@@ -566,6 +566,55 @@ C.push(p([b("Aetheric Slipstream (Flight Times): "), { text: "The dome claims ea
 C.push(p([b("GPS Sagnac: "), { text: "The dashboard claims the Sagnac correction proves absolute simultaneity. In fact, the GPS system's Sagnac correction is derived FROM special and general relativity (both SR time dilation and GR gravitational time dilation are applied to GPS clocks). Without relativistic corrections, GPS would drift by ~10 km/day. The GPS system is one of the strongest practical confirmations of relativity." }]));
 C.push(p([b("Eclipse 2026: "), { text: "The dome predicts -17 to -21 nT Z-component anomaly at seven European observatories. The site states: 'Globe Model Prediction: 0.0 nT exactly; no physical mechanism proposed.' This is false. Chapman (1933) proposed the mechanism 93 years ago, and peer-reviewed literature documents eclipse magnetic perturbations of 5-20 nT during quiet conditions. See detailed analysis below." }]));
 
+C.push(h3("Corrected 20-Domain Analysis: The Independence Problem"));
+C.push(p("The site claims 9.2-sigma convergence across '20 independent domains' with 'locked constants derived from first principles.' Below, all 20 domains are classified by their actual constant dependencies, showing that the claimed independence is illusory."));
+
+// Group A table
+C.push(p([b("GROUP A \u2014 \u03BBg = 8,619 km Dependent (14 of 20 domains): "), { text: "These 14 domains all share the fitted scale constant \u03BBg = 8,619 km and/or H\u2080 = 8,537 km. They are not statistically independent of each other." }]));
+
+// 5-column helper for domain table
+const dcw = [500, 2200, 1200, 1800, 3660];
+function dHdr(cols) {
+  return new TableRow({ children: cols.map((c,i) =>
+    new TableCell({ borders, width: { size: dcw[i], type: WidthType.DXA }, margins: cellMargins,
+      shading: { fill: "2E4057", type: ShadingType.CLEAR },
+      children: [new Paragraph({ children: [new TextRun({ text: c, bold: true, color: "FFFFFF", size: 18, font: "Arial" })] })] })
+  )});
+}
+function dRow(cols) {
+  return new TableRow({ children: cols.map((c,i) =>
+    new TableCell({ borders, width: { size: dcw[i], type: WidthType.DXA }, margins: cellMargins,
+      children: [new Paragraph({ children: [new TextRun({ text: c, size: 18, font: "Arial" })] })] })
+  )});
+}
+
+const domRows = [
+  dHdr(["#", "Domain", "Shared Constant", "Globe Same?", "Issues"]),
+  dRow(["1", "Schumann Resonance", "\u03BBg, H\u2080", "YES", "Both predict 7.83 Hz"]),
+  dRow(["2", "Tesla Longitudinal Freq", "\u03BBg, va", "N/A", "Patent lacks cited formula"]),
+  dRow(["3", "NMP Drift Rate", "\u03BBg", "YES", "Divergence testable ~2028+"]),
+  dRow(["4", "Equatorial Gravity", "\u03BBg", "YES", "Uses observed 9.7803 as input"]),
+  dRow(["5", "EM-Gravity Coupling", "\u03BA, \u03BBg", "YES (0.0)", "SGs confirm 0.0 \u00B5Gal"]),
+  dRow(["6", "Schumann Suppression", "H\u2080, \u03BBg", "YES", "D-layer absorption"]),
+  dRow(["7", "Roaring 40s AAO", "\u03BBg", "YES", "No causal test"]),
+  dRow(["8", "Telluric Cutoff", "\u03BBg", "N/A", "MT: valley not peak"]),
+  dRow(["9", "Ionospheric D-layer", "H\u2080, \u03BBg", "YES", "Known since 1920s"]),
+  dRow(["10", "Mascon Gravity", "\u03BBg", "YES", "Mapped from orbit"]),
+  dRow(["11", "Solar Ang. Diameter", "H\u2080, \u03BBg", "YES", "Matches eccentricity"]),
+  dRow(["12", "Kp\u2013SR Suppression", "H\u2080, \u03BBg", "YES", "Both predict correlation"]),
+  dRow(["13", "Solar Wind Pressure", "\u03BBg", "YES", "MHD since 1960s"]),
+  dRow(["14", "Schumann Splitting", "H\u2080, \u03BBg", "YES", "Spherical asymmetry"]),
+];
+C.push(new Table({ width: { size: 9360, type: WidthType.DXA }, columnWidths: dcw, rows: domRows }));
+
+C.push(p([b("GROUP B \u2014 Trivially Confirmable (3 of 20): "), { text: "Known physical constants or long-established phenomena that are not predictions." }]));
+C.push(p([{ text: "15. Lunar Magnetic Tide (M2 = 12.42h): Known since Doodson 1921. 16. Roaring 40s Wind Speed: Documented since Age of Sail; Coriolis + baroclinic instability. 17. Polaris Excess: Claimed +0.27\u00B0 is within Polaris's 0.74\u00B0 offset from true pole + atmospheric refraction." }]));
+
+C.push(p([b("GROUP C \u2014 Potentially Testable but Problematic (3 of 20): "), { text: "These domains could in principle discriminate, but each has issues." }]));
+C.push(p([{ text: "18. Aetheric Slipstream: Globe explains via jet stream; asymmetry vanishes on equatorial routes. 19. GPS Sagnac: GPS is built on SR + GR; without relativistic corrections it drifts ~10 km/day. 20. Eclipse 2026: Pending, but dome range (-17 to -21 nT) overlaps Chapman-mechanism range (5-20 nT); stated globe prediction of '0.0 nT' is a straw man." }]));
+
+C.push(p([b("Bottom line: "), { text: "14 of 20 domains share the same fitted constant and are therefore one test, not fourteen. Of the remaining 6, the globe model predicts the same or better result in 5, and the dome prediction is directly contradicted by data in 1 (Polaris). Zero of 20 domains produce a result the globe model disagrees with that the dome model uniquely explains. The 9.2-sigma figure is the product of treating correlated tests as independent; the actual statistical significance is indeterminate." }]));
+
 C.push(h3("The August 2026 Eclipse: A Misrepresented Prediction"));
 C.push(p([b("The dome prediction: "), { text: "-17 to -21 nT Z-component anomaly at European INTERMAGNET stations during the August 12, 2026 eclipse, conditional on Kp < 2 (quiet geomagnetic conditions)." }]));
 C.push(p([b("The stated globe prediction: "), { text: "'0.0 nT exactly; no physical mechanism proposed.'" }]));
