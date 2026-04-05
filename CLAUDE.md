@@ -75,7 +75,7 @@ Each entry has:
 
 ### Self-Contradictions (the strongest category)
 - **Schumann resonance**: Dome cavity H(r)=8537·exp(−r/8619) predicts ~22 Hz fundamental, not 7.83 Hz
-- **Tidal forces**: Local moon at ~5,200 km produces 300,000× observed tidal force
+- **Tidal pattern**: Local moon at ~2,534 km produces one tidal spike, not the observed two-bulge semidiurnal pattern (geometric, mass-independent)
 - **Gravity at rim**: g drops ~90% at r=20,015 km under dome geometry
 - **Solar formula**: Uses globe's 23.45° axial tilt while claiming flat earth
 
