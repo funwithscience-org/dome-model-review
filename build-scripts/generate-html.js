@@ -662,7 +662,7 @@ ${sectionNav('model', 'The Model', 'pages', 'Live Power Analysis')}
 <table>
 <thead><tr><th>#</th><th>Domain</th><th>Problem</th></tr></thead>
 <tbody>
-<tr><td>18</td><td>Aetheric Slipstream</td><td>Eastbound flights are faster than westbound — both models agree on the observation. The globe predicts this from the jet stream (250 hPa westerlies measured by radiosondes and aircraft). The dome predicts it from "aetheric slipstream." The discriminating test: flight asymmetry should vanish on equatorial routes (no jet stream) if the globe is right, or persist everywhere if "aether" is right. It vanishes at the equator.</td></tr>
+<tr><td>18</td><td>Aetheric Slipstream</td><td>Both models predict eastbound advantage. Three discriminating tests: (1) Seasonal — asymmetry is ~62 min in winter, ~51 min in summer, matching jet stream strength cycle; dome predicts constant. (2) Equatorial — asymmetry vanishes near equator where jet stream is absent; dome predicts it everywhere. (3) Hemispheric — pattern varies by southern latitude, matching varying wind patterns. All three match jet stream, not fixed aether.</td></tr>
 <tr><td>19</td><td>GPS Sagnac</td><td>The Sagnac correction in GPS is real and both models could claim it. The discriminating evidence: GPS requires relativistic corrections (+38.3 μs/day net from gravitational time dilation and velocity time dilation) calibrated to orbital altitude (20,200 km). These corrections are physical clock-rate adjustments that only produce the right positioning if the satellites are where orbital mechanics says they are.</td></tr>
 <tr><td>20</td><td>Eclipse 2026</td><td>Pending. Dome range (−17 to −21 nT) overlaps the Chapman-mechanism (when the Moon's shadow shuts off sunlight, the upper atmosphere loses its electrical conductivity, disrupting magnetic currents at ground level) range (5–20 nT). Stated globe prediction of "0.0 nT" is a straw man. See Section 3.2.</td></tr>
 </tbody>
@@ -709,7 +709,21 @@ ${sectionNav('model', 'The Model', 'pages', 'Live Power Analysis')}
 
 <p><strong>Test 2 — Polaris altitude at 35.9°N (claimed confirmed):</strong> The author claims a +0.27° "excess" above predicted altitude. Polaris is offset 0.74° from the true celestial pole, and atmospheric refraction routinely adds 0.2–0.5° at moderate elevations. The claimed excess is within known measurement artifacts.</p>
 
-<p><strong>Tests 3–6 (pending):</strong> Eclipse 2026 (misrepresented — see Section 3.2 above), NMP drift rate divergence, SAA cell prediction, JFK–LHR flight time asymmetry.</p>
+<p><strong>Test 3 — JFK–LHR flight time asymmetry (listed as pending):</strong> The dome predicts "eastbound >5% advantage" from "aetheric slipstream." The page states the globe predicts "0% (after wind)" — framing the jet stream as a correction to be removed rather than the explanation itself.</p>
+
+<p><strong>The data (publicly available from airline schedules and peer-reviewed research):</strong> JFK→LHR averages ~6h 50m; LHR→JFK averages ~7h 45m–8h. The eastbound advantage is roughly 55–75 minutes, varying by season. Both models agree the asymmetry exists. The question is <em>why</em>.</p>
+
+<p><strong>Discriminating test 1 — seasonal variation:</strong> The jet stream is strongest in winter and weakest in summer. If the jet stream causes the asymmetry, the time difference should be larger in winter and smaller in summer. If "aetheric slipstream" (a property of the dome cavity, not weather) causes it, the difference should be constant year-round. Peer-reviewed data (<a href="https://iopscience.iop.org/article/10.1088/1748-9326/11/2/024008">Williams, 2016, Environ. Res. Lett.</a>) shows: winter asymmetry ~62 minutes, summer asymmetry ~51 minutes. <strong>The data matches the jet stream prediction.</strong> The dome model offers no mechanism for seasonal variation in a fixed cavity.</p>
+
+<p><strong>Discriminating test 2 — equatorial routes:</strong> If the aether circulates from north to south across the disc, the slipstream should be present everywhere, including near the equator. The jet stream, by contrast, is absent near the equator. Equatorial east-west routes (e.g., Nairobi–Singapore) show minimal or no consistent asymmetry. <strong>The data matches the jet stream prediction</strong> — the effect disappears where the jet stream disappears.</p>
+
+<p><strong>Discriminating test 3 — southern hemisphere reversal:</strong> In the southern hemisphere, the jet stream blows from west to east at different latitudes, producing different asymmetry patterns. The dome's aetheric circulation (flowing south from the center of the disc) should not produce east-west asymmetry at all — or if it does, it should be the same direction everywhere. Sydney→Santiago (near-polar route) still shows an eastbound advantage, consistent with southern westerlies, while some routes show westbound advantages depending on wind patterns. The asymmetry <em>varies by route and season</em>, which is exactly what weather-driven winds predict and exactly what a fixed aetheric property cannot explain.</p>
+
+<p><strong>The framing problem:</strong> The dome's Kill-Shot page states the globe predicts "0% (after wind)." This is a straw man. No one claims the asymmetry doesn't exist — the globe model explains it as the jet stream. Saying "the globe predicts 0% after removing the jet stream" is like saying "the thermometer predicts 0° after removing the temperature." The wind <em>is</em> the explanation. Renaming it "aetheric slipstream" changes the label but not the physics — and the dome's label cannot explain why the "slipstream" varies seasonally, disappears at the equator, or changes character in the southern hemisphere.</p>
+
+<p><strong>Verdict:</strong> The dome's prediction (eastbound advantage exists) is confirmed — but so is the globe's. The three discriminating tests (seasonal variation, equatorial absence, hemispheric variation) all match jet stream physics and are incompatible with a fixed aetheric circulation. This test is non-discriminating at best, and arguably falsifies the dome's proposed mechanism.</p>
+
+<p><strong>Tests 4–6 (pending):</strong> Eclipse 2026 (misrepresented — see Section 3.2 above), NMP drift rate divergence, SAA cell prediction.</p>
 
 <h2>3.4 Audit Walkthrough: A Six-Step Pipeline for AI Models</h2>
 
