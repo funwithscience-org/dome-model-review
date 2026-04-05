@@ -27,6 +27,111 @@ const VERDICT_CLASSES = {
   'Unfalsifiable': 'v-unfalsifiable'
 };
 
+// ════ PIE CHART COLORS (match CSS verdict colors) ════
+
+const VERDICT_COLORS_LIGHT = {
+  'Refuted by Data': '#FFCCCC',
+  'Std Model Explains': '#C8E6C9',
+  'Self-Contradicted': '#B3E5FC',
+  'Misleading': '#FFE0B2',
+  'Not Demonstrated': '#D1C4E9',
+  'Unfalsifiable': '#E0E0E0'
+};
+
+const VERDICT_COLORS_DARK = {
+  'Refuted by Data': '#c45050',
+  'Std Model Explains': '#4a8c4a',
+  'Self-Contradicted': '#2d8abf',
+  'Misleading': '#c48a30',
+  'Not Demonstrated': '#7b5eae',
+  'Unfalsifiable': '#888888'
+};
+
+const VERDICT_ORDER = [
+  'Refuted by Data', 'Self-Contradicted', 'Std Model Explains',
+  'Misleading', 'Not Demonstrated', 'Unfalsifiable'
+];
+
+function generatePieChart(tally, total) {
+  const cx = 120, cy = 120, r = 100;
+  let angle = -Math.PI / 2; // start at top
+  const slices = [];
+  const labels = [];
+
+  for (const verdict of VERDICT_ORDER) {
+    const count = tally[verdict] || 0;
+    if (count === 0) continue;
+    const sweep = (count / total) * 2 * Math.PI;
+    const x1 = cx + r * Math.cos(angle);
+    const y1 = cy + r * Math.sin(angle);
+    const x2 = cx + r * Math.cos(angle + sweep);
+    const y2 = cy + r * Math.sin(angle + sweep);
+    const largeArc = sweep > Math.PI ? 1 : 0;
+    const lightColor = VERDICT_COLORS_LIGHT[verdict];
+    const darkColor = VERDICT_COLORS_DARK[verdict];
+
+    slices.push(`<path d="M${cx},${cy} L${x1.toFixed(2)},${y1.toFixed(2)} A${r},${r} 0 ${largeArc},1 ${x2.toFixed(2)},${y2.toFixed(2)} Z" fill="${lightColor}" class="pie-slice" data-dark="${darkColor}" stroke="var(--bg)" stroke-width="1.5"/>`);
+
+    // Label at midpoint of arc
+    const midAngle = angle + sweep / 2;
+    const labelR = r * 0.62;
+    const lx = cx + labelR * Math.cos(midAngle);
+    const ly = cy + labelR * Math.sin(midAngle);
+    const pct = ((count / total) * 100).toFixed(0);
+    labels.push(`<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="middle" dominant-baseline="central" font-size="12" font-weight="700" fill="#333" class="pie-label">${count}</text>`);
+
+    angle += sweep;
+  }
+
+  // Legend items
+  const legendItems = VERDICT_ORDER.filter(v => (tally[v] || 0) > 0).map((verdict, i) => {
+    const count = tally[verdict] || 0;
+    const pct = ((count / total) * 100).toFixed(0);
+    const y = i * 24;
+    return `<g transform="translate(0,${y})">
+      <rect width="14" height="14" rx="2" fill="${VERDICT_COLORS_LIGHT[verdict]}" class="legend-swatch" data-dark="${VERDICT_COLORS_DARK[verdict]}"/>
+      <text x="20" y="11.5" font-size="12.5" fill="var(--text)">${verdict} (${count}, ${pct}%)</text>
+    </g>`;
+  });
+
+  return `
+<div style="display:flex;align-items:center;justify-content:center;gap:2rem;flex-wrap:wrap;margin:1.2rem 0 1.5rem">
+  <svg viewBox="0 0 240 240" width="220" height="220" role="img" aria-label="Verdict distribution pie chart">
+    ${slices.join('\n    ')}
+    ${labels.join('\n    ')}
+  </svg>
+  <svg viewBox="0 0 260 ${VERDICT_ORDER.filter(v => (tally[v] || 0) > 0).length * 24}" width="260" height="${VERDICT_ORDER.filter(v => (tally[v] || 0) > 0).length * 24}" role="img" aria-label="Pie chart legend">
+    ${legendItems.join('\n    ')}
+  </svg>
+</div>
+<script>
+(function(){
+  const mq = window.matchMedia('(prefers-color-scheme:dark)');
+  function applyTheme(dark) {
+    document.querySelectorAll('.pie-slice').forEach(el => {
+      el.setAttribute('fill', dark ? el.dataset.dark : el.getAttribute('fill').includes('#') ? el.getAttribute('fill') : el.dataset.dark);
+    });
+    document.querySelectorAll('.legend-swatch').forEach(el => {
+      el.setAttribute('fill', dark ? el.dataset.dark : el.getAttribute('fill').includes('#') ? el.getAttribute('fill') : el.dataset.dark);
+    });
+    document.querySelectorAll('.pie-label').forEach(el => {
+      el.setAttribute('fill', dark ? '#eee' : '#333');
+    });
+  }
+  // Store original light colors
+  document.querySelectorAll('.pie-slice').forEach(el => el.dataset.light = el.getAttribute('fill'));
+  document.querySelectorAll('.legend-swatch').forEach(el => el.dataset.light = el.getAttribute('fill'));
+  function apply(dark) {
+    document.querySelectorAll('.pie-slice').forEach(el => el.setAttribute('fill', dark ? el.dataset.dark : el.dataset.light));
+    document.querySelectorAll('.legend-swatch').forEach(el => el.setAttribute('fill', dark ? el.dataset.dark : el.dataset.light));
+    document.querySelectorAll('.pie-label').forEach(el => el.setAttribute('fill', dark ? '#eee' : '#333'));
+  }
+  apply(mq.matches);
+  mq.addEventListener('change', e => apply(e.matches));
+})();
+</script>`;
+}
+
 // ════ CSS (EXACT FROM CURRENT INDEX.HTML) ════
 
 const CSS = `
@@ -106,7 +211,13 @@ function formatTableRow(win) {
   return `<tr><td><a href="#${id}">${win.id}</a></td><td>${escapeHtml(win.claim)}</td><td class="${verdictClass}">${escapeHtml(win.verdict)}</td><td>${escapeHtml(win.finding)}</td></tr>`;
 }
 
+function hasDetailContent(win) {
+  return win.detail_claim || win.detail_evidence || win.detail_verdict_text || win.detail_extra;
+}
+
 function formatWinDetail(win) {
+  if (!hasDetailContent(win)) return '';
+
   const verdictClass = VERDICT_CLASSES[win.verdict] || '';
   const verdictShortClass = verdictClass.replace('v-', 'vt-');
   let html = `<div class="evidence" id="win${win.id}">
@@ -209,9 +320,10 @@ ${CSS}
 <ul>
 <li><a href="#summary-table">2.1 Verdict Summary Table</a></li>
 <li><a href="#refuted">2.2 Detailed: Refuted by Data</a></li>
-<li><a href="#stdmodel">2.3 Detailed: Standard Model Explains</a></li>
-<li><a href="#notdemo">2.4 Detailed: Not Demonstrated</a></li>
-<li><a href="#misleading">2.5 Detailed: Misleading and Unfalsifiable</a></li>
+<li><a href="#selfcon">2.3 Detailed: Self-Contradicted</a></li>
+<li><a href="#stdmodel">2.4 Detailed: Standard Model Explains</a></li>
+<li><a href="#notdemo">2.5 Detailed: Not Demonstrated</a></li>
+<li><a href="#misleading">2.6 Detailed: Misleading and Unfalsifiable</a></li>
 </ul></li>
 <li><a href="#part3">Part 3: Analysis of New Site Pages (Live Power, Kill-Shot, Audit, Tracking, Infographics)</a></li>
 <li><a href="#part4">Part 4: Falsification Tests</a></li>
@@ -272,6 +384,8 @@ Not Demonstrated: ${tally['Not Demonstrated'] || 0} |
 Unfalsifiable: ${tally['Unfalsifiable'] || 0}
 </div>
 
+${generatePieChart(tally, wins.length)}
+
 <table>
 <thead><tr><th>WIN</th><th>Claim</th><th>Verdict</th><th>Primary Finding</th></tr></thead>
 <tbody>
@@ -282,16 +396,19 @@ ${wins.map(formatTableRow).join('\n')}
 <h2 id="refuted">2.2 Detailed: Refuted by Data</h2>
 ${(winsByVerdict['Refuted by Data'] || []).map(formatWinDetail).join('\n')}
 
-<h2 id="stdmodel">2.3 Detailed: Standard Model Explains</h2>
+<h2 id="selfcon">2.3 Detailed: Self-Contradicted</h2>
+<p>These WINs are cases where the dome model's own geometry — its firmament height equation, cavity dimensions, and distance formulas — produces predictions that contradict the author's claimed values. The model refutes itself before external data is even considered.</p>
+${(winsByVerdict['Self-Contradicted'] || []).map(formatWinDetail).join('\n')}
+
+<h2 id="stdmodel">2.4 Detailed: Standard Model Explains</h2>
 ${(winsByVerdict['Std Model Explains'] || []).map(formatWinDetail).join('\n')}
 
-<h2 id="notdemo">2.4 Detailed: Not Demonstrated</h2>
+<h2 id="notdemo">2.5 Detailed: Not Demonstrated</h2>
 ${(winsByVerdict['Not Demonstrated'] || []).map(formatWinDetail).join('\n')}
 
-<h2 id="misleading">2.5 Detailed: Misleading and Unfalsifiable</h2>
+<h2 id="misleading">2.6 Detailed: Misleading and Unfalsifiable</h2>
 ${(winsByVerdict['Misleading'] || []).map(formatWinDetail).join('\n')}
 ${(winsByVerdict['Unfalsifiable'] || []).map(formatWinDetail).join('\n')}
-${(winsByVerdict['Self-Contradicted'] || []).map(formatWinDetail).join('\n')}
 
 <!-- ═══ PART 3 ═══ -->
 <h1 id="part3">Part 3: Analysis of New Site Pages (V51.0)</h1>
