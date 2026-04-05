@@ -745,6 +745,48 @@ C.push(pMixed([
 C.push(pb());
 
 // ══════════════════════════════════════════════════════════════════════
+// PART 4.5 — SELF-CONSISTENCY: DOES THE MODEL PREDICT WHAT IT CLAIMS?
+// ══════════════════════════════════════════════════════════════════════
+C.push(h1("Part 4.5: Self-Consistency \u2014 Does the Dome\u2019s Own Geometry Produce Its Claimed Predictions?"));
+C.push(p("A striking pattern emerges in the 20-domain analysis: many dome 'predictions' match globe predictions despite starting from radically different premises (flat disc vs. oblate spheroid, local sun vs. distant sun, aetheric medium vs. vacuum). This section asks: if you actually work through the physics of the dome's own stated geometry, do you get the numbers the author claims? In most cases, the answer is no. The author achieves agreement with observations by quietly substituting globe-derived formulas or by fitting parameters to observed values rather than deriving them from his geometry."));
+
+C.push(h2("4.5.1 Schumann Resonance: Wrong Formula for His Own Cavity"));
+C.push(p([b("Author's formula: "), { text: "f = c/(4H\u2080) = 299,792/(4\u00D78,537) = 8.78 Hz. He then claims this matches 7.83 Hz (it doesn't \u2014 12% error \u2014 but set that aside)." }]));
+C.push(p([b("The real problem: "), { text: "The formula f = c/(4H) assumes a UNIFORM-HEIGHT rectangular cavity. His cavity has VARYING height: H(r) = 8,537\u00D7exp(\u2212r/8,619) km, from 8,537 km at the pole to 837 km at the ice wall \u2014 a 10\u00D7 variation. For a non-uniform cavity, the resonant frequency is not determined by the maximum height alone; it depends on the weighted average across the entire cavity. The average height across his disc is ~3,339 km, which would give f \u2248 22 Hz \u2014 nearly 3\u00D7 higher than observed. His own geometry predicts the wrong Schumann frequency. He gets close to 7.83 Hz only by using a simplified formula that ignores the exponential height variation he himself specifies." }]));
+
+C.push(h2("4.5.2 Gravity Variation: 152\u00D7 Too Large"));
+C.push(p([b("The model's mechanism: "), { text: "Gravity is attributed to 'aetheric pressure' from the medium filling the cavity. If gravity is proportional to the column of aetheric medium above a point (which is the only physical interpretation of a pressure-based mechanism), then g should track H(r)." }]));
+C.push(p([b("What this predicts: "), { text: "H(r) drops from 8,537 km at the pole to 1,662 km at the equatorial radius (r = 14,105 km) \u2014 an 80.5% decrease. The actual gravity variation from pole to equator is 0.53%. The dome's own geometry predicts a variation 152\u00D7 larger than observed. At the Antarctic rim, H = 837 km, meaning gravity should be ~10% of its polar value \u2014 a 90% drop. No such variation exists. The author avoids this by fitting g(r) = 9.7803\u00D7(1+0.005307\u00D7exp(\u2212r/8619)), which reproduces observations but does not follow from aetheric pressure \u2014 it is a curve fit using the observed 9.7803 as a starting constant." }]));
+
+C.push(h2("4.5.3 Solar Angular Diameter: 29\u00D7 Too Much Variation"));
+C.push(p([b("Dome geometry: "), { text: "The model posits a local sun at ~5,733 km altitude (WIN-026, from crepuscular ray convergence). At the zenith, the sun is 5,733 km away. At 60\u00B0 zenith angle, the sun is 11,466 km away (simple trigonometry). Angular diameter goes as 1/distance." }]));
+C.push(p([b("What this predicts: "), { text: "The sun should appear 50% smaller at 60\u00B0 zenith angle than at noon. The observed variation is \u00B11.7% (entirely from orbital eccentricity). The dome predicts 29\u00D7 more variation than observed. Furthermore, the sun should appear LARGEST at noon and SMALLEST at sunrise/sunset. Century-old micrometer measurements confirm the sun's angular diameter is constant throughout the day. This is one of the clearest falsifications of a local sun." }]));
+
+C.push(h2("4.5.4 Tidal Forces: 300,000\u00D7 Too Strong"));
+C.push(p([b("Globe tidal mechanism: "), { text: "Tides are driven by the differential gravitational pull of the Moon at 384,400 km, producing a 1/r\u00B3 tidal potential. The tidal forcing ratio is (R_Earth/r_Moon)\u00B3 = (6,371/384,400)\u00B3 = 4.55\u00D710\u207B\u2076." }]));
+C.push(p([b("Dome tidal mechanism: "), { text: "A local moon at ~5,733 km altitude circling the disc. The tidal forcing ratio becomes (6,371/5,733)\u00B3 = 1.37 \u2014 a factor of 301,000\u00D7 stronger than the globe calculation. If the dome's local moon exerted any gravitational influence at all, tidal ranges would be measured in kilometers, not the observed ~1 meter. The author claims tidal periods (M2 = 12.42h, etc.) as dome 'predictions' but has never derived them from his own geometry \u2014 he simply cites the standard tidal constituent values and declares them confirmed." }]));
+
+C.push(h2("4.5.5 South Atlantic Anomaly: Axial Symmetry Problem"));
+C.push(p([b("What the SAA is: "), { text: "A localized region of reduced magnetic field strength centered at ~25\u00B0S, 55\u00B0W (over Brazil). It is longitude-dependent \u2014 strongest at one specific longitude, extending westward over time." }]));
+C.push(p([b("What the dome geometry predicts: "), { text: "The disc and toroidal cavity are axially symmetric around the north pole. Any 'rim effect' from the Antarctic resonance barrier would form a RING around the entire disc edge, at all longitudes equally. The dome has no mechanism for features at a specific longitude. The SAA's longitude-dependent structure, its westward drift (~0.3\u00B0/year), and its splitting into two lobes (documented by ESA Swarm satellites) all require 3D convective dynamics in a fluid core \u2014 exactly what the globe model provides and the dome model lacks." }]));
+
+C.push(h2("4.5.6 Secular Variation and Pole Drift: No Time Dependence"));
+C.push(p([b("The dome's field equation: "), { text: "B(r) = 62,376\u00D7exp(\u2212r_N/8,619) + 64,852\u00D7exp(\u2212r_S/8,619). This has NO time variable. A static geometric cavity with fixed material properties produces a STATIC field." }]));
+C.push(p([b("What is observed: "), { text: "The field at Hermanus, South Africa is declining ~100 nT/year. The north magnetic pole has moved >1,000 km since 1900 and is currently at ~86.5\u00B0N, 175\u00B0E \u2014 offset from geographic north. The field has completely reversed hundreds of times over geologic history (paleomagnetic record in ocean floor basalts). The dome model has no mechanism for any of these. The Axis Mundi is a fixed geometric point; if it is the magnetic source, the magnetic pole should be fixed at geographic north. It isn\u2019t." }]));
+
+C.push(h2("4.5.7 Solar Elevation: Using the Globe's Formula"));
+C.push(p([b("The author's formula: "), { text: "\u03B8 = 90\u00B0 \u2212 \u03C6_obs + \u03C6_sun(t), where \u03C6_sun(t) = 23.45\u00B0 \u00D7 sin(2\u03C0(t\u221281)/365). The model page states this 'reproduces the globe formula exactly.'" }]));
+C.push(p([b("The problem: "), { text: "This IS the globe formula. Solar declination = 23.45\u00B0 comes from Earth's axial tilt relative to its orbital plane. On a flat disc with a local sun, solar elevation depends on the sun's altitude and the observer's radial distance from the sun's projection point \u2014 a completely different geometric relationship. The author has not derived solar elevation from his own geometry; he has adopted the globe's formula and labeled it as his own. This is the most transparent case of smuggling globe physics into the dome model." }]));
+
+C.push(h2("4.5.8 Summary: The Substitution Pattern"));
+C.push(p("In every case where the dome model 'agrees with globe predictions,' one of three strategies is at work:"));
+C.push(p([b("Strategy 1 \u2014 Formula substitution: "), { text: "Use the globe's formula directly (solar elevation, tidal periods) without deriving it from dome geometry." }]));
+C.push(p([b("Strategy 2 \u2014 Simplified formula: "), { text: "Use a simplified version that ignores the dome's own geometry (Schumann resonance with uniform height instead of exponentially varying height)." }]));
+C.push(p([b("Strategy 3 \u2014 Curve fitting: "), { text: "Fit free parameters to observed values, then claim the match as a 'derivation from first principles' (gravity formula using observed 9.7803 as a constant; B(r) using fitted amplitudes that violate flux conservation)." }]));
+C.push(p("If the author's own geometry were taken seriously and the physics worked through honestly, the dome model would predict: Schumann resonance at ~22 Hz (not 7.83), gravity varying by 80% pole-to-equator (not 0.53%), solar angular diameter changing by 50% through the day (not 1.7%), tidal forces 300,000\u00D7 too strong, no longitude-dependent magnetic features, no secular variation, and a magnetic pole locked to geographic north. None of these match reality. The model 'works' only because the author replaces his own physics with the globe's physics whenever the dome geometry would produce the wrong answer."));
+C.push(pb());
+
+// ══════════════════════════════════════════════════════════════════════
 // PART 5 — AI DIRECTIVE ANALYSIS (updated for V51.0)
 // ══════════════════════════════════════════════════════════════════════
 C.push(h1("Part 5: Analysis of AI Context Directives"));
