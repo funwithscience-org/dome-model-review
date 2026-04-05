@@ -1,11 +1,35 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Critical Review: Ovoid Cavity Cosmological Model V51.0</title>
-<style>
+#!/usr/bin/env node
 
+/**
+ * generate-html.js
+ *
+ * Generates docs/index.html from:
+ * - data/wins.json (WIN data and details)
+ * - data/sections.json (prose content)
+ * - Includes CSS and structure matching the current index.html exactly
+ */
+
+const fs = require('fs');
+const path = require('path');
+
+// ════ CONFIGURATION ════
+
+const WINS_PATH = path.join(__dirname, '..', 'data', 'wins.json');
+const SECTIONS_PATH = path.join(__dirname, '..', 'data', 'sections.json');
+const OUTPUT_PATH = path.join(__dirname, '..', 'docs', 'index.html');
+
+const VERDICT_CLASSES = {
+  'Refuted by Data': 'v-refuted',
+  'Std Model Explains': 'v-std',
+  'Self-Contradicted': 'v-selfcon',
+  'Misleading': 'v-misleading',
+  'Not Demonstrated': 'v-notdemo',
+  'Unfalsifiable': 'v-unfalsifiable'
+};
+
+// ════ CSS (EXACT FROM CURRENT INDEX.HTML) ════
+
+const CSS = `
 :root{--bg:#fff;--text:#222;--heading:#2E4057;--accent:#4A6FA5;--link:#0563C1;--border:#ccc;--table-header:#2E4057;--refuted:#FFCCCC;--stdmodel:#C8E6C9;--selfcon:#B3E5FC;--misleading:#FFE0B2;--unfalsifiable:#E0E0E0;--notdemo:#D1C4E9;--code-bg:#f5f5f5;--card-bg:#fafafa}
 @media(prefers-color-scheme:dark){:root{--bg:#1a1a2e;--text:#e0e0e0;--heading:#7eb8da;--accent:#8fafd4;--link:#5dade2;--border:#444;--table-header:#1c3045;--refuted:#5c2020;--stdmodel:#1e3e1e;--selfcon:#0d3b52;--misleading:#4a3510;--unfalsifiable:#3a3a3a;--notdemo:#2d1f4e;--code-bg:#2a2a3e;--card-bg:#222240}}
 *{box-sizing:border-box;margin:0;padding:0}
@@ -53,7 +77,94 @@ nav.toc a:hover{text-decoration:underline}
 .star-table td{padding:.3rem .6rem;font-size:.88rem}
 footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--border);font-size:.85rem;color:#888;text-align:center}
 @media(max-width:600px){body{padding:.5rem 1rem}h1{font-size:1.4rem}h2{font-size:1.2rem}table{font-size:.8rem}}
+`;
 
+// ════ UTILITIES ════
+
+function escapeHtml(text) {
+  if (!text) return '';
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function computeVerdictTallies(wins) {
+  const tally = {};
+  wins.forEach(win => {
+    const verdict = win.verdict;
+    tally[verdict] = (tally[verdict] || 0) + 1;
+  });
+  return tally;
+}
+
+function formatTableRow(win) {
+  const verdictClass = VERDICT_CLASSES[win.verdict] || '';
+  const id = `win${win.id}`;
+  return `<tr><td><a href="#${id}">${win.id}</a></td><td>${escapeHtml(win.claim)}</td><td class="${verdictClass}">${escapeHtml(win.verdict)}</td><td>${escapeHtml(win.finding)}</td></tr>`;
+}
+
+function formatWinDetail(win) {
+  const verdictClass = VERDICT_CLASSES[win.verdict] || '';
+  const verdictShortClass = verdictClass.replace('v-', 'vt-');
+  let html = `<div class="evidence" id="win${win.id}">
+<h3>WIN-${win.id}: ${escapeHtml(win.claim)}</h3>
+`;
+
+  if (win.detail_claim) {
+    html += `<p><strong>Claim:</strong> ${escapeHtml(win.detail_claim)}</p>\n`;
+  }
+
+  if (win.detail_evidence) {
+    html += `<p><strong>Evidence:</strong> ${win.detail_evidence}</p>\n`;
+  }
+
+  if (win.detail_verdict_text) {
+    html += `<p><span class="verdict-tag ${verdictShortClass}">${escapeHtml(win.verdict).toUpperCase()}</span> ${win.detail_verdict_text}</p>\n`;
+  }
+
+  if (win.detail_extra) {
+    html += `<p>${win.detail_extra}</p>\n`;
+  }
+
+  html += `</div>
+`;
+  return html;
+}
+
+// ════ MAIN ════
+
+function main() {
+  console.log('Reading wins.json...');
+  const wins = JSON.parse(fs.readFileSync(WINS_PATH, 'utf8'));
+
+  console.log(`Found ${wins.length} WINs`);
+
+  // Group wins by verdict for detailed sections
+  const winsByVerdict = {};
+  wins.forEach(win => {
+    if (!winsByVerdict[win.verdict]) {
+      winsByVerdict[win.verdict] = [];
+    }
+    winsByVerdict[win.verdict].push(win);
+  });
+
+  // Compute tallies
+  const tally = computeVerdictTallies(wins);
+
+  console.log('Verdict tally:', tally);
+
+  // Start HTML
+  let html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Critical Review: Ovoid Cavity Cosmological Model V51.0</title>
+<style>
+${CSS}
 </style>
 </head>
 <body>
@@ -152,423 +263,35 @@ footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--border);font-
 <p>Click any WIN number to jump to the detailed analysis.</p>
 
 <div class="tally">
-<strong>Verdict Tally (67 total WINs):</strong>
-Refuted by Data: 11 |
-Standard Model Explains: 15 |
-Self-Contradicted: 11 |
-Misleading: 23 |
-Not Demonstrated: 3 |
-Unfalsifiable: 4
+<strong>Verdict Tally (${wins.length} total WINs):</strong>
+Refuted by Data: ${tally['Refuted by Data'] || 0} |
+Standard Model Explains: ${tally['Std Model Explains'] || 0} |
+Self-Contradicted: ${tally['Self-Contradicted'] || 0} |
+Misleading: ${tally['Misleading'] || 0} |
+Not Demonstrated: ${tally['Not Demonstrated'] || 0} |
+Unfalsifiable: ${tally['Unfalsifiable'] || 0}
 </div>
 
 <table>
 <thead><tr><th>WIN</th><th>Claim</th><th>Verdict</th><th>Primary Finding</th></tr></thead>
 <tbody>
-<tr><td><a href="#win001">001</a></td><td>Tesla 11.78 Hz resonance</td><td class="v-refuted">Refuted by Data</td><td>US Patent 787412 does not contain the cited formula f=c/(2D)</td></tr>
-<tr><td><a href="#win002">002</a></td><td>Schumann 26% aetheric damping</td><td class="v-selfcon">Self-Contradicted</td><td>Dome cavity with H(r)=8537·exp(−r/8619) gives ~22 Hz, not 7.83; uses simplified uniform-height formula</td></tr>
-<tr><td><a href="#win003">003</a></td><td>King&#39;s Chamber 10th harmonic</td><td class="v-misleading">Misleading</td><td>117 Hz is acoustic resonance of granite chamber dimensions, not EM</td></tr>
-<tr><td><a href="#win004">004</a></td><td>SAA exponential separation</td><td class="v-std">Std Model Explains</td><td>MHD simulations reproduce SAA splitting; author now acknowledges method invalid</td></tr>
-<tr><td><a href="#win005">005</a></td><td>African SAA cell faster decay</td><td class="v-std">Std Model Explains</td><td>Outer-core convection dynamics explain asymmetric decay</td></tr>
-<tr><td><a href="#win006">006</a></td><td>NP pre-1990 linear drift</td><td class="v-std">Std Model Explains</td><td>Normal secular variation documented by NOAA for centuries</td></tr>
-<tr><td><a href="#win007">007</a></td><td>NP post-1990 acceleration</td><td class="v-misleading">Misleading</td><td>Smooth acceleration from 1970s, not sharp 1990 phase transition</td></tr>
-<tr><td><a href="#win008">008</a></td><td>Telluric 11.7 Hz cutoff</td><td class="v-refuted">Refuted by Data</td><td>MT surveys show attenuation valley at 11-12 Hz, not a peak</td></tr>
-<tr><td><a href="#win009">009</a></td><td>Telluric ~12 Hz peak</td><td class="v-refuted">Refuted by Data</td><td>Working geophysicists deliberately avoid this noisy frequency band</td></tr>
-<tr><td><a href="#win010">010</a></td><td>BOU 2017 eclipse -10.9 nT</td><td class="v-std">Std Model Explains</td><td>Ionospheric conductivity drop (Chapman mechanism) explains signal</td></tr>
-<tr><td><a href="#win011">011</a></td><td>Mohe 1997 gravity anomaly</td><td class="v-notdemo">Not Demonstrated</td><td>Membach SG (superior instrument) found 0.0 uGal; result unconfirmed</td></tr>
-<tr><td><a href="#win012">012</a></td><td>Mag-gravity coupling 1.67</td><td class="v-notdemo">Not Demonstrated</td><td>Built on unconfirmed Mohe data; circular derivation</td></tr>
-<tr><td><a href="#win013">013</a></td><td>Membach SG null</td><td class="v-misleading">Misleading</td><td>Null result contradicts WIN-011; both cannot confirm same model</td></tr>
-<tr><td><a href="#win014">014</a></td><td>China SG null</td><td class="v-misleading">Misleading</td><td>Same logical contradiction as WIN-013</td></tr>
-<tr><td><a href="#win015">015</a></td><td>Meyl scalar Faraday</td><td class="v-notdemo">Not Demonstrated</td><td>No peer-reviewed replication; CUORE Faraday cage shows 20 dB at 10 Hz</td></tr>
-<tr><td><a href="#win016">016</a></td><td>Aberration refractive model</td><td class="v-refuted">Refuted by Data</td><td>Aberration is achromatic; refraction is chromatic. VLBI confirms orbital cause</td></tr>
-<tr><td><a href="#win017">017</a></td><td>Parallax = firmament wobble</td><td class="v-refuted">Refuted by Data</td><td>Gaia DR3: 1.8 billion stars show parallax inversely proportional to distance</td></tr>
-<tr><td><a href="#win018">018</a></td><td>Analemma day length 6.9 min</td><td class="v-misleading">Misleading</td><td>Equation of time ranges +16.5 to -14.1 min; 6.9 is cherry-picked RMS</td></tr>
-<tr><td><a href="#win019">019</a></td><td>Analemma loop ratio 2.66</td><td class="v-misleading">Misleading</td><td>Numerical coincidence with no causal mechanism proposed</td></tr>
-<tr><td><a href="#win020">020</a></td><td>Lunar 18.6-yr cycle via gears</td><td class="v-std">Std Model Explains</td><td>Gravitational torque produces exact period; gears have no physical driver</td></tr>
-<tr><td><a href="#win021">021</a></td><td>Gyroscopic precession rate</td><td class="v-misleading">Misleading</td><td>Derived from assumed dome parameters, not independent measurement</td></tr>
-<tr><td><a href="#win022">022</a></td><td>1990 magnetic phase transition</td><td class="v-misleading">Misleading</td><td>Duplicate of WIN-007; same data counted twice</td></tr>
-<tr><td><a href="#win023">023</a></td><td>SAA formation ~950 AD</td><td class="v-unfalsifiable">Unfalsifiable</td><td>Links geomagnetic event to theological timeline without mechanism</td></tr>
-<tr><td><a href="#win024">024</a></td><td>Roaring 40s = SAA boundary</td><td class="v-misleading">Misleading</td><td>Latitude coincidence; winds driven by Coriolis + pressure gradients</td></tr>
-<tr><td><a href="#win025">025</a></td><td>2024 eclipse 9-station (REMOVED)</td><td class="v-misleading">Misleading</td><td>Author removed in V51.0; disturbed-day baseline acknowledged</td></tr>
-<tr><td><a href="#win026">026</a></td><td>Crepuscular ray divergence</td><td class="v-refuted">Refuted by Data</td><td>Anticrepuscular rays converge at anti-solar point; impossible with local sun</td></tr>
-<tr><td><a href="#win027">027</a></td><td>Southern distance quadratic</td><td class="v-misleading">Misleading</td><td>R-sq 0.79 = 21% unexplained; globe great-circle achieves &lt;0.5% error</td></tr>
-<tr><td><a href="#win028">028</a></td><td>Bermuda/Japan symmetry</td><td class="v-refuted">Refuted by Data</td><td>NOAA and Lloyd&#39;s confirm no anomalous loss rates in either region</td></tr>
-<tr><td><a href="#win029">029</a></td><td>Schumann needs conductive ceiling</td><td class="v-selfcon">Self-Contradicted</td><td>Ionosphere IS conductive; dome&#39;s own exponential cavity gives ~22 Hz, not 7.83</td></tr>
-<tr><td><a href="#win030">030</a></td><td>Elliptical disc geometry</td><td class="v-misleading">Misleading</td><td>Adding parameters always improves fit; no AIC/BIC comparison shown</td></tr>
-<tr><td><a href="#win031">031</a></td><td>North Pole cosmic mountain</td><td class="v-unfalsifiable">Unfalsifiable</td><td>Theological assertion, not testable physical claim</td></tr>
-<tr><td><a href="#win032">032</a></td><td>New Jerusalem pole axis</td><td class="v-unfalsifiable">Unfalsifiable</td><td>Theological assertion, not testable physical claim</td></tr>
-<tr><td><a href="#win033">033</a></td><td>Sigma Octantis dimness</td><td class="v-refuted">Refuted by Data</td><td>Both stars ~130 ly away; brightness difference is intrinsic luminosity class</td></tr>
-<tr><td><a href="#win034">034</a></td><td>Firmament = cast copper/bronze</td><td class="v-unfalsifiable">Unfalsifiable</td><td>Biblical exegesis; a copper dome at any altitude would be radar-detectable</td></tr>
-<tr><td><a href="#win035">035</a></td><td>SAA African &lt; 21,795 nT</td><td class="v-std">Std Model Explains</td><td>WMM2025 predicts same trend; ~25 nT/year normal secular variation</td></tr>
-<tr><td><a href="#win036">036</a></td><td>NP deviation &gt;18 deg from 120E</td><td class="v-std">Std Model Explains</td><td>WMM2025 already published this exact position in Dec 2024</td></tr>
-<tr><td><a href="#win037">037</a></td><td>Field decay &gt;=28 nT</td><td class="v-misleading">Misleading</td><td>Conflates regional SAA change with global dipole; rate is ~15 nT/yr globally</td></tr>
-<tr><td><a href="#win038">038</a></td><td>Schumann 7.83 Hz stable</td><td class="v-selfcon">Self-Contradicted</td><td>Dome&#39;s own cavity predicts ~22 Hz; stability is expected on globe (ionosphere stable)</td></tr>
-<tr><td><a href="#win039">039</a></td><td>Lunar magnetic 1-2 nT</td><td class="v-std">Std Model Explains</td><td>Ocean tidal dynamo confirmed by Swarm/CHAMP satellite data</td></tr>
-<tr><td><a href="#win040">040</a></td><td>SAA western cell west of 45W</td><td class="v-std">Std Model Explains</td><td>SAA drift is well-documented by WMM; position already published</td></tr>
-<tr><td><a href="#win041">041</a></td><td>SAA multi-station decay</td><td class="v-misleading">Misleading</td><td>Re-slices same INTERMAGNET data as WIN-004/005/035/037</td></tr>
-<tr><td><a href="#win042">042</a></td><td>Field decay &gt;=28 nT/year</td><td class="v-misleading">Misleading</td><td>Duplicate of WIN-037 with identical threshold and data</td></tr>
-<tr><td><a href="#win043">043</a></td><td>NMP drift 2.26x longitudinal</td><td class="v-std">Std Model Explains</td><td>Already referenced in WIN-007; ratio is from published NOAA data</td></tr>
-<tr><td><a href="#win044">044</a></td><td>FSF formula from V12 geometry</td><td class="v-misleading">Misleading</td><td>Internal model derivation, not independent prediction</td></tr>
-<tr><td><a href="#win045">045</a></td><td>Tidal M2 period</td><td class="v-selfcon">Self-Contradicted</td><td>Never derived from dome; local moon at 5,733 km gives tidal forces 300,000× too strong</td></tr>
-<tr><td><a href="#win046">046</a></td><td>Tidal S2 period</td><td class="v-selfcon">Self-Contradicted</td><td>Never derived from dome; local moon produces 300,000× excess tidal force</td></tr>
-<tr><td><a href="#win047">047</a></td><td>Low-z Hubble Law aetheric</td><td class="v-misleading">Misleading</td><td>Hubble&#39;s Law is established; dome has no galaxy-scale mechanism</td></tr>
-<tr><td><a href="#win048">048</a></td><td>CMB Axis of Evil</td><td class="v-misleading">Misleading</td><td>Contested anomaly; no dome mechanism for CMB generation</td></tr>
-<tr><td><a href="#win049">049</a></td><td>Tidal K1 period</td><td class="v-selfcon">Self-Contradicted</td><td>Never derived from dome; local moon produces 300,000× excess tidal force</td></tr>
-<tr><td><a href="#win050">050</a></td><td>Tidal O1 period</td><td class="v-selfcon">Self-Contradicted</td><td>Never derived from dome; local moon produces 300,000× excess tidal force</td></tr>
-<tr><td><a href="#win051">051</a></td><td>Tidal N2 period</td><td class="v-selfcon">Self-Contradicted</td><td>Never derived from dome; local moon produces 300,000× excess tidal force</td></tr>
-<tr><td><a href="#win052">052</a></td><td>RAR lensing extension</td><td class="v-misleading">Misleading</td><td>Cites Mistele 2024 but dome model has no lensing mechanism</td></tr>
-<tr><td><a href="#win053">053</a></td><td>Two-pole geomagnetic model</td><td class="v-refuted">Refuted by Data</td><td>Contradicts V50.6 monopolar vortex; no actual mechanism change</td></tr>
-<tr><td><a href="#win054">054</a></td><td>El Gordo cluster impossibility</td><td class="v-misleading">Misleading</td><td>Disputes LCDM but dome has no cosmological structure formation model</td></tr>
-<tr><td><a href="#win055">055</a></td><td>Distance-redshift Cepheid/SBF</td><td class="v-misleading">Misleading</td><td>Standard cosmological observations; dome has no redshift mechanism</td></tr>
-<tr><td><a href="#win056">056</a></td><td>Solar elevation from H(r)</td><td class="v-selfcon">Self-Contradicted</td><td>Uses globe&#39;s declination formula (23.45° axial tilt); dome geometry gives different relationship entirely</td></tr>
-<tr><td><a href="#win057">057</a></td><td>Two-zone disc topology</td><td class="v-misleading">Misleading</td><td>V13 coordinates regressed NH accuracy from 5.2% to 7.3%</td></tr>
-<tr><td><a href="#win058">058</a></td><td>Unified angular coordinate</td><td class="v-misleading">Misleading</td><td>Internal coordinate convention, not a physical prediction</td></tr>
-<tr><td><a href="#win059">059</a></td><td>NMP deceleration Siberian</td><td class="v-std">Std Model Explains</td><td>Covered by WIN-007; normal secular variation per WMM2025</td></tr>
-<tr><td><a href="#win060">060</a></td><td>SAA western cell shift</td><td class="v-std">Std Model Explains</td><td>SAA drift already tracked by NOAA/ESA; no new prediction</td></tr>
-<tr><td><a href="#win061">061</a></td><td>Schumann suppression G3 storm</td><td class="v-selfcon">Self-Contradicted</td><td>Dome cavity predicts ~22 Hz base frequency; suppression pattern follows ionospheric (globe) physics</td></tr>
-<tr><td><a href="#win062">062</a></td><td>Tesla longitudinal wave 1.574c</td><td class="v-refuted">Refuted by Data</td><td>Superluminal group velocity does not imply superluminal information transfer</td></tr>
-<tr><td><a href="#win063">063</a></td><td>Magnetic decay asymmetry ratio</td><td class="v-std">Std Model Explains</td><td>Hemispheric asymmetry modeled by CHAOS-7 outer core dynamics</td></tr>
-<tr><td><a href="#win064">064</a></td><td>P-wave shadow zone geometric</td><td class="v-std">Std Model Explains</td><td>Shadow zone at 104-140 deg proves spherical layered Earth with liquid core</td></tr>
-<tr><td><a href="#win065">065</a></td><td>Polaris systematic excess</td><td class="v-refuted">Refuted by Data</td><td>Centuries of celestial navigation show Polaris elevation = latitude</td></tr>
-<tr><td><a href="#win066">066</a></td><td>NH heat excess asymmetry</td><td class="v-std">Std Model Explains</td><td>Land-ocean distribution asymmetry; well-modeled by climate science</td></tr>
-<tr><td><a href="#win067">067</a></td><td>Antarctic gravity hole</td><td class="v-selfcon">Self-Contradicted</td><td>Dome predicts 90% gravity drop at rim (H=837 km vs 8,537 at pole); actual variation is 0.53%</td></tr>
+${wins.map(formatTableRow).join('\n')}
 </tbody>
 </table>
 
 <h2 id="refuted">2.2 Detailed: Refuted by Data</h2>
-<div class="evidence" id="win001">
-<h3>WIN-001: Tesla 11.78 Hz resonance</h3>
-<p><strong>Claim:</strong> US Patent 787412 contains formula f = c/(2*disc_thickness) giving 11.787 Hz.</p>
-<p><strong>Evidence:</strong> US Patent 787412 (1905), publicly available at , describes electrical energy transmission through the Earth. The patent text mentions that the charge oscillates approximately twelve times per second but derives no disc-thickness frequency formula. The specific equation f = c/(2D) does not appear in the patent. Furthermore, 11.78 Hz is distinct from the Schumann resonance (7.83 Hz); conflating them misidentifies two separate electromagnetic phenomena.</p>
-<p><span class="verdict-tag vt-refuted">REFUTED BY DATA</span> The patent citation is verifiably inaccurate.</p>
-<p>WIN-001 claims a fundamental resonance of 11.78 Hz while WIN-002 claims 7.83 Hz (with 26% aetheric damping reducing from 10.6 Hz). These are incompatible: if the disc thickness resonance is 11.78 Hz, the Schumann frequency should be near that value, not 7.83 Hz. The model claims credit for two different frequencies from two incompatible calculations.</p>
-</div>
-
-<div class="evidence" id="win008">
-<h3>WIN-008: Telluric 11.7 Hz cutoff</h3>
-<p><strong>Claim:</strong> Sharp telluric cutoff at 11.7 Hz and peak at ~12 Hz match disc resonance ceiling.</p>
-<p><strong>Evidence:</strong> Magnetotelluric (MT) survey literature documents that the 11-12 Hz frequency band lies in a zone of low signal-to-noise ratio, between the Schumann resonance peak at ~8 Hz and the first Schumann harmonic at ~14 Hz. Working geophysicists conducting MT surveys deliberately avoid this band because it is an attenuation valley, not a peak. The claim inverts the actual spectrum.</p>
-<p><span class="verdict-tag vt-refuted">REFUTED BY DATA</span> Peer-reviewed MT literature shows an attenuation valley where the claim asserts a peak.</p>
-</div>
-
-<div class="evidence" id="win009">
-<h3>WIN-009: Telluric ~12 Hz peak</h3>
-</div>
-
-<div class="evidence" id="win016">
-<h3>WIN-016: Aberration refractive model</h3>
-<p><strong>Claim:</strong> Refractive index alpha = 2.56e-8 reproduces 20.5 arcsecond annual aberration without Earth orbiting the Sun.</p>
-<p><strong>Evidence:</strong> James Bradley (1727) explicitly tested and rejected atmospheric refraction as an explanation: refraction is wavelength-dependent (chromatic), while stellar aberration is achromatic. Modern VLBI measurements achieve milliarcsecond precision and directly confirm aberration correlates with Earth's orbital velocity (~30 km/s). The  required stellar aberration corrections computed from Earth's orbital elements, confirming the orbital-velocity origin across 1.8 billion stars.</p>
-<p><span class="verdict-tag vt-refuted">REFUTED BY DATA</span> Aberration is achromatic; refraction is chromatic. VLBI and Gaia confirm orbital cause.</p>
-</div>
-
-<div class="evidence" id="win017">
-<h3>WIN-017: Parallax = firmament wobble</h3>
-<p><strong>Claim:</strong> A 20m firmament lateral wobble produces 0-0.5 arcsecond apparent parallax.</p>
-<p><strong>Evidence:</strong> ESA  (2022) provides parallax measurements for 1.8 billion stars. Parallax is inversely proportional to distance: Proxima Centauri (4.24 ly) shows 0.768 arcsec, Sirius (8.6 ly) shows 0.379 arcsec. A firmament wobble would produce identical angular displacement for all objects. Gaia conclusively demonstrates distance-dependent parallax.</p>
-<p><span class="verdict-tag vt-refuted">REFUTED BY DATA</span> 1.8 billion Gaia measurements show parallax inversely proportional to distance.</p>
-</div>
-
-<div class="evidence" id="win026">
-<h3>WIN-026: Crepuscular ray divergence</h3>
-<p><strong>Claim:</strong> Rays visibly diverge from a local sun at approximately 5,733 km.</p>
-<p><strong>Evidence:</strong> Crepuscular rays are parallel beams made visible by atmospheric scattering. The apparent divergence is a perspective effect. Crucially, anticrepuscular rays converge at the anti-solar point simultaneously. See  and . A local sun at 5,733 km could not produce rays converging at both horizons simultaneously.</p>
-<p><span class="verdict-tag vt-refuted">REFUTED BY DATA</span> Anticrepuscular ray convergence at the anti-solar point is physically impossible with a local sun.</p>
-</div>
-
-<div class="evidence" id="win028">
-<h3>WIN-028: Bermuda/Japan symmetry</h3>
-<p><strong>Claim:</strong> Two agonic line locations at 180-degree symmetry correspond to disappearance zones.</p>
-<p><strong>Evidence:</strong> NOAA officially states no evidence of anomalous disappearances.  does not charge premium rates for the region. U.S. Coast Guard reviews found no unusual causes.</p>
-<p><span class="verdict-tag vt-refuted">REFUTED BY DATA</span> Insurance data, NOAA, and USCG confirm no anomalous loss rates.</p>
-</div>
-
-<div class="evidence" id="win033">
-<h3>WIN-033: Sigma Octantis dimness</h3>
-<p><strong>Claim:</strong> Southern pole star (mag 5.42) far dimmer than Polaris (mag 1.98) proves maximal aetheric depth at the disc edge.</p>
-<p><strong>Evidence:</strong> Hipparcos : Polaris is a supergiant (F7Ib, ~1,260 solar luminosities, 433 ly). Sigma Octantis is a subgiant (F0III, ~30 solar luminosities, 294 ly). The magnitude difference is entirely intrinsic luminosity.</p>
-<p><span class="verdict-tag vt-refuted">REFUTED BY DATA</span> Hipparcos stellar classification shows the difference is intrinsic luminosity. Six bright southern stars show zero systematic dimming.</p>
-</div>
-
-<div class="evidence" id="win053">
-<h3>WIN-053: Two-pole geomagnetic model</h3>
-<p><strong>Claim:</strong> Same scale length (\u03BB = 8,619 km) governs both magnetic poles. The &#39;Closed Toroidal Ovoid&#39; geometry produces a dipole-like field via a sub-terrestrial aetheric return path.</p>
-<p><span class="verdict-tag vt-refuted">REFUTED BY DATA</span> The toroidal geometry is a genuine mechanism improvement over V50.6's monopole, but it fails quantitatively: flux conservation forbids equal-strength poles in a ring magnet with a 1,600:1 area ratio. The fitted equation ignores the geometry it claims to derive from.</p>
-<p>The model has been restructured as a toroidal flow circuit: aetheric medium exits the Axis Mundi (north pole), flows south across the disc surface, descends at the Antarctic resonance barrier (ice wall, r \u2248 20,015 km), returns through a sub-terrestrial path (the 'Sump' / Bottom Firmament), and re-enters at the north pole. This is topologically identical to a ring magnet or toroidal solenoid. The subterranean cavity depth is given by Sub-H(r) = H(r) \u00D7 (1 \u2212 e^(\u2212r/\u03B4)) with \u03B4 = 6,371 km. The author fits B(r) = 62,376\u00D7e^(\u2212r_N/8619) + 64,852\u00D7e^(\u2212r_S/8619) nT and claims this drops global RMS from 61% to 20%.</p>
-</div>
-
-<div class="evidence" id="win062">
-<h3>WIN-062: Tesla longitudinal wave 1.574c</h3>
-<p><strong>Claim:</strong> Tesla&#39;s Colorado Springs measurements demonstrate longitudinal wave velocity of 1.574 times the speed of light, confirming ECM disc diameter.</p>
-<p><strong>Evidence:</strong> Tesla observed that electromagnetic signals appeared to arrive faster than expected over Earth's surface. This is explained by group velocity in waveguides: electromagnetic waves propagating in the Earth-ionosphere waveguide can have phase/group velocities exceeding c without violating relativity, because information and energy travel at the signal velocity, which does not exceed c. This is analogous to the phase velocity of light in a waveguide exceeding c. Einstein's special relativity prohibits superluminal information transfer, confirmed by every particle physics experiment. The model's claim that this proves 'aetheric longitudinal waves' ignores the well-understood waveguide physics.</p>
-<p><span class="verdict-tag vt-refuted">REFUTED BY DATA</span> Superluminal group velocity in waveguides is standard physics; does not imply superluminal information transfer or aetheric waves.</p>
-</div>
-
-<div class="evidence" id="win065">
-<h3>WIN-065: Polaris systematic excess</h3>
-<p><strong>Claim:</strong> Polaris elevation at 35.9\u00b0N systematically exceeds latitude by +0.27\u00b0, confirming dome height function.</p>
-<p><strong>Evidence:</strong> Polaris (Alpha Ursae Minoris) is not exactly at the north celestial pole. Its declination is approximately 89.26\u00b0 (2026), meaning it traces a small circle of radius ~0.74\u00b0 around the true pole. This produces a measurable offset that varies throughout the night. The claimed +0.27\u00b0 excess is well within the expected variation from Polaris's offset from true north and atmospheric refraction corrections. Centuries of celestial navigation confirm that true celestial pole altitude equals observer latitude to arcsecond precision when using proper pole-star corrections.</p>
-<p><span class="verdict-tag vt-refuted">REFUTED BY DATA</span> Polaris is 0.74\u00b0 from true pole; the 'excess' is within known offset. True pole altitude equals latitude.</p>
-</div>
-
+${(winsByVerdict['Refuted by Data'] || []).map(formatWinDetail).join('\n')}
 
 <h2 id="stdmodel">2.3 Detailed: Standard Model Explains</h2>
-<div class="evidence" id="win004">
-<h3>WIN-004: SAA exponential separation</h3>
-<p><strong>Claim:</strong> Globe models have no mechanism for SAA splitting or asymmetric decay.</p>
-<p><strong>Evidence:</strong> Terra-Nova et al. (2017, PNAS) demonstrate reversed-flux patches reproduce SAA splitting in MHD simulations. The  documents the evolution quantitatively.  continuously monitors the SAA. Note: V51.0 now acknowledges WIN-004's 'station ratio proxy method' was 'methodologically invalid.'</p>
-<p><span class="verdict-tag vt-std">STD MODEL EXPLAINS</span> MHD simulations reproduce SAA splitting. Author concedes methodology.</p>
-</div>
-
-<div class="evidence" id="win005">
-<h3>WIN-005: African SAA cell faster decay</h3>
-</div>
-
-<div class="evidence" id="win006">
-<h3>WIN-006: NP pre-1990 linear drift</h3>
-<p><strong>Evidence:</strong> Normal secular variation documented by  for centuries. Requires no additional mechanism.</p>
-</div>
-
-<div class="evidence" id="win010">
-<h3>WIN-010: BOU 2017 eclipse -10.9 nT</h3>
-<p><strong>Evidence:</strong> Eclipse-induced perturbations predicted by Chapman (1933) via ionospheric conductivity drops. Data from  confirms Chapman's mechanism across all stations.</p>
-<p><span class="verdict-tag vt-std">STD MODEL EXPLAINS</span> Chapman ionospheric mechanism predicts geometry-tracking signal.</p>
-</div>
-
-<div class="evidence" id="win020">
-<h3>WIN-020: Lunar 18.6-yr cycle via gears</h3>
-<p><strong>Evidence:</strong> Gravitational torque produces exact 18.613-year period. Confirmed to 10 significant figures by lunar laser ranging. Epicyclic gears provide no physical driver.</p>
-</div>
-
-<div class="evidence" id="win035">
-<h3>WIN-035: SAA African &lt; 21,795 nT</h3>
-<p><strong>Evidence:</strong> All five observations already predicted by , , and standard ionospheric models. Analogous to predicting tomorrow's sunrise.</p>
-</div>
-
-<div class="evidence" id="win036">
-<h3>WIN-036: NP deviation &gt;18 deg from 120E</h3>
-</div>
-
-<div class="evidence" id="win039">
-<h3>WIN-039: Lunar magnetic 1-2 nT</h3>
-</div>
-
-<div class="evidence" id="win040">
-<h3>WIN-040: SAA western cell west of 45W</h3>
-<p><strong>Evidence:</strong> These 9 WINs draw from the same INTERMAGNET, NOAA, and Tomsk datasets already used by WIN-004 through WIN-039. Each takes a single data point or ratio from existing measurements and declares it a new 'WIN.' For example, WIN-042 (field decay >=28 nT/year) uses the same threshold and data as WIN-037 (field decay >=28 nT). WIN-043 (NMP drift 2.26x longitudinal) was already cited in WIN-007's evidence. WIN-061 (Schumann suppression during G3 storms) documents that ionospheric disturbance during geomagnetic storms affects Schumann resonance, which is standard ionospheric physics documented since the 1960s.</p>
-<p><span class="verdict-tag vt-std">STD MODEL EXPLAINS</span> All are either duplicates of earlier WINs or standard geophysical observations already documented in the literature.</p>
-</div>
-
-<div class="evidence" id="win043">
-<h3>WIN-043: NMP drift 2.26x longitudinal</h3>
-</div>
-
-<div class="evidence" id="win059">
-<h3>WIN-059: NMP deceleration Siberian</h3>
-</div>
-
-<div class="evidence" id="win060">
-<h3>WIN-060: SAA western cell shift</h3>
-</div>
-
-<div class="evidence" id="win063">
-<h3>WIN-063: Magnetic decay asymmetry ratio</h3>
-</div>
-
-<div class="evidence" id="win064">
-<h3>WIN-064: P-wave shadow zone geometric</h3>
-<p><strong>Claim:</strong> The seismic P-wave shadow zone at 104\u00b0-140\u00b0 from an earthquake epicenter matches dome geometry.</p>
-<p><strong>Evidence:</strong> The P-wave shadow zone is one of the most powerful pieces of evidence FOR a spherical, layered Earth. Seismic waves refract as they pass through layers of different density. The shadow zone at 104\u00b0-140\u00b0 was first explained by Oldham (1906) and refined by Gutenberg (1913) as proof that Earth has a liquid outer core. The radius and depth of the liquid core (2,891 km depth, outer core from 2,891-5,150 km) are derived directly from this shadow zone geometry on a SPHERE. Claiming this as evidence for a flat disc is self-defeating: the shadow zone calculations assume spherical wave propagation through concentric spherical layers.</p>
-<p><span class="verdict-tag vt-std">STD MODEL EXPLAINS</span> The shadow zone proves spherical layered Earth; its very derivation assumes a sphere.</p>
-</div>
-
-<div class="evidence" id="win066">
-<h3>WIN-066: NH heat excess asymmetry</h3>
-<p><strong>Claim:</strong> Northern hemisphere receives +0.34 W/m\u00b2 more heat, confirming dome asymmetry.</p>
-<p><strong>Evidence:</strong> The hemispheric energy asymmetry is a well-studied consequence of land-ocean distribution: the northern hemisphere has 39% land vs 19% in the south. Land has lower heat capacity and albedo differences. Stephens et al. (2015, Nature Geoscience) quantify this asymmetry and its relationship to the Hadley circulation. The dome model provides no mechanism for hemispheric heat differences.</p>
-<p><span class="verdict-tag vt-std">STD MODEL EXPLAINS</span> Land-ocean distribution asymmetry. Well-modeled by climate science.</p>
-</div>
-
+${(winsByVerdict['Std Model Explains'] || []).map(formatWinDetail).join('\n')}
 
 <h2 id="notdemo">2.4 Detailed: Not Demonstrated</h2>
-<div class="evidence" id="win011">
-<h3>WIN-011: Mohe 1997 gravity anomaly</h3>
-<p><strong>Evidence:</strong> Wang et al. (2000) reported ~7 uGal at Mohe. Far more sensitive Membach SG detected 0.0 uGal. China SG network also 0.0 uGal. Coupling constant (1.67 nT/uGal) is built on unconfirmed data.</p>
-<p><span class="verdict-tag vt-notdemo">NOT DEMONSTRATED</span> The 1.67 nT/\u00B5Gal coupling is built on unconfirmed Mohe data. The GRACE L1A claim conflates atmospheric drag with gravitational signal.</p>
-</div>
-
-<div class="evidence" id="win012">
-<h3>WIN-012: Mag-gravity coupling 1.67</h3>
-</div>
-
-<div class="evidence" id="win015">
-<h3>WIN-015: Meyl scalar Faraday</h3>
-<p><strong>Evidence:</strong> Published only in non-indexed journal. Replication attempts explain results via classical near-field coupling. CUORE experiment shows expected Faraday attenuation.</p>
-</div>
-
+${(winsByVerdict['Not Demonstrated'] || []).map(formatWinDetail).join('\n')}
 
 <h2 id="misleading">2.5 Detailed: Misleading and Unfalsifiable</h2>
-<div class="evidence" id="win003">
-<h3>WIN-003: King&#39;s Chamber 10th harmonic</h3>
-</div>
-
-<div class="evidence" id="win007">
-<h3>WIN-007: NP post-1990 acceleration</h3>
-</div>
-
-<div class="evidence" id="win013">
-<h3>WIN-013: Membach SG null</h3>
-</div>
-
-<div class="evidence" id="win014">
-<h3>WIN-014: China SG null</h3>
-</div>
-
-<div class="evidence" id="win018">
-<h3>WIN-018: Analemma day length 6.9 min</h3>
-</div>
-
-<div class="evidence" id="win019">
-<h3>WIN-019: Analemma loop ratio 2.66</h3>
-</div>
-
-<div class="evidence" id="win021">
-<h3>WIN-021: Gyroscopic precession rate</h3>
-</div>
-
-<div class="evidence" id="win022">
-<h3>WIN-022: 1990 magnetic phase transition</h3>
-</div>
-
-<div class="evidence" id="win024">
-<h3>WIN-024: Roaring 40s = SAA boundary</h3>
-</div>
-
-<div class="evidence" id="win025">
-<h3>WIN-025: 2024 eclipse 9-station (REMOVED)</h3>
-</div>
-
-<div class="evidence" id="win027">
-<h3>WIN-027: Southern distance quadratic</h3>
-</div>
-
-<div class="evidence" id="win030">
-<h3>WIN-030: Elliptical disc geometry</h3>
-</div>
-
-<div class="evidence" id="win037">
-<h3>WIN-037: Field decay &gt;=28 nT</h3>
-</div>
-
-<div class="evidence" id="win041">
-<h3>WIN-041: SAA multi-station decay</h3>
-</div>
-
-<div class="evidence" id="win042">
-<h3>WIN-042: Field decay &gt;=28 nT/year</h3>
-</div>
-
-<div class="evidence" id="win044">
-<h3>WIN-044: FSF formula from V12 geometry</h3>
-</div>
-
-<div class="evidence" id="win047">
-<h3>WIN-047: Low-z Hubble Law aetheric</h3>
-</div>
-
-<div class="evidence" id="win048">
-<h3>WIN-048: CMB Axis of Evil</h3>
-</div>
-
-<div class="evidence" id="win052">
-<h3>WIN-052: RAR lensing extension</h3>
-</div>
-
-<div class="evidence" id="win054">
-<h3>WIN-054: El Gordo cluster impossibility</h3>
-</div>
-
-<div class="evidence" id="win055">
-<h3>WIN-055: Distance-redshift Cepheid/SBF</h3>
-</div>
-
-<div class="evidence" id="win057">
-<h3>WIN-057: Two-zone disc topology</h3>
-</div>
-
-<div class="evidence" id="win058">
-<h3>WIN-058: Unified angular coordinate</h3>
-</div>
-
-<div class="evidence" id="win023">
-<h3>WIN-023: SAA formation ~950 AD</h3>
-</div>
-
-<div class="evidence" id="win031">
-<h3>WIN-031: North Pole cosmic mountain</h3>
-</div>
-
-<div class="evidence" id="win032">
-<h3>WIN-032: New Jerusalem pole axis</h3>
-</div>
-
-<div class="evidence" id="win034">
-<h3>WIN-034: Firmament = cast copper/bronze</h3>
-</div>
-
-<div class="evidence" id="win002">
-<h3>WIN-002: Schumann 26% aetheric damping</h3>
-<p><strong>Claim:</strong> Gap between theoretical 10.59 Hz and measured 7.83 Hz proves aetheric damping.</p>
-<p><strong>Evidence:</strong> Finite ionospheric conductivity causes losses that lower the resonant frequency. Sentman (1995) provides quantitative models reproducing all Schumann harmonics (14.1, 20.3, 26.4, 32.5 Hz). 'Aetheric damping' appears in zero peer-reviewed publications.</p>
-<p><span class="verdict-tag vt-selfcon">SELF-CONTRADICTED</span> Ionospheric losses fully account for the gap.</p>
-</div>
-
-<div class="evidence" id="win029">
-<h3>WIN-029: Schumann needs conductive ceiling</h3>
-<p><strong>Evidence:</strong> The formula used is for a quarter-wave linear waveguide, not a spherical cavity. Correct formula f = c/(2*pi*R) gives R = 6,098 km, within 4% of Earth's radius. The ionosphere IS conductive (, CHAMP, ISS instruments). The correct formula actually confirms the globe.</p>
-<p><span class="verdict-tag vt-selfcon">SELF-CONTRADICTED</span> Correct spherical formula gives Earth's radius.</p>
-</div>
-
-<div class="evidence" id="win038">
-<h3>WIN-038: Schumann 7.83 Hz stable</h3>
-</div>
-
-<div class="evidence" id="win045">
-<h3>WIN-045: Tidal M2 period</h3>
-<p><strong>Evidence:</strong> These are fundamental astronomical constants derived from lunar and solar orbital mechanics by Laplace (1775), Darwin (1883), and Doodson (1921). S2 = 12.00 hours is literally half a solar day. M2 = 12.42 hours is half a lunar day (24.84h / 2). Any model that correctly incorporates lunar and solar periodicities will reproduce these values. The dome model's use of a 24.84-hour 'lunar circuit period' inherently produces M2 by halving. This is not a prediction; it is a tautology. The globe model's tidal theory (Laplace tidal equations) reproduces not just these five but all 62 standard tidal constituents, plus their amplitudes at each coastal station.</p>
-<p><span class="verdict-tag vt-selfcon">SELF-CONTRADICTED</span> Tidal periods are fundamental constants known for 250 years. Not predictions.</p>
-</div>
-
-<div class="evidence" id="win046">
-<h3>WIN-046: Tidal S2 period</h3>
-</div>
-
-<div class="evidence" id="win049">
-<h3>WIN-049: Tidal K1 period</h3>
-</div>
-
-<div class="evidence" id="win050">
-<h3>WIN-050: Tidal O1 period</h3>
-</div>
-
-<div class="evidence" id="win051">
-<h3>WIN-051: Tidal N2 period</h3>
-</div>
-
-<div class="evidence" id="win056">
-<h3>WIN-056: Solar elevation from H(r)</h3>
-</div>
-
-<div class="evidence" id="win061">
-<h3>WIN-061: Schumann suppression G3 storm</h3>
-</div>
-
-<div class="evidence" id="win067">
-<h3>WIN-067: Antarctic gravity hole</h3>
-<p><strong>Claim:</strong> Low gravity anomaly in Antarctica confirms &#39;toroidal sump node.&#39;</p>
-<p><strong>Evidence:</strong> Antarctic gravity anomalies are mapped from orbit by  and  satellites at 250-500 km altitude. The anomaly is well-explained by post-glacial rebound (GIA) from ice sheet retreat and mantle viscosity differences. These satellites orbit ABOVE the alleged dome height, yet measure gravity with sub-milligal precision.</p>
-<p><span class="verdict-tag vt-selfcon">SELF-CONTRADICTED</span> Mapped by satellites from orbit; explained by post-glacial rebound.</p>
-</div>
-
+${(winsByVerdict['Misleading'] || []).map(formatWinDetail).join('\n')}
+${(winsByVerdict['Unfalsifiable'] || []).map(formatWinDetail).join('\n')}
+${(winsByVerdict['Self-Contradicted'] || []).map(formatWinDetail).join('\n')}
 
 <!-- ═══ PART 3 ═══ -->
 <h1 id="part3">Part 3: Analysis of New Site Pages (V51.0)</h1>
@@ -788,15 +511,15 @@ Unfalsifiable: 4
 <p>The August 12, 2026 Eclipse Test is presented as the single most important discriminating prediction. However, the site misrepresents the globe prediction as "0.0 nT exactly" when the Chapman ionospheric mechanism (peer-reviewed since 1933) predicts 5–20 nT under identical conditions. The dome's −17 to −21 nT range was derived by applying a 1.672× scaling factor to actual INTERMAGNET data from the 2016 eclipse — which was itself a Chapman-mechanism observation on a spherical Earth. The test is constructed as a heads-I-win, tails-doesn't-count proposition. See <a href="#eclipse-analysis">Section 3.2</a> for the full analysis.</p>
 
 <h2>6.3 Final Tally (V51.0, 67 WINs)</h2>
-<p><strong>Refuted by Data: 11</strong> (direct measurements contradict the claim)</p>
-<p><strong>Standard Model Explains: 15</strong> (observation is real but mainstream physics already accounts for it)</p>
-<p><strong style="background:var(--selfcon);padding:0 .3rem;border-radius:2px">Self-Contradicted: 11</strong> (the dome's own geometry, if worked through honestly, predicts radically different values)</p>
-<p><strong>Misleading: 23</strong> (data misrepresented, duplicated, cherry-picked, or logically contradictory)</p>
-<p><strong>Not Demonstrated: 3</strong> (unconfirmed by independent replication)</p>
-<p><strong>Unfalsifiable: 4</strong> (theological assertions, not testable)</p>
+<p><strong>Refuted by Data: ${tally['Refuted by Data'] || 0}</strong> (direct measurements contradict the claim)</p>
+<p><strong>Standard Model Explains: ${tally['Std Model Explains'] || 0}</strong> (observation is real but mainstream physics already accounts for it)</p>
+<p><strong style="background:var(--selfcon);padding:0 .3rem;border-radius:2px">Self-Contradicted: ${tally['Self-Contradicted'] || 0}</strong> (the dome's own geometry, if worked through honestly, predicts radically different values)</p>
+<p><strong>Misleading: ${tally['Misleading'] || 0}</strong> (data misrepresented, duplicated, cherry-picked, or logically contradictory)</p>
+<p><strong>Not Demonstrated: ${tally['Not Demonstrated'] || 0}</strong> (unconfirmed by independent replication)</p>
+<p><strong>Unfalsifiable: ${tally['Unfalsifiable'] || 0}</strong> (theological assertions, not testable)</p>
 <p><strong>Removed by Author: 1</strong> (WIN-025, disturbed-day baseline)</p>
 <p><strong>Internal Contradictions: 2</strong> (homepage vs context page falsification count; WIN-053 vs V50.6 architecture)</p>
-<p>None of the 67 claims demonstrate predictive power exceeding mainstream geophysical models. Of particular note: 11 WINs are now categorized as "Self-Contradicted" — claims where the dome's own stated geometry, if worked through honestly, produces predictions that radically diverge from both observations and the author's claims. The model "works" only because the author replaces his own physics with globe physics whenever the dome geometry produces the wrong answer. No claimed test on the site produces a prediction that the globe model disagrees with and that the dome model uniquely explains.</p>
+<p>None of the 67 claims demonstrate predictive power exceeding mainstream geophysical models. Of particular note: ${tally['Self-Contradicted'] || 0} WINs are now categorized as "Self-Contradicted" — claims where the dome's own stated geometry, if worked through honestly, produces predictions that radically diverge from both observations and the author's claims. The model "works" only because the author replaces his own physics with globe physics whenever the dome geometry produces the wrong answer. No claimed test on the site produces a prediction that the globe model disagrees with and that the dome model uniquely explains.</p>
 
 <!-- ═══ PART 7 ═══ -->
 <h1 id="part7">Part 7: References and Public Datasets</h1>
@@ -852,3 +575,12 @@ Unfalsifiable: 4
 
 </body>
 </html>
+`;
+
+  fs.writeFileSync(OUTPUT_PATH, html);
+  console.log(`Generated HTML: ${OUTPUT_PATH}`);
+  console.log(`File size: ${(html.length / 1024).toFixed(1)} KB`);
+}
+
+// Run
+main();

@@ -45,6 +45,9 @@ const verdictColors = {
   "Not Demonstrated": "D1C4E9"
 };
 
+// ── Load WIN data from JSON ──
+const wins = JSON.parse(fs.readFileSync(__dirname + '/../data/wins.json', 'utf8'));
+
 const winBookmarks = {};
 function bkId(win) { return "WIN_" + win.replace(/[^0-9]/g, "_"); }
 
@@ -65,6 +68,11 @@ function vRow(win, claim, verdict, flaw) {
       children: [new Paragraph({ children: [new TextRun({ text: flaw, size: 18, font: "Arial" })] })] }),
   ]});
 }
+
+// ── Compute tallies from data ──
+const tally = {};
+wins.forEach(w => { tally[w.verdict] = (tally[w.verdict] || 0) + 1; });
+const tallyText = Object.entries(tally).map(([k,v]) => `${k}: ${v}`).join('  |  ');
 function hRow(cols) {
   const cw = [800, 2400, 1500, 4660];
   return new TableRow({ children: cols.map((c,i) =>
@@ -167,83 +175,16 @@ C.push(h1("Part 2: Point-by-Point Review of All 67 Claimed Wins"));
 C.push(h2("2.1 Verdict Summary"));
 C.push(p("The table below uses six verdict categories. Click any WIN number to jump to the detailed analysis. New WINs added in V51.0 are marked with an asterisk (*). The new 'Self-Contradicted' category (light blue) identifies claims where the dome's own stated geometry, if honestly applied, produces predictions that diverge wildly from both observations and the author's claimed values. See Part 4.5 for full derivations."));
 
+// ── Build summary table from wins.json ──
 const rows = [
   hRow(["WIN", "Claim", "Verdict", "Primary Finding"]),
-  // Original 39 WINs
-  vRow("001", "Tesla 11.78 Hz resonance", "Refuted by Data", "US Patent 787412 does not contain the cited formula f=c/(2D)"),
-  vRow("002", "Schumann 26% aetheric damping", "Self-Contradicted", "Dome cavity with H(r)=8537·exp(−r/8619) gives ~22 Hz, not 7.83; uses simplified uniform-height formula"),
-  vRow("003", "King's Chamber 10th harmonic", "Misleading", "117 Hz is acoustic resonance of granite chamber dimensions, not EM"),
-  vRow("004", "SAA exponential separation", "Std Model Explains", "MHD simulations reproduce SAA splitting; author now acknowledges method invalid"),
-  vRow("005", "African SAA cell faster decay", "Std Model Explains", "Outer-core convection dynamics explain asymmetric decay"),
-  vRow("006", "NP pre-1990 linear drift", "Std Model Explains", "Normal secular variation documented by NOAA for centuries"),
-  vRow("007", "NP post-1990 acceleration", "Misleading", "Smooth acceleration from 1970s, not sharp 1990 phase transition"),
-  vRow("008", "Telluric 11.7 Hz cutoff", "Refuted by Data", "MT surveys show attenuation valley at 11-12 Hz, not a peak"),
-  vRow("009", "Telluric ~12 Hz peak", "Refuted by Data", "Working geophysicists deliberately avoid this noisy frequency band"),
-  vRow("010", "BOU 2017 eclipse -10.9 nT", "Std Model Explains", "Ionospheric conductivity drop (Chapman mechanism) explains signal"),
-  vRow("011", "Mohe 1997 gravity anomaly", "Not Demonstrated", "Membach SG (superior instrument) found 0.0 uGal; result unconfirmed"),
-  vRow("012", "Mag-gravity coupling 1.67", "Not Demonstrated", "Built on unconfirmed Mohe data; circular derivation"),
-  vRow("013", "Membach SG null", "Misleading", "Null result contradicts WIN-011; both cannot confirm same model"),
-  vRow("014", "China SG null", "Misleading", "Same logical contradiction as WIN-013"),
-  vRow("015", "Meyl scalar Faraday", "Not Demonstrated", "No peer-reviewed replication; CUORE Faraday cage shows 20 dB at 10 Hz"),
-  vRow("016", "Aberration refractive model", "Refuted by Data", "Aberration is achromatic; refraction is chromatic. VLBI confirms orbital cause"),
-  vRow("017", "Parallax = firmament wobble", "Refuted by Data", "Gaia DR3: 1.8 billion stars show parallax inversely proportional to distance"),
-  vRow("018", "Analemma day length 6.9 min", "Misleading", "Equation of time ranges +16.5 to -14.1 min; 6.9 is cherry-picked RMS"),
-  vRow("019", "Analemma loop ratio 2.66", "Misleading", "Numerical coincidence with no causal mechanism proposed"),
-  vRow("020", "Lunar 18.6-yr cycle via gears", "Std Model Explains", "Gravitational torque produces exact period; gears have no physical driver"),
-  vRow("021", "Gyroscopic precession rate", "Misleading", "Derived from assumed dome parameters, not independent measurement"),
-  vRow("022", "1990 magnetic phase transition", "Misleading", "Duplicate of WIN-007; same data counted twice"),
-  vRow("023", "SAA formation ~950 AD", "Unfalsifiable", "Links geomagnetic event to theological timeline without mechanism"),
-  vRow("024", "Roaring 40s = SAA boundary", "Misleading", "Latitude coincidence; winds driven by Coriolis + pressure gradients"),
-  vRow("025", "2024 eclipse 9-station (REMOVED)", "Misleading", "Author removed in V51.0; disturbed-day baseline acknowledged"),
-  vRow("026", "Crepuscular ray divergence", "Refuted by Data", "Anticrepuscular rays converge at anti-solar point; impossible with local sun"),
-  vRow("027", "Southern distance quadratic", "Misleading", "R-sq 0.79 = 21% unexplained; globe great-circle achieves <0.5% error"),
-  vRow("028", "Bermuda/Japan symmetry", "Refuted by Data", "NOAA and Lloyd's confirm no anomalous loss rates in either region"),
-  vRow("029", "Schumann needs conductive ceiling", "Self-Contradicted", "Ionosphere IS conductive; dome's own exponential cavity gives ~22 Hz, not 7.83"),
-  vRow("030", "Elliptical disc geometry", "Misleading", "Adding parameters always improves fit; no AIC/BIC comparison shown"),
-  vRow("031", "North Pole cosmic mountain", "Unfalsifiable", "Theological assertion, not testable physical claim"),
-  vRow("032", "New Jerusalem pole axis", "Unfalsifiable", "Theological assertion, not testable physical claim"),
-  vRow("033", "Sigma Octantis dimness", "Refuted by Data", "Both stars ~130 ly away; brightness difference is intrinsic luminosity class"),
-  vRow("034", "Firmament = cast copper/bronze", "Unfalsifiable", "Biblical exegesis; a copper dome at any altitude would be radar-detectable"),
-  vRow("035", "SAA African < 21,795 nT", "Std Model Explains", "WMM2025 predicts same trend; ~25 nT/year normal secular variation"),
-  vRow("036", "NP deviation >18 deg from 120E", "Std Model Explains", "WMM2025 already published this exact position in Dec 2024"),
-  vRow("037", "Field decay >=28 nT", "Misleading", "Conflates regional SAA change with global dipole; rate is ~15 nT/yr globally"),
-  vRow("038", "Schumann 7.83 Hz stable", "Self-Contradicted", "Dome's own cavity predicts ~22 Hz; stability is expected on globe (ionosphere stable)"),
-  vRow("039", "Lunar magnetic 1-2 nT", "Std Model Explains", "Ocean tidal dynamo confirmed by Swarm/CHAMP satellite data"),
-  // NEW V51.0 WINs (40-67)
-  vRow("040*", "SAA western cell west of 45W", "Std Model Explains", "SAA drift is well-documented by WMM; position already published"),
-  vRow("041*", "SAA multi-station decay", "Misleading", "Re-slices same INTERMAGNET data as WIN-004/005/035/037"),
-  vRow("042*", "Field decay >=28 nT/year", "Misleading", "Duplicate of WIN-037 with identical threshold and data"),
-  vRow("043*", "NMP drift 2.26x longitudinal", "Std Model Explains", "Already referenced in WIN-007; ratio is from published NOAA data"),
-  vRow("044*", "FSF formula from V12 geometry", "Misleading", "Internal model derivation, not independent prediction"),
-  vRow("045*", "Tidal M2 period", "Self-Contradicted", "Never derived from dome; local moon at 5,733 km gives tidal forces 300,000× too strong"),
-  vRow("046*", "Tidal S2 period", "Self-Contradicted", "Never derived from dome; local moon produces 300,000× excess tidal force"),
-  vRow("047*", "Low-z Hubble Law aetheric", "Misleading", "Hubble's Law is established; dome has no galaxy-scale mechanism"),
-  vRow("048*", "CMB Axis of Evil", "Misleading", "Contested anomaly; no dome mechanism for CMB generation"),
-  vRow("049*", "Tidal K1 period", "Self-Contradicted", "Never derived from dome; local moon produces 300,000× excess tidal force"),
-  vRow("050*", "Tidal O1 period", "Self-Contradicted", "Never derived from dome; local moon produces 300,000× excess tidal force"),
-  vRow("051*", "Tidal N2 period", "Self-Contradicted", "Never derived from dome; local moon produces 300,000× excess tidal force"),
-  vRow("052*", "RAR lensing extension", "Misleading", "Cites Mistele 2024 but dome model has no lensing mechanism"),
-  vRow("053*", "Two-pole geomagnetic model", "Refuted by Data", "Contradicts V50.6 monopolar vortex; no actual mechanism change"),
-  vRow("054*", "El Gordo cluster impossibility", "Misleading", "Disputes LCDM but dome has no cosmological structure formation model"),
-  vRow("055*", "Distance-redshift Cepheid/SBF", "Misleading", "Standard cosmological observations; dome has no redshift mechanism"),
-  vRow("056*", "Solar elevation from H(r)", "Self-Contradicted", "Uses globe's declination formula (23.45° axial tilt); dome geometry gives different relationship entirely"),
-  vRow("057*", "Two-zone disc topology", "Misleading", "V13 coordinates regressed NH accuracy from 5.2% to 7.3%"),
-  vRow("058*", "Unified angular coordinate", "Misleading", "Internal coordinate convention, not a physical prediction"),
-  vRow("059*", "NMP deceleration Siberian", "Std Model Explains", "Covered by WIN-007; normal secular variation per WMM2025"),
-  vRow("060*", "SAA western cell shift", "Std Model Explains", "SAA drift already tracked by NOAA/ESA; no new prediction"),
-  vRow("061*", "Schumann suppression G3 storm", "Self-Contradicted", "Dome cavity predicts ~22 Hz base frequency; suppression pattern follows ionospheric (globe) physics"),
-  vRow("062*", "Tesla longitudinal wave 1.574c", "Refuted by Data", "Superluminal group velocity does not imply superluminal information transfer"),
-  vRow("063*", "Magnetic decay asymmetry ratio", "Std Model Explains", "Hemispheric asymmetry modeled by CHAOS-7 outer core dynamics"),
-  vRow("064*", "P-wave shadow zone geometric", "Std Model Explains", "Shadow zone at 104-140 deg proves spherical layered Earth with liquid core"),
-  vRow("065*", "Polaris systematic excess", "Refuted by Data", "Centuries of celestial navigation show Polaris elevation = latitude"),
-  vRow("066*", "NH heat excess asymmetry", "Std Model Explains", "Land-ocean distribution asymmetry; well-modeled by climate science"),
-  vRow("067*", "Antarctic gravity hole", "Self-Contradicted", "Dome predicts 90% gravity drop at rim (H=837 km vs 8,537 at pole); actual variation is 0.53%"),
+  ...wins.map(w => vRow(w.new_in_v51 ? w.id + "*" : w.id, w.claim, w.verdict, w.finding))
 ];
 
 C.push(new Table({ width: { size: 9360, type: WidthType.DXA }, columnWidths: [800, 2400, 1500, 4660], rows }));
 
 C.push(p(""));
-C.push(p([b("V51.0 Tally (67 WINs): "), { text: "Refuted by Data: 11  |  Standard Model Explains: 15  |  Self-Contradicted: 11  |  Misleading: 23  |  Not Demonstrated: 3  |  Unfalsifiable: 4" }]));
+C.push(p([b(`V51.0 Tally (${wins.length} WINs): `), { text: tallyText }]));
 C.push(p([b("Self-Contradicted breakdown: "), { text: "Schumann resonance (4 WINs: 002, 029, 038, 061): dome cavity gives ~22 Hz not 7.83. Tidal periods (5 WINs: 045, 046, 049, 050, 051): never derived from dome; local moon gives 300,000× excess force. Solar elevation (WIN-056): uses globe's axial-tilt formula. Antarctic gravity (WIN-067): dome predicts 90% gravity drop at rim. In every case, the author substitutes globe physics to avoid his own geometry's predictions." }]));
 C.push(p([b("Comparison to V50.6 (39 WINs): "), { text: "Original tally: Refuted 8, Std Model 12, Misleading 12, Not Demo 3, Unfalsifiable 4. V4.7 introduces Self-Contradicted category for WINs where the dome's own geometry produces wrong predictions." }]));
 C.push(pb());
@@ -848,13 +789,18 @@ C.push(p("The August 12, 2026 Eclipse Test is presented as the single most impor
 C.push(p("The test is constructed as a heads-I-win, tails-doesn't-count proposition: if a quiet-day eclipse produces ~15 nT perturbation (as the Chapman mechanism predicts and as documented across 39 eclipses in the peer-reviewed literature), the dome claims victory. If geomagnetic conditions are disturbed, the prediction is declared untestable rather than failed. There is no outcome under which the test as framed would falsify the dome model."));
 C.push(p("A genuinely discriminating eclipse test would require the dome model to predict something the Chapman mechanism does not: for example, a specific directional pattern in the anomaly that follows 'aetheric pressure' geometry rather than ionospheric conductivity geometry, or a perturbation at a station far from the eclipse path where ionospheric effects would be negligible but 'cavity height perturbation' would still register. The current prediction makes no such distinction."));
 
-C.push(h2("6.3 Final Tally (V51.0, 67 WINs)"));
-C.push(p([b("Refuted by Data: 11 "), { text: "(direct measurements contradict the claim)" }]));
-C.push(p([b("Standard Model Explains: 15 "), { text: "(observation is real but mainstream physics already accounts for it)" }]));
-C.push(p([b("Self-Contradicted: 11 "), { text: "(the dome's own geometry, if worked through honestly, predicts radically different values)" }]));
-C.push(p([b("Misleading: 23 "), { text: "(data misrepresented, duplicated, cherry-picked, or logically contradictory)" }]));
-C.push(p([b("Not Demonstrated: 3 "), { text: "(unconfirmed by independent replication)" }]));
-C.push(p([b("Unfalsifiable: 4 "), { text: "(theological assertions, not testable)" }]));
+C.push(h2(`6.3 Final Tally (V51.0, ${wins.length} WINs)`));
+const verdictDescriptions = {
+  "Refuted by Data": "direct measurements contradict the claim",
+  "Std Model Explains": "observation is real but mainstream physics already accounts for it",
+  "Self-Contradicted": "the dome's own geometry, if worked through honestly, predicts radically different values",
+  "Misleading": "data misrepresented, duplicated, cherry-picked, or logically contradictory",
+  "Not Demonstrated": "unconfirmed by independent replication",
+  "Unfalsifiable": "theological assertions, not testable"
+};
+Object.entries(tally).forEach(([verdict, count]) => {
+  C.push(p([b(`${verdict}: ${count} `), { text: `(${verdictDescriptions[verdict] || ''})` }]));
+});
 C.push(p([b("Removed by Author: 1 "), { text: "(WIN-025, disturbed-day baseline)" }]));
 C.push(p([b("Internal Contradictions: 2 "), { text: "(homepage vs context page falsification count; WIN-053 vs V50.6 architecture)" }]));
 C.push(p("None of the 67 claims demonstrate predictive power exceeding mainstream geophysical models. Of particular note: 11 WINs are now categorized as 'Self-Contradicted' — claims where the dome's own stated geometry, if worked through honestly, produces predictions that radically diverge from both observations and the author's claims. The model 'works' only because the author replaces his own physics with globe physics whenever the dome geometry produces the wrong answer. The 28 new WINs added in V51.0 include zero genuinely new, dome-specific predictions. No claimed test on the site produces a prediction that the globe model disagrees with and that the dome model uniquely explains."));
