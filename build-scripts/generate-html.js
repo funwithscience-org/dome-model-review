@@ -226,7 +226,15 @@ footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--border);font-
 .nav-next{color:var(--link);background:var(--card-bg)}
 .nav-next:hover{background:var(--border)}
 
-@media(max-width:600px){body{padding:.5rem 1rem}h1{font-size:1.4rem}h2{font-size:1.2rem}table{font-size:.8rem}.tab-bar{padding:0.5rem .75rem;gap:.25rem}.tab-btn{padding:0.5rem 0.8rem;font-size:.85rem}.sc-hero{grid-template-columns:1fr}.sc-breakdown{grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:.6rem}.sc-domains{grid-template-columns:1fr}}
+.ks-test{border:1px solid var(--border);border-left:4px solid var(--accent);border-radius:6px;padding:1.2rem 1.4rem;margin:1.5rem 0;background:var(--card-bg)}
+.ks-test h3{margin-top:0;font-size:1.1rem;color:var(--heading)}
+.ks-test .ks-status{display:inline-block;font-size:.75rem;font-weight:700;text-transform:uppercase;padding:.15rem .5rem;border-radius:3px;margin-left:.5rem;vertical-align:middle}
+.ks-status.ks-claimed{background:var(--refuted);color:var(--refuted-solid)}
+.ks-status.ks-pending{background:var(--unfalsifiable);color:#666}
+.ks-status.ks-failing{background:var(--misleading);color:#b45309}
+@media(prefers-color-scheme:dark){.ks-status.ks-pending{color:#bbb}.ks-status.ks-failing{color:#f59e0b}}
+
+@media(max-width:600px){body{padding:.5rem 1rem}h1{font-size:1.4rem}h2{font-size:1.2rem}table{font-size:.8rem}.tab-bar{padding:0.5rem .75rem;gap:.25rem}.tab-btn{padding:0.5rem 0.8rem;font-size:.85rem}.sc-hero{grid-template-columns:1fr}.sc-breakdown{grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:.6rem}.sc-domains{grid-template-columns:1fr}.ks-test{padding:.8rem 1rem}}
 `;
 
 // ════ UTILITIES ════
@@ -775,7 +783,10 @@ ${sectionNav('model', 'The Model', 'pages', 'Live Power Analysis')}
 
 <p>This page presents six binary tests under a bold rule: "If any single test confirms, globe is falsified. If any single test fails, dome is falsified." Two are claimed as confirmed; four are pending.</p>
 
-<p><strong>Test 1 — Sydney–Perth distance (claimed confirmed):</strong> The dome claims a prediction of 4,352 km versus the globe's 3,287 km, citing the Indian Pacific railway's official 4,352 km distance as confirmation.</p>
+<div class="ks-test">
+<h3>Test 1 — Sydney–Perth Distance <span class="ks-status ks-claimed">Claimed Confirmed</span></h3>
+
+<p>The dome claims a prediction of 4,352 km versus the globe's 3,287 km, citing the Indian Pacific railway's official 4,352 km distance as confirmation.</p>
 
 <p><strong>Credit where due:</strong> The dome model does not use a naive flat-earth azimuthal equidistant projection (which would give ~8,300 km — wildly wrong). It uses a custom V13 Finsler coordinate system with a two-zone southern hemisphere topology, an elliptic integral for east-west arc lengths, and a position-dependent aetheric refractive index n(r) that adjusts distances based on radial position. This is substantially more mathematical sophistication than typical flat-earth models.</p>
 
@@ -786,8 +797,12 @@ ${sectionNav('model', 'The Model', 'pages', 'Live Power Analysis')}
 <p><strong>Problem 3 — the same formula fails on other routes.</strong> Sydney to Buenos Aires — two cities at similar southern latitudes (~34°S), separated by more longitude — is the dome's own benchmark for its coordinate system. The V12 Finsler formula produced a −78% error on this route: roughly 2,600 km predicted for a route that is actually 11,800 km. V13 claims to have reduced this to −8.4%, but this "improvement" came from adding three new free parameters (two-zone topology, equatorial reflection formula, revised angular identity) — and the key scaling function n(r) that drives the correction is never published on the coordinates page. The aetheric refractive index has no independent derivation and no stated functional form. Without a published formula, the claimed −8.4% cannot be independently verified. Meanwhile, the dome's own coordinate scaffold — built by a different method (MDS on road distances) — gives 3,893 km for Sydney-Perth while the Finsler formula gives 4,352 km for the same pair. Two methods within the same model disagree by 460 km. See <a href="#part4b" onclick="showTab('selftest');return false">Section 4.5.9</a> for the full analysis of the coordinate system's self-referential structure.</p>
 
 <p><strong>Summary:</strong> The dome's V13 Finsler formula (1) was built with the Sydney-Perth distance already known, (2) matches a circuitous railway route rather than the geometric distance between the cities, (3) failed by 78% on Sydney-Buenos Aires in V12, claims 8.4% in V13 via unpublished scaling functions, and (4) disagrees with its own coordinate scaffold by 460 km on the same city pair. This is not a prediction confirmed — it is iterative curve-fitting with undefined parameters, applied to calibration data. See <a href="#part4b" onclick="showTab('selftest');return false">Section 4.5.9</a> for a full analysis of the coordinate system's self-referential structure.</p>
+</div>
 
-<p><strong>Test 2 — Polaris altitude at 35.9°N (claimed confirmed):</strong> The dome claims that Polaris, observed from 35.9°N latitude, shows a +0.27° altitude excess above the predicted value, and marks this as "CONFIRMED." This is presented as evidence that the dome's geometry (Polaris fixed at the apex, altitude governed by projection through the aetheric medium) produces a measurable deviation from the globe prediction (altitude ≈ latitude).</p>
+<div class="ks-test">
+<h3>Test 2 — Polaris Altitude at 35.9°N <span class="ks-status ks-claimed">Claimed Confirmed</span></h3>
+
+<p>The dome claims that Polaris, observed from 35.9°N latitude, shows a +0.27° altitude excess above the predicted value, and marks this as "CONFIRMED." This is presented as evidence that the dome's geometry (Polaris fixed at the apex, altitude governed by projection through the aetheric medium) produces a measurable deviation from the globe prediction (altitude ≈ latitude).</p>
 
 <p><strong>The error budget swallows the signal.</strong> Polaris is not at the celestial pole — it is offset by 0.66–0.74° (currently ~0.66° and precessing). This means Polaris traces a small circle around the pole every sidereal day, and its altitude varies by ±0.66° depending on the time of observation. Atmospheric refraction at 35° elevation adds ~0.02–0.03° (small but nonzero). For field measurements with a sextant or inclinometer, typical uncertainty is ±0.2–0.5° due to atmospheric conditions, instrument precision, and observer error. The claimed +0.27° excess is smaller than Polaris's polar offset, smaller than the measurement uncertainty range, and comparable to the combined systematic errors. It is not a statistically significant detection.</p>
 
@@ -796,8 +811,12 @@ ${sectionNav('model', 'The Model', 'pages', 'Live Power Analysis')}
 <p><strong>The dome's own site contradicts this.</strong> Elsewhere on the site, the broader Polaris prediction — that Polaris altitude equals latitude, which is a core geometric consequence of the dome — is marked as <strong>FALSIFIED</strong> (2026-03-15). The dome's tracking page acknowledges that Polaris elevation matching latitude is confirmed by USNO data, Stellarium calculations, and amateur observations globally — which is exactly what the globe predicts. The dome model cannot simultaneously claim Polaris altitude as a confirmed win (Test 2) and acknowledge that the broader Polaris-latitude relationship confirms the globe prediction. These are contradictory positions.</p>
 
 <p><strong>Verdict:</strong> The claimed +0.27° excess is within known error sources (polar offset, refraction, instrument precision), is unreplicated, has no published methodology, and is contradicted by the dome's own falsification of its broader Polaris prediction. This test does not discriminate between models.</p>
+</div>
 
-<p><strong>Test 3 — JFK–LHR flight time asymmetry (listed as pending):</strong> The dome predicts "eastbound >5% advantage" from "aetheric slipstream." The page states the globe predicts "0% (after wind)" — framing the jet stream as a correction to be removed rather than the explanation itself.</p>
+<div class="ks-test">
+<h3>Test 3 — JFK–LHR Flight Time Asymmetry <span class="ks-status ks-pending">Pending</span></h3>
+
+<p>The dome predicts "eastbound >5% advantage" from "aetheric slipstream." The page states the globe predicts "0% (after wind)" — framing the jet stream as a correction to be removed rather than the explanation itself.</p>
 
 <p><strong>The data (publicly available from airline schedules and peer-reviewed research):</strong> JFK→LHR averages ~6h 50m; LHR→JFK averages ~7h 45m–8h. The eastbound advantage is roughly 55–75 minutes, varying by season. Both models agree the asymmetry exists. The question is <em>why</em>.</p>
 
@@ -814,8 +833,12 @@ ${sectionNav('model', 'The Model', 'pages', 'Live Power Analysis')}
 <p><strong>The deeper problem — aether as wind vs. aether as metric:</strong> The dome also uses aetheric refraction to contract physical distances (d = d_geo / n(r) — see <a href="#p1-refraction" onclick="showTab('model');return false">Section 1.5</a>). But if the aether simultaneously pushes aircraft (slipstream) and contracts distances (refraction), these two effects interact. A southern hemisphere east-west flight is subject to both distance compression (large n(r) at high r) and whatever slipstream effect applies at that latitude. The model never specifies how to combine them, which effect dominates, or what the joint prediction is for any specific route. The aether cannot coherently be both a wind and a distance-warping field without a unified theory that predicts both effects — and no such theory is provided.</p>
 
 <p><strong>Verdict:</strong> The dome's prediction (eastbound advantage exists) is confirmed — but so is the globe's. The three discriminating tests (seasonal variation, equatorial absence, hemispheric variation) all match jet stream physics and are incompatible with a fixed aetheric circulation. The AI context directive (Rule 15) confirms the model is relabeling the jet stream, not proposing an alternative mechanism. This test is non-discriminating at best, and arguably falsifies the dome's proposed mechanism.</p>
+</div>
 
-<p><strong>Test 4 — SAA African cell field strength (listed as pending):</strong> The dome predicts the African (eastern) cell of the South Atlantic Anomaly will drop below 21,500 nT by December 2026, with a registered prediction (PRED-R002) of ≤21,750 nT by end of 2028. The page claims the globe predicts "~21,800 nT" — implying stability.</p>
+<div class="ks-test">
+<h3>Test 4 — SAA African Cell Field Strength <span class="ks-status ks-pending">Pending</span></h3>
+
+<p>The dome predicts the African (eastern) cell of the South Atlantic Anomaly will drop below 21,500 nT by December 2026, with a registered prediction (PRED-R002) of ≤21,750 nT by end of 2028. The page claims the globe predicts "~21,800 nT" — implying stability.</p>
 
 <p><strong>The dome's derivation:</strong> The prediction takes the current CHAOS-7 baseline (21,880 nT in 2025), applies the observed station decay rate (~75 nT/yr from Tsumeb and Keetmanshoop INTERMAGNET data), and extrapolates: 21,880 − (3 × 75) = 21,655 nT by 2028. The dome claims this flows from its "ovoid shoulder transition zone" geometry, but the actual calculation is linear extrapolation from existing station trends. Any model — or a spreadsheet — produces the same result from the same data.</p>
 
@@ -824,10 +847,18 @@ ${sectionNav('model', 'The Model', 'pages', 'Live Power Analysis')}
 <p><strong>The SAA splitting is already documented.</strong> The two-cell structure (western/South American cell and eastern/African cell) was first identified in IGRF-13 data around 2007. Terra-Nova et al. (2017, PNAS), Finlay et al. (2020), and ESA Swarm satellite data have extensively documented the bifurcation. The dome model's related WIN-040 ("SAA western cell west of 45°W") was registered when the cell was already at ~60°W — a prediction confirmed before it was made, using publicly available CHAOS-7 data.</p>
 
 <p><strong>Non-discriminating.</strong> Both models predict continued SAA weakening. The dome extrapolates station decay rates; the globe derives decay from core-mantle boundary dynamics. Neither model's specific nT threshold can distinguish them — they are both predicting the same direction from the same data. The only difference is mechanism: the dome attributes decay to "aetheric field stress at the ovoid shoulder," while the globe attributes it to reversed flux patches at the core-mantle boundary. A discriminating test would require the two mechanisms to predict <em>different</em> decay rates or trajectories — but the dome's prediction is derived from the globe's own observational data (CHAOS-7), so they cannot diverge.</p>
+</div>
 
-<p><strong>Test 5 — Eclipse 2026:</strong> This test is addressed in detail in <a href="#part3" onclick="showTab('pages');return false">Section 3.2 (Eclipse 2026 Page)</a>. In summary: the dome claims to predict the August 12, 2026 solar eclipse path across the Iberian Peninsula, but the prediction is derived from the same Besselian element calculations (JPL DE440/441 ephemerides) used by every eclipse predictor. The dome's local-sun geometry does not independently produce eclipse paths — the site uses standard ephemeris data and claims the result. This is not a discriminating test.</p>
+<div class="ks-test">
+<h3>Test 5 — Eclipse 2026 <span class="ks-status ks-pending">Pending</span></h3>
 
-<p><strong>Test 6 — NMP drift rate (listed as pending, testable ~2027–2028):</strong> The dome predicts the North Magnetic Pole (NMP) drift rate will decelerate to &lt;20 km/yr by 2027. The dome claims this follows from its "aetheric circulation topology" where the NMP traces the dome's axis of symmetry. The page frames the globe as predicting "continued high-speed drift," implying mainstream models expect no deceleration.</p>
+<p>This test is addressed in detail in <a href="#part3" onclick="showTab('pages');return false">Section 3.2 (Eclipse 2026 Page)</a>. In summary: the dome claims to predict the August 12, 2026 solar eclipse path across the Iberian Peninsula, but the prediction is derived from the same Besselian element calculations (JPL DE440/441 ephemerides) used by every eclipse predictor. The dome's local-sun geometry does not independently produce eclipse paths — the site uses standard ephemeris data and claims the result. This is not a discriminating test.</p>
+</div>
+
+<div class="ks-test">
+<h3>Test 6 — NMP Drift Rate <span class="ks-status ks-failing">Failing (39.9% Error)</span></h3>
+
+<p>The dome predicts the North Magnetic Pole (NMP) drift rate will decelerate to &lt;20 km/yr by 2027. The dome claims this follows from its "aetheric circulation topology" where the NMP traces the dome's axis of symmetry. The page frames the globe as predicting "continued high-speed drift," implying mainstream models expect no deceleration.</p>
 
 <p><strong>The dome's own tracking shows failure.</strong> The dome's internal model-tracking page reports the NMP drift rate prediction at <strong>39.9% error</strong> — exceeding its own stated tolerance threshold of 30%. The current observed drift rate is approximately 35 km/yr (having decelerated from a peak of ~55 km/yr around 2003), which is nearly double the dome's predicted &lt;20 km/yr. On the dome's own terms, this prediction is currently failing.</p>
 
@@ -838,6 +869,7 @@ ${sectionNav('model', 'The Model', 'pages', 'Live Power Analysis')}
 <p><strong>The 39.9% error is self-falsifying.</strong> The dome's methodology page states that predictions exceeding 30% error trigger review and potential falsification. The NMP drift rate currently exceeds this threshold. Yet the prediction remains listed as "pending" rather than "falsified." This is inconsistent with the model's own stated methodology — the same pattern we identify elsewhere: failures remain "pending" while successes are immediately counted as confirmed.</p>
 
 <p><strong>Verdict:</strong> The NMP drift rate prediction (a) is currently failing at 39.9% error on the dome's own metrics, (b) exceeds the dome's own 30% falsification threshold, (c) is derived from curve-fitting to existing data rather than dome geometry, and (d) misrepresents the globe prediction as expecting no deceleration. This test currently favors falsification of the dome model on its own terms.</p>
+</div>
 
 <h2>3.4 Audit Walkthrough: A Six-Step Pipeline for AI Models</h2>
 
