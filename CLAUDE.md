@@ -173,6 +173,12 @@ Each entry has:
 
 All numerical counts in the HTML prose are computed from wins.json at build time in `generate-html.js`. This includes verdict tallies, total WINs, new-in-V51 count, and code_analysis statistics (reviewed, pending, hardcoded, live_fetch, none, relabels_standard, post_hoc, derives_from_dome). Never hardcode a number that can be derived from the data — we criticize the dome model for doing exactly that.
 
+**This rule extends to ALL project files** — including agent prompts, context files, and task descriptions. Never write a specific count (test count, issue count, verdict tally, curmudgeon progress) when you can instead provide the command to query it live. Examples:
+- Test count: `node test.js 2>&1 | grep -oP '\d+ passed'`
+- Open issues: `node -e "console.log(JSON.parse(require('fs').readFileSync('monitor/decisions/open-issues.json','utf8')).issues.length)"`
+- Verdict tallies: `node -e "const w=JSON.parse(require('fs').readFileSync('data/wins.json','utf8'));const c={};w.forEach(x=>c[x.verdict]=(c[x.verdict]||0)+1);console.log(c)"`
+- Curmudgeon progress: `cat monitor/curmudgeon/tracker.json | node -e "process.stdin.on('data',d=>{const t=JSON.parse(d);console.log(t.items_reviewed+'/'+t.total_items)})"`
+
 ## Key Scientific Arguments
 
 ### Self-Contradictions (the strongest category)
