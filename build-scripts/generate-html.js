@@ -1449,7 +1449,7 @@ ${sectionNav('selftest', 'Internal Contradictions', 'refs', 'References')}
 <p><a href="https://patents.google.com/patent/US787412A">US Patent 787412 (Tesla)</a></p>
 <p><a href="https://gml.noaa.gov/grad/solcalc">NOAA Solar Position Algorithm</a></p>
 <p><a href="https://geodesy.noaa.gov">National Geodetic Survey Gravity</a></p>
-<p><a href="https://chime-frb.ca">CHIME/FRB Project</a></p>
+<p><a href="https://www.chime-frb.ca">CHIME/FRB Project</a></p>
 <p><a href="https://gracefo.jpl.nasa.gov">GRACE-FO (gravity mapping)</a></p>
 <p><a href="https://earth.esa.int/eogateway/missions/goce">GOCE (gravity field)</a></p>
 <p><a href="https://www.gps.gov">GPS.gov</a></p>
