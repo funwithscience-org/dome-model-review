@@ -29,6 +29,8 @@ The following errors exist in the current `generate-html.js` prose. Fix them AS 
    **Rewrite point 1 to this critique instead:**
    d_geo IS defined — but the definition encodes globe geometry. The semi-major axis a = 20,015 km equals π × R_Earth (the pole-to-antipode distance along a sphere's surface). This value has no derivation from flat-disc physics: on a flat disc, the pole-to-rim distance is a straight radial line, and there is no geometric reason it would equal π times anything. The π is the fingerprint of the spherical surface integral the number was derived from. The eccentricity e = 0.66 evolved through five versions (V5–V9: b/a = 0.70→0.90, described as "converging") — the language of iterative fitting, not physical measurement. Every input to the formula (Δlon, r) is derived from WGS84 globe coordinates. And n(r) — the final divisor — remains unpublished, providing an unconstrained free function to absorb remaining error. The formula is geometrically valid for an elliptical disc, but the disc whose dimensions were reverse-engineered from globe geography via a parameter (π × R) that only arises from spherical geometry.
 
+6. **DOCX gap — Sections 5.14, 5.15, 5.16 missing from Word document.** These three sections (Repository Infrastructure: Steering AI, The Repository Is the Model, The Monitoring Infrastructure) exist in `generate-html.js` but have no corresponding builder in `build-doc-v4.js`. After extraction into sections.json, verify that the DOCX builder picks them up. This is the whole point of the refactor — one source, both outputs.
+
 ## Working Environment
 
 - **Clean clone (for git):** `/sessions/peaceful-gallant-rubin/dome-review-clean/`
