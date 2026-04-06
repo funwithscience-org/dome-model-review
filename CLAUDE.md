@@ -26,6 +26,20 @@ node build.js publish  # Build all + git commit + push
 
 Requires: Node.js, LibreOffice (for PDF conversion via headless mode)
 
+### Two-Repo Architecture (Filesystem Constraint)
+
+The workspace mount (`/mnt/dome-model-review/`) uses a FUSE filesystem that **does not support `unlink()`**. This means git cannot `reset`, `checkout`, `pull`, or `commit` there — any operation that needs to delete-then-replace a file fails with "Operation not permitted." Lock files (`.git/index.lock`) also become undeletable once created.
+
+**Consequence:** All git operations (commit, push, pull) must happen in a **clean clone** on the normal filesystem (`/sessions/.../dome-review-clean/`). The workspace is read-only for git but read-write for direct file copies.
+
+**How it works:**
+- Edit and build in the clean clone
+- `node build.js publish` pushes to GitHub **and** syncs key files to the workspace (automatic since V4.9.6)
+- Agents (curmudgeon, integrity, decider) read from the workspace
+- Agent prompt files live in `monitor/prompts/` in the workspace — edit them there directly
+
+**If the workspace falls out of sync**, `build.js publish` will fix it on next push. To manually sync: `cp` the files from the clean clone to the workspace.
+
 ### File Map
 
 ```
@@ -34,6 +48,8 @@ build-scripts/generate-html.js    # Generates docs/index.html from wins.json (al
 build-scripts/build-doc-v4.js     # Generates DOCX from wins.json (uses docx-js)
 build-scripts/add-references.js   # Injects clickable hyperlinks into wins.json
 build.js                          # Unified pipeline orchestrator
+test.js                           # Automated test suite (schema, HTML consistency, links, tabs)
+.github/workflows/ci.yml          # GitHub Actions CI (build + test on every push)
 docs/index.html                   # Generated HTML (GitHub Pages) — DO NOT EDIT DIRECTLY
 downloads/*.docx, *.pdf           # Generated document outputs
 raw-text/                         # Extracted ECM site content (current version)
@@ -41,9 +57,11 @@ raw-text-v50.6-2026-03-12/        # Archived V50.6 baseline for version comparis
 monitor/prompts/                  # Agent prompt files (editable markdown — see Monitoring Pipeline)
 monitor/curmudgeon/tracker.json   # Curmudgeon progress tracker with lifecycle phases
 monitor/decisions/open-issues.json # Persistent issue tracker across sessions
+monitor/tinker/                   # Tinker reports and self-fix audit trail
 monitor/integrity/                # Structure & integrity check reports
 monitor/external-reports/         # Permanent log of all external problem reports (GitHub Issues)
 .github/ISSUE_TEMPLATE/           # "Report a Problem" structured issue template
+.github/workflows/ci.yml          # CI pipeline: build + test on push
 security-audit.md                 # Website security scan results
 ```
 
@@ -54,7 +72,7 @@ security-audit.md                 # Website security scan results
 
 ## Monitoring Pipeline
 
-Five scheduled agents run continuously. All prompts live in `monitor/prompts/*.md` — edit the markdown to change agent behavior. The scheduled tasks are thin wrappers that just read the prompt file.
+Six scheduled agents run continuously. All prompts live in `monitor/prompts/*.md` — edit the markdown to change agent behavior. The scheduled tasks are thin wrappers that just read the prompt file.
 
 | Agent | Schedule | Model | Prompt File | Purpose |
 |-------|----------|-------|-------------|---------|
@@ -63,6 +81,7 @@ Five scheduled agents run continuously. All prompts live in `monitor/prompts/*.m
 | dome-curmudgeon | Every 15min | Opus | `monitor/prompts/curmudgeon.md` | Adversarial self-review of our arguments |
 | dome-decider | Daily 6:30 AM | Opus | `monitor/prompts/decider.md` | Triage, morning briefing, suggested patches |
 | dome-integrity | Daily 9:00 AM | Haiku | `monitor/prompts/structure-integrity.md` | Site health: links, tabs, build drift, data-prose consistency |
+| dome-tinker | Daily 10:30 AM | Opus | `monitor/prompts/tinker.md` | Pipeline self-repair: audit outputs, trace handoffs, fix stale configs |
 
 ### Data Flow
 
@@ -71,6 +90,9 @@ Poller → changes/ → Analyst → analysis/ ─┐
 Curmudgeon → reviews/ + alerts.txt ──────┤
 Integrity → integrity/report-*.json ─────┤
                                           └→ Decider → morning-briefing.txt + suggested-patches.json + open-issues.json
+
+Tinker reads ALL of the above outputs + all prompt files + config.json
+  → monitor/tinker/report-*.json + self-fixes to prompts/config
 ```
 
 ### Curmudgeon Lifecycle

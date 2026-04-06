@@ -113,6 +113,23 @@ if (target === 'publish') {
   const msg = `Update review (auto-build ${new Date().toISOString().slice(0,10)})`;
   run(`git commit -m "${msg}\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"`, 'Commit');
   run('git push origin main', 'Push to GitHub');
+
+  // Sync key files to workspace (FUSE mount can't run git, but agents read from there)
+  const workspace = '/sessions/peaceful-gallant-rubin/mnt/dome-model-review';
+  if (fs.existsSync(workspace)) {
+    console.log('\n⏳ Sync to workspace...');
+    const syncFiles = ['data/wins.json', 'docs/index.html', 'build-scripts/generate-html.js', 'build-scripts/build-doc-v4.js', 'CLAUDE.md'];
+    let synced = 0;
+    for (const f of syncFiles) {
+      const src = path.join(ROOT, f);
+      const dst = path.join(workspace, f);
+      if (fs.existsSync(src)) {
+        fs.copyFileSync(src, dst);
+        synced++;
+      }
+    }
+    console.log(`✅ Sync to workspace (${synced} files)`);
+  }
 }
 
 console.log('\n🎉 Build complete!');
