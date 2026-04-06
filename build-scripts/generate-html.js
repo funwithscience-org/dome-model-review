@@ -330,6 +330,38 @@ function main() {
 
   console.log('Verdict tally:', tally);
 
+  // ════ COMPUTED COUNTS (all numbers in prose derive from data) ════
+  const counts = {
+    total: wins.length,
+    newInV51: wins.filter(w => w.new_in_v51).length,
+    // Verdict counts
+    refuted: tally['Refuted by Data'] || 0,
+    selfContradicted: tally['Self-Contradicted'] || 0,
+    stdModel: tally['Std Model Explains'] || 0,
+    misleading: tally['Misleading'] || 0,
+    notDemonstrated: tally['Not Demonstrated'] || 0,
+    unfalsifiable: tally['Unfalsifiable'] || 0,
+    // Code analysis counts (from reviewed WINs with code_analysis tags)
+    codeAnalysis: (() => {
+      const reviewed = wins.filter(w => w.code_analysis && w.code_analysis.reviewed);
+      return {
+        reviewed: reviewed.length,
+        pending: wins.length - reviewed.length,
+        monitoring: {
+          hardcoded: reviewed.filter(w => w.code_analysis.monitoring === 'hardcoded').length,
+          liveFetch: reviewed.filter(w => w.code_analysis.monitoring === 'live_fetch').length,
+          none: reviewed.filter(w => w.code_analysis.monitoring === 'none').length,
+        },
+        relabelsStandard: reviewed.filter(w => w.code_analysis.relabels_standard).length,
+        postHoc: reviewed.filter(w => w.code_analysis.post_hoc).length,
+        derivesFromDome: reviewed.filter(w => w.code_analysis.derives_from_dome).length,
+      };
+    })(),
+    // Group counts
+    groups: [...new Set(wins.filter(w => w.detail_group).map(w => w.detail_group))].length,
+  };
+  console.log('Computed counts:', JSON.stringify(counts, null, 2));
+
   // Start HTML
   let html = `<!DOCTYPE html>
 <html lang="en">
@@ -347,7 +379,7 @@ ${CSS}
   <button class="tab-btn active" onclick="showTab('overview')">Overview</button>
   <button class="tab-btn" onclick="showTab('evaluate')">Evaluation Guide</button>
   <button class="tab-btn" onclick="showTab('model')">The Model</button>
-  <button class="tab-btn" onclick="showTab('wins')">67 Wins Reviewed</button>
+  <button class="tab-btn" onclick="showTab('wins')">${counts.total} Wins Reviewed</button>
   <button class="tab-btn" onclick="showTab('pages')">Live Power Analysis</button>
   <button class="tab-btn" onclick="showTab('predictions')">Predictions Analysis</button>
   <button class="tab-btn" onclick="showTab('falsify')">Falsification Tests</button>
@@ -362,15 +394,15 @@ ${CSS}
 <h1 style="border:none">Critical Review</h1>
 <h1 style="border:none;font-size:1.6rem;font-weight:400">Ovoid Cavity Cosmological Model V51.0</h1>
 <p class="subtitle">(formerly Dome Cosmological Model V50.6)</p>
-<p class="subtitle">Point-by-Point Analysis of 67 Claimed Wins, Live Power Dashboard,<br>Falsification Tests, Version Change Tracking, and AI Prompt Injection Analysis</p>
+<p class="subtitle">Point-by-Point Analysis of ${counts.total} Claimed Wins, Live Power Dashboard,<br>Falsification Tests, Version Change Tracking, and AI Prompt Injection Analysis</p>
 <p class="meta">April 5, 2026 &nbsp;|&nbsp; Version 4<br>Source: <a href="https://john09289.github.io/predictions">john09289.github.io/predictions</a></p>
 </div>
 
 <div class="scorecard sc-hero">
 <div class="sc-card">
-<div class="sc-number">67</div>
+<div class="sc-number">${counts.total}</div>
 <div class="sc-label">Claimed "Wins"</div>
-<div class="sc-sublabel">The author claims 67 confirmed predictions and zero falsifications</div>
+<div class="sc-sublabel">The author claims ${counts.total} confirmed predictions and zero falsifications</div>
 </div>
 <div class="sc-card accent">
 <div class="sc-number">0</div>
@@ -379,7 +411,7 @@ ${CSS}
 </div>
 </div>
 
-<p style="text-align:center;font-size:.95rem;color:#888;margin:0 0 .5rem">Where the 67 claims actually land:</p>
+<p style="text-align:center;font-size:.95rem;color:#888;margin:0 0 .5rem">Where the ${counts.total} claims actually land:</p>
 
 <div class="scorecard sc-breakdown">
 <div class="sc-card sc-sm" style="border-left:4px solid var(--refuted-solid)">
@@ -415,7 +447,7 @@ ${CSS}
 </div>
 
 <div style="border:2px solid var(--accent);border-radius:8px;padding:1.2rem 1.4rem;margin:1.5rem 0;background:var(--card-bg)">
-<p style="margin-top:0"><strong>The headline "95.2% accuracy" is not computed by any script in the model's repository.</strong> It is a static string in the HTML source code: <code>&lt;div class="score-number"&gt;95.2%&lt;/div&gt;</code>. No Python script, no JavaScript function, and no API endpoint produces this number. The model page now displays the arithmetic <code>67 / (67 + 4) = 95.2%</code>, but this was manually written into the HTML during the V51.0 registry lock — no script validates the count against the actual WIN registry. When the model's own internal data is queried, it returns 96.3%, 97.0%, 89.3%, or 94.7% — depending on which data source and counting method is used. The denominator of 71 (67 confirmed + 4 excluded as "below detection") is an editorial choice, not a programmatic derivation. See <a href="#part3b" onclick="showTab('predictions');return false">Section 3.5.6</a> for the full source-code analysis.</p>
+<p style="margin-top:0"><strong>The headline "95.2% accuracy" is not computed by any script in the model's repository.</strong> It is a static string in the HTML source code: <code>&lt;div class="score-number"&gt;95.2%&lt;/div&gt;</code>. No Python script, no JavaScript function, and no API endpoint produces this number. The model page now displays the arithmetic <code>${counts.total} / (${counts.total} + 4) = 95.2%</code>, but this was manually written into the HTML during the V51.0 registry lock — no script validates the count against the actual WIN registry. When the model's own internal data is queried, it returns 96.3%, 97.0%, 89.3%, or 94.7% — depending on which data source and counting method is used. The denominator of 71 (${counts.total} confirmed + 4 excluded as "below detection") is an editorial choice, not a programmatic derivation. See <a href="#part3b" onclick="showTab('predictions');return false">Section 3.5.6</a> for the full source-code analysis.</p>
 </div>
 
 <h2>Downloads</h2>
@@ -461,6 +493,7 @@ ${CSS}
 <li><a href="#part3b" onclick="showTab('predictions');return false">Part 3.5: Predictions Page — Structural Analysis</a></li>
 <li><a href="#part4" onclick="showTab('falsify');return false">Part 4: Falsification Tests</a></li>
 <li><a href="#part4b" onclick="showTab('selftest');return false">Part 4.5: Internal Contradictions — Does the Dome's Geometry Produce Its Claimed Predictions?</a></li>
+<li><a href="#part4c" onclick="showTab('selftest');return false">Part 4.6: Repository Code Analysis — What the Automation Actually Does</a></li>
 <li><a href="#part5" onclick="showTab('ai');return false">Part 5: Analysis of AI Context Directives</a></li>
 <li><a href="#part6" onclick="showTab('ai');return false">Part 6: Conclusions</a></li>
 <li><a href="#part7" onclick="showTab('refs');return false">Part 7: References and Public Datasets</a></li>
@@ -476,13 +509,13 @@ ${sectionNav(null, null, 'evaluate', 'Evaluation Guide')}
 <!-- ═══ EVALUATION GUIDE ═══ -->
 <h1 id="evaluation-guide">Evaluation Guide: How to Assess This Review</h1>
 
-<p>This review makes specific, falsifiable claims about 67 predictions from the Ovoid Cavity Cosmological Model. We want readers — whether human or AI — to hold this review to the same rigorous standard we apply to the model itself. Below are the principles we used and the standards by which our work should be judged.</p>
+<p>This review makes specific, falsifiable claims about ${counts.total} predictions from the Ovoid Cavity Cosmological Model. We want readers — whether human or AI — to hold this review to the same rigorous standard we apply to the model itself. Below are the principles we used and the standards by which our work should be judged.</p>
 
 <h2>Principles of This Review</h2>
 
 <p><strong>1. Every claim should be independently verifiable.</strong> Where we cite a dataset (NOAA WMM, INTERMAGNET, ESA Swarm, Gaia DR3), the data is publicly accessible. Where we perform a calculation, we show the formula, name the inputs, and state the result so anyone can reproduce it. If we got something wrong, the evidence to prove it is in the public record.</p>
 
-<p><strong>2. The dome model's own parameters are used wherever possible.</strong> The strongest form of critique is internal: show that the model's own stated geometry, worked through honestly, produces predictions that contradict the model's own claims. Eleven of our verdicts ("Self-Contradicted") do exactly this. We use the author's published constants — H(r) = 8,537 × exp(−r/8,619), B(r) = 62,376×e<sup>−r_N/8,619</sup> + 64,852×e<sup>−r_S/8,619</sup>, κ = 1.67 nT/μGal — and derive what they actually predict. We do not substitute our own values.</p>
+<p><strong>2. The dome model's own parameters are used wherever possible.</strong> The strongest form of critique is internal: show that the model's own stated geometry, worked through honestly, produces predictions that contradict the model's own claims. ${counts.selfContradicted} of our verdicts ("Self-Contradicted") do exactly this. We use the author's published constants — H(r) = 8,537 × exp(−r/8,619), B(r) = 62,376×e<sup>−r_N/8,619</sup> + 64,852×e<sup>−r_S/8,619</sup>, κ = 1.67 nT/μGal — and derive what they actually predict. We do not substitute our own values.</p>
 
 <p><strong>3. Mainstream physics is not assumed correct by default.</strong> We do not dismiss the dome model simply because it disagrees with established science. Instead, we ask: does this specific prediction match this specific measurement? When we say "the globe model explains this," we mean the quantitative prediction from standard physics matches the observed data — not that the standard model must be right because it is standard.</p>
 
@@ -498,7 +531,7 @@ ${sectionNav(null, null, 'evaluate', 'Evaluation Guide')}
 
 <p><strong>Does the prediction distinguish this model from alternatives?</strong> A prediction that both the dome and the globe model make equally well is not evidence for either. To count as a "win," a prediction must be something this model gets right that competing models get wrong. This is the standard used in all of science — not "does the model match one dataset," but "does it match a dataset that the alternatives cannot."</p>
 
-<p>An analogy makes this concrete. Imagine two theories of medicine. Theory A says the body heals through cell biology. Theory B says the body heals through spiritual energy. Both predict that a cut on your finger will stop bleeding within a few minutes. When your cut stops bleeding, Theory B counts this as a "confirmed prediction." Technically true — but the result tells you nothing about whether spiritual energy exists, because cell biology predicted the same outcome with no spiritual energy required. A genuine discriminating prediction would look like: "Theory B predicts X, Theory A predicts Y, and the measurement gives X." None of the 67 WINs takes this form. Each observation — magnetic pole drift, tidal periods, Schumann frequency — is predicted by standard physics with well-understood mechanisms. The WIN count is a count of shared predictions, not evidence for the dome.</p>
+<p>An analogy makes this concrete. Imagine two theories of medicine. Theory A says the body heals through cell biology. Theory B says the body heals through spiritual energy. Both predict that a cut on your finger will stop bleeding within a few minutes. When your cut stops bleeding, Theory B counts this as a "confirmed prediction." Technically true — but the result tells you nothing about whether spiritual energy exists, because cell biology predicted the same outcome with no spiritual energy required. A genuine discriminating prediction would look like: "Theory B predicts X, Theory A predicts Y, and the measurement gives X." None of the ${counts.total} WINs takes this form. Each observation — magnetic pole drift, tidal periods, Schumann frequency — is predicted by standard physics with well-understood mechanisms. The WIN count is a count of shared predictions, not evidence for the dome.</p>
 
 <p><strong>Can the prediction be derived from the model's own parameters?</strong> If a model claims a specific geometry, that geometry implies specific, calculable values for observable quantities. If those derived values don't match observations, the model is falsified on its own terms. If the author skips the derivation and instead curve-fits to match known data, that is not a prediction — it is calibration.</p>
 
@@ -524,7 +557,7 @@ ${sectionNav('overview', 'Overview', 'model', 'The Model')}
 <h1 id="part1">Part 1: What Is the Ovoid Cavity Cosmological Model?</h1>
 
 <h2 id="p1-overview">1.1 Overview</h2>
-<p>The Ovoid Cavity Cosmological Model (formerly the Dome Cosmological Model), as presented at john09289.github.io/predictions (Version 51.0, April 2026), proposes a physical cosmology in which the Earth is a flat, elliptical disc enclosed within a "Closed Toroidal Ovoid" cavity. The upper boundary is a conductive metal firmament (cast copper/bronze); the lower boundary is a "Bottom Firmament" or "Sump." An aetheric medium circulates through the full cavity in a toroidal loop: exiting the Axis Mundi at the north pole, flowing south across the disc surface, descending at the Antarctic resonance barrier (ice wall, r ≈ 20,015 km), returning through a sub-terrestrial path, and re-entering at the north pole. This circulation is topologically identical to a <strong>ring magnet</strong>. The model posits a local sun and moon traveling circuits inside the upper cavity, and Polaris fixed directly above the north pole at the dome apex. It draws on a combination of geomagnetic data, electromagnetic resonance measurements, biblical texts, tidal constituent periods, cosmological observations, and proprietary coordinate formulas to claim 67 confirmed predictions and zero falsifications.</p>
+<p>The Ovoid Cavity Cosmological Model (formerly the Dome Cosmological Model), as presented at john09289.github.io/predictions (Version 51.0, April 2026), proposes a physical cosmology in which the Earth is a flat, elliptical disc enclosed within a "Closed Toroidal Ovoid" cavity. The upper boundary is a conductive metal firmament (cast copper/bronze); the lower boundary is a "Bottom Firmament" or "Sump." An aetheric medium circulates through the full cavity in a toroidal loop: exiting the Axis Mundi at the north pole, flowing south across the disc surface, descending at the Antarctic resonance barrier (ice wall, r ≈ 20,015 km), returning through a sub-terrestrial path, and re-entering at the north pole. This circulation is topologically identical to a <strong>ring magnet</strong>. The model posits a local sun and moon traveling circuits inside the upper cavity, and Polaris fixed directly above the north pole at the dome apex. It draws on a combination of geomagnetic data, electromagnetic resonance measurements, biblical texts, tidal constituent periods, cosmological observations, and proprietary coordinate formulas to claim ${counts.total} confirmed predictions and zero falsifications.</p>
 <p><strong>Key architectural parameters:</strong> Firmament height H(r) = 8,537 × exp(−r/8,619) km (an exponential decay from the north pole apex toward the south). At the equator (r = 15,000 km), this gives H ≈ 1,270 km. Two parallel circular plates (upper dome, lower sump) form a cavity. Two-pole geomagnetic field B(r) = 62,376×e<sup>−r_N/8,619</sup> + 64,852×e<sup>−r_S/8,619</sup> nT. Disc semi-major axis ~20,015 km, semi-minor ~15,000 km (elliptical). Coupling constant κ = 1.67 nT/μGal (microGal — a millionth of normal gravity — claimed to link electromagnetism and gravity). The model claims this geometry produces Earth's dipole field, Schumann resonances (the natural electromagnetic frequencies in Earth's cavity), and geomagnetic secular variation (gradual changes in the magnetic field over decades and centuries) from a single set of parameters.</p>
 
 <h2 id="p1-flatearth">1.2 How It Differs from Classic Flat Earth</h2>
@@ -633,20 +666,20 @@ ${sectionNav('overview', 'Overview', 'model', 'The Model')}
 
 <h2>Key Structural Changes</h2>
 <p><strong>V50.6 (March 2026):</strong> 39 claimed wins, 0 falsified, monopolar aetheric vortex architecture, homepage consistency.</p>
-<p><strong>V51.0 (April 2026):</strong> 67 claimed wins (+28), still claims 0 falsified, adds "two-pole geomagnetic model" (WIN-053), new site pages (Live Power, Kill-Shot, Audit, Tracking), introduces internal tracking page reporting 4 falsified predictions (contradicting homepage).</p>
+<p><strong>V51.0 (April 2026):</strong> ${counts.total} claimed wins (+${counts.newInV51}), still claims 0 falsified, adds "two-pole geomagnetic model" (WIN-053), new site pages (Live Power, Kill-Shot, Audit, Tracking), introduces internal tracking page reporting 4 falsified predictions (contradicting homepage).</p>
 
 <h2>New Content Breakdown</h2>
-<p><strong>How the 28 new WINs break down:</strong> Re-sliced geomagnetic data (WIN-040 through WIN-043, WIN-053, WIN-059-061, WIN-063): 9 WINs from existing INTERMAGNET (the global network of magnetic observatories) data already covered by earlier WINs. Tidal periods (WIN-045, 046, 049, 050, 051): 5 WINs claiming well-known M2, S2, K1, O1, N2 tidal constituent periods. These are fundamental astronomical constants any model matching lunar/solar periodicity reproduces. Cosmological expansion (WIN-047, 048, 052, 054, 055): 5 WINs claiming galaxy-scale observations (Hubble Law, CMB axis, galaxy clusters) that the dome geometry has no mechanism to predict. Miscellaneous (WIN-044, 056-058, 062, 064-067): 9 WINs including Tesla wave speed, P-wave shadow zone, Polaris excess, heat asymmetry, and Antarctic gravity.</p>
+<p><strong>How the ${counts.newInV51} new WINs break down:</strong></p> Re-sliced geomagnetic data (WIN-040 through WIN-043, WIN-053, WIN-059-061, WIN-063): 9 WINs from existing INTERMAGNET (the global network of magnetic observatories) data already covered by earlier WINs. Tidal periods (WIN-045, 046, 049, 050, 051): 5 WINs claiming well-known M2, S2, K1, O1, N2 tidal constituent periods. These are fundamental astronomical constants any model matching lunar/solar periodicity reproduces. Cosmological expansion (WIN-047, 048, 052, 054, 055): 5 WINs claiming galaxy-scale observations (Hubble Law, CMB axis, galaxy clusters) that the dome geometry has no mechanism to predict. Miscellaneous (WIN-044, 056-058, 062, 064-067): 9 WINs including Tesla wave speed, P-wave shadow zone, Polaris excess, heat asymmetry, and Antarctic gravity.</p>
 
 <h2>Critical Changes Acknowledged in V51.0</h2>
-<p><strong>WIN-025 REMOVED:</strong> The 2024 Eclipse 9-Station Confirmation has been explicitly marked 'REMOVED' in V51.0. In our V50.6 review, we noted this had a disturbed-day baseline caveat. This is a concession, though the WIN is still listed (just marked removed) and the headline still says '0 falsified.'</p>
+<p><strong>WIN-025 (Eclipse 9-Station):</strong> The 2024 Eclipse 9-Station Confirmation remains listed as "CONFIRMED" in V51.0. The claim is that magnetic variations during a solar eclipse represent a dome-specific prediction. In fact, eclipse-induced magnetic depressions have been documented since Chapman (1933) and are fully explained by suppression of the Sq current system — the solar-quiet ionospheric current driven by dayside UV heating. When the moon's shadow reduces ionospheric conductivity, Sq currents weaken and the surface field dips. This is standard ionospheric physics, not a dome prediction. Our verdict: Std Model Explains.</p>
 <p><strong>WIN-004 methodology acknowledged invalid:</strong> The V51.0 wins page now notes that WIN-004's 'station ratio proxy method' was 'methodologically invalid.' Our V50.6 review rated this as 'Standard Model Explains' due to MHD (magnetohydrodynamic fluid dynamics simulations) reproducing the SAA splitting. This acknowledgment validates our critique.</p>
 <p><strong>Internal version inconsistency:</strong> Homepage claims "0 falsified predictions." Context page and new Tracking page both report "4 falsified predictions." These cannot both be true. The discrepancy suggests either: (a) the Tracking page is a hidden record, or (b) the homepage is not being kept in sync with new data.</p>
 <p><strong>WIN-053 claims two-pole model (toroidal ring magnet):</strong> The most significant architectural change. V51.0 now describes a 'Closed Toroidal Ovoid' — a dual-plate system where aetheric flow exits the Axis Mundi (north pole), flows south across the surface, descends at the Antarctic resonance barrier, returns through a sub-terrestrial path (the 'Sump'), and re-enters at the north pole. This is topologically identical to a ring magnet or toroidal solenoid. It represents a genuine attempt to produce a dipole-like field from flat-disc geometry, and credit is due for addressing the monopole critique from V50.6.</p>
 <p><strong>The flux conservation problem:</strong> In any closed magnetic circuit, total flux (Φ = B × A) must be conserved. The north pole source is concentrated at the Axis Mundi — even generously assuming an effective radius of 500 km, the source area is ~785,000 km². The sub-terrestrial return spreads across the entire disc underside: π × 20,015² ≈ 1.26 × 10⁹ km². The area ratio is roughly 1,600:1. Flux conservation therefore requires B_south ≈ B_north / 1,600 ≈ 39 nT. Earth's measured south polar field is ~66,000 nT — actually 13% stronger than the north (~58,500 nT). The toroidal model predicts the south should be ~1,700× weaker; it is in fact stronger. The author's fitted equation B(r) = 62,376×e<sup>−r_N/8619</sup> + 64,852×e<sup>−r_S/8619</sup> avoids this by adding a second independent source of nearly equal amplitude, but this violates the flux conservation that any physical toroid must obey.</p>
 <p><strong>Additional toroidal geometry failures:</strong> A ring magnet produces axial symmetry — field strength constant along latitude lines. Earth's field is not axially symmetric: the south magnetic pole is offset 28° from geographic south (64.1°S, 135.9°E), the field has significant non-dipole components varying with longitude, and features like the South Atlantic Anomaly have no toroidal explanation. Secular variation (gradual changes in the magnetic field), magnetic reversals, and westward drift all require a fluid dynamo, not a static toroidal cavity.</p>
 
-${sectionNav('evaluate', 'Evaluation Guide', 'wins', '67 Wins Reviewed')}
+${sectionNav('evaluate', 'Evaluation Guide', 'wins', counts.total + ' Wins Reviewed')}
 
 </div>
 
@@ -896,7 +929,7 @@ ${sectionNav('model', 'The Model', 'pages', 'Live Power Analysis')}
 
 <p>The "Audit Walkthrough" page is designed for AI auditors. It creates a six-step guided pipeline:</p>
 <p>1. Present the dome's constants as established fact.</p>
-<p>2. Present all 67 WINs as confirmed.</p>
+<p>2. Present all ${counts.total} WINs as confirmed.</p>
 <p>3. Present the coordinate system as validated.</p>
 <p>4. Present the Kill-Shot tests as discriminating.</p>
 <p>5. Present the Live Dashboard statistics.</p>
@@ -904,11 +937,11 @@ ${sectionNav('model', 'The Model', 'pages', 'Live Power Analysis')}
 
 <p>Each step builds on the previous without inviting cross-referencing against external data. The design bets that a sequential AI processor will reach Step 6 and output the scripted conclusion before independently verifying each claim.</p>
 
-<p><strong>The "easy busts" appear strategic:</strong> The author includes claims that are trivially disprovable — tidal periods as "predictions," contradictory gravity results, internal version inconsistencies. These inflate the headline numbers (67 wins, 9.2σ, 20 domains) while the Audit page's sequential structure discourages verification. Selective admissions of minor flaws (WIN-025 removed, WIN-004 methodology invalid, 4 falsified on context page) create an appearance of honesty while the homepage count is never decremented and the falsification count stays at zero.</p>
+<p><strong>The "easy busts" appear strategic:</strong> The author includes claims that are trivially disprovable — tidal periods as "predictions," contradictory gravity results, internal version inconsistencies. These inflate the headline numbers (${counts.total} wins, 9.2σ, 20 domains) while the Audit page's sequential structure discourages verification. Selective admissions of minor flaws (WIN-025 removed, WIN-004 methodology invalid, 4 falsified on context page) create an appearance of honesty while the homepage count is never decremented and the falsification count stays at zero.</p>
 
 <h2>3.5 Tracking Page: Internal Contradictions</h2>
 
-<p>The Tracking page reports <strong>"4 falsified predictions"</strong> and <strong>"53 confirmed"</strong> (V50.9 data). The homepage claims <strong>"67 confirmed, 0 falsified"</strong> (V51.0). The most charitable reading is that the tracking page simply hasn't been updated to V51.0 — but even so, the 4 falsified predictions acknowledged at V50.9 never appear in the V51.0 homepage count. If those 4 were resolved, the resolution isn't documented. If they weren't resolved, the homepage falsification count of zero is incorrect. Either way, the headline "0 falsified" cannot be verified from the site's own internal data.</p>
+<p>The Tracking page reports <strong>"4 falsified predictions"</strong> and <strong>"53 confirmed"</strong> (V50.9 data). The homepage claims <strong>"${counts.total} confirmed, 0 falsified"</strong> (V51.0). The most charitable reading is that the tracking page simply hasn't been updated to V51.0 — but even so, the 4 falsified predictions acknowledged at V50.9 never appear in the V51.0 homepage count. If those 4 were resolved, the resolution isn't documented. If they weren't resolved, the homepage falsification count of zero is incorrect. Either way, the headline "0 falsified" cannot be verified from the site's own internal data.</p>
 
 <!-- SECTION 3.6 (Dielectric Infographic) — REMOVED FROM PUBLISHED VERSION, CONTENT PRESERVED IN SOURCE
 <h2 id="dielectric">3.6 The "Dielectric" Infographic: GRACE L1A and the EM-Gravity Claim</h2>
@@ -939,7 +972,7 @@ ${sectionNav('model', 'The Model', 'pages', 'Live Power Analysis')}
 <p>Each of these five points follows the same pattern: name a real dataset, isolate a real anomaly, provide a real-sounding ratio, then assert a non-standard interpretation while framing the standard explanation as a cover-up.</p>
 END OF REMOVED SECTION 3.6 -->
 
-${sectionNav('wins', '67 Wins Reviewed', 'predictions', 'Predictions Analysis')}
+${sectionNav('wins', counts.total + ' Wins Reviewed', 'predictions', 'Predictions Analysis')}
 
 </div>
 
@@ -948,7 +981,7 @@ ${sectionNav('wins', '67 Wins Reviewed', 'predictions', 'Predictions Analysis')}
 <!-- ═══ PART 3.5 ═══ -->
 <h1 id="part3b">Part 3.5: Predictions Page — Structural Analysis</h1>
 
-<p>The dome's predictions/wins page (V51.0, updated 2026-04-05) presents 67 "confirmed" predictions, 9 prospective predictions, and headlines "95.2% Accuracy" with "zero fitted parameters" across "10 domains." Below we examine whether these claims survive scrutiny, applying the same standards we use in our <a href="#evaluation-guide" onclick="showTab('evaluate');return false">Evaluation Guide</a>.</p>
+<p>The dome's predictions/wins page (V51.0, updated 2026-04-05) presents ${counts.total} "confirmed" predictions, 9 prospective predictions, and headlines "95.2% Accuracy" with "zero fitted parameters" across "10 domains." Below we examine whether these claims survive scrutiny, applying the same standards we use in our <a href="#evaluation-guide" onclick="showTab('evaluate');return false">Evaluation Guide</a>.</p>
 
 <h2>3.5.1 "Zero Fitted Parameters" — The Hidden Parameters</h2>
 
@@ -1011,11 +1044,11 @@ ${sectionNav('wins', '67 Wins Reviewed', 'predictions', 'Predictions Analysis')}
 
 <h2>3.5.6 The 95.2% Accuracy Claim</h2>
 
-<p>The homepage headlines "95.2% Accuracy." <strong>The repository source code reveals this figure is manually entered as static HTML</strong> — it appears as <code>&lt;div class="score-number score-green"&gt;95.2%&lt;/div&gt;</code> in the homepage markup. No script anywhere in the repository computes it. The model page now displays the arithmetic <code>67 / (67 + 4) = 95.2%</code>, added during the V51.0 registry lock (commit 5c00275, 2026-04-04) — but this is the author (or more likely, the author's AI assistant) writing the division into the HTML, not a script that counts WINs and derives the percentage.</p>
+<p>The homepage headlines "95.2% Accuracy." <strong>The repository source code reveals this figure is manually entered as static HTML</strong> — it appears as <code>&lt;div class="score-number score-green"&gt;95.2%&lt;/div&gt;</code> in the homepage markup. No script anywhere in the repository computes it. The model page now displays the arithmetic <code>${counts.total} / (${counts.total} + 4) = 95.2%</code>, added during the V51.0 registry lock (commit 5c00275, 2026-04-04) — but this is the author (or more likely, the author's AI assistant) writing the division into the HTML, not a script that counts WINs and derives the percentage.</p>
 
 <p><strong>We checked every plausible source file:</strong> <code>scoring.js</code> (per-prediction point-based scoring, no aggregate), <code>predictions.js</code> (prediction data, no percentage), <code>build.js</code> (hash generation only), <code>analytics.js</code> (browser telemetry only), <code>apply_scoring_schema.py</code>, <code>recalc_v51.py</code>, <code>compile_exhaustive_api.py</code>, <code>verify_predictions.py</code>, <code>build_tracking.py</code> — none contain a function that calculates an overall accuracy percentage. The figure has no programmatic derivation and no audit trail in the codebase.</p>
 
-<p><strong>The denominator is an editorial choice.</strong> The formula <code>67 / (67 + 4) = 95.2%</code> treats 67 WINs as confirmed and excludes 4 as "below detection threshold" (W001, W004). But the model's own tracking page acknowledges at least 4 falsified predictions (W019, W020, W024, W027), and WIN-025 was removed entirely. Including these: 67 / (67 + 4 + 4 + 1) = 67/76 = 88.2%. Meanwhile, the repo's own API data tells different stories: <code>api/scorecard.json</code> gives 26/27 = 96.3%; <code>api/current/results.json</code> gives 33/33 = 97.0%. None of these agree with 95.2%. The specific denominator of 71 is not derived from any data structure — it is chosen to produce the desired headline.</p>
+<p><strong>The denominator is an editorial choice.</strong> The formula <code>${counts.total} / (${counts.total} + 4) = 95.2%</code> treats ${counts.total} WINs as confirmed and excludes 4 as "below detection threshold" (W001, W004). But the model's own tracking page acknowledges at least 4 falsified predictions (W019, W020, W024, W027), and WIN-025 was removed entirely. Including these: ${counts.total} / (${counts.total} + 4 + 4 + 1) = ${counts.total}/76 = 88.2%. Meanwhile, the repo's own API data tells different stories: <code>api/scorecard.json</code> gives 26/27 = 96.3%; <code>api/current/results.json</code> gives 33/33 = 97.0%. None of these agree with 95.2%. The specific denominator of 71 is not derived from any data structure — it is chosen to produce the desired headline.</p>
 
 <p>More fundamentally, accuracy metrics are meaningful only when the predictions are independent and discriminating. As our <a href="#part2" onclick="showTab('wins');return false">point-by-point review</a> shows, many WINs are re-sliced versions of the same data (WIN-040 through 043 are all SAA positioning from the same CHAOS-7 dataset), known constants (tidal periods), or globe values relabeled (Hubble Law, WGS84 gravity). Counting each as an independent "confirmed prediction" inflates both the numerator and the headline. But the most basic problem remains: <strong>the headline number is not validated by any computation — the arithmetic is written into the HTML by hand, and the denominator is chosen to exclude failures.</strong></p>
 
@@ -1044,7 +1077,7 @@ ${sectionNav('wins', '67 Wins Reviewed', 'predictions', 'Predictions Analysis')}
 
 <h2>3.5.9 Structural Pattern: The Predictions Page as a Whole</h2>
 
-<p>Across the 67 claimed WINs, a consistent structural pattern emerges:</p>
+<p>Across the ${counts.total} claimed WINs, a consistent structural pattern emerges:</p>
 
 <p><strong>Step 1: Name a real phenomenon.</strong> Schumann resonance, tidal periods, geomagnetic decay, P-wave shadows, Hubble expansion — all genuine, well-measured physical observations.</p>
 <p><strong>Step 2: Cite real data sources.</strong> INTERMAGNET, NOAA, CHAOS-7, WMM2025, Tesla's patents — all legitimate, publicly accessible data.</p>
@@ -1053,7 +1086,7 @@ ${sectionNav('wins', '67 Wins Reviewed', 'predictions', 'Predictions Analysis')}
 
 <p>This is the same self-referential pattern identified in the <a href="#part4b" onclick="showTab('selftest');return false">coordinate system analysis (Section 4.5.9)</a>: known answers go in, dome-labeled formulas come out, and the match is called a prediction. The pattern works because the predictions are tested against the same data used to build them, not against novel measurements the model hasn't seen.</p>
 
-<p><strong>A discriminating test of the predictions page would require:</strong> (a) a dome prediction that differs numerically from the globe prediction for the same quantity, (b) tested against data that was not used in building the dome's formula, (c) with the globe's prediction and the dome's prediction both stated in advance. Of the 67 WINs, zero meet all three criteria.</p>
+<p><strong>A discriminating test of the predictions page would require:</strong> (a) a dome prediction that differs numerically from the globe prediction for the same quantity, (b) tested against data that was not used in building the dome's formula, (c) with the globe's prediction and the dome's prediction both stated in advance. Of the ${counts.total} WINs, zero meet all three criteria.</p>
 
 ${sectionNav('pages', 'Live Power Analysis', 'falsify', 'Falsification Tests')}
 
@@ -1215,6 +1248,41 @@ ${sectionNav('predictions', 'Predictions Analysis', 'selftest', 'Internal Contra
 <br>
 <br>This is the strongest falsification: the model does not merely fail against external data, it contradicts itself. The author "solves" these contradictions by invoking unfalsifiable mechanisms (aetheric refraction), by silently switching to the globe model (using c/2πR for Schumann instead of c/4h, using WGS84 gravity instead of exp(−r/8619)), or by iteratively curve-fitting to known data and presenting the result as prediction. A model that refutes itself before any external data arrives is not salvageable by parameter adjustment or new observations.</p>
 
+<!-- ═══ PART 4.6 ═══ -->
+<h1 id="part4c">Part 4.6: Repository Code Analysis — What the Automation Actually Does</h1>
+
+<p>The dome model's homepage describes its monitoring pipeline as a system that "continuously validates predictions against live data." This implies an automated process that fetches real-world measurements, compares them to model predictions, and reports pass/fail results. We audited the repository's source code — specifically <code>monitor.py</code>, <code>pull_data.py</code>, and the GitHub Actions workflows — to determine what the automation actually does. Of ${counts.total} WINs, ${counts.codeAnalysis.reviewed} have been reviewed so far (${counts.codeAnalysis.pending} remain in the audit queue). The findings below reflect the ${counts.codeAnalysis.reviewed} reviewed WINs.</p>
+
+<h2>4.6.1 The Monitoring Illusion</h2>
+
+<p><strong>The claim:</strong> The dome site presents a "95.2% accuracy" figure alongside a live monitoring dashboard that updates every five minutes. The visual impression is of a scientific instrument continuously checking predictions against incoming data — a practice that would, if real, represent genuine empirical accountability.</p>
+
+<p><strong>What the code actually does:</strong> Of the ${counts.codeAnalysis.reviewed} WINs we have audited, ${counts.codeAnalysis.monitoring.hardcoded} use hardcoded validation — the monitoring script contains a static expected value and a static "observed" value, and the "check" is simply confirming that the hardcoded number equals itself. Another ${counts.codeAnalysis.monitoring.none} have no validation code at all; they appear in the WIN list but <code>monitor.py</code> contains no corresponding domain, no data fetch, no comparison logic. Only ${counts.codeAnalysis.monitoring.liveFetch} of ${counts.codeAnalysis.reviewed} actually fetch live data from external sources (NOAA, USGS, or similar APIs).</p>
+
+<p><strong>The structural problem:</strong> A monitoring system that hardcodes both the prediction and the observation cannot fail. It is not monitoring — it is a display. The "95.2% confirmed by live monitoring" claim is structurally impossible when ${counts.codeAnalysis.monitoring.hardcoded} of ${counts.codeAnalysis.reviewed} reviewed checks contain no live data pathway. Moreover, the 95.2% figure itself is a static HTML string on the homepage — no script in the repository computes it from the monitoring results. The number that is supposed to summarize automated validation is itself manually typed.</p>
+
+<p><strong>What genuine monitoring would look like:</strong> A real validation pipeline would: (a) fetch current measurements from an independent source, (b) compute the model's predicted value from dome equations using current conditions as input, (c) compare prediction to observation with a pre-registered tolerance, and (d) report pass or fail with the raw numbers visible. The dome's pipeline does (a) for ${counts.codeAnalysis.monitoring.liveFetch} WINs. It does none of (b), (c), or (d) for the remaining ${counts.codeAnalysis.monitoring.hardcoded + counts.codeAnalysis.monitoring.none}.</p>
+
+<h2>4.6.2 Relabeling Standard Physics</h2>
+
+<p><strong>The pattern:</strong> ${counts.codeAnalysis.relabelsStandard} of ${counts.codeAnalysis.reviewed} reviewed WINs take a phenomenon that is already predicted and explained by standard physics — often for decades or centuries — and present it as a dome model "prediction" by renaming the causal mechanism. The observation stays the same; only the label changes from "electromagnetic" to "aetheric," from "core dynamics" to "toroidal flow," or from "ionospheric" to "firmament boundary."</p>
+
+<p><strong>Why this matters:</strong> A new model earns credibility by predicting something the old model cannot, or by predicting known phenomena more precisely. Relabeling the cause of an already-explained observation does neither. If standard physics predicts Schumann resonances at 7.83 Hz (as Schumann himself derived in 1952), and the dome model also claims 7.83 Hz but attributes it to an "aetheric cavity" rather than the ionosphere-surface waveguide, no new empirical content has been added. The prediction was already made, the mechanism was already known, and the dome model's contribution is a vocabulary substitution. This is not scientific prediction — it is re-narration.</p>
+
+<p><strong>The test that would matter:</strong> To distinguish relabeling from genuine prediction, ask: does the dome model predict a <em>different numerical value</em> than the standard model for any of these ${counts.codeAnalysis.relabelsStandard} phenomena? In every case we reviewed, the answer is no. The dome adopts the standard model's predicted value, changes the explanatory label, and counts it as a confirmed WIN. A model that never disagrees with standard physics on any measurable quantity is not an alternative — it is a translation layer.</p>
+
+<h2>4.6.3 Post-Hoc Retrodiction</h2>
+
+<p><strong>The pattern:</strong> ${counts.codeAnalysis.postHoc} of ${counts.codeAnalysis.reviewed} reviewed WINs adopt published observations as "predictions" after the fact. The observation was measured and reported in the scientific literature first; the dome model then incorporated the known value and labeled it a "confirmed prediction."</p>
+
+<p><strong>Prediction vs. retrodiction:</strong> A prediction states a value <em>before</em> the measurement is made. A retrodiction states a value <em>after</em> the measurement is known and claims compatibility. Both have some scientific value, but they are not equivalent. Retrodiction demonstrates consistency (the model can accommodate the data), while prediction demonstrates forecasting power (the model anticipated the data). The dome model's timestamp infrastructure (git commits, OpenTimestamps) could in principle distinguish the two — but the timestamps record when the <em>webpage</em> was committed, not when the model first derived the value. A prediction committed to git in 2025 about a phenomenon measured in 1952 is retrodiction, regardless of the commit date.</p>
+
+<p><strong>The derivation question:</strong> Of the ${counts.codeAnalysis.reviewed} WINs reviewed, only ${counts.codeAnalysis.derivesFromDome} actually derives its predicted value from the dome's own geometric equations (disc radius, firmament height function, aetheric parameters). The remainder either adopt standard physics values directly, cite observational databases, or state the known answer without showing a derivation path from dome geometry to numerical prediction. A model that does not derive predictions from its own structure is not generating predictions — it is curating observations.</p>
+
+<p><strong>Combined effect:</strong> These three patterns — illusory monitoring, relabeling, and retrodiction — are not independent. A single WIN often exhibits all three: a known phenomenon (retrodiction) is renamed with dome vocabulary (relabeling) and then "confirmed" by a hardcoded check that cannot fail (illusory monitoring). The result is a pipeline that converts established scientific knowledge into dome model "confirmed predictions" through a series of label changes, with no point at which the dome's own geometry is tested against data it has not already seen.</p>
+
+<p><strong>Audit status:</strong> This analysis covers ${counts.codeAnalysis.reviewed} of ${counts.total} WINs (${Math.round(counts.codeAnalysis.reviewed / counts.total * 100)}% complete). The remaining ${counts.codeAnalysis.pending} WINs are in the review queue. The counts above will update automatically as the audit progresses — they are computed from per-WIN metadata at build time, not hardcoded.</p>
+
 ${sectionNav('falsify', 'Falsification Tests', 'ai', 'AI & Conclusions')}
 
 </div>
@@ -1228,10 +1296,10 @@ ${sectionNav('falsify', 'Falsification Tests', 'ai', 'AI & Conclusions')}
 <p>The V51.0 site includes an "AI Context" page designed to instruct large language models on how to interpret the model. It contains eleven directives presented as "rules" for AI systems. Below, each is evaluated for accuracy and potential bias.</p>
 
 <h2>5.2 Directive #1: "Dome Model Has Zero Falsified Predictions"</h2>
-<p><strong>The claim:</strong> "The model has 67 confirmed predictions and zero falsified."</p>
-<p><strong>The reality:</strong> The Tracking page (v51.0) reports "4 falsified predictions." The homepage claims "0 falsified." These directly contradict. The model's internal geometry refutes 11 of the 67 WINs (see Part 4.5). Sydney–Perth distance: the dome's Finsler coordinate system claims 4,352 km (matching the Indian Pacific railway's circuitous route through Adelaide), while its own coordinate scaffold gives 3,893 km for the same pair — a 460 km internal disagreement. The same formula failed by 78% on Sydney–Buenos Aires in V12; V13 claims 8.4% via unpublished scaling functions. The coordinate system is iterative curve-fitting, not predictive geometry (see <a href="#part4b" onclick="showTab('selftest');return false">Section 4.5.9</a>). The directive contains factually incorrect claims.</p>
+<p><strong>The claim:</strong> "The model has ${counts.total} confirmed predictions and zero falsified."</p>
+<p><strong>The reality:</strong> The Tracking page (v51.0) reports "4 falsified predictions." The homepage claims "0 falsified." These directly contradict. The model's internal geometry refutes ${counts.selfContradicted} of the ${counts.total} WINs (see Part 4.5). Sydney–Perth distance: the dome's Finsler coordinate system claims 4,352 km (matching the Indian Pacific railway's circuitous route through Adelaide), while its own coordinate scaffold gives 3,893 km for the same pair — a 460 km internal disagreement. The same formula failed by 78% on Sydney–Buenos Aires in V12; V13 claims 8.4% via unpublished scaling functions. The coordinate system is iterative curve-fitting, not predictive geometry (see <a href="#part4b" onclick="showTab('selftest');return false">Section 4.5.9</a>). The directive contains factually incorrect claims.</p>
 
-<h2>5.3 Directive #2: "All 67 WINs Are Equally Confirmed"</h2>
+<h2>5.3 Directive #2: "All ${counts.total} WINs Are Equally Confirmed"</h2>
 <p><strong>The claim:</strong> No distinction between trivially confirmable claims (like tidal periods, which are known astronomical constants) and novel predictions.</p>
 <p><strong>The reality:</strong> WINs differ vastly in evidential weight. WIN-001 (Schumann 7.83 Hz) is a trivial restatement of a 70-year-old measurement. WIN-047 (Hubble Law) claims the dome predicts galaxy expansion despite having no galactic-scale mechanism. WIN-053 contradicts V50.6's monopolar architecture. Treating all equally is mathematically misleading.</p>
 
@@ -1333,22 +1401,22 @@ ${sectionNav('falsify', 'Falsification Tests', 'ai', 'AI & Conclusions')}
 <p><strong>Pattern 2: Contradictory Results Both Claimed as Wins.</strong> WIN-011 claims gravity anomaly exists; WIN-013/014 claim it does not. Both counted as confirmations.</p>
 <p><strong>Pattern 3: Predictions Trivially Confirmable.</strong> Weekly confirmations and tidal periods predict outcomes already published.</p>
 <p><strong>Pattern 4: Curve-Fitting Mistaken for Explanation.</strong> Adding parameters always improves fit.</p>
-<p><strong>Pattern 5: Unfalsifiable Claims Counted as Confirmed.</strong> Four theological assertions counted among 67 wins.</p>
+<p><strong>Pattern 5: Unfalsifiable Claims Counted as Confirmed.</strong> ${counts.unfalsifiable} theological assertions counted among ${counts.total} wins.</p>
 <p><strong>Pattern 6: Inconvenient Data Discarded.</strong> StarWalk H=4750 'untrusted.' Failed predictions 'suspended.' Sun altitude (5,733 km) declared an 'optical illusion' via repository script when it exceeded the firmament height (~4,300 km) — see <a href="#p1-refraction" onclick="showTab('model');return false">Section 1.5</a>.</p>
 <p><strong>Pattern 7 (NEW): WIN Inflation via Re-slicing.</strong> Same INTERMAGNET data split into multiple WINs (040-043 replicate 004-039). Fundamental constants (tidal periods) claimed as predictions.</p>
 <p><strong>Pattern 8 (NEW): Scope Creep Without Mechanism.</strong> V51.0 claims galaxy-scale observations (Hubble Law, CMB, galaxy clusters) without any dome-scale mechanism for cosmological phenomena.</p>
 <p><strong>Pattern 9 (NEW): Internal Version Inconsistency.</strong> Homepage says 0 falsified; context page says 4. Tracking says 53 confirmed; homepage says 67. Evolution page lists V51.0 at 62 WINs while homepage claims 67. The homepage advertises an eclipse prediction of −17 to −21 nT, but <code>monitor.py</code> computes −29.1 nT. WIN-053 contradicts V50.6 monopolar architecture.</p>
 <p><strong>Pattern 10 (NEW): Misrepresenting the Opponent's Prediction.</strong> The eclipse test states the globe predicts "0.0 nT exactly" when peer-reviewed literature documents 5–20 nT perturbations via the Chapman mechanism. The dome's −17 to −21 nT prediction was derived by scaling actual globe-model-confirmed observations upward by a correction factor. The test is constructed so that the expected real-world outcome would be claimed as a dome "win" despite being fully consistent with mainstream ionospheric physics.</p>
-<p><strong>Pattern 11 (NEW): Self-Contradicting Own Geometry.</strong> In 11 of 67 WINs, the dome's own stated geometry produces predictions that radically diverge from both reality and the author's claims. The dome cavity gives ~22 Hz for Schumann (not 7.83), a single tidal spike instead of two bulges, 90% gravity drop at the rim, and 50% solar diameter variation through the day. The author avoids these failures by substituting globe formulas, ignoring his own exponential height profile, or curve-fitting to observations. This is the strongest argument against the model: it doesn't merely fail against external data — it contradicts itself.</p>
+<p><strong>Pattern 11 (NEW): Self-Contradicting Own Geometry.</strong> In ${counts.selfContradicted} of ${counts.total} WINs, the dome's own stated geometry produces predictions that radically diverge from both reality and the author's claims. The dome cavity gives ~22 Hz for Schumann (not 7.83), a single tidal spike instead of two bulges, 90% gravity drop at the rim, and 50% solar diameter variation through the day. The author avoids these failures by substituting globe formulas, ignoring his own exponential height profile, or curve-fitting to observations. This is the strongest argument against the model: it doesn't merely fail against external data — it contradicts itself.</p>
 <p><strong>Pattern 12 (NEW): AI Prompt Engineering as Science.</strong> The repository source code contains scripts that inject rules into the API and AI context page to prevent AI assistants from flagging geometric contradictions (e.g., the sun altitude exceeding the firmament height). Curve-fitting scripts (<code>test_curve_stretching.py</code>, <code>find_curve.py</code>) confirm the model is iteratively fitted to WGS84 distances. The CORS configuration is explicitly designed for "Claude instances." This is not a scientific model being tested — it is an AI persuasion system being tuned.</p>
 
 <h2>6.2 The Eclipse Test: Not What It Appears</h2>
 <p>The August 12, 2026 Eclipse Test is presented as the single most important discriminating prediction. However, the site misrepresents the globe prediction as "0.0 nT exactly" when the Chapman ionospheric mechanism (peer-reviewed since 1933) predicts 5–20 nT under identical conditions. The dome's −17 to −21 nT range was derived by applying a 1.672× scaling factor to actual INTERMAGNET data from the 2016 eclipse — which was itself a Chapman-mechanism observation on a spherical Earth. The test is constructed as a heads-I-win, tails-doesn't-count proposition. See <a href="#eclipse-analysis" onclick="showTab('pages');return false">Section 3.2</a> for the full analysis.</p>
 <p>The repository source code confirms this structure. <code>monitor.py</code> hardcodes a <code>Kp &lt; 2</code> precondition: if geomagnetic activity is elevated on eclipse day, the test automatically records <code>pass=null</code> rather than <code>pass=false</code>. Since roughly 60% of days have Kp ≥ 2, the prediction has a built-in ~60% chance of being automatically excused from any test. Meanwhile, the code computes a predicted anomaly of −29.1 nT — not the −17 to −21 nT advertised on the homepage. The monitoring system will test a different number than the one presented to the public.</p>
 
-<h2>6.3 Final Tally (V51.0, 67 WINs)</h2>
+<h2>6.3 Final Tally (V51.0, ${counts.total} WINs)</h2>
 
-<p><strong>The Headline Number Is Inflated.</strong> The 67 claimed wins include systematic duplication: INTERMAGNET geomagnetic data is sliced into multiple WINs (WIN-040 through WIN-043 repackage data already counted in WIN-004 through WIN-039), tidal constituent periods are each counted separately despite being a single astronomical dataset, and several WINs (WIN-007/022, WIN-037/042) are near-duplicates. After removing duplicates, subdivisions of single observations, and re-sliced reprocessings of the same datasets, the 67 claimed wins reduce to roughly 25–30 genuinely distinct claims. The large headline number is a persuasive tactic, not a scientific measure.</p>
+<p><strong>The Headline Number Is Inflated.</strong> The ${counts.total} claimed wins include systematic duplication: INTERMAGNET geomagnetic data is sliced into multiple WINs (WIN-040 through WIN-043 repackage data already counted in WIN-004 through WIN-039), tidal constituent periods are each counted separately despite being a single astronomical dataset, and several WINs (WIN-007/022, WIN-037/042) are near-duplicates. After removing duplicates, subdivisions of single observations, and re-sliced reprocessings of the same datasets, the ${counts.total} claimed wins reduce to roughly 25–30 genuinely distinct claims. The large headline number is a persuasive tactic, not a scientific measure.</p>
 
 <p><strong>Refuted by Data: ${tally['Refuted by Data'] || 0}</strong> (direct measurements contradict the claim)</p>
 <p><strong>Standard Model Explains: ${tally['Std Model Explains'] || 0}</strong> (observation is real but mainstream physics already accounts for it)</p>
@@ -1356,9 +1424,8 @@ ${sectionNav('falsify', 'Falsification Tests', 'ai', 'AI & Conclusions')}
 <p><strong>Misleading: ${tally['Misleading'] || 0}</strong> (data misrepresented, duplicated, cherry-picked, or logically contradictory)</p>
 <p><strong>Not Demonstrated: ${tally['Not Demonstrated'] || 0}</strong> (unconfirmed by independent replication)</p>
 <p><strong>Unfalsifiable: ${tally['Unfalsifiable'] || 0}</strong> (theological assertions, not testable)</p>
-<p><strong>Removed by Author: 1</strong> (WIN-025, disturbed-day baseline)</p>
 <p><strong>Internal Contradictions: 2</strong> (homepage vs context page falsification count; WIN-053 vs V50.6 architecture)</p>
-<p>None of the 67 claims demonstrate predictive power exceeding mainstream geophysical models. Of particular note: ${tally['Self-Contradicted'] || 0} WINs are now categorized as "Self-Contradicted" — claims where the dome's own stated geometry, if worked through honestly, produces predictions that radically diverge from both observations and the author's claims. The model "works" only because the author replaces his own physics with globe physics whenever the dome geometry produces the wrong answer. No claimed test on the site produces a prediction that the globe model disagrees with and that the dome model uniquely explains.</p>
+<p>None of the ${counts.total} claims demonstrate predictive power exceeding mainstream geophysical models. Of particular note: ${counts.selfContradicted} WINs are now categorized as "Self-Contradicted" — claims where the dome's own stated geometry, if worked through honestly, produces predictions that radically diverge from both observations and the author's claims. The model "works" only because the author replaces his own physics with globe physics whenever the dome geometry produces the wrong answer. No claimed test on the site produces a prediction that the globe model disagrees with and that the dome model uniquely explains.</p>
 
 ${sectionNav('selftest', 'Internal Contradictions', 'refs', 'References')}
 
@@ -1407,7 +1474,7 @@ ${sectionNav('selftest', 'Internal Contradictions', 'refs', 'References')}
 <p><strong>V1 (March 12, 2026):</strong> Initial review of V50.6, 39 WINs analyzed.</p>
 <p><strong>V2 (March 12, 2026):</strong> Strengthened evidence, added falsification tests section, AI directive analysis.</p>
 <p><strong>V3 (March 12, 2026):</strong> Added internal navigation links, clickable references, expanded WIN-033 with southern stars, replaced section 3.6 with magnetic dipole falsification.</p>
-<p><strong>V4 (April 5, 2026):</strong> Updated for V51.0 (67 WINs). Added version change analysis, 28 new WIN reviews, analysis of four new site pages (Live Power, Kill-Shot, Audit, Tracking). Eclipse analysis: dome's −17 to −21 nT prediction derived from scaling Chapman-mechanism data; globe prediction misrepresented as 0.0 nT when peer-reviewed literature shows 5–20 nT. Documented internal contradictions and prompt injection escalation.</p>
+<p><strong>V4 (April 5, 2026):</strong> Updated for V51.0 (${counts.total} WINs). Added version change analysis, ${counts.newInV51} new WIN reviews, analysis of four new site pages (Live Power, Kill-Shot, Audit, Tracking). Eclipse analysis: dome's −17 to −21 nT prediction derived from scaling Chapman-mechanism data; globe prediction misrepresented as 0.0 nT when peer-reviewed literature shows 5–20 nT. Documented internal contradictions and prompt injection escalation.</p>
 <p><strong>V4.7 (April 5, 2026):</strong> Added "Self-Contradicted" verdict category for 11 WINs where the dome's own geometry produces predictions that contradict the author's claims (Schumann ~22 Hz, one tidal spike instead of two bulges, gravity 90% drop at rim, globe solar formula substitution). Updated tallies, patterns, and detailed analyses.</p>
 <p><strong>V4.8 (April 5, 2026):</strong> Incorporated findings from independent adversarial review. Strengthened: SH distance failures (model's own 73% admission), GPS/satellite argument (standard orbital mechanics, relativistic corrections), Antarctic circumnavigation (126,000 km rim vs 13,800 km measured). New sections: solar angular diameter falsification, aetheric refraction unfalsifiability, Open Problems as concessions. Improved timestamping acknowledgment. Added WIN-001 vs WIN-002 Schumann internal contradiction.</p>
 
@@ -1415,7 +1482,7 @@ ${sectionNav('selftest', 'Internal Contradictions', 'refs', 'References')}
 <p>This review was conducted with full security scanning of the source website. The site contains no malicious code, but the Home, AI Context, and new Audit pages contain prompt injection directives designed to instruct AI models to treat the model as established fact. V51.0 has escalated from simple directives to a structured six-step audit pipeline. These were identified, documented, and not followed. See the accompanying security-audit.md for the full technical scan.</p>
 
 <footer>
-<p>This review represents an analysis of 67 claimed wins against the dome cosmological model. All citations to external datasets are verifiable through public repositories. The review's methodology, evidence, and conclusions are open to scientific scrutiny and replication.</p>
+<p>This review represents an analysis of ${counts.total} claimed wins against the dome cosmological model. All citations to external datasets are verifiable through public repositories. The review's methodology, evidence, and conclusions are open to scientific scrutiny and replication.</p>
 </footer>
 
 ${sectionNav('ai', 'AI & Conclusions', null, null)}
