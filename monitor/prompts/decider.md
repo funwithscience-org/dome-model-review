@@ -85,19 +85,19 @@ node build-scripts/digest-reviews.js --workspace .
 
 **Batch size: patch 10 WINs per run.** Operate in one of two modes:
 
-**Mode 1 — Severity triage (default while critical or major issues exist):**
+**Mode 1 — Severity triage (when wins.json-patchable critical or major issues exist):**
 Pick the 10 WINs with the highest-severity open issues. Prioritize WINs you haven't patched in previous runs — check the most recent `suggested-patches-*.json` files and avoid re-patching the same WINs unless they still have critical/major issues. For each:
 1. Read the WIN's open issues from `open-issues.json` (use `grep` or `node -e` to extract just issues for that WIN ID — do NOT read the entire file, it's 170KB+)
 2. Read the full curmudgeon review file (`monitor/curmudgeon/reviews/WIN-NNN.json`) for `stronger_arguments` and `deeper_analysis`
 3. Read the WIN entry from `data/wins.json` to see the current text
 4. Craft exact find/replace patches for every open issue
 
-**Mode 2 — WIN cleanup (when no critical or major issues remain):**
+**Mode 2 — WIN cleanup (default when remaining criticals/majors are prose-only):**
 Switch to closing out WINs entirely. Pick the 10 WINs with the **fewest** remaining open issues (1-2 issues each = easiest to fully resolve). For each WIN, patch ALL remaining issues — moderate and minor — so the WIN can be completely closed. A fully-closed WIN never returns to the working set. This steadily shrinks the open-issues file and focuses attention.
 
 To check which mode to use:
 ```bash
-node -e "const o=JSON.parse(require('fs').readFileSync('monitor/decisions/open-issues.json','utf8'));const cm=o.issues.filter(i=>i.severity==='critical'||i.severity==='major');console.log(cm.length?'MODE 1: '+cm.length+' critical/major remain':'MODE 2: cleanup mode')"
+node -e "const o=JSON.parse(require('fs').readFileSync('monitor/decisions/open-issues.json','utf8'));const cm=o.issues.filter(i=>i.severity==='critical'||i.severity==='major');const patchable=cm.filter(i=>i.win_id&&/^\d{3}$/.test(String(i.win_id).replace('WIN-','')));console.log(patchable.length?'MODE 1: '+patchable.length+' patchable critical/major remain':'MODE 2: cleanup mode ('+cm.length+' critical/major are prose-only, not patchable)')"
 ```
 
 **Reading open-issues.json efficiently.** The file is too large to read in full. Instead, extract just the issues you need:
