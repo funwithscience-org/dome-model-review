@@ -871,7 +871,7 @@ ${sectionNav('model', 'The Model', 'pages', 'Live Power Analysis')}
 
 <h3>Bottom Line: One Ruler, Not Twenty Measurements</h3>
 
-<p><strong>14 of 20</strong> domains share the same fitted constant and are therefore one test, not fourteen. Of the remaining 6, the globe predicts the same or better in 5, and the dome is contradicted by data in 1 (Polaris). <strong>Zero of 20 domains</strong> produce a result where the globe disagrees and the dome uniquely explains the observation.</p>
+<p><strong>14 of 20</strong> domains share the same fitted constant and are therefore one test, not fourteen. Of the remaining 6, the globe predicts the same or better in 5, and the dome is contradicted by data in 1 domain (Polaris excess, where the dome model's own refraction formula fails by two orders of magnitude). <strong>Zero of 20 domains</strong> produce a result where the globe disagrees and the dome uniquely explains the observation.</p>
 
 <p>An analogy: imagine measuring your height with the same ruler in 30 rooms. You get "6 feet" every time. That is not 30 independent confirmations — it is one ruler used 30 times. The dome model's λ<sub>g</sub> = 8,619 km is the ruler. It was fitted once to geomagnetic data. Every domain that uses it (14 of 20) is asking the same question: "does this fitted constant reproduce the data it was fitted to?" The answer is always yes. That is one curve fit applied fourteen times, and the 9.2σ figure is meaningless.</p>
 

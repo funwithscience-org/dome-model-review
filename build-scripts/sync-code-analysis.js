@@ -51,10 +51,23 @@ console.log(`🔧 Mode: ${apply ? 'APPLY' : 'DRY RUN'}\n`);
 // Load wins.json
 const wins = JSON.parse(fs.readFileSync(WINS_PATH, 'utf8'));
 
-// Scan review files
-const reviewFiles = fs.readdirSync(reviewDir)
-  .filter(f => f.match(/^WIN-\d+\.json$/))
+// Scan review files — pick latest cycle per WIN for cycle-aware filenames
+// (WIN-001.json = cycle 1, WIN-001.c2.json = cycle 2, etc.)
+const allReviewFiles = fs.readdirSync(reviewDir)
+  .filter(f => f.match(/^WIN-\d+(?:\.c\d+)?\.json$/))
   .sort();
+const latestByWin = new Map();
+for (const file of allReviewFiles) {
+  const match = file.match(/^(WIN-\d+)(?:\.c(\d+))?\.json$/);
+  if (!match) continue;
+  const winKey = match[1];
+  const cycle = match[2] ? parseInt(match[2]) : 1;
+  const existing = latestByWin.get(winKey);
+  if (!existing || cycle > existing.cycle) {
+    latestByWin.set(winKey, { file, cycle });
+  }
+}
+const reviewFiles = [...latestByWin.values()].map(v => v.file).sort();
 
 let applied = 0;
 let skipped = 0;
