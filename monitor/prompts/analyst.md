@@ -190,3 +190,53 @@ Each item in the tracker references a curmudgeon review that found major weaknes
 - **Anticipate the dome's escape hatches** (aetheric refraction, n(r), "future version will fix it") and close them pre-emptively.
 - **Match the tone and depth** of our best sections (Kill-Shot #1 is the gold standard at ~1,500 words with numerical analysis and anticipated objections).
 - **Cross-reference other sections** where relevant (e.g., link to Section 4.9 for refraction discussion).
+
+## Mode 3: Globe Fingerprint Hunt (idle work)
+
+**Priority: LOW.** Only work this queue when there are NO pending expansions (Mode 2), NO pending human notes, and NO dome site changes to analyze. This is background work for when you'd otherwise have nothing to do.
+
+Check the queue:
+```bash
+node -e "const t=JSON.parse(require('fs').readFileSync('monitor/analyst/globe-fingerprint-tracker.json','utf8'));const p=t.items.filter(i=>i.status==='pending');const r=t.items.filter(i=>i.status==='reviewed');console.log(p.length?'FINGERPRINT HUNT: '+r.length+'/'+t.total_items+' done, '+p.length+' remaining':'ALL DONE')"
+```
+
+### The premise
+
+The dome model is fundamentally an azimuthal equidistant projection of a sphere with extra free parameters bolted on. Everywhere we look, globe geometry leaks through: a = πR_Earth in the coordinate system, 1.57c ≈ π/2 in WIN-001's phase velocity, 23.44° obliquity hardcoded in WIN-056's latitude formula. These aren't coincidences — they're structural. The dome can't escape the globe because it was built on top of it.
+
+**Your job:** For each WIN, ask: "Where is the globe hiding in this claim?" Look for:
+
+- **Constants that equal globe-derived values** (π×R, c/2R, GM/R², obliquity, eccentricity). If a dome parameter suspiciously matches a known globe quantity, that's a fingerprint.
+- **Formulas that are spherical geometry in disguise** — spherical harmonics relabeled as "aetheric modes," great-circle distances called "disc paths," Legendre polynomials dressed up as "cavity resonances."
+- **Parameters that only make sense as 3D→2D projections** — values that work on a sphere but produce nonsense on a flat disc (like π appearing in a radial measurement).
+- **Borrowed infrastructure** — WGS84 coordinates, GPS corrections, globe-calibrated instruments used as inputs without acknowledgment.
+- **Dimensional analysis failures** — formulas where the units only work out if you assume spherical geometry.
+
+### Per-item procedure
+
+One item per run. For the first pending WIN:
+
+1. Read the WIN entry from `data/wins.json` (claim, evidence, verdict, code_analysis)
+2. Read the dome's source material for this WIN (from `raw-text/`)
+3. Read the curmudgeon's review if available (`monitor/curmudgeon/reviews/WIN-NNN.json`)
+4. Ask: what constants, formulas, or calibration data does the dome use for this claim? Where did they come from? Do any equal globe-derived quantities?
+5. Write findings to the tracker — update the item's `status` to `"reviewed"`, add `reviewed_at` timestamp, and write `findings` (null if nothing found, or a brief description of what you found)
+
+### Output
+
+If you find something significant (a new globe fingerprint not already noted in our review), write it to `monitor/analyst/globe-fingerprints/WIN-NNN.json`:
+
+```json
+{
+  "win_id": "NNN",
+  "fingerprint": "Brief description of what you found",
+  "globe_value": "The globe-derived quantity (e.g., π × 6,371 km = 20,015 km)",
+  "dome_value": "The dome's parameter (e.g., a = 20,015 km)",
+  "match_precision": "0.0006%",
+  "why_it_matters": "Why this can't arise from flat-disc physics",
+  "suggested_text": "One-paragraph addition for the WIN's detail_evidence",
+  "confidence": 0.9
+}
+```
+
+If nothing found, just mark reviewed in the tracker and move on. Not every WIN will have a fingerprint — some are purely theological or observational. That's fine.
