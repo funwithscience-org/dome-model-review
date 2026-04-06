@@ -12,6 +12,23 @@ After this refactor:
 - `build-doc-v4.js` reads from sections.json and generates DOCX paragraphs
 - Editing prose requires changing ONE file
 
+## Known Prose Errors (fix during extraction)
+
+The following errors exist in the current `generate-html.js` prose. Fix them AS you extract — do not copy them into sections.json:
+
+1. **ISS-412 (MAJOR):** Section 4.5 says "A local sun at fixed height H ≈ 8,537 km" — WRONG. 8,537 km is the firmament apex height H(r=0). The dome's sun altitude is 5,733 km (from inject_ai_layer.py). Fix to: "A local sun at fixed height H ≈ 5,733 km"
+
+2. **ISS-413 (MAJOR):** Section 4.5 says "using the globe formula g = GM / r²" — WRONG. The dome uses WGS84 latitude-dependent gravity (g ≈ 9.78–9.83 m/s²), not point-mass free-fall. Section 4.5.8 of this same document correctly identifies this. Fix to reference WGS84 surface gravity values.
+
+3. **ISS-368:** Section 4.9 (aetheric refraction) lists WIN-056 among refraction-dependent WINs — WRONG. WIN-056's issue is using the globe's declination formula (Self-Contradicted), not refraction. Remove WIN-056 from the refraction list and add WIN-065 (Polaris) instead.
+
+4. **ISS-395:** A kill-shot section says "140–103° from epicenter" — WRONG order. Should be "104°–140°" to match WIN-064's detail_claim and the kill-shot analysis section.
+
+5. **ISS-415 (CRITICAL):** Section 4.5.9, point 1 in the "What actually happens" list says "d_geo is undefined. The page never specifies whether d_geo is the globe geodesic distance, the Euclidean distance on the disc, or something else." — **FACTUALLY WRONG.** V13 explicitly defines d_geo: `EW_arc = 4×a×E(e²)×(Δlon/360)×(r_avg/a)`, `NS = |r₁−r₂|`, `d_geo = √(NS²+EW²)` with a=20,015 km, e=0.66.
+
+   **Rewrite point 1 to this critique instead:**
+   d_geo IS defined — but the definition encodes globe geometry. The semi-major axis a = 20,015 km equals π × R_Earth (the pole-to-antipode distance along a sphere's surface). This value has no derivation from flat-disc physics: on a flat disc, the pole-to-rim distance is a straight radial line, and there is no geometric reason it would equal π times anything. The π is the fingerprint of the spherical surface integral the number was derived from. The eccentricity e = 0.66 evolved through five versions (V5–V9: b/a = 0.70→0.90, described as "converging") — the language of iterative fitting, not physical measurement. Every input to the formula (Δlon, r) is derived from WGS84 globe coordinates. And n(r) — the final divisor — remains unpublished, providing an unconstrained free function to absorb remaining error. The formula is geometrically valid for an elliptical disc, but the disc whose dimensions were reverse-engineered from globe geography via a parameter (π × R) that only arises from spherical geometry.
+
 ## Working Environment
 
 - **Clean clone (for git):** `/sessions/peaceful-gallant-rubin/dome-review-clean/`
