@@ -34,7 +34,10 @@ This writes `monitor/curmudgeon/pending-digest.json`. If the script isn't availa
 - `monitor/integrity/alerts.txt` — critical integrity issues (if exists)
 - `monitor/external-reports/` — external problem reports logged by analyst (check for new entries)
 
-### 1a. Check Pipeline Health
+### 1a. Check for Human Notes
+Read `monitor/decisions/human-notes.json` if it exists. This file contains notes from the human editor — verdict preferences, analytical insights, specific points to factor into patches or triage decisions. For each note with `status: "pending"`, incorporate it into your work for this run. After acting on a note, set its `status` to `"consumed"` with a `consumed_at` timestamp and `consumed_by` explanation.
+
+### 1b. Check Pipeline Health
 When reading upstream outputs, watch for signs of **infrastructure problems** — not just content findings:
 - Poller reporting persistent API failures (e.g., "404 for consecutive polls") → the target repo may have been renamed, gone private, or rate-limited. Check `monitor/config.json` against the actual GitHub API and suggest a config/prompt fix.
 - Integrity reporting the same false positives across multiple runs → the check logic or prompt may need updating, not the site.
@@ -43,7 +46,7 @@ When reading upstream outputs, watch for signs of **infrastructure problems** �
 
 Pipeline issues should be opened in `open-issues.json` with category `"infrastructure"` and suggested fixes targeting the relevant prompt file or config.
 
-### 1b. Read External Problem Reports
+### 1c. Read External Problem Reports
 Check `monitor/external-reports/` for any report JSONs not yet tracked in open-issues.json. External reports are submissions from the public (humans or AIs) via GitHub Issues. For each new report:
 - Read the analyst's assessment from the report JSON
 - If the analyst found a genuine error: create an open issue in open-issues.json with `found_by: "external"` and produce a suggested patch
@@ -53,7 +56,7 @@ Check `monitor/external-reports/` for any report JSONs not yet tracked in open-i
 
 **External reports are high priority.** Someone took the time to file a report. Even if we disagree, the response should be prompt, specific, and transparent.
 
-### 1c. Read Integrity Report (if available)
+### 1d. Read Integrity Report (if available)
 Check `monitor/integrity/` for the most recent `report-*.json` (sorted by filename, take the last one). If the integrity agent ran since your last report:
 - Read the full report
 - If `overall_status` is "fail", treat all critical issues as priority 1 actions

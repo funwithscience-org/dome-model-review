@@ -142,6 +142,12 @@ cat monitor/analyst/expansion-tracker.json 2>/dev/null | node -e "process.stdin.
 
 If expansions are pending, work on **one item per run** (the first pending item). After completing it, continue to check for dome site changes as normal — both modes can produce output in the same run.
 
+### Check for human notes
+
+Before starting ANY expansion work, read `monitor/analyst/human-notes.json` if it exists. This file contains notes from the human editor — insights, corrections, rhetorical angles, or specific points they want factored into the analysis. For each note with `status: "pending"` that matches the item you're working on (check the `target` field), incorporate the note's content into your work. After incorporating a note, set its `status` to `"consumed"` and add a `consumed_at` timestamp and a brief `consumed_by` note saying how you used it (e.g., `"consumed_by": "EXP-003 — added π×R critique to paragraph 3"`).
+
+Even for items that don't have matching notes, skim all pending notes — they may contain cross-cutting insights relevant to your current work.
+
 ### Expansion procedure
 
 Each item in the tracker references a curmudgeon review that found major weaknesses in a section of our review. Your job is to write a **complete replacement text** for that section.
