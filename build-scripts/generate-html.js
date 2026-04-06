@@ -19,6 +19,148 @@ const WINS_PATH = path.join(__dirname, '..', 'data', 'wins.json');
 const SECTIONS_PATH = path.join(__dirname, '..', 'data', 'sections.json');
 const OUTPUT_PATH = path.join(__dirname, '..', 'docs', 'index.html');
 
+// Load section-loader helper
+let SECTIONS_CACHE = null;
+let SECTIONS_AVAILABLE = false;
+
+function loadSectionsCache() {
+  if (SECTIONS_CACHE !== null) return SECTIONS_CACHE;
+  if (!fs.existsSync(SECTIONS_PATH)) {
+    SECTIONS_AVAILABLE = false;
+    return null;
+  }
+  try {
+    SECTIONS_CACHE = JSON.parse(fs.readFileSync(SECTIONS_PATH, 'utf8'));
+    SECTIONS_AVAILABLE = true;
+    return SECTIONS_CACHE;
+  } catch (e) {
+    console.warn(`Warning: Could not load sections.json: ${e.message}`);
+    SECTIONS_AVAILABLE = false;
+    return null;
+  }
+}
+
+function getSection(sectionId) {
+  const sections = loadSectionsCache();
+  return sections ? sections[sectionId] : null;
+}
+
+function resolvePlaceholders(html, context) {
+  if (!html || typeof html !== 'string') return html;
+  let result = html;
+
+  // Simple count replacements
+  const replacements = {
+    '{{TOTAL_WINS}}': context.totalWins || 0,
+    '{{NEW_IN_V51}}': context.newInV51 || 0,
+    '{{SELF_CONTRADICTED}}': context.selfContradicted || 0,
+    '{{UNFALSIFIABLE}}': context.unfalsifiable || 0,
+
+    // Tally
+    '{{TALLY_REFUTED}}': context.tally['Refuted by Data'] || 0,
+    '{{TALLY_STD}}': context.tally['Std Model Explains'] || 0,
+    '{{TALLY_SELFCON}}': context.tally['Self-Contradicted'] || 0,
+    '{{TALLY_MISLEADING}}': context.tally['Misleading'] || 0,
+    '{{TALLY_NOTDEMO}}': context.tally['Not Demonstrated'] || 0,
+    '{{TALLY_UNFALSIFIABLE}}': context.tally['Unfalsifiable'] || 0,
+
+    // Code analysis
+    '{{CA_REVIEWED}}': context.codeAnalysis?.reviewed || 0,
+    '{{CA_PENDING}}': context.codeAnalysis?.pending || 0,
+    '{{CA_HARDCODED}}': context.codeAnalysis?.monitoring?.hardcoded || 0,
+    '{{CA_LIVE}}': context.codeAnalysis?.monitoring?.liveFetch || 0,
+    '{{CA_NONE}}': context.codeAnalysis?.monitoring?.none || 0,
+    '{{CA_RELABELS}}': context.codeAnalysis?.relabelsStandard || 0,
+    '{{CA_POSTHOC}}': context.codeAnalysis?.postHoc || 0,
+    '{{CA_DOME}}': context.codeAnalysis?.derivesFromDome || 0,
+  };
+
+  // Simple replacements
+  for (const [placeholder, value] of Object.entries(replacements)) {
+    result = result.split(placeholder).join(String(value));
+  }
+
+  // Computed expressions
+  if (context.codeAnalysis && context.totalWins) {
+    const hardcodedPlusNone = (context.codeAnalysis.monitoring?.hardcoded || 0) +
+                              (context.codeAnalysis.monitoring?.none || 0);
+    result = result.split('{{CA_HARDCODED_PLUS_NONE}}').join(String(hardcodedPlusNone));
+
+    const pct = Math.round((context.codeAnalysis.reviewed || 0) / context.totalWins * 100);
+    result = result.split('{{CA_REVIEWED_PCT}}').join(String(pct));
+  }
+
+  return result;
+}
+
+function resolveTypeB(html, winsByVerdict, counts, wins, tally, sectionNav) {
+  // Replace Type B generated content placeholders with actual function calls
+  // These are dynamic content blocks that can't be in static JSON
+
+  if (html.includes('{{PIE_CHART}}')) {
+    const chart = generatePieChart(tally, wins.length);
+    html = html.replace('{{PIE_CHART}}', chart);
+  }
+
+  if (html.includes('{{WIN_TABLE}}')) {
+    const table = wins.map(formatTableRow).join('\n');
+    html = html.replace('{{WIN_TABLE}}', table);
+  }
+
+  // Detail sections - replace {{DETAILS_VERDICT}} with actual detail blocks
+  const verdictDetailsMap = {
+    '{{DETAILS_REFUTED}}': 'Refuted by Data',
+    '{{DETAILS_SELFCON}}': 'Self-Contradicted',
+    '{{DETAILS_STD}}': 'Std Model Explains',
+    '{{DETAILS_NOTDEMO}}': 'Not Demonstrated',
+    '{{DETAILS_MISLEADING}}': 'Misleading',
+    '{{DETAILS_UNFALSIFIABLE}}': 'Unfalsifiable',
+  };
+
+  for (const [placeholder, verdict] of Object.entries(verdictDetailsMap)) {
+    if (html.includes(placeholder)) {
+      const details = (winsByVerdict[verdict] || []).map(formatWinDetail).join('\n');
+      html = html.replace(placeholder, details);
+    }
+  }
+
+  // Section navigation placeholders
+  if (html.includes('{{SECTION_NAV}}')) {
+    // Would need the actual sectionNav function call parameters
+    // For now, we'll skip this - it's handled by keeping the old template
+  }
+
+  return html;
+}
+
+function integrateSection(fullHtml, sectionId, sectionContent, context, winsByVerdict, sectionNavFunc) {
+  // Find section start and end markers
+  const startMarker = `<h1 id="${sectionId}">`;
+  const startIdx = fullHtml.indexOf(startMarker);
+  if (startIdx === -1) return fullHtml; // Section not found
+
+  // Find end of section (next h1 tag or end of div)
+  const nextH1Idx = fullHtml.indexOf('<h1 id="part', startIdx + 1);
+  const nextDivIdx = fullHtml.indexOf('</div>\n\n<div class="tab-content"', startIdx);
+  const endIdx = nextH1Idx !== -1 && nextH1Idx < nextDivIdx ? nextH1Idx :
+                 nextDivIdx !== -1 ? nextDivIdx : fullHtml.length;
+
+  if (endIdx === -1) return fullHtml;
+
+  // Replace section with resolved content
+  const beforeSection = fullHtml.substring(0, startIdx);
+  const afterSection = fullHtml.substring(endIdx);
+  let resolvedContent = resolvePlaceholders(sectionContent, context);
+
+  // Resolve Type B generators
+  if (sectionId === 'part2' || sectionId === 'part3b' || sectionId === 'part6') {
+    // These sections might have dynamic content blocks
+    // resolvedContent = resolveTypeB(resolvedContent, winsByVerdict, context, sectionNavFunc);
+  }
+
+  return beforeSection + resolvedContent + afterSection;
+}
+
 const VERDICT_CLASSES = {
   'Refuted by Data': 'v-refuted',
   'Std Model Explains': 'v-std',
@@ -1630,6 +1772,30 @@ window.addEventListener('load', function() {
 </body>
 </html>
 `;
+
+  // Integrate sections from sections.json if available
+  if (SECTIONS_AVAILABLE) {
+    const sections = loadSectionsCache();
+    if (sections) {
+      const context = {
+        totalWins: counts.total,
+        newInV51: counts.newInV51,
+        selfContradicted: counts.selfContradicted,
+        unfalsifiable: counts.unfalsifiable,
+        tally,
+        codeAnalysis: counts.codeAnalysis,
+      };
+
+      // Integrate each section (optional - only if section is found in cache)
+      const sectionIds = ['part1', 'part1b', 'part2', 'part3', 'part3b', 'part4', 'part4b', 'part4c', 'part5', 'part6', 'part7'];
+      for (const sectionId of sectionIds) {
+        const section = sections[sectionId];
+        if (section && section.html) {
+          html = integrateSection(html, sectionId, section.html, context, winsByVerdict, sectionNav);
+        }
+      }
+    }
+  }
 
   fs.writeFileSync(OUTPUT_PATH, html);
   console.log(`Generated HTML: ${OUTPUT_PATH}`);
