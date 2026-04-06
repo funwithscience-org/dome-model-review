@@ -335,7 +335,7 @@ function formatCodeAnalysisTags(win) {
   if (ca.relabels_standard) {
     tags += '<span class="ca-tag tag-true"><span class="ca-icon">\u21BB</span> Relabels standard physics</span>';
   } else {
-    tags += '<span class="ca-tag tag-false"><span class="ca-icon">\u2713</span> Original to dome</span>';
+    tags += '<span class="ca-tag tag-false"><span class="ca-icon">\u2713</span> Distinct from standard model</span>';
   }
 
   // Post-hoc
@@ -347,9 +347,9 @@ function formatCodeAnalysisTags(win) {
 
   // Derives from dome
   if (ca.derives_from_dome) {
-    tags += '<span class="ca-tag tag-false"><span class="ca-icon">\u2713</span> Derived from dome</span>';
+    tags += '<span class="ca-tag tag-false"><span class="ca-icon">\u2713</span> Geometrically derived</span>';
   } else {
-    tags += '<span class="ca-tag tag-true"><span class="ca-icon">\u2717</span> Not derived from dome</span>';
+    tags += '<span class="ca-tag tag-true"><span class="ca-icon">\u2717</span> No geometric derivation</span>';
   }
 
   tags += '</div>\n';
