@@ -35,7 +35,13 @@ This writes `monitor/curmudgeon/pending-digest.json`. If the script isn't availa
 - `monitor/external-reports/` — external problem reports logged by analyst (check for new entries)
 
 ### 1a. Check for Human Notes
-Read `monitor/decisions/human-notes.json` if it exists. This file contains notes from the human editor — verdict preferences, analytical insights, specific points to factor into patches or triage decisions. For each note with `status: "pending"`, incorporate it into your work for this run. After acting on a note, set its `status` to `"consumed"` with a `consumed_at` timestamp and `consumed_by` explanation.
+Read `monitor/decisions/human-notes.json` if it exists. This file contains notes from the human editor — verdict preferences, analytical insights, specific points to factor into patches or triage decisions. For each note with `status: "pending"`:
+
+1. **If the note targets a specific issue or WIN** — factor it into your patch for that issue. If you've already patched it in a prior run, write a new patch that applies the note's insight on top of the current text.
+2. **If the note is a general directive** (e.g., verdict policy, triage priority) — apply it to all relevant decisions this run and future runs.
+3. **Always act on pending notes the same run you read them.** Don't defer — notes represent human editorial intent that shouldn't wait.
+
+After acting on a note, set its `status` to `"consumed"` with a `consumed_at` timestamp and `consumed_by` explanation.
 
 ### 1b. Check Pipeline Health
 When reading upstream outputs, watch for signs of **infrastructure problems** — not just content findings:

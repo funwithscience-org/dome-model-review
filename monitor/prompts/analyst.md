@@ -144,9 +144,13 @@ If expansions are pending, work on **one item per run** (the first pending item)
 
 ### Check for human notes
 
-Before starting ANY expansion work, read `monitor/analyst/human-notes.json` if it exists. This file contains notes from the human editor — insights, corrections, rhetorical angles, or specific points they want factored into the analysis. For each note with `status: "pending"` that matches the item you're working on (check the `target` field), incorporate the note's content into your work. After incorporating a note, set its `status` to `"consumed"` and add a `consumed_at` timestamp and a brief `consumed_by` note saying how you used it (e.g., `"consumed_by": "EXP-003 — added π×R critique to paragraph 3"`).
+Before starting ANY expansion work, read `monitor/analyst/human-notes.json` if it exists. This file contains notes from the human editor — insights, corrections, rhetorical angles, or specific points they want factored into the analysis. For each note with `status: "pending"`:
 
-Even for items that don't have matching notes, skim all pending notes — they may contain cross-cutting insights relevant to your current work.
+1. **If the note targets a pending expansion item** — incorporate it when you work on that item.
+2. **If the note targets a COMPLETED expansion item** — create a revision. Read the completed expansion output, apply the note's insight, and write an updated version to the same output file (overwrite). Update the expansion tracker: set `status: "revised"`, add `revised_at` timestamp and `revision_notes` explaining what changed. This is important — human notes often contain insights the analyst missed, and a completed expansion shouldn't be a dead end.
+3. **Cross-cutting notes** (no specific target, or target is general) — factor into whatever you're currently working on.
+
+After incorporating a note, set its `status` to `"consumed"` and add a `consumed_at` timestamp and a brief `consumed_by` note saying how you used it (e.g., `"consumed_by": "EXP-003 revision — added π×R critique to paragraph 3"`).
 
 ### Expansion procedure
 
