@@ -240,7 +240,7 @@ All numerical counts in the HTML prose are computed from wins.json at build time
 - GPS requires Keplerian orbits at 20,200 km + relativistic corrections
 - Model's own "Open Problems" (OPEN-001, 003, 007) concede it can't function without WGS84
 
-### Repository Source Code Findings (Part 4.6)
+### Repository Source Code Findings (Part 2b)
 All 67 WINs now have code_analysis tags (reviewed by curmudgeon). Counts are computed from wins.json at build time — query with:
 `node -e "const w=JSON.parse(require('fs').readFileSync('data/wins.json','utf8'));const t={h:0,l:0,n:0,r:0,p:0,d:0};w.forEach(x=>{if(!x.code_analysis)return;if(x.code_analysis.monitoring==='hardcoded')t.h++;if(x.code_analysis.monitoring==='live_fetch')t.l++;if(x.code_analysis.monitoring==='none')t.n++;if(x.code_analysis.relabels_standard)t.r++;if(x.code_analysis.post_hoc)t.p++;if(x.code_analysis.derives_from_dome)t.d++});console.log(t)"`
 - **Monitoring illusion**: Majority use hardcoded pred=obs checks; minority fetch live data
@@ -253,8 +253,8 @@ All 67 WINs now have code_analysis tags (reviewed by curmudgeon). Counts are com
 
 ## Known Technical Issues
 
-### Prose Sections (sections.json — V5.0 source of truth)
-All 11 prose sections live in `data/sections.json`. The HTML build reads sections.json via `renderSectionFromJson()` and injects computed values via `{{PLACEHOLDER}}` tokens (24 total). The build fails loudly if sections.json is missing — git is the recovery path.
+### Prose Sections (sections.json — V6.0 source of truth)
+All 13 prose sections (parts 1–10 including 1b and 2b) live in `data/sections.json`. The HTML build reads sections.json via `renderSectionFromJson()` and injects computed values via `{{PLACEHOLDER}}` tokens (24 total). The build fails loudly if sections.json is missing — git is the recovery path.
 
 `apply-patches.js` routes patches to either `wins.json` or `sections.json` based on the `file` field. This makes prose patchable by the decider pipeline (previously impossible with hardcoded HTML in generate-html.js).
 
@@ -312,6 +312,7 @@ All 11 prose sections live in `data/sections.json`. The HTML build reads section
 | V4.9.7 | 2abb55d | Prose extraction: 11 sections from generate-html.js → data/sections.json with {{PLACEHOLDER}} tokens. 2017 tests. |
 | V4.9.8 | 9755573–0e01a5f | WIN-012→Self-Contradicted. WIN-054→Not Demonstrated. Holistic Phase 2 patches (tone, cross-refs, taxonomy). 16 code_analysis tag corrections. Expansion integration pipeline. Human notes system. Globe fingerprint hunt (Mode 3). 94 issues flushed to closed. |
 | V5.0 | 6e68d56 | sections.json is sole prose source of truth (50% line reduction in generate-html.js). HTML→PDF via Playwright replaces DOCX→LibreOffice chain. Removed build-doc-v4.js, adm-zip, docx dependencies. 7 cross-ref fixes in sections.json. Print CSS for PDF layout. |
+| V6.0 | 6b3e4a0 | Major restructure: tabs reordered (Self-Contradictions after The Model), kill shots extracted to own tab, all sections renumbered 1-10. Placeholder-based renumbering script. Translation map at `monitor/v6-restructure-map.json` for backward compat. |
 
 ## Analyst Modes
 
