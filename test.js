@@ -71,14 +71,21 @@ try {
 }
 
 assert(Array.isArray(wins), 'wins.json is an array');
-assert(wins.length === 67, `wins.json has 67 entries (got ${wins.length})`);
+assert(wins.length >= 67, `wins.json has at least 67 entries (got ${wins.length})`);
 
-// Check sequential IDs
+// Check IDs: sequential 001–067 required, plus optional sub-IDs (e.g., "058b")
+// for dome-site numbering collisions where one WIN number maps to two different claims
 const ids = wins.map(w => w.id);
-for (let i = 0; i < wins.length; i++) {
+const baseIds = ids.filter(id => /^\d{3}$/.test(id));
+const subIds = ids.filter(id => /^\d{3}[a-z]$/.test(id));
+for (let i = 0; i < 67; i++) {
   const expected = String(i + 1).padStart(3, '0');
-  assert(wins[i].id === expected, `WIN-${expected} has correct sequential ID`);
+  assert(baseIds.includes(expected), `WIN-${expected} exists in wins.json`);
 }
+subIds.forEach(id => {
+  const base = id.slice(0, 3);
+  assert(baseIds.includes(base), `Sub-ID WIN-${id} has a matching base WIN-${base}`);
+});
 
 // Check no duplicate IDs
 const uniqueIds = new Set(ids);
