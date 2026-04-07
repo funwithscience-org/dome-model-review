@@ -48,7 +48,7 @@ All WIN data lives in `data/wins.json` and prose in `data/sections.json` (single
 
 ## Key Finding
 
-Of 67 claimed wins: 9 refuted by data, 13 self-contradicted by the dome's own geometry, 16 explained by standard physics, 22 misleading, 3 not demonstrated, 4 unfalsifiable. Zero survive scrutiny.
+Every one of the 67 claimed wins falls into one of six categories: refuted by data, self-contradicted by the dome's own geometry, already explained by standard physics, misleading, not demonstrated, or unfalsifiable. Zero survive scrutiny. Run `node -e "const w=JSON.parse(require('fs').readFileSync('data/wins.json','utf8'));const c={};w.forEach(x=>c[x.verdict]=(c[x.verdict]||0)+1);console.log(c)"` for current tallies.
 
 ## AI Continuity
 

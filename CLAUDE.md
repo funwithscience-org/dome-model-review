@@ -30,7 +30,7 @@ Requires: Node.js, Playwright (for HTML→PDF via headless Chromium)
 
 The workspace mount (`/mnt/dome-model-review/`) uses a FUSE filesystem that **does not support `unlink()`**. This means git cannot `reset`, `checkout`, `pull`, or `commit` there — any operation that needs to delete-then-replace a file fails with "Operation not permitted." Lock files (`.git/index.lock`) also become undeletable once created.
 
-**Consequence:** All git operations (commit, push, pull) must happen in a **clean clone** on the normal filesystem (`/sessions/.../dome-review-clean/`). The workspace is read-only for git but read-write for direct file copies.
+**Consequence:** All git operations (commit, push, pull) must happen in a **clean clone** on the normal filesystem. The workspace is read-only for git but read-write for direct file copies.
 
 **How it works:**
 - Edit and build in the clean clone
@@ -39,6 +39,29 @@ The workspace mount (`/mnt/dome-model-review/`) uses a FUSE filesystem that **do
 - Agent prompt files live in `monitor/prompts/` in the workspace — edit them there directly
 
 **If the workspace falls out of sync**, `build.js publish` will fix it on next push. To manually sync: `cp` the files from the clean clone to the workspace.
+
+### Session Setup (for new AI sessions)
+
+Each Cowork session gets a unique path like `/sessions/<session-name>/`. The workspace mount is at `/sessions/<session-name>/mnt/dome-model-review/`. Because git doesn't work on the FUSE mount, you need a clean clone on the normal filesystem. **Run this at the start of every new session:**
+
+```bash
+# 1. Identify your session path
+SESSION=$(pwd | grep -oP '/sessions/[^/]+')
+
+# 2. Clone the repo to the normal filesystem
+git clone https://github.com/funwithscience-org/dome-model-review.git ${SESSION}/dome-review-clean
+cd ${SESSION}/dome-review-clean
+npm install
+
+# 3. Update the workspace sync path in build.js to match this session
+#    (search for the old session name and replace with current)
+sed -i "s|/sessions/[^/]*/mnt/dome-model-review|${SESSION}/mnt/dome-model-review|" build.js
+
+# 4. Verify
+node build.js html && node test.js
+```
+
+The workspace mount path and clean clone path are the two key paths. Everything else (agents, prompts, build pipeline) flows from these. If you see a hardcoded session path anywhere (e.g. in `build.js`), update it to the current session.
 
 ### File Map
 
