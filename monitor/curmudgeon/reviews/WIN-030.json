@@ -1,0 +1,57 @@
+{
+  "point_id": "WIN-030",
+  "topic": "Elliptical disc geometry V5-V9",
+  "reviewed_at": "2026-04-06T22:15:00Z",
+  "cycle": 1,
+  "current_verdict_holds": true,
+  "confidence": 0.82,
+  "our_argument_summary": "Our review classifies WIN-030 as Misleading with the argument that adding free parameters (elliptical axis ratio, orientation) always reduces residuals by definition. We state that AIC/BIC model comparison is required to distinguish genuine improvement from overfitting, and no such comparison is presented.",
+  "dome_code_analysis": {
+    "relevant_files": [
+      "generate_advanced_map_v2.py (hardcoded a=20015, b=15000, orient=60°)",
+      "test_curve_stretching.py (ellipse test uses sqrt(1-(r/R)²) — semicircle, not true ellipse)",
+      "find_curve.py (8 cities, WGS84 distances, no ellipse comparison)",
+      "build_complete_api.py (disc_shape: ellipse, parameters marked 'approximate — V10 refinement in progress')"
+    ],
+    "calculation_pipeline": "No pipeline exists that computes the 48.6% RMS reduction. The map generation scripts (generate_advanced_map_v2.py) hardcode the ellipse parameters a=20015, b=15000, orient_deg=60 for visualization only. test_curve_stretching.py includes an 'Ellipse' test curve but implements sqrt(1-(r/R)²) which is a semicircular cross-section, not an elliptical disc boundary. find_curve.py computes dome-to-WGS84 distance errors for 8 city pairs using r=(90-lat)*111.1, with no elliptical correction applied. There is no script that: (a) computes distances under circular geometry, (b) computes distances under elliptical geometry, and (c) compares the RMS errors.",
+    "hardcoded_vs_computed": "All ellipse parameters are hardcoded: a=20015, b=15000, orient=60°. The b/a ratio is listed as 0.70-0.90 'converging' across V5-V9, but no convergence script or optimization routine exists in the repository. The 48.6% RMS reduction figure appears only in the HTML/text descriptions and is never computed by any script.",
+    "data_sources_used": ["WGS84 reference distances between 8 city pairs (hardcoded in find_curve.py)"],
+    "escape_clauses": "OPEN-003 ('Ellipse parameters still converging') provides an indefinite escape clause — the ellipse can always be retuned when errors are found, because the parameters are explicitly declared unsettled.",
+    "our_code_claims_accurate": true,
+    "code_discrepancies": "Our review does not specifically mention the code analysis for WIN-030, so there are no inaccurate code claims. However, we also miss the opportunity to point out that the 48.6% figure has no computational backing in the repository."
+  },
+  "holes_found": [
+    {
+      "severity": "moderate",
+      "description": "Our AIC/BIC argument is correct but generic and easily deflected. A defender could argue: 'A 48.6% RMS reduction with only 3 additional parameters (a, b, orientation) over a sample of inter-city distances is so large that AIC/BIC would clearly favor the ellipse.' This is a reasonable counterargument for large effect sizes. Our review doesn't address WHY the improvement is so large (if it's real), which is actually the most interesting question.",
+      "recommendation": "Supplement the AIC/BIC argument with the deeper point: the improvement is large BECAUSE the dome is curve-fitting to WGS84 globe-derived coordinates. The ellipse isn't discovering the shape of a flat disc — it's absorbing the systematic distortion that results from projecting a sphere onto a plane. This reframes the argument from 'did you use the right statistical test?' to 'what is your ellipse actually fitting?'"
+    },
+    {
+      "severity": "moderate",
+      "description": "Our review doesn't mention that the 48.6% RMS figure is unverifiable — no script in the repository computes it. This is a concrete, checkable claim we should be making, consistent with our approach to the 95.2% accuracy figure (which we traced to hardcoded HTML).",
+      "recommendation": "Add a sentence noting that the 48.6% figure, like the 95.2% accuracy, cannot be reproduced from any script in the repository. The claim appears only in descriptive text."
+    },
+    {
+      "severity": "minor",
+      "description": "Our detail_evidence cites Burnham & Anderson (2002) for AIC/BIC via a DOI link, which is a solid reference. However, we don't explain what AIC/BIC would actually show in this case — we just say 'you need it.' A critic could say we're hand-waving.",
+      "recommendation": "Optionally add a brief note: with N city pairs and 3 additional parameters, AIC would penalize the ellipse by 2×3=6 units. Whether the ellipse still wins depends entirely on the sample size and the actual log-likelihood improvement — none of which are reported."
+    }
+  ],
+  "stronger_arguments": [
+    {
+      "description": "The deepest problem with WIN-030 is not statistical methodology but circular reasoning. The dome model's distances are computed from WGS84 coordinates (latitude/longitude). WGS84 is an oblate spheroid reference frame. When the circular flat disc fails to reproduce WGS84 distances (especially in the southern hemisphere where azimuthal equidistant projection distortion is worst), the dome adds an elliptical correction. But this elliptical correction is being fitted to globe-derived data using globe-derived coordinates. The 'improvement' is the dome model learning the globe's shape through iterative curve-fitting. The dome's own OPEN-001 ('dome-native coordinates without WGS84') concedes this dependency.",
+      "sources": ["Dome raw-text/05-model.txt: OPEN-001 and OPEN-003", "find_curve.py: uses WGS84 distances as ground truth", "Dome evolution notes: 'v22 found circular disc fails on southern distances'"]
+    },
+    {
+      "description": "The b/a ratio range of 0.70-0.90 across versions V5-V9 represents a 29% variation in a supposedly physical parameter. If the disc's shape is a physical fact, b/a should converge to a specific value as measurement precision improves. Instead, the 'convergence' spans nearly the entire range between a narrow ellipse and a near-circle. Compare: the WGS84 ellipsoid's flattening is f=1/298.257, meaning b/a=0.99664 — essentially circular. The dome needs b/a=0.75 (central estimate), an eccentricity 75× more extreme than the actual Earth, because it's compensating for projection distortion, not measuring a physical shape.",
+      "sources": ["WGS84 reference: a=6378.137 km, b=6356.752 km, f=1/298.257223563", "Dome model: a=20015, b=15000, b/a≈0.75"]
+    },
+    {
+      "description": "The claim 'never reversed' across V5-V9 is presented as evidence of robustness, but it's trivially expected. Once you add free parameters that improve fit, they will ALWAYS continue to improve fit in subsequent versions (unless the optimizer is reset). The ellipse subsumes the circle as a special case (b/a=1). Saying 'the ellipse was never worse than the circle' is like saying 'a quadratic fit was never worse than a linear fit' — it's mathematically guaranteed, not empirically meaningful.",
+      "sources": ["Basic model selection theory — nested models always have equal or better fit"]
+    }
+  ],
+  "kernel_of_truth": "The dome model genuinely identified a real problem: a circular azimuthal equidistant projection produces systematic distance errors that grow with latitude, especially in the southern hemisphere. This is a well-known cartographic fact — the azimuthal equidistant projection centered on the North Pole increasingly distorts distances and areas as you move toward the 'rim' (South Pole region). The dome's 'elliptical correction' is a legitimate empirical observation that the circular projection isn't working. Where the dome goes wrong is in interpreting this as evidence that the physical disc is elliptical, rather than recognizing that the errors arise because the Earth isn't flat. The correction is absorbing globe geometry, not revealing disc geometry.",
+  "recommended_action": "minor_edit",
+  "deeper_analysis": "WIN-030 claims that switching from a circular to an elliptical disc geometry produced a 48.6% RMS reduction in distance errors, sustained across coordinate versions V5 through V9. Our review's current rebuttal — that AIC/BIC is required to validate adding parameters — is technically correct but misses the deeper story and may appear dismissive to a careful reader.\n\nThe most significant finding from the code analysis is that the 48.6% RMS figure cannot be reproduced from any script in the dome's GitHub repository. The map generation scripts (generate_advanced_map_v2.py) hardcode the ellipse parameters a=20015 km, b=15000 km, orient=60° for visualization purposes only. test_curve_stretching.py includes an 'Ellipse' test but implements sqrt(1-(r/R)²), which is a semicircular cross-section profile, not an elliptical disc boundary comparison. find_curve.py computes dome distance errors for 8 city pairs but applies no elliptical correction. No script performs the circular-vs-elliptical RMS comparison that would produce the claimed 48.6% figure. This parallels our finding about the 95.2% accuracy figure — another unreproducible number.\n\nThe stronger argument our review should make is about what the ellipse is actually fitting. The dome's distances are computed from WGS84 coordinates — a globe-based reference frame. When a circular flat disc produces distance errors (especially for southern hemisphere and cross-equator routes), the dome adds an elliptical correction with 3 free parameters. But this correction is being trained against globe-derived distances. The 'discovery' that the disc needs to be elliptical is really the dome model detecting the systematic distortion inherent in flattening a sphere. The dome's own OPEN-001 ('dome-native coordinates without WGS84') and OPEN-003 ('ellipse parameters still converging') tacitly concede this circularity. The b/a ratio wandering from 0.70 to 0.90 across five versions is not convergence — it's a fitting parameter absorbing whatever residual the current version's other corrections haven't handled.\n\nThe kernel of truth worth acknowledging is that the dome model correctly identified that a simple azimuthal equidistant projection (circular, centered on the pole) fails for southern hemisphere distances. This is a genuine cartographic fact, well-documented in projection theory. The insight that error structure is systematic (not random) and grows with distance from the center is real. But this systematic error pattern is exactly what you'd predict if the underlying surface is spherical, not flat. The dome's elliptical 'fix' is the model inadvertently confirming the globe — it needs an ever-more-complex flat projection to approximate what spherical geometry handles naturally with zero free shape parameters.\n\nFinally, the 'never reversed' claim deserves scrutiny. An ellipse with free axis ratio and orientation is a strict superset of a circle (which is just the special case b/a=1). Mathematically, adding parameters to a nested model can never increase the minimum achievable residual. Saying the ellipse 'never reversed' is equivalent to saying a quadratic regression never performed worse than a linear one — true by construction, not by empirical validation."
+}
