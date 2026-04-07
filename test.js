@@ -323,13 +323,13 @@ if (fs.existsSync(SECTIONS_PATH)) {
 
     // Expected sections (all must be present)
     const EXPECTED_SECTIONS = [
-      'part1', 'part1b', 'part2', 'part3', 'part3b',
-      'part4', 'part4b', 'part4c', 'part5', 'part6', 'part7'
+      'part1', 'part1b', 'part2', 'part2b', 'part3', 'part4',
+      'part5', 'part6', 'part7', 'part8', 'part9', 'part10'
     ];
 
     const VALID_TABS = [
-      'overview', 'evaluate', 'wins', 'pages', 'predictions',
-      'falsify', 'selftest', 'code', 'ai', 'refs'
+      'overview', 'evaluate', 'model', 'wins', 'pages', 'killshots',
+      'predictions', 'falsify', 'selftest', 'ai', 'refs'
     ];
 
     // _meta is optional but skip it in section checks
@@ -394,16 +394,17 @@ if (html) {
   // Every expected Part heading should appear in the HTML
   const EXPECTED_PARTS = [
     { id: 'part1', pattern: 'Part 1' },
-    { id: 'part1b', pattern: 'Part 1.5' },
+    { id: 'part1b', pattern: 'Part 1b' },
     { id: 'part2', pattern: 'Part 2' },
+    { id: 'part2b', pattern: 'Part 2b' },
     { id: 'part3', pattern: 'Part 3' },
-    { id: 'part3b', pattern: 'Part 3.5' },
     { id: 'part4', pattern: 'Part 4' },
-    { id: 'part4b', pattern: 'Part 4.5' },
-    { id: 'part4c', pattern: 'Part 4.6' },
     { id: 'part5', pattern: 'Part 5' },
     { id: 'part6', pattern: 'Part 6' },
     { id: 'part7', pattern: 'Part 7' },
+    { id: 'part8', pattern: 'Part 8' },
+    { id: 'part9', pattern: 'Part 9' },
+    { id: 'part10', pattern: 'Part 10' },
   ];
 
   for (const part of EXPECTED_PARTS) {
@@ -437,11 +438,11 @@ if (html) {
   // If any of these disappear, prose was likely truncated or dropped
   const CANARY_PHRASES = [
     'Schumann resonance',           // Part 1 / WIN-002
-    'H(r)',                         // firmament height function (Part 4.5)
-    'monitor.py',                   // code analysis (Part 4.6)
-    'inject_ai_layer',              // AI steering (Part 5)
-    'falsification',                 // methodology (Part 4)
-    'kill-shot',                    // Part 4 kill shots
+    'H(r)',                         // firmament height function (Part 2)
+    'monitor.py',                   // code analysis (Part 2b)
+    'inject_ai_layer',              // AI steering (Part 8)
+    'falsification',                 // methodology (Part 7)
+    'kill-shot',                    // Part 5 kill shots
     '95.2%',                        // accuracy claim discussion
     'aetheric',                     // dome model terminology
     'self-contradict',              // key verdict category discussion
