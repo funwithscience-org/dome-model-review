@@ -47,7 +47,19 @@ For each chain, check:
 - **Is there data being produced that nobody consumes?** Orphaned outputs indicate a gap in the pipeline design.
 - **Are there fields the producer populates that the consumer ignores?** For example, if the curmudgeon fills `stronger_arguments` but the decider never references them in patches.
 
-### 3. Audit Open Issues — Are They Getting Resolved?
+### 3. Verify Previous Findings — Read the Code, Not Just the Symptoms
+
+If a previous tinker report flagged an issue, **verify whether it's actually fixed by reading the relevant code or data, not by re-checking whether the symptom persists.** Symptoms can lag fixes (e.g., a pipeline needs several runs to flush through a backlog after a code fix). Conversely, symptoms can disappear temporarily while the root cause remains.
+
+For each unresolved finding from the previous report:
+1. **Read the actual source file** mentioned in the suggested fix. Has the code changed? Does it match the fix that was proposed, or was a different fix applied?
+2. **If the code was fixed**, check whether the fix is correct — don't just assume it works because it exists. Trace the logic mentally or check the output.
+3. **If the code was NOT fixed**, re-check the symptom to confirm it still applies, then re-flag with increased urgency.
+4. **Update your `previous_tinker_followup`** with what you found: "FIXED — code at line N now does X" or "STILL BROKEN — code unchanged, symptom persists."
+
+Do NOT carry forward a finding based solely on symptom re-checking. A finding that says "5 files still unprocessed" when the underlying code bug was already fixed is a false alarm that wastes human attention.
+
+### 4. Audit Open Issues — Are They Getting Resolved?
 
 Read `monitor/decisions/open-issues.json` and check:
 - **Age of open issues.** Any issue open for more than 7 days with severity "major" or above is a red flag — either the decider isn't producing patches, or patches aren't being applied.
@@ -55,7 +67,7 @@ Read `monitor/decisions/open-issues.json` and check:
 - **Fixed issues that recur.** If an issue was marked fixed but the same problem reappears in a later integrity or curmudgeon report, the fix didn't stick.
 - **Issues without patches.** Every open issue with a clear fix should have a suggested patch. If the decider is describing problems without providing find/replace text, it's not doing its job.
 
-### 4. Audit Prompt-Config Consistency
+### 5. Audit Prompt-Config Consistency
 
 Check each agent prompt against `monitor/config.json` and the actual file structure:
 - **Stale references.** Do prompts reference files, URLs, repo names, or paths that no longer exist? (Example: a prompt referencing `john09289.github.io` as a repo name when the repo is actually `john09289/predictions`.)
@@ -63,14 +75,14 @@ Check each agent prompt against `monitor/config.json` and the actual file struct
 - **Missing fields.** When new fields are added to `wins.json` (like `code_analysis`), check that all agents that read wins.json know about them. Check that the decider's patch template covers all patchable fields.
 - **Schedule alignment.** Do agent schedules make sense? The decider should run AFTER the integrity agent and curmudgeon have had time to produce fresh data. If integrity runs at 9 AM but the decider runs at 6:30 AM, the decider always sees yesterday's integrity report.
 
-### 5. Audit Schedule Health
+### 6. Audit Schedule Health
 
 Check for signs of schedule problems:
 - **Failed runs.** Look for gaps in output timestamps that suggest missed runs. A curmudgeon that runs every 10 minutes should have ~144 reviews per day; if tracker.json shows only 20 advances in 24 hours, most runs are failing or producing no progress.
 - **Overlapping runs.** If an agent's runtime exceeds its schedule interval (e.g., curmudgeon takes 15 minutes but runs every 10), runs may overlap and corrupt shared state files like tracker.json.
 - **Wasted runs.** If the poller runs every 4 hours but the dome site only changes meaningfully once a week, consider recommending a frequency reduction. Conversely, if the curmudgeon is the bottleneck (67 WINs to review), check if it's making progress at the expected rate.
 
-### 6. State Hygiene — Prevent Accumulation and Drift
+### 7. State Hygiene — Prevent Accumulation and Drift
 
 Check for signs that the pipeline's persistent state is degrading over time:
 
@@ -86,7 +98,7 @@ Check for signs that the pipeline's persistent state is degrading over time:
 
 - **Review staleness for repaint.** If the curmudgeon is in Phase 3 (repaint cycle), check whether the wins.json text has changed since the Phase 1 review. Compare the current `detail_evidence` text length/content against what existed when the review was written (use review timestamps vs git history if available). Flag WINs where the text changed substantially — those need priority re-review, not a rubber stamp.
 
-### 7. Cross-Check Agent Understanding (spot check)
+### 8. Cross-Check Agent Understanding (spot check)
 
 Pick 2-3 recent agent outputs and verify the agent understood its instructions:
 - **Curmudgeon:** Did it review the `claim` and `finding` fields (summary table) alongside the detail block? Did it validate `code_analysis_tags` against actual monitor.py code?
@@ -94,7 +106,7 @@ Pick 2-3 recent agent outputs and verify the agent understood its instructions:
 - **Integrity:** Did it search the entire HTML document for cross-tab anchors, not just the containing tab div?
 - **Poller:** Did it use the correct GitHub API endpoint from config.json?
 
-### 8. Write the Tinker Report
+### 9. Write the Tinker Report
 
 Write to `monitor/tinker/report-YYYY-MM-DDTHH-MM.json` (include hour and minute to avoid overwriting on multiple runs per day):
 
@@ -160,7 +172,7 @@ Write to `monitor/tinker/report-YYYY-MM-DDTHH-MM.json` (include hour and minute 
 }
 ```
 
-### 9. Apply Self-Fixes (Prompt and Config Only)
+### 10. Apply Self-Fixes (Prompt and Config Only)
 
 For issues where `self_fixable` is true AND the fix is low-risk:
 - **Fix stale references** in prompts (wrong URLs, file paths, repo names)
@@ -175,7 +187,7 @@ Do NOT self-fix:
 
 When you apply a self-fix, record it in the report with `fix_applied: true` and the exact change made. This creates an audit trail.
 
-### 10. Write Summary
+### 11. Write Summary
 
 Overwrite `monitor/tinker/latest-tinker-summary.txt` with a human-readable summary of findings and any self-fixes applied.
 
