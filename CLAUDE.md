@@ -280,7 +280,7 @@ All 11 prose sections now live in `data/sections.json` (extracted from generate-
 | V4.4 | 7df2eef | Full toroidal architecture description |
 | V4.5 | 9c4cd2f | Corrected 20-domain independence analysis |
 | V4.6 | 22ae1b1 | Self-consistency analysis (Part 4.5) |
-| V4.7 | 0be5bfa | Self-Contradicted verdict category (11 WINs) |
+| V4.7 | 0be5bfa | Self-Contradicted verdict category (initially 11 WINs) |
 | V4.8 | 1e15195 | Independent adversarial review findings |
 | V4.8.1 | 5cbb8ff | Unified build pipeline, wins.json source of truth |
 | V4.9 | d108833 | Replaced 300,000× tidal force with geometric pattern argument |
