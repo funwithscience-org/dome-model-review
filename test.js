@@ -183,8 +183,11 @@ if (html) {
   }
 
   // Check that the HTML contains the correct total WIN count
-  assert(html.includes(`${wins.length} prediction`),
-    `HTML references ${wins.length} predictions`);
+  // Use base WIN count (3-digit IDs only) — sub-IDs (e.g., "058b") are tracking entries
+  // for dome numbering collisions, not additional dome claims
+  const baseWinCount = wins.filter(w => /^\d{3}$/.test(w.id)).length;
+  assert(html.includes(`${baseWinCount} prediction`),
+    `HTML references ${baseWinCount} predictions`);
 
   // Check each verdict count appears somewhere in HTML
   // The counts appear in various formats: pie chart labels, legend text, table cells, prose

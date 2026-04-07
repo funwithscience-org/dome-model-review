@@ -536,8 +536,11 @@ function main() {
   console.log('Verdict tally:', tally);
 
   // ════ COMPUTED COUNTS (all numbers in prose derive from data) ════
+  // Base WINs = dome's claimed count (3-digit IDs only, e.g., "001"–"067")
+  // Sub-IDs (e.g., "058b") are our tracking entries for dome numbering collisions
+  const baseWins = wins.filter(w => /^\d{3}$/.test(w.id));
   const counts = {
-    total: wins.length,
+    total: baseWins.length,  // dome's claimed count (used in prose as {{TOTAL_WINS}})
     newInV51: wins.filter(w => w.new_in_v51).length,
     // Verdict counts
     refuted: tally['Refuted by Data'] || 0,
