@@ -115,7 +115,7 @@ if (target === 'publish') {
   run('git push origin main', 'Push to GitHub');
 
   // Sync key files to workspace (FUSE mount can't run git, but agents read from there)
-  const workspace = '/sessions/peaceful-gallant-rubin/mnt/dome-model-review';
+  const workspace = '/sessions/optimistic-vibrant-bohr/mnt/dome-model-review';
   if (fs.existsSync(workspace)) {
     console.log('\n⏳ Sync to workspace...');
     const syncFiles = ['data/wins.json', 'docs/index.html', 'build-scripts/generate-html.js', 'build-scripts/build-doc-v4.js', 'CLAUDE.md'];
