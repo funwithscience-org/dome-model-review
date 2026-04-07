@@ -117,11 +117,16 @@ Two sub-tasks per run:
 node -e "const t=JSON.parse(require('fs').readFileSync('monitor/analyst/expansion-tracker.json','utf8'));const s=require('fs').existsSync('data/sections.json');t.items.filter(i=>(i.status==='complete'||i.status==='revised')&&!i.integrated).forEach(i=>console.log(i.id,i.status,i.target.slice(0,60)));if(!s)console.log('WARNING: sections.json does not exist yet')"
 ```
 For each completed/revised expansion that hasn't been integrated:
-1. Read the expansion output file (e.g., `monitor/analyst/expansions/EXP-001.json`) — get the `replacement_html` field
-2. Identify which section in `data/sections.json` it targets (the expansion tracker's `target` field tells you — e.g., "Part 4.3" = `part4`, "Section 4.5.9" = `part4b`)
-3. Write a find/replace patch that swaps the old section text for the analyst's replacement. For full section replacements, find a unique opening string (e.g., the `<h2>` heading) and the closing string, and replace everything between them.
-4. Mark the expansion as `"integrated": true` with an `integrated_at` timestamp in the tracker
-5. **Close the related issues — do NOT skip this.** For each issue ID in the expansion's `issue_ids` array, move it from `open-issues.json` to `closed-issues.json` with `status: "fixed"`, `fixed_at` timestamp, and `fixed_by: "expansion-integration"`. The issue field name is `id` (not `issue_id`). Verify each issue was actually removed from open-issues.json after writing. If you integrated an expansion but didn't close its issues, those issues become zombies — still "assigned-analyst" but already fixed.
+1. Read the expansion output file (e.g., `monitor/analyst/expansions/EXP-001.json`).
+2. **Determine the target type** from the expansion's `target` field and the output file's structure:
+   - **sections.json target** (target mentions "Section", "Part", or a sections.json key like `part4`): Get the `replacement_html` field. Identify which key in `data/sections.json` it targets (e.g., "Part 4.3" = `part4`). Write a find/replace patch that swaps the old section text for the analyst's replacement. For full section replacements, find a unique opening string (e.g., the `<h2>` heading) and the closing string, and replace everything between them.
+   - **wins.json target** (target mentions "WIN-NNN", "detail_evidence", "detail_extra", etc.): The output file may use different structures depending on what the analyst produced:
+     - `replacement_detail_evidence`, `replacement_detail_verdict_text`, etc.: Full field replacements. Write patches with `"file": "wins.json"` that replace the entire field value for the specified WIN.
+     - `insertion_1`, `insertion_2`, etc.: Targeted insertions into existing fields. Each insertion object has `target_file`, `target_field` (e.g., "detail_evidence (WIN-002)"), `location` (describes where to insert — usually "append after..." with a unique anchor string), and `insertion_html` (the HTML to insert). Write patches that find the anchor string in the specified WIN's field and append the insertion HTML after it.
+     - `replacement_html` with a WIN target: Treat as a full replacement of the specified field.
+   - **Route patches correctly.** Patches against wins.json MUST include `"file": "wins.json"` so `apply-patches.js` routes them to the right file. Patches against sections.json use `"file": "sections.json"` (or omit the field, since sections.json is the default).
+3. Mark the expansion as `"integrated": true` with an `integrated_at` timestamp in the tracker.
+4. **Close the related issues — do NOT skip this.** For each issue ID in the expansion's `issue_ids` array, move it from `open-issues.json` to `closed-issues.json` with `status: "fixed"`, `fixed_at` timestamp, and `fixed_by: "expansion-integration"`. The issue field name is `id` (not `issue_id`). Verify each issue was actually removed from open-issues.json after writing. If you integrated an expansion but didn't close its issues, those issues become zombies — still "assigned-analyst" but already fixed.
 
 This is how the analyst's work gets into production. Don't skip any step — a completed expansion sitting in a JSON file helps nobody, and unclosed issues pollute the tracker.
 
