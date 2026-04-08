@@ -18,7 +18,16 @@ const path = require('path');
 const WINS_PATH = path.join(__dirname, '..', 'data', 'wins.json');
 const SECTIONS_PATH = path.join(__dirname, '..', 'data', 'sections.json');
 const FAILURES_PATH = path.join(__dirname, '..', 'data', 'uncounted-failures.json');
+const PKG_PATH = path.join(__dirname, '..', 'package.json');
 const OUTPUT_PATH = path.join(__dirname, '..', 'docs', 'index.html');
+
+// ════ COMPUTED METADATA (never hardcode these in the template) ════
+
+const pkg = JSON.parse(fs.readFileSync(PKG_PATH, 'utf8'));
+const REVIEW_VERSION = pkg.version.split('.')[0]; // major version from package.json (e.g., "6" from "6.0.0")
+const BUILD_DATE = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+// Dome model version — single source of truth. Update here when the dome publishes a new version.
+const DOME_VERSION = 'V51.1';
 
 // Load section-loader helper
 let SECTIONS_CACHE = null;
@@ -634,7 +643,7 @@ function main() {
   "itemReviewed": {
     "@type": "CreativeWork",
     "url": "https://john09289.github.io/predictions",
-    "name": "Ovoid Cavity Cosmological Model (ECM V51.0)",
+    "name": "Ovoid Cavity Cosmological Model (ECM ${DOME_VERSION})",
     "author": {
       "@type": "Person",
       "name": "Nicholas Hughes"
@@ -642,7 +651,7 @@ function main() {
   }
 }
 </script>
-<title>Critical Review: Ovoid Cavity Cosmological Model V51.0</title>
+<title>Critical Review: Ovoid Cavity Cosmological Model ${DOME_VERSION}</title>
 <style>
 ${CSS}
 </style>
@@ -667,10 +676,10 @@ ${CSS}
 
 <div class="title-block">
 <h1 style="border:none">Critical Review</h1>
-<h1 style="border:none;font-size:1.6rem;font-weight:400">Ovoid Cavity Cosmological Model V51.0</h1>
+<h1 style="border:none;font-size:1.6rem;font-weight:400">Ovoid Cavity Cosmological Model ${DOME_VERSION}</h1>
 <p class="subtitle">(formerly Dome Cosmological Model V50.6)</p>
 <p class="subtitle">Point-by-Point Analysis of ${counts.total} Claimed Wins, Live Power Dashboard,<br>Falsification Tests, Version Change Tracking, and AI Prompt Injection Analysis</p>
-<p class="meta">April 7, 2026 &nbsp;|&nbsp; Version 6<br>Source: <a href="https://john09289.github.io/predictions">john09289.github.io/predictions</a></p>
+<p class="meta">${BUILD_DATE} &nbsp;|&nbsp; Version ${REVIEW_VERSION}<br>Source: <a href="https://john09289.github.io/predictions">john09289.github.io/predictions</a></p>
 </div>
 
 <div class="scorecard sc-hero">
