@@ -241,6 +241,35 @@ node -e "const oi=require('./monitor/decisions/open-issues.json'); oi.issues.fil
 - Create issues for ALL holes, then update the processed ledger with the review filename
 - The `backfill-issues.js` script can also be run to batch-create issues: `node build-scripts/backfill-issues.js --workspace .`
 
+**When Cycle 3+ reviews appear — check for surviving defenses:**
+Cycle 3+ reviews include an `advocate_mode` field where the curmudgeon role-played a dome defender. If `advocate_mode.defense_survives >= 3`, that defense is a real vulnerability our text doesn't handle. For each surviving defense:
+
+1. **Create an EXP item** tagged `category: "defense"` in the expansion tracker:
+```bash
+node -e "
+const fs=require('fs');
+const t=JSON.parse(fs.readFileSync('monitor/analyst/expansion-tracker.json','utf8'));
+const nextNum=t.items.length+1;
+t.items.push({
+  id:'EXP-'+String(nextNum).padStart(3,'0'),
+  target:'WIN-NNN defense neutralization — curmudgeon rated N/5',
+  source:'curmudgeon-cycle3-advocate',
+  curmudgeon_review:'monitor/curmudgeon/reviews/WIN-NNN.c3.json',
+  issue_ids:['ISS-NNN'],
+  category:'defense',
+  priority: /* 3→medium, 4→high, 5→critical */ 'high',
+  status:'pending',
+  notes:'Surviving defense: [brief description]. Curmudgeon rating: N/5. Analyst neutralizes via Mode 3.',
+  created_at:new Date().toISOString()
+});
+fs.writeFileSync('monitor/analyst/expansion-tracker.json',JSON.stringify(t,null,2));
+"
+```
+2. **Create an open issue** with `category: "defense"` linking to the EXP item.
+3. **Priority mapping:** rating 3 → severity moderate, 4 → major, 5 → critical.
+
+The analyst picks these up in Mode 3 (Surviving Defense Neutralization), which runs before the fingerprint hunt but after expansions and human notes. Don't yeet these to the expansion queue as generic prose rewrites — they need the `category: "defense"` tag so the analyst knows to apply the defense neutralization procedure (compute, don't argue; preempt, don't rebut).
+
 **Moving fixed issues to archive.** When you self-apply patches (Step 6b) and they pass tests + publish, close those issues yourself — move them from `open-issues.json` to `closed-issues.json` with `status: "fixed"` and `fixed_by: "decider-self-apply"`. For verdict-change patches you can't self-apply, mark those issues `status: "pending-human"` so they're clearly flagged for manual review.
 
 **Assigning issues to the analyst ("yeet to analyst").** Some issues need substantive rewriting — expanding a 100-word section to 500+ words, reframing an argument that strawmans the dome, adding evidence from primary sources. You can't do this with find/replace patches. When you encounter an issue like this:

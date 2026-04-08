@@ -70,10 +70,11 @@ Many status changes are AUTOMATED by monitor.py — not deliberate author decisi
 **Modes are checked in strict priority order. Higher-priority modes preempt lower ones.**
 
 1. **Mode 0: New WIN Onboarding** — dome has WINs we don't. TOP PRIORITY. Our count must match theirs and every claim must have a debunk. Nothing else matters until this is done.
-2. **Mode 1: Section Expansion Queue** — pending expansions from the decider.
+2. **Mode 1: Section Expansion Queue** — pending expansions from the decider (includes steelman category work tagged `category: "steelman"`).
 3. **Mode 2: Human Notes** — pending notes from the human editor.
-4. **Mode 3: Globe Fingerprint Hunt + Defense Neutralization** — idle background work.
-5. **Normal: Dome site change analysis** — poller-flagged changes.
+4. **Mode 3: Surviving Defense Neutralization** — curmudgeon Cycle 3+ found defenses rated 3+ that our text can't handle. These are EXP items tagged `category: "defense"` — the decider creates them when processing Cycle 3 reviews. Higher priority than fingerprints because a surviving defense means a real rhetorical vulnerability.
+5. **Mode 4: Globe Fingerprint Hunt** — idle background work when nothing else is pending.
+6. **Normal: Dome site change analysis** — poller-flagged changes (runs after mode checks).
 
 ## Step-by-Step Procedure
 
@@ -412,9 +413,20 @@ Each item in the tracker references a curmudgeon review that found major weaknes
 - **Match the tone and depth** of our best sections (Kill-Shot #1 is the gold standard at ~1,500 words with numerical analysis and anticipated objections).
 - **Cross-reference other sections** where relevant (e.g., link to Section 4.9 for refraction discussion).
 
-## Mode 3: Globe Fingerprint Hunt (idle work, was Mode 3)
+## Mode 3: Surviving Defense Neutralization
 
-**Priority: LOW.** Only work this queue when there are NO pending expansions (Mode 2), NO pending human notes, and NO dome site changes to analyze. This is background work for when you'd otherwise have nothing to do.
+**Priority: MEDIUM.** Check this after expansions and human notes, but before fingerprints. The decider creates EXP items tagged `category: "defense"` when it processes curmudgeon Cycle 3+ reviews with `advocate_mode.defense_survives >= 3`. These represent real rhetorical vulnerabilities — a smart dome defender could use them to dismiss our review.
+
+```bash
+# Check for pending defense neutralization work
+node -e "const t=JSON.parse(require('fs').readFileSync('monitor/analyst/expansion-tracker.json','utf8'));const d=t.items.filter(i=>i.category==='defense'&&i.status==='pending');console.log(d.length?'DEFENSE MODE: '+d.length+' surviving defenses to neutralize':'NO PENDING DEFENSES')"
+```
+
+If defenses are pending, work **one per run** using the procedure from Mode 3b below (research the counter, compute don't argue, preempt don't rebut). Write output to `monitor/analyst/expansions/DEF-NNN.json`. Then continue to check for other work.
+
+## Mode 4: Globe Fingerprint Hunt (idle work)
+
+**Priority: LOW.** Only work this queue when there are NO pending expansions (Mode 1), NO pending defenses (Mode 3), NO pending human notes, and NO dome site changes to analyze. This is background work for when you'd otherwise have nothing to do.
 
 Check the queue:
 ```bash
@@ -520,11 +532,11 @@ If you find something significant (a new globe fingerprint not already noted in 
 
 If nothing found for either analysis, just mark reviewed in the tracker and move on. Not every item will have a fingerprint or a surviving defense — some WINs are purely theological, some sections are methodology that doesn't invoke dome parameters. That's fine. The section-level items are often richer hunting ground than individual WINs because they contain our aggregate arguments, derived statistics, and cross-references where globe assumptions can hide in plain sight.
 
-### Mode 3b: Advocate Defense Neutralization (combined with fingerprint pass)
+### Mode 3/4 combined: Advocate Defense Neutralization procedure
 
-Starting in Curmudgeon Cycle 3, each review includes an `advocate_mode` field where the curmudgeon role-plays a dome defender, constructs the strongest possible rebuttal, and rates it 1–5 (1 = trivially refuted, 5 = requires a text change). **As part of your Mode 3 pass on each item**, also check for Cycle 3+ curmudgeon reviews with surviving defenses (rated 3+).
+Starting in Curmudgeon Cycle 3, each review includes an `advocate_mode` field where the curmudgeon role-plays a dome defender, constructs the strongest possible rebuttal, and rates it 1–5 (1 = trivially refuted, 5 = requires a text change). The **decider** creates EXP items tagged `category: "defense"` for any rated 3+, which you pick up in Mode 3. When doing a Mode 4 fingerprint pass, also check for Cycle 3+ reviews on that item as a bonus.
 
-When you pick up a Mode 3 item, do both analyses in one pass:
+When you pick up a Mode 4 fingerprint item, do both analyses if a Cycle 3+ review exists:
 1. Globe fingerprint hunt (as above)
 2. Check if a Cycle 3+ curmudgeon review exists for this item with `advocate_mode.defense_survives >= 3`
 
