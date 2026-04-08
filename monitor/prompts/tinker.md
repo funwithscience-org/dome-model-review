@@ -15,10 +15,11 @@ You maintain the monitoring pipeline for the "Ovoid Cavity Cosmological Model" (
 | Agent | Prompt | Schedule | Key Outputs |
 |-------|--------|----------|-------------|
 | Poller | `monitor/prompts/poller.md` | Every 4h | `monitor/changes/latest-poll-summary.txt`, `monitor/changes/*.json`, `monitor/status.json` |
-| Analyst | `monitor/prompts/analyst.md` | Every 8h | `monitor/analysis/latest-analysis-summary.txt`, `monitor/external-reports/*.json` |
-| Curmudgeon | `monitor/prompts/curmudgeon.md` | Every 15min | `monitor/curmudgeon/reviews/WIN-*.json`, `monitor/curmudgeon/tracker.json`, `monitor/curmudgeon/alerts.txt` |
-| Decider | `monitor/prompts/decider.md` | Daily 6:30 AM | `monitor/decisions/open-issues.json`, `monitor/decisions/suggested-patches-*.json`, `monitor/decisions/daily-report-*.json` |
+| Analyst | `monitor/prompts/analyst.md` | Every 4h | `monitor/analysis/latest-analysis-summary.txt`, `monitor/external-reports/*.json` |
+| Curmudgeon | `monitor/prompts/curmudgeon.md` | Every 4h | `monitor/curmudgeon/reviews/WIN-*.json`, `monitor/curmudgeon/tracker.json`, `monitor/curmudgeon/alerts.txt` |
+| Decider | `monitor/prompts/decider.md` | Every 4h | `monitor/decisions/open-issues.json`, `monitor/decisions/suggested-patches-*.json`, `monitor/decisions/daily-report-*.json` |
 | Integrity | `monitor/prompts/structure-integrity.md` | Daily 9 AM | `monitor/integrity/report-*.json`, `monitor/integrity/alerts.txt` |
+| Social | `monitor/prompts/social.md` | Daily 11 AM | `monitor/social/report-*.json`, `monitor/social/search-rankings.json`, `monitor/social/discoverability-baseline.json` |
 
 ## Step-by-Step Procedure
 
@@ -102,9 +103,69 @@ Check for signs that the pipeline's persistent state is degrading over time:
 
 - **Review staleness for repaint.** If the curmudgeon is in Phase 3 (repaint cycle), check whether the wins.json text has changed since the Phase 1 review. Compare the current `detail_evidence` text length/content against what existed when the review was written (use review timestamps vs git history if available). Flag WINs where the text changed substantially — those need priority re-review, not a rubber stamp.
 
-### 8. Cross-Check Agent Understanding (spot check)
+### 8. Audit Agent Infrastructure — Can They Actually Do Their Jobs?
 
-Pick 2-3 recent agent outputs and verify the agent understood its instructions:
+Agents fail silently when they lack access to tools they need. Check these every run:
+
+**8a. Git authentication health:**
+The decider and (formerly) analyst need to push to GitHub. The PAT is extracted from the workspace git remote URL. Verify:
+```bash
+WORKSPACE=$(find /sessions/*/mnt/dome-model-review -maxdepth 0 2>/dev/null | head -1)
+AUTH_URL=$(git -C "${WORKSPACE}" remote get-url origin 2>/dev/null)
+TOKEN=$(echo "$AUTH_URL" | grep -oP 'x-access-token:\K[^@]+')
+if [ -n "$TOKEN" ]; then
+  echo "PAT found (${#TOKEN} chars)"
+  # Verify it actually works
+  curl -s -o /dev/null -w "%{http_code}" -H "Authorization: token $TOKEN" "https://api.github.com/repos/funwithscience-org/dome-model-review" 
+else
+  echo "CRITICAL: No PAT in workspace git config"
+fi
+```
+If the PAT is missing or returns non-200, flag as **critical** — the decider can't push, and no agent can check GitHub issues. Check recent decider reports for push failures ("fatal: Authentication failed", "403", "could not push").
+
+**8b. GitHub issue visibility:**
+The analyst checks for external problem reports via GitHub issues. Verify this is actually working:
+- Check `monitor/external-reports/` — are there any report files? If the repo has open issues but this directory is empty, the analyst can't see GitHub.
+- Run the same `gh` auth or curl check the analyst would run and verify it returns issue data.
+- Cross-reference: count open GitHub issues vs logged external reports. Any gap = broken pipeline.
+
+**8c. Inline code correctness in prompts:**
+Agent prompts contain bash/node one-liners that can have subtle bugs (wrong field names, missing quotes, incorrect paths). For each prompt, scan for inline code blocks and spot-check:
+- **Field name consistency**: If a code block references `i.issue_id`, verify that's the actual field name in the JSON it reads. Check the source file schema. Common bug: `i.id` vs `i.issue_id` vs `i.win_id`.
+- **File path validity**: If a code block reads `monitor/decisions/open-issues.json`, verify that file exists and has the expected structure.
+- **Command availability**: If a prompt uses `gh`, verify the prompt also has the auth setup step. If it uses `node`, verify the working directory has node_modules.
+
+Don't exhaustively check every line — pick 2-3 code blocks per prompt per run and verify them. Rotate which blocks you check across runs.
+
+**8d. Agent error patterns in recent outputs:**
+Search recent agent outputs for common failure signatures:
+- `"gh: command not found"` or `"gh CLI not available"` — missing gh auth setup
+- `"fatal: Authentication failed"` or `"403"` — PAT expired or insufficient scope
+- `"Operation not permitted"` — FUSE filesystem issue (agent trying to git on workspace mount)
+- `"ENOENT"` or `"file not found"` — stale path reference
+- `"-1"` as a count value — agent couldn't fetch data and used a placeholder
+
+```bash
+# Quick scan for error patterns across recent outputs
+grep -ri "command not found\|Authentication failed\|Operation not permitted\|ENOENT\|gh CLI not available\|403\|: -1[,}]" monitor/decisions/daily-report-*.json monitor/social/report-*.json monitor/analysis/*.json monitor/tinker/report-*.json 2>/dev/null | tail -20
+```
+
+Also scan for **agents complaining in natural language** — these are softer signals but equally important:
+- `"not available"`, `"unavailable"`, `"could not"`, `"unable to"`, `"failed to"`, `"WARNING"`, `"fallback"`
+- `"push fail"`, `"clone fail"`, `"auth"`, `"permission"`, `"token"`
+- `"skipping"`, `"cannot check"`, `"not accessible"`
+- Check the decider's `pipeline_bugs` field in status.json — agents sometimes self-report bugs there
+
+```bash
+# Scan for agent complaints (natural language)
+grep -ri "not available\|unavailable\|could not\|unable to\|failed to\|WARNING\|fallback\|push fail\|cannot check\|not accessible\|skipping" monitor/decisions/daily-report-*.json monitor/social/report-*.json monitor/analysis/*.json 2>/dev/null | grep -v "node_modules" | tail -20
+```
+
+If you find patterns, trace them back to root cause and propose fixes. A `-1` in a social report's `github_activity.forks` means the agent couldn't query GitHub — that's a gh auth issue, not a data issue. An analyst writing "GitHub CLI unavailable — could not check external reports" for 5 consecutive runs means the auth step is missing or broken — that's a prompt fix, not a transient error.
+
+### 9. Cross-Check Agent Understanding (spot check)
+
+Pick 2-3 recent agent outputs and verify the agent understood its instructions (rotate which agents you check each run):
 - **Curmudgeon:** Did it review the `claim` and `finding` fields (summary table) alongside the detail block? Did it validate `code_analysis_tags` against actual monitor.py code?
 - **Decider:** Did it produce patches for ALL open issues, not just highlights? Did it check whether curmudgeon findings affect summary-table text? Did it produce patches targeting the correct files (wins.json for WIN fields, sections.json for prose)? Patches should NEVER target generate-html.js or build-doc-v4.js.
 - **Integrity:** Did it search the entire HTML document for cross-tab anchors, not just the containing tab div?
@@ -176,12 +237,14 @@ Write to `monitor/tinker/report-YYYY-MM-DDTHH-MM.json` (include hour and minute 
 }
 ```
 
-### 10. Apply Self-Fixes (Prompt and Config Only)
+### 10. Apply Self-Fixes (Prompt and Config Only — INCLUDING Inline Code Bugs)
 
 For issues where `self_fixable` is true AND the fix is low-risk:
 - **Fix stale references** in prompts (wrong URLs, file paths, repo names)
 - **Fix config.json** entries that don't match reality
 - **Add missing fields** to prompt schemas that have drifted
+- **Fix inline code bugs** in prompts — wrong field names, missing quotes, incorrect paths in bash/node one-liners. These are the most insidious failures because the agent silently gets wrong results. If you verified a field name mismatch in step 8c, fix it.
+- **Add missing auth setup** — if a prompt uses `gh` but doesn't have the PAT extraction step, add it (copy the pattern from the decider or social prompt)
 
 Do NOT self-fix:
 - Changes to `data/wins.json` or review content (that's the decider's job)
