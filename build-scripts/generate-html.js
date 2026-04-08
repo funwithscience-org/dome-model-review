@@ -602,6 +602,46 @@ function main() {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Independent scientific review of every prediction claimed by the Ovoid Cavity Cosmological Model (ECM dome model). ${counts.total} claims evaluated — 0 survive scrutiny.">
+<meta name="keywords" content="ovoid cavity cosmological model, dome model, ECM, flat earth predictions, critical review, scientific review, dome model review, firmament resonance, aetheric medium">
+<meta property="og:title" content="Critical Review: Ovoid Cavity Cosmological Model">
+<meta property="og:description" content="${counts.total} predictions claimed. 0 survive independent scrutiny. ${failures.entries.length} acknowledged failures the model doesn't count.">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://funwithscience-org.github.io/dome-model-review/">
+<meta property="og:site_name" content="Fun With Science">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Critical Review: Ovoid Cavity Cosmological Model">
+<meta name="twitter:description" content="${counts.total} predictions claimed. 0 survive independent scrutiny.">
+<link rel="canonical" href="https://funwithscience-org.github.io/dome-model-review/">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "ClaimReview",
+  "url": "https://funwithscience-org.github.io/dome-model-review/",
+  "claimReviewed": "The Ovoid Cavity Cosmological Model has ${counts.total} confirmed predictions with ${failures.dome_claimed_accuracy} accuracy",
+  "author": {
+    "@type": "Organization",
+    "name": "Fun With Science",
+    "url": "https://funwithscience-org.github.io/dome-model-review/"
+  },
+  "reviewRating": {
+    "@type": "Rating",
+    "ratingValue": 1,
+    "bestRating": 5,
+    "worstRating": 1,
+    "alternateName": "False"
+  },
+  "itemReviewed": {
+    "@type": "CreativeWork",
+    "url": "https://john09289.github.io/predictions",
+    "name": "Ovoid Cavity Cosmological Model (ECM V51.0)",
+    "author": {
+      "@type": "Person",
+      "name": "Nicholas Hughes"
+    }
+  }
+}
+</script>
 <title>Critical Review: Ovoid Cavity Cosmological Model V51.0</title>
 <style>
 ${CSS}
