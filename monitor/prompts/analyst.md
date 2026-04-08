@@ -92,16 +92,22 @@ Read `monitor/status.json`. If `changes_pending_analysis` is 0 AND no new extern
 Check for new GitHub issues on the `funwithscience-org/dome-model-review` repo. Check ALL open issues, not just labeled ones — reporters may not use the template, and labels may not be applied:
 
 ```bash
-gh issue list --state open --json number,title,body,author,createdAt,labels 2>/dev/null
+gh issue list --state open --json number,title,body,author,createdAt,labels,author 2>/dev/null
 ```
 
 **Fallback if `gh` fails:** Use curl:
 ```bash
-# List ALL open issues (not just labeled ones)
-curl -s "https://api.github.com/repos/funwithscience-org/dome-model-review/issues?state=open" | node -e "process.stdin.on('data',d=>JSON.parse(d).forEach(i=>console.log(i.number,i.title,i.labels.map(l=>l.name).join(','))))"
+# List ALL open issues (not just labeled ones — filter PRs via pull_request field)
+curl -s "https://api.github.com/repos/funwithscience-org/dome-model-review/issues?state=open" | node -e "process.stdin.on('data',d=>JSON.parse(d).filter(i=>!i.pull_request).forEach(i=>console.log(i.number,i.title,i.user.login,i.labels.map(l=>l.name).join(','))))"
 ```
 
-For each open issue not yet logged in `monitor/external-reports/`:
+**Filtering — only process issues that are actual human reports:**
+- **SKIP** pull requests (the GitHub issues API returns PRs too — filter by `pull_request` field being absent)
+- **SKIP** issues created by `github-actions[bot]`, `dependabot[bot]`, or any `[bot]` author
+- **SKIP** issues with titles starting with "Auto-update", "Bump ", or other automated patterns
+- **PROCESS** everything else — whether it uses our template or not, whether it has the `external-report` label or not. Real humans filing issues in any format should be heard.
+
+For each qualifying open issue not yet logged in `monitor/external-reports/`:
 
 1. Read the full issue body
 2. Apply the same kernel-of-truth analysis you'd apply to any claim — assume the reporter found something real
