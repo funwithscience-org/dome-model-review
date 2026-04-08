@@ -20,7 +20,7 @@ You maintain the monitoring pipeline for the "Ovoid Cavity Cosmological Model" (
 | Decider | `monitor/prompts/decider.md` | Every 20min | `monitor/decisions/open-issues.json`, `monitor/decisions/suggested-patches-*.json`, `monitor/decisions/daily-report-*.json` |
 | Integrity | `monitor/prompts/structure-integrity.md` | Daily 9 AM | `monitor/integrity/report-*.json`, `monitor/integrity/alerts.txt` |
 | Tinker | `monitor/prompts/tinker.md` | Daily 10:30 AM | `monitor/tinker/report-*.json` |
-| Social | `monitor/prompts/social.md` | Daily 11 AM | `monitor/social/report-*.json`, `monitor/social/search-rankings.json`, `monitor/social/discoverability-baseline.json` |
+| Social | `monitor/prompts/social.md` | Daily 11 AM | `monitor/social/report-*.json`, `monitor/social/search-rankings.json`, `monitor/social/discoverability-baseline.json`, `monitor/social/drafts/` (machine-readable file drafts for decider), direct updates to `docs/llms.txt` |
 
 ## Step-by-Step Procedure
 
@@ -54,7 +54,7 @@ Analyst → category-proposals/ → Decider step 1g → flags needs-human
 Analyst → expansion-tracker.json (status: complete) → Decider step 2a → patches + integration
 Decider → open-issues.json → (self-apply or human review)
 Decider → suggested-patches-*.json → self-apply or human review
-Social → search-rankings.json, llms.txt updates, discoverability audits
+Social → search-rankings.json, direct llms.txt/sitemap/robots.txt updates, drafts/ (new machine-readable files) → Decider step 1h reviews + deploys drafts
 ```
 
 For each chain, check:

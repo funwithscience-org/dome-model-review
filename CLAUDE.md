@@ -35,10 +35,12 @@ The workspace mount (`/mnt/dome-model-review/`) uses a FUSE filesystem that **do
 **How it works:**
 - Edit and build in the clean clone
 - `node build.js publish` pushes to GitHub **and** syncs key files to the workspace (automatic since V4.9.6)
-- Agents (curmudgeon, integrity, decider) read from the workspace
+- Agents read from the workspace (but see FUSE Staleness below)
 - Agent prompt files live in `monitor/prompts/` in the workspace — edit them there directly
 
 **If the workspace falls out of sync**, `build.js publish` will fix it on next push. To manually sync: `cp` the files from the clean clone to the workspace.
+
+**FUSE Staleness Warning:** The workspace FUSE mount can serve stale file content. Agents that make decisions based on data file contents (wins.json, sections.json) must clone fresh or cross-check against GitHub. Currently: decider and curmudgeon clone fresh each run; analyst cross-checks counts against GitHub raw URL. Integrity and social read from the mount and are more vulnerable to stale reads. Tinker audits for staleness symptoms each run (Section 7b in tinker prompt).
 
 ### Session Setup (for new AI sessions)
 
@@ -104,7 +106,10 @@ monitor/analyst/globe-fingerprints/ # Mode 4 output: per-WIN fingerprint analysi
 monitor/decisions/processed-reviews.json # Ledger of reviews the decider has fully processed (filenames, not bare IDs)
 monitor/decisions/suggested-patches-*.json # Timestamped patch files from decider runs
 monitor/decisions/daily-report-*.json # Timestamped daily reports from decider
-monitor/tinker/                   # Tinker reports and self-fix audit trail
+monitor/social/drafts/            # Social analyst draft files (llms-full.txt, structured data) for decider review
+monitor/social/discoverability-baseline.json # Competitive discoverability snapshot (both sites)
+monitor/social/search-rankings.json # Search term ranking history
+monitor/tinker/                   # Tinker reports, self-fix audit trail, cost engineering analysis
 monitor/integrity/                # Structure & integrity check reports
 monitor/external-reports/         # Permanent log of all external problem reports (GitHub Issues)
 .github/ISSUE_TEMPLATE/           # "Report a Problem" structured issue template
@@ -129,8 +134,8 @@ Seven scheduled agents run continuously. All prompts live in `monitor/prompts/*.
 | dome-curmudgeon | Every 10min | Opus | `monitor/prompts/curmudgeon.md` | Adversarial self-review; priority-new items jump the queue |
 | dome-decider | Every 20min | Opus | `monitor/prompts/decider.md` | Triage, patches, new WIN commits, tracker updates, expansion integration |
 | dome-integrity | Daily 9:00 AM | Haiku | `monitor/prompts/structure-integrity.md` | Site health: links, tabs, build drift, data-prose consistency, discoverability |
-| dome-tinker | Daily 10:30 AM | Opus | `monitor/prompts/tinker.md` | Pipeline self-repair: audit outputs, trace handoffs, fix stale configs |
-| dome-social | Daily 11:00 AM | Sonnet | — | Search rankings, discoverability audit, dome author activity, site staleness |
+| dome-tinker | Daily 10:30 AM | Opus | `monitor/prompts/tinker.md` | Pipeline ops: audit outputs, trace handoffs, fix stale configs, FUSE staleness detection, cost engineering |
+| dome-social | Daily 11:00 AM | Sonnet | `monitor/prompts/social.md` | Strategic analyst: owns machine-readable layer (llms.txt, sitemap, robots.txt), competitive discoverability, search rankings, dome author activity |
 
 ### Data Flow
 
@@ -178,13 +183,20 @@ Human approves + builds structure → Decider creates EXP items for content
          ↓
 Analyst writes content → Decider commits → Curmudgeon first-review
 
+SOCIAL DISCOVERABILITY:
+Social analyst → updates docs/llms.txt directly (owns machine-readable layer)
+Social analyst → drafts new files to monitor/social/drafts/ (e.g., llms-full.txt, structured data)
+         ↓
+Decider step 1h → reviews drafts, deploys to docs/, rejects content boundary violations
+         ↓
+Tinker → audits social's boundary compliance (machine-readable only, no content changes)
+
 SUPPORTING FLOWS:
 Human notes: human-notes.json → Agent reads on next run → acts immediately → marks consumed
 Poller → changes/ → Analyst → analysis/ → Decider (also reads these)
 Poller → prediction test window tracking → Analyst/Decider create FAIL entries
 Integrity → integrity/report-*.json → Decider (also reads these)
-Social → search rankings, llms.txt updates, discoverability audits
-Tinker reads ALL outputs + prompt files → monitor/tinker/report-*.json
+Tinker reads ALL outputs + prompt files → monitor/tinker/report-*.json + cost engineering analysis
 ```
 
 ### Curmudgeon Lifecycle

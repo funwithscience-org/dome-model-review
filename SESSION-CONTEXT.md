@@ -524,16 +524,7 @@ node -e "const o=JSON.parse(require('fs').readFileSync('monitor/decisions/open-i
 `build.js publish` now syncs 6 files to workspace (added `data/sections.json` to sync list). Previous sync gap caused decider to skip expansion integration for one day because sections.json was missing from workspace.
 
 ### Scheduled task states (as of CW13 — V6)
-- dome-analyst: DISABLED (suspended during V6 stabilization)
-- dome-decider: DISABLED (suspended during V6 stabilization)
-- dome-curmudgeon: DISABLED (suspended during V6 stabilization)
-- dome-poller: every 4 hours
-- dome-integrity: daily 9 AM
-- dome-tinker: daily 10:30 AM
-- dome-prose-extraction: DISABLED (completed)
-- curmudgeon-cycle2-alert: DISABLED (no longer needed)
-
-**Note:** Analyst, decider, and curmudgeon were disabled for the V6 restructure. All three have updated prompts with V6 translation map (Step 0). Re-enable when ready to resume pipeline.
+All agents were DISABLED during the V6 restructure. Re-enabled in CW14 — see Section 15 for current states.
 
 ### Known remaining work (updated CW13)
 - Decider should integrate EXP-001–005 into sections.json on next run (sections.json synced to workspace)
@@ -602,3 +593,71 @@ When syncing clean clone files to the FUSE workspace mount, workspace-only chang
 | e332b16 | Restore lost human notes (NOTE-004/005), fix expansion tracker refs |
 | 1267229 | Add explicit translation map step to curmudgeon and decider per-run procedures |
 | 488f83c | V6 version bump: package.json 6.0.0, version strings, sync list, digest refresh |
+
+---
+
+## 15. Context Window 14 — New WIN Pipeline, Social Analyst, Cost Engineering (2026-04-08)
+
+### Agents re-enabled
+
+All 7 agents now running: poller (4h), analyst (30min), curmudgeon (10min), decider (20min), integrity (daily 9AM), tinker (daily 10:30AM), social (daily 11AM). Pipeline is fully operational post-V6.
+
+### Acknowledged failures infrastructure
+
+Added `data/uncounted-failures.json` — tracks dome predictions that failed but were relabeled ("refined," "suspended," or quietly dropped). Schema: FAIL-NNN entries with dome W-number cross-refs, dome_claimed_accuracy computed field. Hero scorecard now shows 3 boxes: Claims Evaluated / Actual Wins / Acknowledged Failures. Dome's claimed accuracy (from this file) replaces all hardcoded 95.2% references.
+
+### AI discoverability infrastructure
+
+Added `docs/llms.txt`, `docs/sitemap.xml`, `docs/robots.txt`. Social agent detected dome had built extensive AI-steering infrastructure (llms.txt, ai_manifest.json, 7 JSON API endpoints) and responded with genuine discoverability infrastructure (not AI-steering). Meta description, OG tags, Twitter Card, ClaimReview JSON-LD all added to index.html with computed counts.
+
+### No hardcoded values
+
+Replaced all hardcoded values in generate-html.js: version number (from package.json), build date (computed), dome version (DOME_VERSION constant), accuracy figure (from uncounted-failures.json). Principle: we criticize the dome for hardcoding 95.2% — we can't do the same.
+
+### WIN-068 and WIN-069
+
+Dome moved to V51.1 with 69 WINs. Analyst wrote entries via EXP-038 (before Mode 0 existed). Manually committed: WIN-068 (Eclipse magnetic ensemble — Std Model Explains), WIN-069 (Australia road scaffold — Misleading). Both queued as priority-new for curmudgeon.
+
+### New WIN onboarding pipeline (Mode 0)
+
+Designed and implemented a priority cascade for when the dome adds new WINs:
+1. **Analyst Mode 0** (top priority): detects count mismatch, writes entries to `monitor/analyst/new-wins/`
+2. **Decider step 1f**: commits to wins.json, updates curmudgeon tracker (priority-new), updates fingerprint tracker
+3. **Curmudgeon step 0b**: priority-new items jump the queue for first review
+
+Also handles new analytical categories (steel mans) via category proposals routed through human approval.
+
+### Defense neutralization (Analyst Mode 3)
+
+Curmudgeon Cycle 3+ introduces advocate_mode (steel man defenses rated 1–5). Surviving defenses (rated 3+) create EXP items tagged `category: "defense"`. Analyst Mode 3 processes these, writing neutralizations. Priority: above fingerprint hunt (now Mode 4), below expansions and human notes.
+
+### Social upgraded from observer to strategic analyst
+
+Social now owns the machine-readable layer: `docs/llms.txt`, `docs/sitemap.xml`, `docs/robots.txt`. Produces strategic analysis of discoverability gaps and drafts new files to `monitor/social/drafts/` for decider review. Clear ownership boundary: social owns how content is seen by machines, not the content itself. Decider (step 1h) reviews and deploys social's drafts, rejects any content boundary violations and escalates to tinker.
+
+### FUSE staleness bug and fix
+
+Curmudgeon couldn't find WIN-068 in wins.json despite it being committed 18 hours earlier — the FUSE workspace mount served stale content. Fix: curmudgeon and decider now clone fresh from GitHub each run. Analyst cross-checks workspace counts against GitHub raw URL. Tinker audits workspace freshness each run (Section 7b) with md5 cross-checks, write collision detection, and phantom file detection.
+
+### Tinker cost engineering (Section 11)
+
+Tinker now owns pipeline efficiency: identifies wasted no-op runs, proposes Haiku pre-flight gates, preprocessor scripts, model tiering, schedule optimization, and prompt diets. Quality guardrail: never sacrifice analytical depth, only eliminate overhead. Target the "clone, read, discover nothing, exit" pattern, not the "think hard" pattern.
+
+### Scheduled task states (as of CW14)
+- dome-poller: every 4 hours (Sonnet)
+- dome-analyst: every 30 minutes (Opus)
+- dome-curmudgeon: every 10 minutes (Opus)
+- dome-decider: every 20 minutes (Opus)
+- dome-integrity: daily 9 AM (Haiku)
+- dome-tinker: daily 10:30 AM (Opus)
+- dome-social: daily 11 AM (Sonnet)
+
+### Known remaining work (updated CW14)
+- ISS-643: Poller should auto-update DOME_VERSION on version changes
+- ISS-442: Verdict category overload (human decision pending)
+- PDF needs regeneration (v6.pdf)
+- EXP-039 through EXP-042 pending (analyst backlog)
+- Curmudgeon Cycle 2 in progress; WIN-069 still priority-new
+- Chapman 1933 DOI wrong in WIN-068 (curmudgeon finding — needs fix)
+- Social discoverability baseline stale for some fields
+- Prompt sizes: analyst (598 lines), decider (577 lines), tinker (443 lines) all exceed 250-line target
