@@ -271,9 +271,21 @@ Write to `monitor/analysis/latest-analysis-summary.txt`. Update `status.json`.
 
 **Check this FIRST, every run, before anything else.** If the dome has WINs we don't cover, nothing else matters until we do.
 
+**Data freshness check:** The workspace FUSE mount can serve stale files. Before checking WIN counts, verify you're reading current data by cross-checking the workspace wins.json against the GitHub repo:
+
+```bash
+# Check workspace wins.json count
+WORKSPACE_COUNT=$(node -e "console.log(JSON.parse(require('fs').readFileSync('data/wins.json','utf8')).length)")
+# Check GitHub's latest wins.json count (no clone needed)
+GITHUB_COUNT=$(curl -s "https://raw.githubusercontent.com/funwithscience-org/dome-model-review/main/data/wins.json" | node -e "process.stdin.on('data',d=>console.log(JSON.parse(d).length))")
+echo "Workspace: ${WORKSPACE_COUNT}, GitHub: ${GITHUB_COUNT}"
+```
+
+If counts differ, the workspace is stale — use the GitHub raw URL to read the authoritative version for your comparisons.
+
 ```bash
 # Compare our WIN count against the dome's claimed count
-OUR_COUNT=$(node -e "console.log(JSON.parse(require('fs').readFileSync('data/wins.json','utf8')).length)")
+OUR_COUNT=${GITHUB_COUNT:-$WORKSPACE_COUNT}
 echo "Our wins.json: ${OUR_COUNT}"
 # Check dome's count from latest poller data or status.json
 cat monitor/status.json | node -e "process.stdin.on('data',d=>{const s=JSON.parse(d);console.log('Dome status:',s.dome_site_status)})"

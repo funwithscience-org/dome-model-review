@@ -107,11 +107,27 @@ Add these fields to the standard review JSON alongside the existing fields:
 
 ## Per-Run Procedure
 
-**Step 0: Read the V6 translation map** (`monitor/v6-restructure-map.json`). All sections were renumbered on 2026-04-07. Your Cycle 1 reviews use old numbers (e.g., "Section 4.5.1" is now "Section 2.1"). When reading ANY prior review from `monitor/curmudgeon/reviews/`, mentally translate old section numbers to new ones using the map. When writing NEW reviews, always use the new numbers. The tracker items have already been updated to use new numbers.
+**Step 0: Setup — get fresh data.** The workspace FUSE mount can serve stale content. Clone the repo fresh to ensure you're reading the latest `data/wins.json`, `data/sections.json`, and other data files:
 
-**Step 0b: Check for priority-new items** (new WINs or new categories). Read `monitor/curmudgeon/tracker.json` and check for any items with `status: "priority-new"`. These are freshly onboarded WINs or new analytical sections that have never been reviewed. **They jump the queue** — review them before continuing any cyclic or holistic work. The analyst wrote the initial entry; your job is to stress-test it before it accumulates readers. After reviewing a priority-new item, set its status to `"reviewed"` (it then enters normal cycle rotation).
+```bash
+SESSION=$(pwd | grep -oP '/sessions/[^/]+')
+WORKSPACE="${SESSION}/mnt/dome-model-review"
+CLONE="${SESSION}/dome-curmudgeon-clone"
 
-**Step 0c: Check human notes** (`monitor/curmudgeon/human-notes.json`). If any notes have `status: "pending"`, they take priority over the normal tracker sequence. Review the item specified in the note, focusing on the questions asked. Mark the note as `"consumed"` after completing the review. Then resume normal tracker order on the next run.
+# Clone fresh from repo (unauthenticated is fine — curmudgeon only reads, doesn't push)
+git clone https://github.com/funwithscience-org/dome-model-review.git ${CLONE} 2>/dev/null
+cd ${CLONE}
+```
+
+**Read data files from `${CLONE}/data/`** (wins.json, sections.json, uncounted-failures.json). **Read raw dome text from `${CLONE}/raw-text/`**. **Write reviews to `${WORKSPACE}/monitor/curmudgeon/`** (the workspace mount — this is where other agents read your output). **Read/write the tracker at `${WORKSPACE}/monitor/curmudgeon/tracker.json`**.
+
+In short: read data from the clone (guaranteed fresh), write outputs to the workspace (shared with other agents).
+
+**Step 0a: Read the V6 translation map** (`${CLONE}/monitor/v6-restructure-map.json`). All sections were renumbered on 2026-04-07. Your Cycle 1 reviews use old numbers (e.g., "Section 4.5.1" is now "Section 2.1"). When reading ANY prior review from `monitor/curmudgeon/reviews/`, mentally translate old section numbers to new ones using the map. When writing NEW reviews, always use the new numbers. The tracker items have already been updated to use new numbers.
+
+**Step 0b: Check for priority-new items** (new WINs or new categories). Read the tracker (`${WORKSPACE}/monitor/curmudgeon/tracker.json`) and check for any items with `status: "priority-new"`. These are freshly onboarded WINs or new analytical sections that have never been reviewed. **They jump the queue** — review them before continuing any cyclic or holistic work. The analyst wrote the initial entry and the decider committed it to `data/wins.json` — the entry IS in the repo (that's why you cloned fresh in Step 0). Your job is to stress-test it before it accumulates readers. After reviewing a priority-new item, set its status to `"reviewed"` (it then enters normal cycle rotation).
+
+**Step 0c: Check human notes** (`${WORKSPACE}/monitor/curmudgeon/human-notes.json`). If any notes have `status: "pending"`, they take priority over the normal tracker sequence. Review the item specified in the note, focusing on the questions asked. Mark the note as `"consumed"` after completing the review. Then resume normal tracker order on the next run.
 
 **Priority order each run:**
 1. `priority-new` items (Step 0b) — new WINs/sections that have never been reviewed
@@ -123,7 +139,7 @@ Each run, review ONE item following the priority order above. Read `monitor/curm
 For each WIN, you must:
 
 ### 1. Read Our Current Text
-Read the WIN entry from `data/wins.json`. Study **all** fields that produce user-visible text:
+Read the WIN entry from `${CLONE}/data/wins.json` (the fresh clone — NOT the workspace). Study **all** fields that produce user-visible text:
 - `claim` and `finding` (summary table row — this is what most readers see first)
 - `detail_claim`, `detail_evidence`, `detail_verdict_text`, and `detail_extra` (expanded detail block)
 
