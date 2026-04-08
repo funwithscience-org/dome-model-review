@@ -52,7 +52,7 @@ if (target === 'publish') {
   run('git push origin main', 'Push to GitHub');
 
   // Sync key files to workspace (FUSE mount can't run git, but agents read from there)
-  const workspace = '/sessions/nice-charming-cannon/mnt/dome-model-review';
+  const workspace = '/sessions/busy-cool-mayer/mnt/dome-model-review';
   if (fs.existsSync(workspace)) {
     console.log('\n⏳ Sync to workspace...');
     const syncFiles = ['data/wins.json', 'data/sections.json', 'docs/index.html', 'build-scripts/generate-html.js', 'build-scripts/generate-pdf.js', 'CLAUDE.md', 'monitor/v6-restructure-map.json', 'monitor/prompts/curmudgeon.md', 'monitor/prompts/analyst.md', 'monitor/prompts/decider.md', 'monitor/prompts/tinker.md', 'test.js'];
