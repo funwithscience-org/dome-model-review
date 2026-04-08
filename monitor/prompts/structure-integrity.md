@@ -100,7 +100,18 @@ Classify issues as:
 - **Moderate**: Stale counts in llms.txt, missing sitemap entries for new pages
 - **Minor**: Formatting issues, suboptimal descriptions
 
-### 7. Build Reproducibility
+### 7. Expansion Tracker Continuity
+
+Check `monitor/analyst/expansion-tracker.json` for signs of write collisions (concurrent agent writes that silently drop entries):
+
+- **ID continuity**: Extract all EXP-NNN IDs sorted numerically. Flag any gaps (e.g., EXP-030 jumps to EXP-035 means EXP-031–034 are missing).
+- **Orphaned output files**: List all files in `monitor/analyst/expansions/`. For each EXP-NNN.json file, verify a matching tracker entry exists. Flag orphans — these are completed work the decider will never integrate.
+- **Phantom tracker entries**: For each tracker entry with `status: complete` and an `output_file`, verify the file exists on disk. Flag entries pointing to missing files.
+- **Stale pending items**: Flag any tracker entry with `status: pending` that was `created_at` more than 48 hours ago — the analyst may have lost track of it.
+
+Classify: ID gaps and orphaned output files are **major** (lost work). Phantom entries and stale pending are **moderate**.
+
+### 8. Build Reproducibility
 
 Run `node build.js html` and diff the output against the current `docs/index.html`. If they differ, the published site doesn't match the source data. This is a critical finding.
 
