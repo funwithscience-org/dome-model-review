@@ -85,7 +85,22 @@ Fetch the dome site's wins page (john09289.github.io/predictions/wins.html) and 
 
 This check catches the author silently renumbering or redefining WINs, which could make our review address the wrong claim for a given WIN number.
 
-### 6. Build Reproducibility
+### 6. Discoverability Infrastructure
+
+Verify that our AI/search discoverability files exist and are well-formed:
+
+- **`docs/llms.txt`**: Must exist. Check that it contains our review URL (`funwithscience-org.github.io/dome-model-review`), mentions the dome model by name, and describes the review's key findings. If the file references specific counts (e.g., "0 of 67+"), verify those counts match `wins.json` length. Flag staleness if counts are off — the social agent can fix `llms.txt` directly, but you should flag it.
+- **`docs/sitemap.xml`**: Must exist. Must be valid XML with `<urlset>` root. Must contain at least the main page URL (`https://funwithscience-org.github.io/dome-model-review/`). Check that all `<loc>` URLs are actually served (the main page and llms.txt).
+- **`docs/robots.txt`**: Must exist. Must contain `Allow: /` and a `Sitemap:` directive pointing to our sitemap URL.
+- **`data/uncounted-failures.json`**: Must exist. Validate schema: each entry needs `id` (FAIL-NNN format), `dome_ref`, `dome_label`, `what_actually_happened`. No duplicate IDs. Cross-check: the count should match the `{{ACKNOWLEDGED_FAILURES}}` placeholder value rendered in the HTML.
+- **Meta tags in `docs/index.html`**: Check `<head>` for: `<meta name="description">`, `<meta property="og:title">`, `<meta property="og:description">`, and a `<script type="application/ld+json">` block containing `ClaimReview`. If any are missing, flag as major — these are how search engines and AI systems discover us.
+
+Classify issues as:
+- **Major**: Missing file entirely, invalid XML/JSON, missing meta tags
+- **Moderate**: Stale counts in llms.txt, missing sitemap entries for new pages
+- **Minor**: Formatting issues, suboptimal descriptions
+
+### 7. Build Reproducibility
 
 Run `node build.js html` and diff the output against the current `docs/index.html`. If they differ, the published site doesn't match the source data. This is a critical finding.
 

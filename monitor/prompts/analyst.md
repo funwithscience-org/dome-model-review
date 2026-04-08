@@ -216,6 +216,30 @@ fs.writeFileSync('monitor/analyst/expansion-tracker.json',JSON.stringify(t,null,
 
 **Without this step, your analysis sits in a file that nobody reads. The decider only acts on open issues and expansion items.**
 
+### 6c. Track Prediction Failures (Acknowledged Failures)
+
+The file `data/uncounted-failures.json` tracks dome predictions that actually failed — regardless of how the dome labels them. The dome doesn't call failures "failures" — it calls them "refined," "suspended," or quietly drops them. We track the actual outcomes.
+
+**When analyzing dome site changes, check for prediction failures:**
+- Predictions whose test windows expired without the predicted outcome occurring
+- Predictions relabeled from "confirmed" to "refined" or "suspended" (this IS a failure — they're just not calling it one)
+- Predictions quietly removed from the active list
+- The dome's own failure count changing (or not changing when it should)
+
+**When you find a new failure:**
+1. Check `data/uncounted-failures.json` — is this dome_ref (W-number) already tracked?
+2. If not, include in your `recommended_actions` with `action: "add_failure_entry"` and provide: the dome's W-number, what the dome calls it, and what actually happened
+3. Create an open issue (step 6b) with `category: "failure-tracking"` so the decider adds the FAIL entry
+
+**Current schema** (each entry):
+- `id`: FAIL-NNN (our stable ID)
+- `dome_ref`: Dome's W-number (e.g., "W024")
+- `dome_label`: What the dome calls the outcome
+- `what_actually_happened`: Reality
+- `date_failed`, `evidence`, `notes`
+
+The build computes `{{ACKNOWLEDGED_FAILURES}}` from this file. The overview page shows a three-box scorecard: Claims Made / Survive Scrutiny / Acknowledged Failures.
+
 ### 7. Write summary and update status
 Write to `monitor/analysis/latest-analysis-summary.txt`. Update `status.json`.
 

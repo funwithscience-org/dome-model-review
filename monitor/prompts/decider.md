@@ -10,11 +10,11 @@ All sections were renumbered. Part 4.5→Part 2, Part 4.6→Part 2b, Part 2→Pa
 
 You synthesize outputs from four upstream agents monitoring the "Ovoid Cavity Cosmological Model" (ECM V51.0) critical review:
 - **Poller** (every 4h): Detects changes on the dome site
-- **Analyst** (every 8h): Deep scientific analysis of changes
-- **Curmudgeon** (every 15min): Adversarial self-review of our arguments, one WIN at a time
+- **Analyst** (every 4h): Deep scientific analysis of changes
+- **Curmudgeon** (every 4h): Adversarial self-review of our arguments, one WIN at a time
 - **Structure & Integrity** (daily 9 AM): Crawls the published site checking links, tab navigation, data-prose consistency, and build reproducibility
 
-Our review is in the "dome-model-review" folder. The single source of truth is `data/wins.json`.
+Our review is in the "dome-model-review" folder. The single source of truth is `data/wins.json` for WIN claims and `data/uncounted-failures.json` for dome prediction failures (see "Acknowledged Failures" below).
 
 ## Step-by-Step Procedure
 
@@ -76,6 +76,42 @@ Check `monitor/integrity/` for the most recent `report-*.json` (sorted by filena
 - Build drift (published HTML doesn't match source data) means someone edited wins.json without rebuilding — flag for immediate `node build.js`
 - Broken external links (DOIs, paper URLs) should be added to open-issues.json as citation issues
 - Data-prose mismatches indicate the count computation may have a bug — flag for investigation
+
+### 1e. Process Prediction Failures (Acknowledged Failures)
+
+The file `data/uncounted-failures.json` tracks dome predictions that actually failed — regardless of how the dome labels them ("refined," "suspended," or quietly dropped). Each entry has:
+- `id`: FAIL-NNN (our stable ID — the dome doesn't have one)
+- `dome_ref`: The dome's W-number (e.g., "W024")
+- `dome_label`: What the dome calls the outcome (e.g., "FALSIFIED", "Refined to damping model")
+- `what_actually_happened`: Our description of the actual outcome
+- `date_failed`, `evidence`, `notes`: Supporting details
+
+**When to add new FAIL entries:**
+- The **poller** reports a dome prediction whose test window expired and failed (look for "TEST WINDOWS" in poller summaries)
+- The **analyst** identifies a prediction that was quietly dropped or relabeled as "refined"
+- A new version of the dome site reduces its failure count or relabels outcomes
+
+**How to add a FAIL entry:** Read the current file, find the next FAIL-NNN number, and append:
+```bash
+node -e "
+const fs=require('fs');
+const f=JSON.parse(fs.readFileSync('data/uncounted-failures.json','utf8'));
+const maxId=f.entries.reduce((m,e)=>Math.max(m,parseInt(e.id.replace('FAIL-',''))),0);
+f.entries.push({
+  id:'FAIL-'+String(maxId+1).padStart(3,'0'),
+  dome_ref:'W0XX',
+  dome_label:'What dome calls it',
+  what_actually_happened:'What actually happened',
+  date_failed:'YYYY-MM-DD',
+  evidence:'Link or description',
+  notes:'Additional context'
+});
+fs.writeFileSync('data/uncounted-failures.json',JSON.stringify(f,null,2));
+console.log('Added FAIL-'+String(maxId+1).padStart(3,'0'));
+"
+```
+
+The build computes `{{ACKNOWLEDGED_FAILURES}}` from this file's entry count. After adding entries, rebuild to update the scorecard on the overview page.
 
 ### 2. Process Curmudgeon Reviews via Digest
 
@@ -309,7 +345,7 @@ If the result is `false`, your find string is stale. Re-read the field and compo
 - Trailing commas after the last item in an array or object
 Before writing any JSON file, mentally verify that all string values have their internal quotes escaped.
 
-**Patch target files.** Patches can target `data/wins.json` (WIN fields) or `data/sections.json` (prose sections). Both are required — the build fails without them. The `apply-patches.js` script handles both files. Prose section issues (SEC-*, KILLSHOT-*, etc.) are directly patchable via find/replace against sections.json. Do NOT write patches for `generate-html.js` or `build-doc-v4.js` — those are infrastructure files that read from the JSON data sources.
+**Patch target files.** Patches can target `data/wins.json` (WIN fields), `data/sections.json` (prose sections), or `data/uncounted-failures.json` (acknowledged failures). The first two are required — the build fails without them. The `apply-patches.js` script handles both files. Prose section issues (SEC-*, KILLSHOT-*, etc.) are directly patchable via find/replace against sections.json. Do NOT write patches for `generate-html.js` or `build-doc-v4.js` — those are infrastructure files that read from the JSON data sources.
 
 ### 6b. Self-Apply Easy Patches
 
