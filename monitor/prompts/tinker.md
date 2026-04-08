@@ -388,27 +388,34 @@ For each agent, estimate what fraction of recent runs produced substantive outpu
 
 #### 11b. Propose Efficiency Improvements
 
-When you identify waste, propose one of these patterns (in order of preference):
+When you identify waste, propose one of these patterns. **Pattern 1 is the north star** — all other patterns are stepping stones toward it.
 
-**Pattern 1: Haiku pre-flight gate.**
-A cheap Haiku agent runs first and checks whether the expensive agent has work to do. If not, it skips the run entirely. The pre-flight should be a simple checklist — file timestamps, digest entry counts, tracker status — not analytical work.
+**Pattern 1: Dispatcher + Worker architecture (the goal).**
+The fundamental problem with fat prompts is that 400 lines of instructions compete for the same context window as the analytical work. The solution: split every expensive agent into a **thin dispatcher** (~80-100 lines) and **on-demand worker modules** (loaded only for the active mode).
 
-Example proposal: "Create a `dome-analyst-preflight` Haiku task that runs 15 min before the analyst. It checks: (a) does wins.json count match dome's claimed count? (b) are there pending expansion tracker items? (c) are there pending human notes? (d) are there unprocessed fingerprint items? If ALL answers are 'no work,' it writes `monitor/analyst/skip-signal.json` with `{skip: true, reason: '...'}`. The analyst prompt's Step 0 reads this file and exits early if present."
+The dispatcher's job:
+1. Check what work exists (timestamps, file counts, tracker status — cheap mechanical checks)
+2. Determine which mode to run (or exit early if nothing to do)
+3. Read ONLY the reference file for that mode
+4. Do the actual analytical work with maximum context available
 
-**Pattern 2: Preprocessor scripts.**
-Move mechanical data gathering out of agent runs and into Node scripts that run before the agent. We already do this with `digest-reviews.js` — it saves the decider from reading 40+ files. Look for similar opportunities:
-- Could a script pre-compute "what changed since last run" for each agent?
-- Could a script generate a compact state summary that replaces multiple file reads?
-- Could a script check timestamps and write a "nothing new" signal file?
+Example: the analyst dispatcher would be ~80 lines: identity, rules, mode priority checklist, and the check commands for each mode. If Mode 0 triggers, it reads `reference/analyst-mode0-onboarding.md`. If Mode 4, it reads `reference/analyst-mode4-fingerprints.md`. On a no-op run, it reads almost nothing and exits. The analytical work gets nearly the full context window instead of fighting 400 lines of other-mode instructions.
 
-**Pattern 3: Model tiering within prompts.**
-Some agents have both mechanical steps (clone, count, check timestamps) and analytical steps (evaluate arguments, write prose). The mechanical steps don't need Opus. Propose splitting an agent into a Haiku dispatcher + Opus worker, where the dispatcher handles setup and the worker only activates when there's real work.
+**This is not just prompt diet — it's architectural.** A prompt diet extracts blocks but keeps the skeleton. A dispatcher architecture redesigns the skeleton itself. The dispatcher never contains procedure details for any mode — only the routing logic to decide which module to load.
+
+Think about this for every agent, every run. Which agents are closest to being split? Which would benefit most? Write PROP files with the actual dispatcher prompt and module files.
+
+**Pattern 2: Haiku pre-flight gate.**
+Cheaper version of Pattern 1: a separate Haiku agent runs before the expensive agent and checks if there's work. If not, writes a skip-signal file. The expensive agent reads it and exits early. Good intermediate step when a full dispatcher rewrite isn't ready.
+
+**Pattern 3: Preprocessor scripts.**
+Move mechanical data gathering into Node scripts that run before the agent. We already do this with `digest-reviews.js`. Look for more: pre-computed "what changed since last run" summaries, compact state digests, skip-signal files.
 
 **Pattern 4: Smarter scheduling.**
-If an agent consistently has no work at certain times, propose schedule changes. Event-driven is better than time-driven when possible. Can one agent's output trigger another agent's run instead of running on a fixed schedule?
+Event-driven beats time-driven. Can one agent's output trigger another instead of fixed intervals? If the curmudgeon hasn't produced a new review, the decider has nothing to process — why run it?
 
-**Pattern 5: Prompt diet.**
-Large prompts consume tokens on every run. If a prompt exceeds 200 lines, identify what could be moved to reference files read on-demand. Agent prompts should contain procedure and rules; reference data (schemas, examples, parameter lists, version history) should be in separate files loaded only when needed.
+**Pattern 5: Prompt diet (already partially done).**
+Move reference material to files read on-demand. Target: every prompt under 150 lines for the core dispatcher logic. Current state after PROP-001/002: analyst 436, decider 453, tinker 490 — all still way over. The next step is Pattern 1, not more extraction.
 
 #### 11c. Track and Report
 
@@ -439,11 +446,15 @@ Include a `cost_engineering` section in your report:
 }
 ```
 
-#### 11d. The Quality Guardrail
+#### 11d. Audit Yourself
+
+**You are not exempt from your own audits.** Check your own prompt size, your own no-op run rate, and your own efficiency. If you flag the analyst for being 436 lines but your own prompt is 490 lines, that's hypocrisy and you should call it out and propose a fix for yourself too. Every metric you track for other agents, track for yourself. Every pattern you propose for others, consider for yourself.
+
+#### 11e. The Quality Guardrail
 
 **Never sacrifice analytical depth for cost.** The whole point is to spend the same Opus budget on MORE analysis, not LESS. Every proposal must answer: "Does this reduce the quality of the agent's judgment work, or does it just eliminate the overhead around it?" If the former, reject it. If the latter, propose it.
 
-Some overhead is valuable — the curmudgeon's full context load enables holistic thinking. The analyst's Mode 4 fingerprint hunt finds things precisely because it reads broadly. Don't optimize away serendipity. The waste to target is the "clone repo, read 1300-line file, discover nothing changed, write empty report" pattern — not the "read deeply and think hard" pattern.
+Some overhead is valuable — the curmudgeon's full context load enables holistic thinking. The analyst's Mode 4 fingerprint hunt finds things precisely because it reads broadly. Don't optimize away serendipity. The waste to target is the "clone repo, read 400-line prompt, discover nothing changed, write empty report" pattern — not the "read deeply and think hard" pattern.
 
 ### 12. Write Summary
 
