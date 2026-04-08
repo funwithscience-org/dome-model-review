@@ -8,17 +8,18 @@ All sections were renumbered. Part 4.5→Part 2, Part 4.6→Part 2b, Part 2→Pa
 
 ## Context
 
-You maintain the monitoring pipeline for the "Ovoid Cavity Cosmological Model" (ECM) critical review. The pipeline consists of five agents whose prompts live in `monitor/prompts/` and whose outputs live in `monitor/`. The source of truth for the review is `data/wins.json`. The pipeline config is `monitor/config.json`.
+You maintain the monitoring pipeline for the "Ovoid Cavity Cosmological Model" (ECM) critical review. The pipeline consists of seven agents whose prompts live in `monitor/prompts/` and whose outputs live in `monitor/`. Sources of truth: `data/wins.json` (WINs), `data/sections.json` (prose), `data/uncounted-failures.json` (acknowledged failures).
 
 ### Agent Map
 
 | Agent | Prompt | Schedule | Key Outputs |
 |-------|--------|----------|-------------|
 | Poller | `monitor/prompts/poller.md` | Every 4h | `monitor/changes/latest-poll-summary.txt`, `monitor/changes/*.json`, `monitor/status.json` |
-| Analyst | `monitor/prompts/analyst.md` | Every 4h | `monitor/analysis/latest-analysis-summary.txt`, `monitor/external-reports/*.json` |
-| Curmudgeon | `monitor/prompts/curmudgeon.md` | Every 4h | `monitor/curmudgeon/reviews/WIN-*.json`, `monitor/curmudgeon/tracker.json`, `monitor/curmudgeon/alerts.txt` |
-| Decider | `monitor/prompts/decider.md` | Every 4h | `monitor/decisions/open-issues.json`, `monitor/decisions/suggested-patches-*.json`, `monitor/decisions/daily-report-*.json` |
+| Analyst | `monitor/prompts/analyst.md` | Every 30min | Modes 0–4: `monitor/analyst/new-wins/` (Mode 0), `monitor/analyst/expansions/` (Mode 1), `monitor/analyst/category-proposals/` (Mode 0), `monitor/analyst/globe-fingerprints/` (Mode 4), `monitor/analysis/latest-analysis-summary.txt`, `monitor/external-reports/*.json` |
+| Curmudgeon | `monitor/prompts/curmudgeon.md` | Every 10min | `monitor/curmudgeon/reviews/WIN-*.json`, `monitor/curmudgeon/tracker.json`, `monitor/curmudgeon/alerts.txt` |
+| Decider | `monitor/prompts/decider.md` | Every 20min | `monitor/decisions/open-issues.json`, `monitor/decisions/suggested-patches-*.json`, `monitor/decisions/daily-report-*.json` |
 | Integrity | `monitor/prompts/structure-integrity.md` | Daily 9 AM | `monitor/integrity/report-*.json`, `monitor/integrity/alerts.txt` |
+| Tinker | `monitor/prompts/tinker.md` | Daily 10:30 AM | `monitor/tinker/report-*.json` |
 | Social | `monitor/prompts/social.md` | Daily 11 AM | `monitor/social/report-*.json`, `monitor/social/search-rankings.json`, `monitor/social/discoverability-baseline.json` |
 
 ## Step-by-Step Procedure
@@ -35,15 +36,25 @@ For each agent, check:
 Trace these handoff chains and verify each link:
 
 ```
+NEW WIN ONBOARDING (highest priority chain):
+Poller detects dome WIN count change → Analyst Mode 0 → new-wins/WIN-NNN.json → Decider step 1f
+  → commits to wins.json + updates curmudgeon tracker (status: priority-new) + fingerprint tracker
+  → Curmudgeon step 0b priority interrupt → first review
+
+STANDARD CHAINS:
 Poller → changes/ → Analyst (reads changes, produces analysis)
 Poller → status.json → Decider (reads pipeline state)
 Curmudgeon → reviews/*.json → digest-reviews.js → pending-digest.json → Decider (reads holes, produces patches)
 Curmudgeon → alerts.txt → Decider (reads critical issues)
 Curmudgeon → tracker.json → Decider (reads progress)
+Curmudgeon Cycle 3+ → advocate_mode (defense_survives >= 3) → Decider creates EXP (category: defense) → Analyst Mode 3
 Integrity → report-*.json → Decider (reads site health)
 Analyst → external-reports/ → Decider (reads problem reports)
-Decider → open-issues.json → (human review + next decider cycle)
-Decider → suggested-patches-*.json → (human review)
+Analyst → category-proposals/ → Decider step 1g → flags needs-human
+Analyst → expansion-tracker.json (status: complete) → Decider step 2a → patches + integration
+Decider → open-issues.json → (self-apply or human review)
+Decider → suggested-patches-*.json → self-apply or human review
+Social → search-rankings.json, llms.txt updates, discoverability audits
 ```
 
 For each chain, check:

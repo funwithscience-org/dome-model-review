@@ -66,9 +66,12 @@ The workspace mount path and clean clone path are the two key paths. Everything 
 ### File Map
 
 ```
-data/wins.json                    # 67 WINs: claims, verdicts, findings, detail writeups, code_analysis tags
+data/wins.json                    # WINs: claims, verdicts, findings, detail writeups, code_analysis tags
 data/sections.json                # 13 prose sections (parts 1-10 incl. 1b, 2b) with {{PLACEHOLDER}} tokens
-build-scripts/generate-html.js    # Generates docs/index.html from wins.json + sections.json (all counts computed at build time)
+data/uncounted-failures.json      # Acknowledged dome prediction failures (FAIL-NNN IDs, dome W-number cross-refs)
+build-scripts/generate-html.js    # Generates docs/index.html from wins.json + sections.json + uncounted-failures.json
+                                  # DOME_VERSION constant (single source of truth for dome model version)
+                                  # Review version from package.json, build date computed at build time
 build-scripts/generate-pdf.js     # Generates PDF from HTML using Playwright (@media print CSS)
 build-scripts/add-references.js   # Injects clickable hyperlinks into wins.json
 build-scripts/digest-reviews.js   # Preprocesses curmudgeon reviews into compact digest for decider
@@ -79,6 +82,9 @@ build.js                          # Unified pipeline orchestrator
 test.js                           # Automated test suite (schema, HTML consistency, links, tabs)
 .github/workflows/ci.yml          # GitHub Actions CI (build + test on every push)
 docs/index.html                   # Generated HTML (GitHub Pages) — DO NOT EDIT DIRECTLY
+docs/llms.txt                     # AI discoverability: tells LLMs what this review is and how to read it
+docs/sitemap.xml                  # Search engine sitemap (main page + llms.txt)
+docs/robots.txt                   # Crawler permissions + sitemap reference
 downloads/*.pdf                   # Generated PDF output
 raw-text/                         # Extracted ECM site content (current version)
 raw-text-v50.6-2026-03-12/        # Archived V50.6 baseline for version comparison
@@ -89,10 +95,12 @@ monitor/decisions/open-issues.json # Persistent issue tracker (open only — que
 monitor/decisions/closed-issues.json # Archive of fixed/wontfix issues (query for count)
 monitor/decisions/human-notes.json # Human editorial notes for decider (agents check each run)
 monitor/analyst/human-notes.json  # Human editorial notes for analyst (agents check each run)
-monitor/analyst/expansion-tracker.json # Analyst expansion work items with integration status
+monitor/analyst/expansion-tracker.json # Analyst expansion work items (category: steelman|defense|null) with integration status
 monitor/analyst/expansions/EXP-NNN.json # Analyst expansion outputs (replacement_html + metadata)
-monitor/analyst/globe-fingerprint-tracker.json # Mode 3: 67-item background queue for globe constant hunt
-monitor/analyst/globe-fingerprints/ # Mode 3 output: per-WIN fingerprint analysis
+monitor/analyst/new-wins/WIN-NNN.json # Mode 0 output: new WIN entries staged for decider to commit
+monitor/analyst/category-proposals/CAT-NNN.json # New analytical category proposals (needs human approval)
+monitor/analyst/globe-fingerprint-tracker.json # Mode 4: background queue for globe constant hunt
+monitor/analyst/globe-fingerprints/ # Mode 4 output: per-WIN fingerprint analysis
 monitor/decisions/processed-reviews.json # Ledger of reviews the decider has fully processed (filenames, not bare IDs)
 monitor/decisions/suggested-patches-*.json # Timestamped patch files from decider runs
 monitor/decisions/daily-report-*.json # Timestamped daily reports from decider
@@ -112,54 +120,83 @@ security-audit.md                 # Website security scan results
 
 ## Monitoring Pipeline
 
-Six scheduled agents run continuously. All prompts live in `monitor/prompts/*.md` — edit the markdown to change agent behavior. The scheduled tasks are thin wrappers that just read the prompt file.
+Seven scheduled agents run continuously. All prompts live in `monitor/prompts/*.md` — edit the markdown to change agent behavior. The scheduled tasks are thin wrappers that just read the prompt file.
 
 | Agent | Schedule | Model | Prompt File | Purpose |
 |-------|----------|-------|-------------|---------|
-| dome-poller | Every 4h | Sonnet | `monitor/prompts/poller.md` | Detect changes on the dome site |
-| dome-analyst | Every 30min | Opus | `monitor/prompts/analyst.md` | Deep scientific analysis, expansions, globe fingerprint hunt |
-| dome-curmudgeon | Every 10min | Opus | `monitor/prompts/curmudgeon.md` | Adversarial self-review of our arguments |
-| dome-decider | Every 20min | Opus | `monitor/prompts/decider.md` | Triage, patches, expansion integration, yeet unpatchable to analyst |
-| dome-integrity | Daily 9:00 AM | Haiku | `monitor/prompts/structure-integrity.md` | Site health: links, tabs, build drift, data-prose consistency |
+| dome-poller | Every 4h | Sonnet | `monitor/prompts/poller.md` | Detect changes on the dome site, track prediction test windows |
+| dome-analyst | Every 30min | Opus | `monitor/prompts/analyst.md` | Modes 0–4: new WIN onboarding, expansions, defense neutralization, fingerprints |
+| dome-curmudgeon | Every 10min | Opus | `monitor/prompts/curmudgeon.md` | Adversarial self-review; priority-new items jump the queue |
+| dome-decider | Every 20min | Opus | `monitor/prompts/decider.md` | Triage, patches, new WIN commits, tracker updates, expansion integration |
+| dome-integrity | Daily 9:00 AM | Haiku | `monitor/prompts/structure-integrity.md` | Site health: links, tabs, build drift, data-prose consistency, discoverability |
 | dome-tinker | Daily 10:30 AM | Opus | `monitor/prompts/tinker.md` | Pipeline self-repair: audit outputs, trace handoffs, fix stale configs |
+| dome-social | Daily 11:00 AM | Sonnet | — | Search rankings, discoverability audit, dome author activity, site staleness |
 
 ### Data Flow
 
 ```
+NEW WIN ONBOARDING (highest priority):
+Poller detects dome WIN count > our wins.json count
+         ↓
+Analyst Mode 0 → writes entries to monitor/analyst/new-wins/WIN-NNN.json
+         ↓
+Decider step 1f → commits to wins.json, updates curmudgeon tracker (status: priority-new),
+                   updates fingerprint tracker, builds/tests/pushes
+         ↓
+Curmudgeon step 0b → priority-new items jump queue for first review
+
+CURMUDGEON → DECIDER PIPELINE:
 Curmudgeon → reviews/WIN-NNN.json (or WIN-NNN.c2.json for Cycle 2+)
          ↓
 digest-reviews.js → pending-digest.json (compact summary of all unprocessed reviews)
          ↓
-Decider reads digest → creates issues → writes suggested-patches-*.json
+Decider reads digest → creates issues → writes suggested-patches-*.json → self-applies
          ↓
-Human applies patches: node build-scripts/apply-patches.js <patches-file>
-         ↓
-Human closes issues: moves from open-issues.json → closed-issues.json
+Decider closes fixed issues: moves from open-issues.json → closed-issues.json
 
+EXPANSION PIPELINE:
 Decider yeeting: unpatchable issues → assigned-analyst → Analyst picks up as EXP item
 Analyst → expansion-tracker.json (status: complete) → expansions/EXP-NNN.json (replacement_html)
          ↓
 Decider step 2a → reads completed expansions → writes patches against sections.json
          ↓
-Human applies patches → expansion marked integrated
+Decider self-applies → expansion marked integrated
 
+DEFENSE NEUTRALIZATION (Cycle 3+):
+Curmudgeon Cycle 3 → advocate_mode.defense_survives >= 3
+         ↓
+Decider → creates EXP item (category: defense) in expansion-tracker.json
+         ↓
+Analyst Mode 3 → writes neutralization to expansions/DEF-NNN.json
+         ↓
+Decider integrates → Curmudgeon reviews the neutralization
+
+NEW CATEGORIES / STEEL MANS:
+Analyst → category-proposals/CAT-NNN.json → Decider flags needs-human
+         ↓
+Human approves + builds structure → Decider creates EXP items for content
+         ↓
+Analyst writes content → Decider commits → Curmudgeon first-review
+
+SUPPORTING FLOWS:
 Human notes: human-notes.json → Agent reads on next run → acts immediately → marks consumed
-  - Notes can target completed work → triggers revision (e.g., add π×R argument to EXP-003)
-
 Poller → changes/ → Analyst → analysis/ → Decider (also reads these)
+Poller → prediction test window tracking → Analyst/Decider create FAIL entries
 Integrity → integrity/report-*.json → Decider (also reads these)
-Tinker reads ALL outputs + prompt files + config.json → monitor/tinker/report-*.json
+Social → search rankings, llms.txt updates, discoverability audits
+Tinker reads ALL outputs + prompt files → monitor/tinker/report-*.json
 ```
 
 ### Curmudgeon Lifecycle
 
 The curmudgeon operates in three phases, tracked in `monitor/curmudgeon/tracker.json`:
 
-- **Phase 1**: Per-item review — 67 WINs, then sections (SEC-*), prose items, kill-shots. Produces `code_analysis_tags` for each WIN. Writes to `reviews/WIN-NNN.json` (Cycle 1) or `reviews/WIN-NNN.c2.json` (Cycle 2+) to prevent overwriting unprocessed reviews. Check progress: `cat monitor/curmudgeon/tracker.json | node -e "process.stdin.on('data',d=>{const t=JSON.parse(d);console.log(t.phase,t.current_item,t.items_reviewed+'/'+t.total_items)})"`
+- **Priority interrupt**: Items with `status: "priority-new"` (new WINs added by decider) jump the queue before any cyclic work. This ensures freshly onboarded WINs get first-review immediately.
+- **Phase 1**: Per-item review — WINs, then sections (SEC-*), prose items, kill-shots. Produces `code_analysis_tags` for each WIN. Writes to `reviews/WIN-NNN.json` (Cycle 1) or `reviews/WIN-NNN.c2.json` (Cycle 2+) to prevent overwriting unprocessed reviews. Check progress: `cat monitor/curmudgeon/tracker.json | node -e "process.stdin.on('data',d=>{const t=JSON.parse(d);console.log(t.phase,t.current_item,t.items_reviewed+'/'+t.total_items)})"`
 - **Phase 2**: Holistic review — 9 document-level checks (NARRATIVE, TAXONOMY, CROSSREF, HIERARCHY, TONE, COMPLETENESS, STRESSTEST, REDUNDANCY, MISSING)
-- **Phase 3**: Repaint — cycle increments, all items reset to pending, start over. The bridge never stops being painted.
+- **Phase 3**: Repaint — cycle increments, all items reset to pending, start over. Cycle 3+ adds advocate_mode (steel man defenses rated 1–5), cross-WIN consistency checks, and quantitative verification.
 
-**Current state (Cycle 2):** All 9 Phase 2 holistic checks completed. Cycle incremented. Now in Phase 1 Cycle 2, re-reviewing all WINs with fresh eyes after improvements from Cycle 1. Verdict mismatch detection added to both curmudgeon and decider prompts.
+**Current state (Cycle 2):** Now in Phase 1 Cycle 2, re-reviewing all WINs with fresh eyes after improvements from Cycle 1. Verdict mismatch detection added to both curmudgeon and decider prompts.
 
 ### Issue Tracking
 
@@ -318,10 +355,12 @@ All 13 prose sections (parts 1–10 including 1b and 2b) live in `data/sections.
 
 ## Analyst Modes
 
-The analyst operates in three modes, checked in priority order each run:
-- **Mode 1 (default)**: Process expansion tracker items — write replacement_html for assigned sections
+The analyst operates in five modes, checked in strict priority order each run:
+- **Mode 0 (top priority)**: New WIN onboarding — if dome has WINs we don't cover, write initial entries to `monitor/analyst/new-wins/`. Also handles new category proposals (`monitor/analyst/category-proposals/`).
+- **Mode 1**: Process expansion tracker items — write replacement_html for assigned sections. Includes `category: "steelman"` items.
 - **Mode 2**: Check for human notes — act on pending notes, revise completed work if targeted
-- **Mode 3 (idle only)**: Globe fingerprint hunt — systematic search for globe-derived constants (π×R, spherical harmonics, WGS84 borrowing, dimensional analysis failures) across all 67 WINs. One item per run, low priority. Tracker: `monitor/analyst/globe-fingerprint-tracker.json`
+- **Mode 3**: Surviving defense neutralization — process `category: "defense"` EXP items created by decider from curmudgeon Cycle 3+ advocate_mode findings (rated 3+). Write to `expansions/DEF-NNN.json`.
+- **Mode 4 (idle only)**: Globe fingerprint hunt — systematic search for globe-derived constants across all WINs. One item per run. Tracker: `monitor/analyst/globe-fingerprint-tracker.json`
 
 ## Parked Content
 
