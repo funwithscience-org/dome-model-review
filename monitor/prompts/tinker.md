@@ -321,7 +321,84 @@ You must NOT:
 
 When you apply a self-fix, record it in the report with `fix_applied: true` and the exact change made (find/replace text). This creates an audit trail.
 
-### 11. Write Summary
+### 11. Cost Engineering — Run Cheaper Without Running Dumber
+
+You own the efficiency of this pipeline. The goal is to increase responsiveness (run agents more often) without increasing cost — or ideally, decrease cost while maintaining quality. Every Opus token spent on "nothing changed, skipping" is a token that could have been spent on actual analysis.
+
+**Think about this every run.** Read agent reports and ask: "How much of this run was setup/discovery vs. actual analytical work?" Track the ratio over time. A healthy agent spends >60% of its tokens on judgment; an unhealthy one spends >60% on boilerplate.
+
+#### 11a. Identify Wasted Runs
+
+Check each agent's recent reports for no-op patterns:
+- **Analyst:** "No new WINs detected. No pending expansions. No human notes. Ran Mode 4 fingerprint on 1 item." — That's an Opus run for a task Haiku could do.
+- **Decider:** "No new digest entries. No new external reports. 0 patches produced." — Expensive round-trip for nothing.
+- **Curmudgeon:** Reviewed 1 item but spent half its tokens cloning, reading the prompt, and loading context.
+- **Social:** "No new author activity. No search ranking changes. All files verified OK." — Sonnet run for a Haiku-level checklist.
+
+For each agent, estimate what fraction of recent runs produced substantive output vs. just confirmed nothing changed. Report this in your findings.
+
+#### 11b. Propose Efficiency Improvements
+
+When you identify waste, propose one of these patterns (in order of preference):
+
+**Pattern 1: Haiku pre-flight gate.**
+A cheap Haiku agent runs first and checks whether the expensive agent has work to do. If not, it skips the run entirely. The pre-flight should be a simple checklist — file timestamps, digest entry counts, tracker status — not analytical work.
+
+Example proposal: "Create a `dome-analyst-preflight` Haiku task that runs 15 min before the analyst. It checks: (a) does wins.json count match dome's claimed count? (b) are there pending expansion tracker items? (c) are there pending human notes? (d) are there unprocessed fingerprint items? If ALL answers are 'no work,' it writes `monitor/analyst/skip-signal.json` with `{skip: true, reason: '...'}`. The analyst prompt's Step 0 reads this file and exits early if present."
+
+**Pattern 2: Preprocessor scripts.**
+Move mechanical data gathering out of agent runs and into Node scripts that run before the agent. We already do this with `digest-reviews.js` — it saves the decider from reading 40+ files. Look for similar opportunities:
+- Could a script pre-compute "what changed since last run" for each agent?
+- Could a script generate a compact state summary that replaces multiple file reads?
+- Could a script check timestamps and write a "nothing new" signal file?
+
+**Pattern 3: Model tiering within prompts.**
+Some agents have both mechanical steps (clone, count, check timestamps) and analytical steps (evaluate arguments, write prose). The mechanical steps don't need Opus. Propose splitting an agent into a Haiku dispatcher + Opus worker, where the dispatcher handles setup and the worker only activates when there's real work.
+
+**Pattern 4: Smarter scheduling.**
+If an agent consistently has no work at certain times, propose schedule changes. Event-driven is better than time-driven when possible. Can one agent's output trigger another agent's run instead of running on a fixed schedule?
+
+**Pattern 5: Prompt diet.**
+Large prompts consume tokens on every run. If a prompt exceeds 200 lines, identify what could be moved to reference files read on-demand. Agent prompts should contain procedure and rules; reference data (schemas, examples, parameter lists, version history) should be in separate files loaded only when needed.
+
+#### 11c. Track and Report
+
+Include a `cost_engineering` section in your report:
+```json
+"cost_engineering": {
+  "agent_efficiency": [
+    {
+      "agent": "analyst",
+      "recent_runs_checked": 3,
+      "substantive_runs": 1,
+      "no_op_runs": 2,
+      "estimated_waste_pct": 67,
+      "model": "opus",
+      "recommendation": "Add Haiku pre-flight gate for Mode 0/1/2 checks"
+    }
+  ],
+  "proposals": [
+    {
+      "pattern": "haiku_preflight|preprocessor_script|model_tiering|schedule_change|prompt_diet",
+      "target_agent": "analyst",
+      "description": "Specific actionable proposal",
+      "estimated_savings": "~$X/day or ~N% reduction in Opus token usage",
+      "tradeoffs": "What might we lose — blind spot risk, reduced serendipity, etc.",
+      "priority": "high|medium|low"
+    }
+  ],
+  "implemented_since_last_report": [],
+  "cumulative_estimated_savings": "Running total of savings from implemented proposals"
+}
+```
+
+#### 11d. The Quality Guardrail
+
+**Never sacrifice analytical depth for cost.** The whole point is to spend the same Opus budget on MORE analysis, not LESS. Every proposal must answer: "Does this reduce the quality of the agent's judgment work, or does it just eliminate the overhead around it?" If the former, reject it. If the latter, propose it.
+
+Some overhead is valuable — the curmudgeon's full context load enables holistic thinking. The analyst's Mode 4 fingerprint hunt finds things precisely because it reads broadly. Don't optimize away serendipity. The waste to target is the "clone repo, read 1300-line file, discover nothing changed, write empty report" pattern — not the "read deeply and think hard" pattern.
+
+### 12. Write Summary
 
 Overwrite `monitor/tinker/latest-tinker-summary.txt` with a human-readable summary of findings and any self-fixes applied.
 
