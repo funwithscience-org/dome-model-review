@@ -123,6 +123,63 @@ Read `data/wins.json` and relevant sections of `build-scripts/generate-html.js`.
 ### 6. Write analysis records
 Create JSON in `monitor/analysis/` with ISO timestamp. Include kernel_of_truth, forensic_timeline, review_state_crossref, current_review_text_affected, recommended_actions, overall_threat_level, gotchas.
 
+### 6b. Create actionable items for the decider
+
+**This step is critical.** Your analysis is useless if the decider never sees it. For each `recommended_action` in your analysis record, you MUST create at least one of:
+
+1. **An open issue** in `monitor/decisions/open-issues.json` — for things that need a patch to wins.json or sections.json (verdict changes, text updates, new rebuttals, accuracy figure updates, etc.)
+2. **An expansion tracker item** in `monitor/analyst/expansion-tracker.json` — for things that need deep new analysis or substantial new prose (new WINs, new sections, major rewrites)
+
+**How to create open issues:**
+```bash
+node -e "
+const fs=require('fs');
+const o=JSON.parse(fs.readFileSync('monitor/decisions/open-issues.json','utf8'));
+const maxId=o.issues.reduce((m,i)=>Math.max(m,parseInt(i.issue_id.replace('ISS-',''))),0);
+// Add one issue per actionable finding:
+o.issues.push({
+  issue_id:'ISS-'+String(maxId+1).padStart(3,'0'),
+  source:'analyst-v51.1-analysis',
+  severity:'medium',
+  category:'content-update',
+  summary:'Brief description of what needs changing',
+  detail:'Specific details: what text, what file, what the fix should be',
+  affected_wins:['068'],  // or affected_sections:['part2b']
+  status:'open',
+  created_at:new Date().toISOString()
+});
+fs.writeFileSync('monitor/decisions/open-issues.json',JSON.stringify(o,null,2));
+"
+```
+
+**How to create expansion tracker items:**
+```bash
+node -e "
+const fs=require('fs');
+const t=JSON.parse(fs.readFileSync('monitor/analyst/expansion-tracker.json','utf8'));
+const nextNum=t.items.length+1;
+t.items.push({
+  id:'EXP-'+String(nextNum).padStart(3,'0'),
+  target:'Description of what needs writing (e.g., new WIN-068 entry, new Section 7.13)',
+  source:'analyst-v51.1-analysis',
+  issue_ids:['ISS-NNN'],  // link to the open issue(s)
+  status:'pending',
+  created_at:new Date().toISOString()
+});
+fs.writeFileSync('monitor/analyst/expansion-tracker.json',JSON.stringify(t,null,2));
+"
+```
+
+**Rules:**
+- Every recommended action with `priority: "high"` or `priority: "medium"` MUST produce at least one issue or expansion item. Low-priority items are optional.
+- If the action is a simple text change (update a number, fix a reference), create an **open issue** — the decider can patch it directly.
+- If the action requires new prose, new WINs, or substantial rewriting, create an **expansion tracker item** AND an open issue linking to it.
+- If the action requires human judgment (e.g., "should we add WIN-068?"), create an open issue with `status: "needs-human"` and describe the decision needed.
+- Deduplicate: before creating, check if an equivalent issue already exists in open-issues.json. Don't create duplicates.
+- Reference your analysis file in the issue detail so the decider can find the full context.
+
+**Without this step, your analysis sits in a file that nobody reads. The decider only acts on open issues and expansion items.**
+
 ### 7. Write summary and update status
 Write to `monitor/analysis/latest-analysis-summary.txt`. Update `status.json`.
 
@@ -164,7 +221,7 @@ After incorporating a note, set its `status` to `"consumed"` and add a `consumed
 The decider yeeting issues to you sets `status: "assigned-analyst"` in open-issues.json, but may not always create a matching expansion-tracker entry. Check for orphaned issues:
 
 ```bash
-node -e "const o=JSON.parse(require('fs').readFileSync('monitor/decisions/open-issues.json','utf8'));const t=JSON.parse(require('fs').readFileSync('monitor/analyst/expansion-tracker.json','utf8'));const tracked=new Set(t.items.flatMap(i=>i.issue_ids||[]));const orphans=o.issues.filter(i=>i.status==='assigned-analyst'&&!tracked.has(i.issue_id));if(orphans.length)console.log('ORPHANED:',orphans.length,'issues assigned to you with no EXP entry');else console.log('ALL TRACKED')"
+node -e "const o=JSON.parse(require('fs').readFileSync('monitor/decisions/open-issues.json','utf8'));const t=JSON.parse(require('fs').readFileSync('monitor/analyst/expansion-tracker.json','utf8'));const tracked=new Set(t.items.flatMap(i=>i.issue_ids||[]));const orphans=o.issues.filter(i=>i.status==='assigned-analyst'&&!tracked.has(i.id));if(orphans.length)console.log('ORPHANED:',orphans.length,'issues assigned to you with no EXP entry');else console.log('ALL TRACKED')"
 ```
 
 If orphaned issues exist, group related ones together and create new EXP tracker entries for them. Use the next available EXP number: `node -e "const t=JSON.parse(require('fs').readFileSync('monitor/analyst/expansion-tracker.json','utf8'));console.log('EXP-'+String(t.items.length+1).padStart(3,'0'))"`. Then work them in priority order alongside existing pending items.
