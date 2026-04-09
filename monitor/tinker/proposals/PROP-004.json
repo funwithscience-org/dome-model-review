@@ -1,0 +1,42 @@
+{
+  "id": "PROP-004",
+  "created": "2026-04-09T10:45:00Z",
+  "status": "implemented",
+  "implemented_at": "2026-04-09T21:45:00Z",
+  "implemented_by": "human+claude peaceful-gallant-rubin",
+  "actual_result": "build.js now derives the workspace path from process.cwd() (matches /sessions/<name>/) with a fallback that scans /sessions/*/mnt/dome-model-review for any accessible mount. Silent skip replaced with a loud warning. Verified with node --check, node build.js html, and node test.js (2242 passed). First publish from this session will sync automatically — no more per-session sed dance.",
+  "verification_pattern": "grep -q \"'/sessions/busy-cool-mayer/mnt/dome-model-review'\" build.js && echo STILL_BROKEN || echo FIXED",
+  "priority": "high",
+  "category": "bug-fix",
+  "target": "build.js",
+  "summary": "Replace hardcoded session path in workspace sync with dynamic session detection",
+  "problem": "Line 55 of build.js hardcodes `const workspace = '/sessions/busy-cool-mayer/mnt/dome-model-review'`. This path only exists for a specific Cowork session. When `build.js publish` runs from a clean clone in any other session (e.g. the ephemeral sessions that scheduled decider/curmudgeon runs live in), the `fs.existsSync(workspace)` check returns false (missing path or permission denied) and the workspace sync is silently skipped. CLAUDE.md documents a manual sed step to update this path per-session, but that fix is (a) never committed back, (b) lost on every fresh clone, and (c) requires human or agent intervention per session. Result: stale workspace files accumulate without warning.",
+  "evidence": {
+    "session_current": "zen-brave-fermat",
+    "hardcoded_path_in_main": "/sessions/busy-cool-mayer/mnt/dome-model-review",
+    "files_found_stale_this_run": [
+      "data/sections.json (ws hash 912b211d... vs GH ea763cdc...)",
+      "build-scripts/generate-html.js (ws hash 6515bd4b... vs GH 821b06a0...)",
+      "docs/index.html (ws hash f10617b1... vs GH c9a32687...)"
+    ],
+    "commits_not_synced_to_workspace": [
+      "2e8f256 2026-04-09T09:55 — Add silent failures counter and honest accuracy (90.8%)",
+      "8c4b96b/d97717c/e110cc7/0102e0d/etc. — up to HEAD 7322292 (ISS-678 kill shot verdict work)"
+    ],
+    "files_still_in_sync_by_luck": [
+      "data/wins.json — happened to match GH at 06:26 from an earlier sync window"
+    ],
+    "scheduled_task_vulnerability": "Decider, curmudgeon, and any agent that runs `build.js publish` from a per-session clean clone will silently skip the sync step in every session other than busy-cool-mayer. Because the skip is silent, there is no error in daily reports — the only visible symptom is downstream staleness in integrity/social agents, which was the exact failure mode caught this run.",
+    "silent_failure": "build.js currently prints nothing when fs.existsSync returns false. There is no warning in build output."
+  },
+  "fix": {
+    "file": "build.js",
+    "current_lines_54_56": "  // Sync key files to workspace (FUSE mount can't run git, but agents read from there)\n  const workspace = '/sessions/busy-cool-mayer/mnt/dome-model-review';\n  if (fs.existsSync(workspace)) {",
+    "replacement_lines_54_62": "  // Sync key files to workspace (FUSE mount can't run git, but agents read from there).\n  // Detect the current Cowork session dynamically so this works in every ephemeral session.\n  // Fallback: scan /sessions/*/mnt/dome-model-review for any accessible workspace mount.\n  let workspace = null;\n  const sessionMatch = (process.cwd().match(/\\/sessions\\/([^/]+)/) || [])[1];\n  if (sessionMatch) {\n    const candidate = `/sessions/${sessionMatch}/mnt/dome-model-review`;\n    if (fs.existsSync(candidate)) workspace = candidate;\n  }\n  if (!workspace) {\n    try {\n      const dirs = fs.readdirSync('/sessions');\n      for (const d of dirs) {\n        const c = `/sessions/${d}/mnt/dome-model-review`;\n        try { if (fs.existsSync(c) && fs.readdirSync(c).length > 0) { workspace = c; break; } } catch {}\n      }\n    } catch {}\n  }\n  if (workspace) {",
+    "also_add_after_sync_block": "  } else {\n    console.log('\\n⚠️  Workspace sync skipped: no accessible /sessions/*/mnt/dome-model-review found.');\n  }",
+    "rationale": "Session name is always available in cwd (the clean clone lives under /sessions/<name>/dome-review-clean). Auto-detection eliminates the per-session sed dance documented in CLAUDE.md. The permissive fallback protects sessions where the clone somehow ended up outside /sessions. The loud 'skipped' message turns a silent failure into a diagnosable one."
+  },
+  "testing": "1. In the clean clone: `node build.js publish` and verify the final line reads 'Sync to workspace (N files)'. 2. Run the tinker Mode 2 FUSE hash check — all 5 files should be OK. 3. Grep build output for 'Workspace sync skipped' — should be absent when a workspace exists.",
+  "risk": "Low. Pure additive change plus a string replacement of a dead path. No effect on any consumer; only the workspace mirror is affected. Worst case: regression = current behavior (silent skip).",
+  "followup": "Once PROP-004 lands, a single-pass FUSE hash check across recent commits will show full sync. Tinker should verify on next Mode 2 check."
+}

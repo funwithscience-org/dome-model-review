@@ -55,15 +55,11 @@ git clone https://github.com/funwithscience-org/dome-model-review.git ${SESSION}
 cd ${SESSION}/dome-review-clean
 npm install
 
-# 3. Update the workspace sync path in build.js to match this session
-#    (search for the old session name and replace with current)
-sed -i "s|/sessions/[^/]*/mnt/dome-model-review|${SESSION}/mnt/dome-model-review|" build.js
-
-# 4. Verify
+# 3. Verify — build.js now auto-detects the session from cwd, no sed step needed
 node build.js html && node test.js
 ```
 
-The workspace mount path and clean clone path are the two key paths. Everything else (agents, prompts, build pipeline) flows from these. If you see a hardcoded session path anywhere (e.g. in `build.js`), update it to the current session.
+The workspace mount path and clean clone path are the two key paths. Everything else (agents, prompts, build pipeline) flows from these. As of PROP-004 (commit landing 2026-04-09), `build.js publish` auto-detects the current session from `process.cwd()` and falls back to scanning `/sessions/*/mnt/dome-model-review` for any accessible workspace — no per-session editing required.
 
 ### File Map
 

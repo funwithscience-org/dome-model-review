@@ -51,10 +51,28 @@ if (target === 'publish') {
   run(`git commit -m "${msg}\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"`, 'Commit');
   run('git push origin main', 'Push to GitHub');
 
-  // Sync key files to workspace (FUSE mount can't run git, but agents read from there)
-  const workspace = '/sessions/busy-cool-mayer/mnt/dome-model-review';
-  if (fs.existsSync(workspace)) {
-    console.log('\n⏳ Sync to workspace...');
+  // Sync key files to workspace (FUSE mount can't run git, but agents read from there).
+  // Detect the current Cowork session dynamically so this works in every ephemeral
+  // session — clean clones live under /sessions/<name>/dome-review-clean, so the
+  // session name is always discoverable from cwd. Fallback: scan /sessions/*/mnt/
+  // dome-model-review for any accessible workspace mount.
+  let workspace = null;
+  const sessionMatch = (process.cwd().match(/\/sessions\/([^/]+)/) || [])[1];
+  if (sessionMatch) {
+    const candidate = `/sessions/${sessionMatch}/mnt/dome-model-review`;
+    if (fs.existsSync(candidate)) workspace = candidate;
+  }
+  if (!workspace) {
+    try {
+      const dirs = fs.readdirSync('/sessions');
+      for (const d of dirs) {
+        const c = `/sessions/${d}/mnt/dome-model-review`;
+        try { if (fs.existsSync(c) && fs.readdirSync(c).length > 0) { workspace = c; break; } } catch {}
+      }
+    } catch {}
+  }
+  if (workspace) {
+    console.log(`\n⏳ Sync to workspace (${workspace})...`);
     const syncFiles = ['data/wins.json', 'data/sections.json', 'docs/index.html', 'build-scripts/generate-html.js', 'build-scripts/generate-pdf.js', 'CLAUDE.md', 'monitor/v6-restructure-map.json', 'monitor/prompts/curmudgeon.md', 'monitor/prompts/analyst.md', 'monitor/prompts/decider.md', 'monitor/prompts/tinker.md', 'test.js'];
     let synced = 0;
     for (const f of syncFiles) {
@@ -66,6 +84,8 @@ if (target === 'publish') {
       }
     }
     console.log(`✅ Sync to workspace (${synced} files)`);
+  } else {
+    console.log('\n⚠️  Workspace sync skipped: no accessible /sessions/*/mnt/dome-model-review found.');
   }
 }
 
