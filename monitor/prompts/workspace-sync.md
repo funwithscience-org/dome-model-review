@@ -42,9 +42,65 @@ Copy files from workspace to clone using a **direction-aware smart_copy** helper
 SKIP_LOG=/tmp/workspace-sync-skips.log
 : > "$SKIP_LOG"
 
+# Phase 1 Change 1.2: direction guard.
+# Files classified as 'git' in build.js's OWNERSHIP table live
+# authoritatively in git. workspace-sync MUST NEVER push them. The list
+# below MUST stay in sync with build.js (category === 'git') and with
+# the "File Ownership Rules" section of CLAUDE.md.
+#
+# monitor/curmudgeon/tracker.json is DELIBERATELY NOT listed — it is a
+# multi-writer file (decider intake + curmudgeon cycle state) and is
+# protected only by scheduling discipline, the pre-push integrity gate,
+# and git merge-conflict detection. Adding it here would cause
+# workspace-sync to silently drop every curmudgeon mount-side update.
+OWNED_BY_GIT=(
+  'data/wins.json'
+  'data/sections.json'
+  'data/uncounted-failures.json'
+  'docs/index.html'
+  'build-scripts/generate-html.js'
+  'build-scripts/generate-pdf.js'
+  'CLAUDE.md'
+  'monitor/v6-restructure-map.json'
+  'test.js'
+  'monitor/decisions/open-issues.json'
+  'monitor/decisions/closed-issues.json'
+  'monitor/curmudgeon/priority-queue.json'
+  # All .md files under monitor/prompts/ are git-owned (handled by the
+  # dynamic rule in is_git_owned() below).
+)
+
+is_git_owned() {
+  local dst="$1"
+  local p
+  for p in "${OWNED_BY_GIT[@]}"; do
+    [ "$dst" = "$p" ] && return 0
+  done
+  # Dynamic rule: any .md under monitor/prompts/ (any depth).
+  case "$dst" in
+    monitor/prompts/*.md) return 0 ;;
+  esac
+  return 1
+}
+
+# Self-test the guard so an operator or an integrity check can see
+# it's wired correctly. Failure here means someone edited the list
+# inconsistently.
+if ! is_git_owned 'monitor/decisions/open-issues.json'; then
+  echo "FATAL: is_git_owned self-test failed (expected 'monitor/decisions/open-issues.json' = git-owned)"
+  exit 1
+fi
+if is_git_owned 'monitor/curmudgeon/tracker.json'; then
+  echo "FATAL: is_git_owned self-test failed (monitor/curmudgeon/tracker.json must NOT be classified)"
+  exit 1
+fi
+
 # smart_copy: copy $src → $dst only if:
+#   - $dst is not classified as git-owned (direction guard, Change 1.2), AND
 #   - $dst does not exist, OR
 #   - $src and $dst differ AND $src mtime > $dst's last git commit time
+# If the destination is git-owned, SKIP and log — workspace-sync must
+# never push a file that lives authoritatively in git.
 # If the clone's git history is newer than the workspace mtime, SKIP and log.
 # This is the fix for the 2026-04-09 regression where workspace-sync reverted
 # PROP-003 and PROP-004 status updates by blindly copying stale workspace files
@@ -53,6 +109,10 @@ smart_copy() {
   local src="$1"
   local dst="$2"
   [ ! -f "$src" ] && return 0
+  if is_git_owned "$dst"; then
+    echo "SKIP (git-owned; direction violation): $dst" >> "$SKIP_LOG"
+    return 0
+  fi
   if [ ! -f "$dst" ]; then
     cp "$src" "$dst"
     return 0
