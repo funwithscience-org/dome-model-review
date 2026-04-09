@@ -1,0 +1,270 @@
+{
+  "generated_at": "2026-04-08T18:56:00Z",
+  "report_date": "2026-04-08",
+  "pipeline_health": {
+    "agents_running": 7,
+    "agents_stalled": [],
+    "output_freshness": {
+      "poller": "~0.2 hours ago (latest-poll-summary.txt at 18:48 UTC)",
+      "analyst": "~0.5 hours ago (EXP-039 at 19:27, globe-fingerprint WIN-067 at 18:16)",
+      "curmudgeon": "~0.7 hours ago (WIN-069.c2.json at 19:14, tracker at 19:15)",
+      "decider": "~0.4 hours ago (daily-report at 19:34, patches at 19:31)",
+      "integrity": "~9.7 hours ago (report at 09:12 — daily schedule, on time)",
+      "social": "~0.7 hours ago (report-run4 at 19:14)",
+      "tinker": "this run"
+    },
+    "notes": "All 7 agents actively producing output today. No stalls detected. Pipeline is healthy and responsive."
+  },
+  "workspace_freshness": {
+    "data/wins.json": "OK — matches GitHub",
+    "data/sections.json": "OK — matches GitHub",
+    "data/uncounted-failures.json": "OK — matches GitHub",
+    "assessment": "No FUSE staleness detected this run. All key data files in sync."
+  },
+  "git_auth": {
+    "pat_present": true,
+    "pat_length": 93,
+    "github_api_status": 200,
+    "assessment": "Healthy. PAT valid, API accessible."
+  },
+  "handoff_issues": [
+    {
+      "severity": "major",
+      "producer": "curmudgeon",
+      "consumer": "decider (via digest-reviews.js)",
+      "description": "PERSISTENT (6th consecutive report): digest-reviews.js processedWinIds fallback at line 144 still masks Cycle 2 reviews for WINs whose Cycle 1 review was previously processed. 66 c2 review files on disk, 64 in processed ledger. 2 unprocessed: EXHIBIT-AB.c2.json and WIN-062.c2.json. The pending digest currently shows only 2 items (WIN-068, WIN-069) which are genuinely new WINs without c1 history — so the bug's natural mitigation continues to work for new WINs. BUT: WIN-062.c2.json is being masked by the legacy fallback (WIN-062.json was processed in Cycle 1). This means the decider never sees WIN-062's Cycle 2 review findings.",
+      "evidence": "digest-reviews.js line 144: processedWinIds.has(entry.win_id) treats WIN-062.c2.json as processed because WIN-062.json was in the ledger. WIN-062.c2.json written Apr 8 12:13, not in processed-reviews.json, not in pending digest.",
+      "suggested_fix": {
+        "file": "build-scripts/digest-reviews.js",
+        "find": "    const isProcessed = processedSet.has(file) || processedSet.has(entry.win_id) ||\n      processedWinIds.has(entry.win_id);",
+        "replace": "    const isProcessed = processedSet.has(file);",
+        "rationale": "Remove both legacy fallbacks. The processedSet (which checks by exact filename) is the correct deduplication mechanism. The processedWinIds fallback was a transitional measure from when the ledger used bare WIN IDs — that migration is long complete. Removing it makes c2 reviews visible to the digest whenever they haven't been explicitly processed by filename."
+      }
+    },
+    {
+      "severity": "minor",
+      "producer": "decider",
+      "consumer": "all (report consumers)",
+      "description": "Decider still producing future-dated filenames. Files stamped 2026-04-09 were created on April 8. Not functionally broken but creates confusion during freshness audits.",
+      "evidence": "daily-report-2026-04-09T10-00.json and suggested-patches-2026-04-09T06-30.json both have filesystem mtime of Apr 8.",
+      "suggested_fix": {
+        "file": "monitor/prompts/decider.md",
+        "find": null,
+        "replace": null,
+        "rationale": "The decider's timestamp generation likely uses a timezone offset. Low priority — the decider clones fresh and uses system time. This is a cosmetic issue in the decider's timestamp formatting logic, not a prompt bug."
+      }
+    }
+  ],
+  "prompt_issues": [
+    {
+      "severity": "critical",
+      "prompt_file": "monitor/prompts/tinker.md",
+      "description": "Tinker prompt at 501 lines — 100% over the 250-line ceiling. Grew 11 lines since last report (was 490). The tinker is now the 3rd largest prompt. Self-audit: this is my own prompt and I should be the first to fix it.",
+      "suggested_fix": {
+        "find": null,
+        "replace": null,
+        "rationale": "Needs PROP-003: extract cost engineering section (steps 11a-11e, ~100 lines) and agent infrastructure audit (steps 8a-8d, ~80 lines) into reference files. Would bring core prompt to ~320 lines. See proposals."
+      }
+    },
+    {
+      "severity": "critical",
+      "prompt_file": "monitor/prompts/analyst.md",
+      "description": "Analyst prompt at 436 lines — still 74% over ceiling. Decreased from 598 (PROP-001 partially applied or natural trim). Still needs dispatcher architecture per PROP-001.",
+      "suggested_fix": {
+        "find": null,
+        "replace": null,
+        "rationale": "PROP-001 exists. Verify if partially applied. Core issue: 5 modes in one prompt means 80% of instructions are irrelevant on any given run."
+      }
+    },
+    {
+      "severity": "critical",
+      "prompt_file": "monitor/prompts/decider.md",
+      "description": "Decider prompt at 453 lines — 81% over ceiling. Decreased from 577 (PROP-002 partially applied or natural trim). Still far above target.",
+      "suggested_fix": {
+        "find": null,
+        "replace": null,
+        "rationale": "PROP-002 exists. Verify if partially applied."
+      }
+    },
+    {
+      "severity": "moderate",
+      "prompt_file": "monitor/prompts/curmudgeon.md",
+      "description": "Curmudgeon prompt at 316 lines — 26% over ceiling. Stable. Not urgent but should be included in next round of prompt diet work.",
+      "suggested_fix": null
+    }
+  ],
+  "open_issue_health": {
+    "total_open": 6,
+    "total_closed": 553,
+    "aged_out": [
+      {
+        "issue_id": "ISS-442",
+        "description": "VERDICT CATEGORY OVERLOAD: Misleading conflates 4 failure modes",
+        "notes": "This is a structural/architectural issue that requires human judgment on taxonomy. Persistent but not neglected — it's genuinely hard to resolve without a category split decision."
+      }
+    ],
+    "repeated_deferrals": [],
+    "missing_patches": [],
+    "zombie_fixes": [],
+    "assessment": "Healthy. Only 6 open issues is excellent. 553 closed shows strong throughput. ISS-637/638/640/641 are V51.1 response items — appropriately open as the analysis catches up to the dome site changes. ISS-658 is a minor selection-bias gap. ISS-442 is a long-standing taxonomy question."
+  },
+  "curmudgeon_health": {
+    "phase": 1,
+    "current_cycle": 2,
+    "tracker_cycle_field": "current_cycle=2 (note: top-level 'cycle' key is undefined — tracker uses 'current_cycle' instead)",
+    "items_reviewed": 65,
+    "total_items": 69,
+    "pending_wins": ["WIN-064", "WIN-065", "WIN-066", "WIN-067"],
+    "pending_sections": 32,
+    "c2_review_files": 66,
+    "c2_in_processed_ledger": 64,
+    "unprocessed_c2": ["EXHIBIT-AB.c2.json", "WIN-062.c2.json"],
+    "assessment": "Curmudgeon is making steady progress in Cycle 2. 4 WINs remaining before moving to sections. The tracker's 'cycle' field is undefined but 'current_cycle' is correctly set to 2 — this is a schema inconsistency, not a bug (the prompt and code reference 'current_cycle')."
+  },
+  "v6_restructure_audit": {
+    "stale_section_refs_in_tracker": "None found — curmudgeon tracker uses current numbering",
+    "stale_refs_in_open_issues": "None found",
+    "stale_refs_in_patches": "None found",
+    "assessment": "V6 restructure references are clean. No old-style section IDs detected in active pipeline files."
+  },
+  "schedule_health": {
+    "assessment": "All agents running on schedule. No missed runs detected. Curmudgeon producing ~6-8 reviews per day in Cycle 2 (good throughput for 10-min intervals with Opus). Decider running multiple times per day and producing patches. Poller every 4h with dome site stable — appropriate frequency."
+  },
+  "error_patterns": {
+    "social_github_api": "Social report from Apr 7 had -1 values for github_activity.forks, recent_commits, new_issues due to gh CLI unavailable. Apr 8 reports appear to use web search as fallback — no -1 values in run4. Mitigation is working.",
+    "decider_push_failures": "Historical push failures from previous sessions (Apr 7) are resolved. Current session has valid PAT and successful API access.",
+    "digest_script_bug": "Decider self-reported this bug in daily-report-2026-04-08T08-00.json and daily-report-2026-04-08T09-00.json. The decider is aware and working around it by manually checking c2 files. Structural fix still needed in digest-reviews.js."
+  },
+  "previous_tinker_followup": [
+    {
+      "finding": "digest-reviews.js processedWinIds fallback (P2 from last report)",
+      "status": "STILL BROKEN — code at line 144 unchanged. The fallback `processedWinIds.has(entry.win_id)` is still present. WIN-062.c2.json confirmed masked. Decider self-reported awareness but no code fix applied.",
+      "action": "Escalating to 6th consecutive report. Recommending self-fix (mechanical code change)."
+    },
+    {
+      "finding": "Prompt bloat emergency (P1 from last report)",
+      "status": "PARTIALLY IMPROVED — analyst dropped from 598→436 lines (-162), decider dropped from 577→453 lines (-124), tinker grew 490→501 (+11). PROP-001 and PROP-002 exist but may not be fully applied. Overall trend improved but all three still far above 250-line ceiling.",
+      "action": "Continue monitoring. Prompt diet work is happening but needs acceleration toward dispatcher architecture."
+    },
+    {
+      "finding": "CLAUDE.md hardcoded '67 WINs' (P5 from last report)",
+      "status": "NOT VERIFIED this run — CLAUDE.md is a context file, not a pipeline-critical file. Low priority.",
+      "action": "No action needed — CLAUDE.md will be regenerated as needed."
+    },
+    {
+      "finding": "Curmudgeon tracker undefined cycle field (P6 from last report)",
+      "status": "CLARIFIED — tracker uses 'current_cycle' (=2), not 'cycle'. The undefined was from reading the wrong key. Not a bug.",
+      "action": "Closing this finding."
+    },
+    {
+      "finding": "Future-dated decider filenames (P4 from last report)",
+      "status": "STILL PRESENT — daily-report-2026-04-09T10-00.json created on Apr 8. Cosmetic only.",
+      "action": "Downgraded to minor. No action required."
+    }
+  ],
+  "spot_checks": {
+    "decider_apr08_1830": "Decider processed WIN-068 and WIN-069 priority-new reviews. Created 6 new issues (ISS-650 through ISS-655) with specific patches. Correctly targeting data/wins.json fields. Good: patches include find/replace text. Good: checking both new WINs from curmudgeon reviews.",
+    "social_apr08_run4": "Social agent monitoring dome author GitHub activity (18 commits today), checking social media platforms (TikTok, Twitter, Reddit, YouTube — all negative). Staying within boundary: no content patches, only discoverability monitoring. Good."
+  },
+  "recommendations": [
+    {
+      "priority": 1,
+      "type": "config_fix",
+      "description": "Fix digest-reviews.js line 144: remove processedWinIds legacy fallback. This is a mechanical code fix — replace the 2-line isProcessed check with filename-only check. 6th consecutive escalation.",
+      "self_fixable": false,
+      "fix_applied": false,
+      "notes": "This is in build-scripts/ which tinker cannot self-fix per rules. But the fix is trivial and well-defined. The decider has self-reported this bug twice."
+    },
+    {
+      "priority": 2,
+      "type": "prompt_fix",
+      "description": "Continue prompt diet work. All 3 major prompts (analyst 436, decider 453, tinker 501) remain well above 250-line ceiling. PROP-001 and PROP-002 exist. PROP-003 needed for tinker self-diet.",
+      "self_fixable": false,
+      "fix_applied": false
+    },
+    {
+      "priority": 3,
+      "type": "prompt_fix",
+      "description": "ISS-442 (Misleading verdict overload) is the oldest open issue and requires human decision on whether to split the category. Flag for next human review session.",
+      "self_fixable": false,
+      "fix_applied": false
+    }
+  ],
+  "cost_engineering": {
+    "agent_efficiency": [
+      {
+        "agent": "analyst",
+        "recent_runs_checked": 3,
+        "substantive_runs": 3,
+        "no_op_runs": 0,
+        "estimated_waste_pct": 5,
+        "model": "opus",
+        "recommendation": "Currently efficient — producing expansions (EXP-037/038/039) and fingerprints (WIN-065/066/067) every run. V51.1 changes gave it real work."
+      },
+      {
+        "agent": "curmudgeon",
+        "recent_runs_checked": 5,
+        "substantive_runs": 5,
+        "no_op_runs": 0,
+        "estimated_waste_pct": 5,
+        "model": "opus",
+        "recommendation": "Efficient — reviewing 1-2 WINs per run consistently. Cycle 2 provides meaningful re-review work."
+      },
+      {
+        "agent": "decider",
+        "recent_runs_checked": 4,
+        "substantive_runs": 3,
+        "no_op_runs": 1,
+        "estimated_waste_pct": 15,
+        "model": "opus",
+        "recommendation": "Mostly efficient. Some runs produce no patches when digest is empty. The digest bug means it sometimes sees fewer items than it should. Fixing the digest bug would improve this."
+      },
+      {
+        "agent": "social",
+        "recent_runs_checked": 4,
+        "substantive_runs": 2,
+        "no_op_runs": 2,
+        "estimated_waste_pct": 40,
+        "model": "sonnet",
+        "recommendation": "V51.1 dome changes gave it real work (run 1-2 found author activity). Runs 3-4 largely confirmed no new activity. Consider reducing to 2 runs/day or adding a skip-signal when dome site is stable."
+      },
+      {
+        "agent": "poller",
+        "recent_runs_checked": 3,
+        "substantive_runs": 1,
+        "no_op_runs": 2,
+        "estimated_waste_pct": 10,
+        "model": "sonnet",
+        "recommendation": "V51.1 changes detected. When dome is stable, most runs confirm 'no change'. Acceptable overhead for the value of early detection."
+      }
+    ],
+    "proposals_written": [
+      {
+        "id": "PROP-001",
+        "file": "monitor/tinker/proposals/PROP-001.json",
+        "summary": "Analyst prompt diet — extract reference material to separate files",
+        "priority": "high",
+        "status": "Partially applied (436 down from 598). Needs further work toward dispatcher architecture."
+      },
+      {
+        "id": "PROP-002",
+        "file": "monitor/tinker/proposals/PROP-002.json",
+        "summary": "Decider prompt diet — extract reference material to separate files",
+        "priority": "high",
+        "status": "Partially applied (453 down from 577). Needs further work."
+      }
+    ],
+    "new_proposals_this_run": [],
+    "implemented_since_last_report": [
+      "PROP-001 partially applied (analyst -162 lines)",
+      "PROP-002 partially applied (decider -124 lines)"
+    ],
+    "cumulative_estimated_savings": "Prompt reductions saving ~286 lines of context per analyst+decider run. Significant but still above target.",
+    "self_audit": {
+      "tinker_prompt_lines": 501,
+      "tinker_over_ceiling_pct": "100%",
+      "tinker_no_op_rate": "0% (every run produces substantive audit)",
+      "tinker_hypocrisy_check": "FAILING — tinker prompt is now larger than both analyst (436) and decider (453). Need PROP-003 for self-diet. Steps 8a-8d (~80 lines) and 11a-11e (~100 lines) are prime extraction candidates."
+    }
+  }
+}

@@ -1,0 +1,156 @@
+{
+  "report_date": "2026-04-06",
+  "pipeline_health": {
+    "agents_running": 5,
+    "agents_stalled": [],
+    "output_freshness": {
+      "poller": "0.5 hours ago (12:31 local) — within 4h schedule",
+      "analyst": "4.5 hours ago (08:23 local) — within 8h schedule",
+      "curmudgeon": "0.3 hours ago (12:38 local) — within 10-15min schedule",
+      "decider": "3.2 hours ago (09:45 local) — within daily schedule",
+      "integrity": "1 hour ago (12:03 local) — within daily schedule"
+    }
+  },
+  "handoff_issues": [
+    {
+      "severity": "major",
+      "producer": "curmudgeon",
+      "consumer": "wins.json (no consumer exists)",
+      "description": "code_analysis_tags produced in 59 curmudgeon review JSONs but never applied to wins.json. Integrity correctly reports 0/67 code_analysis reviewed in wins.json. The decider's morning briefing says 'Apply code_analysis tags' as a NEXT SESSION action but produces no automated patches for this. 59 WINs worth of tag data is accumulating with no pipeline to ingest it.",
+      "evidence": "monitor/integrity/report-2026-04-06.json shows code_analysis.reviewed=0, pending=67. monitor/curmudgeon/reviews/ contains 59 review files, all with code_analysis_tags populated. monitor/decisions/suggested-patches.json contains 0 patches targeting the code_analysis field. Morning briefing mentions 'Apply code_analysis tags for WIN-035 through WIN-041' but this has been accumulating since WIN-001 was reviewed on April 5.",
+      "suggested_fix": {
+        "file": "monitor/prompts/decider.md",
+        "find": null,
+        "replace": null,
+        "rationale": "The decider prompt should instruct the decider to generate suggested patches for wins.json code_analysis fields based on curmudgeon review JSONs. Alternatively, a script could be written to batch-apply tags from reviews/ to wins.json. This is a design gap, not a simple text fix — flagging for human review."
+      }
+    },
+    {
+      "severity": "minor",
+      "producer": "integrity",
+      "consumer": "decider",
+      "description": "Decider runs at ~06:30 UTC daily; integrity runs at ~09:00 UTC daily. The decider always consumes yesterday's integrity report, missing same-day integrity findings by 2.5 hours. In practice this hasn't caused problems because issues found by integrity are typically fixed in the human session and confirmed on the next cycle.",
+      "evidence": "daily-report-2026-04-07.json (generated_at 2026-04-07T06:30:00Z) references integrity issues from report-2026-04-06.json (run_at 2026-04-06T11:03:24Z). The decider correctly notes all were fixed, but it's always operating on stale integrity data.",
+      "suggested_fix": {
+        "file": null,
+        "find": null,
+        "replace": null,
+        "rationale": "Schedule reorder would fix this (integrity before decider) but schedule changes need human approval. Current impact is low since the daily cycle self-corrects. Flag for consideration only."
+      }
+    },
+    {
+      "severity": "moderate",
+      "producer": "integrity",
+      "consumer": "decider",
+      "description": "Integrity report found 5 broken external links (CHAMP, GRACE, Apollo LRR, CUORE SSL, CHIME DNS). ISS-032 addressed 3 of these (CHAMP, GRACE, CHIME) but 2 were not captured as issues: Apollo 11 LRR (LPI site restructured) and CUORE (expired SSL certificate). These orphaned findings have no open issue tracking them.",
+      "evidence": "integrity report-2026-04-06.json lists 5 broken links. open-issues.json ISS-032 only covers 3. No ISS entry exists for LPI Apollo 11 LRR (404) or CUORE (expired SSL).",
+      "suggested_fix": {
+        "file": null,
+        "find": null,
+        "replace": null,
+        "rationale": "Decider should create ISS entries for these on next run. If they persist, flag for human attention. The CUORE SSL issue may self-resolve; the Apollo LRR URL needs updating to current NASA/ILRS site."
+      }
+    }
+  ],
+  "prompt_issues": [
+    {
+      "severity": "moderate",
+      "prompt_file": "monitor/config.json",
+      "description": "Config only lists 3 of 6 agents (poller, analyst, decider). Curmudgeon, integrity, and tinker are absent. Any agent or process that reads config.json to understand the pipeline will have an incomplete picture.",
+      "suggested_fix": {
+        "find": "\"agents\": {\n    \"poller\": { \"model\": \"sonnet\", \"schedule\": \"every 4 hours\", \"role\": \"detect and classify changes\" },\n    \"analyst\": { \"model\": \"opus\", \"schedule\": \"check every 8 hours\", \"role\": \"deep strategic analysis of flagged changes\" },\n    \"decider\": { \"model\": \"opus\", \"schedule\": \"check every 12 hours\", \"role\": \"triage actions and interact with user\" }\n  }",
+        "replace": "\"agents\": {\n    \"poller\": { \"model\": \"sonnet\", \"schedule\": \"every 4 hours\", \"role\": \"detect and classify changes\" },\n    \"analyst\": { \"model\": \"opus\", \"schedule\": \"every 8 hours\", \"role\": \"deep strategic analysis of flagged changes\" },\n    \"curmudgeon\": { \"model\": \"opus\", \"schedule\": \"every 15 minutes\", \"role\": \"adversarial self-review of review arguments\" },\n    \"decider\": { \"model\": \"opus\", \"schedule\": \"daily 6:30 AM UTC\", \"role\": \"triage actions, morning briefing, suggested patches\" },\n    \"integrity\": { \"model\": \"haiku\", \"schedule\": \"daily 9:00 AM UTC\", \"role\": \"site health: links, tabs, build drift, data-prose consistency\" },\n    \"tinker\": { \"model\": \"opus\", \"schedule\": \"daily 10:30 AM UTC\", \"role\": \"pipeline self-repair: audit outputs, trace handoffs, fix stale configs\" }\n  }",
+        "rationale": "Adds missing agents to config. Also fixes decider schedule from 'every 12 hours' to 'daily 6:30 AM UTC' to match actual behavior documented in CLAUDE.md."
+      }
+    },
+    {
+      "severity": "minor",
+      "prompt_file": "monitor/prompts/tinker.md",
+      "description": "Tinker prompt says curmudgeon runs 'every 10min' but CLAUDE.md says 'every 15min'. Observed output rate (~4 reviews/hour over 14 hours) is more consistent with 15-minute intervals.",
+      "suggested_fix": {
+        "find": "| Curmudgeon | `monitor/prompts/curmudgeon.md` | Every 10min |",
+        "replace": "| Curmudgeon | `monitor/prompts/curmudgeon.md` | Every 15min |",
+        "rationale": "Aligns tinker prompt with CLAUDE.md and observed curmudgeon output rate."
+      }
+    }
+  ],
+  "open_issue_health": {
+    "total_open": 14,
+    "aged_out": [],
+    "repeated_deferrals": [],
+    "missing_patches": [
+      {
+        "issue_id": "ISS-015",
+        "description": "Decider says 'requires reading full WIN-016 detail to locate incomplete sentence' — the decider has read access to wins.json and could read the detail text. This is a lazy deferral if the decider isn't attempting to read the file.",
+        "days_open": 1
+      },
+      {
+        "issue_id": "ISS-020",
+        "description": "Decider says 'requires deeper analysis of dome's specific symmetry claim' — reasonable for now but the decider should attempt this analysis rather than indefinitely deferring.",
+        "days_open": 1
+      }
+    ],
+    "zombie_fixes": [],
+    "notes": "All 14 open issues were created today/yesterday. No issues aged >7 days yet. Most deferrals have reasonable rationales (manual verification, cross-issue coordination). Two issues (ISS-015, ISS-020) have deferral rationales that describe tasks the decider could attempt. Monitor on next cycle."
+  },
+  "schedule_issues": [
+    {
+      "description": "Curmudgeon has produced 59 review files in ~38 hours (Apr 5 22:22 to Apr 6 12:37). That's ~1.55 reviews/hour or ~1 review per 39 minutes. If the curmudgeon runs every 15 minutes, only ~40% of runs produce new reviews. This is expected since reviews take variable time, but it means Phase 1 completion for WINs (8 remaining) will take approximately 5 more hours at current rate, not the 1.7 days estimated in the morning briefing.",
+      "recommendation": "Morning briefing's '1.7 days' estimate appears too pessimistic based on current throughput. 59/67 reviewed in ~38 hours = ~0.6 hours per WIN = ~5 hours for remaining 8 WINs. After WINs: 24 sections + 3 prose + 9 holistic = 36 items remain for Phase 1 completion."
+    }
+  ],
+  "cross_check_findings": [
+    {
+      "agent": "curmudgeon",
+      "finding": "WIN-059 review is thorough and well-structured. code_analysis_tags correctly identify monitoring='none', relabels_standard=true, post_hoc=true, derives_from_dome=false — all with detailed evidence strings. The review correctly identifies that dome's Kill-Shot Test 6 is currently FAILING at 39.9% error, which is devastating and missing from our published text. Two holes found (duplicate mislabeling, missing Test 6 failure evidence) are substantive and actionable.",
+      "quality": "high"
+    },
+    {
+      "agent": "decider",
+      "finding": "Morning briefing accurately summarizes pipeline state. Suggested patches are well-formed with exact find/replace text. However, the curmudgeon progress count (41/67) was stale at time of reporting — the tracker showed 59/67 when the decider ran (based on file timestamps). The decider may have cached an earlier tracker read or the tracker was updated between runs.",
+      "quality": "good — stale count is a timing artifact, not a logic error"
+    },
+    {
+      "agent": "integrity",
+      "finding": "Report correctly identifies all broken anchors and external links. Build reproducibility check is valuable. However, the code_analysis count (0/67 reviewed) reflects wins.json state, not curmudgeon progress — this is technically correct but may mislead readers into thinking the curmudgeon hasn't reviewed any WINs. The integrity report should note the distinction.",
+      "quality": "good — accurate but could add context about curmudgeon review progress vs wins.json state"
+    }
+  ],
+  "recommendations": [
+    {
+      "priority": 1,
+      "type": "new_capability",
+      "description": "Create a script or decider instruction to batch-apply code_analysis_tags from curmudgeon review JSONs to wins.json. 59 WINs have been reviewed but wins.json shows 0/67 — the most valuable curmudgeon output is not reaching the published site.",
+      "self_fixable": false,
+      "fix_applied": false
+    },
+    {
+      "priority": 2,
+      "type": "config_fix",
+      "description": "Update config.json to include all 6 agents with correct schedules. Currently missing curmudgeon, integrity, tinker; decider schedule incorrect.",
+      "self_fixable": true,
+      "fix_applied": true
+    },
+    {
+      "priority": 3,
+      "type": "prompt_fix",
+      "description": "Fix curmudgeon schedule in tinker.md from 'Every 10min' to 'Every 15min' to match CLAUDE.md and observed behavior.",
+      "self_fixable": true,
+      "fix_applied": true
+    },
+    {
+      "priority": 4,
+      "type": "prompt_fix",
+      "description": "Decider should create ISS entries for Apollo LRR (404) and CUORE (expired SSL) broken links found by integrity but not yet tracked.",
+      "self_fixable": false,
+      "fix_applied": false
+    },
+    {
+      "priority": 5,
+      "type": "schedule_change",
+      "description": "Consider reordering integrity (currently 9 AM) to run before decider (currently 6:30 AM), so the decider gets same-day integrity data. Low impact currently.",
+      "self_fixable": false,
+      "fix_applied": false
+    }
+  ]
+}

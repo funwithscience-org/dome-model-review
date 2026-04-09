@@ -1,0 +1,109 @@
+{
+  "generated_at": "2026-04-08T21:50:00Z",
+  "report_date": "2026-04-08",
+  "mode_selected": "Mode 4 — Proposals & Self-Fixes",
+  "mode_rationale": "Pipeline healthy (Mode 1/2 green). Previous report had 4 unresolved findings: expansion tracker discrepancy, PROP-001/002 effectiveness unknown, PROP-003 unresolved, social overrun. All needed investigation before more cost engineering.",
+  "modes_checked": {
+    "mode_1_pipeline_health": "GREEN — All agents producing. Curmudgeon 65/69 (Cycle 2). Analyst output: EXP-040 today. Decider: patches applied. No stalled agents.",
+    "mode_2_infrastructure": "GREEN — FUSE matches GitHub on all 5 checked files (wins.json, sections.json, digest-reviews.js, generate-html.js, index.html).",
+    "mode_3_cost_engineering": "DEFERRED — Previous report's findings needed resolution first.",
+    "mode_4_proposals": "SELECTED — 4 unresolved findings from previous report. All investigated this run."
+  },
+  "previous_followup": [
+    {
+      "finding": "Expansion tracker shows 35 complete, 0 integrated",
+      "status": "FALSE_ALARM",
+      "evidence": "The decider uses an 'integrated: boolean' field on each tracker item, NOT a status change to 'integrated'. 35/36 complete items have integrated: true. Only EXP-040 (newest, written today) lacks the field — pending next decider run. The previous report checked for status==='integrated' which doesn't exist. The decider prompt at line 59 correctly filters on '!i.integrated'. No bug here."
+    },
+    {
+      "finding": "PROP-001/002 marked implemented but analyst (436 lines) and decider (453 lines) unchanged",
+      "status": "FIXED — PREVIOUS REPORT WAS WRONG (FUSE staleness)",
+      "evidence": "Current line counts: analyst.md = 110 lines (was 436 → 75% reduction), decider.md = 82 lines (was 453 → 82% reduction). Both now have reference modules in monitor/prompts/reference/: analyst has 5 modules (analyst-infrastructure.md, analyst-mode0-onboarding.md, analyst-mode1-expansions.md, analyst-mode34-procedures.md, analyst-normal-analysis.md), decider has 4 modules (decider-curmudgeon.md, decider-intake.md, decider-patches-and-selfapply.md, decider-reporting.md). PROPs were fully implemented. The 'unchanged' finding in the previous report was caused by FUSE serving stale file content — the workspace mount hadn't been synced."
+    },
+    {
+      "finding": "PROP-003 digest bug (lines 147-148 processedWinIds legacy fallback)",
+      "status": "STILL_OPEN",
+      "evidence": "Lines 147-148 of build-scripts/digest-reviews.js still contain the legacy fallback. Lines 50-53 still construct processedWinIds. The comment at lines 143-145 still describes the bug. PROP-003 exists with status 'proposed'. Cannot self-fix per Mode 4 rules (build-scripts/ changes need a build cycle). 8th consecutive escalation. Current impact: low (pending digest = 0, curmudgeon at 65/69 Cycle 2). Future impact: will mask Cycle 3 reviews for already-processed WIN IDs."
+    },
+    {
+      "finding": "Social agent ran 4 times on daily schedule, run 4 was explicit no-op",
+      "status": "CONFIRMED",
+      "evidence": "monitor/social/ has 4 reports today (report-2026-04-08.json, run3, run4, plus search-rankings update). Run 4 status='quiet', notes='QUIET RUN. No new developments since run 3.' The social agent correctly self-identified the no-op but still consumed a full Sonnet invocation to reach that conclusion."
+    },
+    {
+      "finding": "Future-dated patches file (suggested-patches-2026-04-09T10-01.json created on April 8)",
+      "status": "PERSISTS",
+      "evidence": "File still exists. Cosmetic timezone offset issue. Low priority."
+    }
+  ],
+  "findings": [
+    {
+      "severity": "minor",
+      "category": "self",
+      "description": "Previous tinker report contained two false findings due to FUSE staleness: (1) expansion tracker 'discrepancy' was actually correct behavior (boolean field vs status), (2) PROP-001/002 'unchanged' was stale file reads. Tinker itself is vulnerable to FUSE staleness despite the CLAUDE.md warning.",
+      "evidence": "Report 2026-04-08T20:30Z claimed '35 complete and 0 integrated' and 'line counts unchanged (436 and 453)'. Both were wrong. Fresh reads show integrated=true on 35/36 items and 110/82 line counts.",
+      "suggested_fix": {
+        "description": "Tinker Mode 3 cost engineering should verify line counts via GitHub raw URL, not workspace FUSE mount, when auditing prompt sizes. Add a curl-based check to the cost engineering reference module.",
+        "self_fixable": false,
+        "rationale": "Requires edit to tinker-cost-engineering.md reference module (which is in monitor/prompts/reference/, technically editable, but the fix is architectural rather than mechanical)."
+      },
+      "self_fixable": false,
+      "fix_applied": false
+    },
+    {
+      "severity": "moderate",
+      "category": "efficiency",
+      "description": "PROP-003 (digest-reviews.js legacy fallback bug) now at 8th escalation. Tinker cannot self-fix build-scripts/. Needs human or decider intervention.",
+      "evidence": "Lines 147-148 in build-scripts/digest-reviews.js. PROP-003 written with full fix specification. The fix is 2 lines: replace line 147-148 with 'const isProcessed = processedSet.has(file);' and remove lines 50-53 (processedWinIds construction).",
+      "suggested_fix": {
+        "description": "Human or build-capable agent applies PROP-003. The fix is trivial and low-risk.",
+        "self_fixable": false
+      },
+      "self_fixable": false,
+      "fix_applied": false
+    },
+    {
+      "severity": "minor",
+      "category": "efficiency",
+      "description": "Social agent ran 4 times today (schedule says daily). Run 4 was pure waste. A pre-flight gate checking dome site commit timestamps could skip unnecessary runs.",
+      "evidence": "4 reports in monitor/social/ today. Run 4: status='quiet', self-identified as no-op. Estimated cost: one full Sonnet invocation (~$0.05-0.10) for zero value.",
+      "suggested_fix": {
+        "description": "Add early-exit check to social prompt: if no new dome commits since last social run AND no new GitHub issues, output a one-line 'no changes' and exit. Or reduce to strict daily-only scheduling.",
+        "self_fixable": false,
+        "rationale": "Schedule frequency change requires human approval per Mode 4 rules."
+      },
+      "self_fixable": false,
+      "fix_applied": false
+    }
+  ],
+  "open_issue_health": {
+    "total_open": 4,
+    "note": "Down from 6 in previous report. Decider actively closing issues."
+  },
+  "dispatcher_conversion_results": {
+    "tinker": "VALIDATED — 100 lines core + 4 modules (~22KB total). One module loads per run. Working correctly.",
+    "analyst": "VALIDATED — 110 lines core + 5 modules (~27KB total). Dramatic reduction from 436 lines. PROP-001 confirmed effective.",
+    "decider": "VALIDATED — 82 lines core + 4 modules (~25KB total). Dramatic reduction from 453 lines. PROP-002 confirmed effective.",
+    "total_context_savings": "Analyst saves ~326 lines/run, decider saves ~371 lines/run, tinker saves ~400 lines/run. Combined: ~1097 lines of context freed across all three agents."
+  },
+  "recommendations": [
+    {
+      "priority": 1,
+      "type": "human_decision",
+      "description": "Apply PROP-003 to fix digest-reviews.js legacy fallback bug (8th escalation). Two-line fix, low risk, full spec in PROP-003.",
+      "prop_id": "PROP-003"
+    },
+    {
+      "priority": 2,
+      "type": "self_fix",
+      "description": "Add FUSE staleness protection to tinker cost engineering: verify prompt line counts via GitHub raw URL, not workspace mount. Prevents false findings like this run discovered.",
+      "prop_id": null
+    },
+    {
+      "priority": 3,
+      "type": "human_decision",
+      "description": "Investigate why social agent runs 4x on a daily schedule. Either enforce strict daily scheduling or add pre-flight gate.",
+      "prop_id": null
+    }
+  ]
+}

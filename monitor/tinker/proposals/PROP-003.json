@@ -1,0 +1,22 @@
+{
+  "id": "PROP-003",
+  "created": "2026-04-08T20:30:00Z",
+  "status": "proposed",
+  "priority": "high",
+  "category": "bug-fix",
+  "target": "build-scripts/digest-reviews.js",
+  "summary": "Remove processedWinIds legacy fallback that masks Cycle 2+ reviews",
+  "problem": "Lines 147-148 in digest-reviews.js check processedWinIds (bare WIN IDs extracted from filenames) as a fallback for the isProcessed check. This means any Cycle 2 review (e.g., WIN-062.c2.json) whose base WIN ID (WIN-062) appears in processed-reviews.json gets silently skipped, even though the Cycle 2 review file itself was never processed. The code comment at lines 143-145 explicitly describes this exact bug.",
+  "escalation_history": "Flagged in 7 consecutive tinker reports. Impact is currently low (pending digest = 0) but the bug will resurface whenever the curmudgeon starts Cycle 3.",
+  "fix": {
+    "file": "build-scripts/digest-reviews.js",
+    "lines": "47-51 and 147-148",
+    "current_code_line_47_51": "const processedSet = new Set(processedRaw);\n\n  const processedWinIds = new Set(processedRaw.map(p =>\n    ...",
+    "current_code_line_147_148": "    const isProcessed = processedSet.has(file) ||\n      (!isCycle2Plus && (processedSet.has(entry.win_id) || processedWinIds.has(entry.win_id)));",
+    "replacement_line_147_148": "    const isProcessed = processedSet.has(file);",
+    "also_remove": "Lines 51-52 (processedWinIds construction) — no longer needed",
+    "rationale": "Filename-only matching (processedSet.has(file)) is sufficient and inherently cycle-aware. WIN-001.json and WIN-001.c2.json are different filenames, so Cycle 2 reviews are never masked by Cycle 1 processing. The bare WIN ID fallback was a pre-cycle-awareness holdover."
+  },
+  "testing": "Run: node build-scripts/digest-reviews.js && node test.js — verify pending-digest.json still generates correctly and test suite passes.",
+  "risk": "Low. The fix simplifies the logic and removes an acknowledged bug. No behavioral change for Cycle 1 reviews (already matched by filename). Only affects Cycle 2+ reviews that were previously incorrectly masked."
+}

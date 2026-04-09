@@ -1,0 +1,192 @@
+{
+  "generated_at": "2026-04-08T21:30:00Z",
+  "report_date": "2026-04-08",
+  "pipeline_health": {
+    "agents_running": 5,
+    "agents_stalled": [],
+    "output_freshness": {
+      "poller": "~13 hours ago (latest-poll-summary.txt at 08:07 UTC — 4h schedule, within tolerance)",
+      "analyst": "~11 hours ago (latest-analysis-summary.txt at 10:16 UTC)",
+      "curmudgeon": "~13 hours ago (WIN-061.c2.json at 08:12 UTC, tracker shows 61/67 Cycle 2 WINs reviewed)",
+      "decider": "~13 hours ago (daily-report-2026-04-08T21-00.json at ~08:18 UTC — processed 10 c2 reviews, applied 3 patches, pushed 2 commits)",
+      "integrity": "~12 hours ago (report-2026-04-08T08-12.json at 09:12 UTC — daily schedule, expected)"
+    }
+  },
+  "handoff_issues": [
+    {
+      "severity": "major",
+      "producer": "curmudgeon",
+      "consumer": "decider (via digest-reviews.js)",
+      "description": "PERSISTENT P1 (4th consecutive tinker report): digest-reviews.js processedWinIds fallback at lines 143-144 still present. However, IMPACT IS MITIGATED — the decider's direct-read fallback is successfully processing c2 reviews. Latest run processed 10 c2 reviews despite digest showing 0 pending. Only WIN-061.c2.json remains unprocessed (written today, will be picked up next run).",
+      "evidence": "digest-reviews.js lines 143-144 unchanged: `const isProcessed = processedSet.has(file) || processedSet.has(entry.win_id) || processedWinIds.has(entry.win_id)`. pending-digest.json: pending_count=0. Yet decider daily-report-2026-04-08T21-00.json shows curmudgeon_reviews_processed includes 10 c2 reviews. Pipeline IS functional via fallback but wastes tokens reading full review files instead of compact digest.",
+      "suggested_fix": {
+        "file": "build-scripts/digest-reviews.js",
+        "find": "    const isProcessed = processedSet.has(file) || processedSet.has(entry.win_id) ||\n      processedWinIds.has(entry.win_id);",
+        "replace": "    // Check processed status by filename only — do NOT fall back to bare WIN ID.\n    // The processedWinIds fallback incorrectly marks Cycle 2+ reviews as processed\n    // when the Cycle 1 review of the same WIN is in the ledger.\n    const isProcessed = processedSet.has(file);",
+        "rationale": "4th consecutive escalation. Impact lower than originally assessed (decider has working fallback) but the bug silently breaks the digest's intended purpose. Fix is safe — processedSet already has full filenames for both cycles."
+      }
+    },
+    {
+      "severity": "moderate",
+      "producer": "decider",
+      "consumer": "digest-reviews.js",
+      "description": "Dual processed-reviews lists creating drift: processed-reviews.json has both 'processed' (127 entries) and 'processed_reviews' (69 entries) with imperfect overlap. digest-reviews.js reads 'processed' only. EXHIBIT-AB.c2.json and WIN-060.c2.json are in 'processed_reviews' but NOT in 'processed', meaning they'll appear as unprocessed in the next digest generation despite already being handled.",
+      "evidence": "processed_reviews has 2 entries not in processed: EXHIBIT-AB.c2.json, WIN-060.c2.json. The 'processed' list has 60 entries not in 'processed_reviews'. Two lists tracking the same concept with different membership.",
+      "suggested_fix": {
+        "file": "build-scripts/digest-reviews.js",
+        "find": "  const processedRaw = processedData ? processedData.processed : [];",
+        "replace": "  // Read from both ledger lists and merge to handle decider's dual-list format\n  const processedRaw = processedData ? [...new Set([...(processedData.processed || []), ...(processedData.processed_reviews || [])])] : [];",
+        "rationale": "Both lists track processed reviews. Merging them prevents re-processing reviews that were handled but only recorded in the secondary list. This is a defensive fix alongside the P1 bug fix."
+      }
+    }
+  ],
+  "prompt_issues": [
+    {
+      "severity": "critical",
+      "prompt_file": "monitor/prompts/decider.md",
+      "description": "Decider prompt at 446 lines — 78% over the 250-line ceiling. GREW 32 lines since last report (was 414). This is the 4th consecutive report flagging this. LLM instruction-following degrades with prompt length; earlier sections get deprioritized.",
+      "suggested_fix": {
+        "find": null,
+        "replace": null,
+        "rationale": "Not self-fixable — requires human refactor. Extract patch template schema (~50 lines), severity definitions (~30 lines), expansion integration procedure (~60 lines), and self-apply procedure (~80 lines) into monitor/prompts/decider-ref-*.md files loaded at runtime. Target: main prompt under 250 lines."
+      }
+    },
+    {
+      "severity": "major",
+      "prompt_file": "monitor/prompts/analyst.md",
+      "description": "Analyst prompt at 369 lines — 48% over ceiling. GREW 67 lines since last report (was 302). Growth is accelerating. Mode 3 globe fingerprint procedure (~80 lines) and V6 restructure context (~40 lines) should be extracted.",
+      "suggested_fix": {
+        "find": null,
+        "replace": null,
+        "rationale": "Not self-fixable. Extract Mode 3 procedure into monitor/prompts/analyst-mode3.md and V6 context into monitor/prompts/v6-context.md. Both read at runtime only when needed."
+      }
+    },
+    {
+      "severity": "moderate",
+      "prompt_file": "monitor/prompts/curmudgeon.md",
+      "description": "Curmudgeon prompt at 293 lines — 17% over ceiling. Manageable but trending upward.",
+      "suggested_fix": {
+        "find": null,
+        "replace": null,
+        "rationale": "Lower priority. Monitor for further growth."
+      }
+    }
+  ],
+  "open_issue_health": {
+    "total_open": 13,
+    "total_closed": 520,
+    "aged_out": [],
+    "repeated_deferrals": [],
+    "missing_patches": [
+      {
+        "issue_id": "ISS-442",
+        "description": "VERDICT CATEGORY OVERLOAD: 'Misleading' verdict conflates 4 distinct failure modes. Taxonomy restructuring requires editorial judgment.",
+        "status": "pending-human",
+        "rationale": "Correctly classified. Not a pipeline failure."
+      }
+    ],
+    "assigned_analyst": [
+      "ISS-627 (MOND priority argument)",
+      "ISS-628 (Galaxy-scale ontology)",
+      "ISS-629 (Cross-WIN structural incoherence)",
+      "ISS-641 (EXHIBIT-AB coverage gap)",
+      "ISS-642 (EXHIBIT-AB statistical claims)"
+    ],
+    "zombie_fixes": []
+  },
+  "schedule_issues": [
+    {
+      "severity": "minor",
+      "description": "Globe fingerprint tracker shows 63/99 reviewed but only 57 output files in monitor/analyst/globe-fingerprints/. 6 reviewed items have no corresponding output file — may indicate crashed runs or items reviewed without producing output. Not critical but should be reconciled."
+    }
+  ],
+  "state_hygiene": {
+    "open_issues_count": 13,
+    "closed_issues_count": 520,
+    "bloat_risk": "low — 13 open issues. Closed issues at 520 but stored separately.",
+    "tracker_disk_consistency": "OK — 61 WINs marked reviewed in tracker, 62 c2 review files on disk (WIN-061.c2.json written after tracker update — normal lag).",
+    "pending_digest_stale": "YES — digest shows 0 pending due to processedWinIds bug. Decider uses direct-read fallback.",
+    "code_analysis_sync": "MINOR GAP — 67/68 WINs have code_analysis.reviewed=true. WIN-058b (added post-V51, Bedrock Induction Ratio κ=1.672) has reviewed=false. Not in curmudgeon tracker point list.",
+    "win_count_discrepancy": "CLAUDE.md says 67 WINs but data/wins.json has 68 (WIN-058b added). Build computes counts dynamically so HTML is correct, but CLAUDE.md and curmudgeon tracker are stale.",
+    "curmudgeon_alerts_stale": "YES — 75KB alerts.txt documents WIN-005 DOI issue from Cycle 1. DOI confirmed FIXED (correct DOI 01252-9 now in wins.json). Alerts should be cleared.",
+    "v6_stale_references": "13 expansion tracker items have old-style section refs (SEC-4.5, part4, SEC-3.5, etc). All are in complete/archived status so not actively consumed, but creates confusion.",
+    "globe_fingerprint_gap": "Tracker shows 63 reviewed, 57 output files on disk. 6 items reviewed without output files.",
+    "prompt_sizes": {
+      "analyst.md": 369,
+      "curmudgeon.md": 293,
+      "decider.md": 446,
+      "poller.md": 86,
+      "structure-integrity.md": 174,
+      "tinker.md": 237,
+      "over_limit": ["decider.md (+196)", "analyst.md (+119)", "curmudgeon.md (+43)"]
+    },
+    "dual_processed_lists": "processed-reviews.json has both 'processed' (127) and 'processed_reviews' (69) lists tracking the same concept. 2 c2 entries exist only in processed_reviews. This causes re-processing risk."
+  },
+  "previous_tinker_followup": {
+    "P1_digest_c2_bug": "STILL UNFIXED (4th consecutive report). Code at build-scripts/digest-reviews.js lines 143-144 unchanged. processedWinIds fallback still present. However, IMPACT DOWNGRADED from critical to major: the decider's direct-read fallback is working — 10 c2 reviews processed in latest run despite digest showing 0 pending. Only 1 c2 review (WIN-061) remains unprocessed. Bug should still be fixed to restore digest efficiency.",
+    "P2_config_schedules": "FIXED — verified in prior report, still correct.",
+    "P3_decider_refactor": "NOT ADDRESSED — decider.md GREW from 414 to 446 lines. Moving in wrong direction.",
+    "P4_analyst_refactor": "NOT ADDRESSED — analyst.md GREW from 302 to 369 lines. Moving in wrong direction.",
+    "P5_alerts_cleanup": "NOT ADDRESSED — alerts.txt still has 75KB of stale WIN-005 content. WIN-005 DOI confirmed fixed (01252-9 in wins.json). Applying self-fix this run.",
+    "P6_WIN_052_parse_error": "FIXED — WIN-052.c2.json now parses as valid JSON. Either the file was regenerated or repaired."
+  },
+  "spot_checks": {
+    "decider_2026_04_08T21_00": {
+      "target_file_routing": "CORRECT — patches target wins.json and sections.json only.",
+      "curmudgeon_reviews_processed": "10 c2 reviews processed (WIN-052 through WIN-060 + EXHIBIT-AB). Pipeline functional via fallback.",
+      "self_apply": "GOOD — 3 patches applied, 2074 tests passed, 2 commits pushed, 5 issues closed. Active and productive.",
+      "issue_creation": "5 new issues created (ISS-636 through ISS-643). Appropriate severity assignments."
+    },
+    "curmudgeon_WIN_061_c2": "Well-formed JSON, Cycle 2 review of WIN-061. Tracker correctly at 61/67.",
+    "integrity_2026_04_08": "PASS — build reproducible (0-diff). One moderate finding: duplicate id='dielectric' at lines 418 and 1624. One minor: geodesy.noaa.gov timeout (transient)."
+  },
+  "recommendations": [
+    {
+      "priority": 1,
+      "type": "script_fix",
+      "description": "Fix build-scripts/digest-reviews.js lines 143-144: remove processedWinIds fallback to restore digest pipeline for Cycle 2+ reviews. Also merge both processed-reviews lists (line 49). 4th consecutive escalation.",
+      "self_fixable": false,
+      "fix_applied": false,
+      "rationale": "Cannot self-fix: build-scripts/ changes need build cycle."
+    },
+    {
+      "priority": 2,
+      "type": "prompt_fix",
+      "description": "Refactor decider.md (446 lines → target <250). Extract patch schema, severity matrix, expansion integration, and self-apply procedure into separate reference files. Prompt grew 32 lines since last report.",
+      "self_fixable": false,
+      "fix_applied": false,
+      "rationale": "Changes agent strategy — needs human approval."
+    },
+    {
+      "priority": 3,
+      "type": "prompt_fix",
+      "description": "Refactor analyst.md (369 lines → target <250). Extract Mode 3 procedure and V6 context into separate files.",
+      "self_fixable": false,
+      "fix_applied": false,
+      "rationale": "Changes agent strategy — needs human approval."
+    },
+    {
+      "priority": 4,
+      "type": "data_fix",
+      "description": "WIN-058b (Bedrock Induction Ratio) has code_analysis.reviewed=false — the only unreviewed WIN. Add to curmudgeon tracker point list so it gets reviewed in Cycle 2. Also update CLAUDE.md '67 WINs' references to reflect the 68-WIN reality (or use dynamic count commands).",
+      "self_fixable": false,
+      "fix_applied": false,
+      "rationale": "Tracker modification and data changes are outside tinker scope."
+    },
+    {
+      "priority": 5,
+      "type": "hygiene",
+      "description": "Clear stale curmudgeon alerts.txt — WIN-005 DOI confirmed fixed (01252-9 in wins.json). 75KB of resolved alerts causes alert fatigue.",
+      "self_fixable": true,
+      "fix_applied": true,
+      "fix_details": "Replaced 75KB stale content with timestamp noting alerts resolved and DOI fix confirmed."
+    },
+    {
+      "priority": 6,
+      "type": "hygiene",
+      "description": "Reconcile globe fingerprint tracker (63 reviewed) with output files on disk (57 files). 6 items marked reviewed have no output file. Minor — no downstream consumer affected.",
+      "self_fixable": false,
+      "fix_applied": false
+    }
+  ]
+}
