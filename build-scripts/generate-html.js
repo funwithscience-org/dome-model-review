@@ -80,12 +80,17 @@ function resolvePlaceholders(html, context) {
     '{{CA_POSTHOC}}': context.codeAnalysis?.postHoc || 0,
     '{{CA_DOME}}': context.codeAnalysis?.derivesFromDome || 0,
 
-    // Acknowledged failures
+    // Acknowledged failures (soft-pedal bucket: refined/suspended/falsified, no dome_status_current)
     '{{ACKNOWLEDGED_FAILURES}}': context.acknowledgedFailures || 0,
     '{{DOME_CLAIMED_FAILURES}}': context.domeClaimedFailures || 0,
     '{{DOME_CLAIMED_ACCURACY}}': context.domeClaimedAccuracy || '?',
     '{{ACCURACY_VARIANT_LIST}}': context.accuracyVariantList || '',
     '{{ACCURACY_VARIANT_DETAIL}}': context.accuracyVariantDetail || '',
+    // Silent failures (items the dome has visibly removed/suspended but excluded from his accuracy denominator)
+    '{{SILENT_FAILURES}}': context.silentFailures || 0,
+    '{{TOTAL_DOCUMENTED_FAILURES}}': context.totalDocumentedFailures || 0,
+    '{{HONEST_ACCURACY}}': context.honestAccuracy || '?',
+    '{{HONEST_ACCURACY_DENOM}}': context.honestAccuracyDenom || 0,
 
     // De-duplication analysis (EXP-032)
     '{{INDEPENDENT_CLAIMS}}': context.independentClaims || 39,
@@ -148,6 +153,81 @@ function resolveTypeB(html, winsByVerdict, counts, wins, tally, sectionNav) {
   }
 
   return html;
+}
+
+function escapeHtml(s) {
+  if (s == null) return '';
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function renderFailureEntry(e) {
+  const idLabel = escapeHtml(e.id);
+  const refLabel = e.dome_ref_current
+    ? escapeHtml(e.dome_ref_current) + (e.dome_status_current ? ` <span style="color:#8b0000;font-weight:600">[${escapeHtml(e.dome_status_current)}]</span>` : '')
+    : escapeHtml(e.dome_ref || 'unknown');
+  const summary = escapeHtml(e.summary || '');
+  const prediction = escapeHtml(e.prediction || '');
+  const outcome = escapeHtml(e.outcome || '');
+  const domeLabel = escapeHtml(e.dome_label || '');
+  const what = escapeHtml(e.what_actually_happened || '');
+  const evidenceDate = escapeHtml(e.evidence_date || '');
+  const staleNote = e.needs_reconciliation
+    ? `<p style="font-size:.85rem;color:#888;font-style:italic;margin:.5rem 0 0">Note: the <code>${escapeHtml(e.dome_ref || '')}</code> reference above is from an earlier dome version and may have been reused on the current site for an unrelated prediction. Reconciliation against the V50.6→V51.1 history is in progress.</p>`
+    : '';
+  return `<div style="border-left:4px solid #c45050;background:var(--card-bg);padding:1rem 1.25rem;margin:1rem 0;border-radius:0 6px 6px 0">
+<div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:.5rem">
+  <strong>${idLabel}: ${summary}</strong>
+  <span style="font-size:.85rem;color:#888">${refLabel}</span>
+</div>
+<p style="margin:.5rem 0 .25rem"><strong>Prediction:</strong> ${prediction}</p>
+<p style="margin:.25rem 0"><strong>Outcome:</strong> ${outcome}</p>
+<p style="margin:.25rem 0"><strong>Dome's label:</strong> <em>${domeLabel}</em>${evidenceDate ? ` <span style="color:#888;font-size:.85rem">(${evidenceDate})</span>` : ''}</p>
+<p style="margin:.25rem 0 0">${what}</p>
+${staleNote}
+</div>`;
+}
+
+function renderFailuresBlock(failures, silentFailureEntries, acknowledgedBucketEntries, honestAccuracy, honestAccuracyDenom) {
+  const totalDome = failures.dome_claimed_failures || 0;
+  const totalSilent = silentFailureEntries.length;
+  const honestPct = honestAccuracy;
+
+  const silentBlocks = silentFailureEntries.length > 0
+    ? silentFailureEntries.map(renderFailureEntry).join('\n')
+    : '<p><em>None currently tracked. The poller flags new removals as they appear.</em></p>';
+
+  const ackBlocks = acknowledgedBucketEntries.length > 0
+    ? acknowledgedBucketEntries.map(renderFailureEntry).join('\n')
+    : '<p><em>None currently tracked.</em></p>';
+
+  return `
+<h2 id="p3-failures">Failures the dome doesn't count</h2>
+
+<p>Beyond the ${69} predictions reviewed above, the dome has produced predictions that <em>did not</em> hold up against data — but most of them are not visible in his ${failures.dome_claimed_accuracy} headline accuracy figure. He uses three layers of softening: <strong>"refined"</strong> (the prediction is rewritten after the data comes in), <strong>"suspended"</strong> (the test is paused indefinitely), and <strong>"removed"</strong> (the WIN is annotated as withdrawn but excluded from the count entirely). His own accuracy formula <code>${69} / (${69} + ${totalDome})</code> only counts the first category.</p>
+
+<p>Counting every documented failure honestly — refined, suspended, removed, and our review's documented failures — gives a denominator of <code>${honestAccuracyDenom}</code> and an accuracy of <strong>${honestPct}</strong>, not ${failures.dome_claimed_accuracy}.</p>
+
+<h3 id="p3-silent-failures">Silent failures (currently visible on dome site, excluded from his count)</h3>
+
+<p>${totalSilent} prediction${totalSilent === 1 ? '' : 's'} that the dome has visibly disowned on the current wins.html — marked <code>[REMOVED]</code> or <code>[SUSPENDED]</code> inline — but excluded from both the headline 69 confirmed count and the ${totalDome} acknowledged failures. These are the entries that should reduce his accuracy but don't.</p>
+
+${silentBlocks}
+
+<h3 id="p3-ack-failures">Acknowledged-bucket failures (refined, suspended, falsified)</h3>
+
+<p>${acknowledgedBucketEntries.length} prediction${acknowledgedBucketEntries.length === 1 ? '' : 's'} we have documented as failures using the dome's softer language. Some of these correspond to items in the dome's "${totalDome} refined" bucket; others were FALSIFIED outright but the dome's accounting absorbs them differently.</p>
+
+<div style="background:#fff9e6;border-left:4px solid #d4a017;padding:.75rem 1rem;margin:1rem 0;border-radius:0 4px 4px 0;font-size:.9rem">
+<strong>⚠ Reconciliation in progress.</strong> The <code>dome_ref</code> field on the entries below points to W-numbers from an earlier dome version. The dome has since reused those W-numbers for unrelated CONFIRMED predictions (e.g. <code>W024</code> previously referred to "Polaris elevation excess" but now refers to "Roaring 40s = SAA Southern Boundary"). The analyst is working through the V50.6→V51.1 history to map each entry to its current dome state. Until that's complete, treat the W-references as historical pointers, not live cross-references.
+</div>
+
+${ackBlocks}
+`;
 }
 
 function renderSectionFromJson(sectionId, context, winsByVerdict, wins, tally, sectionNavFunc) {
@@ -313,7 +393,8 @@ a:hover{text-decoration:none}
 .title-block .subtitle{font-size:1.1rem;color:#666;margin:.2rem 0}
 .title-block .meta{font-size:.95rem;color:#999;margin-top:1rem}
 .scorecard{display:grid;gap:1.5rem;margin:2rem 0;max-width:none}
-.sc-hero{grid-template-columns:repeat(3,1fr)}
+.sc-hero{grid-template-columns:repeat(4,1fr)}
+@media(max-width:1100px){.sc-hero{grid-template-columns:repeat(2,1fr)}}
 .sc-breakdown{grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:1rem;margin-top:.5rem}
 .scorecard .sc-card{background:var(--card-bg);border:2px solid var(--border);border-radius:8px;padding:1.5rem 1.2rem;text-align:center;transition:all .2s}
 .scorecard .sc-card:hover{box-shadow:0 4px 12px rgba(0,0,0,.1);border-color:var(--accent)}
@@ -638,6 +719,25 @@ function main() {
   const independentClaims = dedupClusters.length + (counts.total - clusteredWinSet.size);
   const dedupReductionPct = Math.round((1 - independentClaims / counts.total) * 100);
 
+  // Failures bucket split:
+  //   - silent failures: entries the dome has visibly removed/suspended but excluded from any failure denominator
+  //     (filter on dome_status_current being set, e.g. "REMOVED" or "SUSPENDED")
+  //   - acknowledged-bucket: the rest of the entries — items the dome calls "refined", "suspended" via the
+  //     historical W-NNN pointer, or "FALSIFIED". Many of these have stale dome refs and are awaiting
+  //     reconciliation against the dome's V50.6→V51.1 history (see ISS-676, analyst assignment).
+  // Note: these are OUR documented entries. The dome's own claimed failure count is failures.dome_claimed_failures.
+  const silentFailureEntries = failures.entries.filter(e => e.dome_status_current);
+  const acknowledgedBucketEntries = failures.entries.filter(e => !e.dome_status_current);
+  const silentFailures = silentFailureEntries.length;
+  const acknowledgedFailures = acknowledgedBucketEntries.length;
+  const totalDocumentedFailures = failures.entries.length;
+  // Honest accuracy: dome's 69 wins divided by his denominator + the silent failures he excluded.
+  // Formula: 69 / (69 + dome_claimed_failures + silent_failures)
+  const honestAccuracyDenom = counts.total + (failures.dome_claimed_failures || 0) + silentFailures;
+  const honestAccuracy = honestAccuracyDenom > 0
+    ? ((counts.total / honestAccuracyDenom) * 100).toFixed(1) + '%'
+    : '?';
+
   // Build context object for section rendering
   const context = {
     totalWins: counts.total,
@@ -646,7 +746,11 @@ function main() {
     unfalsifiable: counts.unfalsifiable,
     tally,
     codeAnalysis: counts.codeAnalysis,
-    acknowledgedFailures: failures.entries.length,
+    acknowledgedFailures,
+    silentFailures,
+    totalDocumentedFailures,
+    honestAccuracy,
+    honestAccuracyDenom,
     domeClaimedFailures: failures.dome_claimed_failures,
     domeClaimedAccuracy: failures.dome_claimed_accuracy,
     accuracyVariantList,
@@ -732,7 +836,7 @@ ${CSS}
 <p class="meta">${BUILD_DATE} &nbsp;|&nbsp; Version ${REVIEW_VERSION}<br>Source: <a href="https://john09289.github.io/predictions">john09289.github.io/predictions</a></p>
 </div>
 
-<div class="scorecard sc-hero" style="grid-template-columns:repeat(3,1fr)">
+<div class="scorecard sc-hero" style="grid-template-columns:repeat(4,1fr)">
 <div class="sc-card">
 <div class="sc-number">${counts.total}</div>
 <div class="sc-label">Claimed "Wins"</div>
@@ -744,9 +848,14 @@ ${CSS}
 <div class="sc-sublabel">Not one claim produces a result that the globe model can't explain and the dome uniquely can</div>
 </div>
 <div class="sc-card" style="border-left:4px solid #c45050">
-<div class="sc-number">${failures.entries.length}</div>
+<div class="sc-number">${failures.dome_claimed_failures}</div>
 <div class="sc-label">Acknowledged Failures</div>
-<div class="sc-sublabel">Predictions that failed — labeled "refined," "suspended," or quietly dropped</div>
+<div class="sc-sublabel">The dome's own count — items he labels "refined" and includes in his ${failures.dome_claimed_accuracy} accuracy denominator</div>
+</div>
+<div class="sc-card" style="border-left:4px solid #8b0000">
+<div class="sc-number">${silentFailures}</div>
+<div class="sc-label">Silent Failures</div>
+<div class="sc-sublabel">Predictions the dome has visibly removed or suspended but excluded from his accuracy denominator. Counting them honestly drops his stated ${failures.dome_claimed_accuracy} to <strong>${honestAccuracy}</strong>.</div>
 </div>
 </div>
 
@@ -915,6 +1024,8 @@ ${sectionNav('model', 'The Model', 'wins', counts.total + ' Wins Reviewed')}
 <div class="tab-content" id="wins">
 
 ${renderSectionFromJson('part3', context, winsByVerdict, wins, tally, sectionNav)}
+
+${renderFailuresBlock(failures, silentFailureEntries, acknowledgedBucketEntries, honestAccuracy, honestAccuracyDenom)}
 
 ${sectionNav('selftest', 'Self-Contradictions', 'pages', 'Live Power Dashboard')}
 
