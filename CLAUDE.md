@@ -127,7 +127,7 @@ security-audit.md                 # Website security scan results
 
 ## Monitoring Pipeline
 
-Seven scheduled agents run continuously. All prompts live in `monitor/prompts/*.md` — edit the markdown to change agent behavior. The scheduled tasks are thin wrappers that just read the prompt file.
+Eight scheduled agents run continuously. All prompts live in `monitor/prompts/*.md` — edit the markdown to change agent behavior. The scheduled tasks are thin wrappers that just read the prompt file.
 
 | Agent | Schedule | Model | Prompt File | Purpose |
 |-------|----------|-------|-------------|---------|
@@ -138,6 +138,7 @@ Seven scheduled agents run continuously. All prompts live in `monitor/prompts/*.
 | dome-integrity | Daily 9:00 AM | Haiku | `monitor/prompts/structure-integrity.md` | Site health: links, tabs, build drift, data-prose consistency, discoverability |
 | dome-tinker | Daily 10:30 AM | Opus | `monitor/prompts/tinker.md` | Pipeline ops: audit outputs, trace handoffs, fix stale configs, FUSE staleness detection, cost engineering |
 | dome-social | Daily 11:00 AM | Sonnet | `monitor/prompts/social.md` | Strategic analyst: owns machine-readable layer (llms.txt, sitemap, robots.txt), competitive discoverability, search rankings, dome author activity |
+| dome-workspace-sync | Every 4h | Haiku | `monitor/prompts/workspace-sync.md` | Commits workspace-only files (monitor/) to git. Prevents FUSE data loss. Does not analyze or modify content. |
 
 ### Data Flow
 
