@@ -71,10 +71,31 @@ Write to `monitor/decisions/daily-report-YYYY-MM-DDTHH-MM.json`:
 
 ## Step 5: Update Issue Tracker
 
+**CRITICAL: Issue ID Assignment.** `open-issues.json` has a `next_id` field (integer). When creating new issues:
+1. Read `next_id` from `open-issues.json`
+2. Assign the new issue `ISS-{next_id}`
+3. Increment `next_id` and write it back
+
+**Never scan for max ID across issues.** IDs were historically reused between open and closed files, causing collisions. The `next_id` counter is the single source of truth for the next available ID.
+
+```bash
+# Example: create a new issue
+node -e "
+const fs=require('fs');
+const o=JSON.parse(fs.readFileSync('monitor/decisions/open-issues.json','utf8'));
+const id='ISS-'+o.next_id;
+o.next_id++;
+o.issues.push({id, win_id:null, severity:'moderate', category:'content-update', status:'open', description:'...', found_by:'decider', found_at:new Date().toISOString()});
+fs.writeFileSync('monitor/decisions/open-issues.json',JSON.stringify(o,null,2));
+console.log('Created',id);
+"
+```
+
 Update `monitor/decisions/open-issues.json`:
 ```json
 {
   "last_updated": "ISO timestamp",
+  "next_id": 674,
   "issues": [
     {
       "id": "ISS-NNN",
