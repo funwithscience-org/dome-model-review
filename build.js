@@ -59,14 +59,14 @@ if (target === 'publish') {
   let workspace = null;
   const sessionMatch = (process.cwd().match(/\/sessions\/([^/]+)/) || [])[1];
   if (sessionMatch) {
-    const candidate = `/sessions/${sessionMatch}/mnt/dome-model-review`;
+    const candidate = `/sessions/determined-beautiful-wozniak/mnt/dome-model-review`;
     if (fs.existsSync(candidate)) workspace = candidate;
   }
   if (!workspace) {
     try {
       const dirs = fs.readdirSync('/sessions');
       for (const d of dirs) {
-        const c = `/sessions/${d}/mnt/dome-model-review`;
+        const c = `/sessions/determined-beautiful-wozniak/mnt/dome-model-review`;
         try { if (fs.existsSync(c) && fs.readdirSync(c).length > 0) { workspace = c; break; } } catch {}
       }
     } catch {}
@@ -85,7 +85,7 @@ if (target === 'publish') {
     }
     console.log(`✅ Sync to workspace (${synced} files)`);
   } else {
-    console.log('\n⚠️  Workspace sync skipped: no accessible /sessions/*/mnt/dome-model-review found.');
+    console.log('\n⚠️  Workspace sync skipped: no accessible /sessions/determined-beautiful-wozniak/mnt/dome-model-review found.');
   }
 }
 
