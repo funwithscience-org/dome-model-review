@@ -1,0 +1,102 @@
+{
+  "generated_at": "2026-04-09T10:45:00Z",
+  "report_date": "2026-04-09",
+  "mode_selected": "Mode 2 — Infrastructure & FUSE Staleness",
+  "mode_rationale": "FUSE hash check caught 3 stale files in workspace (data/sections.json, build-scripts/generate-html.js, docs/index.html). Workspace lagged main by 2 commits (2e8f256 at 09:55 and HEAD 7322292 at 10:37). Root cause: hardcoded session path in build.js. Mode 2 is the right mode — infra diagnosis + protect downstream agents from bad data.",
+  "modes_checked": {
+    "mode_1_pipeline_health": "GREEN — Poller 04:08, analyst expansion-tracker 10:11, curmudgeon tracker 08:10, decider daily-report 08:11. Curmudgeon Cycle 2 Phase 1: 69/69 reviewed (completed since previous report). Expansions: 44 complete / 38 integrated / 6 pending integration. Open issues: 9. Tests: 2242 passed, 0 failed. CI: 3 most recent runs all success (HEAD 7322292).",
+    "mode_2_infrastructure": "RED — 3/5 checked files stale in workspace. wins.json OK (synced 06:26 from commit c5a9bd3). sections.json, generate-html.js, index.html all lag by 2+ commits. Auth: PAT present, GitHub API responds 200.",
+    "mode_3_cost_engineering": "DEFERRED — Mode 2 issue takes priority.",
+    "mode_4_proposals": "PARTIAL — PROP-004 written for root-cause fix this run."
+  },
+  "previous_followup": [
+    {
+      "finding": "PROP-003 digest bug (lines 147-148 processedWinIds legacy fallback)",
+      "status": "STILL_OPEN",
+      "evidence": "build-scripts/digest-reviews.js at main still contains the legacy fallback (md5 of digest-reviews.js matches main, so the untouched bug is present). 9th consecutive escalation. No build-capable agent has picked up the fix. Current impact still low (pending-digest empty, curmudgeon Cycle 2 now 69/69 complete — about to flip to Phase 2). Will bite on Cycle 3+ WIN re-reviews."
+    },
+    {
+      "finding": "Social agent potential overrun (4 runs/day on 'daily' schedule)",
+      "status": "NOT_RECHECKED",
+      "evidence": "Did not re-audit social run count this run — deferred to a later Mode 3 cost engineering run."
+    },
+    {
+      "finding": "Future-dated patches file (cosmetic timezone offset)",
+      "status": "NOT_RECHECKED",
+      "evidence": "Cosmetic, low priority."
+    }
+  ],
+  "findings": [
+    {
+      "id": "FND-2026-04-09-01",
+      "severity": "major",
+      "category": "fuse-staleness",
+      "title": "3 workspace files stale — build.js hardcoded session path silently skipping workspace sync",
+      "detail": "FUSE hash check against GitHub raw found 3 mismatches: data/sections.json (912b211d vs ea763cdc), build-scripts/generate-html.js (6515bd4b vs 821b06a0), docs/index.html (f10617b1 vs c9a32687). These files moved in commits 2e8f256 (09:55 'Add silent failures counter and honest accuracy') and downstream ISS-678 work up to HEAD 7322292 (10:37). wins.json happened to stay in sync because its last commit c5a9bd3 (06:26) predated the failure window.",
+      "root_cause": "build.js line 55 hardcodes `const workspace = '/sessions/busy-cool-mayer/mnt/dome-model-review'`. When build.js publish runs from a clean clone in any other Cowork session (including the ephemeral sessions spawned for scheduled decider/curmudgeon runs), `fs.existsSync(workspace)` returns false (path absent or permission denied) and the sync block is silently skipped — no warning, no error, no exit code. CLAUDE.md documents a manual sed step to fix this per-session, but that fix is never committed and is lost on every fresh clone. Scheduled agents that clone fresh therefore inherit the broken path every time.",
+      "evidence": [
+        "build.js:55 — `const workspace = '/sessions/busy-cool-mayer/mnt/dome-model-review';`",
+        "Current session: zen-brave-fermat",
+        "`ls /sessions/busy-cool-mayer/mnt/dome-model-review` → Permission denied from this session",
+        "Workspace wins.json mtime 06:26 = commit c5a9bd3 timestamp (last successful sync window)",
+        "Workspace sections.json mtime 08:10 = commit 8b27fc6 timestamp (last successful sync of that file)",
+        "Commits 2e8f256 / 148bd1a / 7322292 never reached the workspace — 14KB of stale docs/index.html",
+        "No warning was logged to any daily report — silent skip"
+      ],
+      "impact": "High blast radius for agents that read from the workspace without cross-checking GitHub: integrity (reads docs/index.html), social (reads data/ and docs/llms.txt). Integrity/social runs during the stale window audit the wrong HTML, potentially flagging spurious mismatches or missing real ones. The 90.8% honest accuracy counter from commit 2e8f256 was invisible to any agent reading from the mount."
+    },
+    {
+      "id": "FND-2026-04-09-02",
+      "severity": "minor",
+      "category": "schedule-verification",
+      "title": "Schedule table in tinker.md still matches, but not re-verified against cron this run",
+      "detail": "tinker.md reminds tinker to verify the schedule table against actual cron. Skipped this run due to Mode 2 priority. Previous Mode 4 run from 2026-04-08 confirmed schedules; no evidence of drift. Flagging for next Mode 3 run.",
+      "impact": "Very low — nothing broken, just a process-hygiene gap."
+    }
+  ],
+  "self_fixes_applied": [
+    {
+      "description": "Copied 3 stale files from clean clone (which holds the GitHub-verified main state) to the workspace FUSE mount.",
+      "files": [
+        "data/sections.json",
+        "build-scripts/generate-html.js",
+        "docs/index.html"
+      ],
+      "verification": "Re-ran the 5-file FUSE hash check — all 5 now OK against GitHub raw.",
+      "authority": "Explicitly permitted by tinker-infrastructure.md Step 1: 'Fix: copy from clone or GitHub raw fetch to workspace.' The copies are byte-identical mirrors of main, not content edits — tinker is not patching wins.json or sections.json, it is repairing a sync gap."
+    }
+  ],
+  "proposals_written": [
+    {
+      "id": "PROP-004",
+      "target": "build.js",
+      "priority": "high",
+      "summary": "Replace hardcoded `/sessions/busy-cool-mayer/...` with dynamic session detection via cwd + /sessions scan fallback, and log a visible warning when sync is skipped.",
+      "why_not_self_fix": "Modifies build.js, a build-pipeline file. Tinker prefers PROPs for changes to build-scripts/ and build.js per Mode 4 conservative-self-fix rule. The fix is small and low-risk; a decider or human applying PROP-004 should take < 2 minutes."
+    }
+  ],
+  "metrics": {
+    "fuse_hash_check_result": "3 stale / 5 checked → all 5 OK after self-fix",
+    "curmudgeon_progress": "Cycle 2 Phase 1: 69/69 (complete — expect Phase 2 transition on next curmudgeon run)",
+    "open_issues": 9,
+    "expansion_tracker": "44 complete, 38 integrated, 6 pending integration",
+    "tests": "2242 passed, 0 failed",
+    "ci_status": "success (3 most recent runs)",
+    "auth_status": "PAT present, api.github.com responds 200"
+  },
+  "open_followups_for_next_run": [
+    "Verify PROP-004 was applied — rerun FUSE hash check; confirm no new staleness since this report",
+    "PROP-003 escalation count now 9 — needs human or build-capable agent",
+    "Re-audit social agent run frequency and daily no-op rate (Mode 3 candidate)",
+    "Re-verify tinker.md schedule table against `list_scheduled_tasks` next Mode 3 run",
+    "Curmudgeon about to flip Phase 1 → Phase 2 (holistic review). Watch for new output schema in reviews/"
+  ],
+  "self_audit": {
+    "tinker_prompt_size_lines": 108,
+    "tinker_infra_module_lines": 120,
+    "tinker_cost_module_lines": "not checked this run",
+    "tinker_proposals_module_lines": 142,
+    "no_op_rate_comment": "This run was high-value: caught a real staleness bug with measurable impact and produced a targeted PROP plus an immediate self-fix. Not a no-op.",
+    "vulnerability_check": "Tinker reads from the clean clone and the workspace. The stale workspace files could have fooled tinker itself if tinker had only read from the workspace. The dispatcher quick-check (FUSE hash vs GitHub) caught it precisely because tinker compares against GitHub — not against the workspace. This design decision from previous runs paid off today."
+  }
+}
