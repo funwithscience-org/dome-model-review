@@ -111,6 +111,16 @@ Check `monitor/analyst/expansion-tracker.json` for signs of write collisions (co
 
 Classify: ID gaps and orphaned output files are **major** (lost work). Phantom entries and stale pending are **moderate**.
 
+### 7b. Workspace-Only Files at Risk
+
+The FUSE workspace mount is read-write but git cannot operate on it. Agents that write output files (curmudgeon reviews, analyst expansions, analyst reports) write to the workspace — but those files only persist if they are also committed to git via the clean clone. Check for files that exist on the workspace but not in git:
+
+- **Curmudgeon reviews**: Compare `monitor/curmudgeon/reviews/*.json` on workspace vs git. Flag any files present on workspace but missing from git — these are completed reviews the digest pipeline can't process reliably and that will be lost if the workspace is recycled.
+- **Analyst expansions**: Compare `monitor/analyst/expansions/*.json` on workspace vs git. Same risk.
+- **Analyst reports/analyses**: Check `monitor/analyst/*.json` for workspace-only files.
+
+Classify: Any workspace-only file is **major** (at risk of silent data loss). List the specific filenames so they can be committed.
+
 ### 8. Build Reproducibility
 
 Run `node build.js html` and diff the output against the current `docs/index.html`. If they differ, the published site doesn't match the source data. This is a critical finding.
