@@ -73,12 +73,32 @@ if (target === 'publish') {
   }
   if (workspace) {
     console.log(`\n⏳ Sync to workspace (${workspace})...`);
-    const syncFiles = ['data/wins.json', 'data/sections.json', 'docs/index.html', 'build-scripts/generate-html.js', 'build-scripts/generate-pdf.js', 'CLAUDE.md', 'monitor/v6-restructure-map.json', 'monitor/prompts/curmudgeon.md', 'monitor/prompts/analyst.md', 'monitor/prompts/decider.md', 'monitor/prompts/tinker.md', 'test.js'];
+    // Static files: data, HTML, build scripts, CLAUDE.md, test suite.
+    const staticSyncFiles = ['data/wins.json', 'data/sections.json', 'docs/index.html', 'build-scripts/generate-html.js', 'build-scripts/generate-pdf.js', 'CLAUDE.md', 'monitor/v6-restructure-map.json', 'test.js'];
+    // Dynamic: every .md in monitor/prompts (recursively). This includes agent
+    // prompts AND reference files AND workspace-sync.md. Previously we hardcoded
+    // a short list that excluded workspace-sync.md and all reference files, which
+    // meant fixes to those files never reached the workspace mount and the running
+    // agents kept executing the stale versions (2026-04-09 PROP-003/004 regression).
+    const promptFiles = [];
+    const walkPrompts = (dir) => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) walkPrompts(full);
+        else if (entry.isFile() && entry.name.endsWith('.md')) {
+          promptFiles.push(path.relative(ROOT, full));
+        }
+      }
+    };
+    const promptsDir = path.join(ROOT, 'monitor/prompts');
+    if (fs.existsSync(promptsDir)) walkPrompts(promptsDir);
+    const syncFiles = [...staticSyncFiles, ...promptFiles];
     let synced = 0;
     for (const f of syncFiles) {
       const src = path.join(ROOT, f);
       const dst = path.join(workspace, f);
       if (fs.existsSync(src)) {
+        fs.mkdirSync(path.dirname(dst), { recursive: true });
         fs.copyFileSync(src, dst);
         synced++;
       }
