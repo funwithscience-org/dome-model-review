@@ -50,7 +50,37 @@ Work **one item per run** (first pending item). After completing, continue to ch
 }
 ```
 
-6. **Mark item complete** in tracker (`status: "complete"`, `completed_at`, `output_file` path).
+6. **VALIDATE JSON — mandatory, do not skip.** Before marking anything complete, run:
+```bash
+node -e "JSON.parse(require('fs').readFileSync('monitor/analyst/expansions/EXP-NNN.json','utf8'));console.log('valid')" || echo "INVALID JSON — MUST FIX BEFORE CONTINUING"
+```
+If the output is not exactly `valid`, the file has a JSON syntax error — most commonly a missing `}` after a nested object inside an array, a trailing comma, or an unescaped quote inside a string value. **Open the file, find and fix the error, and re-run the validation command. Do not proceed to step 7 until validation prints `valid`.** Writing invalid JSON crashes the decider on its next run and blocks the entire integration pipeline. This is non-negotiable.
+
+Common failure modes to check:
+- Nested arrays of objects (e.g., `anticipated_objections: [{objection, response}, ...]`) — easy to forget a `}` on the last object before the `]`
+- Long string values spanning multiple logical lines — watch for unescaped `"` inside strings
+- Trailing commas after the last array element or object property
+- Mixed quote styles (`"` vs `'`) — JSON requires double quotes only
+
+**Alternative safer pattern:** instead of hand-writing the whole JSON file, build the object in a small node -e script and let `JSON.stringify(obj, null, 2)` serialize it. This eliminates entire classes of syntax errors:
+```bash
+node -e "
+const fs=require('fs');
+const exp={
+  item_id: 'EXP-NNN',
+  target: '...',
+  replacement_html: '...',
+  anticipated_objections: [
+    {objection: '...', response: '...'},
+    {objection: '...', response: '...'}
+  ]
+};
+fs.writeFileSync('monitor/analyst/expansions/EXP-NNN.json', JSON.stringify(exp, null, 2));
+"
+```
+Use hand-written JSON only when the content is short and obviously correct. For anything with nested arrays or multi-paragraph string fields, use the `JSON.stringify` pattern.
+
+7. **Mark item complete** in tracker (`status: "complete"`, `completed_at`, `output_file` path). Only do this AFTER step 6 validation passed.
 
 ## What Makes a Good Expansion
 

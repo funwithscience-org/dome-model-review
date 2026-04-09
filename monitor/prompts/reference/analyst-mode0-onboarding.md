@@ -28,17 +28,29 @@ curl -s "https://raw.githubusercontent.com/funwithscience-org/dome-model-review/
    - `detail_group`: Optional grouping key (null unless related to existing group)
    - `code_analysis`: Initial structural tags (set `reviewed: false` — curmudgeon validates later)
 
-4. **Write to `monitor/analyst/new-wins/WIN-NNN.json`** (not directly to wins.json):
-```json
-{
-  "action": "add_win",
-  "win_entry": { "...full wins.json entry..." },
-  "analysis_notes": "Brief explanation of verdict choice and key arguments",
-  "dome_source": "URL or file path to dome's claim",
-  "kernel_of_truth": "What the dome genuinely got right",
-  "created_at": "ISO timestamp"
-}
+4. **Write to `monitor/analyst/new-wins/WIN-NNN.json`** (not directly to wins.json).
+
+**Prefer the `JSON.stringify` pattern** — build the object in a node -e script and let the serializer emit valid JSON, rather than hand-writing the file:
+```bash
+node -e "
+const fs=require('fs');
+const entry={
+  action: 'add_win',
+  win_entry: { /* full wins.json entry */ },
+  analysis_notes: '...',
+  dome_source: '...',
+  kernel_of_truth: '...',
+  created_at: new Date().toISOString()
+};
+fs.writeFileSync('monitor/analyst/new-wins/WIN-NNN.json', JSON.stringify(entry, null, 2));
+"
 ```
+
+**Then validate — mandatory:**
+```bash
+node -e "JSON.parse(require('fs').readFileSync('monitor/analyst/new-wins/WIN-NNN.json','utf8'));console.log('valid')"
+```
+If output is not `valid`, fix the file before proceeding. Hand-written JSON is prone to missing braces, trailing commas, and unescaped quotes inside string values. Invalid JSON will crash the decider on its next run.
 
 5. **Create an open issue** with `category: "new-win"` and `severity: "critical"`:
 ```bash
