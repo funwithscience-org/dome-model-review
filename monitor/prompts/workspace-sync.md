@@ -12,16 +12,22 @@ WORKSPACE="${SESSION}/mnt/dome-model-review"
 CLONE="${SESSION}/dome-sync-clone"
 
 # Clone fresh if needed (first run only).
-# Reuse the authenticated remote URL from dome-review-clean so the PAT
-# stays out of this prompt file. dome-review-clean must already exist
-# (it's set up at session start per CLAUDE.md).
+# This agent runs in its own ephemeral session, so it cannot rely on
+# dome-review-clean being present. Instead, read a PAT from a gitignored
+# file on the workspace FUSE mount (shared across all sessions) and
+# build the authenticated remote URL from it.
 if [ ! -d "$CLONE" ]; then
-  REMOTE_URL=$(cd "${SESSION}/dome-review-clean" && git remote get-url origin)
-  if [ -z "$REMOTE_URL" ]; then
-    echo "ERROR: cannot find authenticated remote in dome-review-clean. Aborting."
+  TOKEN_FILE="${WORKSPACE}/.workspace-sync-token"
+  if [ ! -f "$TOKEN_FILE" ]; then
+    echo "ERROR: ${TOKEN_FILE} not found. A human must create it with a GitHub PAT that has repo write access. Aborting."
     exit 1
   fi
-  git clone "$REMOTE_URL" "$CLONE"
+  PAT=$(cat "$TOKEN_FILE")
+  if [ -z "$PAT" ]; then
+    echo "ERROR: ${TOKEN_FILE} is empty. Aborting."
+    exit 1
+  fi
+  git clone "https://x-access-token:${PAT}@github.com/funwithscience-org/dome-model-review.git" "$CLONE"
 fi
 
 cd "$CLONE"
