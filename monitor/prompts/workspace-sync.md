@@ -11,9 +11,17 @@ SESSION=$(pwd | grep -oP '/sessions/[^/]+')
 WORKSPACE="${SESSION}/mnt/dome-model-review"
 CLONE="${SESSION}/dome-sync-clone"
 
-# Clone fresh if needed (first run only)
+# Clone fresh if needed (first run only).
+# Reuse the authenticated remote URL from dome-review-clean so the PAT
+# stays out of this prompt file. dome-review-clean must already exist
+# (it's set up at session start per CLAUDE.md).
 if [ ! -d "$CLONE" ]; then
-  git clone https://github.com/funwithscience-org/dome-model-review.git "$CLONE"
+  REMOTE_URL=$(cd "${SESSION}/dome-review-clean" && git remote get-url origin)
+  if [ -z "$REMOTE_URL" ]; then
+    echo "ERROR: cannot find authenticated remote in dome-review-clean. Aborting."
+    exit 1
+  fi
+  git clone "$REMOTE_URL" "$CLONE"
 fi
 
 cd "$CLONE"
