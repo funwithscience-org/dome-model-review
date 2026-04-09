@@ -86,6 +86,10 @@ function resolvePlaceholders(html, context) {
     '{{DOME_CLAIMED_ACCURACY}}': context.domeClaimedAccuracy || '?',
     '{{ACCURACY_VARIANT_LIST}}': context.accuracyVariantList || '',
     '{{ACCURACY_VARIANT_DETAIL}}': context.accuracyVariantDetail || '',
+
+    // De-duplication analysis (EXP-032)
+    '{{INDEPENDENT_CLAIMS}}': context.independentClaims || 39,
+    '{{DEDUP_REDUCTION_PERCENT}}': context.dedupReductionPct || 42,
   };
 
   // Simple replacements
@@ -409,7 +413,17 @@ h3{font-size:1rem}
 .pie-callout{fill:#333}
 .callout-line{stroke:#333}
 }
+/* De-duplication table (EXP-032) */
+.dedup-table summary{cursor:pointer;font-size:1.05em;padding:8px 0;user-select:none}
+.dedup-table summary:hover{color:var(--accent)}
+.dedup-table table.dedup{width:100%;border-collapse:collapse;margin:12px 0;font-size:0.93em}
+.dedup-table table.dedup th,.dedup-table table.dedup td{border:1px solid var(--border);padding:7px 9px;vertical-align:top}
+.dedup-table table.dedup thead{background:#f5f5f5;font-weight:600}
+.dedup-table table.dedup tr.dedup-total{background:#f9f9f9;font-weight:bold}
+.dedup-table table.dedup tfoot td{background:#f0f0f0;font-size:0.9em;padding:8px}
+@media (max-width:700px){.dedup-table table.dedup{font-size:0.82em}}
 `;
+
 
 // ════ UTILITIES ════
 
@@ -606,6 +620,24 @@ function main() {
     .map(s => `<code>${s.endpoint}</code> gives ${s.formula} = ${s.result}`)
     .join('; ');
 
+  // De-duplication clusters (EXP-032) — conservative clustering by shared primary data source
+  // Only clusters WINs sharing the same primary dataset or where one WIN's value is derived from another's.
+  const dedupClusters = [
+    ['001','002','029','038','061','062'], // Schumann/Tesla cavity resonance
+    ['045','046','049','050','051'],        // Tidal harmonic constituents
+    ['004','005','035','040','041','060'], // SAA spatial morphology & drift
+    ['006','007','022','036','043','059'], // NMP position & trajectory
+    ['011','012','013','014'],             // Eclipse gravity/coupling
+    ['037','042','063'],                   // Geomagnetic field decay rate
+    ['010','025'],                         // Eclipse magnetometer response
+    ['008','009'],                         // Telluric EM frequency
+    ['016','017'],                         // Stellar astrometry
+    ['018','019'],                         // Analemma solar geometry
+  ];
+  const clusteredWinSet = new Set(dedupClusters.flat());
+  const independentClaims = dedupClusters.length + (counts.total - clusteredWinSet.size);
+  const dedupReductionPct = Math.round((1 - independentClaims / counts.total) * 100);
+
   // Build context object for section rendering
   const context = {
     totalWins: counts.total,
@@ -619,6 +651,8 @@ function main() {
     domeClaimedAccuracy: failures.dome_claimed_accuracy,
     accuracyVariantList,
     accuracyVariantDetail,
+    independentClaims,
+    dedupReductionPct,
   };
 
   // Start HTML
