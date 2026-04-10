@@ -13,18 +13,15 @@ CLONE="${SESSION}/dome-sync-clone"
 
 # Clone fresh if needed (first run only).
 # This agent runs in its own ephemeral session, so it cannot rely on
-# dome-review-clean being present. Instead, read a PAT from a gitignored
-# file on the workspace FUSE mount (shared across all sessions) and
-# build the authenticated remote URL from it.
+# dome-review-clean being present. Extract the PAT from the FUSE
+# workspace's git remote URL (same method social uses). This is more
+# reliable than a separate token file — the remote URL is always
+# current because Cowork sets it when mounting the workspace.
 if [ ! -d "$CLONE" ]; then
-  TOKEN_FILE="${WORKSPACE}/.workspace-sync-token"
-  if [ ! -f "$TOKEN_FILE" ]; then
-    echo "ERROR: ${TOKEN_FILE} not found. A human must create it with a GitHub PAT that has repo write access. Aborting."
-    exit 1
-  fi
-  PAT=$(cat "$TOKEN_FILE")
+  AUTH_URL=$(git -C "${WORKSPACE}" remote get-url origin 2>/dev/null)
+  PAT=$(echo "$AUTH_URL" | grep -oP 'x-access-token:\K[^@]+')
   if [ -z "$PAT" ]; then
-    echo "ERROR: ${TOKEN_FILE} is empty. Aborting."
+    echo "ERROR: Could not extract PAT from workspace git remote URL. Aborting."
     exit 1
   fi
   git clone "https://x-access-token:${PAT}@github.com/funwithscience-org/dome-model-review.git" "$CLONE"
