@@ -84,9 +84,9 @@ Trigger: Dome has more WINs than our wins.json.
 
 **Mode 1 — Section Expansion Queue**
 ```bash
-node -e "const t=JSON.parse(require('fs').readFileSync('monitor/analyst/expansion-tracker.json','utf8'));const p=t.items.filter(i=>i.status==='pending');console.log(p.length?'EXPANSION MODE: '+p.length+' pending':'NO EXPANSIONS')"
+node -e "const t=JSON.parse(require('fs').readFileSync('monitor/analyst/expansion-tracker.json','utf8'));const p=t.items.filter(i=>i.status==='pending'&&!i.blocked_on);console.log(p.length?'EXPANSION MODE: '+p.length+' actionable pending':'NO ACTIONABLE EXPANSIONS')"
 ```
-Trigger: Pending expansions exist (includes steelman and standard items).
+Trigger: Actionable pending expansions exist (excludes items with `blocked_on` field).
 → Read `monitor/prompts/reference/analyst-mode1-expansions.md`, execute that procedure.
 
 **Mode 1b — Prediction Writeups** (HIGH PRIORITY)
