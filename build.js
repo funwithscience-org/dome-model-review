@@ -90,6 +90,7 @@ const OWNERSHIP = {
   'monitor/analyst/new-wins/': 'append_only',
   'monitor/analyst/expansions/': 'append_only',
   'monitor/analyst/category-proposals/': 'append_only',
+  'monitor/analyst/issue-proposals/': 'append_only',
   'monitor/analyst/globe-fingerprints/': 'append_only',
   'monitor/decisions/': 'append_only_glob',   // daily-report-*.json, suggested-patches-*.json
   'monitor/tinker/': 'append_only_glob',      // report-*.json

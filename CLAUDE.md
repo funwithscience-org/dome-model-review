@@ -51,121 +51,40 @@ Every file that crosses the workspace↔git boundary has exactly one authoritati
 - `build-scripts/generate-html.js`, `build-scripts/generate-pdf.js` — infrastructure.
 - `CLAUDE.md`, `monitor/v6-restructure-map.json`, `test.js` — project docs and tests.
 - `monitor/decisions/open-issues.json`, `monitor/decisions/closed-issues.json` — issue tracker; decider writes from its clone and pushes.
-- `monitor/curmudgeon/priority-queue.json` — single-writer (decider) per `decider.md` Step E. Git is the source of truth. Decider pushes new items AND pops reviewed items (Step E2 scans review files to detect completed items). Curmudgeon must NEVER write to this file — it signals completion by writing review files only.
-- `monitor/integrity/workspace-sync-skips.jsonl` — direction-guard skip log (Phase 1 Change 1.8). Written by `workspace-sync` from its clone via `fs.appendFileSync` and committed to git; read by `structure-integrity` Section 7d from the workspace mount. Must be classified `git` even though it sits under `monitor/integrity/` (which is append-only for per-run `report-*.json` files) because `build.js`'s append-only walker filters by extension `.json` — `.jsonl` fails the filter and would never be copied to the mount at all, leaving the 7d detector born dead with a permanent "no skip log yet" zero reading. The `git` override forces an unconditional publish-time copy so the detector sees fresh records. This is a precedent for future growing log files under `monitor/integrity/`: classify them `git`, don't let them inherit the directory's append-only default.
-- All `.md` files under `monitor/prompts/` (including `reference/` and `workspace-sync.md`) — agent prompts; edited in git and published to the mount.
+- `monitor/curmudgeon/priority-queue.json` — single-writer (decider) per `decider.md` Step E.
+- `monitor/integrity/workspace-sync-skips.jsonl` — direction-guard skip log. Classified `git` to force publish-time copy (see `reference/BUILD-AND-CHANGE.md` for rationale).
+- All `.md` files under `monitor/prompts/` (including `reference/` and `workspace-sync.md`).
 
-**workspace-owned** — `workspace-sync` pushes workspace → git. `build.js publish` MUST NOT copy these in either direction (it logs a `skip` line so the rule is visible).
+**workspace-owned** — `workspace-sync` pushes workspace → git. `build.js publish` MUST NOT copy these.
 
-- `monitor/status.json`, `monitor/review-state.json` — live pipeline state; agents rewrite them on every run.
-- `monitor/decisions/morning-briefing.txt` — decider's human-facing daily briefing; generated on the mount.
+- `monitor/status.json`, `monitor/review-state.json` — live pipeline state.
+- `monitor/decisions/morning-briefing.txt` — decider's human-facing daily briefing.
 
-**append-only** — directories of immutable, per-ID or per-timestamp files. Either direction can write a NEW file, but NEVER overwrite an existing one. The publish walker in `build.js` enforces "never overwrite".
+**append-only** — directories of immutable, per-ID or per-timestamp files. Either direction can write a NEW file, but NEVER overwrite an existing one.
 
-- `monitor/curmudgeon/reviews/`, `monitor/analyst/new-wins/`, `monitor/analyst/expansions/`, `monitor/analyst/category-proposals/`, `monitor/analyst/globe-fingerprints/`, `monitor/tinker/proposals/`, `monitor/integrity/`, `monitor/changes/`, `monitor/social/drafts/` — one file per ID.
-- `monitor/decisions/` and `monitor/tinker/` as "append_only_glob" — mixed directories with `daily-report-*.json`, `suggested-patches-*.json`, `report-*.json`.
+- `monitor/curmudgeon/reviews/`, `monitor/analyst/new-wins/`, `monitor/analyst/expansions/`, `monitor/analyst/category-proposals/`, `monitor/analyst/globe-fingerprints/`, `monitor/analyst/issue-proposals/`, `monitor/tinker/proposals/`, `monitor/integrity/`, `monitor/changes/`, `monitor/social/drafts/` — one file per ID.
+- `monitor/decisions/` and `monitor/tinker/` as "append_only_glob" — mixed directories with timestamped files.
 
-**Unclassified — `monitor/curmudgeon/tracker.json`.** This file is a known multi-writer file. Decider writes to it during new-WIN onboarding (`reference/decider-intake.md` Step 1f appends to `points` and recomputes `total_items`) and curmudgeon writes cycle/phase state and per-item status updates. It is deliberately left out of the table above until a future Phase 2 shard split. For now, it is protected only by (a) decider and analyst running `git pull --rebase` at the start of every run (Change 1.5), (b) the pre-push integrity gate's WIN id uniqueness and `total_items` checks (Change 1.6), (c) git's own merge-conflict detection on line-overlapping writes, and (d) the scheduler default of not running decider and curmudgeon concurrently. This is detection-first, prevention-second. **Do not add it to `OWNERSHIP` in `build.js` or `OWNED_BY_GIT` in `workspace-sync.md`** — misclassification will cause publish to bail on direction violation when decider pushes to it, or cause workspace-sync to silently drop curmudgeon's mount-side updates.
+**Unclassified — `monitor/curmudgeon/tracker.json`.** Known multi-writer (decider + curmudgeon). Protected by: (a) `git pull --rebase` at run start, (b) pre-push integrity gate, (c) git merge-conflict detection, (d) non-concurrent scheduling. **Do not add to OWNERSHIP in build.js or OWNED_BY_GIT in workspace-sync.md.**
 
-> If you are editing a prompt file and you find yourself adding a write to a file not listed above, STOP. Either classify the new file here and update `build.js` and `workspace-sync.md`, or put the write on a file that is already classified. Adding an unclassified writer is how the 2026-04-09 race started.
+> If you are editing a prompt file and you find yourself adding a write to a file not listed above, STOP. Either classify the new file here and update `build.js` and `workspace-sync.md`, or put the write on a file that is already classified.
 
-**FUSE Staleness Warning:** The workspace FUSE mount can serve stale file content. Agents that make decisions based on data file contents (wins.json, sections.json) must clone fresh or cross-check against GitHub. Currently: decider and curmudgeon clone fresh each run; analyst cross-checks counts against GitHub raw URL. Integrity and social read from the mount and are more vulnerable to stale reads. Tinker audits for staleness symptoms each run (Section 7b in tinker prompt).
-
-### Session Setup (for new AI sessions)
-
-Each Cowork session gets a unique path like `/sessions/<session-name>/`. The workspace mount is at `/sessions/<session-name>/mnt/dome-model-review/`. Because git doesn't work on the FUSE mount, you need a clean clone on the normal filesystem. **Run this at the start of every new session:**
-
-```bash
-# 1. Identify your session path
-SESSION=$(pwd | grep -oP '/sessions/[^/]+')
-
-# 2. Clone the repo to the normal filesystem
-git clone https://github.com/funwithscience-org/dome-model-review.git ${SESSION}/dome-review-clean
-cd ${SESSION}/dome-review-clean
-npm install
-
-# 3. Verify — build.js now auto-detects the session from cwd, no sed step needed
-node build.js html && node test.js
-```
-
-The workspace mount path and clean clone path are the two key paths. Everything else (agents, prompts, build pipeline) flows from these. As of PROP-004 (commit landing 2026-04-09), `build.js publish` auto-detects the current session from `process.cwd()` and falls back to scanning `/sessions/*/mnt/dome-model-review` for any accessible workspace — no per-session editing required.
-
-### File Map
-
-```
-data/wins.json                    # WINs: claims, verdicts, findings, detail writeups, code_analysis tags
-data/sections.json                # 13 prose sections (parts 1-10 incl. 1b, 2b) with {{PLACEHOLDER}} tokens
-data/uncounted-failures.json      # Acknowledged dome prediction failures (FAIL-NNN IDs, dome W-number cross-refs)
-data/predictions.json             # ALL dome predictions catalog (prospective, pending, confirmed, falsified). Build computes {{PRED_*}} placeholders.
-build-scripts/generate-html.js    # Generates docs/index.html from wins.json + sections.json + uncounted-failures.json + predictions.json
-                                  # DOME_VERSION constant (single source of truth for dome model version)
-                                  # Review version from package.json, build date computed at build time
-build-scripts/generate-pdf.js     # Generates PDF from HTML using Playwright (@media print CSS)
-build-scripts/add-references.js   # Injects clickable hyperlinks into wins.json
-build-scripts/digest-reviews.js   # Preprocesses curmudgeon reviews into compact digest for decider
-build-scripts/backfill-issues.js  # One-time bulk issue creation from digest (fuzzy dedup)
-build-scripts/apply-patches.js    # Applies decider patches against wins.json or sections.json (routes by `file` field)
-build-scripts/sync-code-analysis.js # Syncs code_analysis tags from reviews to wins.json
-build.js                          # Unified pipeline orchestrator
-test.js                           # Automated test suite (schema, HTML consistency, links, tabs)
-.github/workflows/ci.yml          # GitHub Actions CI (build + test on every push)
-docs/index.html                   # Generated HTML (GitHub Pages) — DO NOT EDIT DIRECTLY
-docs/llms.txt                     # AI discoverability: tells LLMs what this review is and how to read it
-docs/sitemap.xml                  # Search engine sitemap (main page + llms.txt)
-docs/robots.txt                   # Crawler permissions + sitemap reference
-downloads/*.pdf                   # Generated PDF output
-raw-text/                         # Extracted ECM site content (current version)
-raw-text-v50.6-2026-03-12/        # Archived V50.6 baseline for version comparison
-monitor/prompts/                  # Agent prompt files (editable markdown — see Monitoring Pipeline)
-monitor/curmudgeon/tracker.json   # Curmudgeon progress tracker with lifecycle phases
-monitor/curmudgeon/priority-queue.json # Urgent re-review FIFO queue (one item per run) + mode flag (bau|churn-and-burn) + schedule state; written only by decider
-monitor/curmudgeon/pending-digest.json # Compact digest of unprocessed reviews (generated by digest-reviews.js)
-monitor/decisions/open-issues.json # Persistent issue tracker (open only — query for count, don't hardcode)
-monitor/decisions/closed-issues.json # Archive of fixed/wontfix issues (query for count)
-monitor/decisions/human-notes.json # Human editorial notes for decider (agents check each run)
-monitor/analyst/human-notes.json  # Human editorial notes for analyst (agents check each run)
-monitor/analyst/expansion-tracker.json # Analyst expansion work items (category: steelman|defense|null) with integration status
-monitor/analyst/expansions/EXP-NNN.json # Analyst expansion outputs (replacement_html + metadata)
-monitor/analyst/new-wins/WIN-NNN.json # Mode 0 output: new WIN entries staged for decider to commit
-monitor/analyst/category-proposals/CAT-NNN.json # New analytical category proposals (needs human approval)
-monitor/analyst/globe-fingerprint-tracker.json # Mode 4: background queue for globe constant hunt
-monitor/analyst/globe-fingerprints/ # Mode 4 output: per-WIN fingerprint analysis
-monitor/decisions/processed-reviews.json # Ledger of reviews the decider has fully processed (filenames, not bare IDs)
-monitor/decisions/suggested-patches-*.json # Timestamped patch files from decider runs
-monitor/decisions/daily-report-*.json # Timestamped daily reports from decider
-monitor/social/drafts/            # Social analyst draft files (llms-full.txt, structured data) for decider review
-monitor/social/discoverability-baseline.json # Competitive discoverability snapshot (both sites)
-monitor/social/search-rankings.json # Search term ranking history
-monitor/tinker/                   # Tinker reports, self-fix audit trail, cost engineering analysis
-monitor/tinker/proposals/         # Actionable fix proposals (PROP-NNN.json) with full replacement text
-monitor/integrity/                # Structure & integrity check reports
-monitor/changes/                  # Poller output: change detections (chg-*.json), poll summaries (latest-poll-summary.txt)
-monitor/external-reports/         # Permanent log of all external problem reports (GitHub Issues)
-.github/ISSUE_TEMPLATE/           # "Report a Problem" structured issue template
-.github/workflows/ci.yml          # CI pipeline: build + test on push
-build-scripts/restructure-v6.js   # V6 tab reorder + section renumber script (placeholder-based safe replace)
-monitor/v6-restructure-map.json   # V6 backward-compat translation map (old→new section keys, numbers, anchors)
-security-audit.md                 # Website security scan results
-```
-
-### Dependencies
-
-- `playwright` — HTML→PDF generation via headless Chromium
+**FUSE Staleness Warning:** The workspace FUSE mount can serve stale file content. Agents that make decisions based on data file contents (wins.json, sections.json) must clone fresh or cross-check against GitHub. Currently: decider and curmudgeon clone fresh each run; analyst cross-checks counts against GitHub raw URL.
 
 ## Monitoring Pipeline
 
-Eight scheduled agents run continuously. All prompts live in `monitor/prompts/*.md` — edit the markdown to change agent behavior. The scheduled tasks are thin wrappers that just read the prompt file.
+Eight scheduled agents run continuously. All prompts live in `monitor/prompts/*.md` — edit the markdown to change agent behavior.
 
 | Agent | Schedule | Model | Prompt File | Purpose |
-|-------|----------|-------|-------------|---------|
-| dome-poller | Every 12h | Sonnet | `monitor/prompts/poller.md` | Detect changes on the dome site, track prediction test windows |
-| dome-analyst | Every 2h | Opus | `monitor/prompts/analyst.md` | Modes 0–4: new WIN onboarding, expansions, defense neutralization, fingerprints; picks up assigned-analyst issues |
-| dome-curmudgeon | Every 4h (BAU) / 30m (churn-and-burn) | Opus | `monitor/prompts/curmudgeon.md` | Adversarial self-review; priority queue items jump cycles |
-| dome-decider | Every 4h | Opus | `monitor/prompts/decider.md` | Triage, patches, new WIN commits, tracker updates, expansion integration, poll summary triage (Step 1i) |
-| dome-integrity | Daily 9:00 AM | Haiku | `monitor/prompts/structure-integrity.md` | Site health: links, tabs, build drift, data-prose consistency, discoverability |
-| dome-tinker | Daily 10:30 AM | Opus | `monitor/prompts/tinker.md` | Pipeline ops: audit outputs, trace handoffs, fix stale configs, FUSE staleness detection, cost engineering |
-| dome-social | Daily 11:00 AM | Sonnet | `monitor/prompts/social.md` | Strategic analyst: owns machine-readable layer (llms.txt, sitemap, robots.txt), competitive discoverability, search rankings, dome author activity |
-| dome-workspace-sync | Every 4h | Haiku | `monitor/prompts/workspace-sync.md` | Commits workspace-only files (monitor/) to git. Prevents FUSE data loss. Does not analyze or modify content. |
+|-------|----------|-------|-------------|--------|
+| dome-poller | Every 12h | Sonnet | `poller.md` | Detect changes on dome site, track prediction test windows |
+| dome-analyst | Every 2h | Opus | `analyst.md` | New WIN onboarding, expansions, defense neutralization, fingerprints |
+| dome-curmudgeon | Every 4h (BAU) / 30m (churn-and-burn) | Opus | `curmudgeon.md` | Adversarial self-review; priority queue items jump cycles |
+| dome-decider | Every 4h | Opus | `decider.md` | Triage, patches, new WIN commits, expansion integration |
+| dome-integrity | Daily 9 AM | Haiku | `structure-integrity.md` | Site health: links, tabs, build drift, data-prose consistency |
+| dome-tinker | Daily 10:30 AM | Opus | `tinker.md` | Pipeline ops: audit, trace handoffs, cost engineering |
+| dome-social | Daily 11 AM | Sonnet | `social.md` | Machine-readable layer, discoverability, search rankings |
+| dome-workspace-sync | Every 4h | Haiku | `workspace-sync.md` | Commits workspace-only files to git |
 
 ### Data Flow
 
@@ -175,267 +94,61 @@ Poller detects dome WIN count > our wins.json count
          ↓
 Analyst Mode 0 → writes entries to monitor/analyst/new-wins/WIN-NNN.json
          ↓
-Decider step 1f → commits to wins.json, adds to curmudgeon tracker as pending,
-                   pushes to priority-queue.json (target_type: win-new),
-                   updates fingerprint tracker, builds/tests/pushes
+Decider step 1f → commits to wins.json, adds to curmudgeon tracker,
+                   pushes to priority-queue.json, builds/tests/pushes
          ↓
-Curmudgeon step 0b → pops next priority queue item (FIFO, one per run), reviews, exits
+Curmudgeon step 0b → pops next priority queue item (FIFO), reviews, exits
 
 CURMUDGEON → DECIDER PIPELINE:
 Curmudgeon → reviews/WIN-NNN.json (or WIN-NNN.c2.json for Cycle 2+)
          ↓
-digest-reviews.js → pending-digest.json (compact summary of all unprocessed reviews)
+digest-reviews.js → pending-digest.json
          ↓
-Decider reads digest → creates issues → writes suggested-patches-*.json → self-applies
+Decider reads digest → creates issues → writes patches → self-applies
          ↓
-Decider closes fixed issues: moves from open-issues.json → closed-issues.json
+Decider closes fixed issues: open-issues.json → closed-issues.json
 
 EXPANSION PIPELINE:
-Decider yeeting: unpatchable issues → assigned-analyst → Analyst picks up as EXP item
-Analyst → expansion-tracker.json (status: complete) → expansions/EXP-NNN.json (replacement_html)
+Decider: unpatchable issues → assigned-analyst → Analyst picks up as EXP item
+Analyst → expansion-tracker.json (status: complete) → expansions/EXP-NNN.json
          ↓
-Decider step 2a → reads completed expansions → writes patches against sections.json
-         ↓
-Decider self-applies → expansion marked integrated
+Decider step 2a → reads completed expansions → patches sections.json
 
 DEFENSE NEUTRALIZATION (Cycle 3+):
 Curmudgeon Cycle 3 → advocate_mode.defense_survives >= 3
          ↓
-Decider → creates EXP item (category: defense) in expansion-tracker.json
+Decider → creates EXP item (category: defense)
          ↓
 Analyst Mode 3 → writes neutralization to expansions/DEF-NNN.json
-         ↓
-Decider integrates → Curmudgeon reviews the neutralization
-
-NEW CATEGORIES / STEEL MANS:
-Analyst → category-proposals/CAT-NNN.json → Decider flags needs-human
-         ↓
-Human approves + builds structure → Decider creates EXP items for content
-         ↓
-Analyst writes content → Decider commits → Curmudgeon first-review
-
-SOCIAL DISCOVERABILITY:
-Social analyst → updates docs/llms.txt directly (owns machine-readable layer)
-Social analyst → drafts new files to monitor/social/drafts/ (e.g., llms-full.txt, structured data)
-         ↓
-Decider step 1h → reviews drafts, deploys to docs/, rejects content boundary violations
-         ↓
-Tinker → audits social's boundary compliance (machine-readable only, no content changes)
-
-POLLER → ISSUE PIPELINE (Step 1i):
-Poller → latest-poll-summary.txt (with analyst_priority flags)
-         ↓
-Decider Step 1i (every run) → scans for analyst_priority: HIGH/MEDIUM items
-         ↓
-Cross-checks against open-issues.json → creates issues for untracked findings
-         ↓
-Analyst picks up assigned-analyst issues when no higher-priority mode triggers
 
 SUPPORTING FLOWS:
-Human notes: human-notes.json → Agent reads on next run → acts immediately → marks consumed
-Poller → changes/ → Analyst → analysis/ → Decider (also reads these)
-Poller → prediction test window tracking → Analyst/Decider create FAIL entries
-Integrity → integrity/report-*.json → Decider (also reads these)
-Tinker reads ALL outputs + prompt files → monitor/tinker/report-*.json + cost engineering analysis
+Human notes: human-notes.json → Agent reads on next run → acts → marks consumed
+Poller → changes/ → Analyst/Decider read these
+Integrity → integrity/report-*.json → Decider reads these
+Social → updates docs/llms.txt, drafts to monitor/social/drafts/ → Decider reviews
+Tinker reads ALL outputs → monitor/tinker/report-*.json
 ```
-
-### Operator Runbook — Disabling a Scheduled Task Safely (Phase 1 Change 1.9)
-
-Disabling a scheduled task via `mcp__scheduled-tasks__update_scheduled_task` with `enabled: false` stops **future** triggers but does **not** kill an in-flight run. A decider or analyst that started 30 seconds before the disable will keep running, finish its read-modify-write cycle, and push to `origin/main` after the operator "disabled" it. This is Bug X2 from the phase1-context doc — the disable is a front-door lock while the window is still open.
-
-When you need to pause an agent to land a risky change, run the **disable-then-wait** sequence and do not touch git until the wait completes:
-
-1. **Disable the task.** Call `mcp__scheduled-tasks__update_scheduled_task` with `enabled: false`. Note the current wall-clock time as `T_disable`.
-2. **Wait out the longest plausible run.** The worst-case agent duration seen in practice is the decider at ~8 minutes. Wait `T_disable + 15 minutes` to be safe. Set a timer; do not rely on "it feels like long enough".
-3. **Confirm no recent push from the disabled agent.** Check the workspace `monitor/status.json` / `monitor/decisions/daily-report-*.json` and `git log --since=15.minutes origin/main` for commits authored by the agent you disabled. If a commit landed after `T_disable`, a run was in flight — wait another 15 minutes from that commit's timestamp.
-4. **Verify queue depth.** For the curmudgeon, confirm `monitor/curmudgeon/priority-queue.json` isn't mid-drain with an uncommitted pop. For the decider, confirm `monitor/decisions/suggested-patches-*.json` has no file newer than `T_disable`.
-5. **Only now** land your risky change (commit, rebase, runbook step, prompt edit).
-6. **Re-enable the task** when done. Use `enabled: true` on the same task id. Do not create a new task — the id is referenced by other prompts and by the Mode toggle logic in `reference/decider-patches-and-selfapply.md`.
-
-**What you MUST NOT do:**
-- Do not assume "disable" is instant. It is not.
-- Do not `git push --force` after a disable to "clean up" a run that finished while you were waiting — that's a history rewrite and is banned by the hard rules in `reference/decider-patches-and-selfapply.md`.
-- Do not disable `dome-workspace-sync` without also disabling the agents that write to the FUSE mount — you'll silently accumulate workspace-only files that no one is copying into git.
-
-**Phase 3.1 recommendation (deferred to operator action):** The durable fix is scheduler-side — the scheduled task should run `git fetch && git pull --rebase origin main` on the clean clone as a prerequisite step *before* invoking the agent, and hold a per-agent lock to serialize runs of the same agent. Until then, the Phase 1 Change 1.5 prelude (decider/analyst refresh the clone at the top of every run) is a partial substitute, and the Change 1.6 pre-push integrity gate catches the residual window. When the operator wires the scheduler-side fix, delete the prelude blocks and leave the gate in place — the gate is defense-in-depth even with the scheduler fix.
-
-### Curmudgeon Lifecycle
-
-The curmudgeon operates in three phases, tracked in `monitor/curmudgeon/tracker.json`:
-
-- **Priority queue interrupt**: `monitor/curmudgeon/priority-queue.json` holds urgent re-review items (new WINs, rewritten sections, new proposal packages, kill-shot rewrites). Curmudgeon pops **one item per run** FIFO before any cyclic or holistic work, then STOPS — fresh context next invocation, no batch contamination. Throughput is managed by a `mode` flag in the queue file: `bau` (normal 4h cadence) or `churn-and-burn` (decider bumps curmudgeon to 30-min cadence whenever queue depth > 0, auto-restores to BAU when drained). Toggle with a human note: `{"action": "set_curmudgeon_mode", "mode": "churn-and-burn"}` — decider honors on next run. Only the decider writes to the queue (via Step 1f new WIN onboarding and Step 2a expansion integration). The legacy `status: "priority-new"` mechanism in tracker.json is deprecated and will only appear during the transition.
-- **Phase 1**: Per-item review — WINs, then sections (SEC-*), prose items, kill-shots. Produces `code_analysis_tags` for each WIN. Writes to `reviews/WIN-NNN.json` (Cycle 1) or `reviews/WIN-NNN.c2.json` (Cycle 2+) to prevent overwriting unprocessed reviews. Check progress: `cat monitor/curmudgeon/tracker.json | node -e "process.stdin.on('data',d=>{const t=JSON.parse(d);console.log(t.phase,t.current_item,t.items_reviewed+'/'+t.total_items)})"`
-- **Phase 2**: Holistic review — 9 document-level checks (NARRATIVE, TAXONOMY, CROSSREF, HIERARCHY, TONE, COMPLETENESS, STRESSTEST, REDUNDANCY, MISSING)
-- **Phase 3**: Repaint — cycle increments, all items reset to pending, start over. Cycle 3+ adds advocate_mode (steel man defenses rated 1–5), cross-WIN consistency checks, and quantitative verification.
-
-**Current state (Cycle 2):** Now in Phase 1 Cycle 2, re-reviewing all WINs with fresh eyes after improvements from Cycle 1. Verdict mismatch detection added to both curmudgeon and decider prompts.
-
-### Issue Tracking
-
-Two files: `open-issues.json` (active) and `closed-issues.json` (archive of fixed/wontfix). The decider focuses on writing patches for existing open issues rather than creating new ones — bulk issue creation is handled by `backfill-issues.js`. Patches are written to timestamped files (`suggested-patches-YYYY-MM-DDTHH-MM.json`) to prevent overwrite between runs. Apply with: `node build-scripts/apply-patches.js <patches-file>`.
-
-To get current issue counts: `node -e "const o=JSON.parse(require('fs').readFileSync('monitor/decisions/open-issues.json','utf8'));const c=JSON.parse(require('fs').readFileSync('monitor/decisions/closed-issues.json','utf8'));console.log('Open:',o.issues.length,'Closed:',c.issues.length)"`
-
-The `processed-reviews.json` ledger tracks which curmudgeon review files the decider has fully processed, using filenames (e.g., `WIN-001.json`) not bare WIN IDs, to support cycle-aware deduplication.
-
-### External Problem Reporting
-
-Anyone (human or AI) can report errors via GitHub Issues using the structured "Report a Problem" template (`.github/ISSUE_TEMPLATE/report-a-problem.yml`). Reports auto-label as `external-report` and flow through the pipeline:
-
-1. **Analyst** checks for new `external-report` issues each run, applies kernel-of-truth analysis, logs permanently to `monitor/external-reports/report-{issue-number}.json`
-2. **Decider** reads external report logs, creates open issues, comments on the GitHub issue with the decision
-3. **All reports are logged permanently** in `monitor/external-reports/` regardless of outcome — accepted, rejected, or duplicate
-
-Links to the report form appear in the Evaluation Guide (Principle 6), the AI Review section, and the site footer.
-
-## Verdict Categories
-
-| Verdict | Count | Color (light) | Description |
-|---------|-------|---------------|-------------|
-| Refuted by Data | #FFCCCC | External measurements directly contradict the claim |
-| Self-Contradicted | #B3E5FC | Dome's own geometry/equations contradict the claimed values |
-| Std Model Explains | #C8E6C9 | Standard physics already predicts the same observation |
-| Misleading | #FFE0B2 | Cherry-picked, duplicated, circular, or non-discriminating |
-| Not Demonstrated | #D1C4E9 | Built on unconfirmed data or circular derivations |
-| Unfalsifiable | #E0E0E0 | Theological assertions with no testable physical content |
-
-To get current counts: `node -e "const w=JSON.parse(require('fs').readFileSync('data/wins.json','utf8'));const c={};w.forEach(x=>c[x.verdict]=(c[x.verdict]||0)+1);console.log(c)"`
-
-## wins.json Schema
-
-Each entry has:
-- `id`: Three-digit string ("001"–"067")
-- `claim`: Short claim text (for summary table)
-- `verdict`: One of the six categories above
-- `finding`: One-line primary finding (for summary table)
-- `new_in_v51`: Boolean — true if added in V51.0 (marked with * in table)
-- `detail_claim`: Full claim description (plain text, gets HTML-escaped)
-- `detail_evidence`: Scientific rebuttal (HTML allowed — contains links, sub/sup tags)
-- `detail_verdict_text`: Verdict reasoning (HTML allowed)
-- `detail_extra`: Optional additional analysis (HTML allowed, can be null)
-- `detail_group`: Optional grouping key for related WINs (e.g., "WIN-045/046/049/050/051")
-- `code_analysis`: Structural tags populated by curmudgeon review (null if not yet reviewed):
-  - `monitoring`: "hardcoded" | "live_fetch" | "none" — what monitor.py actually does for this WIN
-  - `relabels_standard`: boolean — does this WIN just rename a standard physics explanation?
-  - `post_hoc`: boolean — was the observation known before the dome "predicted" it?
-  - `derives_from_dome`: boolean — is the prediction derived from dome geometry or just adopted?
-  - `reviewed`: boolean — has the curmudgeon validated these tags?
 
 ### Computed Counts (never hardcode)
 
-All numerical counts in the HTML prose are computed from wins.json at build time in `generate-html.js`. This includes verdict tallies, total WINs, new-in-V51 count, and code_analysis statistics (reviewed, pending, hardcoded, live_fetch, none, relabels_standard, post_hoc, derives_from_dome). Never hardcode a number that can be derived from the data — we criticize the dome model for doing exactly that.
+All numerical counts in the HTML prose are computed from wins.json at build time. Never hardcode a number that can be derived from the data — we criticize the dome model for doing exactly that.
 
-**This rule extends to ALL project files** — including agent prompts, context files, and task descriptions. Never write a specific count (test count, issue count, verdict tally, curmudgeon progress) when you can instead provide the command to query it live. Examples:
+**This rule extends to ALL project files** — including agent prompts, context files, and task descriptions. Never write a specific count when you can instead provide the command to query it live. Examples:
 - Test count: `node test.js 2>&1 | grep -oP '\d+ passed'`
 - Open issues: `node -e "console.log(JSON.parse(require('fs').readFileSync('monitor/decisions/open-issues.json','utf8')).issues.length)"`
 - Verdict tallies: `node -e "const w=JSON.parse(require('fs').readFileSync('data/wins.json','utf8'));const c={};w.forEach(x=>c[x.verdict]=(c[x.verdict]||0)+1);console.log(c)"`
-- Curmudgeon progress: `cat monitor/curmudgeon/tracker.json | node -e "process.stdin.on('data',d=>{const t=JSON.parse(d);console.log(t.items_reviewed+'/'+t.total_items)})"`
 
-## Key Scientific Arguments
+## Agent-Specific References
 
-### Self-Contradictions (the strongest category)
-- **Schumann resonance**: Dome cavity H(r)=8537·exp(−r/8619) predicts ~22 Hz fundamental, not 7.83 Hz
-- **Tidal pattern**: Local moon at ~2,534 km produces one tidal spike, not the observed two-bulge semidiurnal pattern (geometric, mass-independent)
-- **Gravity at rim**: g drops ~90% at r=20,015 km under dome geometry
-- **Solar formula**: Uses globe's 23.45° axial tilt while claiming flat earth
+Each agent should read ONLY the reference files relevant to its work (all under `monitor/prompts/reference/`):
 
-### Refuted by Data
-- Tesla patent 787412 doesn't contain cited formula f=c/(2D)
-- Stellar parallax measured to microarcsecond precision by Gaia (1.8B stars)
-- Bermuda/Japan geomagnetic anomaly positions are asymmetric, not symmetric
-- Crepuscular/anticrepuscular ray convergence impossible with local sun
-
-### Structural Issues
-- Aetheric refraction index n(r) reaches 28.8 at dome edge — unfalsifiable escape hatch
-- Antarctic circumnavigation: dome rim = 126,000 km, measured = 13,800 km (factor of 9)
-- GPS requires Keplerian orbits at 20,200 km + relativistic corrections
-- Model's own "Open Problems" (OPEN-001, 003, 007) concede it can't function without WGS84
-
-### Repository Source Code Findings (Part 2b)
-All WINs now have code_analysis tags (reviewed by curmudgeon). Counts are computed from wins.json at build time — query with:
-`node -e "const w=JSON.parse(require('fs').readFileSync('data/wins.json','utf8'));const t={h:0,l:0,n:0,r:0,p:0,d:0};w.forEach(x=>{if(!x.code_analysis)return;if(x.code_analysis.monitoring==='hardcoded')t.h++;if(x.code_analysis.monitoring==='live_fetch')t.l++;if(x.code_analysis.monitoring==='none')t.n++;if(x.code_analysis.relabels_standard)t.r++;if(x.code_analysis.post_hoc)t.p++;if(x.code_analysis.derives_from_dome)t.d++});console.log(t)"`
-- **Monitoring illusion**: Majority use hardcoded pred=obs checks; minority fetch live data
-- **Relabeling standard physics**: ~70% rename standard physics mechanisms as "aetheric" without changing any numerical prediction
-- **Post-hoc retrodiction**: ~93% adopt published observations as "predictions" after the fact; very few derive from dome geometry
-- **95.2% accuracy is hardcoded**: Static HTML string with no computation — no script in the repo calculates it
-- **Sun/firmament collision**: Sun at 5,733 km exceeds firmament H(r) ≈ 4,200 km at that radius
-- **AI-steering scripts**: `inject_ai_layer.py`, `update_optical_caveats.py` suppress geometric contradictions
-- **Dome core parameters** (from inject_ai_layer.py): disc_radius=20,015 km, firmament_height=9,086 km, sun_altitude=5,733 km, moon_altitude=2,534 km
-
-## Known Technical Issues
-
-### Prose Sections (sections.json — V6.0 source of truth)
-All 13 prose sections (parts 1–10 including 1b and 2b) live in `data/sections.json`. The HTML build reads sections.json via `renderSectionFromJson()` and injects computed values via `{{PLACEHOLDER}}` tokens (24 total). The build fails loudly if sections.json is missing — git is the recovery path.
-
-`apply-patches.js` routes patches to either `wins.json` or `sections.json` based on the `file` field. This makes prose patchable by the decider pipeline (previously impossible with hardcoded HTML in generate-html.js).
-
-## How to Make Changes
-
-### Change a verdict
-1. Edit the `verdict` field in `data/wins.json`
-2. Run `node build.js` — tallies recompute automatically
-
-### Add a new WIN
-1. Add entry to `data/wins.json` with all fields
-2. Run `node build.js`
-
-### Update detail text
-1. Edit `detail_evidence`, `detail_verdict_text`, etc. in `wins.json`
-2. Run `node build-scripts/add-references.js` to inject any new source links
-3. Run `node build.js`
-
-### Update prose sections
-1. Edit the relevant section in `data/sections.json` (each section has `id`, `title`, `html` fields)
-2. Use `{{PLACEHOLDER}}` tokens for any computed values (see generate-html.js for the replacement map)
-3. Run `node build.js`
-4. Run `node build.js` to regenerate HTML + PDF
-
-### Apply decider patches
-1. Run `node build-scripts/apply-patches.js <patches-file>` — applies against parsed JSON field values (handles HTML/unicode correctly)
-2. Run `node build.js html` and `node test.js` to verify
-3. Archive fixed issues from `open-issues.json` to `closed-issues.json`
-
-### Change agent behavior
-1. Edit the relevant prompt file in `monitor/prompts/`
-2. Changes take effect on the agent's next scheduled run — no task reconfiguration needed
-
-## Version History
-
-| Version | Commit | Key Changes |
-|---------|--------|-------------|
-| V4.0 | d0b645a | Initial V51.0 review (67 WINs) |
-| V4.1 | 041f0fc | Eclipse prediction analysis |
-| V4.2 | 90a6f3f | Ring magnet / flux conservation for WIN-053 |
-| V4.3 | 94ebc19 | GRACE L1A / Dielectric infographic analysis |
-| V4.4 | 7df2eef | Full toroidal architecture description |
-| V4.5 | 9c4cd2f | Corrected 20-domain independence analysis |
-| V4.6 | 22ae1b1 | Self-consistency analysis (Part 4.5) |
-| V4.7 | 0be5bfa | Self-Contradicted verdict category (initially 11 WINs) |
-| V4.8 | 1e15195 | Independent adversarial review findings |
-| V4.8.1 | 5cbb8ff | Unified build pipeline, wins.json source of truth |
-| V4.9 | d108833 | Replaced 300,000× tidal force with geometric pattern argument |
-| V4.9.1 | a0a9dc6 | Kill-Shot test card layout with status badges |
-| V4.9.2 | afaf462 | 95.2% accuracy traced to hardcoded HTML (no computation) |
-| V4.9.3 | 991c9ae | Parked Dielectric infographic section (preserved in source) |
-| V4.9.4 | 3ff6282 | Part 4.6 (code analysis), computed counts, WIN-025/033/034 fixes, code_analysis tags |
-| V4.9.5 | 5a608f7 | "Report a Problem" external reporting via GitHub Issues, permanent logging pipeline |
-| V4.9.6 | e4b22d2–52c632d | Decider patch pipeline: digest preprocessing, apply-patches.js, backfill-issues.js, cycle-aware filenames, timestamped outputs, open/closed issue split. ~25 WINs patched across 5 decider runs. WIN-053 verdict→Self-Contradicted. |
-| V4.9.7 | 2abb55d | Prose extraction: 11 sections from generate-html.js → data/sections.json with {{PLACEHOLDER}} tokens. 2017 tests. |
-| V4.9.8 | 9755573–0e01a5f | WIN-012→Self-Contradicted. WIN-054→Not Demonstrated. Holistic Phase 2 patches (tone, cross-refs, taxonomy). 16 code_analysis tag corrections. Expansion integration pipeline. Human notes system. Globe fingerprint hunt (Mode 3). 94 issues flushed to closed. |
-| V5.0 | 6e68d56 | sections.json is sole prose source of truth (50% line reduction in generate-html.js). HTML→PDF via Playwright replaces DOCX→LibreOffice chain. Removed build-doc-v4.js, adm-zip, docx dependencies. 7 cross-ref fixes in sections.json. Print CSS for PDF layout. |
-| V6.0 | 6b3e4a0 | Major restructure: tabs reordered (Self-Contradictions after The Model), kill shots extracted to own tab, all sections renumbered 1-10. Placeholder-based renumbering script. Translation map at `monitor/v6-restructure-map.json` for backward compat. |
-| V6.1 | ongoing | V51.1 coverage (69 WINs, 94.5% accuracy). WIN-068/069 onboarded. Dedup table (EXP-032), axial symmetry (EXP-033) integrated. Section 1.6 Dielectric Foundation (EXP-031) ready. Analytical tags methodology table in Part 3. WIN-001 Colorado Springs argument. Poll summary triage pipeline (Step 1i). Agent schedules reduced (poller 12h, analyst 2h, curmudgeon/decider 4h). |
-
-## Analyst Modes
-
-The analyst operates in five modes, checked in strict priority order each run:
-- **Mode 0 (top priority)**: New WIN onboarding — if dome has WINs we don't cover, write initial entries to `monitor/analyst/new-wins/`. Also handles new category proposals (`monitor/analyst/category-proposals/`).
-- **Mode 1**: Process expansion tracker items — write replacement_html for assigned sections. Includes `category: "steelman"` items.
-- **Mode 2**: Check for human notes — act on pending notes, revise completed work if targeted
-- **Mode 3**: Surviving defense neutralization — process `category: "defense"` EXP items created by decider from curmudgeon Cycle 3+ advocate_mode findings (rated 3+). Write to `expansions/DEF-NNN.json`.
-- **Mode 4 (idle only)**: Globe fingerprint hunt — systematic search for globe-derived constants across all WINs. One item per run. Tracker: `monitor/analyst/globe-fingerprint-tracker.json`
-
-## Parked Content
-
-### Dielectric Infographic (GRACE L1A / EM-Gravity)
-Commented out in `generate-html.js` (HTML comment). Content preserved for potential reinstatement. The WIN-012 detail still references GRACE L1A as part of its individual evidence rebuttal. (Was Section 3.6 pre-V6; section no longer has a numbered slot.)
+| Agent | Additional references |
+|-------|----------------------|
+| Poller | (none beyond this file) |
+| Analyst | `SCIENTIFIC-CONTEXT.md`, `DATA-SCHEMAS.md` |
+| Curmudgeon | `SCIENTIFIC-CONTEXT.md`, `DATA-SCHEMAS.md` |
+| Decider | `SCIENTIFIC-CONTEXT.md`, `DATA-SCHEMAS.md`, `BUILD-AND-CHANGE.md` |
+| Integrity | `DATA-SCHEMAS.md` |
+| Tinker | all reference files |
+| Social | (none beyond this file) |
+| Workspace-sync | (none beyond this file) |
