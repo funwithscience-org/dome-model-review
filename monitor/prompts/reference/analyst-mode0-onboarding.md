@@ -52,24 +52,22 @@ node -e "JSON.parse(require('fs').readFileSync('monitor/analyst/new-wins/WIN-NNN
 ```
 If output is not `valid`, fix the file before proceeding. Hand-written JSON is prone to missing braces, trailing commas, and unescaped quotes inside string values. Invalid JSON will crash the decider on its next run.
 
-5. **Create an open issue** with `category: "new-win"` and `severity: "critical"`:
+5. **Create an issue proposal** with `category: "new-win"` and `severity: "critical"`. Write to the staging directory — the decider will create the formal issue from this:
 ```bash
 node -e "
 const fs=require('fs');
-const o=JSON.parse(fs.readFileSync('monitor/decisions/open-issues.json','utf8'));
-const maxId=o.issues.reduce((m,i)=>Math.max(m,parseInt(i.issue_id.replace('ISS-',''))),0);
-o.issues.push({
-  issue_id:'ISS-'+String(maxId+1).padStart(3,'0'),
+const id='WIN-NNN'; // replace with actual WIN ID
+const proposal={
   source:'analyst-mode0',
   severity:'critical',
   category:'new-win',
-  summary:'New WIN-NNN needs committing to wins.json',
-  detail:'Entry written to monitor/analyst/new-wins/WIN-NNN.json',
-  affected_wins:['NNN'],
-  status:'open',
+  summary:'New '+id+' needs committing to wins.json',
+  detail:'Entry written to monitor/analyst/new-wins/'+id+'.json',
+  affected_wins:[id.replace('WIN-','')],
   created_at:new Date().toISOString()
-});
-fs.writeFileSync('monitor/decisions/open-issues.json',JSON.stringify(o,null,2));
+};
+fs.mkdirSync('monitor/analyst/issue-proposals',{recursive:true});
+fs.writeFileSync('monitor/analyst/issue-proposals/proposal-'+id+'-'+Date.now()+'.json',JSON.stringify(proposal,null,2));
 "
 ```
 

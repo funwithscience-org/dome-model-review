@@ -68,6 +68,12 @@ ls monitor/analyst/new-wins/WIN-*.json 2>/dev/null | wc -l
 Trigger: Any new WIN files exist. Our credibility depends on covering every dome claim.
 → Read `monitor/prompts/reference/decider-intake.md`, execute Step 1f.
 
+**Priority 1b — Analyst Issue Proposals** (check every run)
+```bash
+ls monitor/analyst/issue-proposals/proposal-*.json 2>/dev/null | wc -l
+```
+Trigger: Any proposal files exist. The analyst cannot write to `open-issues.json` directly (Phase 1 single-writer rule). Instead it writes proposals to this staging directory. For each proposal file, create a formal issue in `open-issues.json` with the next ISS-NNN ID, then delete the proposal file.
+
 **Priority 2 — External Reports**
 ```bash
 # New reports not yet in open-issues?

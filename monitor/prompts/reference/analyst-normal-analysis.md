@@ -76,24 +76,21 @@ Create JSON in `monitor/analysis/` with ISO timestamp. Include: kernel_of_truth,
 
 For each `recommended_action`, create at least one of:
 
-**Open issue** (for patches to wins.json or sections.json):
+**Issue proposal** (for patches to wins.json or sections.json) — write to staging directory, decider creates the formal issue:
 ```bash
 node -e "
 const fs=require('fs');
-const o=JSON.parse(fs.readFileSync('monitor/decisions/open-issues.json','utf8'));
-const maxId=o.issues.reduce((m,i)=>Math.max(m,parseInt(i.issue_id.replace('ISS-',''))),0);
-o.issues.push({
-  issue_id:'ISS-'+String(maxId+1).padStart(3,'0'),
+const proposal={
   source:'analyst-change-analysis',
   severity:'medium',
   category:'content-update',
   summary:'Brief description',
   detail:'Specific details: what text, what file, what fix',
   affected_wins:['NNN'],
-  status:'open',
   created_at:new Date().toISOString()
-});
-fs.writeFileSync('monitor/decisions/open-issues.json',JSON.stringify(o,null,2));
+};
+fs.mkdirSync('monitor/analyst/issue-proposals',{recursive:true});
+fs.writeFileSync('monitor/analyst/issue-proposals/proposal-'+Date.now()+'.json',JSON.stringify(proposal,null,2));
 "
 ```
 
