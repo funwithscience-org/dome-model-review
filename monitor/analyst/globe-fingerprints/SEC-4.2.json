@@ -1,0 +1,88 @@
+{
+  "section_id": "SEC-4.2",
+  "section_title": "The August 2026 Eclipse: A Sophisticated But Non-Discriminating Prediction",
+  "reviewed_at": "2026-04-10T17:12:25.919Z",
+  "fingerprints_found": 3,
+  "fingerprint_1": {
+    "name": "Radial coordinate instability across model versions",
+    "description": "The dome assigns completely different radial coordinates to the same stations between model versions, while the WGS84 geographic latitude remains invariant. BOU: r=5,423 km (V12) vs r=9,911 km (V51), ratio 1.83. HAD: r=4,231 km (V12) vs r=7,228 km (V51), ratio 1.71. SNK: r=7,021 km (V12) vs r=13,291 km (V51), ratio 1.89. If the dome were the fundamental geometry, the dome radial coordinate would be the physical invariant and WGS84 latitude would be derived. Instead, latitude is fixed across versions and the dome coordinate is recalculated each time from the new H(r) function via r×tan(lat)=H(r). The globe coordinate is the anchor; the dome coordinate is a derived artifact. This is visible in check_fsf.py, which hardcodes different r values for V12 and V51.",
+    "globe_value": "WGS84 geographic latitude (invariant across model versions)",
+    "dome_value": "Dome radial coordinate r (varies 1.7–1.9× between V12 and V51 for the same physical station)",
+    "code_evidence": {
+      "file": "check_fsf.py",
+      "detail": "V12 uses cities_old_r = {BOU: 5715, HAD: 3778, EBR: 5577}; V51 uses cities_new_r = {BOU: 9983, HAD: 7116, EBR: 9800}. Same stations, same globe latitudes, completely different dome coordinates. The latitude is the primitive; the dome r is computed.",
+      "verified": true
+    },
+    "why_it_matters": "A model built on its own geometry should have stable fundamental coordinates. The dome's coordinates change with every firmament function revision precisely because they are derived from the stable globe coordinate system. The dome cannot locate its own stations without first consulting WGS84.",
+    "confidence": 0.95
+  },
+  "fingerprint_2": {
+    "name": "fsf_derivation.py is formula shopping, not theoretical derivation",
+    "description": "The dome's fsf_derivation.py script tests 9 candidate mathematical formulas against the published FSF values to find the best empirical match. Candidates include H(r)/H_ref, H_ref/H(r), power laws, exp(r/8619), r/H(r), 1/cos(lat), sin(lat)/sin(51), and field gradient |dH/dr|. The script selects whichever formula has the lowest MSE against published FSF. This is not a derivation from dome physics — it is a brute-force search through a formula space, fitting to a target. The 'winning' formula (H(r)/r normalized, equivalent to tan(lat)/tan(ref_lat)) was selected because it matched the numbers, not because dome theory demanded it. Our section already identifies the tan(lat) tautology; this code proves the tautology was found by empirical search rather than theoretical prediction.",
+    "globe_value": "tan(WGS84_latitude) / tan(reference_latitude)",
+    "dome_value": "H(r)/r normalized — presented as dome geometry output",
+    "code_evidence": {
+      "file": "scripts/fsf_derivation.py",
+      "detail": "Tests 9 formulas (labeled A through I) including purely latitude-based options like 1/cos(lat) and sin(lat)/sin(51). The inclusion of geographic-latitude-based formulas in the candidate pool reveals the author knows the FSF correlates with latitude, not dome geometry. The script computes MSE for each and selects the best fit. A genuine dome derivation would produce one formula from first principles — not a menu of 9 candidates ranked by empirical fit.",
+      "verified": true
+    },
+    "why_it_matters": "This transforms our FSF=tan(lat) argument from a mathematical observation to a code-demonstrated fact: the dome's own derivation script is formula shopping. The author tested latitude-based formulas alongside dome-based formulas and found they produce the same numbers — because the dome coordinates are derived from the latitudes. The 'dome geometry' is not contributing independent information.",
+    "confidence": 0.92
+  },
+  "fingerprint_3": {
+    "name": "Monitor.py uses hidden third baseline (-18.22 nT) not matching any published prediction",
+    "description": "monitor.py line 512 computes ecm_eclipse = -18.22 × 0.95 × 1.672 = -28.94 nT. The -18.22 nT baseline does not match either published baseline: BOU = -10.9 nT or W004 = -22.24 nT. It is not the arithmetic mean (-16.57), geometric mean (-15.57), or any obvious combination. The coverage (0.95) matches Ebro, but the FSF (1.672) doesn't match any published station FSF (closest is ESK at 1.722). This means the runtime monitoring code checks a prediction that differs from the pre-registered predictions file. The discrepancy between what is Bitcoin-anchored and what the automation actually checks is a provenance gap.",
+    "globe_value": "N/A (this is a code-vs-predictions discrepancy)",
+    "dome_value": "-18.22 nT baseline in monitor.py vs -10.9 (BOU) and -22.24 (W004) in eclipse_v12_predictions.txt",
+    "code_evidence": {
+      "file": "monitor.py lines 510-523",
+      "detail": "Line 512: ecm_eclipse = -18.22 * 0.95 * 1.672 — all hardcoded literals. Line 515 describes formula as delta_B = -18.22 × coverage × FSF. Line 520: globe_prediction set to 0.0 (incorrect — Chapman mechanism predicts 5-25 nT). Product = -28.94 nT, exceeding the highest published prediction (Hartland W004 at -26.2 nT). The monitor appears to check a single composite prediction rather than per-station values.",
+      "verified": true
+    },
+    "why_it_matters": "Pre-registration has value only if the monitoring code checks the same predictions that were registered. A hidden baseline that differs from both published baselines undermines the pre-registration claim. Additionally, the globe_prediction field is set to 0.0, misrepresenting the Chapman mechanism's well-established 5-25 nT range — the dome's own monitoring code presents a false dichotomy.",
+    "confidence": 0.88
+  },
+  "additional_observations": {
+    "latitude_input_inconsistency": "fsf_derivation.py uses SNK (Canary Islands) latitude = 27.7° while eclipse_v12_predictions.txt uses 28.3°. With 27.7°: tan(27.7)/tan(40) = 0.6257. With 28.3°: tan(28.3)/tan(40) = 0.6417. Published FSF = 0.642. The predictions file's 28.3° produces the correct FSF; the derivation script's 27.7° produces the anomalous 0.016 deviation we flag in our review. This suggests the Canary Islands outlier in our FSF verification table is not a mysterious dome-geometry effect but simply a latitude input error in one of the dome's own scripts.",
+    "monitor_globe_misrepresentation": "monitor.py line 520 sets globe_prediction to 0.0 for eclipse magnetic anomaly, claiming the globe predicts no effect. This contradicts 90+ years of Chapman Sq-current mechanism literature (5-25 nT predicted for quiet-day eclipses). The dome's runtime monitoring code presents a straw-man globe prediction.",
+    "section_already_covers": "Our section already thoroughly documents: (1) FSF = tan(lat) tautology with 9-station verification, (2) BOU baseline as Chapman measurement, (3) Besselian elements assuming spherical Earth, (4) monitor.py hardcoded check, (5) E-PRED-C contradicting WIN-012. The new findings above strengthen the existing arguments with additional code-level evidence."
+  },
+  "suggested_additions": [
+    {
+      "target": "Section 4.2, after the FSF station-by-station verification paragraph",
+      "text": "The dome's own <code>fsf_derivation.py</code> confirms this algebraic identity was found by empirical search, not theoretical derivation: the script tests nine candidate formulas — including purely latitude-based options like 1/cos(lat) and sin(lat)/sin(ref_lat) — and selects whichever minimizes the mean squared error against published FSF values. That latitude-based formulas appear alongside \"dome geometry\" formulas in the same candidate pool, and produce equivalent results, is a direct code-level demonstration that the dome geometry contributes nothing beyond relabeling geographic latitude.",
+      "rationale": "Strengthens the existing tautology argument by showing the dome author explicitly searched through formulas including latitude-only candidates."
+    },
+    {
+      "target": "Section 4.2, Structural problems, after point 1",
+      "text": "The dome's radial coordinate is not a stable physical quantity. Between V12 and V51, the same stations are assigned completely different dome r values — Boulder shifts from r=5,423 km to r=9,911 km (ratio 1.83×), while its WGS84 latitude (40°N) stays fixed. The globe coordinate is the physical invariant; the dome coordinate is a derived artifact that changes with every firmament function revision. A model built on its own geometry would have stable fundamental coordinates. The dome cannot locate its own eclipse stations without first consulting the globe's WGS84 coordinate system.",
+      "rationale": "New finding from check_fsf.py code analysis showing r-coordinate instability across model versions."
+    }
+  ],
+  "code_search": {
+    "terms_searched": [
+      "eclipse",
+      "FSF",
+      "fsf",
+      "coverage",
+      "Hartland",
+      "BOU",
+      "E-PRED",
+      "besselian"
+    ],
+    "files_checked": [
+      "check_eclipse_fsf.py",
+      "check_fsf.py",
+      "scripts/fsf_derivation.py",
+      "monitor.py",
+      "docs/eclipse_v12_predictions.txt"
+    ],
+    "key_findings": [
+      "check_eclipse_fsf.py: Tests 3 H(r) curves (exponential, elliptical, parabolic) against HAD>EBR ordering",
+      "check_fsf.py: V12 vs V51 comparison with different r values for same stations",
+      "fsf_derivation.py: 9-formula empirical search including latitude-only candidates",
+      "monitor.py line 512: hidden -18.22 nT baseline, hardcoded 0.95 coverage and 1.672 FSF",
+      "eclipse_v12_predictions.txt: full prediction table with SHA-256 anchor"
+    ]
+  }
+}

@@ -1,0 +1,265 @@
+{
+  "id": "AUDIT-001",
+  "created_at": "2026-04-10T19:15:00Z",
+  "category": "ownership_compliance_audit",
+  "title": "Phase 1 Ownership Compliance Audit \u2014 Full Agent Prompt Scan",
+  "audited_by": "tinker",
+  "scope": "All agent prompts under monitor/prompts/ and monitor/prompts/reference/, cross-checked against build.js OWNERSHIP object and workspace-sync.md OWNED_BY_GIT array",
+  "methodology": "Read every agent prompt file, extracted every file write operation (fs.writeFileSync, fs.appendFileSync, cp, echo >, overwrite instructions), then cross-checked each write against the OWNERSHIP table in build.js (lines 43-99) and the OWNED_BY_GIT array in workspace-sync.md (lines 56-75). Verified three-way consistency: CLAUDE.md \u2194 build.js \u2194 workspace-sync.md.",
+  "violations": [],
+  "discrepancies_claude_md_vs_build_js": [
+    {
+      "file": "data/predictions.json",
+      "claude_md": "Listed as git-owned (line 49)",
+      "workspace_sync": "In OWNED_BY_GIT array",
+      "build_js": "NOT in OWNERSHIP object",
+      "impact": "build.js publish does NOT copy data/predictions.json git\u2192workspace. Workspace FUSE copy can go stale. Agents reading from workspace (integrity, social) see stale predictions data.",
+      "recommended_fix": "Add 'data/predictions.json': 'git' to build.js OWNERSHIP object (after 'data/uncounted-failures.json' line)"
+    },
+    {
+      "file": "docs/llms.txt",
+      "claude_md": "Listed as git-owned (line 51)",
+      "workspace_sync": "In OWNED_BY_GIT array",
+      "build_js": "NOT in OWNERSHIP object",
+      "impact": "build.js publish does NOT copy docs/llms.txt git\u2192workspace. Social/integrity agents reading from workspace see stale version after decider commits an update.",
+      "recommended_fix": "Add 'docs/llms.txt': 'git' to build.js OWNERSHIP"
+    },
+    {
+      "file": "docs/sitemap.xml",
+      "claude_md": "Listed as git-owned (line 51)",
+      "workspace_sync": "In OWNED_BY_GIT array",
+      "build_js": "NOT in OWNERSHIP object",
+      "impact": "Same as docs/llms.txt \u2014 no git\u2192workspace sync on publish.",
+      "recommended_fix": "Add 'docs/sitemap.xml': 'git' to build.js OWNERSHIP"
+    },
+    {
+      "file": "docs/robots.txt",
+      "claude_md": "Listed as git-owned (line 51)",
+      "workspace_sync": "In OWNED_BY_GIT array",
+      "build_js": "NOT in OWNERSHIP object",
+      "impact": "Same as above.",
+      "recommended_fix": "Add 'docs/robots.txt': 'git' to build.js OWNERSHIP"
+    },
+    {
+      "file": "monitor/analyst/issue-proposals/",
+      "claude_md": "Listed as append-only (line 66)",
+      "workspace_sync": "NOT in sync_glob list (missing entirely)",
+      "build_js": "NOT in OWNERSHIP object",
+      "impact": "Analyst writes issue proposals to FUSE workspace. workspace-sync never copies them to git. Decider reads from workspace cwd (not clone), so the handoff works in practice. But proposals have no git persistence \u2014 if FUSE recycles before decider processes them, they're lost. Also no historical record.",
+      "recommended_fix": "Add sync_glob monitor/analyst/issue-proposals '*.json' to workspace-sync.md (after line 158, the globe-fingerprints sync), and add 'monitor/analyst/issue-proposals/': 'append_only' to build.js OWNERSHIP"
+    }
+  ],
+  "unclassified_files": [
+    {
+      "file": "monitor/analyst/expansion-tracker.json",
+      "written_by": [
+        "analyst (FUSE, analyst-normal-analysis.md:120)",
+        "decider (git clone, decider-curmudgeon.md:97,151)"
+      ],
+      "classification": "multi-writer (same class as tracker.json)",
+      "recommendation": "Document alongside tracker.json in CLAUDE.md's Unclassified section. Same protections apply: scheduling discipline, pre-push integrity gate, git merge-conflict detection. Already synced by workspace-sync (line 159)."
+    },
+    {
+      "file": "monitor/analyst/globe-fingerprint-tracker.json",
+      "written_by": [
+        "decider (git clone, decider-intake.md:123)"
+      ],
+      "classification": "Effectively git-owned (decider is sole writer from clone). workspace-sync copies FUSE\u2192git (line 160) but this is a no-op when decider's git version is newer.",
+      "recommendation": "Consider classifying as git-owned in build.js since decider is the sole writer. OR document as multi-writer if analyst also writes (not observed in current prompts)."
+    },
+    {
+      "file": "monitor/social/report-*.json",
+      "written_by": [
+        "social (FUSE)"
+      ],
+      "classification": "workspace-only (not synced to git, not consumed from git)",
+      "recommendation": "Low priority. Social reports are only read by tinker from FUSE. Could add sync_glob for persistence but not functionally required."
+    },
+    {
+      "file": "monitor/social/latest-summary.txt",
+      "written_by": [
+        "social (FUSE)"
+      ],
+      "classification": "workspace-only convenience file",
+      "recommendation": "Same as social reports."
+    },
+    {
+      "file": "monitor/curmudgeon/latest-review-summary.txt",
+      "written_by": [
+        "curmudgeon (FUSE)"
+      ],
+      "classification": "workspace-only convenience file. Read by decider-intake.md (line 9).",
+      "recommendation": "Should be synced to git so decider can read from clone. Currently decider reads from workspace cwd, which works. Low priority."
+    },
+    {
+      "file": "monitor/curmudgeon/alerts.txt",
+      "written_by": [
+        "curmudgeon (FUSE)"
+      ],
+      "classification": "workspace-only. Read by decider-intake.md (line 10).",
+      "recommendation": "Same as latest-review-summary.txt."
+    },
+    {
+      "file": "monitor/curmudgeon/pending-digest.json",
+      "written_by": [
+        "digest-reviews.js script"
+      ],
+      "classification": "Build artifact. Already synced by workspace-sync (line 167).",
+      "recommendation": "No action needed \u2014 already synced correctly."
+    },
+    {
+      "file": "monitor/integrity/latest-integrity-summary.txt",
+      "written_by": [
+        "integrity (FUSE)"
+      ],
+      "classification": "workspace-only convenience file in an append_only directory. Overwrite semantics conflict with append_only classification.",
+      "recommendation": "Low priority. The overwrite doesn't break anything because append_only only governs the sync direction, not the filesystem. The file is a convenience summary consumed from FUSE by decider."
+    },
+    {
+      "file": "monitor/integrity/alerts.txt",
+      "written_by": [
+        "integrity (FUSE)"
+      ],
+      "classification": "Same as latest-integrity-summary.txt.",
+      "recommendation": "Same."
+    },
+    {
+      "file": "monitor/changes/latest-poll-summary.txt",
+      "written_by": [
+        "poller (FUSE)"
+      ],
+      "classification": "Workspace-only convenience file in an append_only directory. Overwrite semantics. Already synced by workspace-sync (sync_glob line 171 handles *.txt).",
+      "recommendation": "No action needed."
+    },
+    {
+      "file": "monitor/tinker/latest-tinker-summary.txt",
+      "written_by": [
+        "tinker (FUSE)"
+      ],
+      "classification": "workspace-only convenience file in append_only_glob dir.",
+      "recommendation": "No action needed."
+    },
+    {
+      "file": "human-notes.json files (monitor/analyst/, monitor/decisions/, monitor/social/, monitor/curmudgeon/)",
+      "written_by": [
+        "human operator (dual-write to FUSE + git clone)"
+      ],
+      "classification": "Dual-write per CLAUDE.md rule. Not in OWNERSHIP table.",
+      "recommendation": "Deliberate dual-write \u2014 documenting in CLAUDE.md is sufficient. Adding to OWNERSHIP would break the dual-write pattern."
+    }
+  ],
+  "clean_agents": [
+    {
+      "agent": "poller",
+      "writes": [
+        "monitor/changes/<ID>.json (append_only \u2713)",
+        "monitor/changes/latest-poll-summary.txt (overwrite in append_only dir \u2014 functional, synced)",
+        "monitor/status.json (workspace \u2713)"
+      ],
+      "violations": "none"
+    },
+    {
+      "agent": "analyst",
+      "writes": [
+        "monitor/analyst/new-wins/WIN-NNN.json (append_only \u2713)",
+        "monitor/analyst/issue-proposals/proposal-*.json (unclassified but correct direction \u2014 FUSE write for FUSE consumer)",
+        "monitor/analyst/expansion-tracker.json (multi-writer, synced)",
+        "monitor/analyst/expansions/EXP-NNN.json (append_only \u2713)"
+      ],
+      "violations": "none \u2014 prior open-issues.json violation CONFIRMED FIXED (no grep hits for open-issues in analyst prompts)"
+    },
+    {
+      "agent": "curmudgeon",
+      "writes": [
+        "monitor/curmudgeon/reviews/*.json (append_only \u2713)",
+        "monitor/curmudgeon/tracker.json (multi-writer, acknowledged)",
+        "monitor/curmudgeon/latest-review-summary.txt (unclassified convenience)",
+        "monitor/curmudgeon/alerts.txt (unclassified convenience)"
+      ],
+      "violations": "none \u2014 prior priority-queue.json violation CONFIRMED FIXED (line 160: 'Do NOT modify priority-queue.json')"
+    },
+    {
+      "agent": "decider",
+      "writes": [
+        "data/uncounted-failures.json (git \u2713)",
+        "data/wins.json (git \u2713, via build.js)",
+        "data/sections.json (git \u2713, via build.js)",
+        "monitor/curmudgeon/priority-queue.json (git \u2713, authorized single-writer)",
+        "monitor/curmudgeon/tracker.json (multi-writer, acknowledged)",
+        "monitor/decisions/open-issues.json (git \u2713)",
+        "monitor/decisions/closed-issues.json (git \u2713)",
+        "monitor/decisions/suggested-patches-*.json (append_only_glob \u2713)",
+        "monitor/analyst/expansion-tracker.json (multi-writer)",
+        "monitor/analyst/globe-fingerprint-tracker.json (sole git-clone writer)",
+        "docs/ files via cp from social drafts (git \u2713)"
+      ],
+      "violations": "none"
+    },
+    {
+      "agent": "integrity",
+      "writes": [
+        "monitor/integrity/report-*.json (append_only \u2713)",
+        "monitor/integrity/latest-integrity-summary.txt (convenience overwrite)",
+        "monitor/integrity/alerts.txt (convenience overwrite)"
+      ],
+      "violations": "none"
+    },
+    {
+      "agent": "social",
+      "writes": [
+        "monitor/social/report-*.json (unclassified, workspace-only)",
+        "monitor/social/latest-summary.txt (unclassified)",
+        "monitor/social/search-rankings.json (synced by workspace-sync)",
+        "monitor/social/drafts/* (append_only \u2713)"
+      ],
+      "violations": "none \u2014 prior docs/ direct-write violation CONFIRMED FIXED (social.md line 234: explicit Phase 1 ownership warning)"
+    },
+    {
+      "agent": "workspace-sync",
+      "writes": [
+        "monitor/integrity/workspace-sync-skips.jsonl (git \u2713, via fs.appendFileSync bypassing smart_copy direction guard)",
+        "Various cp operations governed by smart_copy direction guard"
+      ],
+      "violations": "none"
+    },
+    {
+      "agent": "tinker",
+      "writes": [
+        "monitor/tinker/report-*.json (append_only_glob \u2713)",
+        "monitor/tinker/proposals/PROP-*.json (append_only \u2713)",
+        "monitor/tinker/latest-tinker-summary.txt (convenience overwrite)"
+      ],
+      "violations": "none"
+    }
+  ],
+  "false_alarms": [
+    {
+      "agent": "workspace-sync",
+      "file": "monitor/integrity/workspace-sync-skips.jsonl",
+      "concern": "workspace-sync writes to a git-owned file \u2014 looks like a violation",
+      "resolution": "By design. workspace-sync is the authoritative writer via fs.appendFileSync, bypassing its own smart_copy direction guard. The 'git' classification in build.js ensures publish copies the file to FUSE workspace for integrity to read. Documented in build.js comments (lines 57-73)."
+    },
+    {
+      "agent": "curmudgeon",
+      "file": "monitor/curmudgeon/tracker.json",
+      "concern": "Multi-writer (curmudgeon from FUSE + decider from git clone)",
+      "resolution": "Deliberately unclassified per build.js comment (lines 79-85) and CLAUDE.md line 69. Protected by scheduling discipline, pre-push integrity gate, and git merge-conflict detection. Deferred to Phase 2 shard split."
+    },
+    {
+      "agent": "decider",
+      "file": "monitor/analyst/expansion-tracker.json",
+      "concern": "Multi-writer (analyst from FUSE + decider from git clone)",
+      "resolution": "Same class as tracker.json. Both writers are protected by non-concurrent scheduling. workspace-sync smart_copy has mtime-vs-git-time guard. Should be documented as multi-writer in CLAUDE.md."
+    }
+  ],
+  "summary": {
+    "violations_found": 0,
+    "discrepancies_found": 5,
+    "unclassified_files_found": 12,
+    "all_three_prior_violations_confirmed_fixed": true,
+    "highest_priority_fix": "Add data/predictions.json, docs/llms.txt, docs/sitemap.xml, docs/robots.txt to build.js OWNERSHIP as 'git'. These are in CLAUDE.md and workspace-sync OWNED_BY_GIT but missing from build.js, meaning publish doesn't sync them git\u2192workspace.",
+    "second_priority_fix": "Add monitor/analyst/issue-proposals/ to both build.js OWNERSHIP (append_only) and workspace-sync sync_glob for persistence.",
+    "third_priority": "Document expansion-tracker.json as multi-writer alongside tracker.json in CLAUDE.md."
+  },
+  "verification_pattern": "grep -q \"'data/predictions.json'\" build.js && grep -q \"'docs/llms.txt'\" build.js && grep -q \"issue-proposals\" monitor/prompts/workspace-sync.md && echo FIXED || echo STILL_BROKEN"
+}
