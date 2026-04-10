@@ -163,11 +163,47 @@ The dome model's name ("Ovoid Cavity Cosmological Model" / ECM) may change. Ther
 
 If any of these change, flag as **critical** with `analyst_priority: "HIGH"`. Include both the old and new names. Set a note: "Model rebrand detected — notify social analyst for discoverability pivot."
 
+### 13. Parameter Canary Watch
+
+The dome model has core numerical parameters embedded in formulas, code blocks, and interactive calculators across its pages. When the author silently changes a coefficient, our review can cite stale values for months before anyone notices. This section catches that.
+
+**Baseline parameters (check each poll):**
+
+Fetch the predictions page and model page content. Search for the current values of these parameters and compare to the baselines below:
+
+| Parameter | Symbol / Context | Baseline Value | Where to look |
+|-----------|-----------------|----------------|---------------|
+| Disc radius | `disc_radius`, `a` | 20,015 km | model page, inject_ai_layer.py |
+| Firmament height (pole) | `firmament_height`, `H(0)` | 8,537 km | model page, H(r) formula |
+| Firmament decay constant | H(r) exponent | 8,619 km | model page, H(r) formula |
+| Sun altitude | `sun_altitude` | 5,733 km | model page, inject_ai_layer.py |
+| Moon altitude | `moon_altitude` | 2,534 km | model page, inject_ai_layer.py |
+| Refraction coefficient | n(r) formula multiplier | 0.20 | predictions page formula / calculator, model page |
+| Claimed accuracy | headline % | 94.5% | home page, wins page |
+| WIN count | confirmed predictions | 69 | home page, wins page |
+| Failure count | claimed failures | 4 | predictions page |
+
+**How to check:**
+```bash
+# Grep fetched page content for key numerical values
+# These patterns catch the parameter in formula context, not just any occurrence of the number
+# Look for: coefficient changes, formula rewrites, new parameters added
+```
+
+**If any parameter differs from baseline:**
+- Flag as **critical** with `analyst_priority: "HIGH"`
+- Record both old and new values in the change record
+- Note: "PARAMETER CHANGE DETECTED — [parameter name] shifted from [old] to [new]. Our review may cite stale values."
+- The coefficient change from 0.27→0.20 in n(r) was caught by the analyst months late. This check exists to prevent that from happening again.
+
+**Maintenance:** When the decider or analyst confirms a parameter change and our review is updated to reflect it, update the baseline value in this table. The table is the single source of truth for "what our review currently assumes."
+
 ## Critical Rules
 - **Distinguish automated from manual commits.** monitor.py commits every 5 minutes; pull_data.py every 6 hours. These are noise unless their content changes.
 - **Be thorough but fast.** The poller runs every 4 hours — don't spend time on analysis, that's the analyst's job.
 - **Always check canary traps.** This is the early warning system.
 - **Track test windows.** When prediction deadlines pass, the dome tends to update the site within 24-48 hours. That's when failures get "refined" away.
 - **Check accuracy data sources.** When API-derived figures drift, our review becomes wrong.
+- **Check parameter canaries.** When the dome silently changes a core coefficient, our review cites stale values. This is how we missed n(r) 0.27→0.20.
 - **Monitor model name.** A rebrand affects our entire discoverability strategy.
 - **Log everything.** Even quiet polls get a summary line.
