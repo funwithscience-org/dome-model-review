@@ -45,6 +45,7 @@ const OWNERSHIP = {
   'data/wins.json': 'git',
   'data/sections.json': 'git',
   'data/uncounted-failures.json': 'git',
+  'data/predictions.json': 'git',
   'docs/index.html': 'git',
   'build-scripts/generate-html.js': 'git',
   'build-scripts/generate-pdf.js': 'git',

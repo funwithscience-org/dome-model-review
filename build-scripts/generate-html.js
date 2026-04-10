@@ -18,6 +18,7 @@ const path = require('path');
 const WINS_PATH = path.join(__dirname, '..', 'data', 'wins.json');
 const SECTIONS_PATH = path.join(__dirname, '..', 'data', 'sections.json');
 const FAILURES_PATH = path.join(__dirname, '..', 'data', 'uncounted-failures.json');
+const PREDICTIONS_PATH = path.join(__dirname, '..', 'data', 'predictions.json');
 const PKG_PATH = path.join(__dirname, '..', 'package.json');
 const OUTPUT_PATH = path.join(__dirname, '..', 'docs', 'index.html');
 
@@ -95,6 +96,19 @@ function resolvePlaceholders(html, context) {
     // De-duplication analysis (EXP-032)
     '{{INDEPENDENT_CLAIMS}}': context.independentClaims || 39,
     '{{DEDUP_REDUCTION_PERCENT}}': context.dedupReductionPct || 42,
+
+    // Predictions catalog
+    '{{PRED_TOTAL}}': context.predCounts?.total || 0,
+    '{{PRED_PROSPECTIVE}}': context.predCounts?.prospective || 0,
+    '{{PRED_PENDING}}': context.predCounts?.pending || 0,
+    '{{PRED_CONFIRMED}}': context.predCounts?.confirmed || 0,
+    '{{PRED_FALSIFIED}}': context.predCounts?.falsified || 0,
+    '{{PRED_EXPIRED}}': context.predCounts?.expired || 0,
+    '{{PRED_STD_RELABEL}}': context.predCounts?.stdRelabel || 0,
+    '{{PRED_TESTABLE}}': context.predCounts?.testable || 0,
+    '{{PRED_DOME_DERIVED}}': context.predCounts?.domeDerived || 0,
+    '{{PRED_ACTIVE_WINDOWS}}': context.predCounts?.activeWindows || 0,
+    '{{PRED_IMMINENT}}': context.predCounts?.imminent || 0,
   };
 
   // Simple replacements
@@ -693,6 +707,35 @@ function main() {
     console.log('Acknowledged failures:', failures.entries.length);
   }
 
+  // Load predictions catalog
+  let predictions = { entries: [] };
+  if (fs.existsSync(PREDICTIONS_PATH)) {
+    predictions = JSON.parse(fs.readFileSync(PREDICTIONS_PATH, 'utf8'));
+    console.log('Predictions cataloged:', predictions.entries.length);
+  }
+  // Compute prediction counts
+  const predEntries = predictions.entries || [];
+  const predCounts = {
+    total: predEntries.length,
+    prospective: predEntries.filter(e => e.prospective === true).length,
+    pending: predEntries.filter(e => e.outcome === 'pending').length,
+    confirmed: predEntries.filter(e => e.outcome === 'confirmed').length,
+    falsified: predEntries.filter(e => e.outcome === 'falsified').length,
+    expired: predEntries.filter(e => e.outcome === 'expired').length,
+    stdRelabel: predEntries.filter(e => e.derivation === 'standard_physics').length,
+    testable: predEntries.filter(e => e.testability === 'testable').length,
+    domeDerived: predEntries.filter(e => e.derivation === 'dome_geometry').length,
+    activeWindows: predEntries.filter(e => e.test_window?.status === 'open').length,
+    imminent: predEntries.filter(e => {
+      if (!e.test_window?.closes) return false;
+      const closes = new Date(e.test_window.closes);
+      const now = new Date();
+      const days = (closes - now) / (1000 * 60 * 60 * 24);
+      return days >= 0 && days <= 30;
+    }).length,
+  };
+  console.log('Prediction counts:', JSON.stringify(predCounts));
+
   // Compute accuracy variant list from data
   const variantSources = failures.dome_accuracy_variants?.sources || [];
   const accuracyVariants = variantSources.map(s => s.result);
@@ -761,6 +804,7 @@ function main() {
     accuracyVariantDetail,
     independentClaims,
     dedupReductionPct,
+    predCounts,
   };
 
   // Start HTML

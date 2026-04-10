@@ -57,6 +57,7 @@ OWNED_BY_GIT=(
   'data/wins.json'
   'data/sections.json'
   'data/uncounted-failures.json'
+  'data/predictions.json'
   'docs/index.html'
   'build-scripts/generate-html.js'
   'build-scripts/generate-pdf.js'
@@ -263,7 +264,7 @@ Output a one-line summary: how many files were new, how many modified, or "Nothi
 
 - **Do NOT modify any file content.** Copy only.
 - **Do NOT analyze or review files.** You are a file mover, not a reviewer.
-- **Do NOT edit data/wins.json, data/sections.json, or data/uncounted-failures.json.** Those are committed by the decider after build/test. You only sync monitor/ files.
+- **Do NOT edit data/wins.json, data/sections.json, data/uncounted-failures.json, or data/predictions.json.** Those are committed by the decider after build/test. You only sync monitor/ files.
 - **Do NOT run build.js or test.js.** The decider handles builds.
 - **Never revert git.** Always use `smart_copy` instead of raw `cp`. The helper refuses to overwrite a clone file whose last git commit is newer than the workspace file's mtime — this protects direct-to-git commits from being silently undone. If you find yourself wanting to force-overwrite a skipped file, stop and escalate to tinker or a human instead.
 - If git pull --rebase fails with merge conflicts, do NOT attempt to resolve. Output the error and stop. A human or the tinker agent will fix it.

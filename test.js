@@ -521,6 +521,69 @@ if (html) {
 }
 
 // ════════════════════════════════════════════
+// Section 6: predictions.json schema validation
+// ════════════════════════════════════════════
+
+{
+  const predictionsPath = path.join(__dirname, 'data', 'predictions.json');
+  if (fs.existsSync(predictionsPath)) {
+    const pred_data = JSON.parse(fs.readFileSync(predictionsPath, 'utf8'));
+    assert(Array.isArray(pred_data.entries), 'predictions.json has entries array');
+    assert(pred_data._meta && typeof pred_data._meta === 'object', 'predictions.json has _meta');
+    assert(Array.isArray(pred_data.categories), 'predictions.json has categories array');
+
+    const validOutcomes = ['pending', 'confirmed', 'falsified', 'expired', 'withdrawn'];
+    const validTestability = ['testable', 'partially_testable', 'untestable', null];
+    const validDerivation = ['dome_geometry', 'standard_physics', 'unfalsifiable', 'mixed', null];
+    const predIds = new Set();
+
+    for (const entry of pred_data.entries) {
+      assert(typeof entry.id === 'string' && entry.id.length > 0,
+        `Prediction entry has valid id: ${entry.id}`);
+      assert(!predIds.has(entry.id), `No duplicate prediction ID: ${entry.id}`);
+      predIds.add(entry.id);
+      assert(typeof entry.claim === 'string' && entry.claim.length > 0,
+        `${entry.id} has claim`);
+      assert(validOutcomes.includes(entry.outcome),
+        `${entry.id} outcome '${entry.outcome}' is valid`);
+      assert(typeof entry.prospective === 'boolean',
+        `${entry.id} has boolean prospective flag`);
+      if (entry.testability !== undefined && entry.testability !== null) {
+        assert(validTestability.includes(entry.testability),
+          `${entry.id} testability '${entry.testability}' is valid`);
+      }
+      if (entry.derivation !== undefined && entry.derivation !== null) {
+        assert(validDerivation.includes(entry.derivation),
+          `${entry.id} derivation '${entry.derivation}' is valid`);
+      }
+      if (entry.category) {
+        const catIds = pred_data.categories.map(c => c.id);
+        assert(catIds.includes(entry.category),
+          `${entry.id} category '${entry.category}' exists in categories list`);
+      }
+      if (entry.test_window) {
+        assert(typeof entry.test_window === 'object',
+          `${entry.id} test_window is object`);
+      }
+      if (entry.related_wins) {
+        assert(Array.isArray(entry.related_wins),
+          `${entry.id} related_wins is array`);
+      }
+    }
+
+    // Check that HTML has no unresolved prediction placeholders
+    if (html) {
+      assert(!html.includes('{{PRED_TOTAL}}'),
+        'HTML has no unresolved {{PRED_TOTAL}} placeholder');
+      assert(!html.includes('{{PRED_PROSPECTIVE}}'),
+        'HTML has no unresolved {{PRED_PROSPECTIVE}} placeholder');
+      assert(!html.includes('{{PRED_TESTABLE}}'),
+        'HTML has no unresolved {{PRED_TESTABLE}} placeholder');
+    }
+  }
+}
+
+// ════════════════════════════════════════════
 // Results
 // ════════════════════════════════════════════
 
