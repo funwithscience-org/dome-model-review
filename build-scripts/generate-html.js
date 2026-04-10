@@ -99,6 +99,11 @@ function resolvePlaceholders(html, context) {
 
     // Predictions catalog
     '{{PRED_TOTAL}}': context.predCounts?.total || 0,
+    '{{PRED_REVIEWABLE}}': context.predCounts?.reviewable || 0,
+    '{{PRED_PREDICTIONS}}': context.predCounts?.predictions || 0,
+    '{{PRED_TRACKING}}': context.predCounts?.tracking || 0,
+    '{{PRED_DATA_WATCH}}': context.predCounts?.data_watch || 0,
+    '{{PRED_MANUAL_TEST}}': context.predCounts?.manual_test || 0,
     '{{PRED_PROSPECTIVE}}': context.predCounts?.prospective || 0,
     '{{PRED_PENDING}}': context.predCounts?.pending || 0,
     '{{PRED_CONFIRMED}}': context.predCounts?.confirmed || 0,
@@ -716,13 +721,20 @@ function main() {
   }
   // Compute prediction counts
   const predEntries = predictions.entries || [];
+  // Only count prediction and tracking types for headline numbers
+  const reviewableEntries = predEntries.filter(e => e.entry_type === 'prediction' || e.entry_type === 'tracking');
   const predCounts = {
     total: predEntries.length,
+    reviewable: reviewableEntries.length,
+    predictions: predEntries.filter(e => e.entry_type === 'prediction').length,
+    tracking: predEntries.filter(e => e.entry_type === 'tracking').length,
+    data_watch: predEntries.filter(e => e.entry_type === 'data_watch').length,
+    manual_test: predEntries.filter(e => e.entry_type === 'manual_test').length,
     prospective: predEntries.filter(e => e.prospective === true).length,
-    pending: predEntries.filter(e => e.outcome === 'pending').length,
-    confirmed: predEntries.filter(e => e.outcome === 'confirmed').length,
-    falsified: predEntries.filter(e => e.outcome === 'falsified').length,
-    expired: predEntries.filter(e => e.outcome === 'expired').length,
+    pending: predEntries.filter(e => e.author_status === 'pending').length,
+    confirmed: predEntries.filter(e => e.author_status === 'confirmed').length,
+    falsified: predEntries.filter(e => e.author_status === 'falsified').length,
+    expired: predEntries.filter(e => e.author_status === 'expired').length,
     stdRelabel: predEntries.filter(e => e.derivation === 'standard_physics').length,
     testable: predEntries.filter(e => e.testability === 'testable').length,
     domeDerived: predEntries.filter(e => e.derivation === 'dome_geometry').length,

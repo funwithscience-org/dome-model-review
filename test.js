@@ -532,7 +532,9 @@ if (html) {
     assert(pred_data._meta && typeof pred_data._meta === 'object', 'predictions.json has _meta');
     assert(Array.isArray(pred_data.categories), 'predictions.json has categories array');
 
-    const validOutcomes = ['pending', 'confirmed', 'falsified', 'expired', 'withdrawn', 'unresolved', 'refined', 'suspended', 'logging'];
+    const validAuthorStatuses = ['pending', 'confirmed', 'falsified', 'expired', 'withdrawn', 'unresolved', 'refined', 'suspended', 'logging'];
+    const validOurVerdicts = ['pending', 'confirmed', 'falsified', 'expired', 'withdrawn', 'recycled', 'standard_physics', 'unfalsifiable', null];
+    const validEntryTypes = ['prediction', 'tracking', 'data_watch', 'manual_test'];
     const validTestability = ['testable', 'partially_testable', 'untestable', null];
     const validDerivation = ['dome_geometry', 'standard_physics', 'unfalsifiable', 'mixed', null];
     const predIds = new Set();
@@ -544,8 +546,14 @@ if (html) {
       predIds.add(entry.id);
       assert(typeof entry.claim === 'string' && entry.claim.length > 0,
         `${entry.id} has claim`);
-      assert(validOutcomes.includes(entry.outcome),
-        `${entry.id} outcome '${entry.outcome}' is valid`);
+      assert(validEntryTypes.includes(entry.entry_type),
+        `${entry.id} entry_type '${entry.entry_type}' is valid`);
+      assert(validAuthorStatuses.includes(entry.author_status),
+        `${entry.id} author_status '${entry.author_status}' is valid`);
+      if (entry.our_verdict !== null && entry.our_verdict !== undefined) {
+        assert(validOurVerdicts.includes(entry.our_verdict),
+          `${entry.id} our_verdict '${entry.our_verdict}' is valid`);
+      }
       assert(typeof entry.prospective === 'boolean',
         `${entry.id} has boolean prospective flag`);
       if (entry.testability !== undefined && entry.testability !== null) {
