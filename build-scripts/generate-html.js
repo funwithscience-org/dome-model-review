@@ -770,7 +770,7 @@ function main() {
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="description" content="Independent scientific review of every prediction claimed by the Ovoid Cavity Cosmological Model (ECM dome model). ${counts.total} claims evaluated — 0 survive scrutiny.">
-<meta name="keywords" content="ovoid cavity cosmological model, dome model, ECM, flat earth predictions, critical review, scientific review, dome model review, firmament resonance, aetheric medium">
+<meta name="keywords" content="ovoid cavity cosmological model, dome model, ECM, flat earth predictions, critical review, scientific review, dome model review, firmament resonance, aetheric medium, dome cosmology, aetheric dome model, firmament cavity model, Nicholas Hughes, john09289, aetheric refraction index, local sun cosmology">
 <meta property="og:title" content="Critical Review: Ovoid Cavity Cosmological Model">
 <meta property="og:description" content="${counts.total} predictions claimed. 0 survive independent scrutiny. ${failures.entries.length} acknowledged failures the model doesn't count.">
 <meta property="og:type" content="article">
