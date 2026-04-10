@@ -105,3 +105,67 @@ When you find a gap, diagnose WHY:
 4. **Simplest change?** Prefer: script > prompt addition > new capability.
 
 Recommendations must be specific enough to implement without further investigation.
+
+## CLAUDE.md Accuracy & Performance Audit (every Mode 3 run)
+
+CLAUDE.md is the single most important document in the project — every new session, every agent reads it. When it's wrong, every agent inherits the error. When it's bloated, every agent wastes tokens.
+
+**Accuracy checks (catch bugs before they bite):**
+- Does the File Ownership table match `build.js` OWNERSHIP and `workspace-sync.md` OWNED_BY_GIT? Any file that's written by an agent but not classified?
+- Does the File Map list all files that actually exist under `data/`, `monitor/`, `docs/`? Any new files missing?
+- Does the Data Flow diagram accurately describe how data moves between agents? Any new pipelines (e.g., predictions.json) not documented?
+- Does the Monitoring Pipeline table match actual scheduled task configs (agent names, schedules, models)?
+- Are any version numbers, counts, or descriptions hardcoded when they should be computed?
+
+**Performance checks (tokens cost money):**
+- Total CLAUDE.md size in tokens. Track this over time in your report.
+- For each major section, which agents actually need it? Flag sections that are read by 8 agents but needed by ≤2.
+- Flag content that could move to `monitor/prompts/reference/` (version history, operator runbooks, session setup, parked content) without breaking any agent's decision-making.
+- Flag content that is duplicated between CLAUDE.md and individual agent prompts.
+
+**Output:** Include a `claude_md_audit` section in your report with accuracy findings and a token budget breakdown.
+
+## ONE-TIME DIRECTIVE: CLAUDE.md Structured Refactor (PROP-005)
+
+**Priority: HIGH. Execute on your next Mode 3 or Mode 4 run.**
+
+CLAUDE.md has grown to ~440 lines / ~6400 tokens. Every agent reads it every run (~51k tokens/cycle). Analysis shows most agents only need 20-40% of the content. A structured refactor would cut per-agent context by ~75%.
+
+**Write a PROP-005 to `monitor/tinker/proposals/PROP-005.json` with:**
+
+1. **Lean CLAUDE.md core (~140 lines):** Keep only what ALL or MOST agents need:
+   - FUSE constraint & two-repo architecture
+   - File Ownership Rules (Phase 1)
+   - Monitoring Pipeline table
+   - Data Flow diagram
+   - Computed Counts rule
+   - Single Source of Truth
+
+2. **Reference files** — move agent-specific or low-frequency content to `monitor/prompts/reference/`:
+   - `reference/VERSION-ARCHIVE.md` — version history table (only humans/tinker)
+   - `reference/OPERATOR-RUNBOOK.md` — session setup, disable-then-wait (only operators/tinker)
+   - `reference/SCIENTIFIC-CONTEXT.md` — key scientific arguments, verdict categories (only analyst/curmudgeon/decider)
+   - `reference/DATA-SCHEMAS.md` — wins.json schema, sections.json schema, predictions.json schema (only agents that write data)
+   - `reference/BUILD-AND-CHANGE.md` — how to make changes, build pipeline, dependencies (only decider/tinker)
+
+3. **Per-agent reading lists** — at the bottom of the lean CLAUDE.md, add a section:
+   ```
+   ## Agent-Specific References
+   Each agent should read ONLY the reference files relevant to its work:
+   - Poller: (none beyond this file)
+   - Analyst: SCIENTIFIC-CONTEXT.md, DATA-SCHEMAS.md
+   - Curmudgeon: SCIENTIFIC-CONTEXT.md, DATA-SCHEMAS.md
+   - Decider: SCIENTIFIC-CONTEXT.md, DATA-SCHEMAS.md, BUILD-AND-CHANGE.md
+   - Integrity: DATA-SCHEMAS.md
+   - Tinker: all reference files
+   - Social: (none beyond this file)
+   - Workspace-sync: (none beyond this file)
+   ```
+
+4. **Full replacement text** for the lean CLAUDE.md and each reference file. This is a PROP, not a suggestion — provide the complete content so the decider can apply it.
+
+5. **Verification:** After refactor, every agent prompt should still have access to everything it needs. Cross-check the agent-specific reading lists against the per-agent relevance analysis.
+
+**Also fix the analyst open-issues.json ownership violation** found by audit: analyst-mode0-onboarding.md and analyst-normal-analysis.md both write to `monitor/decisions/open-issues.json` (git-owned, decider-only). The PROP should include replacement text that routes issue creation through the analyst's own output files instead, same pattern as the curmudgeon priority-queue fix.
+
+After this PROP lands, remove this ONE-TIME DIRECTIVE section from tinker.md.
