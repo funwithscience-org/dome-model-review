@@ -78,6 +78,14 @@ For each detected change, classify as:
 - **strategic**: Changes that appear to respond to our review or address known weaknesses
 - **critical**: Changes that could invalidate any of our current arguments
 
+**Hard escalation rules (override QUIET classification):**
+- **≥5 new predictions registered** since last poll → classify as **critical**, set `analyst_priority: "HIGH"`. New predictions — even prospective/pending ones — expand the model's claim surface and may have imminent test windows. This is never QUIET.
+- **Any new confirmed WIN** (count increases above baseline) → **critical**, `analyst_priority: "HIGH"`
+- **Any parameter canary mismatch** → **critical**, `analyst_priority: "HIGH"`
+- **Any test window expiring within 30 days** → **substantive**, `analyst_priority: "MEDIUM"` minimum
+
+The 2026-04-04 batch of ~50 new predictions was classified QUIET because no confirmed WINs changed. That was wrong — the strategic significance of the dome shifting to prospective predictions with cryptographic timestamps was missed for 6 consecutive polls. These rules exist to prevent that.
+
 ### 6. Check Canary Traps
 Read `monitor/review-state.json` and check if any canary traps have been triggered. Canary traps are specific criticisms in our review that, if addressed, indicate the author is reading our review.
 
