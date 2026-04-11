@@ -117,6 +117,9 @@ function resolvePlaceholders(html, context) {
     '{{PRED_IMMINENT}}': context.predCounts?.imminent || 0,
     '{{PRED_RECYCLED}}': context.predCounts?.recycled || 0,
     '{{PRED_GENUINELY_PROSPECTIVE}}': context.predCounts?.genuinelyProspective || 0,
+    '{{PROS_TOTAL}}': context.prosCounts?.total || 0,
+    '{{PROS_PROMOTED}}': context.prosCounts?.promoted || 0,
+    '{{PROS_SUSPENDED}}': context.prosCounts?.suspended || 0,
     '{{DOME_PRED_CLAIMED}}': context.domePredClaimed || 0,
   };
 
@@ -968,6 +971,15 @@ function main() {
   };
   console.log('Prediction counts:', JSON.stringify(predCounts));
 
+  // Compute PROS-bucket counts (entry_type === 'prospective')
+  const prosEntries = predEntries.filter(e => e.entry_type === 'prospective');
+  const prosCounts = {
+    total: prosEntries.length,
+    promoted: prosEntries.filter(e => e.dome_promotion_status === 'promoted').length,
+    suspended: prosEntries.filter(e => e.dome_promotion_status === 'suspended').length,
+  };
+  console.log('PROS counts:', JSON.stringify(prosCounts));
+
   // Compute accuracy variant list from data
   const variantSources = failures.dome_accuracy_variants?.sources || [];
   const accuracyVariants = variantSources.map(s => s.result);
@@ -1038,6 +1050,7 @@ function main() {
     independentClaims,
     dedupReductionPct,
     predCounts,
+    prosCounts,
     domePredClaimed: predictions.summary?.dome_total_claimed || 0,
   };
 
