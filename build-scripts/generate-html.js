@@ -737,10 +737,12 @@ function formatPredictionDetail(pred) {
   };
   const badgeStyle = badgeColors[verdict] || badgeColors['pending'];
 
-  // TLDR: use detail_reasoning, or a fallback
-  const tldr = pred.detail_reasoning
-    ? escapeHtml(pred.detail_reasoning)
-    : (verdict === 'pending' ? 'Awaiting assessment — test window has not yet closed.' : escapeHtml(verdictLabel));
+  // TLDR: prefer dedicated tldr field, fall back to detail_reasoning, then generic
+  const tldr = pred.tldr
+    ? escapeHtml(pred.tldr)
+    : pred.detail_reasoning
+      ? escapeHtml(pred.detail_reasoning)
+      : (verdict === 'pending' ? 'Awaiting assessment — test window has not yet closed.' : escapeHtml(verdictLabel));
 
   // ── Summary bar (always visible, kill-shot pattern) ──
   let html = `<div class="ks-test"><details id="${anchorId}"><summary class="ks-summary">`;
