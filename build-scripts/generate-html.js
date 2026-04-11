@@ -1451,9 +1451,9 @@ ${sectionNav('killshots', 'Kill Shots', 'predictions', 'Predictions Analysis')}
 <!-- ═══ TAB: Predictions Analysis (Part 6) ═══ -->
 <div class="tab-content" id="predictions">
 
-${renderSectionFromJson('part6', context, winsByVerdict, wins, tally, sectionNav)}
-
 ${renderPredictionPanels(predictions)}
+
+${renderSectionFromJson('part6', context, winsByVerdict, wins, tally, sectionNav)}
 
 ${sectionNav('timestamp', 'Timestamp Error', 'falsify', 'External Tests')}
 
