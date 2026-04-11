@@ -33,7 +33,19 @@ The build reads sections.json via `renderSectionFromJson()` and injects computed
 
 ## predictions.json Schema
 
-Catalog of ALL dome predictions (prospective, pending, confirmed, falsified). Build computes {{PRED_*}} placeholders from this file.
+Catalog of ALL dome predictions (prospective, pending, confirmed, falsified). Build computes {{PRED_*}} placeholders from this file. The build also renders individual prediction panels on the Predictions Analysis tab, grouped into:
+- **Tombstone** (`is_genuinely_prospective: true`): dome's official prospective set
+- **Mined** (`is_genuinely_prospective` not true): extracted by us, mostly postdictions
+- **Operational** (`entry_type: data_watch | manual_test`): tracking items, not rendered as panels
+
+Key fields per entry:
+- `id`: prediction ID (e.g., "PRED-077", "W019", "MT-003")
+- `entry_type`: "prediction" | "tracking" | "data_watch" | "manual_test"
+- `claim`: one-line description of the prediction
+- `our_verdict`: "standard_physics" | "recycled" | "falsified" | "unfalsifiable" | "pending" | null
+- `detail_reasoning`: analyst's assessment prose — **rendered on the site as the prediction's analysis panel**. Decider MUST copy this from the assessment file's `reasoning` field when integrating verdicts.
+- `is_genuinely_prospective`: boolean — determines tombstone vs mined grouping
+- `restates_win`: WIN ID this prediction restates (bare "011" or "WIN-001" format; build normalizes both)
 
 ## uncounted-failures.json Schema
 

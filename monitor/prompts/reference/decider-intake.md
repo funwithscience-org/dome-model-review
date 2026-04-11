@@ -156,7 +156,8 @@ For each assessment file found:
 1. Read the assessment — it has `prediction_id`, `our_verdict`, `reasoning`, and other fields
 2. Update the matching entry in `data/predictions.json` (`d.entries.find(e=>e.id===prediction_id)`):
    - Set `our_verdict` to the assessment's value
-   - Optionally add assessment reasoning to the entry's `notes` field
+   - Set `detail_reasoning` to the assessment's `reasoning` field (this is rendered on the site as the prediction's analysis panel — mandatory, not optional)
+   - Optionally also append a summary to the entry's `notes` field for quick reference
 3. After updating all assessments, run `node test.js` to verify schema validity
 4. Commit and push `data/predictions.json`
 5. Do NOT delete the assessment files (append-only directory)
