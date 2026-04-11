@@ -185,15 +185,19 @@ console.log('mode:',pq.mode,'| queue_depth:',pq.queue.length,'| current_interval
 
 **If `mode === "churn-and-burn"` AND `queue.length > 0`:**
 - If `curmudgeon_current_interval_minutes !== curmudgeon_fast_interval_minutes` (i.e. we haven't already bumped), call `mcp__scheduled-tasks__update_scheduled_task` on the `dome-curmudgeon` task to set its interval to 30 minutes.
-- Update `priority-queue.json`: set `schedule_state.curmudgeon_current_interval_minutes = 30`, `last_schedule_change = <ISO>`, `last_schedule_change_by = "decider"`.
+- If `analyst_current_interval_minutes !== analyst_fast_interval_minutes`, call `mcp__scheduled-tasks__update_scheduled_task` on `dome-analyst` to set its interval to 30 minutes.
+- If `decider_current_interval_minutes !== decider_fast_interval_minutes`, call `mcp__scheduled-tasks__update_scheduled_task` on `dome-decider` to set its interval to 60 minutes.
+- Update `priority-queue.json`: set the corresponding `schedule_state.*_current_interval_minutes` fields, `last_schedule_change = <ISO>`, `last_schedule_change_by = "decider"`.
 - Log `churn_schedule_bumped` in the daily report.
 
-**If `mode === "churn-and-burn"` AND `queue.length === 0`:** The queue has been drained. Auto-restore and auto-flip:
-- If `curmudgeon_current_interval_minutes !== curmudgeon_default_interval_minutes` (i.e. we're currently fast), call `mcp__scheduled-tasks__update_scheduled_task` on `dome-curmudgeon` to restore interval to 240 minutes (4h).
-- Update `priority-queue.json`: set `mode = "bau"`, `mode_set_by = "decider-auto-restore"`, `mode_set_at = <ISO>`, `schedule_state.curmudgeon_current_interval_minutes = 240`, `last_schedule_change = <ISO>`, `last_schedule_change_by = "decider"`.
+**If `mode === "churn-and-burn"` AND `queue.length === 0`:** The queue has been drained. Auto-restore ALL three Opus agents and auto-flip:
+- If `curmudgeon_current_interval_minutes !== curmudgeon_default_interval_minutes`, call `mcp__scheduled-tasks__update_scheduled_task` on `dome-curmudgeon` to restore interval to 240 minutes (4h).
+- If `analyst_current_interval_minutes !== analyst_default_interval_minutes`, call `mcp__scheduled-tasks__update_scheduled_task` on `dome-analyst` to restore interval to 120 minutes (2h).
+- If `decider_current_interval_minutes !== decider_default_interval_minutes`, call `mcp__scheduled-tasks__update_scheduled_task` on `dome-decider` to restore interval to 240 minutes (4h).
+- Update `priority-queue.json`: set `mode = "bau"`, `mode_set_by = "decider-auto-restore"`, `mode_set_at = <ISO>`, set all three `*_current_interval_minutes` to their defaults, `last_schedule_change = <ISO>`, `last_schedule_change_by = "decider"`.
 - Log `churn_complete_auto_restore` in the daily report.
 
-**Self-healing invariant:** The system can never get stuck in fast mode. Once the queue drains, the next decider run restores BAU. If something weird happens and you see `mode === "churn-and-burn"` with an empty queue and `curmudgeon_current_interval_minutes === 240`, just flip mode back to bau without touching the scheduler.
+**Self-healing invariant:** The system can never get stuck in fast mode. Once the queue drains, the next decider run restores BAU for ALL three Opus agents. If something weird happens and you see `mode === "churn-and-burn"` with an empty queue and schedules already at BAU defaults, just flip mode back to bau without touching the scheduler.
 
 ### Step E5: Log queue state in daily report
 
