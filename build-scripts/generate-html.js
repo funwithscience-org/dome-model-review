@@ -831,8 +831,9 @@ function renderPredictionPanels(predictions) {
   html += `</div>\n`;
 
   // ── Tombstone Predictions ──
-  html += `<h2 id="pred-tombstone">The Dome's Official Prospective Predictions</h2>\n`;
-  html += `<p>The dome's predictions page designates ${tombstone.length} entries as genuinely prospective — predictions registered <em>before</em> the data comes in. These are the strongest category: if even one produces a novel, verified result that standard physics cannot explain, the dome model would earn real scientific credibility. Below we assess each one.</p>\n`;
+  html += `<details id="pred-tombstone"><summary class="ps-summary"><h2 style="display:inline;margin:0">The Dome's Official Prospective Predictions (${tombstone.length})</h2>`;
+  html += `<p class="ps-tldr">These are the dome's strongest category — predictions registered <em>before</em> the data arrives. If even one produced a novel result that standard physics cannot explain, the model would earn real credibility. So far, none do: most predict the same ranges as standard models (non-discriminating), and the timestamp infrastructure anchors the observations file, not the predictions. The prospective label is earned; the evidential weight is not.</p>`;
+  html += `</summary><div class="ps-detail">\n`;
 
   // Tombstone summary scorecard
   html += `<div class="scorecard" style="grid-template-columns:repeat(${Object.keys(tombstoneTally).length},1fr)">\n`;
@@ -850,10 +851,12 @@ function renderPredictionPanels(predictions) {
 
   // Tombstone detail panels
   html += tombstone.map(formatPredictionDetail).join('\n');
+  html += `</div></details>\n`;
 
   // ── Mined Predictions ──
-  html += `<h2 id="pred-mined">Extracted Predictions — Registered After the Data</h2>\n`;
-  html += `<p>Beyond the dome's official prospective set, the predictions page contains ${mined.length} additional entries that we extracted and assessed independently. Most were registered <em>after</em> the relevant data was already published, restating existing WINs under new prediction IDs — what we classify as "recycled." Others are standard physics results repackaged as dome predictions. A prediction registered after its outcome is known is not a prediction; it is a postdiction.</p>\n`;
+  html += `<details id="pred-mined"><summary class="ps-summary"><h2 style="display:inline;margin:0">Extracted Predictions — Registered After the Data (${mined.length})</h2>`;
+  html += `<p class="ps-tldr">The predictions page contains ${mined.length} additional entries registered <em>after</em> the relevant data was already published. Most restate existing WINs under new prediction IDs — what we classify as "recycled." Others are standard physics results repackaged with dome terminology. A prediction registered after its outcome is known is not a prediction; it is a postdiction. The volume pads the catalog without adding evidential weight.</p>`;
+  html += `</summary><div class="ps-detail">\n`;
 
   // Mined summary scorecard
   html += `<div class="scorecard" style="grid-template-columns:repeat(${Object.keys(minedTally).length},1fr)">\n`;
@@ -871,16 +874,19 @@ function renderPredictionPanels(predictions) {
 
   // Mined detail panels
   html += mined.map(formatPredictionDetail).join('\n');
+  html += `</div></details>\n`;
 
   // ── Operational Tracking ──
   if (operational.length > 0) {
-    html += `<h2 id="pred-operational">Operational Tracking Items</h2>\n`;
-    html += `<p>These ${operational.length} entries are not predictions in the scientific sense — they are data watches and manual tests that monitor ongoing phenomena relevant to the dome's claims. They are listed here for completeness.</p>\n`;
+    html += `<details id="pred-operational"><summary class="ps-summary"><h2 style="display:inline;margin:0">Operational Tracking Items (${operational.length})</h2>`;
+    html += `<p class="ps-tldr">These are not predictions in the scientific sense — they are data watches and manual tests that monitor ongoing phenomena relevant to the dome's claims. Listed for completeness; none carry evidential weight.</p>`;
+    html += `</summary><div class="ps-detail">\n`;
     html += `<table><thead><tr><th>ID</th><th>Type</th><th>Description</th></tr></thead><tbody>\n`;
     operational.forEach(e => {
       html += `<tr><td>${escapeHtml(e.id)}</td><td>${escapeHtml(e.entry_type)}</td><td>${escapeHtml(e.claim || '')}</td></tr>\n`;
     });
     html += `</tbody></table>\n`;
+    html += `</div></details>\n`;
   }
 
   return html;
