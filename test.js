@@ -532,9 +532,9 @@ if (html) {
     assert(pred_data._meta && typeof pred_data._meta === 'object', 'predictions.json has _meta');
     assert(Array.isArray(pred_data.categories), 'predictions.json has categories array');
 
-    const validAuthorStatuses = ['pending', 'confirmed', 'falsified', 'expired', 'withdrawn', 'unresolved', 'refined', 'suspended', 'logging'];
+    const validAuthorStatuses = ['pending', 'confirmed', 'falsified', 'expired', 'withdrawn', 'unresolved', 'refined', 'suspended', 'logging', 'promoted'];
     const validOurVerdicts = ['pending', 'confirmed', 'falsified', 'expired', 'withdrawn', 'recycled', 'standard_physics', 'unfalsifiable', null];
-    const validEntryTypes = ['prediction', 'tracking', 'data_watch', 'manual_test'];
+    const validEntryTypes = ['prediction', 'tracking', 'data_watch', 'manual_test', 'prospective'];
     const validTestability = ['testable', 'partially_testable', 'untestable', null];
     const validDerivation = ['dome_geometry', 'standard_physics', 'unfalsifiable', 'mixed', null];
     const predIds = new Set();
