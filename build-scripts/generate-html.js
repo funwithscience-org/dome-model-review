@@ -772,10 +772,8 @@ function formatPredictionTableRow(pred) {
   return `<tr><td><a href="#${anchorId}">${escapeHtml(pred.id)}</a></td><td>${escapeHtml(pred.claim || '')}</td><td class="${tdClass}">${escapeHtml(verdictLabel)}</td><td>${escapeHtml(restatesDisplay)}</td></tr>`;
 }
 
-function renderPredictionPanels(predictions) {
+function _splitPredictions(predictions) {
   const entries = predictions.entries || [];
-
-  // Split into tombstone (genuinely prospective) vs mined
   const tombstone = entries.filter(e =>
     e.is_genuinely_prospective === true &&
     (e.entry_type === 'prediction' || e.entry_type === 'tracking')
@@ -784,29 +782,20 @@ function renderPredictionPanels(predictions) {
     e.is_genuinely_prospective !== true &&
     (e.entry_type === 'prediction' || e.entry_type === 'tracking')
   );
-  // Operational items (data_watch, manual_test) — shown as a collapsed list
   const operational = entries.filter(e =>
     e.entry_type === 'data_watch' || e.entry_type === 'manual_test'
   );
-
-  // Compute verdict tallies for each group
   function tallyVerdicts(arr) {
     const t = {};
-    arr.forEach(e => {
-      const v = e.our_verdict || 'pending';
-      t[v] = (t[v] || 0) + 1;
-    });
+    arr.forEach(e => { const v = e.our_verdict || 'pending'; t[v] = (t[v] || 0) + 1; });
     return t;
   }
+  return { entries, tombstone, mined, operational, tombstoneTally: tallyVerdicts(tombstone), minedTally: tallyVerdicts(mined), domeClaimed: predictions.summary?.dome_total_claimed || '?' };
+}
 
-  const tombstoneTally = tallyVerdicts(tombstone);
-  const minedTally = tallyVerdicts(mined);
-
-  const domeClaimed = predictions.summary?.dome_total_claimed || '?';
-
+function renderPredictionScorecard(predictions) {
+  const { entries, tombstone, mined, domeClaimed } = _splitPredictions(predictions);
   let html = '';
-
-  // ── Predictions Summary Scorecard ──
   html += `<div class="scorecard" style="grid-template-columns:repeat(4,1fr);margin:1rem 0">\n`;
   html += `<div class="sc-card sc-sm" style="border-left:4px solid #2a6496">
 <div class="sc-number">${domeClaimed}</div>
@@ -829,6 +818,12 @@ function renderPredictionPanels(predictions) {
 <div class="sc-sublabel">Registered after the data was already public — postdictions, recycled WINs, standard physics</div>
 </div>\n`;
   html += `</div>\n`;
+  return html;
+}
+
+function renderPredictionPanels(predictions) {
+  const { tombstone, mined, operational, tombstoneTally, minedTally } = _splitPredictions(predictions);
+  let html = '';
 
   // ── Tombstone Predictions ──
   html += `<details id="pred-tombstone"><summary class="ps-summary"><h2 style="display:inline;margin:0">The Dome's Official Prospective Predictions (${tombstone.length})</h2>`;
@@ -1457,9 +1452,11 @@ ${sectionNav('killshots', 'Kill Shots', 'predictions', 'Predictions Analysis')}
 <!-- ═══ TAB: Predictions Analysis (Part 6) ═══ -->
 <div class="tab-content" id="predictions">
 
-${renderPredictionPanels(predictions)}
+${renderPredictionScorecard(predictions)}
 
 ${renderSectionFromJson('part6', context, winsByVerdict, wins, tally, sectionNav)}
+
+${renderPredictionPanels(predictions)}
 
 ${sectionNav('timestamp', 'Timestamp Error', 'falsify', 'External Tests')}
 
