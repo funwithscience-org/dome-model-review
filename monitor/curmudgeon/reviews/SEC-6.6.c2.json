@@ -1,0 +1,102 @@
+{
+  "point_id": "SEC-6.6",
+  "topic": "The Accuracy Claim — 95.2%/94.5% headline and de-duplication analysis",
+  "reviewed_at": "2026-04-11T23:15:00Z",
+  "cycle": 2,
+  "current_verdict_holds": true,
+  "confidence": 0.85,
+  "our_argument_summary": "Section 6.6 argues the dome's headline accuracy figure (95.2% in V51.0, 94.5% in V51.1) is manually entered HTML, not computed from any script. The denominator is editorially chosen to exclude failures. Our correction including silent failures gives ~88%. A de-duplication analysis shows 69 WINs reduce to ~41 independent claims after clustering by shared data source.",
+
+  "holes_found": [
+    {
+      "severity": "critical",
+      "description": "Template arithmetic produces incorrect math on the rendered page. The sentence 'V51.0 formula {{TOTAL_WINS}} / ({{TOTAL_WINS}} + 4) = 95.2%' expands to '69 / (69 + 4) = 95.2%' — but 69/73 = 94.5%, NOT 95.2%. The 95.2% was V51.0's historical claim (with ~67 WINs), but the template substitutes the CURRENT WIN count, creating visibly wrong arithmetic. Even with V51.0's 67 WINs: 67/71 = 94.4%, not 95.2%. A dome defender who checks the math will immediately point out we printed an equation that doesn't equal what we said it equals. This is exactly the kind of sloppy-looking error that lets a motivated skeptic dismiss the entire section.",
+      "recommendation": "Separate the historical claim from the arithmetic demonstration. Option 1: Hardcode V51.0's numbers as historical ('V51.0 displayed 67 / (67 + 4) = 94.4%, rounded up and presented as 95.2%'). Option 2: Only show V51.1's formula with the live template: '{{TOTAL_WINS}} / ({{TOTAL_WINS}} + 4) = 94.5%'. Either way, the rendered equation must be arithmetically correct. Never print 'X / Y = Z' where X/Y ≠ Z."
+    },
+    {
+      "severity": "major",
+      "description": "Hardcoded denominator '76' in the honest accuracy sentence: '{{TOTAL_WINS}}/76 ≈ 88%' renders as '69/76 ≈ 88%' — but 69/76 = 90.8%, not ≈88%. Additionally, the inline formula '{{TOTAL_WINS}} + 4 + 4 + 1' = 69+9 = 78, not 76. The '76' is a stale relic from when TOTAL_WINS was 67 (67+9=76, 67/76=88.2%≈88%). Meanwhile, the build script already computes {{HONEST_ACCURACY}} (currently 90.8%) and {{HONEST_ACCURACY_DENOM}} (currently 76) correctly via the formula total/(total + dome_claimed_failures + silent_failures). But wait — the build script uses dome_claimed_failures(4) + silent_failures(3) = 7, giving 69/76 = 90.8%. The prose counts differently: 4 dome-acknowledged + 4 'falsified predictions' + 1 removal = 9. This is a THIRD counting methodology that doesn't match either the dome's math or the build script's math. The section needs to pick one counting method and use the matching template variables.",
+      "recommendation": "Replace the inline arithmetic with {{HONEST_ACCURACY}} and {{HONEST_ACCURACY_DENOM}} template variables, which are already computed by the build script. If the section wants to use a different failure count than the build script (e.g., including all 8 documented failures), then update the build script to expose that count as a variable too. But the rendered arithmetic MUST be correct — never have 'X/Y ≈ Z' when X/Y ≠ Z."
+    },
+    {
+      "severity": "major",
+      "description": "De-duplication table hardcodes '29 WINs → 29 claims' for the unclustered row, but with 69 base WINs minus 38 clustered = 31 unclustered WINs. The footer uses {{INDEPENDENT_CLAIMS}} (= 41) and {{TOTAL_WINS}} (= 69) correctly, but the body row is stale. After WIN-068 (eclipse magnetic ensemble) and WIN-069 (Australia road scaffold), neither was added to any cluster — the unclustered count should be 31, not 29. The footer will say '69 WINs → 41 independent claims' while the body math (29 unclustered + 10 clusters = 39) doesn't add up to 41. A reader checking the table finds a 2-WIN discrepancy.",
+      "recommendation": "Make the unclustered row a computed template. Or: add WIN-068 and WIN-069 to appropriate clusters if they share data with existing WINs (WIN-068 is eclipse magnetic — possibly clusters with WIN-010/025; WIN-069 is distance measurement — possibly standalone). Either way, the table math must be self-consistent."
+    },
+    {
+      "severity": "moderate",
+      "description": "The section's central argument — 'the figure is manually entered as static HTML' — is true but rhetorically underweight. Many valid statistics are manually entered in HTML (every journal article hardcodes its figures). The real issue is threefold: (1) no audit trail linking the figure to a specific counting method, (2) the denominator changes between versions without explanation, and (3) the dome's own internal data sources produce at least 4 different accuracy figures, none matching the headline. Point (3) is buried late in the paragraph via {{ACCURACY_VARIANT_DETAIL}}. Leading with the variant disagreement would be more devastating.",
+      "recommendation": "Restructure the paragraph to lead with the fact that the dome's own data contradicts its headline: 'The dome's own API endpoints return four different accuracy figures: scorecard gives 96.3%, results.json gives 100%, excluding open problems gives 89.3%, and the V51.0 denominator gives 94.4% — yet the headline says 94.5%. None of these agree.' Then explain WHY: 'Because the figure is manually entered HTML with no programmatic derivation, there's no way to determine which counting method produces it.' This makes the 'manually entered' finding a CONSEQUENCE of the inconsistency rather than a standalone complaint."
+    },
+    {
+      "severity": "moderate",
+      "description": "The section doesn't address the dome defender's strongest rebuttal: 'Every scientific model reports a denominator. CERN excludes preliminary runs. Medical trials exclude screen failures. Excluding 4 predictions the model itself flagged as below detection threshold is standard practice, not cherry-picking.' Our text calls it an 'editorial choice' but doesn't explain why the dome's particular exclusions are problematic (some of those 'excluded' items were falsified, then relabeled as excluded).",
+      "recommendation": "Add a sentence like: 'The issue is not that a denominator must include all attempts — it is that the excluded items (W019, W020, W024, W027) were initially tracked as active predictions and only reclassified after they failed. In medical trials, this is called protocol deviation after unblinding, and it invalidates the analysis. The dome's denominator evolves retroactively to absorb failures.'"
+    },
+    {
+      "severity": "moderate",
+      "description": "WIN-068 (eclipse magnetic ensemble, 39 eclipses) and WIN-069 (Australia road scaffold) are not mentioned in the de-duplication table clusters. WIN-068 is a 39-eclipse magnetic ensemble — it directly shares data sources with the eclipse magnetometer cluster (WIN-010, WIN-025). If WIN-068 should be clustered with WIN-010/025, the eclipse magnetometer cluster becomes 3 → 1 instead of 2 → 1, and the build script's dedupClusters array needs updating too. This is a data consistency issue, not just a prose issue.",
+      "recommendation": "Evaluate whether WIN-068 belongs in the eclipse magnetometer cluster (likely yes — same phenomenon, same prediction type, overlapping data). If so, update both the build script's dedupClusters array and the table in sections.json. WIN-069 (distance measurement) is probably genuinely independent."
+    },
+    {
+      "severity": "minor",
+      "description": "The 'fair objection' paragraph about tidal WINs is well-written but could be tightened. The key point — 'these values aren't derived from dome geometry' — is the crux. The preceding sentence about M2 and S2 being 'different numbers' is a setup that slightly dilutes the punchline.",
+      "recommendation": "Minor tightening only. Consider leading directly: 'A dome defender might object that each tidal period is a distinct number deserving separate verification. True — but verification of what? None of the tidal WINs trace their values to dome parameters.'"
+    }
+  ],
+
+  "stronger_arguments": [
+    {
+      "description": "The section could compute what the dome's accuracy would be under standard methodology: (1) include all predictions ever made (including refined/suspended), (2) count only prospective predictions (pre-registered before data), (3) require the prediction to discriminate between dome and standard physics. Under criterion (3), virtually all WINs that are 'Std Model Explains' or 'Misleading' (40/69 = 58%) fail — they predict the same value as standard physics. A model that predicts what every other model predicts is 'accurate' but has zero discriminatory power. This is the strongest argument against the accuracy claim and deserves a standalone paragraph.",
+      "sources": ["Lakatos (1978) on 'novel predictions' vs. accommodations", "Mayo (2018) on severe testing"]
+    },
+    {
+      "description": "The section could highlight the temporal trajectory of the accuracy claim: V51.0 claimed 95.2%, V51.1 claims 94.5%. The direction is DOWN despite adding 2 new WINs. This only makes sense if the denominator grew faster than the numerator — i.e., the dome acknowledged more failures between versions. If the accuracy is dropping as the model 'matures,' it suggests earlier versions overcounted and the trend will continue as more predictions are tested against data.",
+      "sources": []
+    }
+  ],
+
+  "kernel_of_truth": {
+    "description": "The dome model does genuinely maintain a prediction registry with timestamps and git hashes, which is better documentation than many fringe models provide. Having ANY falsifiable predictions puts it ahead of models that make only vague claims. The accuracy claim, while inflated, is at least attempting to quantify predictive success — something mainstream cosmology rarely does in such a direct percentage form.",
+    "why_it_doesnt_save_claim": "The documentation rigor is commendable but doesn't validate the accuracy figure itself. Good bookkeeping of a rigged ledger is still a rigged ledger. The timestamps prove WHEN predictions were registered, not THAT they discriminate between dome and globe models. And the percentage format, while appealing, is only as meaningful as the denominator — which we've shown is editorially selected to maximize the headline."
+  },
+
+  "advocate_mode": {
+    "best_defense": "A dome defender could argue: 'Your complaint is about presentation, not substance. Yes, the figure is manually entered — show me a journal that auto-computes its abstracts. Yes, the denominator excludes some items — every experiment has inclusion criteria. The real question is: did the model predict these values or not? 69 confirmed WINs with timestamps and git hashes — you can't fake that. Your de-duplication argument is subjective: you chose which WINs to cluster. And your "honest accuracy" still gives 88-90% — that's STILL remarkable for any cosmological model. You spent an entire section arguing about 5 percentage points.'",
+    "defense_survives": 3,
+    "preemptive_recommendation": "Pre-empt the 'still remarkable' defense by noting that 88-90% would be meaningful IF the predictions discriminated between dome and standard physics. Since ~58% of WINs predict the same values as standard physics (per code_analysis tags: 49/69 relabel standard), the 'accuracy' metric is dominated by predictions any model would get right. Quote the analogy: 'A model that predicts the sun will rise tomorrow has 100% accuracy but zero predictive power for cosmology.' The accuracy % tells you nothing without a denominator that excludes non-discriminating predictions."
+  },
+
+  "cross_win_consistency": {
+    "related_wins": ["All WINs (aggregate section)"],
+    "compatible": false,
+    "inconsistencies_found": "The de-duplication table's cluster assignments need to be reconciled with WIN-068 (eclipse magnetic ensemble). WIN-068 shares the same prediction type and data domain as WIN-010/025 (eclipse magnetometer) but is not in their cluster. Additionally, the build script's dedupClusters array and the table HTML must stay synchronized — currently they're separate sources of truth."
+  },
+
+  "quantitative_verification": {
+    "claims_checked": [
+      "V51.0 formula {{TOTAL_WINS}} / ({{TOTAL_WINS}} + 4) = 95.2%",
+      "V51.1 accuracy 69/73 = 94.5%",
+      "Our 'honest' correction {{TOTAL_WINS}} / ({{TOTAL_WINS}} + 4 + 4 + 1) = {{TOTAL_WINS}}/76 ≈ 88%",
+      "Build script honestAccuracy = total / (total + dome_claimed_failures + silent_failures)",
+      "De-duplication: 69 WINs → independent claims (table says 29 unclustered)"
+    ],
+    "computations": "Verified all arithmetic using Node.js. TOTAL_WINS=69 (base 3-digit IDs). 69/73=94.52% (matches V51.1 claim). 69/76=90.8% (build script honest accuracy, uses 4 dome-claimed + 3 silent = 7 failure adjustments). The prose formula 69+4+4+1=78, but '76' is hardcoded (stale from 67+9=76). 69/78=88.5%. De-duplication: 38 clustered WINs across 10 clusters, 31 unclustered (table says 29). Total independent: 41 (template says 41, table body implies 39).",
+    "all_verified": false,
+    "discrepancies": "THREE arithmetic errors in rendered HTML: (1) '69 / 73 = 95.2%' — actual is 94.5%. (2) '69/76 ≈ 88%' — actual is 90.8%. (3) De-duplication table body shows 29 unclustered but should be 31, creating a 2-WIN gap with the template-computed footer total."
+  },
+
+  "citation_check": {
+    "citations_verified": ["Doodson 1921 (tidal theory) — referenced in de-duplication table, correct attribution"],
+    "citations_failed": [],
+    "citations_unchecked": ["CHAOS-7 dataset reference in SAA cluster — not verified against source", "IGRF reference in field decay cluster — not verified"]
+  },
+
+  "text_fingerprint": {
+    "section_html_length": 10500,
+    "verdict": "N/A (section-level review)"
+  },
+
+  "recommended_action": "major_rewrite",
+  "deeper_analysis": "This section makes the right argument — the dome's accuracy claim is inflated and unauditable — but undermines itself with arithmetic errors that a dome defender would immediately weaponize. The critical fix is ensuring every equation in the rendered HTML is arithmetically correct. The section should use computed template variables ({{HONEST_ACCURACY}}, {{HONEST_ACCURACY_DENOM}}) instead of inline arithmetic with hardcoded values that drift as WIN counts change. The de-duplication analysis is strong but needs maintenance — new WINs must be evaluated for cluster membership and the table's hardcoded counts must become template-driven. The section would also benefit from a clearer distinction between 'the figure is wrong' (denominator manipulation) and 'even if the figure were right, it wouldn't mean what it claims' (non-discriminating predictions). Currently these two arguments are interleaved, diluting both."
+}
