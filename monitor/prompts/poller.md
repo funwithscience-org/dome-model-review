@@ -89,6 +89,20 @@ The 2026-04-04 batch of ~50 new predictions was classified QUIET because no conf
 ### 6. Check Canary Traps
 Read `monitor/review-state.json` and check if any canary traps have been triggered. Canary traps are specific criticisms in our review that, if addressed, indicate the author is reading our review.
 
+#### The Primary Canary: OTS Wrong-Side Error
+
+Our site's **Timestamp Error tab** (cross-referenced from Overview, Section 1.4, Part 6, and WIN-035 through WIN-039) explains that the dome author timestamps the **observation side** (`status_history.json` — measured values, pass/fail results) instead of the **prediction side** (the formulas, expected values, and tolerances in `monitor.py` and `model.html`). A timestamped prediction requires timestamping THE PREDICTION separately, before the data arrives. He timestamps the answer sheet, not the question.
+
+**The canary triggers when the dome author separates prediction documents from observation documents and timestamps them independently.** This means he found our write-up and fixed his methodology. Specifically, watch for:
+- A new file that contains ONLY prediction parameters (no observation data), with its own OTS or blockchain timestamp
+- Changes to the OTS anchoring structure (e.g., anchoring `predictions.json` separately from `status_history.json`)
+- Any commit message or documentation mentioning "separating predictions from observations" or "timestamping predictions independently"
+- Structural changes to how `monitor.py` registers predictions vs. records observations
+
+Do NOT conflate with the SHA-256 per-prediction hashes — those prove content integrity, not temporal priority. A hash created after the data is in hand is temporally meaningless regardless of how cryptographically sound it is.
+
+If the canary triggers, flag as **critical** with `analyst_priority: "HIGH"` and note: "CANARY TRIGGERED — dome author appears to have fixed the OTS wrong-side error. He is reading our review and reactively patching methodology."
+
 **IMPORTANT: Canary traps must be checked against ALL detected changes, not just commit messages.** The `opentimestamps-provenance` canary was missed for 6 polls because the poller only checked commit messages for trigger signals. Changes to prediction registration methodology (new hashing schemes, new timestamping systems, separating predictions from observations) are EXACTLY the kind of structural change canary traps are designed to detect. Cross-reference every canary's `trigger_signals` against: new files, new data structures, new cryptographic mechanisms, changes to how predictions are registered or validated — not just text in commit messages.
 
 ### 7. Write Change Records
