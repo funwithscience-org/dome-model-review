@@ -825,56 +825,58 @@ function renderPredictionPanels(predictions) {
   const { tombstone, mined, operational, tombstoneTally, minedTally } = _splitPredictions(predictions);
   let html = '';
 
-  // ── Tombstone Predictions ──
-  html += `<details id="pred-tombstone"><summary class="ps-summary"><h2 style="display:inline;margin:0">The Dome's Official Prospective Predictions (${tombstone.length})</h2>`;
-  html += `<p class="ps-tldr">These are the dome's strongest category — predictions registered <em>before</em> the data arrives. If even one produced a novel result that standard physics cannot explain, the model would earn real credibility. So far, none do: most predict the same ranges as standard models (non-discriminating), and the timestamp infrastructure anchors the observations file, not the predictions. The prospective label is earned; the evidential weight is not.</p>`;
-  html += `</summary><div class="ps-detail">\n`;
+  function verdictCardColor(v) {
+    return v === 'standard_physics' ? 'stdmodel' : v === 'recycled' ? 'misleading' : v === 'falsified' ? 'refuted' : v === 'unfalsifiable' ? 'unfalsifiable' : 'notdemo';
+  }
 
-  // Tombstone summary scorecard
+  // ── Tombstone Predictions (all visible except detail panels) ──
+  html += `<h2 id="pred-tombstone">The Dome's Official Prospective Predictions</h2>\n`;
+  html += `<p>The dome's predictions page designates ${tombstone.length} entries as genuinely prospective — predictions registered <em>before</em> the data comes in. These are the strongest category: if even one produces a novel, verified result that standard physics cannot explain, the dome model would earn real scientific credibility. So far, none do: most predict the same ranges as standard models (non-discriminating), and the timestamp infrastructure anchors the observations file, not the predictions. The prospective label is earned; the evidential weight is not.</p>\n`;
+
   html += `<div class="scorecard" style="grid-template-columns:repeat(${Object.keys(tombstoneTally).length},1fr)">\n`;
   for (const [v, count] of Object.entries(tombstoneTally)) {
-    const label = PRED_VERDICT_LABELS[v] || v;
-    html += `<div class="sc-card sc-sm" style="border-left:4px solid var(--${v === 'standard_physics' ? 'stdmodel' : v === 'recycled' ? 'misleading' : v === 'falsified' ? 'refuted' : v === 'unfalsifiable' ? 'unfalsifiable' : 'notdemo'}-solid)">\n`;
-    html += `<div class="sc-number">${count}</div>\n<div class="sc-label">${escapeHtml(label)}</div>\n</div>\n`;
+    html += `<div class="sc-card sc-sm" style="border-left:4px solid var(--${verdictCardColor(v)}-solid)">\n`;
+    html += `<div class="sc-number">${count}</div>\n<div class="sc-label">${escapeHtml(PRED_VERDICT_LABELS[v] || v)}</div>\n</div>\n`;
   }
   html += `</div>\n`;
 
-  // Tombstone table
   html += `<table><thead><tr><th>ID</th><th>Claim</th><th>Our Verdict</th><th>Restates</th></tr></thead><tbody>\n`;
   html += tombstone.map(formatPredictionTableRow).join('\n');
   html += `\n</tbody></table>\n`;
 
-  // Tombstone detail panels
+  // Detail panels — collapsed
+  html += `<details id="pred-tombstone-detail"><summary class="ps-summary"><h2 style="display:inline;margin:0">Prospective Prediction Details (${tombstone.length})</h2>`;
+  html += `<p class="ps-tldr">Full per-prediction assessments: what the dome claims, what the data shows, and why each one fails to discriminate between dome and globe physics.</p>`;
+  html += `</summary><div class="ps-detail">\n`;
   html += tombstone.map(formatPredictionDetail).join('\n');
   html += `</div></details>\n`;
 
-  // ── Mined Predictions ──
-  html += `<details id="pred-mined"><summary class="ps-summary"><h2 style="display:inline;margin:0">Extracted Predictions — Registered After the Data (${mined.length})</h2>`;
-  html += `<p class="ps-tldr">The predictions page contains ${mined.length} additional entries registered <em>after</em> the relevant data was already published. Most restate existing WINs under new prediction IDs — what we classify as "recycled." Others are standard physics results repackaged with dome terminology. A prediction registered after its outcome is known is not a prediction; it is a postdiction. The volume pads the catalog without adding evidential weight.</p>`;
-  html += `</summary><div class="ps-detail">\n`;
+  // ── Mined Predictions (all visible except detail panels) ──
+  html += `<h2 id="pred-mined">Extracted Predictions — Registered After the Data</h2>\n`;
+  html += `<p>The predictions page contains ${mined.length} additional entries registered <em>after</em> the relevant data was already published. Most restate existing WINs under new prediction IDs — what we classify as "recycled." Others are standard physics results repackaged with dome terminology. A prediction registered after its outcome is known is not a prediction; it is a postdiction. The volume pads the catalog without adding evidential weight.</p>\n`;
 
-  // Mined summary scorecard
   html += `<div class="scorecard" style="grid-template-columns:repeat(${Object.keys(minedTally).length},1fr)">\n`;
   for (const [v, count] of Object.entries(minedTally)) {
-    const label = PRED_VERDICT_LABELS[v] || v;
-    html += `<div class="sc-card sc-sm" style="border-left:4px solid var(--${v === 'standard_physics' ? 'stdmodel' : v === 'recycled' ? 'misleading' : v === 'falsified' ? 'refuted' : v === 'unfalsifiable' ? 'unfalsifiable' : 'notdemo'}-solid)">\n`;
-    html += `<div class="sc-number">${count}</div>\n<div class="sc-label">${escapeHtml(label)}</div>\n</div>\n`;
+    html += `<div class="sc-card sc-sm" style="border-left:4px solid var(--${verdictCardColor(v)}-solid)">\n`;
+    html += `<div class="sc-number">${count}</div>\n<div class="sc-label">${escapeHtml(PRED_VERDICT_LABELS[v] || v)}</div>\n</div>\n`;
   }
   html += `</div>\n`;
 
-  // Mined table
   html += `<table><thead><tr><th>ID</th><th>Claim</th><th>Our Verdict</th><th>Restates</th></tr></thead><tbody>\n`;
   html += mined.map(formatPredictionTableRow).join('\n');
   html += `\n</tbody></table>\n`;
 
-  // Mined detail panels
+  // Detail panels — collapsed
+  html += `<details id="pred-mined-detail"><summary class="ps-summary"><h2 style="display:inline;margin:0">Extracted Prediction Details (${mined.length})</h2>`;
+  html += `<p class="ps-tldr">Full per-prediction assessments for the ${mined.length} post-hoc entries: recycled WINs, relabeled standard physics, and postdictions.</p>`;
+  html += `</summary><div class="ps-detail">\n`;
   html += mined.map(formatPredictionDetail).join('\n');
   html += `</div></details>\n`;
 
   // ── Operational Tracking ──
   if (operational.length > 0) {
     html += `<details id="pred-operational"><summary class="ps-summary"><h2 style="display:inline;margin:0">Operational Tracking Items (${operational.length})</h2>`;
-    html += `<p class="ps-tldr">These are not predictions in the scientific sense — they are data watches and manual tests that monitor ongoing phenomena relevant to the dome's claims. Listed for completeness; none carry evidential weight.</p>`;
+    html += `<p class="ps-tldr">Not predictions in the scientific sense — data watches and manual tests that monitor ongoing phenomena. Listed for completeness; none carry evidential weight.</p>`;
     html += `</summary><div class="ps-detail">\n`;
     html += `<table><thead><tr><th>ID</th><th>Type</th><th>Description</th></tr></thead><tbody>\n`;
     operational.forEach(e => {
