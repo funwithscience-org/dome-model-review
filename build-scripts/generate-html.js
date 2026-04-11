@@ -116,6 +116,8 @@ function resolvePlaceholders(html, context) {
     '{{PRED_ACTIVE_WINDOWS}}': context.predCounts?.activeWindows || 0,
     '{{PRED_IMMINENT}}': context.predCounts?.imminent || 0,
     '{{PRED_RECYCLED}}': context.predCounts?.recycled || 0,
+    '{{PRED_GENUINELY_PROSPECTIVE}}': context.predCounts?.genuinelyProspective || 0,
+    '{{DOME_PRED_CLAIMED}}': context.domePredClaimed || 0,
   };
 
   // Simple replacements
@@ -213,7 +215,7 @@ ${staleNote}
 </div>`;
 }
 
-function renderFailuresBlock(failures, silentFailureEntries, acknowledgedBucketEntries, honestAccuracy, honestAccuracyDenom) {
+function renderFailuresBlock(failures, silentFailureEntries, acknowledgedBucketEntries, honestAccuracy, honestAccuracyDenom, totalWins) {
   const totalDome = failures.dome_claimed_failures || 0;
   const totalSilent = silentFailureEntries.length;
   const honestPct = honestAccuracy;
@@ -226,28 +228,45 @@ function renderFailuresBlock(failures, silentFailureEntries, acknowledgedBucketE
     ? acknowledgedBucketEntries.map(renderFailureEntry).join('\n')
     : '<p><em>None currently tracked.</em></p>';
 
+  const totalFailures = totalDome + totalSilent;
   return `
 <h2 id="p3-failures">Failures the dome doesn't count</h2>
 
-<p>Beyond the ${69} predictions reviewed above, the dome has produced predictions that <em>did not</em> hold up against data — but most of them are not visible in his ${failures.dome_claimed_accuracy} headline accuracy figure. He uses three layers of softening: <strong>"refined"</strong> (the prediction is rewritten after the data comes in), <strong>"suspended"</strong> (the test is paused indefinitely), and <strong>"removed"</strong> (the WIN is annotated as withdrawn but excluded from the count entirely). His own accuracy formula <code>${69} / (${69} + ${totalDome})</code> only counts the first category.</p>
+<div class="scorecard" style="grid-template-columns:repeat(3,1fr);margin:1rem 0">
+<div class="sc-card sc-sm" style="border-left:4px solid #c45050">
+<div class="sc-number">${totalDome}</div>
+<div class="sc-label">Acknowledged</div>
+<div class="sc-sublabel">The dome's own count — items he labels "refined" and includes in his ${failures.dome_claimed_accuracy} denominator</div>
+</div>
+<div class="sc-card sc-sm" style="border-left:4px solid #8b0000">
+<div class="sc-number">${totalSilent}</div>
+<div class="sc-label">Silent</div>
+<div class="sc-sublabel">Predictions visibly removed or suspended but excluded from his accuracy denominator</div>
+</div>
+<div class="sc-card sc-sm" style="border-left:4px solid #666">
+<div class="sc-number">${honestPct}</div>
+<div class="sc-label">Honest Accuracy</div>
+<div class="sc-sublabel">Counting all ${totalFailures} failures: <code>${totalWins} / (${totalWins} + ${totalDome} + ${totalSilent})</code> = ${honestPct}, not ${failures.dome_claimed_accuracy}</div>
+</div>
+</div>
 
-<p>Counting every documented failure honestly — refined, suspended, removed, and our review's documented failures — gives a denominator of <code>${honestAccuracyDenom}</code> and an accuracy of <strong>${honestPct}</strong>, not ${failures.dome_claimed_accuracy}.</p>
+<p>The dome has produced predictions that <em>did not</em> hold up against data — but most are not visible in his ${failures.dome_claimed_accuracy} headline accuracy figure. He uses three layers of softening: <strong>"refined"</strong> (rewritten after the data comes in), <strong>"suspended"</strong> (paused indefinitely), and <strong>"removed"</strong> (withdrawn but excluded from the count entirely). His own accuracy formula <code>${totalWins} / (${totalWins} + ${totalDome})</code> only counts the first category.</p>
 
-<h3 id="p3-silent-failures">Silent failures (currently visible on dome site, excluded from his count)</h3>
+<h3 id="p3-ack-failures">Acknowledged failures — the dome's own "${totalDome} refined"</h3>
 
-<p>${totalSilent} prediction${totalSilent === 1 ? '' : 's'} that the dome has visibly disowned on the current wins.html — marked <code>[REMOVED]</code> or <code>[SUSPENDED]</code> inline — but excluded from both the headline 69 confirmed count and the ${totalDome} acknowledged failures. These are the entries that should reduce his accuracy but don't.</p>
-
-${silentBlocks}
-
-<h3 id="p3-ack-failures">Acknowledged-bucket failures (refined, suspended, falsified)</h3>
-
-<p>${acknowledgedBucketEntries.length} prediction${acknowledgedBucketEntries.length === 1 ? '' : 's'} we have documented as failures using the dome's softer language. Some of these correspond to items in the dome's "${totalDome} refined" bucket; others were FALSIFIED outright but the dome's accounting absorbs them differently.</p>
+<p>These ${acknowledgedBucketEntries.length} predictions correspond to items the dome counts in his ${totalDome}-failure denominator. He calls them "refined" or "falsified" and they are the only failures included in his ${failures.dome_claimed_accuracy} accuracy figure.</p>
 
 <div style="background:#fff9e6;border-left:4px solid #d4a017;padding:.75rem 1rem;margin:1rem 0;border-radius:0 4px 4px 0;font-size:.9rem">
 <strong>⚠ Reconciliation in progress.</strong> The <code>dome_ref</code> field on the entries below points to W-numbers from an earlier dome version. The dome has since reused those W-numbers for unrelated CONFIRMED predictions (e.g. <code>W024</code> previously referred to "Polaris elevation excess" but now refers to "Roaring 40s = SAA Southern Boundary"). The analyst is working through the V50.6→V51.1 history to map each entry to its current dome state. Until that's complete, treat the W-references as historical pointers, not live cross-references.
 </div>
 
 ${ackBlocks}
+
+<h3 id="p3-silent-failures">Silent failures — removed or suspended, excluded from his count</h3>
+
+<p>${totalSilent} prediction${totalSilent === 1 ? '' : 's'} that the dome has visibly disowned — marked <code>[REMOVED]</code> or <code>[SUSPENDED]</code> — but excluded from both the headline confirmed count and the ${totalDome} acknowledged failures. These are the entries that should reduce his accuracy but don't.</p>
+
+${silentBlocks}
 `;
 }
 
@@ -756,7 +775,33 @@ function renderPredictionPanels(predictions) {
   const tombstoneTally = tallyVerdicts(tombstone);
   const minedTally = tallyVerdicts(mined);
 
+  const domeClaimed = predictions.summary?.dome_total_claimed || '?';
+
   let html = '';
+
+  // ── Predictions Summary Scorecard ──
+  html += `<div class="scorecard" style="grid-template-columns:repeat(4,1fr);margin:1rem 0">\n`;
+  html += `<div class="sc-card sc-sm" style="border-left:4px solid #2a6496">
+<div class="sc-number">${domeClaimed}</div>
+<div class="sc-label">Dome Claims</div>
+<div class="sc-sublabel">Total predictions on the dome's registry</div>
+</div>\n`;
+  html += `<div class="sc-card sc-sm" style="border-left:4px solid #555">
+<div class="sc-number">${entries.length}</div>
+<div class="sc-label">We Cataloged</div>
+<div class="sc-sublabel">Our independent tally from the same source pages</div>
+</div>\n`;
+  html += `<div class="sc-card sc-sm" style="border-left:4px solid var(--accent)">
+<div class="sc-number">${tombstone.length}</div>
+<div class="sc-label">Genuinely Prospective</div>
+<div class="sc-sublabel">Registered before the data — the only ones with real evidential weight</div>
+</div>\n`;
+  html += `<div class="sc-card sc-sm" style="border-left:4px solid var(--misleading-solid)">
+<div class="sc-number">${mined.length}</div>
+<div class="sc-label">Extracted / Mined</div>
+<div class="sc-sublabel">Registered after the data was already public — postdictions, recycled WINs, standard physics</div>
+</div>\n`;
+  html += `</div>\n`;
 
   // ── Tombstone Predictions ──
   html += `<h2 id="pred-tombstone">The Dome's Official Prospective Predictions</h2>\n`;
@@ -908,6 +953,10 @@ function main() {
     testable: predEntries.filter(e => e.testability === 'testable').length,
     domeDerived: predEntries.filter(e => e.derivation === 'dome_geometry').length,
     recycled: predEntries.filter(e => e.restates_win != null).length,
+    genuinelyProspective: predEntries.filter(e =>
+      e.is_genuinely_prospective === true &&
+      (e.entry_type === 'prediction' || e.entry_type === 'tracking')
+    ).length,
     activeWindows: predEntries.filter(e => e.test_window?.status === 'open').length,
     imminent: predEntries.filter(e => {
       if (!e.test_window?.closes) return false;
@@ -961,8 +1010,8 @@ function main() {
   const silentFailures = silentFailureEntries.length;
   const acknowledgedFailures = acknowledgedBucketEntries.length;
   const totalDocumentedFailures = failures.entries.length;
-  // Honest accuracy: dome's 69 wins divided by his denominator + the silent failures he excluded.
-  // Formula: 69 / (69 + dome_claimed_failures + silent_failures)
+  // Honest accuracy: dome's wins divided by his denominator + the silent failures he excluded.
+  // Formula: counts.total / (counts.total + dome_claimed_failures + silent_failures)
   const honestAccuracyDenom = counts.total + (failures.dome_claimed_failures || 0) + silentFailures;
   const honestAccuracy = honestAccuracyDenom > 0
     ? ((counts.total / honestAccuracyDenom) * 100).toFixed(1) + '%'
@@ -989,6 +1038,7 @@ function main() {
     independentClaims,
     dedupReductionPct,
     predCounts,
+    domePredClaimed: predictions.summary?.dome_total_claimed || 0,
   };
 
   // Start HTML
@@ -1080,14 +1130,14 @@ ${CSS}
 <div class="sc-sublabel">Not one claim produces a result that the globe model can't explain and the dome uniquely can</div>
 </div>
 <div class="sc-card" style="border-left:4px solid #c45050">
-<div class="sc-number">${failures.dome_claimed_failures}</div>
-<div class="sc-label">Acknowledged Failures</div>
-<div class="sc-sublabel">The dome's own count — items he labels "refined" and includes in his ${failures.dome_claimed_accuracy} accuracy denominator</div>
+<div class="sc-number">${failures.dome_claimed_failures} + ${silentFailures}</div>
+<div class="sc-label">Actual Failures</div>
+<div class="sc-sublabel">He admits ${failures.dome_claimed_failures}. We found ${silentFailures} more he silently removed. Honest accuracy: <strong>${honestAccuracy}</strong>, not ${failures.dome_claimed_accuracy}. <a href="#p3-failures" onclick="showTab('wins');return false">Details →</a></div>
 </div>
-<div class="sc-card" style="border-left:4px solid #8b0000">
-<div class="sc-number">${silentFailures}</div>
-<div class="sc-label">Silent Failures</div>
-<div class="sc-sublabel">Predictions the dome has visibly removed or suspended but excluded from his accuracy denominator. Counting them honestly drops his stated ${failures.dome_claimed_accuracy} to <strong>${honestAccuracy}</strong>.</div>
+<div class="sc-card" style="border-left:4px solid #2a6496">
+<div class="sc-number">${predCounts.genuinelyProspective}</div>
+<div class="sc-label">Genuinely Prospective</div>
+<div class="sc-sublabel">Of ${predictions.summary?.dome_total_claimed || '?'} predictions on his registry, only ${predCounts.genuinelyProspective} were registered before the data. <a href="#pred-tombstone" onclick="showTab('predictions');return false">Details →</a></div>
 </div>
 </div>
 
@@ -1257,7 +1307,7 @@ ${sectionNav('model', 'The Model', 'wins', counts.total + ' Wins Reviewed')}
 
 ${renderSectionFromJson('part3', context, winsByVerdict, wins, tally, sectionNav)}
 
-${renderFailuresBlock(failures, silentFailureEntries, acknowledgedBucketEntries, honestAccuracy, honestAccuracyDenom)}
+${renderFailuresBlock(failures, silentFailureEntries, acknowledgedBucketEntries, honestAccuracy, honestAccuracyDenom, counts.total)}
 
 ${sectionNav('selftest', 'Self-Contradictions', 'pages', 'Live Power Dashboard')}
 
