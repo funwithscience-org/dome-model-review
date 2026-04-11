@@ -1,0 +1,37 @@
+{
+  "type": "issue_proposal",
+  "issue_id": "ISS-677",
+  "proposal_type": "mode5-specification",
+  "title": "Mode 5: Prospective Bucket Tracking — Design Specification",
+  "assessed_at": "2026-04-11T23:09:50.268Z",
+  "context": {
+    "current_state": "8 PROS entries in predictions.json (7 standard_physics, 1 falsified). Section 6.11 integrated. No separate data/prospective.json needed — predictions.json already tracks them.",
+    "gap_analysis": "Mode 0 detects new confirmed WINs (PROS promotion). Mode 1b assesses prediction writeups. Missing: (1) detecting PROS suspensions/removals, (2) detecting NEW PROS additions, (3) prospective hit-rate metric, (4) pre-promotion critique readiness check."
+  },
+  "recommendation": {
+    "separate_file": false,
+    "rationale": "data/prospective.json is unnecessary — PROS entries are already in predictions.json with full fields. Adding a second file creates sync burden and multi-writer risk. Instead, Mode 5 should operate on predictions.json entries where id starts with PROS-.",
+    "mode_5_design": {
+      "trigger": "Runs after Mode 4 (lowest priority). Also runs in any cycle where the poller reports changes to the dome predictions page.",
+      "frequency": "Low priority — dome prospective bucket changes rarely.",
+      "steps": [
+        "Step 1: Fetch dome predictions page (or read latest poller change report) and extract current prospective items list.",
+        "Step 2: Compare against PROS entries in predictions.json. Flag: (a) NEW PROS items not in our catalog, (b) REMOVED items (in our catalog but not on dome), (c) STATUS CHANGES (promoted/suspended/active/removed).",
+        "Step 3: For new PROS items — create a Mode 1b-style assessment. For suspensions/removals — update author_status in an assessment file for decider to integrate.",
+        "Step 4: Compute prospective hit rate: (PROS items promoted to confirmed WIN) / (total PROS items ever registered). Write to summary.",
+        "Step 5: Pre-promotion readiness check: for each active PROS item, verify we have a pre-emptive critique (detail_reasoning populated with our counter-argument). Flag any gaps."
+      ],
+      "outputs": [
+        "Assessment files to monitor/analyst/expansions/PROS-status-update-YYYY-MM-DD.json for any status changes detected.",
+        "Summary line in run log with prospective hit rate and readiness status."
+      ]
+    },
+    "prospective_hit_rate_formula": {
+      "numerator": "Count of PROS entries where author_status === promoted AND our_verdict !== falsified",
+      "denominator": "Count of all PROS entries ever tracked",
+      "current_rate": "7 promoted out of 8 total = 87.5% dome promotion rate. But our verdicts: 7/7 promoted are standard_physics (not genuine dome successes), 1/8 falsified/suspended. Effective dome prospective accuracy = 0/8 (0%) by our assessment.",
+      "note": "This metric is powerful: the dome promotes 87.5% of its prospective items to WINs, but 100% of promoted items are standard physics. The promotion pipeline is a relabeling operation, not a scientific validation."
+    },
+    "implementation_priority": "LOW. All PROS items are already assessed. Mode 5 becomes valuable only when the dome registers new PROS items. Current 10th consecutive quiet poll suggests no imminent PROS activity. Recommend implementing as a lightweight check that skips quickly when poller reports no predictions page changes."
+  }
+}
