@@ -85,6 +85,16 @@ Fetch the dome site's wins page (john09289.github.io/predictions/wins.html) and 
 
 This check catches the author silently renumbering or redefining WINs, which could make our review address the wrong claim for a given WIN number.
 
+### 5c. Progressive Disclosure Structure
+
+All prose sections should be wrapped in `<details>`/`<summary>` with TLDRs. Spot-check the rendered HTML:
+
+- Every `<h2>` inside a tab (except tab-level `<h1>` headings and the overview scorecard) should be inside a `<details>` with `ps-summary` or `ks-summary` class.
+- Every `<summary>` should contain a `<p>` with `ps-tldr` or `ks-tldr` class.
+- No empty TLDRs (the `<p class="ps-tldr">` should have text content).
+- Prediction panels in `predictions.json`: check that genuinely prospective predictions have a `tldr` field.
+- Severity: Missing TLDR structure = **moderate** (content works but UX regresses). Empty/broken TLDR = **major**.
+
 ### 6. Discoverability Infrastructure
 
 Verify that our AI/search discoverability files exist and are well-formed:

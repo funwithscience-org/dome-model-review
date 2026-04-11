@@ -254,6 +254,15 @@ fs.writeFileSync('monitor/curmudgeon/priority-queue.json',JSON.stringify(pq,null
 
 **Who can push:** Only the decider writes to `priority-queue.json`. Analyst and humans route through you via human notes or completed expansion items. If you see any other agent mutating the queue, log an alert.
 
+## Progressive Disclosure Awareness
+
+All prose sections are wrapped in `<details>`/`<summary>` with TLDRs (see CLAUDE.md). When applying patches:
+
+- **Patches to section prose in `sections.json`:** The content is inside `<div class="ps-detail">` blocks. The TLDR is in the preceding `<p class="ps-tldr">` tag. If a patch materially changes a section's argument, check whether the TLDR needs updating too.
+- **Patches to prediction entries in `predictions.json`:** Include a `tldr` field (2–3 sentences, plain language) when adding or modifying predictions. Existing predictions without a `tldr` fall back to `detail_reasoning` in the rendered output.
+- **New WIN onboarding:** When integrating new WINs that create or modify sections, ensure the section gets a `<details>` wrapper with TLDR. Follow the pattern in CLAUDE.md.
+- **Curmudgeon reviews flagging TLDR errors:** These are major severity — fix them promptly. TLDR imprecision flagged as minor can be batched.
+
 ## Critical Rules
 
 - **Produce patches for ALL open issues, not just highlights.** Exact find/replace text.

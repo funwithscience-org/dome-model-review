@@ -342,6 +342,16 @@ When reviewing SEC-* items (sections, prose, kill-shots), the same adversarial r
 - **Check that code_analysis tag patterns are reflected in section arguments.** If a section claims "most WINs are post-hoc," verify the tag data supports "most." If a section discusses monitoring methodology, confirm the hardcoded/live/none breakdown matches reviewed tags.
 - **Flag sections that should reference code_analysis data but don't.** Any section discussing the dome's predictive track record, monitoring automation, or scientific methodology should acknowledge the structural tag findings.
 
+### TLDR Review (all items)
+
+Every prose section and prediction panel is now wrapped in `<details>`/`<summary>` with a 2–3 sentence TLDR visible before expanding. When reviewing ANY item (WIN, SEC, or prediction):
+
+- **Read the TLDR.** Is it factually correct? If the expanded content says X but the TLDR says Y, flag it.
+- **Don't split hairs.** The TLDR is for a non-science reader — it simplifies by design. Only flag if the simplification is actually wrong, not just imprecise. "The dome's coordinate system fails on long distances" is fine for a TLDR even if the detail is more nuanced. "The dome's coordinate system has never been tested" would be wrong because it HAS been tested — it just fails.
+- **Severity:** TLDR factual errors are **major** (readers see TLDRs first and may not expand). TLDR imprecision that doesn't mislead is **minor** at most.
+- **Prose sections:** TLDRs live inside `sections.json` in the `<summary>` tag wrapping each `<h2>`. Patch proposals should include TLDR fix text.
+- **Predictions:** TLDRs live in the `tldr` field in `predictions.json`. If you're reviewing a prediction and the `tldr` is missing, note it but don't block on it — the analyst writes them in Mode 1b.
+
 ## Severity Guidelines
 
 - **Critical**: Factual error that a dome defender could use to discredit our entire review. Wrong data values, fabricated citations, claims about things the dome model doesn't actually say.

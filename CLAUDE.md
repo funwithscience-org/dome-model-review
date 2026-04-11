@@ -27,6 +27,38 @@ The dedicated write-up lives in the **Timestamp Error tab** on the site. All ref
 
 All WIN data lives in `data/wins.json`. The HTML site and PDF are generated from this file. Never edit `docs/index.html` directly — edit `wins.json` and rebuild.
 
+### Progressive Disclosure (UX Structure)
+
+Every prose section across all tabs is wrapped in `<details>`/`<summary>` HTML5 elements with 2–3 sentence TLDRs. This gives readers a scannable overview before they dive into detail.
+
+**CSS classes:**
+- `ps-summary`, `ps-tldr`, `ps-detail` — prose sections (parts 1–10, evaluation guide, timestamp error, references)
+- `ks-summary`, `ks-tldr`, `ks-detail` — kill-shot tests (part5) and individual prediction panels (part6 tombstone predictions)
+
+**Structure per section:**
+```html
+<details id="p7-71-0"><summary class="ps-summary">
+  <h2 style="display:inline;margin:0">7.1 Section Title</h2>
+  <p class="ps-tldr">2–3 sentence plain-language TLDR.</p>
+</summary><div class="ps-detail">
+  ...full prose content...
+</div></details>
+```
+
+**Where TLDRs live:**
+- Prose sections: embedded in `sections.json` HTML, wrapping each `<h2>` section
+- Kill shots: embedded in `sections.json` (part5), one `<details>` per test
+- Prediction panels: `predictions.json` has a `tldr` field per prediction; `formatPredictionDetail()` in `generate-html.js` renders it into `ks-tldr`
+- Evaluation Guide + Timestamp Error: inline in `generate-html.js` template
+
+**TLDR writing rules:**
+- Plain language — written for a non-science reader, not a physicist
+- 2–3 sentences max — punchline first, then why in one sentence
+- Factually accurate — but don't split hairs on nuance; the expanded detail handles that
+- Kill-shot style — lead with the verdict/key issue
+
+**Nested progressive disclosure:** Section 4.2 (Eclipse Analysis) has two levels — expanding 4.2 reveals an intro plus 6 individually collapsible subsections (4.2.1–4.2.6).
+
 ### Build Pipeline
 
 ```

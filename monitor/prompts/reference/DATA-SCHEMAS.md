@@ -43,7 +43,8 @@ Key fields per entry:
 - `entry_type`: "prediction" | "tracking" | "data_watch" | "manual_test"
 - `claim`: one-line description of the prediction
 - `our_verdict`: "standard_physics" | "recycled" | "falsified" | "unfalsifiable" | "pending" | null
-- `detail_reasoning`: analyst's assessment prose — **rendered on the site as the prediction's analysis panel**. Decider MUST copy this from the assessment file's `reasoning` field when integrating verdicts.
+- `detail_reasoning`: analyst's assessment prose — **rendered in the expanded detail panel**. Decider MUST copy this from the assessment file's `reasoning` field when integrating verdicts.
+- `tldr`: 2–3 sentence plain-language summary — **rendered in the collapsed summary bar** (visible before expanding). Punchline first, for non-science readers. Falls back to `detail_reasoning` if absent, but all genuinely prospective predictions should have one. Analyst writes this in Mode 1b.
 - `is_genuinely_prospective`: boolean — determines tombstone vs mined grouping
 - `restates_win`: WIN ID this prediction restates (bare "011" or "WIN-001" format; build normalizes both)
 
