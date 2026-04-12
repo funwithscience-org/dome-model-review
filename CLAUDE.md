@@ -85,6 +85,8 @@ The workspace mount (`/mnt/dome-model-review/`) uses a FUSE filesystem that **do
 
 **If the workspace falls out of sync**, `build.js publish` will fix it on next push. To manually sync: `cp` the files from the clean clone to the workspace.
 
+**Prompt sync gotcha:** Agent prompt files (`monitor/prompts/*.md`) are git-owned, so they only reach the FUSE workspace via `build.js publish`. If you push prompt changes to git without running a full publish, scheduled agents will keep running the **old** prompt until the next publish copies it over. When editing prompts outside of a publish cycle, always manually sync: `cp dome-review-clean/monitor/prompts/foo.md mnt/dome-model-review/monitor/prompts/foo.md`.
+
 ### File Ownership Rules (Phase 1)
 
 Every file that crosses the workspace↔git boundary has exactly one authoritative side. The table below is the canonical reference; it is duplicated in code in `build.js` (the `OWNERSHIP` object, Change 1.1) and `monitor/prompts/workspace-sync.md` (the `OWNED_BY_GIT` array, Change 1.2). If you edit one, edit all three.
