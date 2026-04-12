@@ -215,6 +215,66 @@ if (recentWindow.length) {
 
 Classify repeated skips (same path, ≥3 times in 24h) as **major** and include the list in the integrity report so the tinker or a human can trace the offending writer. A single transient skip is **informational** — log it but don't escalate.
 
+### 7e. Curmudgeon → Decider Digest Coverage
+
+The digest pipeline (`build-scripts/digest-reviews.js`) converts curmudgeon review files into a compact digest for the decider. If the digest script filters out review files (by prefix, naming convention, or other criteria), completed curmudgeon work becomes invisible to the decider — findings pile up with no one acting on them.
+
+**Check:** Compare the set of review files the curmudgeon has produced against what the digest and decider have processed.
+
+```bash
+node -e "
+const fs=require('fs');
+const reviewDir='monitor/curmudgeon/reviews';
+const processedPath='monitor/decisions/processed-reviews.json';
+
+// All review files
+const allFiles = fs.readdirSync(reviewDir).filter(f => f.endsWith('.json'));
+
+// Processed ledger
+let processed = [];
+try { processed = JSON.parse(fs.readFileSync(processedPath,'utf8')).processed || []; } catch(e) {}
+const processedSet = new Set(processed);
+
+// Unprocessed = exists in reviews/ but not in processed ledger
+// (digest-reviews.js deduplicates cycles, so count base IDs)
+const baseIds = new Map();
+for (const f of allFiles) {
+  const base = f.replace(/(?:\.c\d+)?\.json$/, '');
+  const cycle = f.match(/\.c(\d+)\.json$/) ? parseInt(f.match(/\.c(\d+)\.json$/)[1]) : 1;
+  const existing = baseIds.get(base);
+  if (!existing || cycle > existing.cycle) baseIds.set(base, { file: f, cycle });
+}
+const latestFiles = [...baseIds.values()].map(v => v.file);
+const unprocessed = latestFiles.filter(f => !processedSet.has(f));
+
+console.log('Total review files: ' + allFiles.length);
+console.log('Unique base IDs (latest cycle): ' + latestFiles.length);
+console.log('Processed: ' + processed.length);
+console.log('Unprocessed: ' + unprocessed.length);
+
+if (unprocessed.length > 10) {
+  console.error('MAJOR: ' + unprocessed.length + ' curmudgeon reviews never processed by decider.');
+  console.error('Sample unprocessed: ' + unprocessed.slice(0, 10).join(', '));
+  // Check for prefix patterns in unprocessed — suggests a filter bug in digest-reviews.js
+  const prefixes = {};
+  unprocessed.forEach(f => { const p = f.split('-')[0] || f.split('.')[0]; prefixes[p] = (prefixes[p]||0)+1; });
+  console.error('Unprocessed by prefix: ' + JSON.stringify(prefixes));
+  process.exit(1);
+} else if (unprocessed.length > 0) {
+  console.log('OK: ' + unprocessed.length + ' unprocessed (within normal pipeline lag)');
+} else {
+  console.log('OK: all reviews processed');
+}
+"
+```
+
+Classify:
+- **Major**: >10 unprocessed reviews (systematic gap — the digest pipeline is probably filtering by prefix or naming convention and missing entire categories of reviews). Include the prefix breakdown so the fix is obvious.
+- **Moderate**: 5–10 unprocessed (possible lag, but check if they're all recent or if some are weeks old).
+- **OK**: <5 unprocessed (normal pipeline lag — decider hasn't run since curmudgeon's latest output).
+
+This check exists because `digest-reviews.js` historically filtered on `WIN-*` prefix only, silently dropping all SEC-*, ISS-*, HOLISTIC-*, PRED-*, and other non-WIN reviews. The fix was applied 2026-04-12, but this check prevents regression or the introduction of new filter bugs.
+
 ### 8. Project Documentation — Mechanical Checks
 
 `CLAUDE.md` and `SESSION-CONTEXT.md` are the first things new AI sessions read. Check the mechanical facts:
