@@ -54,6 +54,24 @@ Key fields per entry:
 
 Acknowledged dome prediction failures with FAIL-NNN IDs and dome W-number cross-references.
 
+## analyst/attention-inbox.json Schema
+
+The decider writes items here when content changes in ways that might affect prior analyst work. The analyst checks this between Mode 2 (human notes) and Mode 3 (defense neutralization).
+
+- `items[]`: Array of attention items
+  - `id`: "ATT-<ISO-timestamp>"
+  - `status`: "pending" | "resolved"
+  - `target_type`: "win" | "section" | "prediction"
+  - `target_id`: "WIN-NNN" | "SEC-X.Y" | "PRED-NNN"
+  - `reason`: Brief description of what changed and why the analyst should re-examine
+  - `pushed_by`: "decider" | "human"
+  - `pushed_at`: ISO timestamp
+  - `related_issues`: array of ISS-NNN strings
+  - `resolved_at`: ISO timestamp (set by analyst when marking resolved)
+  - `resolution_note`: brief note on what the analyst found (set by analyst)
+
+Writers: decider, human. Readers: analyst.
+
 ## Issue Tracking
 
 Two files: `open-issues.json` (active) and `closed-issues.json` (archive). Decider is the sole writer. Patches are written to timestamped files (`suggested-patches-YYYY-MM-DDTHH-MM.json`). The `processed-reviews.json` ledger tracks which curmudgeon review files have been fully processed, using filenames (not bare WIN IDs) for cycle-aware dedup.

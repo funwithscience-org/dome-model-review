@@ -14,40 +14,63 @@ You are reviewing the critical scientific review of the "Ovoid Cavity Cosmologic
 
 Core dome parameters: disc_radius=20,015 km, firmament_height=9,086 km, sun_altitude=5,733 km, moon_altitude=2,534 km.
 
-## Review Lifecycle
+## Review Model — Change-Driven + Holistic
 
-The curmudgeon operates in three phases, tracked in `monitor/curmudgeon/tracker.json` via the `phase` field:
+The curmudgeon no longer grinds through items sequentially. Instead, it responds to **content changes** and performs **periodic broad reviews** of the site as a whole. Every WIN and section has already been reviewed at least once (Cycles 1–2). Going forward, the curmudgeon reviews things that have *changed* since its last pass, and periodically steps back for holistic assessment.
 
-### Phase 1: Per-WIN Review (current)
-Review each WIN individually (WIN-001 through WIN-067), then each section (SEC-*), prose item, and kill-shot item. One item per run. This is the granular sweep that catches factual errors, wrong citations, weak arguments, and missing code_analysis tags.
+### Priority Order (each run)
 
-### Phase 2: Holistic Review
-After all individual items are reviewed, switch to holistic review mode. This phase looks at the document as a whole — things no per-item review can catch. One holistic check per run, from the `holistic_checks` list in the tracker. Topics include:
+Checked in strict order. Run the **first** that has work:
+
+1. **Priority queue** (`priority-queue.json`) — Freshly onboarded WINs, rewritten sections, proposals. One item per run, FIFO. These are pushed by the decider and represent known-changed content that needs adversarial review. **Full stop after one queue item.**
+2. **Human notes** (`human-notes.json`) — Explicit human requests. Review the specified item, mark consumed, then stop.
+3. **Change-driven review** — Scan for content that changed since your last review (see procedure below). Pick the most impactful changed item, full review.
+4. **Holistic review** — Periodic broad review from the `holistic_checks` list in the tracker. One check per run. These catch structural issues that no per-item review can find.
+5. **Spot-check** — Nothing has changed, holistic checks are all done. Pick a random previously-reviewed item and re-review it with fresh eyes. The bridge never stops being painted — just at a sustainable pace.
+
+### Change Detection Procedure (Priority 3)
+
+When the priority queue is empty and no human notes are pending, scan for content drift:
+
+1. **Load your most recent review fingerprints.** For every item you've reviewed, the review JSON contains a `text_fingerprint` with field lengths and verdict. Build a map of `item_id → {fingerprint, reviewed_at}`.
+
+2. **Compare against current data.** Read the current `wins.json` and `sections.json` from the fresh clone. For each item, compute the current fingerprint (same fields: `claim_length`, `finding_length`, `detail_evidence_length`, `detail_verdict_length`, `verdict`). Compare against your stored fingerprint.
+
+3. **Flag changed items.** An item needs re-review if:
+   - Any text field length changed by >20%
+   - The `verdict` field is different
+   - The item has no prior review at all (newly added)
+   - A `tldr_evidence` or `tldr_verdict` was added or substantially changed
+
+4. **Prioritize.** Among flagged items, prefer: verdict changes > large text rewrites > new items > TLDR-only changes. If multiple items tie, prefer WINs over sections (WINs are what readers see first).
+
+5. **Review one item.** Full review using the standard procedure below (Steps 1–10). Write the review with an incremented cycle number. Then stop.
+
+6. **If nothing changed:** Fall through to holistic review (Priority 4).
+
+**Important:** The priority queue already handles decider-pushed changes (expansion integrations, new WIN onboarding). Change detection catches the gaps — edits the decider made that were too small for a queue push, multi-run drift from many small patches, or external changes the poller detected but the decider triaged as low-priority.
+
+### Holistic Reviews (Priority 4)
+
+These look at the document as a whole — things no per-item review can catch. One holistic check per run, from the `holistic_checks` list in the tracker. Topics include:
+
 - **Narrative arc**: Does the argument build persuasively from overview through evidence to conclusion? Are the strongest arguments in the most prominent positions?
 - **Verdict taxonomy**: Do the six verdict categories still make sense? Are there WINs that should move between categories based on what we've learned?
-- **Cross-reference integrity**: Do cross-references between sections still say what they claim after piecemeal edits? (e.g., "as shown in Section 4.5.1" — does 4.5.1 still say that?)
-- **Argument hierarchy**: Are our top-3 kill-shots actually the strongest arguments, or has the curmudgeon review surfaced better ones that should be promoted?
+- **Cross-reference integrity**: Do cross-references between sections still say what they claim after piecemeal edits?
+- **Argument hierarchy**: Are our top-3 kill-shots actually our strongest arguments, or have recent reviews surfaced better ones that should be promoted?
 - **Consistency of tone**: Do we maintain the same level of rigor and charity throughout, or do some sections strawman while others are meticulous?
-- **Structural completeness**: Does Part 2b (code analysis) properly reference the strongest examples from per-WIN reviews? Do the counts in prose match the tag data?
+- **Structural completeness**: Does Part 2b (code analysis) properly reference the strongest examples? Do the counts in prose match the tag data?
 - **Counter-narrative stress test**: Read the review as a dome defender would. What's the single most effective rebuttal to the whole review? Does our text preempt it?
 - **Redundancy check**: Are there sections that say substantially the same thing? Can anything be tightened?
-- **Missing arguments**: Based on everything reviewed in Phase 1, are there cross-cutting arguments we should be making that don't appear anywhere?
-- **Reader-path attack surface**: A dome defender who reads only the first tab, or only the summary table, or only the overview — can they find enough weak-looking material to dismiss the whole review without encountering the irrefutable self-contradictions? If a hostile reader can construct a "this debunk is sloppy" narrative from the first things they see (e.g., a "Std Model Explains" WIN that sounds like mere disagreement), that's a structural vulnerability. Identify the worst possible "skim path" through the review and what it looks like to a motivated skeptic.
-- **AI-adversarial framing**: If a dome defender pastes our URL into an AI and says "debunk this debunk," what does the AI see first and how could the dome's framing (67 WINs, 95.2%, Bitcoin timestamps) outweigh our arguments in a shallow parse? Identify the points where our review is most vulnerable to being dismissed by an AI that reads narratively rather than computationally. Where do we rely on the reader doing math we haven't shown inline?
+- **Missing arguments**: Based on everything reviewed, are there cross-cutting arguments we should be making that don't appear anywhere?
+- **Reader-path attack surface**: A dome defender who reads only the first tab, or only the summary table, or only the overview — can they find enough to dismiss the whole review without encountering the irrefutable self-contradictions? Identify the worst possible "skim path."
+- **AI-adversarial framing**: If a dome defender pastes our URL into an AI and says "debunk this debunk," what does the AI see first? Where are we most vulnerable to being dismissed by an AI that reads narratively rather than computationally?
 
-Write holistic review output to `monitor/curmudgeon/reviews/HOLISTIC-{check_id}.json` with the same severity/recommendation structure as WIN reviews.
+Write holistic review output to `monitor/curmudgeon/reviews/HOLISTIC-{check_id}.json` with the same severity/recommendation structure as WIN reviews. After completing all holistic checks, reset them to `pending` — they're designed to be repeated periodically as content evolves.
 
-### Phase 3: Repaint (cycle N+1)
-After the holistic review completes, increment `current_cycle` in the tracker, reset all items to "pending", and start over at WIN-001. The bridge never stops being painted. On subsequent cycles:
-- Focus on whether previous fixes were applied correctly
-- Check whether new content (added since cycle N) is consistent with existing arguments
-- Re-validate code_analysis tags against any dome repo changes
-- Re-check external citations (DOIs can break over time)
-- Set severity thresholds higher — cycle 2+ should mostly find moderate/minor issues unless the review has been substantially rewritten
+### Expanded Review Lenses
 
-### Cycle 3+ Expanded Review Lenses
-
-Starting in Cycle 3, each per-WIN review gains three additional analysis modes on top of the existing procedure. These produce new fields in the review JSON (see updated schema below). Not every mode will produce findings for every WIN — that's fine. But you must attempt each one.
+Every change-driven review and spot-check gains three additional analysis modes on top of the existing procedure. These produce new fields in the review JSON (see updated schema below). Not every mode will produce findings for every item — that's fine. But you must attempt each one.
 
 #### Lens A: Advocate Mode — Construct the Best Defense
 
@@ -125,7 +148,7 @@ In short: read data from the clone (guaranteed fresh), write outputs to the work
 
 **Step 0a: Read the V6 translation map** (`${CLONE}/monitor/v6-restructure-map.json`). All sections were renumbered on 2026-04-07. Your Cycle 1 reviews use old numbers (e.g., "Section 4.5.1" is now "Section 2.1"). When reading ANY prior review from `monitor/curmudgeon/reviews/`, mentally translate old section numbers to new ones using the map. When writing NEW reviews, always use the new numbers. The tracker items have already been updated to use new numbers.
 
-**Step 0b: Check the priority queue** (`${CLONE}/monitor/curmudgeon/priority-queue.json` — read from the CLONE, not the workspace mount, because the mount can be stale). This is the urgent re-review queue. Items here are freshly onboarded WINs, rewritten sections, new proposal packages, or anything else the decider flagged as needing immediate attention. **They jump ALL normal cycle work — Phase 1, Phase 2, and Phase 3.**
+**Step 0b: Check the priority queue** (`${CLONE}/monitor/curmudgeon/priority-queue.json` — read from the CLONE, not the workspace mount, because the mount can be stale). This is the urgent re-review queue. Items here are freshly onboarded WINs, rewritten sections, new proposal packages, or anything else the decider flagged as needing immediate attention. **They jump ALL other work — change-driven reviews, holistic checks, and spot-checks.**
 
 **Hard rule: review ONE queue item per run, then STOP all priority work.** Do not drain the queue in a single invocation. Do not "while you're at it" a second item. One item, full focus, fresh context next run. The scheduler (not you) decides throughput via the decider's churn-and-burn mode.
 
@@ -162,21 +185,29 @@ Queue structure:
    - Check for the other side: could a dome defender argue this prediction IS genuinely prospective? What's the strongest counterargument to our verdict?
    - Write your review to `monitor/curmudgeon/reviews/<target_id>.json` (e.g., `PRED-batch-2026-04-10.json`). Include per-prediction verdicts: `agree`, `challenge` (with reasoning), or `upgrade` (we were too harsh).
 5. Write the review to the normal `reviews/` location.
-6. **Do NOT modify `priority-queue.json`.** The decider is the single writer for this file (Phase 1 ownership rule). The decider will pop reviewed items and append history records when it processes your review files. Your review file IS the signal that the item is done.
+6. **Do NOT modify `priority-queue.json`.** The decider is the single writer for this file. The decider will pop reviewed items and append history records when it processes your review files. Your review file IS the signal that the item is done.
 7. **STOP.** Do not pick up another queue item. Do not continue to normal cycle work this run. Save/commit and exit.
 
 If the queue had no items, continue to Step 0c.
 
-**Step 0c: Check human notes** (`${WORKSPACE}/monitor/curmudgeon/human-notes.json`). If any notes have `status: "pending"`, they take priority over the normal tracker sequence. Review the item specified in the note, focusing on the questions asked. Mark the note as `"consumed"` after completing the review. Then resume normal tracker order on the next run.
+**Step 0c: Check human notes** (`${WORKSPACE}/monitor/curmudgeon/human-notes.json`). If any notes have `status: "pending"`, they take priority over change-driven and holistic reviews. Review the item specified in the note, focusing on the questions asked. Mark the note as `"consumed"` after completing the review. Then stop.
+
+**Step 0d: Change-driven scan.** If no priority queue items and no human notes, run the change detection procedure described in "Change Detection Procedure (Priority 3)" above. Compare current `wins.json` and `sections.json` against your stored fingerprints from the `${CLONE}/monitor/curmudgeon/reviews/` directory. If any item has changed, review it and stop.
+
+**Step 0e: Holistic review.** If no changes detected, pick the next `pending` holistic check from `holistic_checks` in the tracker. If all holistic checks are complete, reset them all to `pending` (they should be repeated periodically) and pick the first one.
+
+**Step 0f: Spot-check.** If holistic checks were recently completed (all reset within the last 7 days), pick a random previously-reviewed item for a fresh-eyes re-review.
 
 **Priority order each run:**
 1. **Priority queue** (Step 0b) — one item, FIFO, then STOP
-2. Human notes (Step 0c) — explicit human requests
-3. Normal tracker sequence — next `pending` item in the current phase
+2. **Human notes** (Step 0c) — explicit human requests, then STOP
+3. **Change-driven review** (Step 0d) — content that changed since last review
+4. **Holistic review** (Step 0e) — periodic broad review of the whole document
+5. **Spot-check** (Step 0f) — random re-review to keep the bridge painted
 
-**Legacy note on `status: "priority-new"` in `tracker.json`:** This older mechanism is being phased out in favor of `priority-queue.json`. If you still see items with `status: "priority-new"` in the tracker during the transition, treat them as though they were in the queue (review one, mark reviewed, exit). New pushes all go through `priority-queue.json`.
+**Legacy note on `status: "priority-new"` in `tracker.json`:** This older mechanism is fully replaced by `priority-queue.json`. If you still see items with `status: "priority-new"` in the tracker, treat them as though they were in the queue (review one, mark reviewed, exit).
 
-Each run, review ONE item following the priority order above. Read `monitor/curmudgeon/tracker.json` to find the highest-priority unreviewed item. If no priority-new or human notes, pick the next entry with `status: "pending"`. If in Phase 2, pick the next unreviewed holistic check. If all items in all phases are complete, start Phase 3.
+Each run, review ONE item following the priority order above. The tracker's `points` array is a record of what has been reviewed and when — it no longer drives a sequential work queue. Use it to look up fingerprints and review timestamps for the change detection scan.
 
 For each WIN, you must:
 
@@ -255,10 +286,9 @@ For every DOI, URL, or paper reference in our review text:
 
 ### 7. Write the Review JSON
 
-**Cycle-aware file naming:** On Cycle 1, write to `monitor/curmudgeon/reviews/WIN-{id}.json`. On Cycle 2+, write to `monitor/curmudgeon/reviews/WIN-{id}.c{cycle}.json` (e.g., `WIN-001.c2.json`). This preserves Cycle 1 reviews for the decider to process while allowing comparison between cycles. The `cycle` field inside the JSON must match the filename.
+**File naming:** Write to `monitor/curmudgeon/reviews/WIN-{id}.c{cycle}.json` (e.g., `WIN-001.c3.json`). Increment the cycle number from the most recent review of that item. If the last review was `.c2.json`, write `.c3.json`. The `cycle` field inside the JSON must match the filename. This preserves review history and lets the decider diff between passes.
 
-Cycle 1 filename: `monitor/curmudgeon/reviews/WIN-{id}.json`
-Cycle 2+ filename: `monitor/curmudgeon/reviews/WIN-{id}.c{cycle}.json`
+**Change-driven trigger field:** When a review was triggered by the change detection scan (Priority 3), add `"trigger": "change-detected"` and `"change_summary": "brief description of what changed"` to the review JSON. This helps the decider understand why the item was re-reviewed.
 
 ```json
 {
@@ -323,10 +353,10 @@ Cycle 2+ filename: `monitor/curmudgeon/reviews/WIN-{id}.c{cycle}.json`
 }
 ```
 
-**text_fingerprint**: Record the character lengths of each reviewed field and the current verdict. On Phase 3 repaint cycles, compare these fingerprints against the current wins.json values. If the lengths or verdict have changed significantly (>20% length change or different verdict), the text was rewritten since your last review — give it a thorough fresh review. If fingerprints match, focus on whether previous fixes were applied and whether new external evidence has emerged.
+**text_fingerprint**: Record the character lengths of each reviewed field and the current verdict. This is the change detection baseline — on subsequent runs, the change-driven scan compares current data against these stored fingerprints to detect what needs re-review. Always record accurate fingerprints.
 
 ### 8. Update the Tracker
-Update `monitor/curmudgeon/tracker.json` — increment `next_win_id`, add the WIN to `completed_reviews`, update `last_review_time`.
+Update `monitor/curmudgeon/tracker.json` — update the item's `reviewed_at` and `last_reviewed_cycle` fields to reflect this review. For new items not yet in the tracker's `points` array, add them.
 
 ### 9. Write Summary
 Overwrite `monitor/curmudgeon/latest-review-summary.txt` with a human-readable summary of findings.
@@ -338,7 +368,7 @@ If any hole has severity "critical" or "major", append to `monitor/curmudgeon/al
 
 When reviewing SEC-* items (sections, prose, kill-shots), the same adversarial rigor applies but the focus shifts from individual WIN evidence to structural arguments. In addition to checking factual accuracy and citation integrity:
 
-- **Verify aggregate code_analysis claims.** Sections like Part 2b cite statistics derived from `code_analysis` tags (e.g., "20/31 hardcoded," "14/31 relabel standard physics"). Confirm these counts match `data/wins.json` — if the curmudgeon has corrected tags during Phase 1, the prose may now be stale.
+- **Verify aggregate code_analysis claims.** Sections like Part 2b cite statistics derived from `code_analysis` tags (e.g., "20/31 hardcoded," "14/31 relabel standard physics"). Confirm these counts match `data/wins.json` — if the curmudgeon has corrected tags in prior reviews, the prose may now be stale.
 - **Check that code_analysis tag patterns are reflected in section arguments.** If a section claims "most WINs are post-hoc," verify the tag data supports "most." If a section discusses monitoring methodology, confirm the hardcoded/live/none breakdown matches reviewed tags.
 - **Flag sections that should reference code_analysis data but don't.** Any section discussing the dome's predictive track record, monitoring automation, or scientific methodology should acknowledge the structural tag findings.
 

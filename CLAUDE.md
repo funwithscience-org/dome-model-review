@@ -111,7 +111,7 @@ Every file that crosses the workspace↔git boundary has exactly one authoritati
 - `monitor/curmudgeon/reviews/`, `monitor/analyst/new-wins/`, `monitor/analyst/expansions/`, `monitor/analyst/category-proposals/`, `monitor/analyst/globe-fingerprints/`, `monitor/analyst/issue-proposals/`, `monitor/tinker/proposals/`, `monitor/integrity/`, `monitor/changes/`, `monitor/social/drafts/` — one file per ID.
 - `monitor/decisions/` and `monitor/tinker/` as "append_only_glob" — mixed directories with timestamped files.
 
-**Unclassified — `monitor/curmudgeon/tracker.json` and `monitor/analyst/expansion-tracker.json`.** Known multi-writer files (tracker.json: decider + curmudgeon; expansion-tracker.json: analyst + decider). Protected by: (a) `git pull --rebase` at run start, (b) pre-push integrity gate, (c) git merge-conflict detection, (d) non-concurrent scheduling. **Do not add to OWNERSHIP in build.js or OWNED_BY_GIT in workspace-sync.md.**
+**Unclassified — `monitor/curmudgeon/tracker.json`, `monitor/analyst/expansion-tracker.json`, and `monitor/analyst/attention-inbox.json`.** Known multi-writer files (tracker.json: decider + curmudgeon; expansion-tracker.json: analyst + decider; attention-inbox.json: decider writes items + analyst marks resolved). Protected by: (a) `git pull --rebase` at run start, (b) pre-push integrity gate, (c) git merge-conflict detection, (d) non-concurrent scheduling. **Do not add to OWNERSHIP in build.js or OWNED_BY_GIT in workspace-sync.md.**
 
 > If you are editing a prompt file and you find yourself adding a write to a file not listed above, STOP. Either classify the new file here and update `build.js` and `workspace-sync.md`, or put the write on a file that is already classified.
 
@@ -127,7 +127,7 @@ Eight scheduled agents run continuously. All prompts live in `monitor/prompts/*.
 |-------|----------|-------|-------------|--------|
 | dome-poller | Every 12h | Sonnet | `poller.md` | Detect changes on dome site, track prediction test windows |
 | dome-analyst | Every 2h | Opus | `analyst.md` | New WIN onboarding, expansions, defense neutralization, fingerprints |
-| dome-curmudgeon | Every 4h (BAU) / 30m (churn-and-burn) | Opus | `curmudgeon.md` | Adversarial self-review; priority queue items jump cycles |
+| dome-curmudgeon | Every 4h (BAU) / 30m (churn-and-burn) | Opus | `curmudgeon.md` | Adversarial self-review; change-driven + holistic reviews |
 | dome-decider | Every 4h | Opus | `decider.md` | Triage, patches, new WIN commits, expansion integration |
 | dome-integrity | Daily 9 AM | Haiku | `structure-integrity.md` | Site health: links, tabs, build drift, data-prose consistency |
 | dome-tinker | Daily 10:30 AM | Opus | `tinker.md` | Pipeline ops: audit, trace handoffs, cost engineering |
@@ -148,13 +148,21 @@ Decider step 1f → commits to wins.json, adds to curmudgeon tracker,
 Curmudgeon step 0b → pops next priority queue item (FIFO), reviews, exits
 
 CURMUDGEON → DECIDER PIPELINE:
-Curmudgeon → reviews/WIN-NNN.json (or WIN-NNN.c2.json for Cycle 2+)
+Curmudgeon → reviews/WIN-NNN.cN.json (change-driven or priority queue)
          ↓
 digest-reviews.js → pending-digest.json
          ↓
 Decider reads digest → creates issues → writes patches → self-applies
          ↓
 Decider closes fixed issues: open-issues.json → closed-issues.json
+Decider optionally → attention-inbox.json (if patches affect analyst's prior work)
+
+CURMUDGEON CHANGE DETECTION (when priority queue is empty):
+Curmudgeon compares text_fingerprint from prior reviews against current data
+         ↓
+Items with >20% field length change or verdict change → re-review
+         ↓
+If nothing changed → holistic review → spot-check
 
 EXPANSION PIPELINE:
 Decider: unpatchable issues → assigned-analyst → Analyst picks up as EXP item
@@ -162,8 +170,13 @@ Analyst → expansion-tracker.json (status: complete) → expansions/EXP-NNN.jso
          ↓
 Decider step 2a → reads completed expansions → patches sections.json
 
-DEFENSE NEUTRALIZATION (Cycle 3+):
-Curmudgeon Cycle 3 → advocate_mode.defense_survives >= 3
+ANALYST ATTENTION INBOX:
+Decider patches content → writes to attention-inbox.json
+         ↓
+Analyst Mode 2b → checks inbox → re-examines affected content → marks resolved
+
+DEFENSE NEUTRALIZATION:
+Curmudgeon advocate_mode.defense_survives >= 3
          ↓
 Decider → creates EXP item (category: defense)
          ↓

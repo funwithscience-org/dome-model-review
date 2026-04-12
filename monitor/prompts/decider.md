@@ -105,7 +105,37 @@ After processing, always:
 → Read `monitor/prompts/reference/decider-patches-and-selfapply.md` for patch format and self-apply procedure.
 → Read `monitor/prompts/reference/decider-reporting.md` for report schema, issue management, and morning briefing.
 
-## End-of-Run: Curmudgeon Priority Queue Management
+## End-of-Run Step A: Analyst Attention Inbox
+
+**After** self-applying patches but **before** queue management, check whether any of your patches this run affect content the analyst previously analyzed. If you patched a WIN's evidence or verdict text, or modified a section the analyst wrote an expansion for, append an item to `monitor/analyst/attention-inbox.json`:
+
+```json
+{
+  "id": "ATT-<ISO-timestamp>",
+  "status": "pending",
+  "target_type": "win" | "section" | "prediction",
+  "target_id": "WIN-NNN" | "SEC-X.Y" | "PRED-NNN",
+  "reason": "Brief description of what changed and why the analyst should re-examine",
+  "pushed_by": "decider",
+  "pushed_at": "ISO timestamp",
+  "related_issues": ["ISS-NNN"]
+}
+```
+
+**When to write attention items:**
+- You patched a WIN's `detail_evidence` or `detail_verdict_text` based on a curmudgeon finding → the analyst's original analysis may need updating
+- You integrated a curmudgeon-recommended verdict change → the analyst should verify the science still holds
+- You patched section prose that references specific data or claims the analyst authored
+- A poller change report suggests the dome site modified content relevant to a prior analyst expansion
+
+**When NOT to write attention items:**
+- Minor text edits (typo fixes, formatting, citation corrections) that don't change the substance
+- Changes the analyst themselves proposed (via expansions) — they already know
+- TLDR-only changes — the curmudgeon handles TLDR review via its own change detection
+
+Keep this lightweight. The analyst already has a full mode dispatcher; the attention inbox is for "hey, something changed under you" signals, not a second work queue.
+
+## End-of-Run Step B: Curmudgeon Priority Queue Management
 
 **After** all other work (patches applied, commits made, report written), manage the curmudgeon priority queue and throughput mode. This is a mandatory end-of-run step.
 
@@ -133,7 +163,7 @@ if(pending){
 
 ### Step E2: Pop reviewed items from the queue
 
-The curmudgeon does NOT modify `priority-queue.json` (Phase 1 single-writer rule). Instead, it writes review files to `monitor/curmudgeon/reviews/`. The decider pops items whose review files exist. This is the ONLY place queue items are removed.
+The curmudgeon does NOT modify `priority-queue.json` (single-writer rule). Instead, it writes review files to `monitor/curmudgeon/reviews/`. The decider pops items whose review files exist. This is the ONLY place queue items are removed.
 
 ```bash
 node -e "

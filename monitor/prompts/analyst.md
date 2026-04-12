@@ -103,11 +103,22 @@ cat monitor/analyst/human-notes.json 2>/dev/null | node -e "let d='';process.std
 Trigger: Pending human notes exist.
 → Read `monitor/prompts/reference/analyst-mode1-expansions.md` (human notes procedure is in that module), execute.
 
+**Mode 2b — Attention Inbox**
+```bash
+cat monitor/analyst/attention-inbox.json 2>/dev/null | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const a=JSON.parse(d);const p=a.items?a.items.filter(x=>x.status==='pending'):[];console.log(p.length?'ATTENTION ITEMS: '+p.length+' pending':'NO ATTENTION ITEMS')}catch(e){console.log('NO ATTENTION ITEMS')}})"
+```
+Trigger: The decider (or human) flagged something for the analyst to re-examine. This is the "take a look at this" inbox — items that changed in ways that might affect your prior analysis, or new content the decider wants scientific review on before committing. Process one item per run. For each item:
+- Read the `reason` field to understand what changed
+- Re-examine the affected WIN/section/prediction with fresh eyes
+- If your prior analysis still holds, mark the item `"status": "resolved"` with a brief note
+- If your analysis needs updating, write an expansion or patch proposal as usual, then mark resolved
+→ Write updates directly to `monitor/analyst/attention-inbox.json` (mark items resolved) and any analysis output to the normal expansion/proposal paths.
+
 **Mode 3 — Surviving Defense Neutralization**
 ```bash
 node -e "const t=JSON.parse(require('fs').readFileSync('monitor/analyst/expansion-tracker.json','utf8'));const d=t.items.filter(i=>i.category==='defense'&&i.status==='pending');console.log(d.length?'DEFENSE MODE: '+d.length+' surviving defenses':'NO PENDING DEFENSES')"
 ```
-Trigger: Curmudgeon Cycle 3+ found defenses rated 3+ that our text can't handle.
+Trigger: Curmudgeon found defenses rated 3+ that our text can't handle.
 → Read `monitor/prompts/reference/analyst-mode34-procedures.md`, execute Mode 3.
 
 **Mode 4 — Globe Fingerprint Hunt** (idle work)
