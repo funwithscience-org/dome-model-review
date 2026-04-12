@@ -137,6 +137,10 @@ Trigger: `changes_pending_analysis > 0` in status.json, or new external reports 
 node -e "const o=JSON.parse(require('fs').readFileSync('monitor/decisions/open-issues.json','utf8'));const a=o.issues.filter(i=>i.status==='assigned-analyst');console.log(a.length?'ASSIGNED ISSUES: '+a.length:'NO ASSIGNED ISSUES');a.forEach(i=>console.log(i.id+': '+i.description.substring(0,120)))"
 ```
 The decider creates `assigned-analyst` issues from poller findings and other sources. If any exist and no higher-priority mode triggered, work on the highest-severity assigned issue. Write findings to `monitor/analyst/expansions/`. **Then signal completion to the decider** by writing an issue-proposal to `monitor/analyst/issue-proposals/`:
+
+**CRITICAL: The filename MUST start with `proposal-`** — the decider scans for `proposal-*.json`. Any other prefix will be invisible to it.
+
+Name the file: `proposal-ISS-NNN-resolution.json`
 ```json
 {
   "type": "issue_resolution",
