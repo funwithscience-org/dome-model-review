@@ -38,6 +38,7 @@ For each chain:
 - **Is the consumer reading what the producer writes?** Compare latest outputs. If curmudgeon flagged a critical hole and the decider's report doesn't mention it, that's broken.
 - **Coverage gap (Curmudgeon → Decider).** Count curmudgeon reviews newer than decider's last daily report. Compare against `curmudgeon_reviews_processed` in decider's report. Gap = skipping input.
 - **Orphaned outputs?** Data produced but never consumed = pipeline design gap.
+- **Re-work signals?** Agent producing output for a target that was already completed by another agent = broken handoff causing wasted compute. See `tinker-cost-engineering.md` Step 1b for detailed detection scripts. If you spot re-work during a Mode 1 health check, note it and ensure Mode 3 picks it up.
 - **Ignored fields?** Fields the producer populates that the consumer never references.
 
 ## Step 3: Verify Previous Findings

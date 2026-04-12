@@ -21,6 +21,127 @@ A healthy agent spends >60% of its tokens on judgment. An unhealthy one spends >
 
 For each agent, estimate what fraction of recent runs produced substantive output. Report this.
 
+## Step 1b: Detect Wasted Compute (Re-Work Patterns)
+
+No-ops are cheap waste — the agent discovers there's nothing to do and stops. **Re-work is expensive waste** — the agent spends full Opus tokens re-analyzing something another agent already finished. Detecting re-work is harder because the agent's output looks substantive; only cross-referencing reveals it was redundant.
+
+### Patterns to scan for:
+
+**1. Curmudgeon re-reviewing the same target:**
+```bash
+# Find targets reviewed more than once. Same target_id across multiple review files = re-review.
+node -e "
+const fs=require('fs');
+const dir='monitor/curmudgeon/reviews/';
+const files=fs.readdirSync(dir).filter(f=>f.endsWith('.json'));
+const byTarget={};
+files.forEach(f=>{
+  try{const r=JSON.parse(fs.readFileSync(dir+f,'utf8'));
+  const tid=r.target_id||r.win_id||f.replace('.json','');
+  (byTarget[tid]=byTarget[tid]||[]).push({file:f,date:r.reviewed_at||fs.statSync(dir+f).mtime.toISOString()});
+  }catch(e){}
+});
+Object.entries(byTarget).filter(([k,v])=>v.length>1).forEach(([k,v])=>console.log(k+': '+v.length+' reviews — '+v.map(x=>x.file).join(', ')));
+"
+```
+Root cause: curmudgeon's fresh clone doesn't contain its own prior reviews (written to FUSE). Fix: curmudgeon checks FUSE for existing reviews before starting (already patched — verify it's working).
+
+**2. Analyst re-writing completed expansions:**
+```bash
+# Expansion tracker items that are integrated but were worked on after integration.
+# Check: any expansion file modified AFTER its tracker item was marked integrated.
+node -e "
+const fs=require('fs');
+const t=JSON.parse(fs.readFileSync('monitor/analyst/expansion-tracker.json','utf8'));
+t.items.filter(i=>i.integrated&&i.integrated_at).forEach(i=>{
+  const expFile='monitor/analyst/expansions/'+i.id+'.json';
+  if(fs.existsSync(expFile)){
+    const mtime=fs.statSync(expFile).mtime.toISOString();
+    if(mtime>i.integrated_at) console.log('RE-WORK: '+i.id+' integrated at '+i.integrated_at+' but file modified at '+mtime);
+  }
+});
+"
+```
+Root cause: `integrated: true` set without `status: 'complete'` — analyst sees pending item and re-does it. Fix: decider always sets both fields together (already patched — verify).
+
+Also check for the inverse: `status: 'complete'` without `integrated: true` that's been sitting for more than 2 decider cycles:
+```bash
+node -e "
+const t=JSON.parse(fs.readFileSync('monitor/analyst/expansion-tracker.json','utf8'));
+const stale=t.items.filter(i=>i.status==='complete'&&!i.integrated&&!i.routed_to_curmudgeon);
+stale.forEach(i=>console.log('STALE COMPLETE: '+i.id+' — complete but never integrated, created '+i.created_at));
+"
+```
+
+**3. Decider re-processing orphaned proposals (FUSE can't unlink):**
+```bash
+# Check processed-proposals ledger vs actual proposal files on FUSE.
+# If proposal files exist that AREN'T in the ledger, they'll be re-processed next run.
+node -e "
+const fs=require('fs');
+const dir='monitor/analyst/issue-proposals/';
+const ledgerPath='monitor/analyst/processed-proposals.json';
+const ledger=fs.existsSync(ledgerPath)?JSON.parse(fs.readFileSync(ledgerPath,'utf8')):{files:[]};
+const onDisk=fs.readdirSync(dir).filter(f=>f.startsWith('proposal-')&&f.endsWith('.json'));
+const orphans=onDisk.filter(f=>!ledger.files.includes(f));
+if(orphans.length) console.log('ORPHAN PROPOSALS (will be re-processed): '+orphans.join(', '));
+else console.log('All proposals in ledger — no orphan risk');
+"
+```
+Root cause: FUSE can't delete files; ledger-based dedup is the fix (already implemented). Verify ledger is being maintained.
+
+**4. Agents producing output that duplicates already-committed content:**
+```bash
+# Check for new-wins files that correspond to WINs already in wins.json.
+node -e "
+const fs=require('fs');
+const wins=JSON.parse(fs.readFileSync('data/wins.json','utf8')).map(w=>w.win_id);
+const dir='monitor/analyst/new-wins/';
+if(fs.existsSync(dir)){
+  fs.readdirSync(dir).filter(f=>f.endsWith('.json')).forEach(f=>{
+    const id=f.replace('.json','');
+    if(wins.includes(id)) console.log('DUPLICATE: '+f+' already committed to wins.json');
+  });
+}
+"
+```
+
+**5. Priority queue items that target already-reviewed content:**
+```bash
+# Queue items pointing at targets that curmudgeon has already reviewed post-integration.
+node -e "
+const fs=require('fs');
+const pq=JSON.parse(fs.readFileSync('monitor/curmudgeon/priority-queue.json','utf8'));
+const reviewDir='monitor/curmudgeon/reviews/';
+const reviews=fs.existsSync(reviewDir)?fs.readdirSync(reviewDir):[];
+pq.queue.forEach(q=>{
+  const matchingReviews=reviews.filter(r=>r.includes(q.target_id));
+  const postPush=matchingReviews.filter(r=>{
+    try{const rev=JSON.parse(fs.readFileSync(reviewDir+r,'utf8'));
+    return rev.reviewed_at&&rev.reviewed_at>q.pushed_at;}catch(e){return false;}
+  });
+  if(postPush.length) console.log('STALE QUEUE: '+q.target_id+' already reviewed after push ('+postPush.map(r=>r).join(', ')+')');
+});
+"
+```
+
+### Reporting:
+
+Include in your report:
+```json
+"wasted_compute": {
+  "re_reviews": [{"target": "SEC-6.11", "count": 3, "root_cause": "clone missing FUSE reviews", "status": "FIXED|ACTIVE"}],
+  "re_work": [{"expansion": "EXP-075", "root_cause": "integrated without status:complete", "status": "FIXED|ACTIVE"}],
+  "orphan_reprocessing": [{"file": "proposal-ISS-700-status.json", "in_ledger": true}],
+  "duplicate_outputs": [],
+  "stale_queue_items": [],
+  "estimated_wasted_opus_runs": 0,
+  "trend": "IMPROVING|STABLE|WORSENING"
+}
+```
+
+**Escalation:** If any pattern shows 3+ instances of active (not fixed) re-work, flag as `major` finding and write a PROP to fix the root cause. The goal is zero active re-work patterns — every agent run should produce NEW analysis, never repeat old analysis.
+
 ## Step 2: Pick the Worst Offender and Go Deep
 
 **Do NOT survey all agents shallowly.** Pick the SINGLE agent with the highest waste or biggest prompt, read its actual prompt file, and produce a complete PROP with all the files needed to implement the fix. One agent, deep work, ready to apply.
