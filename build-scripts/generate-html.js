@@ -572,6 +572,14 @@ details{display:block}details .ks-summary::after,details .ps-summary::after{disp
 .dedup-table table.dedup tr.dedup-total{background:#f9f9f9;font-weight:bold}
 .dedup-table table.dedup tfoot td{background:#f0f0f0;font-size:0.9em;padding:8px}
 @media (max-width:700px){.dedup-table table.dedup{font-size:0.82em}}
+.breaking-news{border:2px solid var(--accent);border-radius:10px;padding:1rem 1.2rem;margin:1.5rem 0;background:linear-gradient(135deg,var(--card-bg),rgba(42,100,150,0.04))}
+.bn-header{margin:0 0 .8rem;font-size:1.15rem;color:var(--accent);border:none}
+.bn-item{display:flex;gap:.8rem;padding:.6rem 0;border-bottom:1px solid var(--border);align-items:baseline}
+.bn-item:last-child{border-bottom:none;padding-bottom:0}
+.bn-date{font-size:.8rem;color:#888;white-space:nowrap;min-width:5.5rem}
+.bn-text{font-size:.93rem;line-height:1.5}
+.bn-text strong{color:var(--text)}
+@media print{.breaking-news{border:1px solid #ccc;break-inside:avoid}}
 `;
 
 
@@ -1030,7 +1038,12 @@ function main() {
       const days = (closes - now) / (1000 * 60 * 60 * 24);
       return days >= 0 && days <= 30;
     }).length,
+    ourFalsified: predEntries.filter(e => e.our_verdict === 'falsified').length,
+    ourUnfalsifiable: predEntries.filter(e => e.our_verdict === 'unfalsifiable').length,
+    ourRecycled: predEntries.filter(e => e.our_verdict === 'recycled').length,
   };
+  // Dead on arrival: count by our_verdict to avoid double-counting (restates_win overlaps with std_physics, unfalsifiable)
+  predCounts.deadOnArrival = predCounts.stdRelabel + predCounts.ourRecycled + predCounts.ourFalsified + predCounts.ourUnfalsifiable;
   console.log('Prediction counts:', JSON.stringify(predCounts));
 
   // Compute PROS-bucket counts (entry_type === 'prospective')
@@ -1214,6 +1227,18 @@ ${CSS}
 <div class="sc-number" style="font-size:1.4rem">Wrong Side</div>
 <div class="sc-label">Timestamp Error</div>
 <div class="sc-sublabel">His blockchain proof timestamps the <em>observations</em>, not the predictions. The cryptographic infrastructure is real — it just proves the wrong thing. <a href="#timestamp-error" onclick="showTab('timestamp');return false">Details →</a></div>
+</div>
+</div>
+
+<div class="breaking-news">
+<h2 class="bn-header">&#128240; Latest Findings</h2>
+<div class="bn-item">
+<span class="bn-date">2026-04-12</span>
+<span class="bn-text"><strong>Dome Moves the Sun 1,500 km to Fix One Problem — Breaks 8 Predictions.</strong> The model's own fix for the sun/firmament collision (splitting altitude into "apparent" 5,733 km and "physical" &lt; 4,200 km) creates a chain reaction: every prediction that depends on the sun's physical position inherits the contradiction. Three verdict upgrades to Self-Contradicted. <a href="#section-1-8" onclick="showTab('model');return false">Full analysis →</a></span>
+</div>
+<div class="bn-item">
+<span class="bn-date">2026-04-10</span>
+<span class="bn-text"><strong>${context.predCounts.total} Predictions Cataloged — ${context.predCounts.deadOnArrival} Are Dead on Arrival.</strong> We datamined every testable claim from the dome's predictions page. Of ${context.predCounts.total} entries: ${context.predCounts.stdRelabel} are standard physics relabeled as dome predictions, ${context.predCounts.ourFalsified} are already falsified by hard data, ${context.predCounts.ourRecycled} recycle existing WINs, and ${context.predCounts.ourUnfalsifiable} are untestable. <a href="#part6" onclick="showTab('predictions');return false">See the full catalog →</a></span>
 </div>
 </div>
 
