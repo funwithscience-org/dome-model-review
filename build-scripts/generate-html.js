@@ -1615,9 +1615,22 @@ window.addEventListener('load', function() {
         const parentTab = el.closest('.tab-content');
         if (parentTab) {
           showTab(parentTab.id);
+          expandToElement(el);
           setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'start' }), 150);
         }
       }
+    }
+  }
+
+  // Expand a <details> element and all its ancestors
+  function expandToElement(el) {
+    // If the element IS a <details>, open it
+    if (el.tagName === 'DETAILS') el.open = true;
+    // Open all ancestor <details> elements so the target is visible
+    let parent = el.closest('details');
+    while (parent) {
+      parent.open = true;
+      parent = parent.parentElement ? parent.parentElement.closest('details') : null;
     }
   }
 
@@ -1633,6 +1646,8 @@ window.addEventListener('load', function() {
           if (parentTab) {
             const tabId = parentTab.id;
             showTab(tabId);
+            // Expand any collapsed <details> so the target is visible
+            expandToElement(element);
             // Scroll to element after a brief delay
             setTimeout(() => {
               element.scrollIntoView({ behavior: 'smooth', block: 'start' });
