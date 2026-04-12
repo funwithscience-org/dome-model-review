@@ -65,6 +65,16 @@ Write to `monitor/decisions/daily-report-YYYY-MM-DDTHH-MM.json`:
       "action": "description",
       "urgency": "immediate|next_session|backlog"
     }
+  ],
+  "breaking_news_suggestions": [
+    {
+      "headline": "Short punchy headline (clickbait-y, max ~15 words)",
+      "summary": "2-3 sentence summary with specific numbers. Link to relevant section.",
+      "link_target": "#anchor-id",
+      "link_tab": "tab-name",
+      "source": "Which agent/analysis produced this finding",
+      "why_newsworthy": "Brief justification — what makes this a headline vs routine finding"
+    }
   ]
 }
 ```
@@ -116,6 +126,18 @@ Update `monitor/decisions/open-issues.json`:
 ## Step 5b: Archive Closed Issues
 
 If open-issues.json has >50 entries with status "fixed" or "wontfix" older than 7 days, move them to closed-issues.json (append). Keep only open + recently-closed in active file.
+
+## Step 6b: Breaking News Suggestions
+
+The overview page has a "Latest Findings" section (reverse-chronological, 3–5 items, slightly clickbait-y). **Adding items is a human decision** — your job is to surface candidates.
+
+**When to suggest:** A finding is newsworthy if it represents a major new argument, a dramatic self-contradiction, a significant dome site change, or a milestone in the predictions catalog. Routine patches, minor fixes, and incremental expansions are NOT news.
+
+**Good examples:** "Dome moves the sun to fix X, breaks Y other predictions." "N new predictions mined, M already falsified." "Dome author fixes [canary item] — confirms he's reading our review." "Kill-shot test X now has hard data: dome fails by N×."
+
+**Bad examples:** "Fixed a typo in Section 3.2." "Curmudgeon reviewed 5 more WINs." "Analyst expanded Section 6.8."
+
+Include `breaking_news_suggestions` in the daily report whenever you have a candidate. The analyst and poller can also flag items — look for `newsworthy` or `breaking_news` fields in their outputs. All suggestions go in the daily report and morning briefing for human review.
 
 ## Step 7: Morning Briefing
 
