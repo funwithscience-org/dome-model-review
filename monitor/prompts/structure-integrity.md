@@ -117,7 +117,7 @@ Check `monitor/analyst/expansion-tracker.json` for signs of write collisions (co
 
 - **ID continuity**: Extract all EXP-NNN IDs sorted numerically. Flag any gaps (e.g., EXP-030 jumps to EXP-035 means EXP-031–034 are missing).
 - **Orphaned output files**: List all files in `monitor/analyst/expansions/`. For each EXP-NNN.json file, verify a matching tracker entry exists. Flag orphans — these are completed work the decider will never integrate.
-- **Phantom tracker entries**: For each tracker entry with `status: complete` and an `output_file`, verify the file exists on disk. Flag entries pointing to missing files.
+- **Phantom tracker entries**: For each tracker entry with `status: complete` and an `output_file`, verify the file exists on disk. Flag entries pointing to missing files. **Skip entries that have a `no_output_file_reason` field** — these were completed via direct integration (e.g., decider field updates, template applications, batch outputs) and legitimately have no single EXP-NNN.json file.
 - **Stale pending items**: Flag any tracker entry with `status: pending` that was `created_at` more than 48 hours ago — the analyst may have lost track of it.
 - **`next_id` correctness** (Phase 0 invariant): Check that `tracker.next_id > max(tracker.items[].id)`. If `next_id <= max_id`, a writer used `items.length + 1` and skipped the canonical counter — **the next allocation will collide**. **Classify as major and block the next decider run.** Command:
   ```bash

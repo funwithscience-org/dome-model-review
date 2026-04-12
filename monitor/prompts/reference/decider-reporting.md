@@ -66,6 +66,13 @@ Write to `monitor/decisions/daily-report-YYYY-MM-DDTHH-MM.json`:
       "urgency": "immediate|next_session|backlog"
     }
   ],
+  // NOTE: Do NOT blindly echo findings from integrity/tinker reports into
+  // recommended_actions. Before surfacing an integrity finding:
+  // 1. Check whether it's already been reported in a previous daily report
+  // 2. If it has, either investigate it THIS run or drop it — don't keep echoing
+  // 3. For "phantom" or "missing file" findings, check for fields like
+  //    no_output_file_reason that explain legitimate absences
+  // Repeated unactioned recommendations waste human attention.
   "breaking_news_suggestions": [
     {
       "headline": "Short punchy headline (clickbait-y, max ~15 words)",
