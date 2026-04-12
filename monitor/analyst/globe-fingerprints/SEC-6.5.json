@@ -1,0 +1,85 @@
+{
+  "item_id": "SEC-6.5",
+  "item_type": "section",
+  "section_title": "The 4 Acknowledged Failures — 3 Refined, 1 Falsified, and a 5th That Doesn't Count",
+  "reviewed_at": "2026-04-12T07:14:50.553Z",
+  "fingerprints": [
+    {
+      "id": "SEC-6.5-FP1",
+      "fingerprint": "Polaris prediction function takes WGS84 latitude as axiomatic input",
+      "globe_value": "Polaris elevation = observer latitude (spherical astronomy)",
+      "dome_value": "predict_polaris_excess(lat) = 0.27 * (lat / 35.9) * exp(-((lat - 35.9)² / 1000)) — predicts a tiny EXCESS above the globe baseline",
+      "match_precision": "The dome's prediction IS the globe answer plus a 0.27° perturbation",
+      "why_it_matters": "The entire Polaris prediction framework takes the globe result (elevation ≈ latitude) as ground truth. The dome doesn't derive Polaris elevation from its own geometry (flat disc + Polaris at 6,500 km). If it did, the formula would be arctan(6500/d) where d is horizontal distance from pole — producing a smooth function of disc-radial distance, not of 'latitude.' Instead, the code uses WGS84 latitude directly, measuring the dome's contribution as a tiny residual on top of the globe's answer. The prediction literally cannot exist without the globe framework providing the baseline.",
+      "code_search": {
+        "terms_searched": [
+          "polaris",
+          "predict_polaris",
+          "W024",
+          "excess"
+        ],
+        "files_checked": [
+          "monitor.py"
+        ],
+        "found_in": "monitor.py lines 381-383: predict_polaris_excess(lat) = 0.27 * (lat / 35.9) * exp(-((lat - 35.9)**2) / 1000)",
+        "derivation_present": false,
+        "notes": "Function is pure curve-fitting with no connection to dome geometry parameters (disc_radius, polaris_height=6500 km). The 0.27° and 35.9° are fitted constants, not derived from any dome equation."
+      },
+      "confidence": 0.95,
+      "suggested_text": "The dome's Polaris prediction function (<code>predict_polaris_excess</code> in monitor.py) takes WGS84 latitude as its input and predicts a 0.27° excess at 35.9°N — treating the globe's prediction (Polaris elevation ≈ latitude) as axiomatic. The dome never derives Polaris elevation from its own parameters; it measures a tiny perturbation on top of the globe baseline."
+    },
+    {
+      "id": "SEC-6.5-FP2",
+      "fingerprint": "Moon angular diameter reframed from dome prediction (local altitude) to globe measurement (apogee/perigee orbital variation)",
+      "globe_value": "Moon perigee/apogee angular diameter variation: ~14% (orbital distance 356,500–406,700 km)",
+      "dome_value": "monitor.py line 870-878: predicted 11-14% variation, observed 12.5%, sourced from 'NASA JPL Horizons (OPEN-007 static win)'",
+      "match_precision": "Predicted=11-14%, Observed=12.5% — matches because the prediction was reframed to match the globe-framework measurement",
+      "why_it_matters": "The dome's original W021 predicted >2% moonrise-to-transit variation as a consequence of a local moon at 2,534 km altitude. That geometry actually produces ~80% variation (catastrophic failure). The current monitor.py entry tracks apogee/perigee variation instead — a measurement that requires the moon to be at ~384,000 km in a Keplerian orbit around the Earth. The data source (NASA JPL Horizons) is an ephemeris computed using globe-framework orbital mechanics. The dome silently replaced a dome-geometry prediction with a globe-framework measurement and now calls it a pass.",
+      "code_search": {
+        "terms_searched": [
+          "Moon Angular",
+          "W021",
+          "moon_alt",
+          "angular_diam",
+          "JPL"
+        ],
+        "files_checked": [
+          "monitor.py",
+          "api/current/parameters.json"
+        ],
+        "found_in": "monitor.py lines 870-878: Moon Angular Diameter Variation entry; parameters.json: moon_altitude=2534 km",
+        "derivation_present": false,
+        "notes": "parameters.json says moon_altitude=2534 km ('V48 triangulation'). But monitor.py uses apogee/perigee variation (a globe orbital concept, not local altitude), sourced from NASA JPL Horizons. The two frameworks are geometrically incompatible."
+      },
+      "confidence": 0.92,
+      "suggested_text": "The dome's moon angular diameter monitoring (monitor.py entry 36) now tracks apogee/perigee variation (11–14%, sourced from NASA JPL Horizons) — a globe-framework orbital measurement. The dome's own parameters place the moon at 2,534 km altitude, which would produce ~80% moonrise-to-transit variation. The prediction was silently reframed from dome geometry (local moon) to globe orbital mechanics (distant moon), and the pass/fail check uses globe-computed ephemeris data."
+    },
+    {
+      "id": "SEC-6.5-FP3",
+      "fingerprint": "Roaring 40s prediction depends on globe-specific meteorological phenomena",
+      "globe_value": "Roaring 40s: persistent westerly winds at 40–60°S latitude, driven by Coriolis deflection on a rotating sphere. 500 hPa geopotential height: defined relative to WGS84 reference geoid.",
+      "dome_value": "W020: 500hPa geopotential height anomaly ≥3% above climatology in the 40–60°S band",
+      "match_precision": "N/A — the prediction invokes a globe-framework phenomenon",
+      "why_it_matters": "On the dome's flat disc, 40–60°S maps to a ring at disc radius 14,400–16,700 km. There is no physical mechanism in the dome model to produce persistent westerly winds in a ring at that radius — the Roaring 40s exist because of Coriolis deflection on a rotating sphere. The concept of '500 hPa geopotential height' is defined relative to the WGS84 geoid (a globe reference surface). The dome is predicting the behavior of a phenomenon that only exists in globe physics, using a measurement framework that only exists in globe geodesy.",
+      "code_search": {
+        "terms_searched": [
+          "roaring",
+          "500hPa",
+          "geopotential",
+          "W020",
+          "AAO"
+        ],
+        "files_checked": [
+          "monitor.py"
+        ],
+        "found_in": "Not found in code — W020 is not in the current monitor.py audit loop (no live fetch). The prediction was tested manually against NOAA AAO data.",
+        "derivation_present": false,
+        "notes": "The absence from monitor.py is itself notable: the dome cannot automate a test for a prediction whose underlying phenomenon requires globe physics to define."
+      },
+      "confidence": 0.85,
+      "suggested_text": null
+    }
+  ],
+  "section_level_finding": "Section 6.5 documents the dome's failure accounting accurately but misses a pattern: every failed prediction was tested against globe-framework measurements (WGS84 latitude for Polaris, spherical coordinates for NMP drift, geoid-referenced geopotential for Roaring 40s, globe orbital mechanics for moon diameter). The dome's failure-tracking infrastructure is as globe-dependent as its success-tracking infrastructure. The reframing of W021 (moon angular diameter) from a dome-geometry prediction to a globe-orbital measurement is particularly damning: the dome acknowledges a failure by silently switching to the globe framework and calling it a pass.",
+  "opportunity": "A 1–2 sentence addition to Section 6.5's concluding paragraph could note that the dome's failure-detection framework is itself globe-dependent, reinforcing the broader theme of Section 6.4 (Globe Values Relabeled as Dome Predictions). The moon diameter reframing deserves a specific callout, perhaps with a cross-reference to WIN-021's detail panel."
+}
