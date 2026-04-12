@@ -1292,7 +1292,7 @@ ${CSS}
 <div class="vl vl-refuted"><strong>Refuted by Data:</strong> Direct physical measurements or experiments contradict the specific claim. Hard evidence exists proving the stated behavior does not occur or the cited source does not contain what is claimed.</div>
 <div class="vl vl-std"><strong>Standard Model Explains:</strong> The observation cited is real, but mainstream physics already provides a complete, quantitative explanation. The dome model adds no predictive power beyond what existing models already achieve.</div>
 <div class="vl vl-selfcon"><strong>Self-Contradicted:</strong> The dome's own stated geometry, if worked through honestly, predicts a value radically different from what the author claims. Agreement with observations is achieved only by substituting globe formulas, ignoring the dome's own geometry, or curve-fitting. See <a href="#part2" onclick="showTab('selftest');return false">Part 2</a> for derivations.</div>
-<div class="vl vl-misleading"><strong>Misleading:</strong> The data is misrepresented, cherry-picked, the cited values do not match the actual source, or logically contradictory results are both claimed as confirmations.</div>
+<div class="vl vl-misleading"><strong>Misleading:</strong> The data is misrepresented, cherry-picked, the cited values do not match the actual source, logically contradictory results are both claimed as confirmations, or the same observation is counted as multiple independent wins.</div>
 <div class="vl vl-notdemo"><strong>Not Demonstrated:</strong> The claim relies on unreplicated fringe experiments or unverified data that has not been independently confirmed.</div>
 <div class="vl vl-unfalsifiable"><strong>Unfalsifiable:</strong> The claim cannot be tested by any physical measurement. Typically theological assertions.</div>
 </div>
@@ -1375,6 +1375,29 @@ ${sectionNav(null, null, 'evaluate', 'Evaluation Guide')}
 <p><strong>Is the claim falsifiable?</strong> A claim that can explain any possible observation — because it invokes a free parameter or unmeasurable mechanism — is not a scientific prediction. It is not wrong; it is untestable. Identifying unfalsifiability is not dismissal; it is a precise statement about what kind of claim is being made.</p>
 
 <p><strong>Are the same data being counted multiple times?</strong> If tidal constituent periods (M2, S2, K1, O1) are each counted as separate predictions, but they all come from a single astronomical dataset, the actual number of independent predictions is one, not four. Counting methodology matters.</p>
+
+</div></details>
+
+<details id="eg-verdicts"><summary class="ps-summary"><h2 style="display:inline;margin:0">Verdict Assignment Criteria</h2><p class="ps-tldr">Each WIN receives the verdict matching its primary failure mode. When a WIN fails in multiple ways, the most structurally damaging failure takes priority. The six categories are not ranked by severity — they describe different kinds of failure, not degrees of it.</p></summary><div class="ps-detail">
+
+<p>The six verdict categories describe qualitatively different failure modes. A WIN that contradicts the dome's own equations fails differently from one that merely restates standard physics. Assigning the correct category matters because a dome defender who can show a misclassified WIN gains a process objection against the entire review. Below we make the assignment criteria explicit so that any reader — or any AI — can audit our work.</p>
+
+<p><strong>The primary-issue rule.</strong> Most WINs exhibit multiple problems: a claim might both restate standard physics and involve data misrepresentation. We assign the verdict that captures the <em>primary</em> structural failure — the one that, if corrected, would still leave the claim unsupported. For example: if a WIN cites wrong numbers AND standard physics explains the observation, the primary issue is the data error (Refuted by Data) if the numbers are verifiably wrong, or standard physics (Std Model Explains) if the numbers are correct but non-discriminating. The secondary issue is noted in the detailed analysis but does not determine the verdict.</p>
+
+<p><strong>Misleading vs. Std Model Explains — the decision boundary.</strong> These two categories share the most porous border. The distinguishing question is: <em>does the dome actively mishandle the evidence, or does it simply present a real observation that standard physics already explains?</em></p>
+
+<ul>
+<li><strong>Std Model Explains</strong> applies when the observation is accurately represented, the data sources are correctly cited, and the only problem is that standard physics predicts the same result without dome geometry. The dome's claim is not wrong — it is redundant. No deception is implied.</li>
+<li><strong>Misleading</strong> applies when the dome's presentation involves an additional structural problem beyond non-discrimination: cherry-picked data ranges, misrepresented source values, logically contradictory claims both counted as confirmations, the same data counted multiple times, or circular derivations where the "prediction" was fitted to the data it claims to predict. Misleading implies the evidence has been mishandled, not merely that it is unpersuasive.</li>
+</ul>
+
+<p>Some WINs classified as Std Model Explains include secondary notes about duplication or overlap with other WINs in their detailed analysis. These notes are informational — the primary reason the WIN fails is that standard physics explains the observation, and the duplication is a compounding but not the defining issue.</p>
+
+<p><strong>Substructure within Misleading.</strong> The Misleading verdicts encompass several distinct failure patterns: data misrepresentation (cited values don't match the source), count inflation (the same observation counted as multiple WINs), circular calibration (curve-fitting to known data then claiming prediction), and false-dilemma framing (citing a competitor's unsolved problem as dome evidence without offering dome-specific physics). We do not formally subdivide the category because the defining feature is the same in each case: the evidence has been actively mishandled, not merely interpreted differently. Readers who want the specific failure pattern for each WIN will find it in the point-by-point analysis in <a href="#part3" onclick="showTab('wins');return false">Part 3</a>.</p>
+
+<p><strong>Self-Contradicted: the internal-consistency standard.</strong> This verdict applies only when the dome's own published equations, worked through with the dome's own stated parameters, produce a result that contradicts the dome's own claimed value. No external physics is invoked. This is the structurally strongest category because no amount of "mainstream science is wrong" can rebut it — the contradiction is between the model and itself.</p>
+
+<p><strong>On the absence of a "Confirmed" category.</strong> A careful reader will notice that no verdict category corresponds to "the dome model is correct." This is not an oversight. If we found a WIN where the dome's prediction — derived from dome geometry, not adopted from standard physics — preceded and matched an observation that standard physics could not explain, we would add such a category. We have not found one. The category's absence reflects the evidence, not an assumption.</p>
 
 </div></details>
 
