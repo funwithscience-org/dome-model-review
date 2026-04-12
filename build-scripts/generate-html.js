@@ -527,6 +527,7 @@ details .ks-summary::after{content:'▸ expand';display:block;font-size:.75rem;c
 details[open] .ks-summary::after{content:'▾ collapse'}
 details .ks-detail{padding:.6rem 1.2rem 1.2rem;border:1px solid var(--border);border-top:none;border-radius:0 0 6px 6px;background:var(--bg);margin-bottom:1.5rem}
 details[open] .ks-summary{border-radius:6px 6px 0 0;margin-bottom:0;border-bottom:none}
+.evidence details.win-section{margin:.8rem 0}.evidence details.win-section .ks-summary{border-left-width:3px;padding:.6rem 1rem;margin:0}.evidence details.win-section .ks-detail{padding:.4rem 1rem 1rem}
 
 details .ps-summary{cursor:pointer;list-style:none;padding:.8rem 1.2rem;border-radius:6px;background:var(--card-bg);border:1px solid var(--border);border-left:4px solid var(--heading);margin:1.2rem 0 0}
 details .ps-summary::-webkit-details-marker{display:none}
@@ -619,11 +620,27 @@ function formatWinDetail(win) {
   }
 
   if (win.detail_evidence) {
-    html += `<p><strong>Evidence:</strong> ${win.detail_evidence}</p>\n`;
+    const evTldr = win.tldr_evidence
+      ? `<p class="ks-tldr">${escapeHtml(win.tldr_evidence)}</p>`
+      : '';
+    if (evTldr) {
+      html += `<details class="win-section"><summary class="ks-summary"><strong>Evidence</strong>${evTldr}</summary>\n`;
+      html += `<div class="ks-detail"><p>${win.detail_evidence}</p></div>\n</details>\n`;
+    } else {
+      html += `<p><strong>Evidence:</strong> ${win.detail_evidence}</p>\n`;
+    }
   }
 
   if (win.detail_verdict_text) {
-    html += `<p><span class="verdict-tag ${verdictShortClass}">${escapeHtml(win.verdict).toUpperCase()}</span> ${win.detail_verdict_text}</p>\n`;
+    const vdTldr = win.tldr_verdict
+      ? `<p class="ks-tldr">${escapeHtml(win.tldr_verdict)}</p>`
+      : '';
+    if (vdTldr) {
+      html += `<details class="win-section"><summary class="ks-summary"><span class="verdict-tag ${verdictShortClass}">${escapeHtml(win.verdict).toUpperCase()}</span>${vdTldr}</summary>\n`;
+      html += `<div class="ks-detail"><p>${win.detail_verdict_text}</p></div>\n</details>\n`;
+    } else {
+      html += `<p><span class="verdict-tag ${verdictShortClass}">${escapeHtml(win.verdict).toUpperCase()}</span> ${win.detail_verdict_text}</p>\n`;
+    }
   }
 
   if (win.detail_extra) {
