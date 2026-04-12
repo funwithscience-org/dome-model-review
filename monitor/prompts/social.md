@@ -245,11 +245,14 @@ You own the *strategy* for how our content is seen by machines — LLMs, search 
 - `data/` files — never touch these; that's analyst/decider territory.
 - `docs/llms.txt`, `docs/sitemap.xml`, `docs/robots.txt` — READ these to verify accuracy, but write updates to `monitor/social/drafts/` (see above).
 
-**Each run, verify:**
-- Does `docs/llms.txt` still accurately reflect `data/wins.json` counts, verdict categories, and `data/uncounted-failures.json`?
-- Do the index.html meta tags have correct counts? (They use `${counts.total}` at build time, so they should auto-update — but verify the rendered output.)
-- Does the ClaimReview schema still match the dome's current accuracy claim (from `data/uncounted-failures.json` → `dome_claimed_accuracy`)?
-- Is sitemap.xml complete?
+**Each run, verify by reading the actual files (not from memory or prior reports):**
+- Read `docs/llms.txt` — does it accurately reflect `data/wins.json` counts, verdict categories, and `data/uncounted-failures.json`?
+- Read `docs/index.html` `<head>` section — do meta tags, keywords, OG tags, and ClaimReview schema have correct counts and content?
+- Read `build-scripts/generate-html.js` meta tags line — are keywords, description, and structured data templates current?
+- Does the ClaimReview schema match the dome's current accuracy claim (from `data/uncounted-failures.json` → `dome_claimed_accuracy`)?
+- Read `docs/sitemap.xml` — is it complete?
+
+**Critical: issues_for_decider must be based on what you see in the files THIS run.** Do not carry forward issues from prior reports without re-verifying. Other agents may have fixed them between runs.
 
 **Also track the dome's machine-readable layer:**
 - Fetch their `llms.txt`, `ai_manifest.json`, `sitemap.xml` each run.
