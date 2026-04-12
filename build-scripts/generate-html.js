@@ -1234,11 +1234,11 @@ ${CSS}
 <h2 class="bn-header">&#128240; Latest Findings</h2>
 <div class="bn-item">
 <span class="bn-date">2026-04-12</span>
-<span class="bn-text"><strong>Dome Moves the Sun 1,500 km to Fix One Problem — Breaks 8 Predictions.</strong> The model's own fix for the sun/firmament collision (splitting altitude into "apparent" 5,733 km and "physical" &lt; 4,200 km) creates a chain reaction: every prediction that depends on the sun's physical position inherits the contradiction. Three verdict upgrades to Self-Contradicted. <a href="#section-1-8" onclick="showTab('model');return false">Full analysis →</a></span>
+<span class="bn-text"><strong>Dome Moves the Sun 1,500 km to Fix One Problem — Breaks 8 Predictions.</strong> The model's own fix for the sun/firmament collision (splitting altitude into "apparent" 5,733 km and "physical" &lt; 4,200 km) creates a chain reaction: every prediction that depends on the sun's physical position inherits the contradiction. Three verdict upgrades to Self-Contradicted. <a href="#section-1-8">Full analysis →</a></span>
 </div>
 <div class="bn-item">
 <span class="bn-date">2026-04-10</span>
-<span class="bn-text"><strong>${context.predCounts.total} Predictions Cataloged — ${context.predCounts.deadOnArrival} Are Dead on Arrival.</strong> We datamined every testable claim from the dome's predictions page. Of ${context.predCounts.total} entries: ${context.predCounts.stdRelabel} are standard physics relabeled as dome predictions, ${context.predCounts.ourFalsified} are already falsified by hard data, ${context.predCounts.ourRecycled} recycle existing WINs, and ${context.predCounts.ourUnfalsifiable} are untestable. <a href="#pred-mined" onclick="showTab('predictions');return false">See the full catalog →</a></span>
+<span class="bn-text"><strong>${context.predCounts.total} Predictions Cataloged — ${context.predCounts.deadOnArrival} Are Dead on Arrival.</strong> We datamined every testable claim from the dome's predictions page. Of ${context.predCounts.total} entries: ${context.predCounts.stdRelabel} are standard physics relabeled as dome predictions, ${context.predCounts.ourFalsified} are already falsified by hard data, ${context.predCounts.ourRecycled} recycle existing WINs, and ${context.predCounts.ourUnfalsifiable} are untestable. <a href="#pred-mined">See the full catalog →</a></span>
 </div>
 </div>
 
@@ -1569,7 +1569,8 @@ ${sectionNav('ai', 'AI & Conclusions', null, null)}
 </div>
 
 <script>
-function showTab(tabId) {
+function showTab(tabId, opts) {
+  opts = opts || {};
   // Hide all tabs
   const allTabs = document.querySelectorAll('.tab-content');
   allTabs.forEach(tab => tab.classList.remove('active'));
@@ -1594,27 +1595,33 @@ function showTab(tabId) {
     }
   });
 
-  // Store in URL hash (optional)
-  window.location.hash = tabId;
-
-  // Scroll to top
-  window.scrollTo(0, 0);
+  if (!opts.skipHash) {
+    window.location.hash = tabId;
+  }
+  if (!opts.skipScroll) {
+    window.scrollTo(0, 0);
+  }
 }
 
 // On page load, check for hash and show appropriate tab
 window.addEventListener('load', function() {
+  // Replace initial history entry so back button can return to overview
+  history.replaceState({ tab: 'overview', anchor: null }, '', window.location.href);
+
   const hash = window.location.hash.slice(1);
   if (hash) {
     const el = document.getElementById(hash);
     if (el) {
       // Check if hash IS a tab
       if (el.classList.contains('tab-content')) {
-        showTab(hash);
+        showTab(hash, { skipHash: true });
+        history.replaceState({ tab: hash, anchor: null }, '', '#' + hash);
       } else {
         // Find which tab contains this element
         const parentTab = el.closest('.tab-content');
         if (parentTab) {
-          showTab(parentTab.id);
+          showTab(parentTab.id, { skipHash: true, skipScroll: true });
+          history.replaceState({ tab: parentTab.id, anchor: hash }, '', '#' + hash);
           expandToElement(el);
           setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'start' }), 150);
         }
@@ -1645,7 +1652,10 @@ window.addEventListener('load', function() {
           let parentTab = element.closest('.tab-content');
           if (parentTab) {
             const tabId = parentTab.id;
-            showTab(tabId);
+            // Use skipHash + skipScroll so showTab doesn't clobber our anchor or fight scrollIntoView
+            showTab(tabId, { skipHash: true, skipScroll: true });
+            // Push the anchor hash into history so back button works
+            history.pushState({ tab: tabId, anchor: target }, '', '#' + target);
             // Expand any collapsed <details> so the target is visible
             expandToElement(element);
             // Scroll to element after a brief delay
@@ -1657,6 +1667,29 @@ window.addEventListener('load', function() {
         }
       }
     });
+  });
+
+  // Back/forward button support
+  window.addEventListener('popstate', function(e) {
+    const hash = window.location.hash.slice(1);
+    if (!hash) {
+      // No hash — show overview tab
+      showTab('overview', { skipHash: true });
+      return;
+    }
+    const el = document.getElementById(hash);
+    if (el) {
+      if (el.classList.contains('tab-content')) {
+        showTab(hash, { skipHash: true });
+      } else {
+        const parentTab = el.closest('.tab-content');
+        if (parentTab) {
+          showTab(parentTab.id, { skipHash: true, skipScroll: true });
+          expandToElement(el);
+          setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'start' }), 150);
+        }
+      }
+    }
   });
 });
 </script>
