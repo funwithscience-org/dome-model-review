@@ -10,6 +10,27 @@ If digest is stale (>6h): `node build-scripts/digest-reviews.js --workspace .`
 
 **Issue creation:** Cycle 1 issues already exist via `backfill-issues.js`. Your job is patches. For Cycle 2+ or new sections, create issues for new holes, then update the processed ledger.
 
+### Staleness Gate (before creating issues or assigning analyst)
+
+Curmudgeon reviews in the digest may predate patches that already fixed the issue. **Before creating an `assigned-analyst` issue from a digest entry**, run this check:
+
+1. **Get the review date.** The digest entry's source review file has `reviewed_at`. Also check the review's `cycle` — cycle 1 reviews are older and more likely stale.
+2. **Check if the target was patched since the review.**
+```bash
+# For a section target (e.g., SEC-2b.7 lives in data/sections.json):
+git log --since="<reviewed_at>" --oneline -- data/sections.json data/wins.json | head -5
+```
+If commits exist after the review date touching the target file, the section may have been rewritten.
+
+3. **Quick content verification.** If the target was patched post-review, read the CURRENT section text (from the clone, not FUSE) and check whether the specific hole described in the digest entry still exists. Look for the exact claim the curmudgeon flagged — if the text no longer contains it, the issue is stale.
+
+4. **Disposition:**
+   - **Still present** → create issue normally, assign as needed.
+   - **Already fixed** → skip issue creation. Log in daily report: "Stale digest entry for <target>: <hole summary> — already resolved by commit <hash>. Skipping." Mark the digest entry as processed.
+   - **Uncertain** → create the issue but at **one severity level lower** and add `"staleness_note": "Target was patched post-review; verify finding still applies before deep investigation"` to the issue. This lets the analyst do a quick triage rather than a full rewrite.
+
+This gate saves analyst Opus tokens. A 30-second git-log + content check here prevents a 5-minute analyst investigation that concludes "ALREADY_RESOLVED."
+
 ## Step 2a: Integrate Completed Expansions (EVERY run, do FIRST)
 
 ```bash
@@ -62,6 +83,8 @@ if(!existing){
 ## Step 2b: Yeet Scan (EVERY run)
 
 Scan ALL open issues for anything that can't be fixed with find/replace — prose rewrites, argument restructuring, 100+ words of new prose, dome source research needed. **Yeet ALL immediately.** Don't hold back because the analyst queue is deep.
+
+**Before yeeting:** Apply the Staleness Gate (Step 2 above) to each issue. If the curmudgeon review that sourced the issue is older than the last patch to the target section, verify the finding still applies. Auto-close stale issues instead of assigning them to the analyst.
 
 ```bash
 node -e "const t=JSON.parse(require('fs').readFileSync('monitor/analyst/expansion-tracker.json','utf8'));t.items.filter(i=>i.status!=='complete'&&i.status!=='revised').forEach(i=>console.log(i.id,i.issue_ids,i.target.slice(0,60)))"
