@@ -178,17 +178,20 @@ console.log('OK: all ' + needed.length + ' coupled-category items have priority-
 
 Classify decoupled items as **major**. The fix is usually a one-line decider patch to push the missing entry onto the queue with the EXP id as `target_id`; the integrity agent does not push itself — it reports and lets the decider reconcile.
 
-### 7d. Workspace-Sync Direction-Violation Skip Log (Phase 1 Change 1.8)
+### 7d. Workspace-Sync Skip Log (Phase 1 Change 1.8)
 
-The workspace-sync agent now refuses to push any file classified as git-owned (Change 1.2 direction guard). When it skips a file, it writes a line to `/tmp/workspace-sync-skips.log` and — for persistence across ephemeral sessions — appends a JSON record to `monitor/integrity/workspace-sync-skips.jsonl`. Each record is one line of JSON with `{timestamp, run_id, path, reason}`.
+The workspace-sync agent logs two types of skips to `monitor/integrity/workspace-sync-skips.jsonl`:
 
-This log is the early-warning signal that a prompt edited a git-owned file from the wrong side of the boundary. A single entry is a curiosity; a sustained pattern (the same file skipped on consecutive runs) means a writer is stuck in a bad loop.
+- **`git-owned; direction violation`** — A workspace writer tried to push a file that belongs to git. This is a real bug: some agent is writing to the wrong side of the boundary.
+- **`mtime-guard; git newer`** — The git version of a workspace-owned file is newer than the workspace copy. This is the mtime guard working correctly — another agent (usually the decider) committed the file directly to git, making the workspace copy stale. This is **normal and expected** for files like `review-state.json` and `category-proposals/*.json` that multiple agents touch.
+
+**Only escalate direction violations.** Mtime-guard skips are informational — they indicate a file is effectively written from git, not a boundary-crossing bug.
 
 ```bash
 node -e "
 const fs=require('fs');
 const path='monitor/integrity/workspace-sync-skips.jsonl';
-if (!fs.existsSync(path)) { console.log('OK: no skip log yet (workspace-sync never tripped the direction guard)'); process.exit(0); }
+if (!fs.existsSync(path)) { console.log('OK: no skip log yet'); process.exit(0); }
 const lines=fs.readFileSync(path,'utf8').split('\n').filter(Boolean);
 const recent=lines.slice(-200).map(l=>{try{return JSON.parse(l)}catch{return null}}).filter(Boolean);
 const now=Date.now();
@@ -197,23 +200,43 @@ const recentWindow=recent.filter(r => {
   const t=Date.parse(r.timestamp||'');
   return Number.isFinite(t) && (now - t) < windowMs;
 });
+
+// Separate direction violations from mtime-guard skips
+const dirViolations = recentWindow.filter(r => (r.reason||'').includes('direction violation'));
+const mtimeSkips = recentWindow.filter(r => (r.reason||'').includes('mtime-guard'));
+
+// Only escalate direction violations
 const byPath={};
-recentWindow.forEach(r=>{ byPath[r.path]=(byPath[r.path]||0)+1 });
+dirViolations.forEach(r=>{ byPath[r.path]=(byPath[r.path]||0)+1 });
 const repeated=Object.entries(byPath).filter(([,n])=>n>=3);
 if (repeated.length) {
   console.error('MAJOR: direction-violation skips repeating in the last 24h — a writer is editing a git-owned file from the workspace side:');
   repeated.forEach(([p,n])=>console.error('  '+p+' ('+n+' skips)'));
   process.exit(1);
 }
-if (recentWindow.length) {
-  console.log('OK: '+recentWindow.length+' skip(s) in the last 24h, none repeated — transient, watch next run');
-} else {
+
+// Report mtime-guard skips as informational (not a bug)
+if (mtimeSkips.length) {
+  const mtimePaths = {};
+  mtimeSkips.forEach(r=>{ mtimePaths[r.path]=(mtimePaths[r.path]||0)+1 });
+  console.log('INFO: '+mtimeSkips.length+' mtime-guard skip(s) in 24h (normal — git version is newer):');
+  Object.entries(mtimePaths).forEach(([p,n])=>console.log('  '+p+' ('+n+'x)'));
+}
+
+if (dirViolations.length && !repeated.length) {
+  console.log('OK: '+dirViolations.length+' direction-violation skip(s) in 24h, none repeated — transient');
+} else if (!dirViolations.length && !mtimeSkips.length) {
   console.log('OK: no skips in the last 24h');
+} else if (!dirViolations.length) {
+  console.log('OK: no direction violations (mtime-guard skips are normal)');
 }
 "
 ```
 
-Classify repeated skips (same path, ≥3 times in 24h) as **major** and include the list in the integrity report so the tinker or a human can trace the offending writer. A single transient skip is **informational** — log it but don't escalate.
+Classify:
+- **Major**: Repeated direction-violation skips (same path, ≥3 in 24h) — a writer is on the wrong side of the boundary.
+- **Informational**: Mtime-guard skips — normal operation, do not escalate. A file like `review-state.json` showing repeated mtime-guard skips just means the decider is updating it directly in git, which is fine.
+- **Moderate**: A single direction-violation skip — transient, watch next run.
 
 ### 7e. Curmudgeon → Decider Digest Coverage
 

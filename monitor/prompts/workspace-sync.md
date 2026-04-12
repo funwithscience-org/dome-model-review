@@ -132,7 +132,7 @@ smart_copy() {
   if [ "$ws_mtime" -gt "$git_time" ]; then
     cp "$src" "$dst"
   else
-    echo "SKIP (git newer than workspace): $dst (git $(date -u -d @$git_time +%FT%TZ 2>/dev/null || echo $git_time), ws $(date -u -d @$ws_mtime +%FT%TZ 2>/dev/null || echo $ws_mtime))" >> "$SKIP_LOG"
+    echo "SKIP (mtime-guard; git newer): $dst (git $(date -u -d @$git_time +%FT%TZ 2>/dev/null || echo $git_time), ws $(date -u -d @$ws_mtime +%FT%TZ 2>/dev/null || echo $ws_mtime))" >> "$SKIP_LOG"
   fi
 }
 
@@ -199,8 +199,12 @@ if [ -s "$SKIP_LOG" ]; then
   echo "⚠️  Workspace-sync skipped $(wc -l < "$SKIP_LOG") file(s):"
   cat "$SKIP_LOG"
   echo ""
-  echo "If 'git newer than workspace' keeps happening, it means build.js publish sync isn't running from the sessions that made those commits (see PROP-004). The sparing itself is correct — better to leave git's newer version than revert it."
-  echo "If 'git-owned; direction violation' keeps happening, a writer is editing a git-owned file from the workspace side — investigate."
+  echo "Skip types:"
+  echo "  'mtime-guard; git newer' = normal. Another agent committed this file directly to git"
+  echo "    (e.g., decider). The workspace copy is stale. This is the guard WORKING, not a bug."
+  echo "    Sustained skips on the same file just mean that file is effectively git-written."
+  echo "  'git-owned; direction violation' = a workspace writer tried to push a file that belongs"
+  echo "    to git. Investigate which agent is writing to the wrong side of the boundary."
 
   # Persist skip records to monitor/integrity/ so the structure-integrity agent
   # (Section 7d, Phase 1 Change 1.8) can detect sustained patterns across
