@@ -1022,7 +1022,7 @@ function main() {
     pending: predEntries.filter(e => e.author_status === 'pending').length,
     confirmed: predEntries.filter(e => e.author_status === 'confirmed').length,
     falsified: predEntries.filter(e => e.author_status === 'falsified').length,
-    expired: predEntries.filter(e => e.author_status === 'expired').length,
+    expired: predEntries.filter(e => e.author_status === 'expired' || e.window_expired).length,
     stdRelabel: predEntries.filter(e => e.our_verdict === 'standard_physics').length,
     testable: predEntries.filter(e => e.testability === 'testable').length,
     domeDerived: predEntries.filter(e => e.our_verdict === 'dome_geometry').length,
