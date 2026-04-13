@@ -1235,7 +1235,7 @@ ${CSS}
 <h2 class="bn-header">&#128240; Latest Findings</h2>
 <div class="bn-item">
 <span class="bn-date">2026-04-12</span>
-<span class="bn-text"><strong>Dome Moves the Sun 1,500 km to Fix One Problem — Breaks 8 Predictions.</strong> The model's own fix for the sun/firmament collision (splitting altitude into "apparent" 5,733 km and "physical" &lt; 4,200 km) creates a chain reaction: every prediction that depends on the sun's physical position inherits the contradiction. Three verdict upgrades to Self-Contradicted. <a href="#section-1-8">Full analysis →</a></span>
+<span class="bn-text"><strong>Dome's Refraction Fix Destroys Its Own Coordinate System.</strong> To avoid a sun/firmament collision, the model declares the sun an optical illusion — but the same refractive medium (n(r) = 1.2–2.8, vs Earth's 1.0003) contaminates every Polaris-based distance measurement the dome uses to build its map. The coordinate system collapses, taking 22 dependent WINs with it. <a href="#section-1-8">Full analysis →</a></span>
 </div>
 <div class="bn-item">
 <span class="bn-date">2026-04-10</span>
