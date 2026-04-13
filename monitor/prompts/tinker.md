@@ -39,8 +39,8 @@ done | sort -n | head -5
 Trigger: Any output older than expected, or previous report flagged a stalled agent.
 → Read `monitor/prompts/reference/tinker-pipeline-health.md`, execute that procedure.
 
-**Mode 2 — Infrastructure & FUSE** (run if staleness or auth issues detected)
-Check: Are workspace files fresh? Is git auth working? Any error patterns in agent outputs?
+**Mode 2 — Infrastructure & FUSE** (run if staleness, auth, or disk issues detected)
+Check: Are workspace files fresh? Is git auth working? Is disk space safe? Any error patterns in agent outputs?
 ```bash
 # Quick FUSE check — md5 hash key files against GitHub (not just record counts!)
 # A count-only check misses stale build-scripts, HTML, and config files.
@@ -55,8 +55,15 @@ done
 # Quick auth check
 TOKEN=$(git -C "${WORKSPACE}" remote get-url origin 2>/dev/null | grep -oP 'x-access-token:\K[^@]+')
 [ -n "$TOKEN" ] && curl -s -o /dev/null -w "Auth: %{http_code}" -H "Authorization: token $TOKEN" "https://api.github.com/repos/funwithscience-org/dome-model-review" || echo "Auth: NO TOKEN"
+# Disk space check — the sandbox has ~10GB total with ~8GB used by the system image.
+# Agent clones (~76MB each) accumulate fast at churn-and-burn rates.
+AVAIL_MB=$(df --output=avail -BM / | tail -1 | tr -d ' M')
+USE_PCT=$(df --output=pcent / | tail -1 | tr -d ' %')
+echo "DISK: ${AVAIL_MB}MB free (${USE_PCT}% used)"
+if [ "$USE_PCT" -ge 90 ]; then echo "DISK CRITICAL: ≥90% used — agents will fail on next clone"; fi
+if [ "$USE_PCT" -ge 80 ]; then echo "DISK WARNING: ≥80% used — one bad run from full"; fi
 ```
-Trigger: Any STALE file, auth failure, or previous report flagged FUSE/infra issues.
+Trigger: Any STALE file, auth failure, disk ≥80%, or previous report flagged FUSE/infra issues.
 → Read `monitor/prompts/reference/tinker-infrastructure.md`, execute that procedure.
 
 **Mode 3 — Cost Engineering & Architecture** (run when pipeline is healthy)
