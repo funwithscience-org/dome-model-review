@@ -26,7 +26,20 @@ If commits exist after the review date touching the target file, the section may
 
 4. **Disposition:**
    - **Still present** → create issue normally, assign as needed.
-   - **Already fixed** → skip issue creation. Log in daily report: "Stale digest entry for <target>: <hole summary> — already resolved by commit <hash>. Skipping." Mark the digest entry as processed.
+   - **Already fixed** → skip issue creation. Log in daily report: "Stale digest entry for <target>: <hole summary> — already resolved by commit <hash>. Skipping." **AND mark the review file processed by appending its filename to `monitor/decisions/processed-reviews.json` `processed` array.** This is REQUIRED — without it, the next digest run will re-discover the same stale review and you'll waste another cycle on it. Snippet:
+```bash
+node -e "
+const fs=require('fs');
+const p=JSON.parse(fs.readFileSync('monitor/decisions/processed-reviews.json','utf8'));
+const toAdd=['<filename1>.json','<filename2>.json']; // bare filenames, no path prefix
+toAdd.forEach(f=>{if(!p.processed.includes(f))p.processed.push(f)});
+p.last_updated=new Date().toISOString();
+p.total_processed=p.processed.length;
+fs.writeFileSync('monitor/decisions/processed-reviews.json',JSON.stringify(p,null,2));
+console.log('Marked',toAdd.length,'reviews processed. Ledger:',p.processed.length);
+"
+```
+Verify by running `node build-scripts/digest-reviews.js --workspace .` — `pending_count` should drop by the number of files you added. If it does not drop, your update did not take effect — investigate before exiting.
    - **Uncertain** → create the issue but at **one severity level lower** and add `"staleness_note": "Target was patched post-review; verify finding still applies before deep investigation"` to the issue. This lets the analyst do a quick triage rather than a full rewrite.
 
 This gate saves analyst Opus tokens. A 30-second git-log + content check here prevents a 5-minute analyst investigation that concludes "ALREADY_RESOLVED."
