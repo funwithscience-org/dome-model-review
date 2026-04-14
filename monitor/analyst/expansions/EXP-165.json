@@ -1,0 +1,124 @@
+{
+  "item_id": "EXP-165",
+  "target": "SEC-1.9 / WIN-044 FSF citation pin (ISS-1009)",
+  "issue_id": "ISS-1009",
+  "source_issue": "ISS-1009",
+  "curmudgeon_review": "monitor/curmudgeon/reviews/SEC-1.9-post-EXP162.c1.json",
+  "finding": "FSF_FORMULA_PINNED — geometric inputs confirmed by verbatim dome source",
+  "created_by": "analyst",
+  "created_at": "2026-04-14T20:14:05.599Z",
+  "priority": "moderate",
+  "status": "ready-for-integration",
+  "summary": "ISS-1009 asked for a verbatim citation of the dome FSF formula from its own source (raw-text/monitor.py or model page). Dome source found: the FSF is defined in check_fsf.py and check_eclipse_fsf.py in the dome repository. Formula is strictly geometric: fsf(station) = (H(r)/r) / (H(r_BOU)/r_BOU). Inputs are (station dome-coordinate radius r, dome H(r) profile). Eclipse magnitude is NOT an input to FSF — eclipse coverage enters the prediction equation as a separate multiplicative factor (ΔB = baseline × coverage × FSF), which means the ‘apparent-magnitude-sufficiency’ rescue does not save FSF. Section 1.9’s load-bearing sentence (‘the scaling formula itself consumes shadow geometry, not magnitudes’) is now grounded in a direct code quote.",
+  "dome_source_citations": {
+    "primary_file": "check_fsf.py (dome repo root, https://github.com/John09289/predictions/blob/main/check_fsf.py)",
+    "secondary_file": "check_eclipse_fsf.py (dome repo root, https://github.com/John09289/predictions/blob/main/check_eclipse_fsf.py)",
+    "monitor_py_reference": "monitor.py Domain 10 line 515: \"formula\": \"ΔB = -18.22 × coverage × FSF\" and ecm_eclipse = -18.22 * 0.95 * 1.672 (hardcoded FSF=1.672 for the headline display domain — the per-station FSF table comes from check_fsf.py-style geometric computation, not from monitor.py)",
+    "dome_repo_commit_reference": "current main branch (V51.x); citation should note commit SHA at time of patch integration",
+    "verbatim_fsf_definition": {
+      "source": "check_eclipse_fsf.py",
+      "code": "def calc_fsf(name, r, H_func):\n    h = H_func(r)\n    h_b = H_func(r_bou)\n    fsf = (h / r) / (h_b / r_bou)\n    return fsf",
+      "plain_english": "Divide the station’s (dome height at that station) ÷ (station dome-coordinate radius) by the same ratio at Boulder (BOU, the baseline station). Purely geometric: the only quantities are dome-coordinate radii and the dome’s H(r) profile."
+    },
+    "verbatim_v51_evaluation": {
+      "source": "check_fsf.py",
+      "code": "def H_new(r):\n    return 9572 * math.sqrt(1 - (r/20015)**2)\n\ncities_new_r = {\n    \"BOU\": 9983,\n    \"HAD\": 7116,\n    \"EBR\": 9800,\n}\nfor city, r in cities_new_r.items():\n    h = H_new(r)\n    fsf = (h / r) / (H_new(cities_new_r[\"BOU\"]) / cities_new_r[\"BOU\"])",
+      "plain_english": "V51 version uses an elliptical dome profile H_new(r)=9572·sqrt(1-(r/20015)²) and remapped dome-coordinate radii for each station (BOU=9983, HAD=7116, EBR=9800). These remapped radii are different from the V50.6 values used in the exponential version (BOU=5715, HAD=3778, EBR=5577) — the baseline itself moves between dome versions."
+    },
+    "baseline_formula": {
+      "source": "monitor.py lines 510-519, raw-text/03-predictions.txt lines 21-23",
+      "quoted_text": "Formula: delta_Z = baseline x coverage x FSF",
+      "follow_up": "FSF = field strength factor from V12 H(r)/r dome geometry"
+    }
+  },
+  "quantitative_verification": {
+    "method": "Computed FSF from dome formula under both V50.6 exponential H(r) and V51 ellipse H(r) using the published station radii from check_fsf.py, compared to published E001–E009 table in raw-text/03-predictions.txt.",
+    "v506_exponential": {
+      "formula": "H(r) = 8537 · exp(-r/8619); r-values: BOU=5715, HAD=3778, EBR=5577",
+      "computed": {
+        "BOU": 1,
+        "EBR": 1.041,
+        "HAD": 1.894
+      },
+      "published": {
+        "BOU": 1,
+        "EBR": 1.029,
+        "HAD": 1.471
+      },
+      "EBR_error_pct": 1.2,
+      "HAD_error_pct": 28.8,
+      "note": "V50.6 exponential H(r) with its own station radii OVER-PREDICTS HAD FSF (1.894 vs published 1.471). The published table was NOT generated under V50.6 exponential."
+    },
+    "v51_ellipse": {
+      "formula": "H(r) = 9572 · sqrt(1 - (r/20015)^2); r-values: BOU=9983, HAD=7116, EBR=9800",
+      "computed": {
+        "BOU": 1,
+        "EBR": 1.025,
+        "HAD": 1.513
+      },
+      "published": {
+        "BOU": 1,
+        "EBR": 1.029,
+        "HAD": 1.471
+      },
+      "EBR_error_pct": 0.4,
+      "HAD_error_pct": 2.9,
+      "note": "V51 ellipse H(r) with V51 station radii reproduces the published table to within 3%. The E001–E009 values published in raw-text/03-predictions.txt were computed under V51 geometry."
+    },
+    "finding": "The published per-station FSF table is reproducible from a pure geometric formula (H(r)/r normalized) using V51 ellipse H(r) and V51 station radii. Eclipse magnitude does not appear. Coverage is applied separately in the outer formula ΔB = baseline × coverage × FSF. This directly falsifies any defender claim that FSF takes eclipse magnitude as input."
+  },
+  "section_1_9_patch": {
+    "target_file": "data/sections.json, part1 section-1-9, within paragraph P2 (the ‘apparent eclipse magnitude at a single observer is observationally fixed’ / ‘scaling formula consumes shadow geometry’ paragraph)",
+    "patch_type": "insertion + light rephrase",
+    "insert_quote_block": {
+      "purpose": "Replace the asserted load-bearing sentence with an asserted sentence PLUS a direct dome-source quote + plain-english translation.",
+      "replacement_prose_html": "<p><strong>The scaling formula itself consumes shadow geometry, not magnitudes.</strong> The dome’s own source code defines the per-station scaling factor (FSF) in <code>check_eclipse_fsf.py</code> (dome GitHub repository) as <code>fsf = (h / r) / (h_b / r_bou)</code>, where <code>h = H(r)</code> is the dome height at the station’s dome-coordinate radius and <code>r_bou</code> is Boulder’s dome-coordinate radius. The inputs are pure geometry: station radius and the dome’s H(r) profile. Apparent eclipse magnitude is not an input to FSF; it enters the outer prediction equation as the separate <code>coverage</code> factor (ΔB = baseline × coverage × FSF, <code>monitor.py</code> Domain 10). A defender who rescues single-station predictions by pointing to observationally-fixed eclipse magnitude cannot repeat that move for the per-station scaling table: FSF is computed from dome-coordinate shadow geometry by construction, and under the dome’s own n(r) medium that shadow geometry is bent, not a straight-line chord.</p>"
+    },
+    "secondary_section_wins_affected": [
+      "WIN-044 detail_evidence"
+    ]
+  },
+  "win044_patch": {
+    "target": "data/wins.json WIN-044 detail_evidence",
+    "rationale": "WIN-044 already carries a Self-Contradicted verdict grounded in FSF’s internal-derivation issues, but it lacks the direct code quote of the FSF formula. Adding the quote makes the Self-Contradicted verdict reproducible without inference.",
+    "suggested_evidence_addition_html": "<p>Direct dome source: <code>check_eclipse_fsf.py</code> defines FSF as <code>(H(r)/r) / (H(r_BOU)/r_BOU)</code> — purely geometric. Station-specific amplitudes are produced by plugging dome-coordinate station radii and the dome H(r) profile into this ratio. The formula does not take eclipse magnitude as input; coverage is applied separately as <code>ΔB = baseline × coverage × FSF</code> in <code>monitor.py</code> Domain 10 (line 515). The published E001–E009 FSF values (EBR 1.029, HAD 1.471, LER 2.075, …) reproduce to within ~3% under the V51 ellipse H(r) with V51 station radii (<code>check_fsf.py</code>), but do NOT reproduce under the V50.6 exponential H(r) with V50.6 radii (HAD computes to 1.89 vs published 1.47). The baseline station radii move between dome versions: BOU shifts from r=5715 (V50.6) to r=9983 (V51). The ‘derivation from V12 geometry’ claim is therefore version-unstable.</p>"
+  },
+  "aug_2026_falsification_hook": {
+    "pre_test_lock_in": "With the FSF formula now pinned by direct citation, the Aug 12 2026 eclipse becomes a structural binary test: (1) If the dome PUBLISHES a post-eclipse FSF with bent-ray geometry (i.e., n(r)-aware), they concede Section 1.9’s critique of the current straight-line FSF. (2) If they publish straight-line FSF and it fails the Aug 2026 data, Section 1.9’s prediction is vindicated. (3) If they publish a magnitude-based FSF (coverage^alpha or similar), they contradict their own code (check_eclipse_fsf.py) and concede FSF is not a dome-geometry derivation — which is WIN-044’s Self-Contradicted verdict already.",
+    "check_eclipse_fsf_v50_broken": "check_eclipse_fsf.py itself runs a ‘does HAD beat EBR?’ test against V50.6 exponential, V51 ellipse, and parabola forms. Under V50.6 exponential it outputs HAD FSF 1.894 and EBR FSF 1.041 — which yields HAD signal 0.80×1.894 = 1.515 vs EBR 0.95×1.041 = 0.989. HAD beats EBR by 53%. But the PUBLISHED prediction in raw-text/03-predictions.txt gives HAD 1.471 × 0.80 = 1.177 vs EBR 1.029 × 0.95 = 0.978 — HAD beats EBR by only 20%. The published prediction is thus committed to the V51 ellipse, not V50.6 exponential. If V51 is falsified by the Aug 2026 data, the dome cannot retreat to V50.6 without losing 53%-vs-20% signal separation."
+  },
+  "defender_counter_attack_surface": {
+    "strongest_remaining_defense": "‘check_fsf.py / check_eclipse_fsf.py are exploratory / auxiliary scripts; the real FSF isn’t these files.’",
+    "rebuttal_ready": "(a) monitor.py Domain 10 line 515 explicitly references FSF in its formula string; the hardcoded value 1.672 there matches coverage-adjusted product consistent with the check_fsf.py family. (b) The published E001–E009 table reproduces only under the check_fsf.py V51 mapping to within 3%. (c) No other dome source file defines any distinct FSF function. (d) If the dome wants to publish a different FSF definition post-hoc, that is itself a concession that the pre-Aug-2026 FSF was one of the check_fsf.py variants and was wrong."
+  },
+  "cross_references_for_decider": [
+    {
+      "where": "SEC-1.9 P2 (apparent-magnitude concession + scaling-formula-consumes-geometry)",
+      "action": "replace assertion with direct quote (see section_1_9_patch)"
+    },
+    {
+      "where": "WIN-044 detail_evidence",
+      "action": "append the verbatim FSF formula quote (see win044_patch)"
+    },
+    {
+      "where": "optional: WIN-025 and WIN-068 detail_evidence",
+      "action": "cross-reference WIN-044 for the canonical FSF quote; no in-place duplication needed"
+    }
+  ],
+  "newsworthy": "Dome’s own scripts show the FSF headline test for Aug 2026 was silently re-derived — V50.6 and V51 disagree by 50% on relative station signal ratios",
+  "tldr_evidence": "The dome’s own source defines its per-station eclipse scaling factor (FSF) as a purely geometric ratio of dome height over dome-coordinate radius, normalized to Boulder. Eclipse magnitude is not an input. The published FSF values for the Aug 2026 eclipse reproduce only under the V51 ellipse form, not the older V50.6 exponential — the two forms disagree by ~50% on which stations show the largest signal.",
+  "tldr_verdict": "The ‘scaling formula consumes shadow geometry, not magnitudes’ claim in Section 1.9 is now pinned by direct code citation: the apparent-magnitude rescue route is closed for every multi-station WIN, and WIN-044’s Self-Contradicted verdict gains a code-level receipt.",
+  "next_steps_for_decider": [
+    "Apply section_1_9_patch (replace asserted P2 sentence with the direct-quote paragraph)",
+    "Apply win044_patch (append verbatim FSF formula to WIN-044 detail_evidence)",
+    "Optionally record the dome commit SHA at time of patch so the citation is frozen (the dome may silently rewrite check_fsf.py post-review; our cite needs to be pinned)",
+    "Consider an attention-inbox ping to the analyst post-Aug-2026 if the dome publishes a new FSF — Mode 2b re-examination"
+  ],
+  "follow_up_issues_suggested": [
+    {
+      "title": "Record dome commit SHA for check_fsf.py / check_eclipse_fsf.py / monitor.py at the moment we cite them",
+      "severity": "minor",
+      "reason": "Protects the citation against silent dome rewrites (we timestamp the observation side; the dome only git-versions the prediction side — see Timestamp Error tab)."
+    }
+  ]
+}
