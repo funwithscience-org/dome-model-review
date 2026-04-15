@@ -80,6 +80,12 @@ function resolvePlaceholders(html, context) {
     '{{CA_RELABELS}}': context.codeAnalysis?.relabelsStandard || 0,
     '{{CA_POSTHOC}}': context.codeAnalysis?.postHoc || 0,
     '{{CA_DOME}}': context.codeAnalysis?.derivesFromDome || 0,
+    // Structural-failure cross-tabulation (4 tests: hardcoded-or-none monitoring,
+    // relabels standard physics, post-hoc, does-NOT-derive-from-dome).
+    // See Part 2b "The Quadruple Failure" prose.
+    '{{CA_QUAD_FAIL}}': context.codeAnalysis?.quadFail || 0,
+    '{{CA_TRIPLE_FAIL}}': context.codeAnalysis?.tripleFail || 0,
+    '{{CA_LOW_FAIL}}': context.codeAnalysis?.lowFail || 0,
 
     // Acknowledged failures (soft-pedal bucket: refined/suspended/falsified, no dome_status_current)
     '{{ACKNOWLEDGED_FAILURES}}': context.acknowledgedFailures || 0,
@@ -976,6 +982,21 @@ function main() {
       // unfiltered `wins` caused prose to report "1 pending" forever after WIN-058b
       // was added (ISS-692).
       const reviewed = baseWins.filter(w => w.code_analysis && w.code_analysis.reviewed);
+      // Structural-failure cross-tabulation: count how many of the 4 tests each WIN fails.
+      // Test A: monitoring is 'hardcoded' or 'none' (i.e., NOT 'live_fetch')
+      // Test B: relabels_standard === true
+      // Test C: post_hoc === true
+      // Test D: derives_from_dome === false (i.e., does NOT derive from dome geometry)
+      const failBuckets = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0 };
+      reviewed.forEach(w => {
+        const ca = w.code_analysis;
+        let f = 0;
+        if (ca.monitoring === 'hardcoded' || ca.monitoring === 'none') f++;
+        if (ca.relabels_standard === true) f++;
+        if (ca.post_hoc === true) f++;
+        if (ca.derives_from_dome === false) f++;
+        failBuckets[f] = (failBuckets[f] || 0) + 1;
+      });
       return {
         reviewed: reviewed.length,
         pending: baseWins.length - reviewed.length,
@@ -987,6 +1008,10 @@ function main() {
         relabelsStandard: reviewed.filter(w => w.code_analysis.relabels_standard).length,
         postHoc: reviewed.filter(w => w.code_analysis.post_hoc).length,
         derivesFromDome: reviewed.filter(w => w.code_analysis.derives_from_dome).length,
+        // Structural-failure buckets (Part 2b Quadruple Failure section)
+        quadFail: failBuckets[4],
+        tripleFail: failBuckets[3],
+        lowFail: failBuckets[0] + failBuckets[1] + failBuckets[2],
       };
     })(),
     // Group counts
