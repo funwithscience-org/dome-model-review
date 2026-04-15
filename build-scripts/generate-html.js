@@ -1102,7 +1102,7 @@ function main() {
     ['006','007','022','036','043','059'], // NMP position & trajectory
     ['011','012','013','014'],             // Eclipse gravity/coupling
     ['037','042','063'],                   // Geomagnetic field decay rate
-    ['010','025'],                         // Eclipse magnetometer response
+    ['010','025','068'],                   // Eclipse magnetometer response (BOU 2017, 2024 9-station, 39-eclipse ensemble — all Chapman 1933 Sq suppression)
     ['008','009'],                         // Telluric EM frequency
     ['016','017'],                         // Stellar astrometry
     ['018','019'],                         // Analemma solar geometry
