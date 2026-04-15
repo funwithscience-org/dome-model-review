@@ -1,0 +1,42 @@
+{
+  "id": "PROP-007",
+  "created_at": "2026-04-15T09:55:00Z",
+  "status": "proposed",
+  "category": "workflow_redesign",
+  "target": "build.js OWNERSHIP table + CLAUDE.md File Ownership Rules",
+  "title": "Classify build.js and all build-scripts/*.js as git-owned so publish keeps workspace in sync",
+  "problem": "The workspace→git publish sync loop iterates `OWNERSHIP` keys only. `build.js` itself and every `build-scripts/*.js` file except `generate-html.js`/`generate-pdf.js` are unclassified, so no publish ever copies them into the FUSE workspace. Consequences observed this run (2026-04-15T09:39Z):\n\n1. `build.js` in workspace has md5 c3ad8c95, GitHub main has dbd0e96c. Last GitHub commit to build.js was 2026-04-10T17:50:45Z — five days of stale workspace copy, right through the Phase-1 OWNERSHIP-coverage fix that added `data/predictions.json`, `docs/llms.txt`, `docs/sitemap.xml`, `docs/robots.txt`.\n2. `build-scripts/digest-reviews.js` in workspace has md5 0a11b762, GitHub main has 6a742c5e. Last commit was 2026-04-15T05:23:37Z — 4 hours ago — and that commit is exactly the silent-parse-error fix (exit code 2, verbose errors). Any integrity-agent run that actually invokes the workspace-rooted `node build-scripts/digest-reviews.js --workspace .` will execute the old version without the exit-code signal.\n3. Previous tinker runs (2026-04-13, 2026-04-14) grep'd the workspace build.js and reported `OWNERSHIP misalignment: data/predictions.json, docs/llms.txt, ... miss` as STILL_BROKEN. The bug was fixed on main on 2026-04-10 but the workspace copy never received the update — so the tinker report has been chasing a ghost for two consecutive runs.\n\nSix more build-scripts are in the same boat and are one edit away from a similar silent staleness bug: `add-references.js`, `apply-patches.js`, `backfill-issues.js`, `extract-sections.js`, `sync-code-analysis.js`, plus `build.js` itself. They currently happen to be in sync only because nothing has edited them since their last manual workspace copy.\n\nThe CLAUDE.md File Ownership Rules list is also incomplete on this point — it mentions only `generate-html.js` and `generate-pdf.js` as 'infrastructure', implying the rest live outside the classification system.",
+  "proposed_fix": {
+    "summary": "Add every build-scripts/*.js file and `build.js` itself to the OWNERSHIP table as git-owned. build.js self-sync is safe because fs.copyFileSync(src,dst) with src==dst where FUSE can't unlink is still a legal overwrite; the existing `copyIfExists` helper already handles mkdirSync for parents so it is idempotent. Then mirror the addition in CLAUDE.md's File Ownership Rules list so the three authoritative locations (build.js OWNERSHIP, workspace-sync.md OWNED_BY_GIT, CLAUDE.md) stay consistent — per CLAUDE.md's own rule: 'If you edit one, edit all three.'",
+    "files_to_modify": [
+      {
+        "path": "build.js",
+        "find": "  'build-scripts/generate-html.js': 'git',\n  'build-scripts/generate-pdf.js': 'git',",
+        "replace": "  'build-scripts/generate-html.js': 'git',\n  'build-scripts/generate-pdf.js': 'git',\n  'build-scripts/digest-reviews.js': 'git',\n  'build-scripts/sync-code-analysis.js': 'git',\n  'build-scripts/add-references.js': 'git',\n  'build-scripts/apply-patches.js': 'git',\n  'build-scripts/backfill-issues.js': 'git',\n  'build-scripts/extract-sections.js': 'git',\n  'build.js': 'git',                       // self-sync: publish copies its own source to workspace",
+        "explanation": "Classifies every active build script (and build.js itself) as git-owned. The publish-loop's copyIfExists(relPath) is idempotent when src and dst are distinct paths — the workspace mount is a different filesystem than the clean clone, so self-sync of build.js is a cross-filesystem overwrite and FUSE's no-unlink restriction does not apply (copyFileSync uses truncate+write, not unlink+rename)."
+      },
+      {
+        "path": "monitor/prompts/workspace-sync.md",
+        "find": "  'build-scripts/generate-html.js',\n  'build-scripts/generate-pdf.js',",
+        "replace": "  'build-scripts/generate-html.js',\n  'build-scripts/generate-pdf.js',\n  'build-scripts/digest-reviews.js',\n  'build-scripts/sync-code-analysis.js',\n  'build-scripts/add-references.js',\n  'build-scripts/apply-patches.js',\n  'build-scripts/backfill-issues.js',\n  'build-scripts/extract-sections.js',\n  'build.js',",
+        "explanation": "Mirrors the OWNERSHIP extension. workspace-sync uses OWNED_BY_GIT to short-circuit any workspace→git push of these files (they are authoritative in git, so if the workspace copy ever diverges it's always because the workspace is stale, never because it is newer)."
+      },
+      {
+        "path": "CLAUDE.md",
+        "find": "- `build-scripts/generate-html.js`, `build-scripts/generate-pdf.js` — infrastructure.",
+        "replace": "- `build-scripts/generate-html.js`, `build-scripts/generate-pdf.js`, `build-scripts/digest-reviews.js`, `build-scripts/sync-code-analysis.js`, `build-scripts/add-references.js`, `build-scripts/apply-patches.js`, `build-scripts/backfill-issues.js`, `build-scripts/extract-sections.js`, `build.js` — infrastructure (all git-owned; publish copies into workspace so agents running from FUSE see the same version that's on main).",
+        "explanation": "Keeps the CLAUDE.md file-ownership reference honest. Without this, a future editor will read CLAUDE.md, assume only the two generator scripts are classified, and the drift will recur."
+      }
+    ],
+    "files_to_create": [],
+    "files_to_delete": []
+  },
+  "tradeoffs": "GAIN: The workspace stops drifting on every commit that touches build.js or any other build-script. That kills the class of false-positive tinker reports that have been escalating the OWNERSHIP-misalignment finding (fixed on main since 2026-04-10, still flagged in workspace-backed checks). It also hardens the integrity agent's check 7f — if integrity ever actually invokes `node build-scripts/digest-reviews.js --workspace .` from the FUSE mount, it will now run the version with the exit-code-2 signal that check 7f relies on.\n\nLOSE: One more file-ownership claim to maintain. If a new build script is added and not registered, it will silently fall out of sync again — but that's the current failure mode anyway. Self-syncing build.js is a mild foot-gun: if someone ever introduces a build.js bug that crashes mid-publish after `git push` but before the sync block, the workspace will run an old build.js on the next attempt and succeed where a fresh build.js would have failed. That is probably a feature, not a bug, because it makes publish self-healing, but it does mean the workspace build.js is never a strict witness for 'what's on main'.\n\nThe counter-case — leave this alone — is weaker than it looks. The argument would be: 'no agent actually runs build.js or digest-reviews.js from the workspace, so staleness is cosmetic.' That's almost true today, but it gambles on a fragile invariant. CLAUDE.md explicitly says 'scheduled agents' read prompt files from FUSE; extending the same expectation to build-scripts is a small leap that a future prompt edit could make silently. Better to close the gap now.",
+  "estimated_impact": "Removes a recurring false-positive class from tinker reports (2 runs already wasted on it). Prevents a latent bug where integrity runs the stale digest-reviews.js and misses the exit-code signal. Token cost: ~300 chars of OWNERSHIP text, one-time.",
+  "requires_human_judgment": false,
+  "why_human_needed": null,
+  "verification_pattern": "grep -q \"'build-scripts/digest-reviews.js': 'git'\" build.js && grep -q \"'build.js': 'git'\" build.js && echo FIXED || echo STILL_BROKEN",
+  "escalation_history": [
+    { "run": "2026-04-15T09:55Z", "note": "First escalation — root cause of OWNERSHIP-misalignment false positive in 04-13 and 04-14 tinker reports." }
+  ]
+}

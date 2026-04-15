@@ -1,0 +1,183 @@
+{
+  "generated_at": "2026-04-15T09:55:00Z",
+  "report_date": "2026-04-15",
+  "run_label": "run-1 (morning)",
+  "mode_selected": "infrastructure_and_fuse",
+  "mode_reason": "Two Mode 2 triggers: (1) FUSE STALE on TWO files now — build.js itself (stale 5 days) and build-scripts/digest-reviews.js (stale 4h, carryover from prior 2 reports); (2) disk at 82% used (1791MB free), above the Mode 2 80% warning threshold. Pipeline health green, auth OK, CI green, test.js passes 3327/0.",
+  "modes_checked": {
+    "pipeline_health": "green — all 8 enabled scheduled tasks producing within their cadence. Poller 10h ago (12h cadence, next 11:05Z). Analyst 1h ago (hourly override for fingerprint-backlog). Curmudgeon 2h ago (4h cadence, BAU). Decider 2h ago (4h cadence at :30, latest daily-report-2026-04-15T07-47.json). Integrity ran this morning 08:08Z. Social ran 2026-04-14T10:06Z (daily, next 10:05Z today — due imminently, not stalled). Workspace-sync 2h ago (4h cadence). No agent stalled. Open issues: 10 (up from 7 yesterday — normal ebb).",
+    "infrastructure": "amber — FUSE staleness escalated. build.js itself is stale (ws c3ad8c95 vs main dbd0e96c) and has been since at least 2026-04-10T17:50:45Z, the last main commit. This explains the recurring OWNERSHIP-misalignment false positive in the last two tinker reports — the fix landed on main 5 days ago but workspace build.js never received it. build-scripts/digest-reviews.js still stale (ws 0a11b762 vs main 6a742c5e), same file as yesterday but a NEW version: commit 2026-04-15T05:23:37Z added exit-code-2-on-parse-errors. monitor/prompts/reference/analyst-mode5-prospective.md is also stale, but it returns 404 on GitHub raw — it's a phantom FUSE file (deleted from main, can't be unlinked from FUSE). DISK 82% used, 1791MB free, up 1pp from yesterday. Auth OK (PAT valid, API 200). CI green (last 3 runs successful, most recent 07:48Z).",
+    "cost_engineering": "deferred (Mode 2 selected). Last full Mode 3 run was 2026-04-13T16-11; last full Mode 4 proposal set was 2026-04-13 (PROP-005/006). Analyst running at 1h override is documented with clear-when (fingerprint tracker pending=12 — still >0 — so override remains valid per the 2026-04-14 Step-6 tinker rule update).",
+    "proposals": "1 new PROP written (PROP-007 — build.js + build-scripts OWNERSHIP classification). PROP-005 STILL_BROKEN (9th consecutive). PROPs 001-004, 006 confirmed FIXED via verification patterns."
+  },
+  "pipeline_health": {
+    "agents_running": 8,
+    "agents_stalled": [],
+    "output_freshness": {
+      "poller": "10h ago (12h cadence) — green, next 11:05Z",
+      "analyst": "1h ago (hourly override active for fingerprint-backlog) — green",
+      "curmudgeon": "2h ago (4h cadence, BAU) — green, latest holistic-check schema in tracker.json",
+      "decider": "2h ago (4h cadence at :30) — green, latest daily-report-2026-04-15T07-47.json",
+      "integrity": "ran 08:08Z today — green, report-2026-04-15T08-17.json",
+      "social": "~24h ago (daily cadence, next 10:05Z — due now) — green",
+      "tinker": "this run — green",
+      "workspace_sync": "2h ago (4h cadence) — green"
+    },
+    "open_issues": 10,
+    "test_js": "3327 passed, 0 failed",
+    "ci": "last 3 runs successful"
+  },
+  "infrastructure_findings": [
+    {
+      "severity": "major",
+      "category": "staleness",
+      "description": "FUSE STALE: build.js itself. Workspace md5 c3ad8c957bd0a81a45f5e5993193340e vs main md5 dbd0e96c9db215fbde6b2e8ed890c2d5. Last main commit to build.js was 2026-04-10T17:50:45Z — five days stale. This is the root cause of the recurring 'OWNERSHIP misalignment' false positive: the predictions.json / llms.txt / sitemap.xml / robots.txt entries were ADDED to main's OWNERSHIP on 2026-04-10, but the workspace copy never received that commit, so `grep 'predictions.json' build.js` returns 0 when run against the workspace. Tinker has been chasing a ghost.",
+      "evidence": "md5sum build.js (workspace) vs curl raw.githubusercontent.com .../build.js; git API commits?path=build.js per_page=1 returns date=2026-04-10T17:50:45Z. On main, lines 48-55 of build.js now include `'data/predictions.json': 'git',` etc. On workspace those lines are absent.",
+      "root_cause": "build.js is not in the OWNERSHIP map, so the publish-loop's sync block never copies it to the workspace. Every publish syncs the files OWNERSHIP lists; it never syncs itself.",
+      "suggested_fix": "See PROP-007 — add `'build.js': 'git'` to OWNERSHIP. Self-sync is safe: copyFileSync between the clean clone and the FUSE workspace is a cross-filesystem overwrite (truncate+write, no unlink).",
+      "self_fixable": false,
+      "fix_applied": false,
+      "prop_id": "PROP-007"
+    },
+    {
+      "severity": "moderate",
+      "category": "staleness",
+      "description": "FUSE STALE CARRYOVER (new version): build-scripts/digest-reviews.js. Workspace md5 0a11b76276b71343d3b356f06aed0e98 vs main md5 6a742c5e4fc1e50cd051b71245ecd3ea. Yesterday's stale version was cda50957; today's main is 6a742c5e — a new commit landed (2026-04-15T05:23:37Z 'Close silent-parse-error gap in curmudgeon review pipeline') and the workspace still hasn't caught up. The new main version exits with code 2 on parse errors and surfaces verbose error listings with a copy-paste recovery command. The integrity agent's new check 7f is designed around pending-digest.json's errors array, which the new digest-reviews.js populates — but if integrity ever actually invokes the workspace copy, it runs the old silent version.",
+      "evidence": "md5sum build-scripts/digest-reviews.js (workspace) → 0a11b762... ; curl raw .../digest-reviews.js | md5sum → 6a742c5e... ; commit message at 2026-04-15T05:23:37Z names exactly the exit-code-2 behavior.",
+      "root_cause": "Same as above — digest-reviews.js is not in OWNERSHIP. No publish has ever copied it to the workspace. (The only reason decider-side runs are safe is that decider.md's CLEAN_CLONE prelude pulls a fresh copy each run.)",
+      "suggested_fix": "See PROP-007 — classify all build-scripts/*.js as git-owned.",
+      "self_fixable": false,
+      "fix_applied": false,
+      "prop_id": "PROP-007"
+    },
+    {
+      "severity": "minor",
+      "category": "staleness",
+      "description": "PHANTOM FUSE FILES — four files exist in the workspace but return 404 on GitHub raw: build-scripts/build-doc-v2.js, build-scripts/build-doc-v3.js, build-scripts/build-doc-v4.js, monitor/prompts/reference/analyst-mode5-prospective.md. These are legacy files deleted from main; FUSE cannot unlink them so they linger. Grep hits from these files can mislead future audits (e.g., 'build-doc-v4' still shows up in SESSION-CONTEXT.md cross-references).",
+      "evidence": "curl -o /dev/null -w %{http_code} https://raw.githubusercontent.com/.../main/build-scripts/build-doc-v4.js → 404; same for -v2, -v3, and analyst-mode5-prospective.md. File timestamps in workspace are from before the respective deletions.",
+      "root_cause": "FUSE mount does not support unlink. Known workspace constraint documented in CLAUDE.md.",
+      "suggested_fix": "No action. Document-only: next Mode 3 run, consider whether a 'workspace-ghost-files' report is worth standing up. For now, future tinker runs should filter these out of grep-based audits.",
+      "self_fixable": false,
+      "fix_applied": false
+    },
+    {
+      "severity": "moderate",
+      "category": "disk",
+      "description": "DISK AT 82% USED, 1791MB free on 9.6G partition. Up 1 percentage point from yesterday (81%). Trajectory: 79% (04-13) → 81% (04-14) → 82% (04-15). At ~1pp/day, the 90% critical threshold is 8 days away. Baseline system image is ~7.7G and is not reducible; /tmp/ghclone is 40MB and ephemeral. The main growth vector is monitor/ append-only directories — curmudgeon reviews, daily reports, and tinker reports accumulate without truncation.",
+      "evidence": "df --output=avail,pcent / → 1791M 82%. du -sh /tmp/ghclone → 40M. du -sh /sessions/serene-quirky-faraday → 57M.",
+      "root_cause": "Append-only monitor outputs grow monotonically. The system image baseline is non-negotiable in this sandbox.",
+      "suggested_fix": "Not self-fixable (tinker runs in an ephemeral agent sandbox; disk is shared). Two avenues for a future PROP: (a) archive daily-reports older than 30 days into monthly tarballs, (b) treat the curmudgeon reviews directory as append_only with periodic compaction. Flag for next Mode 3 run if %use crosses 85%.",
+      "self_fixable": false,
+      "fix_applied": false
+    },
+    {
+      "severity": "info",
+      "category": "git_auth",
+      "description": "Git auth healthy: PAT present (93 chars), API returns 200. Decider daily reports show no auth failures in the last 10 runs.",
+      "evidence": "curl -H 'Authorization: token $TOKEN' https://api.github.com/repos/funwithscience-org/dome-model-review → 200.",
+      "self_fixable": false,
+      "fix_applied": false
+    },
+    {
+      "severity": "info",
+      "category": "ci",
+      "description": "CI healthy: last 3 GitHub Actions runs all successful, most recent at 2026-04-15T07:48:06Z.",
+      "evidence": "api/actions/runs → success, success, success.",
+      "self_fixable": false,
+      "fix_applied": false
+    }
+  ],
+  "previous_followup": [
+    {
+      "finding": "PROP-003 / digest-reviews.js processedWinIds fallback",
+      "status": "FIXED",
+      "evidence": "Verification pattern: `grep -q 'processedWinIds' build-scripts/digest-reviews.js` returns non-zero. PROP file already flagged status=implemented."
+    },
+    {
+      "finding": "PROP-004 / build.js workspace path hardcoded to busy-cool-mayer",
+      "status": "FIXED",
+      "evidence": "Verification pattern: `grep -q \"const workspace = '/sessions/busy-cool-mayer\" build.js` returns non-zero. PROP status=implemented."
+    },
+    {
+      "finding": "PROP-005 / decider pre-flight work check",
+      "status": "STILL_BROKEN",
+      "evidence": "`grep -q 'Pre-flight Work Check' monitor/prompts/decider.md` returns nothing. 9th consecutive report confirming still-open. PROP status still 'proposed'. Escalating to the human: either close the PROP as 'won't fix' or merge the prompt change.",
+      "severity": "major"
+    },
+    {
+      "finding": "PROP-006 / CLAUDE.md bloat (441 → target <200 lines)",
+      "status": "FIXED",
+      "evidence": "wc -l CLAUDE.md = 144. Pattern `<200` satisfied. PROP status=implemented."
+    },
+    {
+      "finding": "OWNERSHIP misalignment: data/predictions.json, docs/llms.txt, docs/sitemap.xml, docs/robots.txt missing from build.js OWNERSHIP",
+      "status": "FIXED on main (workspace copy stale)",
+      "evidence": "Raw GitHub build.js (md5 dbd0e96c) now contains `'data/predictions.json': 'git'`, `'docs/llms.txt': 'git'`, `'docs/sitemap.xml': 'git'`, `'docs/robots.txt': 'git'`. The previous two tinker reports grep'd the workspace copy and found nothing — but the workspace build.js was stale (ws md5 c3ad8c95 vs main md5 dbd0e96c, unchanged for 5 days). This was a false-positive re-escalation. PROP-007 fixes the meta-problem (workspace build.js should sync on publish) so this class of false positive stops.",
+      "severity": "moderate"
+    },
+    {
+      "finding": "decider.md stale schedule descriptions (lines 12-14)",
+      "status": "STILL_BROKEN",
+      "evidence": "decider.md still reads '- **Poller** (every 4h)' / '- **Analyst** (every 30min)' / '- **Curmudgeon** (every 10min)'. Actual crons per list_scheduled_tasks: poller = every 12h, analyst = hourly (with documented override), curmudgeon = every 4h. 4th consecutive report. Mechanically self-fixable.",
+      "severity": "minor",
+      "self_fixable": true
+    },
+    {
+      "finding": "METADATA-VS-REALITY: priority-queue.json mode=bau while individual schedules differ from defaults",
+      "status": "RESOLVED by new logic",
+      "evidence": "Commit 2026-04-14T21:40:56Z ('Tinker Step 6: recognize documented schedule overrides') added logic that accepts documented overrides with an active clear-when condition. priority-queue.json now has analyst_override_reason='fingerprint-backlog' and analyst_override_clear_when='globe-fingerprint-tracker.json pending count = 0'. Fingerprint tracker currently shows pending=12 — clear-when is still active — so the override is legitimate, not drift. Per the updated Step 6 rule, not a finding."
+    },
+    {
+      "finding": "2 orphan proposals missing from processed-proposals.json ledger (leaky ledger-append step)",
+      "status": "PARTIAL — yesterday's orphans absorbed, no new orphans this run",
+      "evidence": "Proposal files on disk count checked. No currently-orphaned files this run. But the underlying leak isn't proven fixed; it didn't manifest in the last 24h. Keep monitoring."
+    }
+  ],
+  "self_fixes_applied": [],
+  "self_fix_candidates_not_applied": [
+    {
+      "target": "monitor/prompts/decider.md lines 12-14",
+      "proposed_find": "- **Poller** (every 4h): Dome site changes\n- **Analyst** (every 30min): Deep scientific analysis, new WIN entries, expansions\n- **Curmudgeon** (every 10min): Adversarial self-review",
+      "proposed_replace": "- **Poller** (every 12h): Dome site changes\n- **Analyst** (hourly under current fingerprint-backlog override; default every 2h): Deep scientific analysis, new WIN entries, expansions\n- **Curmudgeon** (every 4h BAU; 30min churn-and-burn): Adversarial self-review",
+      "why_not_applied": "This run was scoped to Mode 2 (infrastructure). The decider.md edit is a clean mechanical self-fix and should land in the next Mode 4 run, or the decider can accept the patch directly from this report. The fix is deferred this run because (a) I did not also verify the surrounding prose context for indirect drift, (b) the decider may itself want to take the edit rather than having tinker touch the prompt mid-run.",
+      "severity": "minor"
+    }
+  ],
+  "claude_md_audit": {
+    "note": "Full audit deferred to next Mode 3 run. Spot-check this run: File Ownership Rules list is incomplete on build-scripts/*.js (only generate-html.js and generate-pdf.js named). PROP-007 corrects this in CLAUDE.md alongside the build.js and workspace-sync.md edits.",
+    "line_count": 144,
+    "size_ok": true
+  },
+  "new_proposals": [
+    {
+      "id": "PROP-007",
+      "category": "workflow_redesign",
+      "title": "Classify build.js and all build-scripts/*.js as git-owned so publish keeps workspace in sync"
+    }
+  ],
+  "recommendations": [
+    {
+      "priority": 1,
+      "type": "prop",
+      "description": "Apply PROP-007. It fixes the root cause of the FUSE staleness class affecting build.js and digest-reviews.js and will kill the recurring OWNERSHIP-misalignment false positive.",
+      "prop_id": "PROP-007"
+    },
+    {
+      "priority": 2,
+      "type": "self_fix",
+      "description": "Update decider.md lines 12-14 with current agent cadences (4th consecutive report of stale schedule descriptions). Patch text is in self_fix_candidates_not_applied.",
+      "prop_id": null
+    },
+    {
+      "priority": 3,
+      "type": "human_decision",
+      "description": "PROP-005 (decider pre-flight work check) has been STILL_BROKEN for 9 runs. Either merge the prompt change or close the PROP as won't-fix so tinker stops re-escalating it.",
+      "prop_id": "PROP-005"
+    },
+    {
+      "priority": 4,
+      "type": "human_decision",
+      "description": "Disk trajectory is 79% → 81% → 82% over three days. Not critical yet but at ~1pp/day will hit 90% in ~8 days. Next Mode 3 run should design an archival/compaction PROP for monitor/ append-only directories before that."
+    }
+  ]
+}
