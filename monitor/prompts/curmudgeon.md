@@ -273,6 +273,18 @@ For every DOI, URL, or paper reference in our review text:
 
 **text_fingerprint**: Record the character lengths of each reviewed field and the current verdict. This is the change detection baseline — on subsequent runs, the change-driven scan compares current data against these stored fingerprints to detect what needs re-review. Always record accurate fingerprints.
 
+### 7b. Validate the JSON (mandatory)
+
+**After writing the review file, immediately parse it to confirm validity.** Invalid JSON breaks the decider's digest pipeline silently — review findings become inaccessible.
+
+```bash
+node -e "JSON.parse(require('fs').readFileSync('monitor/curmudgeon/reviews/<filename>.json','utf8'));console.log('valid')"
+```
+
+If it fails, fix and rewrite before continuing. The most common failure is **unescaped double quotes inside string values** — prose like `The "easy busts" appear strategic` needs `\"` around the inner words when written as a JSON string value. **Prefer building the review object in a `node -e` script and letting `JSON.stringify(obj, null, 2)` serialize it** — this eliminates hand-writing escape errors entirely. If you write JSON by hand, run the validation above before doing anything else.
+
+Four broken curmudgeon reviews (HOLISTIC-HOL-TONE, SEC-4.6.2, SEC-6.6.c2, WIN-068.c3) were wedged by this exact bug on 2026-04-14 — do not repeat.
+
 ### 8. Update the Tracker
 Update `monitor/curmudgeon/tracker.json` — update the item's `reviewed_at` and `last_reviewed_cycle` fields to reflect this review. For new items not yet in the tracker's `points` array, add them.
 
