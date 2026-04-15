@@ -194,6 +194,29 @@ When you identify a discoverability gap, **do the work** — don't just log it:
 
 Write draft files to `monitor/social/drafts/`. The decider or human can review and deploy. This is the pipeline: social thinks and drafts → decider reviews and commits → build publishes.
 
+#### 4d. Auto-detect human actions BEFORE reporting "pending human"
+
+The human may complete account-required setup (Search Console verification, Bing Webmaster, GitHub repo updates) without filing a human-note to tell you. Before you flag any of these as "pending human" or "waiting on human decision," check for these completion signals every run:
+
+```bash
+# Google Search Console verification
+ls docs/google*.html 2>/dev/null | head -1 && echo "GSC: DONE" || echo "GSC: pending"
+
+# Bing Webmaster Tools verification
+ls docs/BingSiteAuth.xml 2>/dev/null && echo "Bing: DONE" || echo "Bing: pending"
+
+# Bing IndexNow key file (alternate Bing setup path)
+ls docs/*.txt 2>/dev/null | grep -iE '^[a-f0-9]{32,}\.txt$' && echo "IndexNow: DONE" || echo "IndexNow: pending"
+
+# GitHub repo description/topics (public API, no auth needed)
+curl -s https://api.github.com/repos/funwithscience-org/dome-model-review | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{const r=JSON.parse(d);console.log('Repo:', r.description ? 'DONE' : 'pending', '| topics:', (r.topics||[]).length)})"
+
+# Meta-tag-based verification (alternate path — look in built HTML)
+grep -o 'name="google-site-verification"\|name="msvalidate' docs/index.html 2>/dev/null
+```
+
+**Rule:** Only flag the specific items that are still pending. If GSC is done but Bing isn't, say "Bing Webmaster Tools still pending" — NOT "indexing strategy pending human review." That generic phrasing caused a 4-day coordination gap on 2026-04-12–15 because social kept re-flagging GSC as pending while the verification file was already committed.
+
 ```json
 "discoverability": {
   "competitive_assessment": "Brief strategic read on where both sites stand",
