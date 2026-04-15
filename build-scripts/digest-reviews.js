@@ -256,13 +256,24 @@ function run() {
   console.log(`    Minor:    ${digest.severity_breakdown.minor}`);
   console.log(`  Need full read:    ${digest.needs_full_read_count}`);
   if (errors.length > 0) {
-    console.log(`  Errors:            ${errors.length}`);
+    console.log(`  ⚠ Errors:            ${errors.length}`);
+    errors.forEach(e => console.log(`      - ${e.file}: ${e.error}`));
+    console.log(`    (Parse failures drop findings silently. Run:`);
+    console.log(`      node build-scripts/fix-json-quotes.js ${errors.map(e => 'monitor/curmudgeon/reviews/' + e.file).join(' ')}`);
+    console.log(`    to auto-recover, then re-run digest.)`);
   }
   if (underCovered.length > 0) {
     console.log(`  ⚠ Under-covered "processed" reviews: ${underCovered.length}`);
     const totalMissing = underCovered.reduce((sum, r) => sum + r.missing_holes.length, 0);
     console.log(`    Total missing issues: ${totalMissing}`);
     console.log(`    (These WINs are marked processed but have holes with no corresponding open-issues entry)`);
+  }
+
+  // Exit non-zero if parse errors — forces visibility in CI/agent logs and
+  // signals to the decider that recovery action is needed before acting on
+  // the rest of the digest.
+  if (errors.length > 0) {
+    process.exitCode = 2;
   }
 }
 

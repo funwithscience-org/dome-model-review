@@ -325,6 +325,29 @@ Classify:
 
 This check exists because `digest-reviews.js` historically filtered on `WIN-*` prefix only, silently dropping all SEC-*, ISS-*, HOLISTIC-*, PRED-*, and other non-WIN reviews. The fix was applied 2026-04-12, but this check prevents regression or the introduction of new filter bugs.
 
+### 7f. Broken Curmudgeon Review Files (Parse Errors)
+
+The digest pipeline's `errors[]` array records review files that fail JSON parsing. Their findings are silently dropped — the file is neither "pending" nor "processed," it's in error limbo. Historically these could sit broken for 9+ days before being noticed.
+
+**Check:** Read `monitor/curmudgeon/pending-digest.json`'s `errors` field and fail any non-empty list.
+
+```bash
+node -e "
+const fs = require('fs');
+const d = JSON.parse(fs.readFileSync('monitor/curmudgeon/pending-digest.json','utf8'));
+const errs = d.errors || [];
+if (errs.length === 0) { console.log('OK: no broken review files'); process.exit(0); }
+console.error('MAJOR: ' + errs.length + ' review files have parse errors:');
+errs.forEach(e => console.error('  - ' + e.file + ': ' + e.error));
+console.error('Auto-recovery: node build-scripts/fix-json-quotes.js ' + errs.map(e => 'monitor/curmudgeon/reviews/' + e.file).join(' '));
+process.exit(1);
+"
+```
+
+Also spot-check that the digest file itself isn't stale. If `pending-digest.json` is older than the most recent review file, the digest needs regeneration (`node build-scripts/digest-reviews.js --workspace .`) before this check can be trusted.
+
+**Severity:** Any parse-errored review file is **major** — findings are invisible to the decider. Always include the auto-recovery command in the integrity report so it's one copy-paste to fix.
+
 ### 8. Project Documentation — Mechanical Checks
 
 `CLAUDE.md` and `SESSION-CONTEXT.md` are the first things new AI sessions read. Check the mechanical facts:
