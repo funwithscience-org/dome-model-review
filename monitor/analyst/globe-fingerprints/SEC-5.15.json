@@ -1,0 +1,94 @@
+{
+  "section_id": "SEC-5.15",
+  "section_title_new": "8.15 The Repository Is the Model",
+  "reviewed_at": "2026-04-15T06:00:00.000Z",
+  "mode": "Globe Fingerprint Hunt (Mode 4)",
+  "fingerprints_found": 2,
+  "summary": "Section 8.15 mentions WGS84 once in a subordinate clause when describing the curve-fit scripts, and mentions disc_radius=20,015 km once without flagging it as πR_Earth. Both are globe fingerprints hiding in plain sight inside the section's own evidence. The stronger version of 'the curve fit IS the model' is 'the curve fit targets — and encodes — the globe coordinate frame, line by line, in comments the author wrote himself.'",
+  "fingerprint_1": {
+    "name": "find_curve.py encodes the azimuthal equidistant projection as its fit target via the literal formula r = (90 - lat) * 111.1 km — a globe great-circle arc-length-per-degree identity",
+    "kernel_of_truth": "Section 8.15 correctly identifies test_curve_stretching.py and find_curve.py as the heart of the modelling methodology and correctly notes they 'perform iterative least-squares fitting to WGS84 coordinates.' That is right. What the section does not do is show the READER what the fit target actually is. Without that, a dome defender can say 'WGS84 is just a convenient coordinate frame; our model reinterprets it.' The literal contents of find_curve.py close that door.",
+    "but_here_is_why_it_fails": "find_curve.py line 34 contains the author's own comment: 'Required H(lat) to maintain perfect WGS84 map radius (r = (90-lat)*111.1):' followed by a loop that computes r = (90 - lat) * 111.1 for latitudes 80 through -10 in 10-degree steps. This formula is not a flat-disc coordinate system — it is the azimuthal equidistant projection from the pole on a globe of radius R = 6,371 km. The constant 111.1 km/deg equals π R_Earth / 180 = π × 6,371 / 180 = 111.195 km/deg — the globe's great-circle arc per degree of latitude, known to every cartographer. The dome's 'curve-fitting' script does not fit to raw observations; it fits H(lat) to maintain agreement with the AEP of a sphere. The repository does not just use globe-derived inputs — the repository encodes the globe map formula as the curve-fit target, in code the author wrote and commented himself. The model is an AEP of the globe with an H(lat) fudge layer bolted on.",
+    "globe_value": {
+      "name": "Great-circle arc length per degree of latitude",
+      "derivation": "π × R_Earth / 180 = π × 6,371 km / 180 = 111.195 km/deg — the length of one degree of meridian arc on the globe",
+      "source": "Standard geodesy. Equivalent forms: 2π R / 360; ≈ 60 nautical miles/deg. 111.1 is the rounded value used in AEP and flight-planning tools worldwide.",
+      "AEP_identity": "On an azimuthal equidistant projection from the north pole, a point at latitude lat maps to radial distance r = (90 - lat) × 111.1 km from the pole center"
+    },
+    "dome_value": {
+      "name": "Fit-target radial distance in find_curve.py",
+      "value": "r = (90 - lat) * 111.1 km (literal expression in code)",
+      "code_location": "find_curve.py line 34 (comment) and line 36 (expression in loop body)",
+      "usage": "Computes the 'required' firmament height H_req = r × tan(lat) at each latitude so that H/r matches the globe AEP radius. The script exists to determine what H(lat) profile must be imposed to keep the disc map agreeing with WGS84 at each latitude."
+    },
+    "quantitative_link": {
+      "script_constant": "111.1 km/deg",
+      "globe_constant": "π × 6,371 / 180 = 111.195 km/deg",
+      "match_precision": "0.09% (4 parts in 10,000)",
+      "interpretation": "The script is explicitly parameterized on the globe AEP identity. At lat=0, r = 90 × 111.1 = 9,999 km; at lat=-90 (south pole), r = 180 × 111.1 = 19,998 km, matching the dome's disc_radius = 20,015 km to 0.09% — i.e., the disc edge IS the south pole of the globe unrolled by the AEP formula. The entire dome coordinate system collapses to one globe identity in this one file."
+    },
+    "code_evidence": {
+      "file": "find_curve.py",
+      "lines_verified": "1-36 (script entire first routine)",
+      "verbatim_excerpts": [
+        "# Real WGS84 distances",
+        "def wgs_dist(c1, c2):",
+        "    return real_dist[(c1, c2)]",
+        "print(\"Required H(lat) to maintain perfect WGS84 map radius (r = (90-lat)*111.1):\")",
+        "for lat in range(80, -10, -10):",
+        "    r = (90 - lat) * 111.1"
+      ],
+      "verified": true,
+      "verification_method": "GitHub API read of john09289/predictions/find_curve.py on 2026-04-15. Constants and comments confirmed in-repo."
+    },
+    "why_it_matters": "Section 8.15's deepest argument is 'the curve fit is the model.' That is right but under-specified. The stronger claim is that the curve-fit target is the globe's AEP. This converts the section's position from 'the code is opaque physics-wise' to 'the code is self-documenting: the author wrote a comment telling the reader that the goal is to maintain WGS84 map agreement at each latitude.' The section doesn't need to argue the point — it just needs to quote the comment. This also closes off the 'we use WGS84 as a convenient coordinate frame but our model is independent' defense: the script is not re-expressing observations in disc coordinates, it is demanding that disc coordinates reproduce the globe AEP to within numerical precision.",
+    "defender_rebuttal_and_counter": {
+      "defender_claim": "The 111.1 km/deg is just a convenient way to convert latitude to distance for humans reading the script. The model itself doesn't depend on 111.1 being π R_Earth/180 — it could use any distance unit.",
+      "counter": "If it were unit-neutral, the script would use a symbolic constant like KM_PER_DEG defined in terms of the dome's own geometry. Instead it uses the rounded globe value 111.1 inline. More importantly, the COMMENT explicitly names the target 'perfect WGS84 map radius' — the fit target is not any pair of distances, it is the specific AEP identity of the globe. The dome defender cannot wave off the comment the author wrote himself.",
+      "defender_claim_2": "The script is just one of many in the repository; it's not clear it represents the model's core methodology.",
+      "counter_2": "Section 8.15 itself singles out find_curve.py and test_curve_stretching.py as the files that generate the 'curve fit' that IS the model. The comment in find_curve.py is therefore a primary source, not a marginal one. If these scripts are not the model, the section's core claim needs separate support. If they are, this comment is the tightest possible confirmation of our argument."
+    },
+    "confidence": 0.94
+  },
+  "fingerprint_2": {
+    "name": "The three hardcoded 'core parameters' in inject_ai_layer.py are a globe-derived triplet, not an independent disc-native set — the section cites them flat without flagging the identities",
+    "kernel_of_truth": "The existing section 8.15 paragraph states: 'inject_ai_layer.py hardcodes the dome's core parameters (disc_radius = 20,015 km, firmament_height = 9,086 km, sun_altitude = 5,733 km) as static values for AI consumption — not as outputs of any calculation.' That observation is factually correct — lines 89-93 of inject_ai_layer.py (verified 2026-04-15) do contain these literals.",
+    "but_here_is_why_it_fails": "Calling them 'hardcoded with no derivation' is a weaker argument than calling them what they actually are — namely, globe quantities in disguise. The identity disc_radius = 20,015 km ≈ π × R_Earth is already documented elsewhere in our review (see SEC-2.9, SEC-5.14 fingerprint 2, SEC-6.6). Section 8.15 is a natural place to complete the triplet: all three 'core parameters' are tied to globe geometry. disc_radius = 20,015 km sets the disc edge at the AEP antipode (π × 6,371 = 20,011.7 km; match 0.02%). firmament_height = 9,086 km sits between the Schumann quarter-wave c/(4 × 7.83 Hz) = 9,572 km (the value the section itself quotes) and the distance-fit supremum 8,537 km documented in SEC-2.1 — i.e., it is a compromise between two globe-derived constraints the author is balancing. sun_altitude = 5,733 km is chosen so that at the Tropic of Cancer disc-radius r ≈ (90 - 23.44) × 111.1 ≈ 7,390 km, the solar elevation arctan(5,733 / 7,390) ≈ 37.8° reproduces approximately the observed noon-sun elevation at that latitude on the equinox — another globe-boundary-condition calibration. The section's current framing treats these three values as arbitrary constants; the stronger framing is that they are the AEP radius, a Schumann-adjacent height, and a solar-elevation-calibrated height — no one of which is free once you fix the others.",
+    "globe_values": {
+      "disc_radius_vs_pi_R": "20,015 km vs π × 6,371 = 20,011.7 km (0.02% match)",
+      "firmament_height_vs_Schumann_quarterwave": "9,086 km vs c/(4 × 7.83 Hz) = 9,572 km — 5.4% off; the section itself quotes this formula",
+      "sun_altitude_vs_tropic_elevation": "5,733 km implies arctan(5733 / 7390) = 37.8° at Tropic of Cancer AEP radius — close to the observed noon-sun elevation at equinox at that latitude (not a random pick)"
+    },
+    "dome_values": {
+      "source_file": "inject_ai_layer.py lines 89-93",
+      "verbatim": [
+        "\"disc_radius_km\": 20015,",
+        "\"firmament_height_km\": 9086,",
+        "\"sun_altitude_km\": 5733,",
+        "\"moon_altitude_km\": 2534"
+      ],
+      "verified": true,
+      "verification_method": "GitHub API read of john09289/predictions/inject_ai_layer.py on 2026-04-15"
+    },
+    "why_it_matters": "Strengthens the section's 'no forward model' argument by showing that even the constants being hardcoded are not arbitrary. 'No derivation' is a weaker claim than 'no derivation needed because the values are already globe quantities relabeled.' This complements SEC-5.14's fingerprint 2 (recalc_v51.py Redge = 20015) by extending the same argument to inject_ai_layer.py, which is the section 8.15 specifically singles out.",
+    "defender_rebuttal_and_counter": {
+      "defender_claim": "A 5.4% discrepancy between firmament_height and the Schumann quarter-wavelength isn't a fingerprint — that's just a different number.",
+      "counter": "The match doesn't need to be exact to be a fingerprint — the question is whether the value sits on or near a globe-derived locus. 9,086 km is close enough to the Schumann quarter-wave that the section itself uses the Schumann formula to contextualize it. A genuinely free disc parameter would not be within 5% of a specific globe-cavity constant; the more natural explanation is that the author is balancing Schumann-compatibility against distance-fit residuals."
+    },
+    "confidence": 0.78
+  },
+  "suggested_patch": {
+    "target": "part8 section 8.15, the existing paragraph about test_curve_stretching.py and find_curve.py",
+    "current_text": "<strong><code>test_curve_stretching.py</code> and <code>find_curve.py</code></strong> perform iterative least-squares fitting to WGS84 coordinates. There is no deeper physical derivation underneath — the curve fit <em>is</em> the model.",
+    "proposed_replacement": "<strong><code>test_curve_stretching.py</code> and <code>find_curve.py</code></strong> perform iterative least-squares fitting to WGS84 coordinates. The fit target is the globe's own coordinate system: find_curve.py line 34 contains the author's comment <em>\"Required H(lat) to maintain perfect WGS84 map radius (r = (90-lat)*111.1)\"</em>, followed by a loop that computes r = (90 - lat) × 111.1 km at each latitude. That formula is the azimuthal equidistant projection from the north pole on a sphere of radius R_Earth — the constant 111.1 km/deg equals π R_Earth / 180 = 111.195 km/deg to four parts in 10,000. The 'curve fit' is not just calibrated against globe data; it is structurally designed to reproduce the globe AEP at each latitude. There is no deeper physical derivation underneath — the curve fit is the model, and the model is the globe's AEP with an H(lat) fudge layer added to match distances that pure AEP gets wrong.",
+    "tldr_patch": "No change needed — the existing TLDR ('no forward model exists...') remains accurate; this patch only strengthens the supporting paragraph."
+  },
+  "newsworthy": "Dome's own curve-fitting script carries an author comment explicitly targeting 'perfect WGS84 map radius (r = (90-lat)*111.1)' — the globe AEP identity, line-coded as the fit target",
+  "notes_and_caveats": [
+    "Fingerprint 1 is high-confidence because the evidence is the author's own comment in his own code. The only interpretive choice is whether the comment describes a primary methodology or a throwaway script. Section 8.15 already treats find_curve.py as primary, so this is consistent.",
+    "Fingerprint 2 is moderate-confidence because the sun_altitude and firmament_height links to globe quantities are not as clean as the disc_radius = π R identity. Recommend presenting the triplet as a pattern rather than claiming each number matches a single globe constant to 0.01%.",
+    "This finding does NOT contradict or modify the SEC-5.14 fingerprint 2 (recalc_v51.py Redge = 20015). It extends the pattern to a different file that SEC-5.15 explicitly cites.",
+    "Consider-the-other-side: a fair defender might say the author uses 111.1 as a 'didactic' constant to illustrate the argument, not as the actual fit target. Counter: the comment literally says 'to MAINTAIN perfect WGS84 map radius' — the script's purpose is to enforce AEP agreement, not illustrate it.",
+    "No defense neutralization performed — no Cycle 3+ curmudgeon review exists for SEC-5.15 (only one cycle-1 review, which we read and used to inform this analysis)."
+  ]
+}
