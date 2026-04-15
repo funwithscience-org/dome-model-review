@@ -216,6 +216,12 @@ if (target === 'publish') {
   );
   if (committed) {
     run('git push origin main', 'Push to GitHub');
+    // Run git gc --auto after push to prevent pack-file bloat. The --auto flag
+    // is cheap when not needed (fast check of loose-object threshold) and only
+    // actually repacks when git itself decides it's worth it. Silent by default.
+    // We observed 72MB → 13MB savings after one aggressive gc on 2026-04-15, which
+    // was the accumulation of ~9 days of pack drift. Weekly+ auto-gc prevents that.
+    runTolerant('git gc --auto --quiet', 'Git GC (if needed)', ['']);
   }
 
   // Sync key files to workspace (FUSE mount can't run git, but agents read from there).
