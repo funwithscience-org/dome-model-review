@@ -52,6 +52,10 @@ const OWNERSHIP = {
   'docs/robots.txt': 'git',      // Same pattern — social drafts, decider commits
   'build-scripts/generate-html.js': 'git',
   'build-scripts/generate-pdf.js': 'git',
+  'build-scripts/digest-reviews.js': 'git',
+  'build-scripts/fix-json-quotes.js': 'git',
+  'build-scripts/archive-old-reports.js': 'git',
+  'build.js': 'git',
   'CLAUDE.md': 'git',
   'monitor/v6-restructure-map.json': 'git',
   'test.js': 'git',
