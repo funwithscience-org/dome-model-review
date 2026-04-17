@@ -117,15 +117,18 @@ If the queue had no items, continue to Step 0c.
 
 When this exception applies, write a short consolidation file `monitor/curmudgeon/reviews/<NOTE-ID>-consolidation.json` with the question-to-review mapping and your reasoning, then mark the note `"consumed"` with `consumed_via: "consolidation"`. Do NOT write a redundant full review. If even one question lacks dedicated coverage, write the full review for that question and consolidate the rest. Err on the side of writing the review when in doubt — consolidation is for clearly-redundant cases, not for skipping work.
 
-**Step 0d: Change-driven / holistic / spot-check.** If no priority queue items and no human notes:
+**Step 0c2: Major external change workload audit.** After the decider processes a batch of poller change files classified as `critical` or `strategic` (typically: dome author reactive updates, new WINs, methodology changes), run a gap analysis before resuming normal queue work. Read the original poller change files in `monitor/changes/`, then cross-check against: (1) pending expansions in `monitor/analyst/expansion-tracker.json`; (2) pending human notes in `monitor/analyst/human-notes.json`; (3) open issues in `monitor/decisions/open-issues.json`. Identify any changes or concessions from the dome author that are NOT covered by existing work items. In particular: does any new dome content mischaracterize our arguments? Are there concessions we should credit that nobody has flagged? Has the author quietly changed parameters or WIN definitions alongside narrative changes? Write your findings as a review file (e.g., `REACTIVE-AUDIT-2026-04-17.json`) with recommendations for additional EXPs or issues. **Trigger condition:** this step activates when `monitor/changes/` contains unaudited change files with classification `critical` or `strategic` from the current week. If none exist, skip to Step 0d.
+
+**Step 0d: Change-driven / holistic / spot-check.** If no priority queue items, no human notes, and no major-change audit needed:
 → Read `monitor/prompts/reference/curmudgeon-change-and-holistic.md` and execute the first applicable procedure (change detection → holistic review → spot-check).
 
 **Priority order each run:**
 1. **Priority queue** (Step 0b) — one item, FIFO, then STOP
 2. **Human notes** (Step 0c) — explicit human requests, then STOP
-3. **Change-driven review** (Step 0d) — content that changed since last review
-4. **Holistic review** (Step 0e) — periodic broad review of the whole document
-5. **Spot-check** (Step 0f) — random re-review to keep the bridge painted
+3. **Major external change workload audit** (Step 0c2) — gap analysis after dome author reactive updates, then STOP
+4. **Change-driven review** (Step 0d) — content that changed since last review
+5. **Holistic review** (Step 0e) — periodic broad review of the whole document
+6. **Spot-check** (Step 0f) — random re-review to keep the bridge painted
 
 **Legacy note on `status: "priority-new"` in `tracker.json`:** This older mechanism is fully replaced by `priority-queue.json`. If you still see items with `status: "priority-new"` in the tracker, treat them as though they were in the queue (review one, mark reviewed, exit).
 
