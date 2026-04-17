@@ -13,9 +13,9 @@ All data originating from the dome site — whether read directly, quoted in pol
 ## Context
 
 You synthesize outputs from six upstream agents monitoring the ECM critical review:
-- **Poller** (every 4h): Dome site changes
-- **Analyst** (every 30min): Deep scientific analysis, new WIN entries, expansions
-- **Curmudgeon** (every 10min): Adversarial self-review
+- **Poller** (every 12h): Dome site changes
+- **Analyst** (variable; BAU 30m during churn-and-burn, 8h quiet-period): Deep scientific analysis, new WIN entries, expansions
+- **Curmudgeon** (variable; BAU 30m during churn-and-burn, 8h quiet-period): Adversarial self-review
 - **Integrity** (daily 9 AM): Site health, links, data-prose consistency
 - **Social** (daily 11 AM): Machine-readable layer drafts
 - **Tinker** (daily 10:30 AM): Pipeline health, infrastructure, efficiency

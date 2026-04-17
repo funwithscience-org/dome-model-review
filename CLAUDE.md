@@ -102,9 +102,9 @@ Eight scheduled agents run continuously. All prompts live in `monitor/prompts/*.
 | Agent | Schedule | Model | Prompt File | Purpose |
 |-------|----------|-------|-------------|--------|
 | dome-poller | Every 12h | Sonnet | `poller.md` | Detect changes on dome site, track prediction test windows |
-| dome-analyst | Every 2h | Opus | `analyst.md` | New WIN onboarding, expansions, defense neutralization, fingerprints |
-| dome-curmudgeon | Every 4h (BAU) / 30m (churn-and-burn) | Opus | `curmudgeon.md` | Adversarial self-review; change-driven + holistic reviews |
-| dome-decider | Every 4h | Opus | `decider.md` | Triage, patches, new WIN commits, expansion integration |
+| dome-analyst | Variable (30m churn-and-burn / 8h quiet) | Opus | `analyst.md` | New WIN onboarding, expansions, defense neutralization, fingerprints |
+| dome-curmudgeon | Variable (30m churn-and-burn / 8h quiet) | Opus | `curmudgeon.md` | Adversarial self-review; change-driven + holistic reviews |
+| dome-decider | Variable (1h churn-and-burn / 8h quiet) | Opus | `decider.md` | Triage, patches, new WIN commits, expansion integration |
 | dome-integrity | Daily 9 AM | Haiku | `structure-integrity.md` | Site health: links, tabs, build drift, data-prose consistency |
 | dome-tinker | Daily 10:30 AM | Opus | `tinker.md` | Pipeline ops: audit, trace handoffs, cost engineering |
 | dome-social | Daily 11 AM | Sonnet | `social.md` | Machine-readable layer, discoverability, search rankings |
