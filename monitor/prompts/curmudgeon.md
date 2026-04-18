@@ -103,7 +103,7 @@ Queue structure:
    **If ALL your findings have been superseded** (i.e., everything you were going to flag is already fixed), do NOT write an empty or "nothing found" review file — that wastes the review slot. Instead: log "queue item <target_id> fully superseded by parallel patches — skipping" in your output, and **go back to Step 2 to pick the next un-reviewed queue item.** Repeat this whole procedure for that new item. A single curmudgeon run can legitimately process multiple items when earlier ones are fully superseded (to avoid burning Opus cycles on obsolete work). Cap this at 3 queue items per run to avoid runaway.
 
 6. Write the review to the normal `reviews/` location.
-7. **Do NOT modify `priority-queue.json`.** The decider is the single writer for this file. The decider will pop reviewed items and append history records when it processes your review files. Your review file IS the signal that the item is done.
+7. **Do NOT modify `priority-queue.json`.** The decider is the primary writer; the human operator may also push items directly (look for `pushed_by` containing `"operator"`). You never write to the queue. The decider will pop reviewed items and append history records when it processes your review files. Your review file IS the signal that the item is done — treat operator-pushed and decider-pushed items identically.
 8. **STOP** (unless Step 5 sent you back for another item). Do not continue to normal cycle work this run. Save/commit and exit.
 
 If the queue had no items, continue to Step 0c.

@@ -282,7 +282,7 @@ fs.writeFileSync(CLONE+'/monitor/curmudgeon/priority-queue.json',JSON.stringify(
 
 **Dedup:** Before pushing, check if an item with the same `target_type` + `target_id` is already in the queue. If so, don't duplicate — just update its `reason` and `pushed_at`.
 
-**Who can push:** Only the decider writes to `priority-queue.json`. Analyst and humans route through you via human notes or completed expansion items. If you see any other agent mutating the queue, log an alert.
+**Who can push:** The decider is the primary writer of `priority-queue.json`. The human operator (Steve, working through the Cowork session) MAY also push directly when they want to queue specific review targets without waiting for a decider cycle — this is the documented operator escape hatch. Operator pushes must set `pushed_by` to a string containing `"operator"` (e.g. `"steve (operator, via cowork)"`), and must respect the same dedup rule (no duplicate `target_type` + `target_id` pairs). Analyst and any other agent route through the decider via human notes or completed expansion items — never push to the queue directly. If you see any agent other than the decider or a `pushed_by` containing `"operator"` mutating the queue, log an alert. When popping items, treat operator-pushed and decider-pushed items identically (strict FIFO by `queue_id`) — the origin does not affect review scheduling.
 
 ## Progressive Disclosure Awareness
 
