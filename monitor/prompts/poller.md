@@ -86,6 +86,34 @@ For each detected change, classify as:
 
 The 2026-04-04 batch of ~50 new predictions was classified QUIET because no confirmed WINs changed. That was wrong — the strategic significance of the dome shifting to prospective predictions with cryptographic timestamps was missed for 6 consecutive polls. These rules exist to prevent that.
 
+### 5b. Load-Bearing Page Status-Label Rule
+
+Certain pages on the dome site carry verdict-bearing wording that is directly referenced by our review's verdict-counting and falsification narratives. When the poller diff touches any of the following on these pages, it MUST emit a DEDICATED `chg-*.json` for that page — even if the same change is also mentioned in a broader docs-surface rollup.
+
+**Covered pages:** `docs/killshot.html`, `docs/wins.html`, `docs/predictions.html`, `docs/audit.html`, `docs/review-response.html`.
+
+**Covered surfaces within those pages:**
+- Status badge text on any row of a data table (e.g. `CONFIRMED`, `PENDING`, `STRUCTURAL SUPPORT`, `SUPPORTIVE ONLY`, `REFINED`, `FALSIFIED`, `CONFIRMED (globe falsified)`, or any new verdict label introduced)
+- Verdict column contents in any tabular data
+- Section headings named `Falsification Rule`, `Kill-Shot`, `Confirmed`, `How To Read This Page`, or equivalents, and the body text directly under them
+- CSS class transitions on status cells (e.g. `status-confirmed` applied to non-confirmed text, or dropped from confirmed text) — presentation-vs-wording mismatches are notable in themselves
+
+**Required dedicated file contents:**
+- `page` field names the specific file (not a category)
+- `before` and `after` enumerate per-row or per-heading text, not a summary phrase
+- `git_commit` cites the exact commit hash(es) causing the change
+- `description` includes per-row enumeration — one bullet per affected row/heading
+
+**Priority and classification rules for this file type:**
+- If any row demotes from confirmed-class wording (`CONFIRMED`, `CONFIRMED (globe falsified)`, `FALSIFIED`) to non-confirmed-class wording (`STRUCTURAL SUPPORT`, `SUPPORTIVE ONLY`, `PENDING`, `REFINED`, `UNCLEAR`, `WITHDRAWN`, or equivalent) → `classification: "strategic"`, `analyst_priority: "HIGH"`. A status demotion is evidence about the author's confidence state and adjudication behavior, not merely a documentation rewrite.
+- If the change REWRITES a falsification-rule heading or body into qualified / hedged language → `classification: "strategic"`, `analyst_priority: "HIGH"`.
+- If the change only ADDS new rows or only reflows layout with no text demotion → `classification: "substantive"` is acceptable, but the dedicated file is still required.
+- CSS-class mismatches (green class retained on demoted text) should be explicitly flagged in `description` even when only a "substantive" classification applies to the text change.
+
+**Relationship to rollup files:** The broader docs-surface rollup file (classifying e.g. the whole batch of HTML rewrites as one entry) is still emitted. The dedicated file sits ALONGSIDE the rollup, not in place of it. A rollup entry may reference the dedicated file via `related_changes` or a one-line mention, but the rollup's single-phrase mention DOES NOT DISCHARGE the requirement to emit the dedicated file.
+
+**Rationale (2026-04-17 near-miss):** On 2026-04-17, commit 5021eec demoted two `CONFIRMED (globe falsified)` badges on `killshot.html` (Sydney-Perth rail, Polaris elevation) to `STRUCTURAL SUPPORT` / `SUPPORTIVE ONLY`, rewrote the `Falsification Rule` section into qualified `How To Read This Page Correctly` language, and commit 6e06efb added a canary-adjacent OTS concession on the same page. The poller detected the changes and flagged them at the meta-framing level inside `chg-20260417-1620-002` (review-response.html, strategic/HIGH) and as a single phrase (`"killshot.html (softened phrasing)"`) inside `chg-20260417-1620-005` (docs-surface rollup, substantive/MEDIUM). Per-row before/after, the falsification-rule rewrite, and the CSS-class mismatch were never captured until operator-written `chg-20260417-1620-006.json` filed them retroactively. This rule closes that gap.
+
 ### 6. Check Canary Traps
 Read `monitor/review-state.json` and check if any canary traps have been triggered. Canary traps are specific criticisms in our review that, if addressed, indicate the author is reading our review.
 
