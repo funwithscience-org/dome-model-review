@@ -1365,6 +1365,7 @@ ${CSS}
 <li><a href="#part6" onclick="showTab('predictions');return false">Part 6: Predictions Page — Structural Analysis</a></li>
 <li><a href="#part7" onclick="showTab('falsify');return false">Part 7: External Falsification Tests</a></li>
 <li><a href="#part8" onclick="showTab('ai');return false">Part 8: Analysis of AI Context Directives</a></li>
+<li><a href="#part8b" onclick="showTab('ai');return false">Part 8b: The Dome Author's Fair-Auditor List — What Changes If We Follow It</a></li>
 <li><a href="#part9" onclick="showTab('ai');return false">Part 9: Conclusions</a></li>
 <li><a href="#part10" onclick="showTab('refs');return false">Part 10: References and Public Datasets</a></li>
 </ul>
@@ -1619,6 +1620,8 @@ ${sectionNav('pages', 'Live Power Dashboard', 'timestamp', 'Timestamp Error')}
 
 </div></details>
 
+<div class="ts-related-callout"><p><strong>Related: methodology.json 5-class claim taxonomy.</strong> Alongside the OTS timestamping methodology, the April 17 rigor push introduced a 5-class claim taxonomy (<code>retrospective_structural</code>, <code>pending_contested</code>, <code>supportive_nonunique</code>, <code>prospective_confirmed</code>, <code>open_refinement</code>) in methodology.json, applied to 9 of 69+ claims in claim_index.json. For the registry-level audit of how that taxonomy and other API-level concessions compare to the visible headline, see <a href="#registry-framing-audit" onclick="showTab('pages');return false">Section 4.2 — Registry Framing Audit</a>. For per-WIN author-rating fields, see the <em>Author's Self-Rating</em> block on each WIN detail card.</p></div>
+
 ${sectionNav('killshots', 'Kill Shots', 'predictions', 'Predictions Analysis')}
 
 </div>
@@ -1649,6 +1652,7 @@ ${sectionNav('predictions', 'Predictions Analysis', 'ai', 'AI & Conclusions')}
 <div class="tab-content" id="ai">
 
 ${renderSectionFromJson('part8', context, winsByVerdict, wins, tally, sectionNav)}
+${renderSectionFromJson('part8b', context, winsByVerdict, wins, tally, sectionNav)}
 ${renderSectionFromJson('part9', context, winsByVerdict, wins, tally, sectionNav)}
 
 ${sectionNav('falsify', 'External Tests', 'refs', 'References')}
