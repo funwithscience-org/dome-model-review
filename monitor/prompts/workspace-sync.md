@@ -73,6 +73,11 @@ OWNED_BY_GIT=(
   'monitor/curmudgeon/priority-queue.json'
   'monitor/integrity/workspace-sync-skips.jsonl'
   'monitor/curmudgeon/pending-digest.json'
+  # PROP-009r2 C-1: enforcement flag for the priority-queue pop precondition.
+  # git-owned so workspace-sync does NOT push the workspace copy back into
+  # git (preserves the `git rm` rollback path). See build.js OWNERSHIP and
+  # CLAUDE.md "File Ownership Rules".
+  'monitor/decisions/prop-009-enforce.flag'
   # All .md files under monitor/prompts/ are git-owned (handled by the
   # dynamic rule in is_git_owned() below).
 )

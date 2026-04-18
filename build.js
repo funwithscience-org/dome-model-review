@@ -61,6 +61,10 @@ const OWNERSHIP = {
   'test.js': 'git',
   'monitor/decisions/open-issues.json': 'git',
   'monitor/decisions/closed-issues.json': 'git',
+  // PROP-009r2 C-1: enforcement-toggle flag, git-owned so build.js publish copies
+  // it from clone to workspace. The file's presence = enforce; absence = shadow.
+  // Created via `touch && git add && git commit`; removed via `git rm && commit`.
+  'monitor/decisions/prop-009-enforce.flag': 'git',
   'monitor/curmudgeon/priority-queue.json': 'git',
   // Direction-guard skip log (Phase 1 Change 1.8). Authoritatively written
   // by workspace-sync from its clone (fs.appendFileSync → git add -A → push),

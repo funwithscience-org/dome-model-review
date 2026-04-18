@@ -87,15 +87,25 @@ Queue structure:
 
 **Procedure:**
 1. Read the queue. If `queue` is empty, skip to Step 0c.
-2. Find the **first un-reviewed** item in `queue` — strict FIFO, no reordering. To determine if an item has already been reviewed, check whether a review file exists in **`${WORKSPACE}/monitor/curmudgeon/reviews/`** (NOT the clone — you write reviews to the workspace, and workspace-sync may not have pushed them to git yet; the clone would be missing your own recent reviews). Check if any filename contains the item's `target_id`. For example, queue item `target_id: "WIN-003"` is already reviewed if `WIN-003.c2.json` (or any file matching `WIN-003*`) exists. Queue item `target_id: "EXP-050"` is already reviewed if `EXP-050-proposal.c2.json` exists. For `EXP-054-batch`, check for `EXP-054-batch*.json`. For section items like `part3-3.1b`, check for `SEC-3.1b*.json`. **If ALL queue items have matching review files, skip to Step 0c** — the queue is fully reviewed and the decider will clean it up on its next run.
+2. Find the **first un-reviewed** item in `queue` — strict FIFO, no reordering. **PROP-009 precondition:** an item is 'already reviewed' ONLY if one of the following holds (read from `${WORKSPACE}/monitor/curmudgeon/reviews/`, not the clone):
+   - **Strict:** a review file exists whose top-level `queue_id` field equals this item's `queue_id`; OR
+   - **Soft fallback (for legacy reviews without queue_id tags):** a review file exists whose filename substring-matches the `target_id` AND whose `reviewed_at` timestamp post-dates this item's `pushed_at` timestamp.
+
+   Substring-match alone is NOT sufficient — a pre-existing old review for the same `target_id` does not count. For example, queue item `target_id: "WIN-058"` with `queue_id: 166` and `pushed_at: "2026-04-18T07:26Z"` is NOT covered by `WIN-058.c2.json` from 2026-04-08, even though the filename substring-matches. You MUST review this item.
+
+   When you DO write a review for a queue-sourced item, **always include the `queue_id` field** (integer) and the `queue_pushed_at` field (ISO timestamp) inside the review JSON, copied verbatim from the queue item — this is how the decider's Step E2 pop filter finds your work and prevents post-integration adversarial review from being silently skipped. Do not rely on the filename alone to carry queue identity. Cycle-number determination (`.c2`, `.c3`, `.c4`) should still follow the existing rule (highest existing cycle + 1), but the `queue_id` field disambiguates which push this review covers.
+
+   For section items like `part3-3.1b`, the search-terms expansion (`SEC-3.1b*`) still applies to the substring portion of the soft fallback.
+
+   **If ALL queue items either (a) strict-match or (b) soft-match under the above rule, skip to Step 0c** — the queue is fully reviewed and the decider will clean it up on its next run.
 2b. **Content-exists guard:** Before reviewing, verify the target content actually exists. For expansion/proposal items (EXP-NNN), check that the expansion file is present in `monitor/analyst/expansions/`. For section rewrites referencing an EXP, check that the EXP has been integrated into `sections.json`. **If the target content doesn't exist yet** (e.g., analyst hasn't written the expansion), **skip this item and move to the next un-reviewed queue item.** Do NOT write a review about missing content — that wastes a cycle. If no queue items have reviewable content, skip to Step 0c.
 3. Review that item using the appropriate section below (WIN review procedure for `win-*`, section review for `section-*`, proposal-package review for `proposal`, kill-shot review for `killshot-*`, prediction-batch review for `prediction-batch`).
-4. **For `proposal` target_type**: do NOT attack the prose — it doesn't exist yet. Instead review the proposal package in `monitor/analyst/expansions/<EXP-ID>.json` against the analytical questions in the package itself (verdict-flip plausibility, new-tag naming, alternatives considered, unknowns acknowledged). Write your review to `monitor/curmudgeon/reviews/<EXP-ID>-proposal.json`. Your verdict here gates whether the analyst writes prose next.
+4. **For `proposal` target_type**: do NOT attack the prose — it doesn't exist yet. Instead review the proposal package in `monitor/analyst/expansions/<EXP-ID>.json` against the analytical questions in the package itself (verdict-flip plausibility, new-tag naming, alternatives considered, unknowns acknowledged). Write your review to `monitor/curmudgeon/reviews/<EXP-ID>-proposal.json`, **including `queue_id` and `queue_pushed_at` at the top of the JSON, copied from the queue item** (PROP-009 precondition). Your verdict here gates whether the analyst writes prose next.
 4b. **For `prediction-batch` target_type**: The decider integrated a batch of prediction verdicts into `data/predictions.json`. The `context_hints.prediction_ids` lists which predictions were assessed. For each prediction in the batch:
    - Read the entry from `data/predictions.json` and the assessment file from `monitor/analyst/expansions/PRED-assessment-<ID>.json`
    - Challenge the `our_verdict`: Is `recycled` correct, or does this prediction add genuinely new content beyond the WIN it restates? Is `standard_physics` fair, or is the dome's derivation path non-trivial enough to count? Is `unfalsifiable` warranted, or is there a reasonable test we're overlooking?
    - Check for the other side: could a dome defender argue this prediction IS genuinely prospective? What's the strongest counterargument to our verdict?
-   - Write your review to `monitor/curmudgeon/reviews/<target_id>.json` (e.g., `PRED-batch-2026-04-10.json`). Include per-prediction verdicts: `agree`, `challenge` (with reasoning), or `upgrade` (we were too harsh).
+   - Write your review to `monitor/curmudgeon/reviews/<target_id>.json` (e.g., `PRED-batch-2026-04-10.json`), **including `queue_id` and `queue_pushed_at` at the top of the JSON, copied from the queue item** (PROP-009 precondition). Include per-prediction verdicts: `agree`, `challenge` (with reasoning), or `upgrade` (we were too harsh).
 5. **Pre-write staleness check.** Before writing the review, your clone may be 15-30 min old and the decider may have patched content in parallel. Run `git pull --rebase -q` in your clone, then re-read the target fields (e.g., wins.json for the WIN you reviewed, sections.json for the section). For each hole / finding in your draft review:
    - If the specific text or condition you flagged **still exists** in the current content → keep the finding.
    - If it has been **patched or removed** → drop the finding (or mark it `superseded_by_parallel_patch: true` with the commit SHA that fixed it, your call).
@@ -103,7 +113,7 @@ Queue structure:
    **If ALL your findings have been superseded** (i.e., everything you were going to flag is already fixed), do NOT write an empty or "nothing found" review file — that wastes the review slot. Instead: log "queue item <target_id> fully superseded by parallel patches — skipping" in your output, and **go back to Step 2 to pick the next un-reviewed queue item.** Repeat this whole procedure for that new item. A single curmudgeon run can legitimately process multiple items when earlier ones are fully superseded (to avoid burning Opus cycles on obsolete work). Cap this at 3 queue items per run to avoid runaway.
 
 6. Write the review to the normal `reviews/` location.
-7. **Do NOT modify `priority-queue.json`.** The decider is the primary writer; the human operator may also push items directly as an escape hatch (look for `pushed_by` containing `"operator"`). You never write to the queue. Note: `priority-queue.json` is git-owned — you see it from your fresh clone each run, so operator pushes via the FUSE workspace will be invisible to you; operators are expected to push via a git clone. The decider will pop reviewed items and append history records when it processes your review files. Your review file IS the signal that the item is done — treat operator-pushed and decider-pushed items identically.
+7. **Do NOT modify `priority-queue.json`.** The decider is the primary writer; the human operator may also push items directly as an escape hatch (look for `pushed_by` containing `"operator"`). You never write to the queue. Note: `priority-queue.json` is git-owned — you see it from your fresh clone each run, so operator pushes via the FUSE workspace will be invisible to you; operators are expected to push via a git clone. The decider will pop reviewed items and append history records when it processes your review files. Your review file IS the signal that the item is done — treat operator-pushed and decider-pushed items identically. **PROP-009: when the triggering work is a queue-sourced item, your review JSON MUST contain a top-level `queue_id` field copied verbatim from `item.queue_id` (integer) and a `queue_pushed_at` field copied from `item.pushed_at`. This is the load-bearing identifier the decider uses to match your review to the push; without it the decider falls back to a timestamp heuristic, and with a wrong value the decider may pop the wrong queue entry. Before writing the review file, assert in your own output: `queue_id set to <N>, matches queue item`. If you are unsure which queue_id you are servicing (e.g., two concurrent pushes of the same target_id), stop and leave a human note rather than guessing.**
 8. **STOP** (unless Step 5 sent you back for another item). Do not continue to normal cycle work this run. Save/commit and exit.
 
 If the queue had no items, continue to Step 0c.
@@ -219,6 +229,8 @@ For every DOI, URL, or paper reference in our review text:
 {
   "point_id": "WIN-NNN",
   "topic": "Short description",
+  "queue_id": 168,                           // PROP-009: REQUIRED when this review services a priority-queue item — copy from queue entry verbatim. Omit ONLY if the review was triggered by change-detection/holistic/spot-check with no queue entry.
+  "queue_pushed_at": "2026-04-18T09:34:14.533Z",  // PROP-009: REQUIRED alongside queue_id — copy from queue entry; used by decider soft fallback and by tinker audit.
   "reviewed_at": "ISO timestamp",
   "cycle": 1,
   "current_verdict_holds": true/false,
@@ -280,13 +292,24 @@ For every DOI, URL, or paper reference in our review text:
 
 **text_fingerprint**: Record the character lengths of each reviewed field and the current verdict. This is the change detection baseline — on subsequent runs, the change-driven scan compares current data against these stored fingerprints to detect what needs re-review. Always record accurate fingerprints.
 
+### 7a. Pre-write assertion — queue_id presence (PROP-009, mandatory for queue-sourced reviews)
+
+Before you finalize the review file, verify: "Is this review servicing a priority-queue item (Step 0b)? If yes, is `queue_id` set on the review JSON to the integer value from the queue entry I am reviewing? Is `queue_pushed_at` set to the queue entry's `pushed_at`?" If either answer is "no, but it should be", stop and re-read the queue entry. This is the load-bearing identifier — missing or wrong `queue_id` silently breaks the decider's pop filter.
+
 ### 7b. Validate the JSON (mandatory)
 
-**After writing the review file, immediately parse it to confirm validity.** Invalid JSON breaks the decider's digest pipeline silently — review findings become inaccessible.
+**After writing the review file, immediately parse it to confirm validity.** Invalid JSON breaks the decider's digest pipeline silently — review findings become inaccessible. PROP-009 extends the validator to assert `queue_id` presence on queue-sourced reviews.
+
+In the command below, substitute `<filename>.json` with the EXACT basename of the file you just wrote (e.g., `SEC-4.1.c5.json` or `EXP-183-proposal.json`). The `<filename>` is a literal placeholder the agent MUST replace; do not run the command verbatim.
 
 ```bash
-node -e "JSON.parse(require('fs').readFileSync('monitor/curmudgeon/reviews/<filename>.json','utf8'));console.log('valid')"
+node -e "const d=JSON.parse(require('fs').readFileSync('monitor/curmudgeon/reviews/<filename>.json','utf8'));const known=new Set(['change-detected','holistic','spot-check','priority-queue-win-rewrite','priority-queue-section-rewrite','priority-queue-expansion-proposal','priority-queue-expansion-prose','priority-queue-prediction-batch']);const t=d.trigger;if(t&&!known.has(t))console.error('WARN: unknown trigger '+t+' — queue_id strictness skipped');else if(t&&t.startsWith('priority-queue-')&&!Number.isInteger(d.queue_id)){const strictAfter=Date.parse(d.reviewed_at||'1970')>Date.parse(process.env.QUEUE_ID_STRICT_AFTER||'2026-04-20T00:00:00Z');if(strictAfter)throw new Error('queue-sourced review missing queue_id');else console.error('WARN: queue-sourced review missing queue_id (strict after '+(process.env.QUEUE_ID_STRICT_AFTER||'2026-04-20T00:00:00Z')+')');}console.log('valid')"
 ```
+
+Notes on the validator:
+- `known` enumerates the accepted `trigger` values. Missing `trigger` is tolerated (returns 'valid' without strictness, preserves pre-PROP-009 review compatibility).
+- Unknown `trigger` strings (future additions not yet in `known`) emit a WARN and skip the queue_id strictness — safer than throwing during agent rollout.
+- Queue-sourced triggers (`priority-queue-*`) require `queue_id` as an integer. During the 24h migration window after the curmudgeon.md commit lands, the validator WARN-logs instead of throwing (controlled by the `QUEUE_ID_STRICT_AFTER` env var, default 2026-04-20T00:00:00Z). The decider's pre-push validator should also honor this env for pre-patch-in-flight reviews.
 
 If it fails, fix and rewrite before continuing. The most common failure is **unescaped double quotes inside string values** — prose like `The "easy busts" appear strategic` needs `\"` around the inner words when written as a JSON string value. **Prefer building the review object in a `node -e` script and letting `JSON.stringify(obj, null, 2)` serialize it** — this eliminates hand-writing escape errors entirely. If you write JSON by hand, run the validation above before doing anything else.
 
