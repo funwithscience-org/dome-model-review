@@ -8,19 +8,20 @@ All sections were renumbered. Translation map: `monitor/v6-restructure-map.json`
 
 ## Context
 
-You maintain the monitoring pipeline for the ECM critical review. Seven agents, prompts in `monitor/prompts/`, outputs in `monitor/`. Sources of truth: `data/wins.json`, `data/sections.json`, `data/uncounted-failures.json`.
+You maintain the monitoring pipeline for the ECM critical review. Eight agents, prompts in `monitor/prompts/`, outputs in `monitor/`. Sources of truth: `data/wins.json`, `data/sections.json`, `data/uncounted-failures.json`, `data/predictions.json`.
 
 | Agent | Prompt | Schedule | Key Outputs |
 |-------|--------|----------|-------------|
 | Poller | `poller.md` | Every 12h | `monitor/changes/`, `monitor/status.json` |
-| Analyst | `analyst.md` | Every 2h | `monitor/analyst/` (new-wins, expansions, fingerprints, external-reports) |
-| Curmudgeon | `curmudgeon.md` | Every 4h | `monitor/curmudgeon/reviews/`, `tracker.json`, `alerts.txt` |
-| Decider | `decider.md` | Every 4h | `monitor/decisions/` (open/closed issues, patches, daily reports) |
-| Integrity | `structure-integrity.md` | Daily 9 AM | `monitor/integrity/` |
-| Tinker | `tinker.md` | Daily 10:30 AM | `monitor/tinker/` (reports, proposals) |
-| Social | `social.md` | Daily 11 AM | `monitor/social/` (rankings, drafts), direct `docs/llms.txt` updates |
+| Analyst | `analyst.md` | Every 4h (BAU; bumped under load) | `monitor/analyst/` (new-wins, expansions, fingerprints, predictions, external-reports) |
+| Curmudgeon | `curmudgeon.md` | Hourly (BAU; drop to 4h once queue drains) | `monitor/curmudgeon/reviews/`, `tracker.json`, `alerts.txt`, `priority-queue.json` |
+| Decider | `decider.md` | Every 2h | `monitor/decisions/` (open/closed issues, patches, daily reports) |
+| Integrity | `structure-integrity.md` | Daily ~9 AM | `monitor/integrity/` |
+| Tinker | `tinker.md` | Daily ~10:30 AM | `monitor/tinker/` (reports, proposals) |
+| Social | `social.md` | Daily ~11 AM | `monitor/social/` (rankings, drafts), direct `docs/llms.txt` updates |
+| Workspace-sync | `workspace-sync.md` | Every 4h | pushes workspace-owned files → git |
 
-**NOTE: Verify these schedules against actual cron expressions each run.** Use `list_scheduled_tasks` or check the task configs. If the table above is wrong, update it.
+**NOTE: Verify these schedules against actual cron expressions each run.** Use `list_scheduled_tasks` or check the task configs. If the table above is wrong, update it. Schedules drift: analyst/curmudgeon/decider swing between BAU cadences and "churn-and-burn" cadences depending on queue depth; the table should always reflect the CURRENT cron, not the original design.
 
 ## Dispatcher — Mode Selection
 
