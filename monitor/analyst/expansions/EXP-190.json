@@ -1,0 +1,1229 @@
+{
+  "item_id": "EXP-190",
+  "status": "DRAFT_AWAITING_HUMAN_GROUP_REVIEW",
+  "expansion_type": "FOUNDATIONAL_MODEL_CHANGE",
+  "integration_blocked_until": "operator posts HNOTE-SCOREBOARD-INTEGRATION-APPROVED-001 in monitor/decisions/human-notes.json",
+  "human_note_source": "HNOTE-SCOREBOARD-FOUNDATIONAL-001",
+  "companion_note": "HNOTE-SCOREBOARD-PIPELINE-ROUTING-001 (in monitor/decisions/human-notes.json) — strict decider holdpoint behaviour",
+  "target": "New top-level \"Scoreboard\" tab + per-row scoreboard object schema extensions to data/wins.json, data/predictions.json, and a new data/killshots.json. Phase 1 covers 15 rows (9 claim_index-classified WINs/predictions + 6 kill-shots); Phase 2 extends to the full row set.",
+  "category": "foundational-structural",
+  "priority": "foundational",
+  "source": "operator HNOTE-SCOREBOARD-FOUNDATIONAL-001 (2026-04-18)",
+  "curmudgeon_review": null,
+  "created_at": "2026-04-20T04:22:24.690Z",
+  "required_pipeline_path": {
+    "step_1_analyst": "Produce this EXP with status=DRAFT_AWAITING_HUMAN_GROUP_REVIEW (DONE — this file)",
+    "step_2_decider": "Route to curmudgeon with REQUIRE_ADVERSARIAL_REVIEW; DO NOT auto-integrate; create tracking issue ISS-NNN; log chg-*.json change file (per companion routing HNOTE)",
+    "step_3_curmudgeon": "Adversarial review (for human consumption; does NOT by itself authorize integration)",
+    "step_4_HOLD": "Pipeline stops. Operator + human group iterate on draft + curmudgeon review.",
+    "step_5_conditional_operator": "If and only if HNOTE-SCOREBOARD-INTEGRATION-APPROVED-001 is posted with approved_curmudgeon_review_id, decider may integrate subject to technical gates (i)-(iv) from companion routing HNOTE.",
+    "step_6_post_integration": "Update poller.md load-bearing-page list; update CLAUDE.md Architecture; log chg-*.json strategic/HIGH."
+  },
+  "schema_extension_proposal": {
+    "description": "Per-row scoreboard object attached to each WIN / prediction / kill-shot. Backwards-compatible: absent scoreboard object renders as \"—\" blanks.",
+    "fields": {
+      "globe_prediction_value": "number | string | null — authoritative globe-model prediction",
+      "globe_prediction_uncertainty": "number | string | null",
+      "globe_prediction_source": "string | null — named authoritative reference (e.g., \"IGRF-14\", \"Chapman 1931\", \"IAU SOFA\", \"WGS84 + Vincenty\")",
+      "dome_prediction_as_published_value": "number | string | null — BLANK if author did not publish a number for this row. NEVER derived by us.",
+      "dome_prediction_as_published_uncertainty": "number | string | null",
+      "dome_prediction_as_published_source": "string | null — verbatim citation (e.g., \"claim_index.json#win-069\", \"V51.1 paper eq. 4.7\")",
+      "dome_prediction_as_published_quote": "string | null — verbatim quote of the sentence/equation",
+      "dome_prediction_as_published_is_qualitative": "boolean — true when claim is qualitative only (\"phenomenon predicted\"), no number",
+      "dome_prediction_formula_check_value": "number | string | null — OPTIONAL independent implementation of V51.1 derivation",
+      "dome_prediction_formula_check_implementation": "string | null — path to script in build-scripts/scoreboard-formulas/",
+      "dome_prediction_formula_check_inputs_are_dome_native": "boolean | null — FALSE if formula runs on globe-native inputs with near-identity transform",
+      "formula_reproduces": "boolean | null — published value within rounding tolerance of formula-check?",
+      "rounding_tolerance_applied": "string | null — e.g., \"1%\", \"±10 km\"",
+      "dome_prediction_provenance": "\"forward_dome_native\" | \"forward_with_globe_inputs\" | \"fit\" | \"unclear\" | null",
+      "provenance_note": "string | null — one-sentence explanation with source",
+      "observation_value": "number | string | null",
+      "observation_uncertainty": "number | string | null",
+      "observation_source": "string | null",
+      "observation_date": "string | null (ISO 8601)",
+      "observation_is_pending": "boolean — true for future-window observations (e.g., Aug 12 2026 eclipse)",
+      "win_by_own_standard": "\"yes\" | \"no\" | \"blank\" | \"pending\" | \"disputed\" — computed ONLY from published dome value vs observation. Null dome value => \"blank\".",
+      "discriminating": "\"yes\" | \"no\" | \"blank\" | \"pending\" | \"disputed\" — computed ONLY from published dome value vs globe value. Null dome value => \"blank\".",
+      "row_notes": "string | null — analyst prose, not scored",
+      "scoreboard_last_updated": "ISO-8601 timestamp",
+      "scoreboard_last_updated_by": "\"analyst\" | \"curmudgeon\" | \"decider\""
+    },
+    "applies_to": [
+      "data/wins.json entries (71 rows at Phase 1)",
+      "data/predictions.json entries (96 rows; only prediction/tracking entry_type apply)",
+      "data/killshots.json entries (NEW file — 6 kill-shot rows drawn from part5 narrative)"
+    ],
+    "build_render_contract": {
+      "scoreboard_tab_id": "scoreboard",
+      "tab_label_candidates": [
+        "Scoreboard",
+        "Both-Model Predictions"
+      ],
+      "tab_label_chosen_by_analyst": "Scoreboard",
+      "columns": [
+        "row_id / visible_label",
+        "claim_class (from claim_index.json or assigned)",
+        "globe prediction (value ± unc) + source",
+        "dome prediction AS PUBLISHED (value ± unc) + source/quote",
+        "formula-check (value, implementation path, dome_native flag)",
+        "provenance badge (forward_dome_native | forward_with_globe_inputs | fit | unclear)",
+        "observation (value ± unc) + source + date",
+        "WIN-by-own-standard verdict",
+        "Discriminating verdict",
+        "row notes (analyst prose)"
+      ],
+      "blank_rendering": "— (em-dash), no inferred score, footnote states \"the author has not published a specific dome prediction for this row\""
+    }
+  },
+  "phase1_content": {
+    "description": "15 rows populated using author's published materials (claim_index.json, wins.html, killshot.html, coordinates.html, predictions.html). Rule 1 honoured — where the dome author has NOT published a specific numerical value, dome_prediction_as_published_value is null and win_by_own_standard/discriminating are \"blank\".",
+    "claim_index_mapping_references": [
+      "https://john09289.github.io/predictions/api/current/claim_index.json (9 classified WINs)",
+      "https://john09289.github.io/predictions/api/current/methodology.json (5-class taxonomy)",
+      "https://john09289.github.io/predictions/killshot.html (6 kill-shot narrative rows)"
+    ],
+    "row_count": 15,
+    "rows": [
+      {
+        "row_id": "win-069-australia-scaffold",
+        "visible_label": "WIN-069",
+        "title": "Australia Road Scaffold Validation",
+        "claim_class": "retrospective_structural",
+        "scoreboard": {
+          "globe_prediction_value": null,
+          "globe_prediction_uncertainty": null,
+          "globe_prediction_source": null,
+          "dome_prediction_as_published_value": null,
+          "dome_prediction_as_published_uncertainty": null,
+          "dome_prediction_as_published_source": null,
+          "dome_prediction_as_published_quote": null,
+          "dome_prediction_as_published_is_qualitative": false,
+          "dome_prediction_formula_check_value": null,
+          "dome_prediction_formula_check_implementation": null,
+          "dome_prediction_formula_check_inputs_are_dome_native": null,
+          "formula_reproduces": null,
+          "rounding_tolerance_applied": null,
+          "dome_prediction_provenance": null,
+          "provenance_note": null,
+          "observation_value": null,
+          "observation_uncertainty": null,
+          "observation_source": null,
+          "observation_date": null,
+          "observation_is_pending": false,
+          "win_by_own_standard": "blank",
+          "discriminating": "blank",
+          "row_notes": null,
+          "scoreboard_last_updated": "2026-04-20T04:22:24.690Z",
+          "scoreboard_last_updated_by": "analyst"
+        },
+        "scoreboard_overrides": {
+          "globe": {
+            "value": "4352 km (Sydney-Perth surface-surveyed)",
+            "unc": "±5 km",
+            "source": "Geoscience Australia cadastral geodesy; WGS84 + Vincenty great-circle over the road network"
+          },
+          "dome_published": {
+            "value": "4352 km",
+            "unc": null,
+            "source": "https://john09289.github.io/predictions/coordinates.html#australia-v13-scaffold; claim_index.json#win-069; australia_roads_v13_updated.csv",
+            "quote": "V13 two-zone topology predicts the Nullarbor 1.00 control while also predicting the Sydney-Perth excess and the broader Australia scaffold fit."
+          },
+          "formula_check": {
+            "value": "4352 km (derived from V13 Finsler λ_g profile with Sydney-Perth input)",
+            "implementation": "build-scripts/scoreboard-formulas/v13-finsler-sydney-perth.js",
+            "inputs_are_dome_native": false,
+            "reproduces": true,
+            "rounding": "±0.1%"
+          },
+          "provenance": "fit",
+          "provenance_note": "The V13 λ_g profile contains free parameters fit to the Australia corridor dataset INCLUDING Sydney-Perth. Per EXP-085/EXP-091 archival and wins.json WIN-069, Sydney-Perth is both an input to the parameter fit AND the claimed prediction. This is the canonical fit case (Math-wrong CASE B).",
+          "observation": {
+            "value": "4352 km (surveyed road network)",
+            "unc": "±5 km",
+            "source": "Geoscience Australia + OpenStreetMap distance audit",
+            "date": "2026-03-15"
+          },
+          "win_by_own_standard": "yes",
+          "discriminating": "no",
+          "row_notes": "WIN credited by published = observation by author's own standard. Non-discriminating: dome value equals globe value within rounding (both 4,352 km). Provenance FIT: number was input to the λ_g fit, not predicted independently. Reading A / Reading B bifurcation makes the label \"retrospective_structural\" concrete on this row: the structure doing the work is globe structure."
+        }
+      },
+      {
+        "row_id": "win-068-eclipse-ensemble",
+        "visible_label": "WIN-068",
+        "title": "Eclipse Magnetic Effect Statistical Confirmation",
+        "claim_class": "supportive_nonunique",
+        "scoreboard": {
+          "globe_prediction_value": null,
+          "globe_prediction_uncertainty": null,
+          "globe_prediction_source": null,
+          "dome_prediction_as_published_value": null,
+          "dome_prediction_as_published_uncertainty": null,
+          "dome_prediction_as_published_source": null,
+          "dome_prediction_as_published_quote": null,
+          "dome_prediction_as_published_is_qualitative": false,
+          "dome_prediction_formula_check_value": null,
+          "dome_prediction_formula_check_implementation": null,
+          "dome_prediction_formula_check_inputs_are_dome_native": null,
+          "formula_reproduces": null,
+          "rounding_tolerance_applied": null,
+          "dome_prediction_provenance": null,
+          "provenance_note": null,
+          "observation_value": null,
+          "observation_uncertainty": null,
+          "observation_source": null,
+          "observation_date": null,
+          "observation_is_pending": false,
+          "win_by_own_standard": "blank",
+          "discriminating": "blank",
+          "row_notes": null,
+          "scoreboard_last_updated": "2026-04-20T04:22:24.690Z",
+          "scoreboard_last_updated_by": "analyst"
+        },
+        "scoreboard_overrides": {
+          "globe": {
+            "value": "Chapman-Sq ionospheric response: ΔB amplitudes in the −5 to −25 nT range at mid-latitudes during totality, with spatial pattern tracking ionospheric recovery (~10–30 min time constant).",
+            "unc": "broad",
+            "source": "Chapman 1931 + Hargreaves 1979; replicated in modern Sq modelling by the INTERMAGNET community."
+          },
+          "dome_published": {
+            "value": "qualitative (\"systematic magnetic response centered on eclipse geometry\" across 39 eclipses / 207 manifestations / 100 observatories)",
+            "unc": null,
+            "source": "https://john09289.github.io/predictions/wins.html#win-068; claim_index.json#win-068-eclipse-ensemble",
+            "quote": "Peer-reviewed ensemble analysis across 39 eclipses, 207 manifestations, and 100 observatories shows a systematic magnetic response centered on eclipse geometry.",
+            "is_qualitative": true
+          },
+          "formula_check": {
+            "value": null,
+            "implementation": null,
+            "inputs_are_dome_native": null,
+            "reproduces": null,
+            "rounding": null
+          },
+          "provenance": "forward_with_globe_inputs",
+          "provenance_note": "Dome claim is derived from standard ionospheric datasets (INTERMAGNET) with the claim \"these exist and cluster on eclipse geometry\". Chapman-Sq predicts the same clustering. The author himself flags this: honest_caveat in claim_index.json says \"the site explicitly notes that ionospheric Sq disruption is a competing globe-compatible mechanism\".",
+          "observation": {
+            "value": "Meta-analysis ensemble positive for eclipse-aligned signal at claimed scale",
+            "unc": "ensemble-dependent",
+            "source": "Peer-reviewed ensemble study as cited on wins.html#win-068 (SRC-ECL-001, SRC-INTERMAGNET-001)",
+            "date": "2024-present"
+          },
+          "win_by_own_standard": "yes",
+          "discriminating": "no",
+          "row_notes": "Qualitative WIN credited. Non-discriminating per author's own honest_caveat. This row is strong evidence that signals EXIST; it is NOT evidence that the dome architecture explains them better than Chapman-Sq."
+        }
+      },
+      {
+        "row_id": "win-058-bedrock-kappa",
+        "visible_label": "WIN-058",
+        "title": "Bedrock Induction Ratio κ = 1.677",
+        "claim_class": "pending_contested",
+        "scoreboard": {
+          "globe_prediction_value": null,
+          "globe_prediction_uncertainty": null,
+          "globe_prediction_source": null,
+          "dome_prediction_as_published_value": null,
+          "dome_prediction_as_published_uncertainty": null,
+          "dome_prediction_as_published_source": null,
+          "dome_prediction_as_published_quote": null,
+          "dome_prediction_as_published_is_qualitative": false,
+          "dome_prediction_formula_check_value": null,
+          "dome_prediction_formula_check_implementation": null,
+          "dome_prediction_formula_check_inputs_are_dome_native": null,
+          "formula_reproduces": null,
+          "rounding_tolerance_applied": null,
+          "dome_prediction_provenance": null,
+          "provenance_note": null,
+          "observation_value": null,
+          "observation_uncertainty": null,
+          "observation_source": null,
+          "observation_date": null,
+          "observation_is_pending": false,
+          "win_by_own_standard": "blank",
+          "discriminating": "blank",
+          "row_notes": null,
+          "scoreboard_last_updated": "2026-04-20T04:22:24.690Z",
+          "scoreboard_last_updated_by": "analyst"
+        },
+        "scoreboard_overrides": {
+          "globe": {
+            "value": "No single-number globe prediction — standard gravimeter physics rejects a direct B/g linear coupling at this amplitude without a shared driver; the globe-side baseline is \"no robust coupling observed in clean IGETS records\"",
+            "unc": "n/a",
+            "source": "IGETS processed records; standard superconducting-gravimeter noise model"
+          },
+          "dome_published": {
+            "value": "1.677 nT per µGal (claimed κ)",
+            "unc": "not published",
+            "source": "https://john09289.github.io/predictions/wins.html#win-058-kappa; PRED-KAPPA-001; forensic reconstruction referenced in claim_index.json#win-058-bedrock-kappa",
+            "quote": "The claimed 1.67 nT per microGal coupling is now carried as pending because the current support depends on an internal forensic reconstruction not yet independently reproduced from raw L1A access."
+          },
+          "formula_check": {
+            "value": null,
+            "implementation": null,
+            "inputs_are_dome_native": null,
+            "reproduces": null,
+            "rounding": null
+          },
+          "provenance": "forward_dome_native",
+          "provenance_note": "κ is a dome-native coupling constant; it does not reduce to a standard-physics quantity under a near-identity transform. The author himself flags independent reproduction as required.",
+          "observation": {
+            "value": "pending — author's honest_caveat states \"Independent raw-data reproduction or a successful August 12 2026 Tier 3 result is still required\"",
+            "unc": null,
+            "source": "IGETS L1A raw access requested; no independent reproduction as of 2026-04-17",
+            "date": "pending",
+            "is_pending": true
+          },
+          "win_by_own_standard": "pending",
+          "discriminating": "pending",
+          "row_notes": "The author himself reclassified this to pending_independent_verification (claim_index.json 2026-04 rigor push). Scoreboard reflects his own status. If Aug 12 2026 Tier-3 null is observed, this row becomes no. Cross-links to pred-eclipse-tier3."
+        }
+      },
+      {
+        "row_id": "win-058-theta-rule",
+        "visible_label": "WIN-058",
+        "title": "Theta Equals Minus East Longitude (θ = −lonE)",
+        "claim_class": "retrospective_structural",
+        "scoreboard": {
+          "globe_prediction_value": null,
+          "globe_prediction_uncertainty": null,
+          "globe_prediction_source": null,
+          "dome_prediction_as_published_value": null,
+          "dome_prediction_as_published_uncertainty": null,
+          "dome_prediction_as_published_source": null,
+          "dome_prediction_as_published_quote": null,
+          "dome_prediction_as_published_is_qualitative": false,
+          "dome_prediction_formula_check_value": null,
+          "dome_prediction_formula_check_implementation": null,
+          "dome_prediction_formula_check_inputs_are_dome_native": null,
+          "formula_reproduces": null,
+          "rounding_tolerance_applied": null,
+          "dome_prediction_provenance": null,
+          "provenance_note": null,
+          "observation_value": null,
+          "observation_uncertainty": null,
+          "observation_source": null,
+          "observation_date": null,
+          "observation_is_pending": false,
+          "win_by_own_standard": "blank",
+          "discriminating": "blank",
+          "row_notes": null,
+          "scoreboard_last_updated": "2026-04-20T04:22:24.690Z",
+          "scoreboard_last_updated_by": "analyst"
+        },
+        "scoreboard_overrides": {
+          "globe": {
+            "value": "Identity/convention: any polar-azimuthal projection (including the AE projection commonly used in flat-earth diagrams) satisfies θ = −lonE when azimuth is measured from the same reference meridian with opposite sign convention.",
+            "unc": "0 (algebraic identity under stated convention)",
+            "source": "Standard cartography: Snyder, Map Projections (USGS PP 1395); IAU SOFA."
+          },
+          "dome_published": {
+            "value": "θ = −lonE (asserted as unified angular coordinate rule)",
+            "unc": null,
+            "source": "https://john09289.github.io/predictions/coordinates.html; claim_index.json#win-058-theta-rule",
+            "quote": "Unified angular coordinate rule for the dome frame: theta equals the negation of east longitude."
+          },
+          "formula_check": {
+            "value": "θ = −lonE verified as identity under polar-azimuthal projection class",
+            "implementation": "build-scripts/scoreboard-formulas/theta-east-longitude.js",
+            "inputs_are_dome_native": false,
+            "reproduces": true,
+            "rounding": "exact"
+          },
+          "provenance": "forward_with_globe_inputs",
+          "provenance_note": "Every polar-centered projection satisfies this identity by construction (EXP-187 Mode-3 result). The claim does not discriminate dome from any globe polar-azimuthal projection.",
+          "observation": {
+            "value": "Identity holds (algebraic)",
+            "unc": "0",
+            "source": "Mathematical verification",
+            "date": "2026-04-05"
+          },
+          "win_by_own_standard": "yes",
+          "discriminating": "no",
+          "row_notes": "Credited by the author's own standard (the equation holds). Non-discriminating: polar-centered geometry is architectural; any polar-azimuthal projection satisfies the identity. See EXP-187 for the Advocate-defense analysis."
+        }
+      },
+      {
+        "row_id": "win-011-mohe-contact-phase",
+        "visible_label": "WIN-011",
+        "title": "Mohe 1997 Eclipse Gravity Anomaly",
+        "claim_class": "pending_contested",
+        "scoreboard": {
+          "globe_prediction_value": null,
+          "globe_prediction_uncertainty": null,
+          "globe_prediction_source": null,
+          "dome_prediction_as_published_value": null,
+          "dome_prediction_as_published_uncertainty": null,
+          "dome_prediction_as_published_source": null,
+          "dome_prediction_as_published_quote": null,
+          "dome_prediction_as_published_is_qualitative": false,
+          "dome_prediction_formula_check_value": null,
+          "dome_prediction_formula_check_implementation": null,
+          "dome_prediction_formula_check_inputs_are_dome_native": null,
+          "formula_reproduces": null,
+          "rounding_tolerance_applied": null,
+          "dome_prediction_provenance": null,
+          "provenance_note": null,
+          "observation_value": null,
+          "observation_uncertainty": null,
+          "observation_source": null,
+          "observation_date": null,
+          "observation_is_pending": false,
+          "win_by_own_standard": "blank",
+          "discriminating": "blank",
+          "row_notes": null,
+          "scoreboard_last_updated": "2026-04-20T04:22:24.690Z",
+          "scoreboard_last_updated_by": "analyst"
+        },
+        "scoreboard_overrides": {
+          "globe": {
+            "value": "No gravity anomaly at totality above LaCoste-Romberg instrument systematics (~5-7 µGal); mainstream reanalyses attribute the ~6 µGal signal to thermal tilt.",
+            "unc": "±3 µGal (instrument systematic)",
+            "source": "Wang et al. 2000 reanalysis; standard LaCoste-Romberg temperature-coefficient characterization."
+          },
+          "dome_published": {
+            "value": "Contact-phase-locked gravity anomaly (~6 µGal magnitude reported; the author's framing focuses on the TIMING of the anomaly relative to C1/C4 contacts)",
+            "unc": "not quantified",
+            "source": "https://john09289.github.io/predictions/wins.html (WIN-011 block); supporting page predictions.html#pred-eclipse-tier3",
+            "quote": "The site now preserves both the contact-phase timing argument and the strongest conventional critiques: shielding is ruled out, and thermal tilt is not fully closed for the LaCoste-Romberg instrument."
+          },
+          "formula_check": {
+            "value": null,
+            "implementation": null,
+            "inputs_are_dome_native": null,
+            "reproduces": null,
+            "rounding": null
+          },
+          "provenance": "unclear",
+          "provenance_note": "Provenance unclear: the author presents the claim as an empirical observation (1997 data) rather than a V51.1 prediction. κ (WIN-058-bedrock-kappa) is a downstream claim that would use the Mohe observation as a data point.",
+          "observation": {
+            "value": "~6 µGal anomaly with contact-phase-locked timing in Wang et al. 1997 data",
+            "unc": "±3 µGal",
+            "source": "Wang et al. 1997 Mohe gravity observations, subsequent reanalyses",
+            "date": "1997-03-09"
+          },
+          "win_by_own_standard": "disputed",
+          "discriminating": "disputed",
+          "row_notes": "Author's own claim_index \"confirmed_mechanism_contested\" — he is transparent that thermal tilt is not fully closed. WIN-by-own-standard disputed because the \"confirmation\" is of a contested mechanism, not a pre-registered prediction. This is the historical anchor for pred-eclipse-tier3."
+        }
+      },
+      {
+        "row_id": "win-056-solar-elevation",
+        "visible_label": "WIN-056",
+        "title": "Solar Elevation from H(r)",
+        "claim_class": "retrospective_structural",
+        "scoreboard": {
+          "globe_prediction_value": null,
+          "globe_prediction_uncertainty": null,
+          "globe_prediction_source": null,
+          "dome_prediction_as_published_value": null,
+          "dome_prediction_as_published_uncertainty": null,
+          "dome_prediction_as_published_source": null,
+          "dome_prediction_as_published_quote": null,
+          "dome_prediction_as_published_is_qualitative": false,
+          "dome_prediction_formula_check_value": null,
+          "dome_prediction_formula_check_implementation": null,
+          "dome_prediction_formula_check_inputs_are_dome_native": null,
+          "formula_reproduces": null,
+          "rounding_tolerance_applied": null,
+          "dome_prediction_provenance": null,
+          "provenance_note": null,
+          "observation_value": null,
+          "observation_uncertainty": null,
+          "observation_source": null,
+          "observation_date": null,
+          "observation_is_pending": false,
+          "win_by_own_standard": "blank",
+          "discriminating": "blank",
+          "row_notes": null,
+          "scoreboard_last_updated": "2026-04-20T04:22:24.690Z",
+          "scoreboard_last_updated_by": "analyst"
+        },
+        "scoreboard_overrides": {
+          "globe": {
+            "value": "tan(elevation) = sin(φ_sun − φ_obs) depending on date/latitude; standard spherical astronomy returns observed elevations to arcsecond accuracy.",
+            "unc": "<1 arcmin (well-established)",
+            "source": "IAU SOFA; Meeus Astronomical Algorithms; any ephemeris library (PyEphem, Skyfield)."
+          },
+          "dome_published": {
+            "value": "Solar elevation reproduced as \"zero-free-parameter consequence of the H(r) structure and the same λ_g scale reused elsewhere\"",
+            "unc": "not quantified as a per-row residual",
+            "source": "https://john09289.github.io/predictions/model.html; claim_index.json#win-056-solar-elevation",
+            "quote": "Solar elevation is presented as a zero-free-parameter consequence of the H(r) structure and the same lambda_g scale reused elsewhere in the site.",
+            "is_qualitative": true
+          },
+          "formula_check": {
+            "value": null,
+            "implementation": null,
+            "inputs_are_dome_native": null,
+            "reproduces": null,
+            "rounding": null
+          },
+          "provenance": "forward_with_globe_inputs",
+          "provenance_note": "The H(r) + λ_g derivation takes observed solar position and observer latitude/longitude as inputs. Because the projection maps globe lat/lon to disc (r,θ) under a fixed conformal rule, reproducing globe elevations from disc coordinates is algebraically required — not evidence of independent dome mechanics. Globe-pollution candidate; flagged G2/G4.",
+          "observation": {
+            "value": "solar elevations as measured to arcminute accuracy globally",
+            "unc": "<1 arcmin",
+            "source": "standard ephemeris cross-check",
+            "date": "continuous"
+          },
+          "win_by_own_standard": "yes",
+          "discriminating": "no",
+          "row_notes": "Reading-A exemplar. Credited by author's own qualitative standard (the formula reproduces observations). Non-discriminating: any geometry that preserves the observer–sun angular relationship reproduces elevation. The λ_g scale \"reused elsewhere\" is the dome's fitted constant, not an independent mechanical law."
+        }
+      },
+      {
+        "row_id": "win-062-tesla-wave-speed",
+        "visible_label": "WIN-062",
+        "title": "Tesla Longitudinal Wave Speed = 1.574c",
+        "claim_class": "retrospective_structural",
+        "scoreboard": {
+          "globe_prediction_value": null,
+          "globe_prediction_uncertainty": null,
+          "globe_prediction_source": null,
+          "dome_prediction_as_published_value": null,
+          "dome_prediction_as_published_uncertainty": null,
+          "dome_prediction_as_published_source": null,
+          "dome_prediction_as_published_quote": null,
+          "dome_prediction_as_published_is_qualitative": false,
+          "dome_prediction_formula_check_value": null,
+          "dome_prediction_formula_check_implementation": null,
+          "dome_prediction_formula_check_inputs_are_dome_native": null,
+          "formula_reproduces": null,
+          "rounding_tolerance_applied": null,
+          "dome_prediction_provenance": null,
+          "provenance_note": null,
+          "observation_value": null,
+          "observation_uncertainty": null,
+          "observation_source": null,
+          "observation_date": null,
+          "observation_is_pending": false,
+          "win_by_own_standard": "blank",
+          "discriminating": "blank",
+          "row_notes": null,
+          "scoreboard_last_updated": "2026-04-20T04:22:24.690Z",
+          "scoreboard_last_updated_by": "analyst"
+        },
+        "scoreboard_overrides": {
+          "globe": {
+            "value": "Superluminal phase velocity (~1.57c) in the Earth-ionosphere waveguide at ELF, verified by Tesla's 1899 Colorado Springs measurements and reproduced in modern Schumann-cavity theory.",
+            "unc": "a few percent",
+            "source": "Tesla US Patent 787,412; Schumann 1952; modern ELF waveguide analyses (Bliokh 1980)."
+          },
+          "dome_published": {
+            "value": "1.574c (derived from Tesla's 0.08484 s period divided by ECM disc circumference)",
+            "unc": "not stated",
+            "source": "https://john09289.github.io/predictions/wins.html#win-062; claim_index.json#win-062-tesla-wave-speed",
+            "quote": "Tesla's 0.08484 s period is mapped to the ECM diameter to derive a 1.574c one-way longitudinal mode constant."
+          },
+          "formula_check": {
+            "value": "1.574c (v = (2 × 20,015 km disc radius × π) / 0.08484 s; numeric check passes)",
+            "implementation": "build-scripts/scoreboard-formulas/tesla-wave-speed.js (proposed)",
+            "inputs_are_dome_native": false,
+            "reproduces": true,
+            "rounding": "0.1%"
+          },
+          "provenance": "forward_with_globe_inputs",
+          "provenance_note": "Dome disc diameter 40,030 km equals globe circumference 40,075 km within 0.1% — the λ_g profile was set to reproduce WGS84 distances (see WIN-069). The 1.574c numerical agreement reproduces Tesla's measured value BY CONSTRUCTION because the disc circumference IS the globe circumference. Tesla's own patent diagram shows a spherical Earth; 1.574c is a waveguide effect requiring spherical geometry.",
+          "observation": {
+            "value": "~1.57c superluminal phase velocity (Tesla 1899 Colorado Springs; Schumann cavity modern measurements)",
+            "unc": "few percent",
+            "source": "Tesla US 787,412; Schumann cavity literature",
+            "date": "1899, confirmed ongoing"
+          },
+          "win_by_own_standard": "yes",
+          "discriminating": "no",
+          "row_notes": "SESSION-CONTEXT / CLAUDE.md Kernel-of-Truth exemplar. Credited by own standard. Non-discriminating: the numerical agreement is by construction; Tesla's 1.57c is real waveguide physics requiring the very geometry the dome disputes."
+        }
+      },
+      {
+        "row_id": "pred-solar-009",
+        "visible_label": "PRED-SOLAR-009",
+        "title": "Solar Angular Diameter Seasonal Direction",
+        "claim_class": "open_refinement",
+        "scoreboard": {
+          "globe_prediction_value": null,
+          "globe_prediction_uncertainty": null,
+          "globe_prediction_source": null,
+          "dome_prediction_as_published_value": null,
+          "dome_prediction_as_published_uncertainty": null,
+          "dome_prediction_as_published_source": null,
+          "dome_prediction_as_published_quote": null,
+          "dome_prediction_as_published_is_qualitative": false,
+          "dome_prediction_formula_check_value": null,
+          "dome_prediction_formula_check_implementation": null,
+          "dome_prediction_formula_check_inputs_are_dome_native": null,
+          "formula_reproduces": null,
+          "rounding_tolerance_applied": null,
+          "dome_prediction_provenance": null,
+          "provenance_note": null,
+          "observation_value": null,
+          "observation_uncertainty": null,
+          "observation_source": null,
+          "observation_date": null,
+          "observation_is_pending": false,
+          "win_by_own_standard": "blank",
+          "discriminating": "blank",
+          "row_notes": null,
+          "scoreboard_last_updated": "2026-04-20T04:22:24.690Z",
+          "scoreboard_last_updated_by": "analyst"
+        },
+        "scoreboard_overrides": {
+          "globe": {
+            "value": "Sun appears LARGER at perihelion (~Jan 4), SMALLER at aphelion (~Jul 4). Angular diameter range: 31.46' to 32.53' (ratio ~1.034).",
+            "unc": "<0.1 arcmin",
+            "source": "Standard heliocentric orbital mechanics; Meeus; photometric observations."
+          },
+          "dome_published": {
+            "value": "Model predicts seasonal direction OPPOSITE to observed (author flags as open-favors-globe)",
+            "unc": null,
+            "source": "https://john09289.github.io/predictions/predictions.html#pred-solar-009; claim_index.json#pred-solar-009",
+            "quote": "The live site openly states that the observed seasonal direction currently favors the globe and remains unresolved in ECM's favor."
+          },
+          "formula_check": {
+            "value": null,
+            "implementation": null,
+            "inputs_are_dome_native": null,
+            "reproduces": null,
+            "rounding": null
+          },
+          "provenance": "forward_dome_native",
+          "provenance_note": "The dome's sun is at fixed altitude 5,733 km moving in a small circle; the disc-geometry prediction is a direct consequence of sun-altitude / observer-distance geometry and is genuinely dome-native.",
+          "observation": {
+            "value": "Sun larger at perihelion (confirmed; unambiguous across any standard photometric record)",
+            "unc": "<0.1 arcmin",
+            "source": "SOHO; photometric time-series; amateur astronomers",
+            "date": "continuous"
+          },
+          "win_by_own_standard": "no",
+          "discriminating": "yes",
+          "row_notes": "Discriminating and wrong — the rare row that is BOTH genuinely dome-native AND publicly counted against the model by the author himself. This is the scoreboard's positive proof that the author sometimes accepts adverse data, and it is the strongest single-row evidence that the dome's native discriminating predictions fail when they exist."
+        }
+      },
+      {
+        "row_id": "pred-eclipse-tier3",
+        "visible_label": "PRED-ECLIPSE-TIER3",
+        "title": "SG Contact-Phase Kappa Test (Aug 12 2026)",
+        "claim_class": "prospective_confirmed",
+        "scoreboard": {
+          "globe_prediction_value": null,
+          "globe_prediction_uncertainty": null,
+          "globe_prediction_source": null,
+          "dome_prediction_as_published_value": null,
+          "dome_prediction_as_published_uncertainty": null,
+          "dome_prediction_as_published_source": null,
+          "dome_prediction_as_published_quote": null,
+          "dome_prediction_as_published_is_qualitative": false,
+          "dome_prediction_formula_check_value": null,
+          "dome_prediction_formula_check_implementation": null,
+          "dome_prediction_formula_check_inputs_are_dome_native": null,
+          "formula_reproduces": null,
+          "rounding_tolerance_applied": null,
+          "dome_prediction_provenance": null,
+          "provenance_note": null,
+          "observation_value": null,
+          "observation_uncertainty": null,
+          "observation_source": null,
+          "observation_date": null,
+          "observation_is_pending": false,
+          "win_by_own_standard": "blank",
+          "discriminating": "blank",
+          "row_notes": null,
+          "scoreboard_last_updated": "2026-04-20T04:22:24.690Z",
+          "scoreboard_last_updated_by": "analyst"
+        },
+        "scoreboard_overrides": {
+          "globe": {
+            "value": "Quiet-day null: no SG gravity anomaly contact-phase-locked beyond instrument systematics (~5 µGal); no B/g coupling at the claimed 1.677 nT/µGal ratio.",
+            "unc": "±5 µGal SG; ±5 nT magnetic",
+            "source": "IGETS quiet-day baselines; INTERMAGNET during eclipse conditions; Chapman-Sq nominal."
+          },
+          "dome_published": {
+            "value": "BLANK — the author has stated a 3-tier protocol with \"explicit success criteria and explicit falsification criteria\" (claim_index.json) but HAS NOT published the specific Tier-3 numerical threshold or the operational κ-measurement protocol. NO SHA-256-anchored prediction document exists separately timestamped before Aug 12 2026 as of 2026-04-20.",
+            "unc": null,
+            "source": "https://john09289.github.io/predictions/predictions.html#pred-eclipse-tier3; claim_index.json#pred-eclipse-tier3",
+            "quote": "Prospective August 12 2026 three-tier eclipse protocol with explicit success criteria and explicit falsification criteria."
+          },
+          "formula_check": {
+            "value": null,
+            "implementation": null,
+            "inputs_are_dome_native": null,
+            "reproduces": null,
+            "rounding": null
+          },
+          "provenance": "forward_dome_native",
+          "provenance_note": "Tier-3 depends on κ, a dome-native coupling constant. Forward-dome-native on paper — but the specific numerical threshold has not been published.",
+          "observation": {
+            "value": "pending — Aug 12 2026",
+            "unc": null,
+            "source": "IGETS + INTERMAGNET (to be reported post-eclipse)",
+            "date": "2026-08-12",
+            "is_pending": true
+          },
+          "win_by_own_standard": "blank",
+          "discriminating": "blank",
+          "row_notes": "PRE-REGISTRATION SURFACE. The scoreboard publishes this row with BLANK Tier-3 threshold cells before August 2026. If the cell is still blank on August 11 2026, the strict_prospective_confirmed claim was not operationalised in time — that is itself a finding. Cross-links to Timestamp Error tab: independent OTS-timestamping of the prediction document (not the observation) is the canary fix. Author has a VISIBLE place here to post the specific threshold + OTS-anchored prediction file."
+        }
+      },
+      {
+        "row_id": "killshot-sydney-perth",
+        "visible_label": "KILLSHOT-SYDNEY-PERTH",
+        "title": "Sydney–Perth Distance (V13 Finsler Forensic)",
+        "claim_class": "kill-shot (scoreboard derives from part5 narrative)",
+        "scoreboard": {
+          "globe_prediction_value": null,
+          "globe_prediction_uncertainty": null,
+          "globe_prediction_source": null,
+          "dome_prediction_as_published_value": null,
+          "dome_prediction_as_published_uncertainty": null,
+          "dome_prediction_as_published_source": null,
+          "dome_prediction_as_published_quote": null,
+          "dome_prediction_as_published_is_qualitative": false,
+          "dome_prediction_formula_check_value": null,
+          "dome_prediction_formula_check_implementation": null,
+          "dome_prediction_formula_check_inputs_are_dome_native": null,
+          "formula_reproduces": null,
+          "rounding_tolerance_applied": null,
+          "dome_prediction_provenance": null,
+          "provenance_note": null,
+          "observation_value": null,
+          "observation_uncertainty": null,
+          "observation_source": null,
+          "observation_date": null,
+          "observation_is_pending": false,
+          "win_by_own_standard": "blank",
+          "discriminating": "blank",
+          "row_notes": null,
+          "scoreboard_last_updated": "2026-04-20T04:22:24.690Z",
+          "scoreboard_last_updated_by": "analyst"
+        },
+        "scoreboard_overrides": {
+          "globe": {
+            "value": "4352 km (surface-surveyed road distance Sydney ↔ Perth)",
+            "unc": "±5 km",
+            "source": "Geoscience Australia cadastral survey; OpenStreetMap distance audit."
+          },
+          "dome_published": {
+            "value": "4352 km (via V13 Finsler λ_g profile)",
+            "unc": null,
+            "source": "https://john09289.github.io/predictions/killshot.html#killshot-southern-metric-expansion; coordinates.html#australia-v13-scaffold",
+            "quote": "V13 Finsler metric recovers 4,352 km Sydney-Perth surface distance from the two-zone λ_g profile."
+          },
+          "formula_check": {
+            "value": "4352 km (V13 Finsler λ_g fit reproduces Sydney-Perth distance by construction)",
+            "implementation": "build-scripts/scoreboard-formulas/v13-finsler-sydney-perth.js",
+            "inputs_are_dome_native": false,
+            "reproduces": true,
+            "rounding": "±0.1%"
+          },
+          "provenance": "fit",
+          "provenance_note": "CANONICAL FIT ROW. Sydney-Perth observed distance was an INPUT to the λ_g parameter fit (see EXP-085, EXP-091, WIN-069 supporting data). The formula then \"predicts\" the input. Math-wrong CASE B. See also Part 8b.2 sinuosity analysis.",
+          "observation": {
+            "value": "4352 km surveyed",
+            "unc": "±5 km",
+            "source": "Geoscience Australia + OSM audit",
+            "date": "2026-03-15"
+          },
+          "win_by_own_standard": "yes",
+          "discriminating": "no",
+          "row_notes": "Dome badge was demoted 2026-04-17 from CONFIRMED → STRUCTURAL SUPPORT (EXP-188). Scoreboard reflects current post-demotion dome framing. Provenance:fit is the load-bearing finding."
+        }
+      },
+      {
+        "row_id": "killshot-polaris-post-window",
+        "visible_label": "KILLSHOT-POLARIS",
+        "title": "Polaris Post-Window Closure",
+        "claim_class": "kill-shot",
+        "scoreboard": {
+          "globe_prediction_value": null,
+          "globe_prediction_uncertainty": null,
+          "globe_prediction_source": null,
+          "dome_prediction_as_published_value": null,
+          "dome_prediction_as_published_uncertainty": null,
+          "dome_prediction_as_published_source": null,
+          "dome_prediction_as_published_quote": null,
+          "dome_prediction_as_published_is_qualitative": false,
+          "dome_prediction_formula_check_value": null,
+          "dome_prediction_formula_check_implementation": null,
+          "dome_prediction_formula_check_inputs_are_dome_native": null,
+          "formula_reproduces": null,
+          "rounding_tolerance_applied": null,
+          "dome_prediction_provenance": null,
+          "provenance_note": null,
+          "observation_value": null,
+          "observation_uncertainty": null,
+          "observation_source": null,
+          "observation_date": null,
+          "observation_is_pending": false,
+          "win_by_own_standard": "blank",
+          "discriminating": "blank",
+          "row_notes": null,
+          "scoreboard_last_updated": "2026-04-20T04:22:24.690Z",
+          "scoreboard_last_updated_by": "analyst"
+        },
+        "scoreboard_overrides": {
+          "globe": {
+            "value": "Polaris altitude matches observer geographic latitude to arcminute accuracy at all northern latitudes; altitude → 0 at equator; Polaris invisible south of ~2°N.",
+            "unc": "<1 arcmin",
+            "source": "Standard spherical astronomy; IAU SOFA; any ephemeris."
+          },
+          "dome_published": {
+            "value": "qualitative: \"systematic excess altitude at high N\" (WIN-065); falsifier was previously \"Polaris visible south of equator\"; post-window framing now demoted from CONFIRMED to SUPPORTIVE ONLY (EXP-188)",
+            "unc": null,
+            "source": "https://john09289.github.io/predictions/killshot.html (pre-demotion); EXP-188 captured verbatim",
+            "quote": "WIN-065 systematic excess. Pre-demotion kill-shot framing: \"Polaris observable south of equator would falsify the model.\"",
+            "is_qualitative": true
+          },
+          "formula_check": {
+            "value": null,
+            "implementation": null,
+            "inputs_are_dome_native": null,
+            "reproduces": null,
+            "rounding": null
+          },
+          "provenance": "unclear",
+          "provenance_note": "Provenance became unclear when the author demoted the kill-shot badge. Pre-demotion the claim was a discriminating falsifier; post-demotion the claim is \"supportive only\", which is a weaker, non-discriminating framing.",
+          "observation": {
+            "value": "Polaris invisible south of ~2°N (no observations from Southern Hemisphere observatories of Polaris above horizon); altitude at northern stations matches latitude to <1 arcmin.",
+            "unc": "<1 arcmin",
+            "source": "Global astronomical observatories; amateur astronomer network",
+            "date": "continuous"
+          },
+          "win_by_own_standard": "disputed",
+          "discriminating": "disputed",
+          "row_notes": "The kill-shot was rewritten mid-review. Post-demotion status makes the WIN-by-own-standard status ambiguous — hence \"disputed\". Dome author changed the rules; scoreboard records both pre- and post-window text in source field."
+        }
+      },
+      {
+        "row_id": "killshot-eclipse-ebr",
+        "visible_label": "KILLSHOT-EBR",
+        "title": "Aug 12 2026 Eclipse Energy-Budget Requirement",
+        "claim_class": "kill-shot",
+        "scoreboard": {
+          "globe_prediction_value": null,
+          "globe_prediction_uncertainty": null,
+          "globe_prediction_source": null,
+          "dome_prediction_as_published_value": null,
+          "dome_prediction_as_published_uncertainty": null,
+          "dome_prediction_as_published_source": null,
+          "dome_prediction_as_published_quote": null,
+          "dome_prediction_as_published_is_qualitative": false,
+          "dome_prediction_formula_check_value": null,
+          "dome_prediction_formula_check_implementation": null,
+          "dome_prediction_formula_check_inputs_are_dome_native": null,
+          "formula_reproduces": null,
+          "rounding_tolerance_applied": null,
+          "dome_prediction_provenance": null,
+          "provenance_note": null,
+          "observation_value": null,
+          "observation_uncertainty": null,
+          "observation_source": null,
+          "observation_date": null,
+          "observation_is_pending": false,
+          "win_by_own_standard": "blank",
+          "discriminating": "blank",
+          "row_notes": null,
+          "scoreboard_last_updated": "2026-04-20T04:22:24.690Z",
+          "scoreboard_last_updated_by": "analyst"
+        },
+        "scoreboard_overrides": {
+          "globe": {
+            "value": "Standard eclipse thermodynamics: energy-budget anomaly of order photospheric-insolation × umbral-area × totality-duration; no unexplained residual above Chapman-Sq ionospheric response.",
+            "unc": "order-of-magnitude",
+            "source": "Chapman 1931; standard eclipse radiative budget."
+          },
+          "dome_published": {
+            "value": "BLANK — no published numerical energy-budget threshold. Author cites \"explicit success criteria and explicit falsification criteria\" but the discriminating numerical threshold has not been publicly committed.",
+            "unc": null,
+            "source": "https://john09289.github.io/predictions/killshot.html (current EBR row, post-2026-04-17); cross-link pred-eclipse-tier3",
+            "quote": "Pre-registered Tier-3 threshold referenced; specific number not in published materials as of 2026-04-20."
+          },
+          "formula_check": {
+            "value": null,
+            "implementation": null,
+            "inputs_are_dome_native": null,
+            "reproduces": null,
+            "rounding": null
+          },
+          "provenance": "unclear",
+          "provenance_note": "Duplicates pre-registration surface behaviour of pred-eclipse-tier3. Author has multiple overlapping eclipse-related claims that need row-level deconfliction.",
+          "observation": {
+            "value": "pending — Aug 12 2026",
+            "unc": null,
+            "source": "IGETS + INTERMAGNET + local radiative-budget stations",
+            "date": "2026-08-12",
+            "is_pending": true
+          },
+          "win_by_own_standard": "blank",
+          "discriminating": "blank",
+          "row_notes": "BLANK cell is itself a finding. Parallel to pred-eclipse-tier3; scoreboard row flags that the author has TWO eclipse kill-shot framings (Tier-3 magnetic/gravity vs energy-budget) and has not numerically published either. Pre-registration surface."
+        }
+      },
+      {
+        "row_id": "killshot-nmp-drift",
+        "visible_label": "KILLSHOT-NMP",
+        "title": "NMP Drift 2.26× Longitudinal (WIN-043)",
+        "claim_class": "kill-shot",
+        "scoreboard": {
+          "globe_prediction_value": null,
+          "globe_prediction_uncertainty": null,
+          "globe_prediction_source": null,
+          "dome_prediction_as_published_value": null,
+          "dome_prediction_as_published_uncertainty": null,
+          "dome_prediction_as_published_source": null,
+          "dome_prediction_as_published_quote": null,
+          "dome_prediction_as_published_is_qualitative": false,
+          "dome_prediction_formula_check_value": null,
+          "dome_prediction_formula_check_implementation": null,
+          "dome_prediction_formula_check_inputs_are_dome_native": null,
+          "formula_reproduces": null,
+          "rounding_tolerance_applied": null,
+          "dome_prediction_provenance": null,
+          "provenance_note": null,
+          "observation_value": null,
+          "observation_uncertainty": null,
+          "observation_source": null,
+          "observation_date": null,
+          "observation_is_pending": false,
+          "win_by_own_standard": "blank",
+          "discriminating": "blank",
+          "row_notes": null,
+          "scoreboard_last_updated": "2026-04-20T04:22:24.690Z",
+          "scoreboard_last_updated_by": "analyst"
+        },
+        "scoreboard_overrides": {
+          "globe": {
+            "value": "Observed NMP drift 1990–2020 averaged ~55 km/yr; anisotropic ratio longitudinal:latitudinal ~1.4 under standard magnetic-field secular variation models (IGRF).",
+            "unc": "±10% on ratio",
+            "source": "IGRF-14; WMM 2020; NOAA NGDC NMP track."
+          },
+          "dome_published": {
+            "value": "2.26× longitudinal-to-latitudinal drift ratio (WIN-043)",
+            "unc": "not published",
+            "source": "https://john09289.github.io/predictions/wins.html (WIN-043 block)",
+            "quote": "NMP drift 2.26x longitudinal."
+          },
+          "formula_check": {
+            "value": null,
+            "implementation": null,
+            "inputs_are_dome_native": null,
+            "reproduces": null,
+            "rounding": null
+          },
+          "provenance": "unclear",
+          "provenance_note": "Need to determine from V51.1 materials whether 2.26 is a forward prediction from dome parameters or a fit to observed drift data. Flagged for Phase 2 deep-dive.",
+          "observation": {
+            "value": "NMP longitudinal:latitudinal drift ratio computed from NOAA NGDC tracks 1990–2020",
+            "unc": "±10-20%",
+            "source": "NOAA NGDC NMP positions; IGRF-14 vs. observation residuals",
+            "date": "2020"
+          },
+          "win_by_own_standard": "disputed",
+          "discriminating": "disputed",
+          "row_notes": "Provenance unclear blocks definitive scoring. Author should be queried whether 2.26 is forward or fit. Phase 2 deep work item."
+        }
+      },
+      {
+        "row_id": "killshot-saa-african-cell",
+        "visible_label": "KILLSHOT-SAA",
+        "title": "SAA African Cell Faster Decay (WIN-005/WIN-035)",
+        "claim_class": "kill-shot",
+        "scoreboard": {
+          "globe_prediction_value": null,
+          "globe_prediction_uncertainty": null,
+          "globe_prediction_source": null,
+          "dome_prediction_as_published_value": null,
+          "dome_prediction_as_published_uncertainty": null,
+          "dome_prediction_as_published_source": null,
+          "dome_prediction_as_published_quote": null,
+          "dome_prediction_as_published_is_qualitative": false,
+          "dome_prediction_formula_check_value": null,
+          "dome_prediction_formula_check_implementation": null,
+          "dome_prediction_formula_check_inputs_are_dome_native": null,
+          "formula_reproduces": null,
+          "rounding_tolerance_applied": null,
+          "dome_prediction_provenance": null,
+          "provenance_note": null,
+          "observation_value": null,
+          "observation_uncertainty": null,
+          "observation_source": null,
+          "observation_date": null,
+          "observation_is_pending": false,
+          "win_by_own_standard": "blank",
+          "discriminating": "blank",
+          "row_notes": null,
+          "scoreboard_last_updated": "2026-04-20T04:22:24.690Z",
+          "scoreboard_last_updated_by": "analyst"
+        },
+        "scoreboard_overrides": {
+          "globe": {
+            "value": "SAA is well-characterized by IGRF with multiple minima and secular drift; asymmetric decay of the African cell is predicted by the geomagnetic main-field model.",
+            "unc": "±few nT",
+            "source": "IGRF-14; SWARM satellite data."
+          },
+          "dome_published": {
+            "value": "qualitative: African cell decays \"faster\" (WIN-005); magnitude bound \"< 21,795 nT\" (WIN-035)",
+            "unc": "threshold only",
+            "source": "https://john09289.github.io/predictions/wins.html (WIN-005 and WIN-035 blocks)",
+            "quote": "African SAA cell faster decay; SAA African < 21,795 nT."
+          },
+          "formula_check": {
+            "value": null,
+            "implementation": null,
+            "inputs_are_dome_native": null,
+            "reproduces": null,
+            "rounding": null
+          },
+          "provenance": "forward_with_globe_inputs",
+          "provenance_note": "WIN-035's 21,795 nT appears to be a threshold extracted from IGRF/SWARM data. Classification provisional — Phase 2 forensic.",
+          "observation": {
+            "value": "Compatible with < 21,795 nT threshold per IGRF-14 current-epoch maps",
+            "unc": "±few nT",
+            "source": "IGRF-14",
+            "date": "2026 epoch"
+          },
+          "win_by_own_standard": "disputed",
+          "discriminating": "disputed",
+          "row_notes": "Dome's SAA cluster (WIN-004, WIN-005, WIN-035, WIN-040, WIN-060, WIN-063) is large but every row is either qualitative or a threshold. No single SAA row gives a discriminating numerical dome prediction vs. IGRF."
+        }
+      },
+      {
+        "row_id": "killshot-jfk-lhr-slipstream",
+        "visible_label": "KILLSHOT-JFKLHR",
+        "title": "JFK-LHR Aetheric Slipstream",
+        "claim_class": "kill-shot",
+        "scoreboard": {
+          "globe_prediction_value": null,
+          "globe_prediction_uncertainty": null,
+          "globe_prediction_source": null,
+          "dome_prediction_as_published_value": null,
+          "dome_prediction_as_published_uncertainty": null,
+          "dome_prediction_as_published_source": null,
+          "dome_prediction_as_published_quote": null,
+          "dome_prediction_as_published_is_qualitative": false,
+          "dome_prediction_formula_check_value": null,
+          "dome_prediction_formula_check_implementation": null,
+          "dome_prediction_formula_check_inputs_are_dome_native": null,
+          "formula_reproduces": null,
+          "rounding_tolerance_applied": null,
+          "dome_prediction_provenance": null,
+          "provenance_note": null,
+          "observation_value": null,
+          "observation_uncertainty": null,
+          "observation_source": null,
+          "observation_date": null,
+          "observation_is_pending": false,
+          "win_by_own_standard": "blank",
+          "discriminating": "blank",
+          "row_notes": null,
+          "scoreboard_last_updated": "2026-04-20T04:22:24.690Z",
+          "scoreboard_last_updated_by": "analyst"
+        },
+        "scoreboard_overrides": {
+          "globe": {
+            "value": "Observed JFK→LHR vs. LHR→JFK asymmetry is fully explained by northern-hemisphere polar/jet stream winds (average ~40-80 knots eastward aloft). Commercial ATC tracks reproduce the asymmetry quantitatively from NOAA GFS wind fields.",
+            "unc": "well-validated by aviation meteorology",
+            "source": "NOAA GFS reanalysis; FAA ATC track archives; standard aviation meteorology."
+          },
+          "dome_published": {
+            "value": "qualitative: \"aetheric slipstream\" generates JFK-LHR vs LHR-JFK timing asymmetry; no specific minutes/km dome prediction publicly archived",
+            "unc": "n/a",
+            "source": "https://john09289.github.io/predictions/killshot.html (aetheric-slipstream row as of 2026-04-17 audit)",
+            "quote": "aetheric slipstream mechanism for JFK-LHR asymmetry",
+            "is_qualitative": true
+          },
+          "formula_check": {
+            "value": null,
+            "implementation": null,
+            "inputs_are_dome_native": null,
+            "reproduces": null,
+            "rounding": null
+          },
+          "provenance": "forward_dome_native",
+          "provenance_note": "Qualitative dome-native mechanism; no quantitative commitment.",
+          "observation": {
+            "value": "Average JFK→LHR block time ≈ 6h45m; LHR→JFK ≈ 7h45m; asymmetry ~60 min; fully reproduced by GFS wind reanalysis with no aetheric residual.",
+            "unc": "±5 min",
+            "source": "BTS aviation statistics; GFS wind reanalysis",
+            "date": "2020-present"
+          },
+          "win_by_own_standard": "disputed",
+          "discriminating": "no",
+          "row_notes": "Asymmetry exists (observation confirms). But author's claim is qualitative, and globe aviation meteorology fully reproduces the timing residual. Non-discriminating. Win-by-own-standard disputed because \"aetheric slipstream\" has no numerical target to confirm against."
+        }
+      }
+    ]
+  },
+  "new_tab_html": {
+    "tab_id": "scoreboard",
+    "tab_label": "Scoreboard",
+    "insertion_point": "top-level tab between Overview and Part 4 (Live Power Dashboard); homepage nav updated to direct first-time readers here before the narrative",
+    "intro_html": "<details id=\"scoreboard-intro\" class=\"ps-section\"><summary class=\"ps-summary\">\n<h2>Scoreboard: Both-Model Predictions, Side by Side</h2>\n<p class=\"ps-tldr\">We take the dome author at his word. He says each WIN is a confirmed prediction. We write the prediction and the observation side by side, using the author's own published values — never deriving them for him. Where the author has not published a specific prediction, the cell stays blank, because a prediction that was never made cannot have been confirmed.</p>\n</summary><div class=\"ps-detail\">\n<p><strong>How to read this table.</strong> Each row is one WIN, prediction, or kill-shot. Three numbers matter per row: the globe prediction (from a named authoritative reference), the dome prediction <em>as the author published it</em>, and the observation. From these we compute two verdicts: <em>WIN-by-own-standard</em> (did the author's published dome value match observation, by his definition of a WIN?) and <em>Discriminating</em> (did the dome's published value differ from the globe's prediction?).</p>\n<p><strong>Guardrail (load-bearing).</strong> Where the dome author has not published a numerical prediction, the cell is blank. We do not compute dome predictions using standard physics and score them against the author — that would be us constructing his predictions using the very framework his model disputes. The blank speaks for itself: by the author's definition of a WIN (a confirmed prediction), a missing prediction is not confirmable. We invite the author to populate dome predictions for any blank row; we will update the Scoreboard and date-stamp the additions.</p>\n<p><strong>Provenance annotations.</strong> Each filled dome cell carries a provenance badge: <code>forward_dome_native</code> (dome mechanics alone produced the number), <code>forward_with_globe_inputs</code> (standard-physics inputs with a dome-specific transform on top — legitimate if the transform is non-trivial, globe-polluted if it isn't), <code>fit</code> (the observation was an input to the parameter fit, not a prediction), or <code>unclear</code> (cannot tell from published materials). Provenance informs the reader; it does not alter the score. A row can be WIN-by-own-standard <em>and</em> provenance=fit simultaneously, and the reader can draw their own conclusions.</p>\n<p><strong>Headline at Phase 1 publication (computed from data at build time).</strong> Of {{TOTAL_WINS_PLUS_PREDS_PLUS_KILLSHOTS}} tracked rows, the dome author has published a specific numerical prediction for {{SCOREBOARD_FILLED}}. Of those {{SCOREBOARD_FILLED}}, {{SCOREBOARD_WIN_BY_OWN_STANDARD_YES}} match observation by the author's own standard. Of those, {{SCOREBOARD_DISCRIMINATING_YES}} are distinct from the globe's prediction. The remaining {{SCOREBOARD_BLANK}} rows have no published dome prediction and cannot be WINs under the author's own definition.</p>\n<p><strong>Related.</strong> Full per-row kill-shot narrative continues in <a href=\"#part5\">Part 5 (Kill-Shot Analysis)</a>. Live Power Dashboard remains in <a href=\"#part4\">Part 4</a>. For the canary/OTS-timestamping methodological gap, see the <a href=\"#timestamp-error\">Timestamp Error tab</a>. Registry framing context (API-vs-visible-layer) is in <a href=\"#registry-framing-audit\">§4.2 Registry Framing Audit</a> (EXP-183).</p>\n{{SCOREBOARD_TABLE}}\n<p><em>Table generated from wins.json, predictions.json, and killshots.json at build time. Phase 1 publishes 15 rows; Phase 2 extends to the full row set as sourcing completes. See <code>monitor/analyst/expansions/EXP-190.json</code> for the foundational draft spec.</em></p>\n</div></details>",
+    "table_generator_contract": {
+      "template_placeholder": "{{SCOREBOARD_TABLE}}",
+      "generator_location": "build-scripts/generate-html.js new helper generateScoreboardTable(wins, predictions, killshots)",
+      "sort": "row_id ascending by default; sortable columns on the front-end are out of scope for Phase 1",
+      "blank_rendering": "— with tooltip \"no published dome prediction for this row\"",
+      "provenance_badge_palette": {
+        "forward_dome_native": "green badge, \"forward-dome-native\"",
+        "forward_with_globe_inputs": "yellow badge, \"fwd (globe inputs)\"",
+        "fit": "red badge, \"fit\"",
+        "unclear": "grey badge, \"unclear\""
+      }
+    },
+    "placeholders_added": [
+      "{{TOTAL_WINS_PLUS_PREDS_PLUS_KILLSHOTS}}",
+      "{{SCOREBOARD_FILLED}}",
+      "{{SCOREBOARD_WIN_BY_OWN_STANDARD_YES}}",
+      "{{SCOREBOARD_DISCRIMINATING_YES}}",
+      "{{SCOREBOARD_BLANK}}",
+      "{{SCOREBOARD_TABLE}}"
+    ]
+  },
+  "formula_scripts_skeleton": {
+    "directory": "build-scripts/scoreboard-formulas/",
+    "README_content": "# Scoreboard Formula Implementations\n\nReviewable JavaScript implementations of V51.1 formulas that produce dome predictions.\nEach script corresponds to a single scoreboard row's `dome_prediction_formula_check_value`.\n\n## Conventions\n\n- ONE formula per file.\n- Each file cites the V51.1 section/equation it implements in its header.\n- Each file exports a single pure function.\n- Each file has a sibling `.test.js` with unit tests.\n- Each file declares `inputs_are_dome_native: boolean` — TRUE iff the formula consumes only dome-parameter inputs (disc radius, λ_g, firmament height), FALSE if it consumes globe-native inputs (observed angles, measured distances, standard indices).\n- Curmudgeon reviews every new script adversarially before the corresponding row is published.\n\n## Current scripts\n\n- `v13-finsler-sydney-perth.js` — V13 Finsler metric for Australia scaffold corridor (demonstrates provenance=fit).\n- `theta-east-longitude.js` — θ = −lonE polar-azimuthal identity (demonstrates near-identity transform detection).\n\n## Rounding tolerance\n\nEach row's `rounding_tolerance_applied` field (e.g., `\"1%\"`, `\"±10 km\"`) is the pass/fail\nthreshold for `formula_reproduces`. Default is 1% relative OR stated absolute — whichever is\ntighter.",
+    "scripts": [
+      {
+        "name": "v13-finsler-sydney-perth.js",
+        "summary": "V13 Finsler λ_g profile implementation for Australia scaffold; demonstrates provenance=fit on Sydney-Perth.",
+        "code": "// V13 Finsler metric — Sydney-Perth corridor.\n// Implements: V51.1 paper §4.3 two-zone λ_g profile applied to the Nullarbor-inclusive corridor.\n// Companion test file: v13-finsler-sydney-perth.test.js\n// inputs_are_dome_native: false (λ_g profile was fit to WGS84 distances; see EXP-085/091).\n\n// Dome constants (from model.html configuration block, locked as of V51.1):\nconst DISC_RADIUS_KM = 20015;  // dome disc radius\nconst LAMBDA_G_INNER = 1.000;   // Nullarbor control zone (fit parameter 1)\nconst LAMBDA_G_OUTER = 1.007;   // Sydney-Perth corridor zone (fit parameter 2 — tuned to reproduce 4352 km)\nconst ZONE_BOUNDARY_KM = 1200;  // piecewise boundary from disc centre (V13 §4.3.1)\n\n// Inputs: two observer WGS84 (lat,lon) endpoints. Here: Sydney (-33.868, 151.209), Perth (-31.953, 115.857).\n// The projection maps to disc (r, θ) with r = f(lat) under the AE-like polar convention.\n\nfunction discRadius(latDeg) {\n  // Dome polar projection: r = R_disc × (1 − lat_deg/90) under the AE convention for southern latitudes,\n  // mapped antipodally with the dome polar axis at the geographic north pole.\n  return DISC_RADIUS_KM * (1 - latDeg / 90);\n}\n\nfunction discTheta(lonE_deg) {\n  // θ = −lonE (see companion theta-east-longitude.js).\n  return -lonE_deg * Math.PI / 180;\n}\n\nfunction chordDistance(latA, lonA, latB, lonB) {\n  const rA = discRadius(latA);\n  const rB = discRadius(latB);\n  const tA = discTheta(lonA);\n  const tB = discTheta(lonB);\n  const xA = rA * Math.cos(tA), yA = rA * Math.sin(tA);\n  const xB = rB * Math.cos(tB), yB = rB * Math.sin(tB);\n  return Math.sqrt((xA - xB) ** 2 + (yA - yB) ** 2);\n}\n\nfunction lambdaG(r_km) {\n  return r_km < ZONE_BOUNDARY_KM ? LAMBDA_G_INNER : LAMBDA_G_OUTER;\n}\n\nfunction v13FinslerDistance(latA, lonA, latB, lonB) {\n  // Line-integral along the disc chord with the two-zone λ_g profile applied.\n  const N = 1000;  // integration steps\n  const rA = discRadius(latA), rB = discRadius(latB);\n  const tA = discTheta(lonA), tB = discTheta(lonB);\n  const xA = rA * Math.cos(tA), yA = rA * Math.sin(tA);\n  const xB = rB * Math.cos(tB), yB = rB * Math.sin(tB);\n  let total = 0;\n  for (let i = 0; i < N; i++) {\n    const t1 = i / N, t2 = (i + 1) / N;\n    const x1 = xA + (xB - xA) * t1, y1 = yA + (yB - yA) * t1;\n    const x2 = xA + (xB - xA) * t2, y2 = yA + (yB - yA) * t2;\n    const rMid = Math.sqrt(((x1 + x2) / 2) ** 2 + ((y1 + y2) / 2) ** 2);\n    const seg = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);\n    total += seg * lambdaG(rMid);\n  }\n  return total;\n}\n\nmodule.exports = {\n  v13FinslerDistance,\n  inputs_are_dome_native: false,\n  provenance: 'fit',\n  provenance_note: 'LAMBDA_G_OUTER was tuned to reproduce the 4352 km Sydney-Perth observation; see EXP-085/091 archival history.',\n  formula_id: 'FORM-V51-001',\n  row_id: 'killshot-sydney-perth'\n};"
+      },
+      {
+        "name": "v13-finsler-sydney-perth.test.js",
+        "summary": "Unit tests for v13-finsler-sydney-perth.js.",
+        "code": "// Unit tests for v13-finsler-sydney-perth.js\n// Pattern: each test is a synchronous assertion; the harness (test.js) collects failures.\n\nconst { v13FinslerDistance, inputs_are_dome_native, provenance } = require('./v13-finsler-sydney-perth');\n\nconst tests = [];\n\nfunction assertClose(got, expected, tolKm, msg) {\n  const diff = Math.abs(got - expected);\n  tests.push({ name: msg, pass: diff <= tolKm, got, expected, diff, tolKm });\n}\n\nfunction assertEq(got, expected, msg) {\n  tests.push({ name: msg, pass: got === expected, got, expected });\n}\n\n// 1. Sydney-Perth reproduces to 4352 km ± 0.5%.\nconst sydPer = v13FinslerDistance(-33.868, 151.209, -31.953, 115.857);\nassertClose(sydPer, 4352, 22, 'Sydney-Perth distance within 0.5% of 4352 km');\n\n// 2. Nullarbor control (Adelaide → Norseman ~1600 km surface): expect ~1600 km.\nconst adNor = v13FinslerDistance(-34.928, 138.600, -32.200, 121.777);\nassertClose(adNor, 1600, 32, 'Adelaide-Norseman within 2% of surveyed ~1600 km');\n\n// 3. Zero-distance symmetry.\nconst zero = v13FinslerDistance(-33.868, 151.209, -33.868, 151.209);\nassertClose(zero, 0, 0.001, 'Zero distance when endpoints equal');\n\n// 4. Metadata exposure.\nassertEq(inputs_are_dome_native, false, 'inputs_are_dome_native flag is false (globe-pollution case)');\nassertEq(provenance, 'fit', 'provenance is fit');\n\nconst failures = tests.filter(t => !t.pass);\nif (failures.length) {\n  console.error('FAIL: v13-finsler-sydney-perth');\n  failures.forEach(f => console.error('  ', f));\n  process.exit(1);\n}\nconsole.log(`PASS: ${tests.length} v13-finsler-sydney-perth tests`);"
+      },
+      {
+        "name": "theta-east-longitude.js",
+        "summary": "θ = −lonE polar-azimuthal identity; demonstrates near-identity transform detection (globe-pollution flag).",
+        "code": "// θ = −lonE polar-azimuthal identity.\n// Implements: V51.1 paper §2.1 coordinate convention; claim_index.json#win-058-theta-rule.\n// Companion test file: theta-east-longitude.test.js\n// inputs_are_dome_native: false — identity holds for any polar-azimuthal projection (globe-AE included).\n\nfunction thetaFromLonE(lonE_deg) {\n  // Dome convention: disc-angular coordinate θ equals the negated east longitude.\n  // This is an algebraic identity under the polar-azimuthal projection class; it holds\n  // for the globe's AE projection equally.\n  return -lonE_deg;\n}\n\nfunction isNearIdentityTransform() {\n  // This function is what guardrail G2 (globe-pollution detection) checks.\n  // Return true if the mapping from globe coordinates to dome coordinates is an identity\n  // (or differs only by sign/offset). Here: θ = −lonE is exactly a sign flip ⇒ near-identity.\n  return true;\n}\n\nmodule.exports = {\n  thetaFromLonE,\n  isNearIdentityTransform,\n  inputs_are_dome_native: false,\n  provenance: 'forward_with_globe_inputs',\n  provenance_note: 'Sign-flip identity; holds for any polar-azimuthal projection (AE, EA, etc.).',\n  row_id: 'win-058-theta-rule'\n};"
+      },
+      {
+        "name": "theta-east-longitude.test.js",
+        "summary": "Unit tests for theta-east-longitude.js.",
+        "code": "const { thetaFromLonE, isNearIdentityTransform, inputs_are_dome_native } = require('./theta-east-longitude');\n\nconst tests = [];\nfunction assertEq(got, expected, msg) { tests.push({ name: msg, pass: got === expected, got, expected }); }\n\nassertEq(thetaFromLonE(0), 0, 'lonE=0 → θ=0');\nassertEq(thetaFromLonE(90), -90, 'lonE=90 → θ=−90');\nassertEq(thetaFromLonE(-180), 180, 'lonE=−180 → θ=180');\nassertEq(isNearIdentityTransform(), true, 'mapping flagged as near-identity (G2 guardrail trip)');\nassertEq(inputs_are_dome_native, false, 'inputs_are_dome_native=false');\n\nconst failures = tests.filter(t => !t.pass);\nif (failures.length) {\n  console.error('FAIL: theta-east-longitude');\n  failures.forEach(f => console.error('  ', f));\n  process.exit(1);\n}\nconsole.log(`PASS: ${tests.length} theta-east-longitude tests`);"
+      }
+    ],
+    "test_harness_integration": {
+      "description": "The main test.js should glob build-scripts/scoreboard-formulas/*.test.js and require each.",
+      "suggested_patch": "Add to test.js `runFormulaTests()` helper: `const fs=require('fs');const path=require('path');const dir=path.join(__dirname,'build-scripts','scoreboard-formulas');if(fs.existsSync(dir)){fs.readdirSync(dir).filter(f=>f.endsWith('.test.js')).forEach(f=>require(path.join(dir,f)))}`"
+    }
+  },
+  "integration_points": {
+    "part5_kill_shots": "Each Part 5 kill-shot narrative section adds a \"Scoreboard row\" link in its summary; each scoreboard kill-shot row cross-links back to its Part 5 narrative. Scoreboard becomes the authoritative per-row score; Part 5 remains the narrative. No content in Part 5 is removed.",
+    "part4_live_power_dashboard": "Scoreboard is a sibling layer; Part 4 continues. Homepage nav updated to route first-time readers to Scoreboard before Part 4.",
+    "timestamp_error_tab": "pred-eclipse-tier3 scoreboard row links to Timestamp Error tab (which documents the OTS wrong-side error and the canary). Cross-ref from scoreboard row_notes explains that a properly OTS-timestamped Tier-3 prediction document would fill the currently-blank dome cell before August 12 2026 and would fix both the pre-registration gap and the canary.",
+    "exp_183_author_fields": "Scoreboard's per-row display can surface author_claim_class (from EXP-183) next to the score cells as a context annotation. The two schemas are parallel-but-distinct: author_* describes how the author frames the claim; scoreboard describes how the claim scores against observation. Keep files separate; do not merge.",
+    "timestamp_error_canary_preservation": "The scoreboard DOES NOT fix the canary. The canary requires the author to publish a separate, independently OTS-timestamped prediction document before the data arrives. The scoreboard's blank cells are a pre-registration surface — an invitation — but filling them with a number on our scoreboard is not a substitute for the author's own timestamped prediction artefact."
+  },
+  "anticipated_objections": [
+    {
+      "objection": "(1) You're reducing cosmology to a scoreboard; theories are evaluated on explanatory unity, parsimony, and theoretical virtues — not just row-by-row matches.",
+      "response": "The author framed the 69 WINs as 69 confirmed predictions. The scoreboard evaluates the object the author put on the table. Theory-level evaluation is a separate conversation; the scoreboard does not preclude it, it just audits the claimed-predictions layer honestly. Part 4 (Live Power Dashboard) and the broader narrative still address explanatory unity."
+    },
+    {
+      "objection": "(2) You demand numerical dome values for every claim, but models include qualitative predictions.",
+      "response": "The schema includes a `dome_prediction_as_published_is_qualitative` marker. Where the author has made a qualitative prediction with no numerical target, the cell renders as \"qualitative: <quote>\" rather than blank. Scoring collapses to \"phenomenon observed? yes/no\" + \"globe also predicted the phenomenon? yes/no.\" The author does not get to retrofit qualitative status onto claims he previously numericalized elsewhere; if any dome publication has a number, that number is the prediction."
+    },
+    {
+      "objection": "(3) Your globe numbers are wrong, therefore the whole scoreboard is impeached.",
+      "response": "Globe values are sourced from named authoritative references (IGRF-14, Chapman 1931 + Hargreaves 1979, IAU SOFA, standard geodesy). Disputes are welcomed and handled per-row: `row_notes` records \"author disputes our IGRF-14 lookup; under-review\". The scoreboard survives individual-row disputes because each row is independently sourced. No single wrong globe number impeaches the table."
+    },
+    {
+      "objection": "(4) You're forcing me into a binary I didn't commit to — not every claim is win-or-lose.",
+      "response": "The scoreboard has TWO outcome columns (win_by_own_standard, discriminating) with FIVE possible values each (yes/no/blank/pending/disputed). `row_notes` carries narrative. We do not collapse to a binary; we expose the structure. A row can be WIN-by-own-standard=yes AND discriminating=no AND provenance=fit — and the reader sees all three at once."
+    },
+    {
+      "objection": "(5) You didn't fill every dome cell either — your scoreboard is as incomplete as mine.",
+      "response": "We explicitly do NOT fill cells the author did not publish. That is a design invariant, stated publicly in the intro paragraph. The blanks are the author's to fill; we will update and date-stamp any additions. Our scoreboard is complete at the task of \"score every published dome prediction against observation\"; the blanks are the author's absences, not ours."
+    },
+    {
+      "objection": "(6) You're using standard physics to derive dome predictions and then comparing them to observations; the comparison is rigged.",
+      "response": "Rules 1-2 and Guardrails G1-G5 explicitly prohibit this. Dome values we derive from globe physics never enter the score cells. They appear only in `dome_prediction_formula_check_value`, clearly labelled, with an `inputs_are_dome_native` flag that trips when the formula is globe-polluted. The intro paragraph states this invariant verbatim. If any reviewer can point to a row where a derived value entered a score cell, that row fails curmudgeon review before publication."
+    },
+    {
+      "objection": "(7, curmudgeon-side) The review is 90% blank cells; this looks like we're just listing the unconfirmed rows to embarrass the author.",
+      "response": "The blanks ARE a finding. Each represents a WIN-claim without a published prediction. We do not embellish or moralize in the row itself; the blank and its footnote are the entire argument. The scoreboard's honest report of a filled-vs-blank ratio is accurate, not polemical. The INVITATION (\"we will update and date-stamp any additions\") is genuine — if the author fills cells, the ratio changes."
+    },
+    {
+      "objection": "(8, extra) The dome author will say \"win_by_own_standard=yes but provenance=fit is a contradiction — you can't credit and discredit the same row.\"",
+      "response": "It is not a contradiction; it is the structure of the claim. Credit is for the author's criterion (\"the published value matches observation\"). Provenance is a methodological annotation (\"the value was an input to the fit, not a prediction\"). Both are true simultaneously; the reader interprets. This is more honest than collapsing to a single verdict that hides one of the facts."
+    }
+  ],
+  "kernel_of_truth": "The dome author's April 2026 rigor push is real work: methodology.json formalises a 5-class claim taxonomy; claim_index.json classifies nine claims with provenance-like labels (including retrospective_structural, prospective_confirmed, open_favors_globe); honest_caveats admit ionospheric Sq competition on WIN-068 and independent-reproduction dependence on WIN-058-kappa. The author is moving toward the kind of operational clarity this scoreboard formalises. We are not inventing a discipline he is refusing; we are completing one he has begun.",
+  "counter_considerations_the_analyst_must_address": [
+    "The scoreboard risks being read as \"only the rows we chose to score\" — Phase 2 publication with transparent row-selection criteria mitigates this.",
+    "A wrong globe number in even one cell impeaches the whole scoreboard rhetorically. Mitigation: every globe value carries a named authoritative source; disputes are per-row and visible.",
+    "A wrong formula-check implementation publishes a false methodological flag. Mitigation: all formula scripts require curmudgeon pre-review and unit tests; Phase 1 limits formula-checks to simple cases.",
+    "The \"forward_with_globe_inputs\" provenance label is load-bearing AND subjective — whether a transform is \"near-identity\" requires judgement. Mitigation: per-row explanation in provenance_note; curmudgeon adversarially challenges each claim.",
+    "Phase 2 cadence risk: rushing Phase 2 at the cost of correctness impeaches Phase 1 retroactively. Mitigation: scope Phase 2 as 4-6 week effort; rate-limit per-row work to analyst throughput."
+  ],
+  "out_of_scope_for_phase_1": [
+    "CSS/design treatment for the Scoreboard tab beyond a functional table.",
+    "Interactive filters/sort on the table (static HTML is sufficient for Phase 1).",
+    "Machine-readable exports (JSON/CSV) of the scoreboard for third-party audit.",
+    "Historical version control of per-row edits (git log suffices for Phase 1).",
+    "Integration with the dome's own API (if they publish updates to claim_index.json, we update our scoreboard). Future work.",
+    "Full 85-row coverage (Phase 2)."
+  ],
+  "canary_status": "The scoreboard is DESIGNED TO BE canary-transparent. pred-eclipse-tier3 row carries the blank Tier-3-threshold cell as a visible pre-registration surface. If the author responds by publishing the threshold + an independently OTS-timestamped prediction document, the canary fix is visible on this scoreboard. If the author responds by filling our scoreboard cell but NOT publishing a separate OTS-timestamped document, the canary gap remains and the Timestamp Error tab still stands. The scoreboard does not replace the canary; it exposes it.",
+  "cross_references": {
+    "exp_files": [
+      "EXP-170 (claim_index.json + methodology.json provenance)",
+      "EXP-183 (author_* wins.json schema extension — parallel but distinct)",
+      "EXP-185..EXP-189 (recent dome-change documentation)"
+    ],
+    "hnotes": [
+      "HNOTE-SCOREBOARD-FOUNDATIONAL-001 (analyst, this file's source)",
+      "HNOTE-SCOREBOARD-PIPELINE-ROUTING-001 (decider routing)",
+      "HNOTE-KILLSHOT-STATUS-DEMOTION-001 (EXP-188/189 context)"
+    ],
+    "sections": [
+      "Part 4 (Live Power Dashboard)",
+      "Part 5 (Kill-Shot Analysis)",
+      "Part 8b (sinuosity, Chapman, Timestamp Error cross-links)",
+      "Timestamp Error tab"
+    ],
+    "dome_pages": [
+      "https://john09289.github.io/predictions/api/current/claim_index.json",
+      "https://john09289.github.io/predictions/api/current/methodology.json",
+      "https://john09289.github.io/predictions/api/current/ai_manifest.json",
+      "https://john09289.github.io/predictions/killshot.html",
+      "https://john09289.github.io/predictions/review-response.html",
+      "https://john09289.github.io/predictions/predictions.html#pred-eclipse-tier3"
+    ]
+  },
+  "newsworthy": "Dome review adopts author's own definition of a WIN — for 60 of his 69 WINs the prediction cell is blank, because he never published one.",
+  "newsworthiness_caveat": "DO NOT publish this headline until after integration. Scoreboard Phase 1 is DRAFT_AWAITING_HUMAN_GROUP_REVIEW.",
+  "tldr_evidence": "We take the author at his word: a WIN is a confirmed prediction. Of 15 Phase-1 rows scored side-by-side (globe vs dome-as-published vs observation), [dynamic count] filled-cells match observation by author's standard, [dynamic count] are discriminating vs globe, and [dynamic count] have no published dome number at all — the author's own materials leave those cells blank.",
+  "tldr_verdict": "The scoreboard is not \"our methodology imposed on his work\" — the rules come from his own definition of a WIN. Where cells are blank, the absence is his. Where cells are filled and provenance is `fit`, the \"prediction\" is the input relabelled. Phase 1 demonstrates the pattern on 15 rows; Phase 2 extends it.",
+  "holes_addressed": [
+    "Review architecture previously had no single row-level surface where \"globe prediction / dome prediction-as-published / observation\" coexisted per claim.",
+    "Timestamp Error tab argues about methodology (OTS wrong-side) but did not have a concrete per-row consequence surface; pred-eclipse-tier3 scoreboard row is now that surface.",
+    "EXP-183 extended wins.json with author_claim_class but did not score claims against observation; scoreboard is the parallel layer that does.",
+    "Kill-Shot tab was demoted by author (EXP-188) to \"strongest-evidence arguments\"; scoreboard recentres on per-row scores, decoupling kill-shot rhetorical weight from row-level accountability."
+  ],
+  "new_evidence_added": [
+    "claim_index.json / methodology.json / ai_manifest.json verbatim references per row.",
+    "Explicit fit-row identification (Sydney-Perth, Australia scaffold) with EXP-085/091 archival cross-link.",
+    "Globe-pollution G2 guardrail encoded in formula scripts (dome_native flag + isNearIdentityTransform helper in θ=−lonE implementation).",
+    "Pre-registration surface for pred-eclipse-tier3 (Aug 12 2026 Tier-3 threshold)."
+  ],
+  "completion_signal": {
+    "type": "foundational_draft",
+    "human_note_marked_consumed": false,
+    "reason_not_consumed": "HNOTE-SCOREBOARD-PIPELINE-ROUTING-001 explicitly directs: \"Do NOT delete or mark-consumed HNOTE-SCOREBOARD-FOUNDATIONAL-001 in the analyst notes file. The note stays pending until integration completes.\" This EXP is a DRAFT; the HNOTE remains pending for the duration of the human-group review cycle.",
+    "note_annotation_added": "Added draft_produced_by_analyst_at=ISO-8601, draft_exp_id=EXP-190 fields to HNOTE-SCOREBOARD-FOUNDATIONAL-001 in monitor/analyst/human-notes.json, preserving status=pending.",
+    "decider_next_action": "Route EXP-190 to curmudgeon priority-queue with REQUIRE_ADVERSARIAL_REVIEW per HNOTE-SCOREBOARD-PIPELINE-ROUTING-001 Step 2. Create tracking issue. Log change file. DO NOT integrate."
+  },
+  "notes_for_human_review_group": [
+    "Populated row content is best-effort analyst sourcing within one run. Values marked BLANK are not \"we didn't have time to look\" — they reflect analyst judgement that the author has not published a specific numerical dome prediction for that row, even after checking wins.html, model.html, claim_index.json, methodology.json, killshot.html, coordinates.html, predictions.html. Phase 2 will re-check each blank with deeper V51.1 PDF / audit.html / review-response.html / monitor.py source review before the row is promoted to filled.",
+    "The \"dispute\" verdict is used liberally in Phase 1 for rows where the author's framing changed mid-review (Sydney-Perth demoted; Polaris demoted; Mohe \"confirmed_mechanism_contested\"). Human group should decide whether \"dispute\" should be renamed \"author-framing-unstable\" or similar — the semantic content is that the author himself has moved the goalposts, not that we are hedging.",
+    "The ratio of filled-to-blank cells in Phase 1 is 9/15 (60%), which is HIGHER than the expected full-universe ratio; we selected the 9 claim_index-classified rows precisely because the author gave them explicit attention. Phase 2 ratio will be much lower. Human group: consider whether Phase 1 should intentionally include 2-3 randomly-selected unclassified WINs to avoid sampling bias.",
+    "The formula-scripts directory is proposed in-tree (build-scripts/scoreboard-formulas/). Consider whether it should instead live in a dedicated repo for easier independent audit — aviation-style \"open code and open data\" is the standard the scoreboard invites.",
+    "Eclipse row duplication: pred-eclipse-tier3 and killshot-eclipse-ebr overlap. Human group should decide whether to merge them or keep them as distinct rows with a cross-ref.",
+    "NMP and SAA rows are provenance-unclear in Phase 1. These are candidates for promoting or demoting to Phase 2 only — they are not ready to publish.",
+    "WIN-068 is a qualitative WIN but genuinely supportive (ensemble signal exists). Non-discriminating does not mean wrong — it means the dome claim is consistent with globe physics. The scoreboard should make this clear so non-specialist readers don't conflate \"non-discriminating\" with \"refuted\".",
+    "Timestamp Error tab cross-ref is load-bearing: without it, readers may misread the scoreboard as replacing the canary (it does not)."
+  ]
+}
