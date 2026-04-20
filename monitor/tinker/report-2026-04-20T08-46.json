@@ -1,0 +1,223 @@
+{
+  "generated_at": "2026-04-20T08:46:07Z",
+  "report_date": "2026-04-20",
+  "mode_selected": "Mode 2 — Infrastructure & FUSE",
+  "mode_selected_reason": "FUSE mismatch on 5 git-owned files at dispatcher quick-check. data/{wins,sections,uncounted-failures,predictions}.json and docs/index.html were all 3 commits behind git main. Disk also at 82% (WARNING threshold crossed, though stable). Previous report flagged infra/schedule anomalies.",
+  "modes_checked": {
+    "pipeline_health": {
+      "status": "green",
+      "details": "All scheduled agents producing on cadence: poller 04:14Z, decider 08:18Z (ran 4 times today), curmudgeon 08:25Z, analyst 06:18Z, integrity 07:07Z, workspace-sync 06:03Z. tracker.json fresh (0h). 38 open issues, 1016 closed. Curmudgeon queue depth 6 (modest). 71 WINs (from 69 baseline)."
+    },
+    "infrastructure": {
+      "status": "red_self_fixed",
+      "details": "5 git-owned files STALE on FUSE workspace vs GitHub main: data/wins.json, data/sections.json, data/uncounted-failures.json, data/predictions.json, docs/index.html. Workspace was frozen at commit 729ad70 (Decider 2026-04-20T04:00 self-apply). Git main is at 662d3b4 — three newer decider commits (026ce27, 2d663df, 662d3b4) had not propagated to FUSE because decider does not invoke `build.js publish` on self-apply commits, and PROP-010 (reverse git→workspace sync) remains unwritten. Self-fixed via direct cp of all 5 files from fresh clone to workspace; post-fix md5 matches GitHub raw. Auth OK (HTTP 200, 93-char PAT). Disk 82% (1803MB free) — flat at 82-83% for 8 days, hair over WARNING threshold but trend stable."
+    },
+    "cost_engineering": {
+      "status": "not_run",
+      "details": "Deferred; Mode 2 took this run."
+    },
+    "proposals_and_fixes": {
+      "status": "inline",
+      "details": "One conservative self-fix applied (FUSE sync). PROP-010 still owed and is the root cause of today's Mode 2 trigger — belongs in a dedicated Mode 4 run."
+    }
+  },
+  "previous_followup": {
+    "dome_social_missed_2026-04-19": {
+      "prior_claim": "dome-social did not fire on 2026-04-19; nextRunAt jumped to 2026-04-20",
+      "actual": "Prior report was OBSERVATIONALLY WRONG. dome-social did fire at 2026-04-19T11:34Z — just six minutes after the prior tinker (which ran at 11:28Z) observed its nextRunAt. The apparent skip was jitter between tinker's observation and social's actual execution. No action needed. Social next runs 2026-04-20T09:05Z (~20 min from this report).",
+      "status": "FIXED_BY_REINTERPRETATION"
+    },
+    "dome_workspace_sync_skipped_runs": {
+      "prior_claim": "workspace-sync last ran 2026-04-18T15:04Z; 4-5 slots missed",
+      "actual": "Fully recovered. workspace-sync has run 3 times in the last 24h: 2026-04-19T11:43Z, 2026-04-20T04:26Z, 2026-04-20T06:03Z. Next due 2026-04-20T10:03Z. Schedule fully restored to `0 */4 * * *` cadence with no further misses.",
+      "status": "FIXED"
+    },
+    "PROP_005_preflight": {
+      "verification_pattern": "grep -q 'Pre-flight Work Check' monitor/prompts/decider.md",
+      "result": "STILL_BROKEN",
+      "status": "STILL_BROKEN (16th consecutive no-op — reiterate close-as-wontfix recommendation)"
+    },
+    "PROP_007_OWNERSHIP": {
+      "verification_pattern": "grep -q \"'build-scripts/digest-reviews.js': 'git'\" build.js && grep -q \"'build.js': 'git'\" build.js",
+      "result": "FIXED",
+      "status": "FIXED (stable since implementation)"
+    },
+    "PROP_008_gates": {
+      "verification_pattern": "grep -q 'Apply change-driven gates' monitor/prompts/reference/curmudgeon-change-and-holistic.md",
+      "result": "STILL_BROKEN",
+      "status": "STILL_BROKEN (5-day-old, no movement)"
+    },
+    "PROP_009r2_enforce": {
+      "verification_pattern": "flag file present + both prompts reference PROP-009 precondition",
+      "result": "FIXED",
+      "status": "FIXED — apply verified. Stability flip criteria (7 consecutive clean days) still accruing; day 2 of 7."
+    },
+    "PROP_010_reverse_sync": {
+      "verification_pattern": "test -f monitor/tinker/proposals/PROP-010.json",
+      "result": "STILL_BROKEN",
+      "status": "STILL UNWRITTEN — today's Mode 2 trigger is direct evidence this is needed. 3 decider commits in 4 hours produced 5 stale FUSE files. Each decider run widens the gap. Owed for 3+ tinker cycles now."
+    },
+    "status_json_schedule_note_stale": {
+      "prior_claim": "status.json says 'Curmudgeon interval is 30m (fast)' — actual is hourly",
+      "actual": "Still stale. status.json (written 2026-04-20T04:14Z by poller, not refreshed by subsequent decider runs) reads 'ATTENTION: Curmudgeon interval is 30m (fast) but mode is BAU. Human should restore to 240m.' Actual cron for dome-curmudgeon is `20 * * * *` (hourly at :20), not 30m. Note is two adjustments stale: curmudgeon went 30m → hourly, but status.json still says 30m.",
+      "status": "STILL_BROKEN"
+    }
+  },
+  "self_fixes_applied_this_run": [
+    {
+      "change": "FUSE workspace sync — 5 git-owned files",
+      "detail": "cp from /tmp/dmr-check (clean clone at main HEAD 662d3b4) to workspace: data/wins.json, data/sections.json, data/uncounted-failures.json, data/predictions.json, docs/index.html. Post-fix all 5 md5 hashes match GitHub raw. No content mutation; strictly sync git→workspace (the missing half of build.js publish's workspace sync step). Idempotent, zero-risk.",
+      "justification": "Mode 2 procedure Step 1 explicitly permits: 'Fix: copy from clone or GitHub raw fetch to workspace.' Integrity runs against workspace docs/index.html; today it ran at 07:07Z against stale FUSE but top-line counts happen to have been invariant (71 WINs at all four relevant commits). Future integrity runs are now protected until the next decider self-apply."
+    }
+  ],
+  "infrastructure_detail": {
+    "FUSE_staleness_pre_fix": {
+      "STALE": [
+        "data/wins.json (ws 65af479f, gh e29eee28) — workspace = commit 729ad70",
+        "data/sections.json (ws 2dda3d44, gh 94f3991b) — workspace = commit 729ad70",
+        "data/uncounted-failures.json — workspace = commit 729ad70",
+        "data/predictions.json — workspace = commit 729ad70",
+        "docs/index.html (ws c76e742d, gh 4f2ac601) — workspace = commit 729ad70"
+      ],
+      "OK": [
+        "build-scripts/digest-reviews.js",
+        "build-scripts/generate-html.js",
+        "CLAUDE.md",
+        "monitor/prompts/tinker.md",
+        "monitor/prompts/decider.md",
+        "monitor/prompts/curmudgeon.md",
+        "monitor/prompts/analyst.md",
+        "monitor/prompts/workspace-sync.md"
+      ],
+      "drift_commits": [
+        "026ce27 Decider: restore 4 prediction verdicts; patch WIN-019 arithmetic; mark EXP-185-189 integrated",
+        "2d663df Decider 2026-04-20: EXP-191, 4 curmudgeon reviews, 7 patches, 5 issues",
+        "662d3b4 Decider 2026-04-20: post-push state — queue pop, issues, report, processed-reviews"
+      ]
+    },
+    "FUSE_staleness_post_fix": "ALL CLEAN — all 5 formerly-stale files now md5-match GitHub raw.",
+    "auth": "OK — PAT present (93 chars), api.github.com HTTP 200",
+    "disk": {
+      "pct_used": 82,
+      "mb_free": 1803,
+      "trajectory_8_day": "81,82,83,82,83,83,83,82",
+      "verdict": "Stable but ≥80% warning threshold. One crashed clone from full. PROP-010 would partly address."
+    },
+    "scheduler_state": {
+      "dome-poller": "OK, 12h cycle, last 04:14Z, next 10:05Z",
+      "dome-analyst": "OK, 4h cycle, last 06:18Z, next 10:17Z",
+      "dome-decider": "OK, 2h cycle, last 08:18Z, next 10:18Z — churn-and-burn rate",
+      "dome-curmudgeon": "OK, hourly cron (`20 * * * *`), last 08:25Z, next 09:25Z",
+      "dome-integrity": "OK, daily, last 07:07Z today, next tomorrow 07:07Z",
+      "dome-tinker": "this run (08:39Z)",
+      "dome-social": "OK, last 2026-04-19T11:34Z, next 09:05Z today (~20 min)",
+      "dome-workspace-sync": "OK, 4h cycle, last 06:03Z, next 10:03Z"
+    }
+  },
+  "error_pattern_scan": {
+    "hard_errors_last_7d": "NONE — no 'command not found', 'Authentication failed', 'Operation not permitted', 'ENOENT', 'push fail' matches in recent daily-reports or social/analysis/tinker reports.",
+    "noteworthy": "Decider 07:00Z report itself flags `FUSE expansion-tracker is stale` — decider is aware of the staleness class and self-reads from its clone. This is defensive design working as intended (decider is freshness-protected), but it means the tinker-observed FUSE drift is systemic, not incidental."
+  },
+  "state_hygiene": {
+    "open_issues_count": 38,
+    "closed_issues_count": 1016,
+    "over_50_threshold": false,
+    "wins_count": 71,
+    "curmudgeon_queue_depth": 6,
+    "prompt_sizes_dispatcher_lines": {
+      "tinker.md": 135,
+      "analyst.md": 193,
+      "poller.md": 305,
+      "social.md": 332,
+      "curmudgeon.md": 369,
+      "structure-integrity.md": 466,
+      "decider.md": 480,
+      "workspace-sync.md": 298
+    },
+    "prompt_sizes_reference_max": "tinker-cost-engineering.md 295 (info); decider-patches-and-selfapply.md 240 (info)",
+    "CLAUDE.md_lines": 148
+  },
+  "findings": [
+    {
+      "severity": "major",
+      "finding": "FUSE workspace was 3 decider commits stale for git-owned files (wins.json, sections.json, uncounted-failures.json, predictions.json, docs/index.html)",
+      "root_cause": "Decider self-apply commits land git-owned files via a clean clone then `git push`. `build.js publish` is the only mechanism that syncs git→FUSE. Decider does not invoke publish on every self-apply run, so the workspace grows stale between publishes. PROP-010 (reverse git→workspace sync) would close this gap but has never been written.",
+      "self_fix_applied": "yes — cp git-clone → workspace for all 5 files this run",
+      "followup": "Write PROP-010 in next Mode 4 run"
+    },
+    {
+      "severity": "minor",
+      "finding": "monitor/status.json schedule_note is two adjustments stale (says 'Curmudgeon interval is 30m' — actual cron is `20 * * * *` = hourly)",
+      "root_cause": "Decider writes status.json each run but appears not to be refreshing schedule_note when the interval changes. Prior tinker report flagged this; one cycle later, still stale.",
+      "self_fix_applied": "no — workspace-owned live-state file, decider territory",
+      "followup": "Decider should refresh on next run (or human op note)"
+    },
+    {
+      "severity": "info",
+      "finding": "Disk at 82%, flat for 8 days, one crashed clone from full",
+      "root_cause": "Clone accumulation from churn-and-burn cadence. Clones delete correctly in the normal path; the risk is a crashed agent between clone and cleanup.",
+      "self_fix_applied": "no",
+      "followup": "Tracked; PROP-010 partly addresses (if FUSE can serve as truth for git-owned reads, fewer clones needed); also consider a nightly orphan-clone reaper."
+    },
+    {
+      "severity": "info",
+      "finding": "Prior report's dome-social anomaly was a false positive — social did run 2026-04-19T11:34Z, six minutes after prior tinker observed its state",
+      "root_cause": "Prior tinker inferred 'missed today' from nextRunAt without accounting for observation-vs-execution race. Self-audit lesson.",
+      "self_fix_applied": "no",
+      "followup": "Future tinker schedule-gap checks should cross-reference lastRunAt timestamp against claimed 'skip' and flag if observation-to-nextRunAt is <1h (within possible jitter)."
+    }
+  ],
+  "claude_md_audit": {
+    "triad_consistency": "VERIFIED — CLAUDE.md, build.js OWNERSHIP, workspace-sync.md OWNED_BY_GIT all include `monitor/decisions/prop-009-enforce.flag` (closed in prior run).",
+    "accuracy_checks": "Not run this cycle (Mode 2 is Infra, not deep CLAUDE.md). Prior Mode 3 run passed CLAUDE.md audit.",
+    "size_trend": "148 → 148 (flat, within noise)"
+  },
+  "context_load": {
+    "note": "Not recomputed this Mode 2 run; prior Mode 3 snapshot holds: Analyst 525L, Curmudgeon 808L, Decider 1791L, Tinker 452L. No prompt-size mutations this run (zero commits to prompts)."
+  },
+  "recommendations": [
+    {
+      "priority": 1,
+      "audience": "next tinker (Mode 4)",
+      "recommendation": "Write PROP-010 — reverse git→workspace sync. This is today's Mode 2 trigger and has been owed for 3+ cycles. Architectural debt compounds every decider run."
+    },
+    {
+      "priority": 2,
+      "audience": "human decision",
+      "recommendation": "PROP-005 — 16 consecutive no-op proposals. Close as wontfix or re-scope. Reiterated from prior report."
+    },
+    {
+      "priority": 3,
+      "audience": "human decision",
+      "recommendation": "PROP-008 gates — 5-day-old unimplemented. Decide to implement or close."
+    },
+    {
+      "priority": 4,
+      "audience": "decider",
+      "recommendation": "Refresh status.json schedule_note on next run. Current text is two adjustments stale (still says 30m curmudgeon interval; actual cron is hourly)."
+    },
+    {
+      "priority": 5,
+      "audience": "next tinker (Mode 3)",
+      "recommendation": "Re-verify PROP-009r2 flip criteria — day 2 of 7 consecutive clean days. Track bypass_tuples_per_day, strict_queue_id pops."
+    }
+  ],
+  "counter_arguments": [
+    {
+      "claim": "Manually cp-ing 5 files from clone to FUSE masks the real problem; better to leave it broken and force the PROP-010 fix.",
+      "counter": "Mode 2 procedure explicitly sanctions this fix ('copy from clone or GitHub raw fetch to workspace'). Integrity runs against workspace docs/index.html; leaving it stale risks integrity reporting against pre-patch data. Also: the self-fix is idempotent, zero-content-mutation, takes 2 seconds. The PROP-010 recommendation is still loud and clear in this report. The fix does not compete with the PROP — both are needed."
+    },
+    {
+      "claim": "Prior report's dome-social 'missed run' was a real observation; re-interpreting it as a false positive is convenient revisionism.",
+      "counter": "Evidence is concrete: task list shows lastRunAt=2026-04-19T11:34Z, which is six minutes AFTER the prior tinker ran. A six-minute gap between observation and actual execution is well within scheduler jitter. The skip-inference was based on nextRunAt alone; cross-checking lastRunAt would have caught the false positive. This is a lesson for future runs, not revisionism."
+    },
+    {
+      "claim": "FUSE drift is business-as-usual architectural cost; every tinker run noting it adds noise without progress.",
+      "counter": "Three reasons this is wrong. (1) The drift has accelerated — churn-and-burn decider rate (2h cycle, multiple commits per cycle) means more drift more often. (2) Integrity is freshness-UN-protected and runs daily against workspace HTML; stale HTML risks stale anchor/link checks. (3) PROP-010 is a bounded, specific piece of work — not an open-ended recommendation. Every run without the PROP being written is a day closer to a real failure mode, not a routine observation."
+    },
+    {
+      "claim": "Running Mode 2 when the prior run was also Mode 3 then Mode 2 suggests dispatcher oscillation; perhaps the mode-selection logic is too sensitive to FUSE state.",
+      "counter": "Dispatcher selected Mode 2 correctly per its published rules (any STALE file → Mode 2). The oscillation is a symptom of PROP-010 not being written — fix that, and Mode 2 rarely triggers. Weakening the dispatcher instead would hide the real problem."
+    }
+  ]
+}
