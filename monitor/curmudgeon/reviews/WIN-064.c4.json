@@ -1,0 +1,111 @@
+{
+  "point_id": "WIN-064",
+  "topic": "P-wave shadow zone geometric lock",
+  "queue_id": 200,
+  "queue_pushed_at": "2026-04-21T02:28:27.768Z",
+  "reviewed_at": "2026-04-21T04:33:54.256Z",
+  "cycle": 4,
+  "trigger": "priority-queue-win-rewrite",
+  "change_summary": "Decider (commit 43ec502) applied two c3 recommendations on WIN-064: (a) code_analysis.monitoring flipped none->hardcoded; (b) parenthetical \"11,600-15,600 km\" now has the \"(using sphere math — which is the point)\" clarifier. EXP-199 (azimuthal-symmetry + Sub-Terrestrial Wall + depth 378 km) and EXP-200 (defense) are pending analyst and will cover the remaining c3 items. This c4 is a narrow verification pass focused on residual consistency issues introduced by the tag flip.",
+  "current_verdict_holds": true,
+  "confidence": 0.94,
+  "our_argument_summary": "Std Model Explains. Same thesis as c3: P-wave shadow zone at 104-140 deg is textbook spherical-seismology evidence (Oldham 1906, Gutenberg 1913); dome adopts the value with no derivation from disc geometry. Post-patch, the code_analysis tag is now internally consistent with the raw-text finding (domain panel exists in 08-live-power.txt with Tolerance: N/A + unit-mismatched Observed, which is the hardcoded-display signature).",
+  "dome_code_analysis": {
+    "relevant_files": [
+      "raw-text/08-live-power.txt",
+      "raw-text/02-wins.txt",
+      "raw-text/03-predictions.txt",
+      "data/sections.json (part2b, part6)",
+      "build-scripts/generate-html.js (for aggregate counts)"
+    ],
+    "calculation_pipeline": "Unchanged from c3. Dome live-power panel (08-live-power.txt line 244-246) declares Domain: P-wave Shadow Zone | Predicted: Shadow at 104-140 deg | Observed: Confirmed at depth 378 km | Tolerance: N/A | Status: PASS | Source: USGS FDSN. Still no derivation from disc/firmament parameters. \"Observed: ... depth 378 km\" remains a unit-mismatch (depth vs. angular distance) pointing to a cosmetic rather than live-validator panel. monitor.py itself is not included in raw-text/ in this snapshot (only available via the dome author’s github.com/John09289/predictions repository, per 08-live-power.txt line 182) so I cannot directly inspect source; the \"hardcoded\" tag is inferred from the panel signature (N/A tolerance + static mismatched Observed string) rather than from code inspection.",
+    "hardcoded_vs_computed": "Display-only / hardcoded. The Tolerance: N/A + static Observed: Confirmed at depth 378 km pattern is inconsistent with any live pred-vs-obs comparison; even if an upstream USGS FDSN call exists (as Source: USGS FDSN claims), its output is not actually being compared against an angular shadow-zone prediction. Tagging this \"hardcoded\" is the correct conservative call.",
+    "data_sources_used": [
+      "USGS FDSN (claimed in dome panel, not independently verified via raw-text or monitor.py in this session)"
+    ],
+    "escape_clauses": "Tolerance: N/A persists as the primary escape clause. Dome’s own 08-live-power.txt \"HOW THIS WORKS\" block (lines 163-174) declares: \"Each domain has explicit tolerance bands. If prediction falls outside tolerance, it fails — no exceptions.\" The P-wave Shadow Zone domain (same file, lines 244-246) sets Tolerance: N/A — a self-violation of the dome’s own falsifiability criterion. This is a kill-shot waiting to be harvested; still pending in EXP-199/200.",
+    "our_code_claims_accurate": true,
+    "code_discrepancies": "c3 flagged monitoring-tag staleness and prose-vs-tag disagreement. Decider patched the tag to \"hardcoded\" (correct). The prose side of the disagreement remains — see holes_found[0] below — because detail_verdict_text still contains the string \"the hardcoded expected value sits in the same commit as the live fetch call,\" which reads as though WIN-064 has a live fetch. It does not."
+  },
+  "code_analysis_tags": {
+    "monitoring": "hardcoded",
+    "monitoring_evidence": "Decider-patched 2026-04-21 (commit 43ec502). Evidence supporting the tag: 08-live-power.txt lines 244-246 list Domain: P-wave Shadow Zone with Tolerance: N/A + static textual Observed value (\"Confirmed at depth 378 km\") + unit mismatch between Predicted (degrees) and Observed (km). This is the signature of a hardcoded display panel, not a live comparison. Even if monitor.py has a USGS FDSN fetch call, no actual pred-vs-obs comparison produces the displayed status. The \"hardcoded\" tag is defensible; \"live_fetch\" would only be warranted if direct monitor.py inspection showed the Observed string is dynamically produced from fetched data, which our raw-text archive cannot confirm.",
+    "relabels_standard": true,
+    "relabels_standard_evidence": "Unchanged from c3. 104-140 deg shadow zone = Oldham 1906 / Gutenberg 1913 textbook seismology. Dome takes the observation wholesale, labels it PASS, offers no alternative derivation.",
+    "post_hoc": true,
+    "post_hoc_evidence": "Unchanged from c3. Observation ~120 years old; WIN-064 is new in dome V51.0 (April 2026). The numerical boundary is textbook physics — trivial-transcription under Part 3.1b.",
+    "derives_from_dome": false,
+    "derives_from_dome_evidence": "Unchanged from c3. No raw-text derivation from disc_radius, H(r), or other dome parameters produces 104-140 deg. Dome panel restates spherical-seismology value without derivation.",
+    "reviewed": true
+  },
+  "holes_found": [
+    {
+      "severity": "major",
+      "description": "Tag-vs-prose inconsistency persists post-patch. The decider flipped code_analysis.monitoring from \"none\" to \"hardcoded\" (correct), but did NOT touch detail_verdict_text. That text still reads: \"...the hardcoded expected value sits in the same commit as the live fetch call, making even that weaker test unverifiable.\" For WIN-064 specifically, monitoring is now tagged \"hardcoded\" — meaning there is no live fetch call. A dome defender screenshotting the JSON tag beside the prose has a direct \"your own review contradicts itself\" dunk. Interpreting the sentence charitably (as a claim about monitor.py architecture in general — where live-fetch domains and hardcoded expected values share one file and one commit) requires the reader to know the OTS/monitor.py architecture; a first-time reader sees \"live fetch\" next to a \"hardcoded\" tag and is confused. This is the residue of the c3 \"tag-vs-text disagreement\" hole: the tag side was fixed, the text side was not.",
+      "recommendation": "Rewrite the offending clause in detail_verdict_text. Two acceptable rewrites: (a) Narrow-scope fix (preferred): change \"the hardcoded expected value sits in the same commit as the live fetch call, making even that weaker test unverifiable\" to \"the dome lists no live fetch for this domain at all (monitoring: hardcoded) — the 104-140 deg ‘observation’ is a static string in monitor.py, so the ‘timestamped before data was pulled’ framing doesn’t even apply: there is no data-pull event to be timestamped before.\" This eliminates the contradiction and sharpens the argument. (b) Broader-scope fix: keep the architectural point but make it explicit — \"across monitor.py as a whole, hardcoded expected values and live fetch calls sit in the same git commit, so the OTS timestamp cannot distinguish prediction-first from observation-first for any domain — but WIN-064 doesn’t even have a fetch to sequence against; its ‘observation’ is a literal.\" Either works; (a) is tighter."
+    },
+    {
+      "severity": "moderate",
+      "description": "Paraphrased dome quote presented in quote marks. detail_verdict_text attributes to \"the dome author’s own definition\" the phrase \"prediction was timestamped before confirming data was pulled\" (quote marks, hyperlinked to the dome site). The actual dome text (raw-text/03-predictions.txt line 13) reads: \"PROSPECTIVE: Timestamped before confirming data (Highest evidential weight — true advance prediction).\" Our version inserts \"prediction was\" at the start and \"pulled\" at the end, then wraps the whole thing in quote marks. A dome defender can fairly claim we’re strawmanning by quoting words he did not actually write. This is a textbook \"check every citation including self-paraphrased ones\" issue — we’ve criticized the dome for quoting values without grounding them; we should not quote him with inserted words.",
+      "recommendation": "Either (a) drop the quote marks and use indirect attribution (\"the dome author’s own criterion — timestamped before confirming data — is weaker...\"), or (b) restore the verbatim string: \"the dome author’s own definition (“Timestamped before confirming data”)...\". Option (b) preserves the citational force; option (a) reads more naturally. Either removes the strawman risk at zero cost to the argument."
+    },
+    {
+      "severity": "minor",
+      "description": "Retraction of a c3 concern. The c3 review asserted that flipping monitoring from \"none\" to \"hardcoded\" would cascade into stale aggregate counts in Part 2b (e.g., \"X/71 have monitoring: none\"). Re-verification: the Part 2b numeric placeholders ({{CA_HARDCODED}}, {{CA_LIVE}}, {{CA_NONE}}, {{CA_HARDCODED_PLUS_NONE}}, {{CA_RELABELS}}, {{CA_POSTHOC}}) are computed at build time from wins.json in build-scripts/generate-html.js (lines 77-82, 141). So the tag flip auto-propagates on the next build; there is no stale hardcoded count anywhere in the prose. c3 slightly overstated this risk. Current wins.json tag distribution (re-counted for the record): monitoring {none: 41, hardcoded: 27, live_fetch: 3}; relabels_standard {true: 50, false: 21}; post_hoc {true: 69, false: 2}; derives_from_dome {true: 2, false: 69}.",
+      "recommendation": "No action. Recorded here for audit trail so the next cycle doesn’t re-flag the Part 2b count concern as \"still unresolved\" when in fact it was never a real issue. Build-time computation is the right architecture and is working as designed."
+    }
+  ],
+  "stronger_arguments": [],
+  "kernel_of_truth": {
+    "description": "The decider made the defensible call to flip the monitoring tag to \"hardcoded\" rather than waiting for direct monitor.py inspection. Given (Tolerance: N/A + depth-vs-angle unit mismatch + static Observed string), \"hardcoded\" captures the reality of a cosmetic display panel even if there is an upstream USGS FDSN call that the dome doesn’t actually compare against anything. Conservative call in the absence of source access.",
+    "why_it_doesnt_save_claim": "The tag is now right but the prose it supports wasn’t updated in lockstep. A correct tag alongside contradictory prose is arguably worse than the c3 situation of a stale tag alongside consistent prose, because it creates a more obvious defender-exploitable contradiction. Patches to structured data without matching patches to adjacent prose are a recurring failure mode in this pipeline; worth flagging as a process observation."
+  },
+  "recommended_action": "minor_edit",
+  "text_fingerprint": {
+    "claim_length": 28,
+    "finding_length": 74,
+    "detail_evidence_length": 1232,
+    "detail_verdict_length": 953,
+    "verdict": "Std Model Explains"
+  },
+  "advocate_mode": {
+    "best_defense": "A capable dome defender would run three plays. (1) \"Your own tag says hardcoded and your own prose says live fetch — which is it? If you cannot keep your metadata consistent, why should I trust your shadow-zone refutation?\" This is the new opening shot post-patch; it did not exist in the c3 window because c3’s tag was \"none\" (consistent with the absence of a fetch) and the prose’s \"live fetch call\" phrasing could be read as a general architectural claim. (2) \"You quote my definition as ‘prediction was timestamped before confirming data was pulled’ but I actually wrote ‘Timestamped before confirming data.’ You’ve put words in my mouth and now you’re using them to score against me.\" (3) \"You engage with the angular boundaries and the core-mantle geometry but you never engage with USGS FDSN as a data source. My domain cites a real seismic data repository; your response doesn’t audit that it, just attacks the shadow-zone math on pure geometry grounds.\" Leg (1) is net-new and major; leg (2) is moderate and newly applicable given the quote we hand-paraphrased; leg (3) is a milder attack that survives but doesn’t damage the Std Model Explains verdict (FDSN-or-not, the dome still adopts spherical-geometry results without deriving them).",
+    "defense_survives": 2,
+    "preemptive_recommendation": "Fix (1) and (2) directly via the recommendations in holes_found[0] and holes_found[1]. For (3), an optional enhancement is to add one sentence acknowledging the USGS FDSN source: \"The dome’s panel cites USGS FDSN as the data source; FDSN provides seismic waveforms and event catalogs, from which shadow-zone angular boundaries ARE derived using spherical-geometry ray-tracing through PREM — reinforcing rather than refuting the Std Model Explains verdict.\" This preempts the leg (3) attack while folding FDSN into our favor. Not urgent; leg (3) is a defense_survives=1 attack on the scoreboard."
+  },
+  "cross_win_consistency": {
+    "related_wins": [
+      "WIN-067",
+      "WIN-063",
+      "WIN-054"
+    ],
+    "compatible": true,
+    "inconsistencies_found": "No cross-WIN inconsistencies introduced by the patch. WIN-067 (Antarctic gravity hole), WIN-063 (internal structure), WIN-054 (El Gordo cluster), WIN-064 remain grouped in sections.json Part 6 as \"relabels standard spherical evidence\" — same pattern, same critique. The monitoring flip for WIN-064 does not propagate to the grouped WINs; their tags are independent. Part 3.1b trivial-transcription framing shared with WIN-035, WIN-039, WIN-067 is still internally consistent. One tangential consistency note: WIN-037 and WIN-038 were patched in the same commit (43ec502) — their detail_verdict_texts similarly invoke \"OTS timestamps status_history.json\" and \"same commit as live fetch call\" patterns and may deserve a same-reason sweep, but they’re already queued separately (ISS-1278/1279 closed, not in current queue) so no action needed here."
+  },
+  "quantitative_verification": {
+    "claims_checked": [
+      "Post-patch sphere-math parenthetical: \"11,600-15,600 km\" from 104-140 deg",
+      "Aggregate tag counts post-flip (monitoring distribution)",
+      "Dome text phrasing in raw-text/03-predictions.txt line 13"
+    ],
+    "computations": "Sphere arc = R*pi*angle/180, R=6371 km. 104 deg -> 11564.3 km (rounds to 11,600, within 36 km tolerance). 140 deg -> 15567.3 km (rounds to 15,600, within 33 km tolerance). Both rounded values remain correct after the clarifier edit. Aggregate tag counts from wins.json: monitoring {none:41, hardcoded:27, live_fetch:3} totals 71 WINs (matches wins.json .length). The dome-site quoted phrase \"prediction was timestamped before confirming data was pulled\" does NOT appear verbatim in raw-text/03-predictions.txt; the actual text on line 13 is \"PROSPECTIVE: Timestamped before confirming data (Highest evidential weight — true advance prediction).\" Verified via grep.",
+    "all_verified": true,
+    "discrepancies": null
+  },
+  "deeper_analysis": "The c4 pass is narrow by design. Most of the c3 findings were routed to EXP-199 (azimuthal-symmetry + Sub-Terrestrial Wall citation + depth-378-km-unit-mismatch quote) and EXP-200 (defense neutralization), both pending analyst. What c4 had to check was whether the decider’s two self-applied fixes (monitoring tag flip, sphere-math clarifier) introduced any new issues or left any residue. One material residue found: the detail_verdict_text \"live fetch call\" clause is now inconsistent with the hardcoded tag applied to this WIN. This is a process observation as much as a content one — when a decider self-applies a structured-data patch (tag change) without auditing the adjacent prose for consistency, it can flip an internally-consistent review into an internally-contradictory one. The fix is trivial (one sentence) and the defender-exploitability is concrete. Secondarily, a previously-unflagged self-paraphrased dome quote surfaced on careful re-read; we’ve been putting the dome’s words in quote marks with our own insertions, which our citation policy forbids. Finally, I’m retracting the c3 advisory about \"Part 2b aggregate counts off by one\" — re-verification of generate-html.js confirmed the counts are build-time-computed from wins.json so tag flips auto-propagate; c3 slightly over-stated the downstream impact. Verdict remains \"Std Model Explains\"; no basis for a verdict_change. recommended_action = minor_edit (two textual fixes as specified).",
+  "citation_check": {
+    "citations_verified": [
+      "Oldham 1906 DOI 10.1144/GSL.JGS.1906.062.01-04.21 — resolved in c3, carried over.",
+      "Sphere-arc computation at R=6371 km for 104 deg and 140 deg — re-verified.",
+      "Dome raw-text line 13 of 03-predictions.txt — verbatim text does NOT match our paraphrased quote."
+    ],
+    "citations_failed": [
+      "Self-paraphrased dome quote \"prediction was timestamped before confirming data was pulled\" in detail_verdict_text — not verbatim from the dome. Actual dome text: \"Timestamped before confirming data.\" Flagged in holes_found[1]."
+    ],
+    "citations_unchecked": [
+      "Gutenberg 1913 Physikalische Zeitschrift 14:1217-1218 — inline, no DOI; unchecked (same as c3).",
+      "Dome-site attribution of \"Sub-Terrestrial Wall\" — still not located in raw-text; deferred to EXP-199.",
+      "monitor.py source at github.com/John09289/predictions — not in our raw-text archive; cannot directly verify whether a USGS FDSN fetch exists for this domain."
+    ]
+  }
+}
