@@ -1,0 +1,324 @@
+{
+  "item_id": "EXP-207",
+  "status": "DRAFT_AWAITING_HUMAN_GROUP_REVIEW",
+  "expansion_type": "FOUNDATIONAL_MODEL_CHANGE",
+  "integration_blocked_until": "operator posts HNOTE-DESIGN-REFRESH-PHASE-A-INTEGRATION-APPROVED-NNN in monitor/decisions/human-notes.json with approved_exp_ids containing 'EXP-207'. Additional ordering constraint: EXP-202 (EXP-A1 tokens + Google Fonts load) MUST be integrated before or in the same batch as EXP-207; this EXP consumes --serif, --sans, --mono tokens that EXP-202 introduces. If the operator chooses to approve EXP-207 ahead of EXP-202, the decider MUST hold EXP-207 until EXP-202's tokens are present in docs/index.html.",
+  "human_note_source": "HNOTE-DESIGN-REFRESH-PHASE-A-001",
+  "companion_note": "HNOTE-DESIGN-REFRESH-ROUTING-001",
+  "target": "build-scripts/generate-html.js (the const CSS block and the <head> portion at the top of the document template) — this file owns the canonical <head>+<style> for docs/index.html. Also: data/sections.json (three prose blobs — part1.html, part2.html, part6.html — which carry inline font-family:monospace formula literals). Also: test.js (adds assertions that the migration is complete). docs/index.html is a build artifact, not a separately-edited target; running `node build.js html` after the generate-html.js + sections.json edits produces the updated docs/index.html in one step.",
+  "category": "design-refresh-phase-a",
+  "scope_item": "Item 6 application — assign the three typographic roles (serif/sans/mono) to every prose, UI-chrome, and data-evidence consumer on the site, and migrate all inline `font-family:monospace` literals in sections.json and generate-html.js CSS into a single `.formula` class. This is EXP-A2 in the brief's suggested sequence. Tokens were added in EXP-A1 (EXP-202); this EXP is the first visual change of Phase A.",
+  "priority": "high",
+  "source": "HNOTE-DESIGN-REFRESH-PHASE-A-001 section 'SUGGESTED EXP ORDERING' step EXP-A2; item enumerated under SCOPE Item 6 (three-typeface system). Builds on EXP-202 (EXP-A1).",
+  "curmudgeon_review": null,
+  "created_at": "2026-04-21T19:44:59.642Z",
+  "kernel_of_truth": "The external reviewer is right on two points that this EXP concedes without argument. First, that a document presenting a 69-claim critical review reads differently in a system sans-serif UI face than it does in an argumentative serif face — not because sans is worse, but because Segoe UI/Inter are calibrated for dashboard chrome, where every element competes for the reader's attention, whereas an argumentative serif body pushes the prose forward and lets the chrome recede. The review's credibility is in its prose; the current typography actively works against that by styling the arguments the same way it styles the tab labels. Second, the reviewer is right that formulas deserve a class rather than inline `font-family:monospace` literals. The six current literals in docs/index.html (all three parts of sections.json) each carry subtly different styling (one has a background:#f5f5f5 + padding + border-left; others are bare text-align:center) — a class-based approach lets the final render match the argument surrounding it rather than whatever the author typed on any given day. That said, the reviewer's specific font choices (Source Serif 4 / Inter / JetBrains Mono) are defensible but not the only valid answer; the EXP notes that weights and the optical-size axis can be tuned against the dark background without changing the architectural decision.",
+  "content_diff": {
+    "description": "Three coordinated changes. (1) In build-scripts/generate-html.js, the body font stack switches from 'Segoe UI'… to var(--serif), all argumentative headings get var(--serif), all chrome/UI surfaces get var(--sans), and all data-evidence elements (code, kbd, samp, .formula) get var(--mono). (2) In data/sections.json, the six inline `font-family:monospace` literals in part1.html, part2.html, and part6.html are replaced with class=\"formula\" — no other styling on those nodes changes (the WGS84 block keeps its `background:#f5f5f5; padding:1rem; margin:0.5rem 0; border-left:3px solid #666;`; that hardcoded-light-colors migration is explicitly deferred to EXP-A8 per the brief's Item 3). (3) In test.js, four assertions are added to lock in the migration: `font-family:monospace` literal count is 0 in both docs/index.html and data/sections.json; body font-family contains var(--serif); and `.formula` class exists in the generated HTML and resolves to var(--mono).",
+    "change_1_generate_html_js_css_block": {
+      "where": "build-scripts/generate-html.js inside the `const CSS = \\`...\\`` block — the same block EXP-202 introduces tokens into. Edits are in-place; no selectors are removed. This EXP's edits are NOT commingled with EXP-202's token additions (EXP-202 lands first; this EXP edits the same file in a subsequent commit).",
+      "change_1a_body_selector": {
+        "from": "body{font-family:'Segoe UI',Arial,Helvetica,sans-serif;line-height:1.65;color:var(--text);background:var(--bg);max-width:960px;margin:0 auto;padding:1rem 1.5rem 3rem;padding-top:0}",
+        "to": "body{font-family:var(--serif);line-height:1.65;color:var(--text);background:var(--bg);max-width:960px;margin:0 auto;padding:1rem 1.5rem 3rem;padding-top:0;font-weight:400;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}",
+        "rationale": "font-family:var(--serif) is the body default. `font-weight:400` is explicit so the Source Serif 4 400 loaded in EXP-202 is the resolved weight (default browser weight is also 400; being explicit prevents surprise if CSS cascade changes elsewhere). `-webkit-font-smoothing:antialiased` + `-moz-osx-font-smoothing:grayscale` give serif body text on dark backgrounds a cleaner render on macOS/iOS — the default subpixel AA is tuned for black-ink-on-paper and looks slightly heavy inverted. This pair of declarations is the standard fix."
+      },
+      "change_1b_argumentative_headings": {
+        "selectors_affected": [
+          "h1",
+          "h2",
+          "h3",
+          "details .ps-summary h2"
+        ],
+        "add_rule": "h1,h2,h3,details .ps-summary h2{font-family:var(--serif);font-weight:600;letter-spacing:-0.005em}",
+        "rationale": "Argumentative headings stay serif to match body prose and the external mock. font-weight:600 prevents the 700 browser default from looking too heavy in Source Serif 4 at display sizes. letter-spacing:-0.005em is a micro-kern that tightens serif headings slightly without touching body-copy cadence. details .ps-summary h2 is explicitly included because the existing rule `details .ps-summary h2{display:inline;margin:0;font-size:1.15rem}` does NOT set font-family, so it would inherit body — the explicit mention documents that it IS serif by design."
+      },
+      "change_1c_ui_chrome_sans": {
+        "selectors_added": [
+          {
+            "selector": ".tab-btn, .section-nav a, .section-nav span, .nav-prev, .nav-next, .dl-card, .dl-card .dl-label, nav.toc, nav.toc a, footer",
+            "rule": "font-family:var(--sans)",
+            "rationale": "Navigation, buttons, and footer chrome."
+          },
+          {
+            "selector": "th",
+            "rule": "font-family:var(--sans);letter-spacing:0.01em",
+            "rationale": "Table column headers are UI chrome, not prose. Slight positive letter-spacing counteracts the small uppercase-ish appearance at the 600 weight."
+          },
+          {
+            "selector": ".title-block .subtitle, .title-block .meta, .pred-meta, .scorecard-framing, .sc-label, .ca-tag, .ca-label",
+            "rule": "font-family:var(--sans)",
+            "rationale": "Metadata, captions, and label chrome."
+          },
+          {
+            "selector": ".verdict-tag, .vt-refuted, .vt-std, .vt-selfcon, .vt-misleading, .vt-unfalsifiable, .vt-notdemo, .vl, .vl-refuted, .vl-std, .vl-selfcon, .vl-misleading, .vl-unfalsifiable, .vl-notdemo, .ks-status",
+            "rule": "font-family:var(--sans);letter-spacing:0.01em",
+            "rationale": "Verdict pill labels and status labels. Brief explicitly calls out \"pill labels\" as sans."
+          }
+        ],
+        "single_combined_rule_suggestion": "For build-step simplicity and CSS parse performance, the analyst recommends landing all of the above as ONE combined selector list with `font-family:var(--sans)` plus a separate two-selector rule for the pill letter-spacing. The diff stays readable and the CSS stays compact. Final combined form: `.tab-btn,.section-nav a,.section-nav span,.nav-prev,.nav-next,.dl-card,.dl-card .dl-label,nav.toc,nav.toc a,footer,th,.title-block .subtitle,.title-block .meta,.pred-meta,.scorecard-framing,.sc-label,.ca-tag,.ca-label,.verdict-tag,.vt-refuted,.vt-std,.vt-selfcon,.vt-misleading,.vt-unfalsifiable,.vt-notdemo,.vl,.vl-refuted,.vl-std,.vl-selfcon,.vl-misleading,.vl-unfalsifiable,.vl-notdemo,.ks-status{font-family:var(--sans)}` then `th,.verdict-tag,.ks-status,.vl{letter-spacing:0.01em}`."
+      },
+      "change_1d_tldr_serif_explicit": {
+        "selectors_affected": [
+          "details .ps-summary .ps-tldr",
+          "details .ks-summary .ks-tldr"
+        ],
+        "add_rule": "details .ps-summary .ps-tldr,details .ks-summary .ks-tldr{font-family:var(--serif);font-style:italic}",
+        "rationale": "TLDRs are prose — the brief explicitly lists them under serif. font-style:italic is already set on the existing .ps-tldr/.ks-tldr rules (`font-style:italic;color:#666`). This explicit rule documents the serif role and survives a CSS-reorder. Italic Source Serif 4 is loaded in EXP-202."
+      },
+      "change_1e_data_evidence_mono": {
+        "add_rule": "code,kbd,samp,.formula{font-family:var(--mono);font-size:0.92em;font-feature-settings:\"calt\" 0,\"liga\" 0}",
+        "rationale": "Inline code was previously inheriting body (Segoe UI) because no rule set font-family. The 167 existing `<code>` uses — SHA-256 hashes, file paths, inline identifiers — all flip to JetBrains Mono in one line. font-size:0.92em ratchets down to match x-height of serif body so the inline-mono does not visually disrupt the prose line. calt+liga disabled prevents JetBrains Mono's programming ligatures (!= →, -> →, etc.) from rewriting SHA hashes and formula characters — the standard practice for display-mono where the literal bytes matter.",
+        "formula_class_spec": {
+          "rule": ".formula{display:block;text-align:center;padding:0.6em 0.8em;background:var(--code-bg);border-left:3px solid var(--rule);border-radius:0 4px 4px 0;margin:0.6em 0;overflow-x:auto;max-width:100%}",
+          "rationale": "The existing inline-monospace blocks are a mix of `text-align:center` bare paragraphs and one full-chrome card (WGS84 block with background+padding+border-left). The .formula class standardizes them: block, centered, boxed with var(--code-bg) background and var(--rule) border-left, scrollable on overflow. This is a REPLACEMENT for the inline styles in sections.json — the migration drops the inline background:#f5f5f5 for the WGS84 block in favor of var(--code-bg) which is the existing token. Dark mode already defines --code-bg:#2a2a3e so this is a win for dark-theme contrast and for NC1 (dark theme stays). One hardcoded light color removed; one deferred (the `border-left:3px solid #666` in the WGS84 block, because #666 is legible on both themes and can stay until A8 sweeps)."
+        }
+      },
+      "change_1f_print_override_preserves_serif": {
+        "note": "The existing `@media print` block currently re-declares tokens and sets `body{max-width:100%;padding:0.6in 0.7in;font-size:9.5pt;line-height:1.5}`. It does NOT set font-family, so body in print mode inherits whatever the non-print body set — which after this EXP is var(--serif). That is the desired outcome: PDF output adopts the serif body aesthetic the external mock demonstrated. No change needed in the print block beyond inheriting.",
+        "acceptance": "node build.js pdf produces a PDF whose body face is Source Serif 4. Visual check: headings serif, body serif, inline code mono, tab chrome still present (tabs are display:none in print via existing rule, so chrome font choice is irrelevant here)."
+      }
+    },
+    "change_2_sections_json_formula_migration": {
+      "where": "data/sections.json — three top-level HTML blobs: part1.html, part2.html, part6.html.",
+      "patches": [
+        {
+          "file_path_logical": "part1.html — aetheric refractive index definition",
+          "from_substring": "<p style=\"text-align:center; font-family:monospace;\">n(r) = 1 + 0.20 × (8537 / H(r) − 1)</p>",
+          "to_substring": "<p class=\"formula\">n(r) = 1 + 0.20 × (8537 / H(r) − 1)</p>"
+        },
+        {
+          "file_path_logical": "part1.html — WGS84 Somigliana equation (ONLY font-family changes in A2; hardcoded #f5f5f5 background is EXP-A8 scope)",
+          "from_substring": "<p style=\"font-family: monospace; background: #f5f5f5; padding: 1rem; margin: 0.5rem 0; border-left: 3px solid #666;\">g(r, φ) = 9.7803 × (1 + 0.005307 × sin²(φ) − 0.0000058 × sin²(2φ)) m/s²</p>",
+          "to_substring": "<p class=\"formula\" style=\"background: #f5f5f5; padding: 1rem; margin: 0.5rem 0; border-left: 3px solid #666;\">g(r, φ) = 9.7803 × (1 + 0.005307 × sin²(φ) − 0.0000058 × sin²(2φ)) m/s²</p>",
+          "note_for_reviewers": "The #f5f5f5 light background persists. The .formula class would override it to var(--code-bg) but the element retains an inline `style=\"background:#f5f5f5...\"` which wins CSS specificity. This is deliberate: EXP-A8 (a11y audit + fixes) explicitly owns the migration of hardcoded light colors to tokens. If the human review group prefers A2 to also strip the inline style here, flip to the simpler form `<p class=\"formula\">g(r, φ) = …</p>` and tag the diff as absorbing A8's first fix."
+        },
+        {
+          "file_path_logical": "part1.html — city radius solver",
+          "from_substring": "<p style=\"text-align:center;font-family:monospace;\">r(city) = solve numerically: r × tan(θ<sub>Polaris</sub>) = H(r)</p>",
+          "to_substring": "<p class=\"formula\">r(city) = solve numerically: r × tan(θ<sub>Polaris</sub>) = H(r)</p>"
+        },
+        {
+          "file_path_logical": "part1.html — aetheric refraction definition (lowercase r)",
+          "from_substring": "<p style=\"text-align:center;font-family:monospace;\">n(r) = 1 + 0.20 × (8,537/H(r) − 1)</p>",
+          "to_substring": "<p class=\"formula\">n(r) = 1 + 0.20 × (8,537/H(r) − 1)</p>"
+        },
+        {
+          "file_path_logical": "part2.html — core field equation H(r)",
+          "from_substring": "<p style=\"text-align:center; font-family:monospace;\">H(r) = 8,537 × exp(−r / 8,619) km</p>",
+          "to_substring": "<p class=\"formula\">H(r) = 8,537 × exp(−r / 8,619) km</p>"
+        },
+        {
+          "file_path_logical": "part6.html — magnetic field formula B(r_N, r_S)",
+          "from_substring": "<p style=\"text-align:center; font-family:monospace;\">B(r<sub>N</sub>, r<sub>S</sub>) = 62,376 × e<sup>−r<sub>N</sub>/8619</sup> + 64,852 × e<sup>−r<sub>S</sub>/8619</sup></p>",
+          "to_substring": "<p class=\"formula\">B(r<sub>N</sub>, r<sub>S</sub>) = 62,376 × e<sup>−r<sub>N</sub>/8619</sup> + 64,852 × e<sup>−r<sub>S</sub>/8619</sup></p>"
+        }
+      ],
+      "patch_application_recommendation": "The decider can apply these with six `fs.readFileSync` / `.replace(from, to)` / `fs.writeFileSync` pairs — the from_substring values are unique in the file, so no ambiguity. Alternatively, a single regex sweep `style=\"[^\"]*font-family:\\s*monospace[^\"]*\"` → extract remaining rules (if any) + swap to class=\"formula\" is acceptable but riskier. Recommended: explicit pairs, run the test.js assertion that the literal count is 0 as the verification step.",
+      "count_verification": "After this EXP lands: `grep -c 'font-family:monospace' data/sections.json` should return 0 or nothing; same for `font-family: monospace`. Any residual match is a missed patch — fail fast."
+    },
+    "change_3_test_js_assertions": {
+      "where": "test.js (append to the appropriate test-group section — style/build invariants group).",
+      "assertions": [
+        {
+          "name": "No inline font-family:monospace literals in generated HTML",
+          "implementation": "assertEqual((require('fs').readFileSync('docs/index.html','utf8').match(/font-family:\\s*monospace/g) || []).length, 0, 'docs/index.html still contains inline font-family:monospace literal(s)')"
+        },
+        {
+          "name": "No inline font-family:monospace literals in sections data",
+          "implementation": "assertEqual((require('fs').readFileSync('data/sections.json','utf8').match(/font-family:\\s*monospace/g) || []).length, 0, 'data/sections.json still contains inline font-family:monospace literal(s)')"
+        },
+        {
+          "name": "Body rule consumes --serif",
+          "implementation": "assertRegex(require('fs').readFileSync('docs/index.html','utf8'), /body\\{font-family:var\\(--serif\\)/, 'body font-family is not var(--serif)')"
+        },
+        {
+          "name": ".formula class present and routes to --mono",
+          "implementation": "assertRegex(require('fs').readFileSync('docs/index.html','utf8'), /\\.formula\\s*\\{[^}]*font-family:var\\(--mono\\)/, '.formula class missing or not mapped to var(--mono)')"
+        }
+      ],
+      "note": "These four assertions lock in the migration. Any future edit that re-introduces an inline monospace, reverts the body font, or drops the .formula class triggers test failure. This supports NC7 (tests green) by adding coverage rather than just preserving the baseline. test.js current passing count is computed live per CLAUDE.md — after integration the baseline will be current+4 (or +2 if assertRegex/assertEqual each count as one)."
+    },
+    "change_4_no_changes_to": [
+      "EXP-202's :root token block — unchanged. This EXP consumes the tokens without editing them.",
+      "Verdict color tokens (--refuted, --stdmodel, etc.) — unchanged. EXP-A5 migrates them.",
+      "Hardcoded light-theme colors (#f5f5f5 in WGS84 block, #fff in Tesla card) — unchanged. EXP-A8 migrates them.",
+      "Section structure (<details>, <summary> wrappers, tab IA) — unchanged. NC2 honored.",
+      "Masthead content, stance statement, hero thesis — unchanged. EXP-A3 handles them.",
+      "Verdict distribution chart, accuracy-math sidebar, Latest Findings — unchanged. A4/A6/A7 handle them."
+    ]
+  },
+  "acceptance_criteria": [
+    "After `node build.js html`, docs/index.html body rule is `body{font-family:var(--serif);...}` — Segoe UI no longer appears in CSS anywhere.",
+    "After build, docs/index.html contains zero matches for `font-family:monospace` (inline style literals fully migrated to the .formula class or inherited via code/kbd/samp).",
+    "data/sections.json contains zero matches for `font-family:monospace` or `font-family: monospace`.",
+    "DevTools Computed panel on any <h2>, body <p>, .ps-tldr shows the computed font-family resolves to Source Serif 4 (with Georgia/Times fallback).",
+    "DevTools Computed panel on .tab-btn, .sc-label, th, .verdict-tag, nav.toc a shows the computed font-family resolves to Inter (with system-ui/Segoe UI fallback).",
+    "DevTools Computed panel on <code>, .formula shows the computed font-family resolves to JetBrains Mono (with ui-monospace/Consolas fallback).",
+    "All six formula paragraphs render with .formula class styling (centered, boxed, mono, var(--code-bg) background in dark mode). WGS84 formula block retains its existing hardcoded #f5f5f5 background pending EXP-A8 — flagged on inspection; not a defect of A2.",
+    "SHA-256 anchors in the Predictions tab (e.g., '3c427a83edaeaf33c...') render in JetBrains Mono and do NOT exhibit ligature substitution (font-feature-settings disables calt/liga).",
+    "Integrity's build-reproducibility check passes unchanged (fresh clone + node build.js html produces byte-identical docs/index.html up to the embedded date line).",
+    "test.js passes at current baseline + 4 new assertions (or +2 if grouped). No previously passing assertion regresses.",
+    "@media print body inherits var(--serif); PDF build output's body face is Source Serif 4. Confirmed by opening the PDF and inspecting the font-name stream or by rendering a single page to image and comparing.",
+    "Visual regression: the overview 'feels like a document', not a dashboard. Not automatable; include in notes_for_human_review_group."
+  ],
+  "anticipated_objections": [
+    {
+      "objection": "Dark theme + serif body = 'blurry' rendering on some displays, especially non-Retina Windows.",
+      "response": "Mitigated by `-webkit-font-smoothing:antialiased` and `-moz-osx-font-smoothing:grayscale` on body (added in change 1a). On Windows non-Retina, grayscale AA still renders slightly softer than subpixel AA on dark backgrounds — this is a genuine tradeoff. The external mock accepts it by using a weight-500 variant for body; the draft here loads 400 by default and recommends a prototype pass at integration time. If the human review group decides Windows rendering is too soft, the fallback is Source Serif 4 weight 450 (loaded in EXP-202's weight list as part of the 400/600/700 axis — the variable font supports any weight 400-700 from the loaded stylesheet, so no re-download). The EXP notes this tuning as a post-integration adjustment, not a blocker."
+    },
+    {
+      "objection": "167 inline <code> uses is a lot of page area suddenly becoming mono. Could make the prose feel busy.",
+      "response": "Valid. font-size:0.92em on code (added in change 1e) reduces inline-mono height to roughly match serif x-height; the visual disruption is smaller than the font-family swap alone would cause. In the current render, inline code inherits body sans — at the same size, the typographic difference is subtle (sans vs. mono at matched size). In the new render, the role difference is sharper. That sharpness is the point: SHA hashes, file paths, and inline identifiers are evidence-typed elements, and serif-body with mono-inline is exactly the convention readers of argumentative prose expect. If prototyping shows it reads as busy, the fallback is to raise 0.92em to 0.95em (softer difference) or drop font-size scaling entirely — both are one-line fixes, no re-review needed."
+    },
+    {
+      "objection": "Verdict pill labels in sans-serif look lighter than the surrounding serif prose. Could unintentionally de-emphasize verdicts.",
+      "response": "True at the weight level. The existing rules already set `.verdict-tag{...font-weight:700...}`, so pills stay bold even in sans. Bold-sans-on-colored-background is the standard pattern for status pills in editorial typography (NYT, The Atlantic, FT online). The pill is PERCEIVED as more important because its visual weight is high and its shape is discontinuous from prose. If integration shows pills are reading too light, the fallback is to lift letter-spacing to 0.02em (currently 0.01em) or go uppercase — both sans-typical conventions. Flagged as post-integration tuning, not a blocker."
+    },
+    {
+      "objection": "The `.formula` class introduces a `background:var(--code-bg)` styling that the original bare `<p style=\"text-align:center;font-family:monospace;\">` lines did not have. That is a visual change beyond 'replace the font'.",
+      "response": "Correct, and intentional. The external reviewer's thesis (restraint; let typography carry weight) specifically called out the formula chrome as inconsistent — the WGS84 block had a full card and the others had none. Unifying them via the .formula class is the right endpoint. However, the specific chrome (background, border-left, padding) is a design choice, not an inevitability. If the human review group prefers the 'no chrome' version (mono text, centered, no box), the .formula rule can strip to `.formula{display:block;text-align:center;font-family:var(--mono);margin:0.6em 0}` — same A2 scope, less chrome, still uniform. The draft defaults to the chrome version because it matches the argument-surrounding-evidence visual metaphor; flipping is free."
+    },
+    {
+      "objection": "font-feature-settings disabling calt and liga on .formula will fail silently if a reader's font stack falls back to ui-monospace (which may have different feature defaults).",
+      "response": "The fallback chain is `'JetBrains Mono', ui-monospace, 'SF Mono', Consolas, 'Courier New', monospace`. The font-feature-settings declaration applies to whichever font renders. For JetBrains Mono, calt is the programming-ligature feature and this EXP turns it off intentionally. For ui-monospace or Consolas (no programming ligatures in default rendering), the declaration is a no-op. For 'Courier New' (generic fallback), it is also a no-op. There is no failure mode here; the declaration is either applying the intended suppression or doing nothing."
+    },
+    {
+      "objection": "Test assertions on docs/index.html depend on the fresh build — if someone commits sections.json without rebuilding, the tests will pass on the stale-but-still-present build artifact. False negative.",
+      "response": "Correct — and this is a pre-existing build-reproducibility concern (NC6), not one this EXP introduces. Integrity's build-reproducibility check (fresh clone + node build.js html → byte-identical docs/index.html up to date line) is the backstop. The EXP recommends that integration run `node build.js html` as part of the decider's apply sequence (this is the existing pattern for data/sections.json changes). If the operator wants extra belt-and-suspenders, the four test.js assertions can be duplicated against data/sections.json directly (assert the literal count is 0 in the source, not just the artifact) — that is a two-line addition. Flagged in notes for the group; the draft includes it in the sections.json assertion but not the others."
+    }
+  ],
+  "counter_considerations_the_analyst_must_address": [
+    {
+      "id": "CC1",
+      "title": "'Kill Shots' is not chrome",
+      "addressed_how": "The Kill Shots label is TEXT inside a tab button (see generate-html.js line ~1224: `<button class=\"tab-btn\" onclick=\"showTab('killshots')\">Kill Shots</button>`). This EXP puts `.tab-btn` in sans — the same as every other tab label. The term 'Kill Shots' is preserved unchanged. What the EXP does is strip the current red chrome from the rest of the Kill Shots tab surface (by NOT restyling it to red in this EXP's new rules) — but red-chrome stripping per se is EXP-A5's job, not this EXP's. A2 only assigns typographic roles; it does not adjust red usage. NC3 is honored by explicit non-action on the 'Kill Shots' string."
+    },
+    {
+      "id": "CC2",
+      "title": "4+4 failure accounting is calibration content, not layout ornament",
+      "addressed_how": "The accuracy-math callout lives inside `.sc-card` cards. This EXP leaves `.sc-number` and `.sc-sublabel` defaulting to body serif — the accuracy math reads as argumentative prose, not as metadata or dashboard chrome. No demotion or promotion of the 4+4 content happens in this EXP; EXP-A6 handles that. The typographic-role assignment in A2 does not prejudge A6's placement decision."
+    },
+    {
+      "id": "CC3",
+      "title": "Latest Findings is evidence, not ticker chrome",
+      "addressed_how": "Latest Findings prose blocks live inside regular `.evidence` or prose sections and inherit body serif under this EXP. Their pred-meta captions become sans (matching the rest of the metadata chrome). That treatment is CONSERVING of discoverability — serif-body prose with sans-meta is the editorial norm for findings blocks. Demotion is EXP-A7's job. A2 does not move Latest Findings and does not change its visual weight beyond the typographic-role swap that all prose blocks receive."
+    },
+    {
+      "id": "CC4",
+      "title": "Dark theme is differentiator, not oversight",
+      "addressed_how": "Every font-family rule this EXP adds consumes tokens defined in EXP-202's dark-theme override AND light-root AND print override. No paper-theme CSS is imported. The body gets `-webkit-font-smoothing:antialiased` which is the standard mitigation for serif-on-dark rendering — this is in service of preserving dark theme (not backing away from it). NC1 honored."
+    },
+    {
+      "id": "CC5",
+      "title": "Hero thesis candidate is a CANDIDATE",
+      "addressed_how": "Not applicable to this EXP — no masthead content changes. The hero thesis text is unchanged; only the font-family rendering it is changed (body default → serif). EXP-A3 will set the hero thesis and treat the text as up-for-review."
+    },
+    {
+      "id": "CC6",
+      "title": "Verdict distribution chart must route through generate-html.js computed counts",
+      "addressed_how": "Not applicable to this EXP — no chart or count rendering. EXP-A4 handles chart insertion. This EXP touches generate-html.js's CSS only."
+    },
+    {
+      "id": "CC7",
+      "title": "Stance statement is operator-authored",
+      "addressed_how": "Not applicable to this EXP — no masthead text changes. When EXP-A3 adds the stance statement, it will inherit body serif from this EXP (which matches the external reviewer's mock of the same text in Source Serif 4). This EXP does not prejudge A3's weight/size decisions for the stance block."
+    }
+  ],
+  "non_negotiable_constraints_preserved": [
+    {
+      "id": "NC1",
+      "title": "Dark theme stays",
+      "how": "No paper-theme CSS imported. Typography swaps consume tokens defined for dark mode in EXP-202. -webkit-font-smoothing added specifically to mitigate serif-on-dark rendering artifacts."
+    },
+    {
+      "id": "NC2",
+      "title": "Tabs stay",
+      "how": "No IA change. The only tab-related rule is `.tab-btn{font-family:var(--sans)}` — purely a face swap, the tab architecture is preserved."
+    },
+    {
+      "id": "NC3",
+      "title": "'Kill Shots' term stays",
+      "how": "The string 'Kill Shots' appears nowhere in this EXP's diffs. It is preserved by explicit non-modification. Tab-button styling is generic (all tabs treated identically)."
+    },
+    {
+      "id": "NC4",
+      "title": "Latest Findings stays on overview",
+      "how": "Not touched in this EXP."
+    },
+    {
+      "id": "NC5",
+      "title": "Computed counts rule",
+      "how": "No numeric claims added in this EXP. The four new test.js assertions count literal occurrences in source files (not published prose counts) — they are invariants of the source, not published claims."
+    },
+    {
+      "id": "NC6",
+      "title": "Build reproducibility",
+      "how": "All edits are static string replacements in generate-html.js and sections.json. Fresh clone + node build.js html produces byte-identical docs/index.html up to the embedded date line. Acceptance criterion explicitly requires this. If the integrity check flags drift, the root cause will be that the decider committed docs/index.html without re-running build — that is a process issue, not an EXP defect."
+    },
+    {
+      "id": "NC7",
+      "title": "Tests green",
+      "how": "Four new assertions are added (two literal-count checks, two CSS-rule checks). They are written to pass immediately after this EXP lands. Current passing count is computed live per CLAUDE.md; post-integration baseline is current+4 (or current+2 depending on how assertRegex + assertEqual are tallied)."
+    }
+  ],
+  "preserved_load_bearing_content": [
+    "'Kill Shots' tab label term — untouched.",
+    "Kill Shots tab content and red chrome — untouched (EXP-A5 handles red restriction).",
+    "Latest Findings block — untouched (EXP-A7 handles demotion).",
+    "Accuracy-math callout — untouched (EXP-A6 handles demotion).",
+    "Verdict pill color tokens — untouched (EXP-A5 migrates).",
+    "All existing <details>/<summary> progressive-disclosure wrappers — untouched.",
+    "Masthead content — untouched (EXP-A3 adds stance statement and hero thesis).",
+    "Computed-count rule — honored; no hardcoded numbers added.",
+    "Tab IA — untouched; only tab button font-family changes.",
+    "Print pathway — preserved; body-font var(--serif) is the desired print outcome per external-mock aesthetic.",
+    "Progressive-disclosure CSS classes (.ps-summary, .ks-summary, .ps-detail, .ks-detail, ps-tldr, ks-tldr) — preserved; only font-family additions layered on.",
+    "Accessibility glyph/label migration — deferred to EXP-A8 (not this EXP's scope)."
+  ],
+  "out_of_scope_for_this_exp": [
+    "Masthead stance statement and hero thesis text (EXP-A3).",
+    "Verdict distribution bar chart on overview (EXP-A4).",
+    "Restricting red chrome to in-table contradictions (EXP-A5).",
+    "Accuracy-math sidebar demotion (EXP-A6).",
+    "Latest Findings visual demotion (EXP-A7).",
+    "WCAG AA audit, glyph+label addition, 44px tap targets, sub-720px verdict-table stacking (EXP-A8).",
+    "Migrating hardcoded light-theme colors (#f5f5f5, #fff, #666 border) to var(--card-bg) / var(--rule) / etc. — EXP-A8's Item 3 task. The .formula class routes to var(--code-bg) as a free win, but the WGS84 block's inline `background:#f5f5f5` is preserved to keep A8's scope intact.",
+    "Tuning body font-weight (400 vs. 450 vs. 500) for dark-theme serif rendering — flagged as a post-integration prototype decision, not part of this EXP's diff.",
+    "Dropping the --semantic- prefix introduced in EXP-202 — deferred to post-A5 cleanup.",
+    "docx export pipeline changes — build-doc-v4.js is a separate DOCX generator and is NOT touched by this EXP. If the group wants DOCX to adopt serif body, that is a Phase B or C follow-on.",
+    "Adding .num class for numeric table cells in mono — deferred. Brief mentions 'numeric values in tables' but the current table tds are mostly short verdict prose; a blanket td mono rule would hurt readability. Flagged in notes for the group to weigh.",
+    "JavaScript behavior — no JS changes."
+  ],
+  "notes_for_human_review_group": [
+    "BUNDLING WITH EXP-A1 / EXP-202: if the group prefers a single foundation+application drop, the two EXPs can be applied in one commit. Separately they are reviewable in isolation; together they are one visible visual change.",
+    "SCOPE OF THE .formula CLASS CHROME: the draft includes `background:var(--code-bg);border-left:3px solid var(--rule);padding:0.6em 0.8em;border-radius:0 4px 4px 0`. If the group prefers a minimalist .formula with mono text and no chrome, say so and the class shrinks to `.formula{display:block;text-align:center;font-family:var(--mono);margin:0.6em 0}`. The draft default is the chrome version to unify the three currently-inconsistent formula renderings and because it reads as 'evidence block' rather than 'loose code'.",
+    "WGS84 FORMULA HARDCODED BACKGROUND: the single remaining inline `background:#f5f5f5` after A2 lands is a known EXP-A8 target (Integrity has flagged it per the brief's Item 3). If the group wants A2 to absorb this one light-color cleanup (stripping the inline style and letting .formula's var(--code-bg) take over), that flips the file_path_logical 'WGS84' patch to the simpler `<p class=\"formula\">g(r, φ) = …</p>` form. Small scope increase; same review surface.",
+    "TABLE NUMERIC CELLS IN MONO: brief mentions 'numeric values in tables' as mono. Current table cells are mostly short verdict prose, not numbers. A blanket `td.num{font-family:var(--mono);font-variant-numeric:tabular-nums}` opt-in class is an option — authors tag numeric cells as they write them. Deferred from this EXP because it touches no current cells and therefore adds no invariant worth testing. Flagged here so it doesn't get missed later.",
+    "INLINE CODE SIZE (0.92em): the draft ratchets inline <code> down 8% to match serif x-height. If prototyping shows it reads too small, 0.95em is a one-line adjustment. Below 0.90em inline code starts to look sub-superscripted and legibility drops.",
+    "FONT-FEATURE-SETTINGS (calt, liga off): disabling JetBrains Mono programming ligatures. A reader viewing SHA-256 hashes or formula operators should see the literal bytes — no '!=' rendered as ≠, no '->' as →. If the group wants the more ornamental ligature-on rendering, drop the feature-settings declaration; it is a one-line cut.",
+    "DARK-THEME BODY WEIGHT: Source Serif 4 on a dark background can look soft at 400 weight on non-Retina Windows. The draft loads 400/600/700 (from EXP-202's weight list). If a prototype pass says 450 body reads better, that is a one-character change to body font-weight and no re-download (variable font supports the full 400-700 axis). Recommend a prototype pass at integration, not a pre-integration decision.",
+    "PRINT (PDF) PATHWAY: @media print already inherits body font-family via the cascade. After A2, PDF body is Source Serif 4 — matching the external mock's paper aesthetic. The Playwright-headless-Chromium build step will need Google Fonts to be reachable during PDF generation (the preconnect + stylesheet load in EXP-202 also governs print). If the build environment is network-restricted and the self-host alternative is chosen in EXP-202's revision, the print pathway will pick up local fonts naturally.",
+    "VISUAL REGRESSION IS NOT AUTOMATABLE: the 'feels like a document not a dashboard' acceptance criterion is qualitative. Recommend the group schedule a 10-minute pre/post skim of the overview and one WIN page at integration time. If the vibe is wrong, the rollback is a single commit revert — no cascade.",
+    "TEST ASSERTIONS — SOURCE VS. ARTIFACT: the draft puts two assertions against data/sections.json (source) and two against docs/index.html (artifact). If the group prefers all four against the source (generate-html.js + sections.json), the docs/index.html ones can be re-pointed — that makes the tests robust against a missed build but less representative of what the reader actually sees.",
+    "DOCX PIPELINE: build-doc-v4.js generates a .docx export via python-docx-alike (DocX JS). That pipeline is NOT touched. DOCX export will continue to use its own font stack until a follow-on EXP (Phase B or C) re-aligns it. Called out explicitly because a user opening the DOCX after A2 lands will see a different face than the HTML; this is expected and not a defect of A2."
+  ],
+  "cross_references": [
+    "HNOTE-DESIGN-REFRESH-PHASE-A-001 (monitor/analyst/human-notes.json) — source brief; Item 6 is this EXP's scope.",
+    "HNOTE-DESIGN-REFRESH-ROUTING-001 (monitor/decisions/human-notes.json) — decider hard-hold routing.",
+    "EXP-202 (monitor/analyst/expansions/EXP-202.json) — prerequisite; tokens --serif, --sans, --mono and the three Google Fonts loads must be present before this EXP's rules resolve.",
+    "monitor/analyst/design-review-2026-04-17-external.html — external review, typography role definitions at :root, and mock element assignments (e.g., .mock.calm { font-family:var(--serif) }, kvs labels font-family:var(--sans), .bar-row .n font-family:var(--mono)) that this EXP's role assignments pattern-match.",
+    "EXP-A5 (future) — red palette restriction; consumes sans-chrome typography established here.",
+    "EXP-A8 (future) — a11y audit; will depend on serif body + sans chrome contrast ratios evaluated together.",
+    "HNOTE-SCOREBOARD-FOUNDATIONAL-001 — independent hard-hold stream; scoreboard UI when built will inherit these typographic roles automatically."
+  ],
+  "newsworthy": null,
+  "newsworthiness_caveat": "A typography face swap is not newsworthy. The full Phase A landing (A1–A8) may be newsworthy collectively as 'the review site's design catches up with its argument'. Reserve any headline for the Phase A completion EXP.",
+  "holes_addressed": [],
+  "new_evidence_added": [],
+  "completion_signal": {
+    "filename": "proposal-EXP-207-draft-ready.json",
+    "action": "This EXP is DRAFT only. The signal to the decider is: 'Draft is ready; do NOT integrate until HNOTE-DESIGN-REFRESH-PHASE-A-INTEGRATION-APPROVED-NNN lands with approved_exp_ids containing EXP-207 and ordering constraint EXP-202 before EXP-207 is honored.' The decider must mark the tracker entry status=complete + integration_status=blocked_awaiting_operator_approval but MUST NOT route it into the normal integration flow until the approval HNOTE arrives."
+  },
+  "tldr_evidence": "EXP-A2 applies the three typographic roles (serif/sans/mono) that EXP-202 introduced: body + headings + TLDRs + prose become Source Serif 4, tab/nav/captions/pills/table-headers become Inter, code/hashes/formulas become JetBrains Mono, and the six inline font-family:monospace literals in sections.json collapse into a single .formula class. Four test.js assertions lock the migration in.",
+  "tldr_verdict": "DRAFT — first visible face swap of Phase A. Depends on EXP-202 being integrated first (tokens + webfonts must be present). No content changes; no chart/masthead/palette/chrome-weight changes (those are A3–A8). Integration is blocked until the operator posts an approval HNOTE naming EXP-207."
+}
