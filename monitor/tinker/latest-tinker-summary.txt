@@ -1,220 +1,84 @@
-TINKER RUN — 2026-04-19T11:28Z (Mode 3: Cost Engineering + CLAUDE.md audit)
-=============================================================================
+TINKER RUN 2026-04-21T08:40Z — Mode 4 (Proposals & Self-Fixes)
 
 HEADLINE
 --------
-Pipeline green, FUSE ALL-CLEAN for the first time in several runs, PROP-009r2
-enforcement verified working (4/4 priority-queue pops used strict_queue_id,
-zero operator bypasses, 100% claimed_review_file match). Two documentation
-self-fixes pushed: tinker.md schedule table drift (commit 0eb75894) and
-CLAUDE.md flag-file bullet (commit a9127eb, closing the prior report's
-Recommendation #3). TWO SCHEDULE ANOMALIES flagged for human attention:
-dome-social did not fire today and dome-workspace-sync has skipped 4-5
-expected runs since 2026-04-18T15:04Z.
+Wrote PROP-010 (FUSE post-push sync). Applied Mode 2 cp self-fix for 3 stale files inline. This was the 3rd consecutive day with the same FUSE-drift trigger; the PROP is now authored with full file-level patches and is ready to apply.
 
 MODE SELECTION
 --------------
-  pipeline_health     green — decider ran 11:24Z, curmudgeon 11:32Z,
-                        analyst 10:49Z, poller 10:55Z; all producing
-  infrastructure      green — FUSE all-clean (data/wins.json,
-                        data/sections.json, build-scripts/*,
-                        docs/index.html, CLAUDE.md, decider.md,
-                        curmudgeon.md all match GitHub); auth OK;
-                        disk 83% stable
-  cost_engineering    SELECTED — default productive state when pipeline
-                        healthy and no Mode 4 items queued
-  proposals_and_fixes inline — two conservative self-fixes applied,
-                        both documentation-only, zero-risk
+Dispatcher quick-check said Mode 2 (3 git-owned files stale on FUSE). Overrode to Mode 4 per mode-selection rule 3 ("previous report has unresolved findings needing fixes"). Running Mode 2 a third day in a row would re-cp the files and defer the architectural fix that prior runs explicitly flagged as owed.
 
-PROP-009r2 VERIFICATION — FIXED (apply confirmed, stability tracking)
----------------------------------------------------------------------
-  Applied 2026-04-18T14:35Z (commit 8b1a8261). Flag file present in FUSE.
-  Priority-queue pops since enforce:
-    qid 179 part8b              pop_reason=strict_queue_id  crf=SEC-8b.c1.json
-    qid 182 WIN-058             pop_reason=strict_queue_id  crf=WIN-058.c4.json
-    qid 183 WIN-058b            pop_reason=strict_queue_id  crf=WIN-058b.c3.json
-    qid 184 WIN-062             pop_reason=strict_queue_id  crf=WIN-062.c3.json
-  Score: 4/4 strict pops, 0 operator bypasses, 0 missing claimed_review_file.
-  Flip criteria progress:
-    new-review qid coverage     100% (4/4)           ≥80% threshold  ✓
-    strict-majority              100% (4/4)           >50% threshold  ✓
-    bypass tuples/day            0                    ≤3/day threshold ✓
-    consecutive clean days       1                    need 7 to flip
-  Verdict: APPLY verified; STABILITY tracking continues through
-  2026-04-25 (Md-3 weekly bypass-tuple audit).
+PIPELINE STATE
+--------------
+  - WINs: 71  |  Open issues: 73  |  Closed: 1097  |  Curmudgeon queue: 4
+  - Agents: all on cadence (poller 12h, decider 2h BAU, curmudgeon hourly, analyst 4h, integrity daily, workspace-sync 4h, social daily)
+  - 25 commits to main in last 24h; 208 in last 7d. Churn-and-burn is healthy.
+  - CI last run green. Auth OK (PAT 93 chars, api.github.com HTTP 200).
 
-SELF-FIXES APPLIED THIS RUN (2 commits)
----------------------------------------
-  commit 0eb75894 — monitor/prompts/tinker.md
-    * Schedule table was inaccurate in 3 of 7 rows: Analyst said 2h
-      (actual 4h BAU), Curmudgeon said 4h (actual hourly), Decider
-      said 4h (actual 2h). Workspace-sync agent was missing entirely.
-    * Rewrote table against list_scheduled_tasks output, added BAU
-      vs churn-and-burn note, added predictions.json to sources-of-
-      truth list, added workspace-sync row.
-    * Prompt explicitly invites this fix ("If the table above is
-      wrong, update it"). Zero-risk, prompt-only change.
+INFRASTRUCTURE
+--------------
+  PRE-FIX: 3 files STALE on FUSE vs main
+    data/wins.json       ws cc7faa2a -> gh d80899e9
+    data/sections.json   ws 1b142b33 -> gh fad74b7d
+    docs/index.html      ws 9a23f106 -> gh abd2b32b
+  Workspace pinned at commit b4fa494; main at df4b231.
+  Drift commits: df4b231, 67b14d5, b4fa494 (all decider self-applies).
+  SELF-FIX: cp 3 files from /tmp/dmr-tinker clone to FUSE; all 3 now md5-match main.
+  Disk: 82% used (1794 MB free). Flat at 81-83% for 9 days. Above WARNING but stable.
 
-  commit a9127eb — CLAUDE.md
-    * Added one-line bullet for monitor/decisions/prop-009-enforce.flag
-      under the git-owned enumeration. Closes prior report's Rec #3.
-    * Triad (CLAUDE.md + build.js OWNERSHIP + workspace-sync.md
-      OWNED_BY_GIT) now fully in sync — all three enumerate the flag
-      file and reference the triad rule. CLAUDE.md line 65 ("If you
-      edit one, edit all three") is now self-consistent.
-
-SCHEDULE ANOMALIES — both moderate, both merit human attention
---------------------------------------------------------------
-  dome-social
-    last run       2026-04-18T10:06Z
-    nextRunAt      2026-04-20T09:05Z  (skipping today)
-    expected today ~2026-04-19T09:05Z
-    impact         no social report for 2026-04-19; llms.txt/
-                   sitemap.xml discoverability snapshots gap
-    recommendation manual trigger to recover today's baseline
-
-  dome-workspace-sync
-    last run       2026-04-18T15:03Z (~20h 25min ago)
-    nextRunAt      2026-04-19T14:03Z  (still 2h 35min away)
-    cron           0 */4 * * *  (every 4h)
-    missed slots   4-5 (roughly 19:00, 23:00, 03:00, 07:00, 11:00 UTC)
-    impact         workspace-owned files (status.json,
-                   review-state.json, morning-briefing.txt) not
-                   reaching git. Agents cloning fresh see stale
-                   pipeline state. Decider's morning-briefing is the
-                   biggest risk — if stale briefing feeds back into
-                   the next decider run, self-reinforcing confusion.
-    recommendation (a) manual trigger, (b) check task enabled flag,
-                   (c) check for crash in workspace-sync.md after
-                   recent PROP-009r2 ownership-triad updates.
-
-  MINOR — monitor/status.json schedule_note
-    Says "Curmudgeon interval is 30m (fast)" — actual is hourly (60m).
-    Decider writes this field each run; the note is one adjustment
-    stale. Not a tinker self-fix (workspace-owned live state).
-
-INFRASTRUCTURE — GREEN
-----------------------
-  FUSE staleness: ALL CLEAN (data/wins.json, data/sections.json,
-    build-scripts/digest-reviews.js, build-scripts/generate-html.js,
-    docs/index.html, CLAUDE.md, decider.md, curmudgeon.md — all
-    md5 match GitHub main HEAD). This is a notable improvement over
-    the 2026-04-18 run (5 files stale) — suggests a recent build.js
-    publish synced everything. Don't get complacent: PROP-010
-    (reverse sync) still owed.
-  Disk: 83% used (1752MB free), 7-day trajectory 81,82,83,82,83,83,83.
-    Flat but ≥80% warning threshold. One bad run from full.
-  Auth: OK (HTTP 200 against api.github.com/repos/...).
-  CI: latest commit this run (a9127eb). No failing checks.
-
-WASTED COMPUTE — no active patterns
------------------------------------
-  Re-reviews: 2 targets with >1 review (SEC-4.1, timestamp-error-tab-
-    apr2026-update). Both legitimate (post-integration / holistic).
-    BY_DESIGN, not waste.
-  Stale queue items: 1 detected (qid 185 PRED-batch-2026-04-18).
-    FALSE POSITIVE — curmudgeon reviewed it at 11:31Z (10 min before
-    this tinker), decider will pop on next cycle. Normal handoff.
-  Orphan proposals: 2 (ISS-1155 + ISS-1156 resolutions). Decider
-    closed those issues in the 11:24Z run; ledger update lags by
-    one cycle. Low severity.
-  Estimated wasted Opus runs this week: 0.
-  Trend: IMPROVING (prior runs had genuine re-work patterns; this
-    run only finds legitimate activity).
-
-CONTEXT LOAD — STABLE
----------------------
-  CLAUDE.md          148L  (145 → 148, +2% — within noise)
-  Analyst (opus)      525L total (193 dispatcher + 184 refs + 148 CLAUDE)
-  Curmudgeon (opus)   808L total (369 dispatcher + 291 refs + 148 CLAUDE)
-  Decider (opus)     1791L total (480 dispatcher + 1163 refs + 148 CLAUDE)
-  Tinker (opus)       452L typical (134 dispatcher + 170 one-ref-avg + 148 CLAUDE)
-  Alerts: none (no agent >10% growth since last Mode 3).
-
-CLAUDE.MD AUDIT — PASS
-----------------------
-  Triad consistency: VERIFIED IN SYNC after this run's commit.
-  Pipeline table accuracy: uses "Variable" language for swing-cadence
-    agents — intentionally flexible. tinker.md now holds the live-
-    cron snapshot. Design tension, not a fix.
-  Data flow diagram: accurate (includes predictions pipeline).
-  File ownership table: verified against build.js OWNERSHIP and
-    workspace-sync.md OWNED_BY_GIT — no unclassified-written files.
-  Hardcoded counts: none found. "Computed Counts" rule honored.
+PROP-010 SUMMARY
+----------------
+  Category: workflow_redesign
+  Target: build.js + monitor/prompts/reference/decider-patches-and-selfapply.md
+  Problem: build.js publish is the only git->FUSE sync mechanism; decider self-applies
+  push without calling publish. Result: FUSE goes stale between publishes. Recurring
+  Mode 2 trigger - today is the 3rd consecutive day.
+  Fix:
+    1. Extract the sync block in build.js into syncToWorkspace() function (no logic change)
+    2. Add a new `sync-workspace` target that calls only that function (no HTML/PDF/git)
+    3. Decider calls `node build.js sync-workspace` immediately after `git push origin main`
+    4. Soft-fail on decider side; workspace-sync's 4h cycle remains as backstop
+  Verification pattern (runs from clean clone root):
+    grep -q "target === 'sync-workspace'" build.js \
+      && grep -q 'syncToWorkspace()' build.js \
+      && grep -q 'node build.js sync-workspace' monitor/prompts/reference/decider-patches-and-selfapply.md \
+      && echo FIXED || echo STILL_BROKEN
+  Currently returns STILL_BROKEN (expected - patches not yet applied).
+  Counter-arguments pre-addressed (5): publish-heavy vs sync-light, workspace-sync
+  bidirectional option, per-agent clones instead, 20x frequency amplification,
+  self-fix vs PROP classification.
 
 PREVIOUS FOLLOWUP
 -----------------
-  PROP-005 pre-flight      STILL_BROKEN (15+ consecutive) — close candidate
-  PROP-007 OWNERSHIP       FIXED (unchanged)
-  PROP-008 gates           STILL_BROKEN (4-day-old)
-  PROP-009 family          all superseded; PROP-009r2 FIXED this run
-  PROP-010 reverse-sync    STILL UNWRITTEN — architectural debt
-  Rec #3 (flag bullet)     FIXED THIS RUN (commit a9127eb)
-  Rec (schedule drift)     FIXED THIS RUN (commit 0eb75894)
-  Disk 82→83               STABLE (7-day flat)
+  PROP-005 (preflight):    STILL_BROKEN - 17th no-op. Escalate to close-as-wontfix.
+  PROP-007 (OWNERSHIP):    FIXED and stable.
+  PROP-008 (change gates): STILL_BROKEN - 2 days old. Not urgent (queue depth 4).
+  PROP-009r2 (enforce):    FIXED factually; pattern has CLEAN_CLONE env gate that
+                           makes auto-verification return false STILL_BROKEN.
+                           Recommend pattern tightening.
+  PROP-010 (reverse sync): WRITTEN this run.
+  status.json schedule_note: FIXED by field removal.
 
-RECOMMENDATIONS
----------------
-  1. [human operator]  Investigate dome-social missed 2026-04-19 run
-     — no report for today, nextRunAt jumped to tomorrow. Consider
-     manual trigger to recover baseline.
-  2. [human operator]  Investigate dome-workspace-sync skipped runs
-     (last 2026-04-18T15:04Z; 4-5 slots missed). Stale git-side
-     live-state files risk decider morning-briefing feedback loop.
-     Manual trigger + check scheduler config + check for crash.
-  3. [human decision]  PROP-009r2 apply VERIFIED; mark proposal as
-     applied/closed. Stability confirmation tracking continues
-     through 2026-04-25 (Md-3 weekly bypass-tuple audit).
-  4. [human decision]  PROP-005 — 15 consecutive no-op proposals.
-     Close as wontfix or re-scope.
-  5. [next tinker Mode 2]  PROP-010 (reverse git→workspace sync).
-     Today's FUSE all-clean was fortunate; architectural fix owed.
-  6. [decider]  Refresh status.json schedule_note on next run
-     (currently stale: says 30m, actual cron is hourly).
+NEW FINDINGS
+------------
+  1 (major): Recurring FUSE drift - self-fixed + PROP-010 written.
+  2 (moderate): Open issues 38 -> 73 in 24h; decider +1 net today.
+     8 new issues (ISS-1288..1295) from SEC-5.0.c2 review.
+     Watch for 3+ day sustained net-positive; if so, Mode 3 deep-dive.
+  3 (info): PROP-009r2 verification_pattern has CLEAN_CLONE env gate.
+  4 (info): Disk 82% stable, no action.
 
-OTHER SIDE / COUNTER-ARGUMENTS
-------------------------------
-  - Two self-fixes in one Mode 3 run looks like scope creep.
-    Counter: both strictly additive, documentation-only, one was
-    explicitly recommended by the prior report. The tinker.md
-    update is a self-fix the prompt EXPLICITLY invites. Saves the
-    next tinker from re-discovering the same drift.
+RECOMMENDATIONS (priority-ordered)
+-----------------------------------
+  1. Apply PROP-010 - full find/replace text in monitor/tinker/proposals/PROP-010.json.
+  2. Close/rescope PROP-005 (17 no-op cycles).
+  3. PROP-008: apply when curmudgeon queue pressure rises (not urgent today).
+  4. Tighten PROP-009r2 verification_pattern (drop CLEAN_CLONE env gate).
+  5. Next Mode 3 tinker: monitor open-issues trajectory.
 
-  - Declaring PROP-009r2 FIXED after only 4 pops is premature.
-    Counter: the FIXED verdict applies to the apply-success
-    question (did enforcement actually turn on). The flip criteria
-    explicitly require 7 consecutive clean days before stability
-    victory — report carefully distinguishes the two.
-
-  - The schedule anomalies (social, workspace-sync) could be
-    routine scheduler jitter. Counter: 4+ missed 4-hour slots is
-    not jitter (jitter is ≤10min on this system), and social's
-    nextRunAt = tomorrow means the scheduler has committed to
-    skipping — that's a silent commit to a gap, not a delay.
-
-  - Disk 83% flat for 6+ days is fine, no action needed. Counter:
-    "flat ≥80%" is the tinker's own warning threshold = "one bad
-    run from full." The reason it's flat is clones delete correctly
-    after use; if one crashes between clone and delete, we lose the
-    cushion. PROP-010 addresses this partly.
-
-NOTES TO FUTURE TINKER
-----------------------
-  - Self-fixes were pushed to git AND manually copied to FUSE.
-    If workspace-sync is broken (it is), manual copy is the only
-    way FUSE-reading agents see the update until sync is restored.
-  - PROP-009r2 7-day stability window: earliest declaration is
-    2026-04-25T14:35Z. Schedule that as the next mandatory
-    bypass-tuple audit run.
-  - If dome-social stays missed for 2+ consecutive days, escalate
-    from moderate to major. Check 2026-04-20.
-  - CLAUDE.md is now 148L. Any further additive bullet should come
-    with a prune-candidate check.
-  - Priority-queue pops since PROP-009r2 enforce are enumerated in
-    this run's report JSON (prop_009r2_verification.history_detail);
-    future tinker can diff-since-last for new bypass events.
-  - Workspace-sync being down means this report's JSON will not
-    reach git automatically until someone triggers a sync. The
-    tinker/ directory is append-only-glob — report files normally
-    flow through workspace-sync. Flag this in tomorrow's run if
-    it persists.
+COUNTER-ARGUMENTS THIS RUN ADDRESSED
+-------------------------------------
+  - Dispatcher-override legitimacy: rule 3 explicitly permits.
+  - Over-engineering the PROP: specificity is the guidance from tinker-proposals-and-fixes.md.
+  - Two-thing-in-one-run: cp is 30s hygiene, not competing mode work.
+  - 20x sync frequency risk: extract is byte-verbatim; soft-fail isolates failures.
