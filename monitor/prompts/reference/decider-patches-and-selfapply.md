@@ -177,6 +177,14 @@ fi
 
 git push origin main
 
+# PROP-010: immediately sync git→FUSE so agents reading from the workspace
+# (integrity, social, poller) see the post-push content on their next run.
+# This is a lightweight call — no HTML/PDF regen, no git ops, just file
+# copies driven by build.js's OWNERSHIP table. A failure here does NOT
+# roll back the push; the push already succeeded and the 4h workspace-sync
+# cycle is the backstop. Log the outcome but do not abort on sync failure.
+node build.js sync-workspace || echo "WARN: sync-workspace failed; workspace-sync will backfill within 4h."
+
 # 3b. If ANY test fails → abandon and leave for human
 echo "SELF-APPLY FAILED: tests did not pass. Patch file left for human review."
 # Do NOT close any issues — the patches weren't applied

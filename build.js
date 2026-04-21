@@ -15,6 +15,15 @@ const path = require('path');
 const ROOT = __dirname;
 const target = process.argv[2] || 'all';
 
+// Valid targets. 'sync-workspace' is PROP-010: run only the git→workspace
+// sync block so post-push callers (decider self-apply) can refresh FUSE
+// without paying the HTML/PDF regen + commit/push cost of 'publish'.
+const VALID_TARGETS = new Set(['all', 'html', 'pdf', 'publish', 'sync-workspace']);
+if (!VALID_TARGETS.has(target)) {
+  console.error(`❌ Unknown target '${target}'. Valid: ${[...VALID_TARGETS].join(', ')}`);
+  process.exit(2);
+}
+
 // ── File ownership table (Phase 1, Change 1.1) ──
 //
 // Every file that crosses the workspace↔git boundary is classified here.
@@ -211,7 +220,104 @@ if (target === 'all' || target === 'pdf') {
   run('node build-scripts/generate-pdf.js', 'Generate PDF');
 }
 
-if (target === 'publish') {
+// PROP-010: extracted sync-to-workspace logic so publish and the new
+// lightweight sync-workspace target can share it. No behavior change vs.
+// the prior inlined block — same session detection, same OWNERSHIP-driven
+// copy loop, same prompts walker, same log format.
+function syncToWorkspace() {
+  let workspace = null;
+  const sessionMatch = (process.cwd().match(/\/sessions\/([^/]+)/) || [])[1];
+  if (sessionMatch) {
+    const candidate = `/sessions/${sessionMatch}/mnt/dome-model-review`;
+    if (fs.existsSync(candidate)) workspace = candidate;
+  }
+  if (!workspace) {
+    try {
+      const dirs = fs.readdirSync('/sessions');
+      for (const d of dirs) {
+        const c = `/sessions/${d}/mnt/dome-model-review`;
+        try { if (fs.existsSync(c) && fs.readdirSync(c).length > 0) { workspace = c; break; } } catch {}
+      }
+    } catch {}
+  }
+  if (!workspace) {
+    console.log('\n⚠️  Workspace sync skipped: no accessible /sessions/*/mnt/dome-model-review found.');
+    return { synced: 0, newAppendOnly: 0, skippedWorkspace: 0, workspace: null };
+  }
+  console.log(`\n⏳ Sync to workspace (${workspace})...`);
+
+  let synced = 0;
+  let skippedWorkspace = 0;
+  let newAppendOnly = 0;
+
+  const copyIfExists = (relPath) => {
+    const src = path.join(ROOT, relPath);
+    const dst = path.join(workspace, relPath);
+    if (!fs.existsSync(src)) return false;
+    fs.mkdirSync(path.dirname(dst), { recursive: true });
+    fs.copyFileSync(src, dst);
+    return true;
+  };
+
+  const walkAppendOnly = (relDir, globExt) => {
+    const absDir = path.join(ROOT, relDir);
+    if (!fs.existsSync(absDir)) return;
+    const walk = (dir) => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) { walk(full); continue; }
+        if (!entry.isFile()) continue;
+        if (globExt && !entry.name.endsWith(globExt)) continue;
+        const rel = path.relative(ROOT, full);
+        const dst = path.join(workspace, rel);
+        if (fs.existsSync(dst)) continue;
+        fs.mkdirSync(path.dirname(dst), { recursive: true });
+        fs.copyFileSync(full, dst);
+        newAppendOnly++;
+      }
+    };
+    walk(absDir);
+  };
+
+  for (const [entry, category] of Object.entries(OWNERSHIP)) {
+    if (category === 'git') {
+      if (copyIfExists(entry)) synced++;
+    } else if (category === 'workspace') {
+      console.log(`   · skip (workspace-owned): ${entry}`);
+      skippedWorkspace++;
+    } else if (category === 'append_only') {
+      walkAppendOnly(entry, '.json');
+    } else if (category === 'append_only_glob') {
+      walkAppendOnly(entry, null);
+    }
+  }
+
+  const promptsAbs = path.join(ROOT, PROMPTS_DIR);
+  if (fs.existsSync(promptsAbs)) {
+    const walkPrompts = (dir) => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) walkPrompts(full);
+        else if (entry.isFile() && entry.name.endsWith('.md')) {
+          const rel = path.relative(ROOT, full);
+          if (copyIfExists(rel)) synced++;
+        }
+      }
+    };
+    walkPrompts(promptsAbs);
+  }
+
+  console.log(`✅ Sync to workspace (${synced} git-owned files copied, ${newAppendOnly} new append-only files, ${skippedWorkspace} workspace-owned entries skipped)`);
+  return { synced, newAppendOnly, skippedWorkspace, workspace };
+}
+
+if (target === 'sync-workspace') {
+  // PROP-010: lightweight post-push sync. No HTML/PDF regen, no git ops —
+  // just refresh the FUSE workspace from the current clone state. Intended
+  // to be called by decider after `git push origin main` so agents reading
+  // from FUSE never see content older than the most recent push.
+  syncToWorkspace();
+} else if (target === 'publish') {
   // Surface any direction violations before touching git.
   checkDirectionViolations();
 
@@ -232,121 +338,7 @@ if (target === 'publish') {
     runTolerant('git gc --auto --quiet', 'Git GC (if needed)', ['']);
   }
 
-  // Sync key files to workspace (FUSE mount can't run git, but agents read from there).
-  // Detect the current Cowork session dynamically so this works in every ephemeral
-  // session — clean clones live under /sessions/<name>/dome-review-clean, so the
-  // session name is always discoverable from cwd. Fallback: scan /sessions/*/mnt/
-  // dome-model-review for any accessible workspace mount.
-  //
-  // IMPORTANT (Phase 1 Change 1.4): this block runs whether a commit happened or
-  // not. The pre-Phase-1 publish hard-failed on "nothing to commit" and never
-  // reached this sync block, which is Bug X1 from dome-phase1-context.md §6.
-  let workspace = null;
-  const sessionMatch = (process.cwd().match(/\/sessions\/([^/]+)/) || [])[1];
-  if (sessionMatch) {
-    const candidate = `/sessions/${sessionMatch}/mnt/dome-model-review`;
-    if (fs.existsSync(candidate)) workspace = candidate;
-  }
-  if (!workspace) {
-    try {
-      const dirs = fs.readdirSync('/sessions');
-      for (const d of dirs) {
-        const c = `/sessions/${d}/mnt/dome-model-review`;
-        try { if (fs.existsSync(c) && fs.readdirSync(c).length > 0) { workspace = c; break; } } catch {}
-      }
-    } catch {}
-  }
-  if (workspace) {
-    console.log(`\n⏳ Sync to workspace (${workspace})...`);
-
-    // Phase 1 Change 1.1: drive the publish copy loop off OWNERSHIP.
-    // 'git' entries copy git → workspace. 'workspace' entries are
-    // skipped entirely (but logged so the rule is visible). Append-only
-    // directories copy any new files from git to workspace without
-    // overwriting existing ones.
-    let synced = 0;
-    let skippedWorkspace = 0;
-    let newAppendOnly = 0;
-
-    const copyIfExists = (relPath) => {
-      const src = path.join(ROOT, relPath);
-      const dst = path.join(workspace, relPath);
-      if (!fs.existsSync(src)) return false;
-      fs.mkdirSync(path.dirname(dst), { recursive: true });
-      fs.copyFileSync(src, dst);
-      return true;
-    };
-
-    // NOTE: this walker has TWO independent filters that can drop files:
-    //   (1) the extension filter (globExt) — e.g. '.json' will silently skip
-    //       '.jsonl' because 'foo.jsonl'.endsWith('.json') is false;
-    //   (2) the append-only dedupe (`if (fs.existsSync(dst)) continue`) —
-    //       files that grow in place get frozen at their first-seen snapshot.
-    // A growing log file (e.g. workspace-sync-skips.jsonl) inside an
-    // append_only directory hits BOTH traps and must be classified 'git'
-    // explicitly in the OWNERSHIP table so it's copied unconditionally by the
-    // git-owned branch of the publish loop instead. See the comment on
-    // 'monitor/integrity/workspace-sync-skips.jsonl' in OWNERSHIP above.
-    const walkAppendOnly = (relDir, globExt) => {
-      const absDir = path.join(ROOT, relDir);
-      if (!fs.existsSync(absDir)) return;
-      const walk = (dir) => {
-        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-          const full = path.join(dir, entry.name);
-          if (entry.isDirectory()) { walk(full); continue; }
-          if (!entry.isFile()) continue;
-          if (globExt && !entry.name.endsWith(globExt)) continue;
-          const rel = path.relative(ROOT, full);
-          const dst = path.join(workspace, rel);
-          if (fs.existsSync(dst)) continue;     // append-only: never overwrite
-          fs.mkdirSync(path.dirname(dst), { recursive: true });
-          fs.copyFileSync(full, dst);
-          newAppendOnly++;
-        }
-      };
-      walk(absDir);
-    };
-
-    for (const [entry, category] of Object.entries(OWNERSHIP)) {
-      if (category === 'git') {
-        if (copyIfExists(entry)) synced++;
-      } else if (category === 'workspace') {
-        console.log(`   · skip (workspace-owned): ${entry}`);
-        skippedWorkspace++;
-      } else if (category === 'append_only') {
-        walkAppendOnly(entry, '.json');
-      } else if (category === 'append_only_glob') {
-        // append_only_glob directories hold mixed globs (daily-report-*.json,
-        // suggested-patches-*.json, report-*.json). The walker accepts any
-        // file and the never-overwrite rule is the safety.
-        walkAppendOnly(entry, null);
-      }
-    }
-
-    // Dynamic rule: every .md under monitor/prompts/ is git-owned.
-    // Walk the tree and copy each one. This includes agent prompts, reference
-    // files, and workspace-sync.md. Previously these were listed by hand and
-    // the hardcoded list missed the reference directory (PROP-003/PROP-004
-    // regression, 2026-04-09).
-    const promptsAbs = path.join(ROOT, PROMPTS_DIR);
-    if (fs.existsSync(promptsAbs)) {
-      const walkPrompts = (dir) => {
-        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-          const full = path.join(dir, entry.name);
-          if (entry.isDirectory()) walkPrompts(full);
-          else if (entry.isFile() && entry.name.endsWith('.md')) {
-            const rel = path.relative(ROOT, full);
-            if (copyIfExists(rel)) synced++;
-          }
-        }
-      };
-      walkPrompts(promptsAbs);
-    }
-
-    console.log(`✅ Sync to workspace (${synced} git-owned files copied, ${newAppendOnly} new append-only files, ${skippedWorkspace} workspace-owned entries skipped)`);
-  } else {
-    console.log('\n⚠️  Workspace sync skipped: no accessible /sessions/*/mnt/dome-model-review found.');
-  }
+  syncToWorkspace();
 }
 
 console.log('\n🎉 Build complete!');
