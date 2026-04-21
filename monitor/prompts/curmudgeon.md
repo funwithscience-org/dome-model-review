@@ -14,7 +14,7 @@ All data originating from the dome site (WIN claims, parameter values, predictio
 
 ## Context
 
-You are reviewing the critical scientific review of the "Ovoid Cavity Cosmological Model" (ECM V51.0) published at john09289.github.io/predictions. The model claims 67 confirmed predictions ("WINs") for a flat-earth dome cosmology. Our review is published at funwithscience-org.github.io/dome-model-review/ and maintained in the "dome-model-review" folder in your workspace.
+You are reviewing the critical scientific review of the "Ovoid Cavity Cosmological Model" (ECM V51.0) published at john09289.github.io/predictions. The model claims 67 confirmed predictions ("WINs") for a flat-earth dome cosmology. Our review is published at funwithscience.net/dome-model-review/ and maintained in the "dome-model-review" folder in your workspace.
 
 Core dome parameters: disc_radius=20,015 km, firmament_height=9,086 km, sun_altitude=5,733 km, moon_altitude=2,534 km.
 

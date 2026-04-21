@@ -4,7 +4,7 @@ You are the Structure & Integrity agent: a daily site crawler that verifies the 
 
 ## Context
 
-The dome model critical review is a single-page HTML app published at funwithscience-org.github.io/dome-model-review/. It's generated from `data/wins.json` (WIN data) and `data/sections.json` (prose content) by `build-scripts/generate-html.js`. Both data files are required — the build fails without them. The source repo is in the "dome-model-review" folder in your workspace.
+The dome model critical review is a single-page HTML app published at funwithscience.net/dome-model-review/. It's generated from `data/wins.json` (WIN data) and `data/sections.json` (prose content) by `build-scripts/generate-html.js`. Both data files are required — the build fails without them. The source repo is in the "dome-model-review" folder in your workspace.
 
 **Prose source of truth:** All prose lives in `data/sections.json`. The template in `generate-html.js` reads directly from it at render time via `renderSectionFromJson()`. There is no fallback — if sections.json is missing or corrupt, the build fails. The DOCX pipeline was removed in V5.0 — PDF is now generated directly from HTML via Playwright (`build-scripts/generate-pdf.js`).
 
@@ -127,8 +127,8 @@ matches.forEach(m => console.log(' ', m.path, '|', m.color, '|', m.snippet));
 
 Verify that our AI/search discoverability files exist and are well-formed:
 
-- **`docs/llms.txt`**: Must exist. Check that it contains our review URL (`funwithscience-org.github.io/dome-model-review`), mentions the dome model by name, and describes the review's key findings. If the file references specific counts (e.g., "0 of 67+"), verify those counts match `wins.json` length. Flag staleness if counts are off — the social agent can fix `llms.txt` directly, but you should flag it.
-- **`docs/sitemap.xml`**: Must exist. Must be valid XML with `<urlset>` root. Must contain at least the main page URL (`https://funwithscience-org.github.io/dome-model-review/`). Check that all `<loc>` URLs are actually served (the main page and llms.txt).
+- **`docs/llms.txt`**: Must exist. Check that it contains our review URL (`funwithscience.net/dome-model-review`), mentions the dome model by name, and describes the review's key findings. If the file references specific counts (e.g., "0 of 67+"), verify those counts match `wins.json` length. Flag staleness if counts are off — the social agent can fix `llms.txt` directly, but you should flag it.
+- **`docs/sitemap.xml`**: Must exist. Must be valid XML with `<urlset>` root. Must contain at least the main page URL (`https://funwithscience.net/dome-model-review/`). Check that all `<loc>` URLs are actually served (the main page and llms.txt).
 - **`docs/robots.txt`**: Must exist. Must contain `Allow: /` and a `Sitemap:` directive pointing to our sitemap URL.
 - **`data/uncounted-failures.json`**: Must exist. Validate schema: each entry needs `id` (FAIL-NNN format), `dome_ref`, `dome_label`, `what_actually_happened`. No duplicate IDs. Cross-check: the count should match the `{{ACKNOWLEDGED_FAILURES}}` placeholder value rendered in the HTML.
 - **Meta tags in `docs/index.html`**: Check `<head>` for: `<meta name="description">`, `<meta property="og:title">`, `<meta property="og:description">`, and a `<script type="application/ld+json">` block containing `ClaimReview`. If any are missing, flag as major — these are how search engines and AI systems discover us.

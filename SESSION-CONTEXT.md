@@ -2,7 +2,7 @@
 
 **Last updated:** 2026-04-09 (context windows 5–16)
 **Repository:** https://github.com/funwithscience-org/dome-model-review
-**Live site:** https://funwithscience-org.github.io/dome-model-review
+**Live site:** https://funwithscience.net/dome-model-review
 **Version reviewed:** Ovoid Cavity Cosmological Model V51.1 (April 2026)
 **Source site:** john09289.github.io/predictions
 

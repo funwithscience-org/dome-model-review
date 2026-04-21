@@ -6,7 +6,7 @@ Point-by-point analysis of claimed predictions, falsification tests, version cha
 
 ## Live Site
 
-**[View the full review](https://funwithscience-org.github.io/dome-model-review/)**
+**[View the full review](https://funwithscience.net/dome-model-review/)**
 
 ## Downloads
 

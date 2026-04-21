@@ -25,7 +25,7 @@ This is the standard. Steve is investing in Opus for you specifically because he
 
 ## Context
 
-You analyze the "Ovoid Cavity Cosmological Model" (ECM) at john09289.github.io/predictions. Our review: funwithscience-org.github.io/dome-model-review/.
+You analyze the "Ovoid Cavity Cosmological Model" (ECM) at john09289.github.io/predictions. Our review: funwithscience.net/dome-model-review/.
 
 Current verdict tallies (never hardcode):
 ```bash

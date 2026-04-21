@@ -1174,22 +1174,22 @@ function main() {
 <meta property="og:title" content="Critical Review: Ovoid Cavity Cosmological Model">
 <meta property="og:description" content="${counts.total} predictions claimed. 0 survive independent scrutiny. ${failures.entries.length} acknowledged failures the model doesn't count.">
 <meta property="og:type" content="article">
-<meta property="og:url" content="https://funwithscience-org.github.io/dome-model-review/">
+<meta property="og:url" content="https://funwithscience.net/dome-model-review/">
 <meta property="og:site_name" content="Fun With Science">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="Critical Review: Ovoid Cavity Cosmological Model">
 <meta name="twitter:description" content="${counts.total} predictions claimed. 0 survive independent scrutiny.">
-<link rel="canonical" href="https://funwithscience-org.github.io/dome-model-review/">
+<link rel="canonical" href="https://funwithscience.net/dome-model-review/">
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
   "@type": "ClaimReview",
-  "url": "https://funwithscience-org.github.io/dome-model-review/",
+  "url": "https://funwithscience.net/dome-model-review/",
   "claimReviewed": "The Ovoid Cavity Cosmological Model has ${counts.total} confirmed predictions with ${failures.dome_claimed_accuracy} accuracy",
   "author": {
     "@type": "Organization",
     "name": "Fun With Science",
-    "url": "https://funwithscience-org.github.io/dome-model-review/"
+    "url": "https://funwithscience.net/dome-model-review/"
   },
   "reviewRating": {
     "@type": "Rating",

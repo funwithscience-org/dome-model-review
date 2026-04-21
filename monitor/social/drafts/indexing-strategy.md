@@ -9,7 +9,7 @@
 
 ## Executive Summary
 
-Neither our site (funwithscience-org.github.io/dome-model-review) nor the dome model site (john09289.github.io/predictions) is indexed by any search engine. This is the #1 discoverability blocker. All our machine-readable infrastructure (ClaimReview, llms.txt, OG tags, sitemap) is invisible to every search engine and fact-check aggregator until indexing happens.
+Neither our site (funwithscience.net/dome-model-review) nor the dome model site (john09289.github.io/predictions) is indexed by any search engine. This is the #1 discoverability blocker. All our machine-readable infrastructure (ClaimReview, llms.txt, OG tags, sitemap) is invisible to every search engine and fact-check aggregator until indexing happens.
 
 This document presents a concrete, ranked action plan. Each recommendation includes counterarguments and identifies who needs to act.
 
@@ -20,7 +20,7 @@ This document presents a concrete, ranked action plan. Each recommendation inclu
 **What:** Register our GitHub Pages URL as a URL-prefix property in Google Search Console (GSC).
 
 **How it works for GitHub Pages:**
-- Add `https://funwithscience-org.github.io/dome-model-review/` as a URL-prefix property
+- Add `https://funwithscience.net/dome-model-review/` as a URL-prefix property
 - Verify ownership via HTML file upload: Google provides an HTML verification file (e.g., `google1234567890abcdef.html`) that must be placed at the site root. For GitHub Pages project sites, this means committing the file to the `docs/` directory (or whichever directory serves the Pages site).
 - Alternative: HTML meta tag verification — add a `<meta name="google-site-verification" content="...">` tag to the `<head>` of index.html. This would require a build script change to include the tag.
 - Once verified: submit `sitemap.xml`, use URL Inspection tool to request priority indexing of key pages.
@@ -118,7 +118,7 @@ Backlinks are how search engines discover new sites organically and how they ass
 
 **Costs:**
 - $12–55/year depending on TLD
-- One-time DNS setup (CNAME record pointing to `funwithscience-org.github.io`)
+- One-time DNS setup (apex A records + `www` CNAME pointing to `funwithscience-org.github.io`; custom domain `funwithscience.net` set on the org-level repo)
 - Need to update all hardcoded references (sitemap, llms.txt, OG URLs, canonical tags, internal links)
 - Redirects from the old github.io URL need to work to preserve any future SEO value
 

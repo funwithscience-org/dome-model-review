@@ -6,7 +6,7 @@
 
 A scientific critical review of the "Ovoid Cavity Cosmological Model" (ECM V51.1) published at john09289.github.io/predictions. The model claims 69 confirmed predictions ("WINs") for a flat-earth dome cosmology. This review evaluates every claim against published data and the model's own internal consistency. Query current WIN count: `node -e "console.log(JSON.parse(require('fs').readFileSync('data/wins.json','utf8')).length)"`
 
-Published at: https://funwithscience-org.github.io/dome-model-review/
+Published at: https://funwithscience.net/dome-model-review/
 Repository: https://github.com/funwithscience-org/dome-model-review
 
 ## Key Terminology

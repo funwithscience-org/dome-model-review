@@ -15,7 +15,7 @@ The "Ovoid Cavity Cosmological Model" (ECM V51.0) is published at john09289.gith
 
 The model claims 67 confirmed predictions for a flat-earth dome cosmology with specific technical vocabulary: "ovoid cavity," "aetheric medium," "firmament resonance," "Finsler coordinates," "field scaling factor," "toroidal architecture," "dielectric coupling," and dome-specific parameters (disc radius 20,015 km, firmament height 8,537 km, sun altitude 5,733 km).
 
-Our critical review is published at funwithscience-org.github.io/dome-model-review.
+Our critical review is published at funwithscience.net/dome-model-review.
 
 ## What to Search For
 
@@ -29,7 +29,7 @@ Search for the author posting or promoting the dome model on:
 - Any forum or blog linking to the dome site
 
 Also check:
-- Has anyone posted about or responded to our review (funwithscience-org.github.io)?
+- Has anyone posted about or responded to our review (funwithscience.net/dome-model-review)?
 - Has the author commented on or acknowledged our review anywhere?
 
 ### 2. Claim Overlap Detection
@@ -169,7 +169,7 @@ Track search rankings for core terms. Record in `monitor/social/search-rankings.
 
 Core search terms: "ovoid cavity cosmological model", "ECM dome model", "dome model review", "dome model critique", "flat earth 67 predictions", "john09289 predictions", "firmament resonance model"
 
-Situational: "Schumann resonance dome", "flat earth predictions debunked", `site:john09289.github.io`, `site:funwithscience-org.github.io`
+Situational: "Schumann resonance dome", "flat earth predictions debunked", `site:john09289.github.io`, `site:funwithscience.net`
 
 #### 4c. Take Action on Gaps (this is the important part)
 
