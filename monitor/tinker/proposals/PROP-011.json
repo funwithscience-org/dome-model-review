@@ -1,0 +1,36 @@
+{
+  "id": "PROP-011",
+  "created_at": "2026-04-22T08:45:00Z",
+  "category": "prompt_diet",
+  "target": "monitor/prompts/reference/tinker-cost-engineering.md",
+  "problem": "Mode 3 Step 1b pattern #2 (\"stale complete expansions\") is written as `status==='complete' && !integrated && !routed_to_curmudgeon`. This flags any expansion that is intentionally held by the decider via `integration_blocked_until`. Today's Mode 3 run hit 7 such items (EXP-207, 208, 209, 210, 212, 213 — all Phase A design-refresh items gated on operator HNOTE approval) and would have re-escalated them as 're-work' waste. They are NOT re-work; they are legitimately waiting for external gating. The filter must exclude `integration_blocked_until`-holding items, and should also exclude items that have been superseded/reallocated (EXP-211 was reallocated to EXP-214 but the tracker still shows it as stranded).",
+  "proposed_fix": {
+    "summary": "Tighten the Step 1b pattern #2 `node -e` snippet in `tinker-cost-engineering.md` to exclude items whose `integration_blocked_until` field is truthy, and to surface-but-separately-classify `superseded_by`/`reallocated_to` items. The change is a single-file edit to a reference markdown; the logic change is additive (more specific, not less).",
+    "files_to_create": [],
+    "files_to_modify": [
+      {
+        "path": "monitor/prompts/reference/tinker-cost-engineering.md",
+        "find": "Also check for the inverse: `status: 'complete'` without `integrated: true` that's been sitting for more than 2 decider cycles:\n```bash\nnode -e \"\nconst t=JSON.parse(fs.readFileSync('monitor/analyst/expansion-tracker.json','utf8'));\nconst stale=t.items.filter(i=>i.status==='complete'&&!i.integrated&&!i.routed_to_curmudgeon);\nstale.forEach(i=>console.log('STALE COMPLETE: '+i.id+' — complete but never integrated, created '+i.created_at));\n\"\n```",
+        "replace": "Also check for the inverse: `status: 'complete'` without `integrated: true` that's been sitting for more than 2 decider cycles. **Exclude items with `integration_blocked_until` set (these are intentionally held), and items with `superseded_by` or `reallocated_to` (these are pending-tracker-cleanup, not re-work).**\n```bash\nnode -e \"\nconst fs=require('fs');\nconst t=JSON.parse(fs.readFileSync('monitor/analyst/expansion-tracker.json','utf8'));\nconst stale=t.items.filter(i=>\n  i.status==='complete' &&\n  !i.integrated &&\n  !i.routed_to_curmudgeon &&\n  !i.integration_blocked_until &&\n  !i.superseded_by &&\n  !i.reallocated_to\n);\nstale.forEach(i=>console.log('STALE COMPLETE: '+i.id+' — complete but never integrated, created '+i.created_at));\n// Separately surface the held items for situational awareness, NOT as re-work:\nconst held=t.items.filter(i=>i.status==='complete'&&!i.integrated&&i.integration_blocked_until);\nif(held.length) console.log('HELD (awaiting operator gate — not re-work): '+held.map(i=>i.id).join(', '));\n\"\n```",
+        "explanation": "Adds two exclusions to the re-work filter (integration_blocked_until, superseded_by/reallocated_to) and a separate HELD bucket so the tinker can still see them but not classify them as waste. Reads `fs` explicitly (the original snippet omitted the require; it happens to work because the surrounding block adds it, but the standalone version fails without it — harmless hardening)."
+      }
+    ],
+    "files_to_delete": []
+  },
+  "tradeoffs": "Gain: Mode 3 stops generating false-positive 'stale complete' findings when the operator has open design-refresh holds. Tinker runs produce more-signal/less-noise reports. Loss: if an item ever gets `integration_blocked_until` set and then the gate is forever-absent (operator never posts the HNOTE), the bug becomes invisible to the stale-complete check. Mitigation: the HELD bucket still surfaces them for situational awareness, and a separate future check (not in this PROP) can alert if HELD age exceeds N days.",
+  "estimated_impact": "Today's Mode 3 run would have flagged 6 false positives (EXP-207,208,209,210,212,213). Applied, the filter returns 1 true positive (EXP-211 — tracker-hygiene item, not re-work but a genuine stale-complete). Across all future Mode 3 runs while Phase A design-refresh is open, this eliminates ~5-10 false findings per run, meaning the remaining findings are actually actionable.",
+  "requires_human_judgment": false,
+  "why_human_needed": null,
+  "verification_pattern": "grep -q 'integration_blocked_until' monitor/prompts/reference/tinker-cost-engineering.md && grep -q 'HELD (awaiting operator gate' monitor/prompts/reference/tinker-cost-engineering.md && echo FIXED || echo STILL_BROKEN",
+  "counter_arguments_addressed": [
+    {
+      "claim": "If a `integration_blocked_until` gate is forever-open, the item stays stranded and tinker no longer catches it.",
+      "counter": "The HELD bucket surfaces them separately; tinker still reports their existence, just not as re-work waste. A future Mode 3 enhancement can add an age threshold to HELD (alert if held >7 days). Within Phase A (the current design refresh), 7 days of held items is exactly what we'd expect."
+    },
+    {
+      "claim": "This is a prompt-diet change that tinker should not self-apply.",
+      "counter": "The change is mechanical (regex-level edit to a filter predicate), the target is a reference module that tinker itself reads, and the verification pattern is a simple grep. Mode 4 Step 1 explicitly permits self-fixes on tinker's own reference material. The PROP route is still used here for transparency — so the fix lands in a review-able patch rather than a silent edit."
+    }
+  ],
+  "status": "proposed"
+}
