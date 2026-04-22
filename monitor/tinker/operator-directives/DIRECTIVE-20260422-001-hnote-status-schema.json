@@ -1,0 +1,76 @@
+{
+  "directive_id": "DIRECTIVE-20260422-001",
+  "issued_at": "2026-04-22T04:23:49Z",
+  "issued_by": "steve (via cowork session)",
+  "target_agent": "tinker",
+  "target_mode": "Mode 4 — Proposals & Self-Fixes",
+  "priority": "medium",
+  "status": "open",
+  "title": "Human-notes status-vocabulary drift is silent",
+  "summary": "Operators are writing human-notes with status values that the consuming agent silently ignores. Two recent examples: HNOTE-DESIGN-REFRESH-PHASE-A-CLARIFICATION-001/002 were written with status=\"unclaimed\". Analyst preflight (analyst.md line ~105) filters on status===\"pending\" only. The notes sat dormant until the operator noticed by chance. There is no schema enforcement, no warning, no diagnostic in any agent run — it is silent failure. Tinker: propose a schema + enforcement strategy.",
+  "context": {
+    "observed_pattern": "Three distinct statuses live in monitor/analyst/human-notes.json today: \"consumed\" (processed by agent), \"pending\" (triggers action), \"unclaimed\" (operator meant \"pending\" but agent ignores). Same pattern is likely latent in monitor/decisions/human-notes.json, monitor/social/human-notes.json, monitor/curmudgeon/human-notes.json — Tinker should audit all of them.",
+    "root_cause": "No schema file, no validator, no agent-side strictness. Operators (human and Claude-operator) fall back to intuitive English words like \"unclaimed\", \"new\", \"todo\" that do not appear in the prompt preflights.",
+    "impact": "Direct: the design-refresh Phase A EXP-202 revision cycle was delayed by roughly one hour while the operator identified the flipped bit and re-pushed. Systemic: every HNOTE written with a non-canonical status is effectively a no-op, and this is invisible in agent reports — the note simply never shows up in the \"pending notes\" count.",
+    "specific_incident": "On 2026-04-22, HNOTE-DESIGN-REFRESH-PHASE-A-CLARIFICATION-001 (self-host fonts) and -002 (grandfather GA under revised NC8, fix EXP-202 c_4) were written with status=\"unclaimed\". Analyst was scheduled to pick them up at 03:57Z UTC; preflight would have reported \"NO NOTES\". Operator flipped both to \"pending\" via commit cb540b1 before the run fired."
+  },
+  "proposed_fix_spec": {
+    "deliverable": "Propose a schema + enforcement strategy. Specific choice is yours; the pattern to optimize for is \"operator writes a sensible-looking note, if they use a wrong word it fails loudly, not silently.\"",
+    "options_to_consider": [
+      {
+        "option": "A — JSON Schema file + validator step",
+        "description": "Add monitor/prompts/reference/human-notes.schema.json with status enum [\"pending\",\"consumed\",\"deferred\",\"rejected\"]. Add a validation step to either workspace-sync, integrity, or a new pre-commit hook in build.js that fails loudly if any status is out of enum.",
+        "tradeoff": "Most rigorous; requires wiring validation into something that runs frequently. Integrity agent runs daily, which may be too slow."
+      },
+      {
+        "option": "B — Widen the agent preflight",
+        "description": "Change analyst.md / decider.md / etc. preflights from status===\"pending\" to status!==\"consumed\"&&status!==\"deferred\"&&status!==\"rejected\". Any other value (including \"unclaimed\") triggers action.",
+        "tradeoff": "Forgiving. But accepts genuine typos (\"pendng\") as also valid, which has its own failure mode."
+      },
+      {
+        "option": "C — Default-pending-when-absent",
+        "description": "Notes without a status field default to triggering. Consuming an note sets status=\"consumed\". Simpler mental model (the only state is consumed-or-not).",
+        "tradeoff": "Loses expressiveness — no way to say \"deferred until X\" or \"rejected, keep for audit\"."
+      },
+      {
+        "option": "D — Hybrid: A + B",
+        "description": "Schema defines the canonical set, AND preflights widen to accept \"any non-consumed\" as pending. Schema violations get logged (not blocked) so the loudness is there without the fragility.",
+        "tradeoff": "Two layers of redundancy. Probably right, but the most code to write."
+      }
+    ],
+    "thinking_prompts": [
+      "How many HNOTE files total — one per agent, or shared? (monitor/*/human-notes.json appears to be a per-agent convention.)",
+      "Are there any existing statuses in use that are NOT pending/consumed? Audit all four files before proposing enum.",
+      "Should the schema cover other fields (target_agent, priority, body presence)? Err on the side of minimum viable enforcement; schema scope creep has its own cost.",
+      "Where should the validator run? Workspace-sync (every 4h), integrity (daily 9am), or build.js pre-commit (on every decider push)?"
+    ]
+  },
+  "deliverable_requested": {
+    "format": "PROP file in monitor/tinker/proposals/ following existing PROP-* naming conventions.",
+    "contents": [
+      "Audit: enumerate every distinct status value found across all four human-notes.json files, with counts per agent. This is 5 minutes of grep — must be done before proposing.",
+      "Recommended schema (minimum: status enum; optional: required fields, valid target_agent values)",
+      "Enforcement mechanism chosen from A/B/C/D above (or new option) with justification",
+      "Exact patch text for any prompt files or build.js that need changes",
+      "Migration plan: what to do with existing notes that have non-canonical statuses at apply time",
+      "Rollback plan if enforcement blocks a legitimate note the operator needs processed urgently"
+    ]
+  },
+  "non_goals": [
+    "Do NOT propose replacing the human-notes convention entirely — it works, this is a sharpening pass.",
+    "Do NOT propose merging the four human-notes.json files into one. Per-agent separation is a deliberate access-control boundary.",
+    "Do NOT add runtime-side note classification (e.g. tag detection). Keep the vocabulary small and human-legible."
+  ],
+  "cross_references": {
+    "related_incident_commit": "cb540b1 (flipped CLARIFICATION-001/002 unclaimed→pending)",
+    "related_note_commit": "c2a50b3 (HNOTE-SEC2B1-FORMULA-DRIFT-001)",
+    "analyst_preflight": "monitor/prompts/analyst.md line ~105 (pending-only filter)",
+    "prompt_files_likely_affected": [
+      "monitor/prompts/analyst.md",
+      "monitor/prompts/decider.md",
+      "monitor/prompts/curmudgeon.md",
+      "monitor/prompts/social.md"
+    ]
+  },
+  "completion_criteria": "Tinker produces a PROP file addressing the deliverable list above. Operator reviews + approves specific enforcement choice before any prompt or build.js patch is applied."
+}
