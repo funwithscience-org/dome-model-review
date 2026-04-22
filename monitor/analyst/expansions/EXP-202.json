@@ -7,20 +7,14 @@
   "companion_note": "HNOTE-DESIGN-REFRESH-ROUTING-001",
   "target": "docs/index.html <head> and <style> :root block (dark media query mirror). Also touches: build-scripts/generate-html.js only if that file owns head injection (it does — verify before integration).",
   "category": "design-refresh-phase-a",
-  "scope_item": "Item 6 foundation — typography tokens + Google Fonts load (EXP-A1 in the suggested brief sequence). Also supplies --ink, --ink-2, --rule, --accent, --warn, --crit, --good tokens required by subsequent EXPs.",
+  "scope_item": "Item 6 foundation — typography tokens + SELF-HOSTED WOFF2 webfonts (EXP-A1 in the suggested brief sequence; revised per CLARIFICATION-001/002). Also supplies --ink, --ink-2, --rule, --accent, --warn, --crit, --good tokens required by subsequent EXPs.",
   "priority": "high",
   "source": "HNOTE-DESIGN-REFRESH-PHASE-A-001 section 'SUGGESTED EXP ORDERING' step EXP-A1; item enumerated under SCOPE Items 6 (typography) and 7 (palette, which depends on tokens existing before restriction is applied).",
   "curmudgeon_review": null,
   "created_at": "2026-04-21T12:05:01.171Z",
   "kernel_of_truth": "The external designer is right that our current CSS leans entirely on one system-sans face ('Segoe UI',Arial,Helvetica,sans-serif) for body, UI chrome, and prose, and that the formulas are plain monospace without a class. That single-face-does-every-job pattern makes the site read as a dashboard rather than as an argumentative document. A three-role typographic system (serif for prose, sans for chrome, mono for data evidence) is a mature, well-understood pattern in editorial design, and the site gains credibility by adopting the same convention long-form argumentative publications use. The reviewer is also right that tokenizing the palette (--ink, --rule, --crit, etc.) is a prerequisite for the Item 7 red-restriction work — you cannot cleanly restrict red usage until there is a single token that declares where red is allowed. Conceding those two points is free and does not require conceding the paper-theme aesthetic the reviewer's mocks use.",
   "content_diff": {
-    "description": "Two additive changes to docs/index.html. No existing selectors are removed or redefined. No existing font-family declarations are changed in this EXP (that is EXP-A2). No existing colors are remapped (that is EXP-A5). Purely introduces new tokens and loads the webfonts so subsequent EXPs can consume them.",
-    "change_1_google_fonts_preconnect_and_stylesheet": {
-      "where": "docs/index.html inside <head>, immediately after the existing <meta name=viewport ...> tag and before the first <style> block.",
-      "rationale": "preconnect issues the DNS+TLS handshake early so the font CSS fetch does not block first paint. display=swap lets the existing system-sans face render first and swap in the webface when ready (no FOUT blank text).",
-      "exact_insert": "<link rel=\"preconnect\" href=\"https://fonts.googleapis.com\"><link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin><link href=\"https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;0,8..60,700;1,8..60,400&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap\" rel=\"stylesheet\">",
-      "weight_set_justification": "Serif loads italic + 400/600/700 for body/emphasis/headings. Inter loads 400/500/600/700 for UI chrome (captions at 500, pills at 600, small-caps kickers at 700). Mono loads 400/500 for code + subtle data emphasis. Any weight asked for by the final type spec and not in this set would fall back to the nearest loaded weight — if EXP-A2 requires weights outside this set, this EXP's weight list should be updated rather than loading them one-off elsewhere."
-    },
+    "description": "Two additive changes to docs/index.html. No existing selectors are removed or redefined. No existing font-family declarations are changed in this EXP (that is EXP-A2). No existing colors are remapped (that is EXP-A5). Introduces new tokens and declares same-origin @font-face rules for the three webfont families so subsequent EXPs can consume them. Also introduces a new docs/fonts/ directory containing three variable-WOFF2 files and a LICENSES notice. NOTE: per HNOTE-DESIGN-REFRESH-PHASE-A-CLARIFICATION-001, this EXP SELF-HOSTS the fonts — it does NOT add any third-party <link> tags and does NOT introduce any new third-party runtime dependency.",
     "change_2_new_design_tokens_in_root": {
       "where": "docs/index.html inside the :root{...} declaration at the top of the <style> block. Add new tokens at the end of the existing declaration (do NOT modify or remove any of --bg, --text, --heading, --accent, --link, --border, --table-header, --refuted*, --stdmodel*, --selfcon*, --misleading*, --unfalsifiable*, --notdemo*, --code-bg, --card-bg — those stay for backward compatibility with every selector that already consumes them).",
       "rationale": "Additive tokenization. The existing verdict-color tokens remain authoritative for verdict pills and table cells; Item 7 palette restriction in EXP-A5 will route them through the new semantic tokens. The new tokens give EXP-A2 (typography application), EXP-A5 (red restriction), and EXP-A8 (a11y contrast tuning) a single source of truth to edit.",
@@ -64,30 +58,73 @@
     },
     "change_3_no_changes_to": [
       "Existing body { font-family: 'Segoe UI', ... } declaration — stays. EXP-A2 replaces it.",
-      "Existing font-family:monospace literals (3 in sections.json, more in docs/index.html) — stay. EXP-A2 migrates them to a .formula class.",
+      "Existing font-family:monospace literals (actual count: 6 in sections.json, 6 in docs/index.html — corrected from the pre-revision draft's '3 in sections.json'; EXP-A2's diff surface is correspondingly larger) — stay. EXP-A2 migrates them to a .formula class.",
       "Existing verdict color tokens (--refuted, --stdmodel, etc.) — stay. EXP-A5 will migrate them to route through --semantic-crit / --semantic-good / etc. where appropriate.",
       "Existing .title-block, .scorecard, .verdict-legend, .vl-* selectors — stay. No visual change from this EXP.",
       "test.js — no new assertions this EXP. EXP-A2 will add 'font-family:monospace literal count is 0' once migration is done.",
-      "build-scripts/generate-html.js — already emits the <head> block; if the head template lives in that file, the preconnect + stylesheet inserts go there and are copied through to docs/index.html on build. Verify location before integration."
-    ]
+      "build-scripts/generate-html.js — already emits the <head> block; the @font-face declarations and new :root tokens are injected into the embedded <style> template in that file (verified at integration time). No runtime logic change; purely static CSS additions.",
+      "Google Analytics gtag <script> block (docs/index.html lines 6-12) — UNCHANGED. Grandfathered per NC8 (see CLARIFICATION-002). This EXP does not add, remove, or modify any GA-related code or configuration."
+    ],
+    "change_1_self_host_font_faces": {
+      "where": "docs/index.html inside the <style> block in <head>. @font-face declarations land at the TOP of the stylesheet, above the :root{...} block, so variable-font axes are registered before any selector can consume --serif/--sans/--mono in EXP-A2. Important ordering constraint: font-face block must land AFTER the Google Analytics gtag <script> block (currently lines 6-12 of docs/index.html) so the pre-scanner issues the gtag request first — GA is a grandfathered third-party dep per NC8 and its placement is unchanged by this EXP.",
+      "rationale": "Per HNOTE-DESIGN-REFRESH-PHASE-A-CLARIFICATION-001, the three WOFF2 files are self-hosted under docs/fonts/. This preserves the 'no new third-party runtime dependency' posture (NC8) and gives integrity's build-reproducibility check a genuine guarantee (the font CSS cannot silently change under us — we ship the exact bytes and the exact @font-face rules). font-display:swap is preserved on each @font-face so the system-sans fallback renders first and the webface swaps in when ready, matching the behavior Google Fonts CDN served.",
+      "new_files_under_docs_fonts": {
+        "description": "Three variable-weight WOFF2 files and a LICENSES notice. Variable WOFF2 is chosen because it collapses weight axes (400/500/600/700 and italic where supported) into a single file per family, typically 40–90 KB each. If any of the three families does not ship a variable build that covers our weight needs, fall back to per-weight static WOFF2 subsets (regular + bold + italic at minimum) and list the fallback files in the new_files list.",
+        "subset": "latin — U+0000-U+007F (basic Latin) plus U+00A0-U+00FF (Latin-1 Supplement). This covers all prose, chrome, and math glyphs currently present in data/wins.json, data/sections.json, and the rendered docs/index.html. Unicode subsetting MUST be applied before check-in; un-subsetted Noto-style WOFF2 adds ~200-400 KB per family and is unacceptable.",
+        "subsetting_tool": "Recommended: pyftsubset (fonttools). If unavailable in the environment, the foundry distributions already ship subsetted WOFF2 for most weights — use those directly (Source Serif 4 and Inter both publish pre-subsetted WOFF2; JetBrains Mono publishes one-weight-per-file WOFF2 that we can concatenate into a variable equivalent). If the analyst environment cannot run pyftsubset at commit time, the analyst proposes adding build-scripts/subset-fonts.js that downloads the upstream OFL WOFF2 files, runs pyftsubset via a child process, and writes the results to docs/fonts/. This script runs manually (not in the publish path) and its output is committed — the script is NOT a runtime dependency.",
+        "files_to_commit": [
+          "docs/fonts/source-serif-4-variable.woff2   (Source Serif 4, variable axes italic+opsz+wght, ~50-90KB after subset)",
+          "docs/fonts/inter-variable.woff2            (Inter, variable axes wght, ~40-70KB after subset)",
+          "docs/fonts/jetbrains-mono-variable.woff2   (JetBrains Mono, variable axes wght, ~40-60KB after subset)",
+          "docs/fonts/LICENSES.md                      (SIL OFL notice for all three families; per OFL, the license must be distributed with the fonts)"
+        ],
+        "note_if_variable_unavailable": "If a variable build cannot be produced for a given family (e.g., if the upstream OFL archive only ships per-weight static WOFF2 and subsetting is infeasible in this environment), fall back to static per-weight files: source-serif-4-{400,600,700}.woff2 plus -italic-400.woff2, inter-{400,500,600,700}.woff2, jetbrains-mono-{400,500}.woff2. Update the files_to_commit list and the @font-face block accordingly. Variable is preferred purely for file-count reduction; correctness is identical either way."
+      },
+      "exact_insert_font_face_block": "@font-face{font-family:'Source Serif 4';src:url('./fonts/source-serif-4-variable.woff2') format('woff2-variations'),url('./fonts/source-serif-4-variable.woff2') format('woff2');font-weight:400 700;font-style:oblique 0deg 15deg;font-display:swap}@font-face{font-family:'Inter';src:url('./fonts/inter-variable.woff2') format('woff2-variations'),url('./fonts/inter-variable.woff2') format('woff2');font-weight:400 700;font-style:normal;font-display:swap}@font-face{font-family:'JetBrains Mono';src:url('./fonts/jetbrains-mono-variable.woff2') format('woff2-variations'),url('./fonts/jetbrains-mono-variable.woff2') format('woff2');font-weight:400 500;font-style:normal;font-display:swap}",
+      "ordering_note_relative_to_ga": "The @font-face block lands inside the existing <style> tag in <head>. The Google Analytics gtag <script> (docs/index.html lines 6-12) is unchanged — it stays above the <style> block and runs async. No preconnect or dns-prefetch tag is added for any external host. The font URLs resolve to same-origin paths (./fonts/...) so there is no DNS or TLS handshake to warm up.",
+      "weight_set_justification": "Variable WOFF2 covers font-weight: 400 700 (all prose weights for body, UI chrome, and kicker) and font-style: oblique 0deg 15deg (italic for Source Serif 4; Inter and JetBrains Mono ship normal only in our subset). Any weight asked for by EXP-A2 outside 400-700 would fall back to the nearest axis endpoint; if A2 needs 300 or 800, this EXP's @font-face axis range should be widened before A2 integration.",
+      "file_ownership_registration": {
+        "description": "docs/fonts/ is a NEW directory that will contain static, git-versioned served assets. Per the CLAUDE.md 'File Ownership Rules' section, every file that crosses the workspace↔git boundary has exactly one authoritative side. docs/fonts/*.woff2 and docs/fonts/LICENSES.md should be classified 'git' (decider-owned, build.js publish copies git → workspace). Flag the following for the decider at integration time:",
+        "build_js_ownership_entries": [
+          "'docs/fonts/source-serif-4-variable.woff2' => 'git'",
+          "'docs/fonts/inter-variable.woff2'          => 'git'",
+          "'docs/fonts/jetbrains-mono-variable.woff2' => 'git'",
+          "'docs/fonts/LICENSES.md'                   => 'git'",
+          "Optional: use a glob entry if build.js OWNERSHIP supports it — 'docs/fonts/**' => 'git' — which future-proofs any additional font variants added in EXP-A2 polish."
+        ],
+        "workspace_sync_md_entries": [
+          "Add 'docs/fonts/source-serif-4-variable.woff2' to OWNED_BY_GIT in monitor/prompts/workspace-sync.md.",
+          "Add 'docs/fonts/inter-variable.woff2' to OWNED_BY_GIT.",
+          "Add 'docs/fonts/jetbrains-mono-variable.woff2' to OWNED_BY_GIT.",
+          "Add 'docs/fonts/LICENSES.md' to OWNED_BY_GIT.",
+          "OR add a single 'docs/fonts/' prefix entry if OWNED_BY_GIT supports prefix matching."
+        ],
+        "note_for_decider": "The CLAUDE.md File Ownership Rules table requires that the same classification is represented in both build.js OWNERSHIP and workspace-sync.md OWNED_BY_GIT. This EXP is the first to introduce a binary-asset directory under docs/; if the existing OWNERSHIP machinery does not gracefully handle glob/prefix entries, the decider may need to either enumerate the four files individually or extend the OWNERSHIP mechanism. Flagging so this isn't a silent integration landmine."
+      }
+    }
   },
   "acceptance_criteria": [
-    "View-source on docs/index.html shows the three <link> tags for preconnect + Google Fonts stylesheet in <head>.",
+    "View-source on docs/index.html shows three @font-face declarations (Source Serif 4, Inter, JetBrains Mono) inside the <style> block in <head>, each pointing at a same-origin ./fonts/<file>.woff2 URL with font-display:swap.",
+    "View-source on docs/index.html does NOT show any <link> tag or <script> tag referencing fonts.googleapis.com, fonts.gstatic.com, fonts.bunny.net, or any third-party font origin.",
     "DevTools Computed panel on any element shows the new :root variables (--serif, --sans, --mono, --ink, --ink-2, --ink-3, --rule, --semantic-accent, --semantic-warn, --semantic-crit, --semantic-good, and their -soft counterparts) available for use.",
-    "DevTools Network panel shows Source Serif 4 + Inter + JetBrains Mono WOFF2 files downloaded exactly once per page load.",
-    "Visual regression: the page looks IDENTICAL before and after this EXP (no selectors consume the new tokens yet, body font-family is unchanged).",
-    "Integrity's build-reproducibility check passes unchanged (fresh clone + node build.js html produces byte-identical docs/index.html up to the embedded date line).",
+    "DevTools Network panel shows exactly three same-origin WOFF2 downloads (docs/fonts/source-serif-4-variable.woff2, inter-variable.woff2, jetbrains-mono-variable.woff2), each transferred once per cold page load, each with a 200 status.",
+    "DevTools Network panel shows NO new third-party hosts beyond the existing Google Analytics endpoints (googletagmanager.com, google-analytics.com, region.analytics.google.com) — the number of distinct non-origin hosts is UNCHANGED from the pre-EXP baseline. (NC8-compliance criterion per CLARIFICATION-002.)",
+    "Tcpdump or HAR capture across a cold page load + 10s idle shows no DNS query or TCP connect to fonts.googleapis.com, fonts.gstatic.com, fonts.bunny.net, or any host other than the page origin and the existing GA endpoints.",
+    "docs/fonts/ directory exists with three WOFF2 files (or their per-weight static equivalents if variable is infeasible) plus docs/fonts/LICENSES.md containing the SIL OFL notice for Source Serif 4, Inter, and JetBrains Mono.",
+    "Each WOFF2 file is ≤150KB (subset latin-only, basic+supplement ranges). Aggregate ≤350KB across the three. Measured, not estimated.",
+    "Visual regression: the page looks IDENTICAL before and after this EXP (no selectors consume the new tokens yet, body font-family is unchanged). FOUT/FOIT behavior: system-sans fallback renders first, webfaces swap in on load per font-display:swap.",
+    "Integrity's build-reproducibility check passes unchanged (fresh clone + node build.js html produces byte-identical docs/index.html up to the embedded date line). With self-hosted fonts, this check now ALSO guarantees byte-identical rendered font output across builds — a strictly stronger reproducibility posture than the Google Fonts alternative.",
     "test.js passes at the current baseline (no new assertions from this EXP).",
-    "No console errors. No CORS errors. No layout shift."
+    "No console errors. No CORS errors. No layout shift. No font-load-related warning in the Network or Console panels."
   ],
   "anticipated_objections": [
     {
       "objection": "Adding webfonts for a 'no visual change' EXP wastes bandwidth on users who will never see them (because nothing consumes --serif/--sans/--mono yet).",
-      "response": "True in the interval between EXP-A1 integration and EXP-A2 integration. Mitigated by: (a) the suggested sequence lands EXP-A2 immediately after EXP-A1, (b) display=swap means the fonts never block render, (c) WOFF2 with preconnect costs roughly 60–90 KB on cold load — acceptable for the architectural benefit of having tokens and fonts land as a single foundation rather than a bundled megadiff. Alternative considered: roll EXP-A1 and EXP-A2 together. Rejected because A2 is a large prose-file migration (font-family:monospace → .formula literals across sections.json and index.html) that deserves an independent review window."
+      "response": "Partially true in the interval between EXP-A1 integration and EXP-A2 integration. Mitigations: (a) the suggested sequence lands EXP-A2 immediately after EXP-A1; (b) font-display:swap means the fonts never block render; (c) with self-hosted variable WOFF2 files subset to latin, the cold-load cost is ~130–220 KB aggregate (measured post-subsetting, not estimated — the acceptance criterion requires each file ≤150KB and aggregate ≤350KB, with measurement committed to docs/fonts/ build notes at integration time). This is higher than the pre-revision EXP's '~60-90 KB' estimate, which the curmudgeon correctly flagged as undershooting. Alternative considered: roll EXP-A1 and EXP-A2 together. Rejected because A2 is a large prose-file migration (font-family:monospace → .formula literals across sections.json and index.html) that deserves an independent review window. Accepting this bandwidth as the foundational cost of the three-typeface system; the human review group can reject the typeface change wholesale if the bandwidth is disqualifying, which would roll back both EXP-A1 and EXP-A2 in one decision rather than leaving A1 stranded."
     },
     {
-      "objection": "Privacy: Google Fonts makes a third-party request and logs user IP, which is a regression if the site is currently self-contained.",
-      "response": "Legitimate concern. Current docs/index.html makes zero third-party requests. Adding Google Fonts breaks that property. Two mitigations the human review group should weigh: (a) self-host the three WOFF2 files under docs/fonts/ and declare @font-face locally — avoids the third-party request entirely, costs ~6 weight files to commit, adds a new build step to copy/check-hash the fonts; (b) use Bunny Fonts (GDPR-compliant, IP-scrubbed proxy for Google Fonts) as a drop-in CDN replacement — zero self-host overhead, keeps display=swap. Recommendation: flag this in notes_for_human_review_group and let the operator pick. Default in this EXP is Google Fonts with display=swap; flip to self-host with one <link> replacement if the group prefers."
+      "objection": "Adding webfonts changes the privacy posture of the page. Is this EXP adding a new third-party runtime dependency?",
+      "response": "No — this is the critical correction per CLARIFICATION-001 and CLARIFICATION-002. An earlier draft of this EXP claimed docs/index.html currently makes 'zero third-party requests'. That claim was FALSE as a matter of fact: docs/index.html already loads Google Analytics gtag.js from googletagmanager.com (see line 7 of the rendered HTML; originates in build-scripts/generate-html.js). The curmudgeon review (EXP-202-proposal.json finding c_4 by the operator's numbering) correctly flagged this. The honest framing of the current state is: ONE grandfathered third-party runtime dependency exists (GA4 property G-QVD21HWH5X), and this EXP adds ZERO new ones. Self-hosted fonts under docs/fonts/ preserve the privacy posture as it stands under NC8 (revised). No preconnect or dns-prefetch tag is introduced for any external host. The three WOFF2 files are served same-origin, under SIL OFL redistribution permission, with a LICENSES.md file shipped alongside them. Self-hosting also gives integrity's build-reproducibility check a real guarantee — the rendered font bytes cannot drift under us, as they could with a third-party CDN that revises served CSS at a stable href."
     },
     {
       "objection": "The --semantic-* prefix pollutes the token namespace. Why not overwrite --accent, --warn, etc. directly?",
@@ -174,6 +211,11 @@
       "id": "NC7",
       "title": "Tests green",
       "how": "No new test assertions needed for this EXP — it is additive and has no consumer yet. test.js continues to pass at the current baseline. EXP-A2 will add the first test assertions that depend on these tokens."
+    },
+    {
+      "id": "NC8",
+      "title": "No NEW third-party runtime dependencies (one grandfathered exception: GA4 G-QVD21HWH5X)",
+      "how": "Per HNOTE-DESIGN-REFRESH-PHASE-A-CLARIFICATION-002 (revised NC8): 'No third-party runtime dependencies, with ONE grandfathered exception: the Google Analytics GA4 property currently configured at G-QVD21HWH5X (loaded via googletagmanager.com/gtag/js). No other third-party runtime dependencies are permitted. Hyperlinks to external references remain unaffected.' This EXP self-hosts all three WOFF2 files under docs/fonts/. @font-face declarations are same-origin. No preconnect/dns-prefetch tag is added to any third-party host anywhere in <head>. The existing gtag snippet in build-scripts/generate-html.js is unchanged (neither expanded nor removed by this EXP). The exception is bounded three ways per the note: (1) scope — the named GA property only; (2) surface — only the existing gtag snippet, no new events/pixels/fonts via GA; (3) duration — sunset trigger 'meaningful organic traffic arrives' (20+ distinct-day organic Search Console clicks), at which point operator reconsiders GA removal."
     }
   ],
   "preserved_load_bearing_content": [
@@ -198,19 +240,25 @@
     "Dropping the --semantic- prefix — deferred to a post-A5 cleanup EXP if the human group approves."
   ],
   "notes_for_human_review_group": [
-    "PRIVACY DEFAULT: this draft uses Google Fonts. If the group prefers zero third-party requests, say the word and a revision will swap to self-hosted WOFF2 in docs/fonts/ (adds three ~30KB files to the repo and one build-step copy). Bunny Fonts is a third option (GDPR proxy, same URL shape, one-line swap).",
-    "FONT WEIGHTS loaded here (Source Serif 4 italic+400/600/700, Inter 400/500/600/700, JetBrains Mono 400/500) are a prediction about what EXP-A2 will need. If A2's prose audit finds we need e.g. Inter 300 for very-faint metadata or Source Serif 4 900 for display weight, this EXP's weight list should be revised before or at A2 integration rather than loading the extra weights from A2. Flagging so the group knows the cost of the revision is 'edit the href, no re-audit' — small.",
-    "--ink-3 is speculative. It is in this draft because the external reviewer's mock uses three ink tiers. If EXP-A2's prose audit finds no consumer for the third tier, the analyst recommends dropping --ink-3 as part of A2's cleanup rather than amending A1 after the fact.",
-    "SEMANTIC PREFIX DECISION: --semantic-accent / --semantic-warn / --semantic-crit / --semantic-good is verbose. The rationale is in anticipated_objection #3. Group may prefer a shorter prefix (e.g. --s-accent) or no prefix at all (overwriting --accent et al. in this EXP and doing the consumer migration in A5 as a big-bang). The analyst's default is the safer additive path; if the group prefers the big-bang, flip the rename and A5 subsumes the migration.",
+    "REVISED FOR CLARIFICATION-001/002: This EXP now self-hosts the three WOFF2 font families under docs/fonts/. No third-party font CDN is loaded. The earlier 'PRIVACY DEFAULT: Google Fonts' framing has been removed; the revised NC8 (one grandfathered GA third-party dep only) is now the binding privacy constraint.",
+    "LOOK-AND-FEEL ESCAPE HATCH (per CLARIFICATION-001): operator accepts self-hosting on the premise that rendering quality will be indistinguishable from CDN. If during EXP-A2 (the first consumer EXP) the self-hosted output degrades in some measurable way (hinting, subpixel rendering, missing glyphs in a range actually used on the site, FOUT worse than CDN FOUT), flag it back as a new human_note with: (a) specific visual evidence (screenshots or described behavior); (b) whether it is a subsetting bug, a variable-font limitation, or a genuine same-origin WOFF2 regression; (c) whether switching to self-hosted STATIC WOFF2 (non-variable) resolves it. Do NOT silently revert to Google Fonts. The no-third-party rule is non-negotiable; if the look-and-feel bar cannot be met with same-origin assets, operator will revise the rule explicitly via a fresh HNOTE.",
+    "SUBSETTING: the three WOFF2 files are subset to latin (U+0000-U+007F + U+00A0-U+00FF) — sufficient for current content in data/wins.json, data/sections.json, and docs/index.html. If the environment executing the commit does not have pyftsubset available, the analyst proposes adding build-scripts/subset-fonts.js (runs manually, not in the publish path) that downloads upstream OFL sources, subsets with pyftsubset via child_process, and writes docs/fonts/. Its output is committed; the script itself is NOT a runtime dependency. If pyftsubset is unavailable AND a subset script cannot be added at this time, the analyst alternatively recommends downloading the already-subsetted WOFF2 files the foundries ship (Source Serif 4 and Inter both publish subsetted variable WOFF2 via @fontsource/npm) and checking those in.",
+    "FONT WEIGHTS loaded here (Source Serif 4 variable axes italic+opsz+wght 400-700, Inter variable wght 400-700, JetBrains Mono variable wght 400-500) are a prediction about what EXP-A2 will need. If A2's prose audit finds we need e.g. Inter 300 for very-faint metadata or Source Serif 4 900 for display weight, this EXP's @font-face axis range should be widened before or at A2 integration rather than loading extra static files from A2. Flagging so the group knows the cost of the revision is 'regenerate WOFF2 with wider axis, re-commit, no selector change' — small.",
+    "--ink-3 is speculative. It is in this draft because the external reviewer's mock uses three ink tiers. If EXP-A2's prose audit finds no consumer for the third tier, the analyst recommends dropping --ink-3 as part of A2's cleanup rather than amending A1 after the fact. (The curmudgeon moderate finding on this stands; operator has not routed a clarification on it yet.)",
+    "SEMANTIC PREFIX DECISION: --semantic-accent / --semantic-warn / --semantic-crit / --semantic-good is verbose. Group may prefer a shorter prefix (e.g. --s-accent) or no prefix at all (overwriting --accent et al. in this EXP and doing the consumer migration in A5 as a big-bang). The analyst's default is the safer additive path; if the group prefers the big-bang, flip the rename and A5 subsumes the migration.",
     "BUNDLING WITH A2: if the group prefers a single-EXP foundation-plus-application, the analyst can collapse A1+A2 into one draft. Cost: larger review surface, harder to back out typography without also ripping out tokens. Kept separate here for reversibility.",
-    "PRINT PATHWAY: the current print override inherits from :root light values. If the group intends PDF output to also adopt the serif-body aesthetic (it probably should, since the external review's mock IS paper/serif), that is a natural EXP-A2 extension to the print path. Not in scope here, but flagging it so it doesn't get missed."
+    "PRINT PATHWAY: the current print override inherits from :root light values. If the group intends PDF output to also adopt the serif-body aesthetic (it probably should, since the external review's mock IS paper/serif), that is a natural EXP-A2 extension to the print path. Not in scope here, but flagging it so it doesn't get missed.",
+    "OUTSTANDING CURMUDGEON FINDINGS (unaddressed by this revision): c_2 (--rule contrast WCAG fail in both themes, 1.30:1 dark / 1.35:1 light vs 3:1 required), c_3 (--semantic-accent dark #7eb8da collides with --heading dark #7eb8da — silent, undocumented), c_5 (color-blind risk on --semantic-warn vs --semantic-crit), and the minor finding counts/framing items. The operator has not yet routed clarifications on these; the analyst did NOT silently fix them during this revision because the CLARIFICATION notes explicitly scope the work to fonts + NC8 + c_4. Flagging here so the group sees them on the review packet."
   ],
   "cross_references": [
     "HNOTE-DESIGN-REFRESH-PHASE-A-001 (monitor/analyst/human-notes.json) — source brief.",
     "HNOTE-DESIGN-REFRESH-ROUTING-001 (monitor/decisions/human-notes.json) — decider hard-hold routing.",
     "monitor/analyst/design-review-2026-04-17-external.html — external review source document; its :root block is the template this EXP adapts to dark theme.",
     "EXP-190 (monitor/analyst/expansions/EXP-190.json) — scoreboard foundational draft; similar hard-hold EXP structure used as template here.",
-    "HNOTE-SCOREBOARD-FOUNDATIONAL-001 — cross-reference; scoreboard and design refresh are independent hard-hold streams but may share overview real estate (brief §OUT_OF_SCOPE notes the scoreboard subsumes F9/R3 'What would change our mind' module)."
+    "HNOTE-SCOREBOARD-FOUNDATIONAL-001 — cross-reference; scoreboard and design refresh are independent hard-hold streams but may share overview real estate (brief §OUT_OF_SCOPE notes the scoreboard subsumes F9/R3 'What would change our mind' module).",
+    "HNOTE-DESIGN-REFRESH-PHASE-A-CLARIFICATION-001 (monitor/analyst/human-notes.json) — self-host fonts decision; NC8 introduced; routed this EXP for revision.",
+    "HNOTE-DESIGN-REFRESH-PHASE-A-CLARIFICATION-002 (monitor/analyst/human-notes.json) — NC8 amendment to grandfather GA4 G-QVD21HWH5X; explicit routing to fix anticipated_objections #2 and add curmudgeon_finding_responses for c_4.",
+    "monitor/curmudgeon/reviews/EXP-202-proposal.json — curmudgeon review; c_4 (privacy premise error) is now resolved in curmudgeon_finding_responses. c_1/c_2/c_3 remain outstanding per the revision scope note."
   ],
   "newsworthy": null,
   "newsworthiness_caveat": "Token/typography foundation is not newsworthy on its own — no visual change, no verdict change, no claim change. The full Phase A landing (once A1–A8 are approved and integrated) may be newsworthy as 'the review site's design catches up with its argument'. Reserve the newsworthy headline for the Phase A completion EXP, not EXP-A1.",
@@ -220,6 +268,62 @@
     "filename": "proposal-EXP-202-draft-ready.json",
     "action": "This EXP is DRAFT only. The signal to the decider is: 'Draft is ready; do NOT integrate until HNOTE-DESIGN-REFRESH-PHASE-A-INTEGRATION-APPROVED-NNN lands with approved_exp_ids containing EXP-202.' The decider must leave this EXP in the tracker with status=complete but must not route it into the normal integration flow until the approval HNOTE arrives."
   },
-  "tldr_evidence": "Phase A design refresh needs a typography/palette token foundation before typography can be applied or palette restricted. This EXP adds Google Fonts (Source Serif 4, Inter, JetBrains Mono) and --serif/--sans/--mono plus semantic ink/rule/accent/warn/crit/good tokens to :root and its dark override — no existing selector changes, no visual shift yet.",
-  "tldr_verdict": "DRAFT — foundational tokens only, no visual change, no consumer yet. Every one of the seven Phase A items that follows (typography application, stance statement, bar chart, accuracy-math demotion, Latest Findings demotion, palette restriction, a11y fixes) either consumes these tokens or coexists with them. Integration is blocked until the operator posts an approval HNOTE naming EXP-202."
+  "tldr_evidence": "Phase A design refresh needs a typography/palette token foundation before typography can be applied or palette restricted. This revised EXP self-hosts three variable WOFF2 font families (Source Serif 4, Inter, JetBrains Mono) under docs/fonts/ with SIL OFL notice, adds --serif/--sans/--mono plus semantic ink/rule/accent/warn/crit/good tokens to :root and its dark override, and introduces NC8 'no NEW third-party runtime dependencies' (grandfathering the one existing GA4 tag per CLARIFICATION-002). No existing selector changes; no visual shift yet.",
+  "tldr_verdict": "DRAFT — revised per CLARIFICATION-001 (self-host fonts) and CLARIFICATION-002 (GA grandfather + c_4 fix). Every one of the seven Phase A items that follows (typography application, stance statement, bar chart, accuracy-math demotion, Latest Findings demotion, palette restriction, a11y fixes) either consumes these tokens or coexists with them. Integration remains blocked until the operator posts an approval HNOTE naming EXP-202 (status, expansion_type, and integration_blocked_until are unchanged per CLARIFICATION-002).",
+  "curmudgeon_finding_responses": [
+    {
+      "finding_id": "c_4",
+      "finding_source": "monitor/curmudgeon/reviews/EXP-202-proposal.json",
+      "finding_summary_as_flagged": "EXP-202 anticipated_objection #2 response asserted 'Current docs/index.html makes zero third-party requests.' That claim was factually incorrect: docs/index.html already loads Google Analytics gtag.js from googletagmanager.com (line 7). The privacy framing was built on a false premise and biased the operator-group review toward accepting Google Fonts under a purity frame that did not apply.",
+      "operator_routing": "HNOTE-DESIGN-REFRESH-PHASE-A-CLARIFICATION-002 explicitly routes this correction: fix anticipated_objections #2 to honest framing; amend NC8 to grandfather the one existing GA third-party dep; update acceptance_criteria to the 'no NEW third-party requests' test; add this curmudgeon_finding_responses entry referencing CLARIFICATION-002 by ID.",
+      "correction_applied": [
+        "anticipated_objections[1].response rewritten to acknowledge the factual error, state the honest baseline (one grandfathered GA dep, zero new third-parties added by this EXP), and cite the curmudgeon finding + operator clarification.",
+        "non_negotiable_constraints_preserved.NC8 added with the revised NC8 wording from CLARIFICATION-002 verbatim.",
+        "acceptance_criteria updated: AC2/AC5/AC6 now test NC8 compliance — view-source has no third-party font origin; Network panel has no new third-party hosts beyond existing GA endpoints; tcpdump/HAR confirms no DNS/TCP to font CDNs.",
+        "content_diff.change_1_self_host_font_faces replaces the old Google Fonts <link>-tag approach with self-hosted @font-face declarations; docs/fonts/ directory added with the three WOFF2 files + LICENSES.md; file_ownership_registration tells the decider to classify docs/fonts/ as git-owned.",
+        "notes_for_human_review_group 'PRIVACY DEFAULT' bullet (which framed Google Fonts as the default with self-host as an option) is removed and replaced with a 'LOOK-AND-FEEL ESCAPE HATCH' bullet per CLARIFICATION-001."
+      ],
+      "references": [
+        "HNOTE-DESIGN-REFRESH-PHASE-A-CLARIFICATION-001 — self-host fonts decision and NC8 introduction",
+        "HNOTE-DESIGN-REFRESH-PHASE-A-CLARIFICATION-002 — GA grandfather amendment and explicit instruction to add this field",
+        "monitor/curmudgeon/reviews/EXP-202-proposal.json — original finding (critical severity, first hole in holes_found)"
+      ],
+      "requested_resolution": "Decider to close c_4 as addressed on integration of the revised EXP-202. This revision does NOT claim to resolve c_1/c_2/c_3 or other curmudgeon findings — those remain on the operator group's review packet and will be addressed either in a subsequent clarification, in EXP-A8 (WCAG audit for c_2 --rule contrast), or in a separate follow-on patch."
+    }
+  ],
+  "revision_history": [
+    {
+      "revised_at": "2026-04-22T05:05:51.523Z",
+      "revised_by": "analyst (scheduled run)",
+      "triggered_by": [
+        "HNOTE-DESIGN-REFRESH-PHASE-A-CLARIFICATION-001",
+        "HNOTE-DESIGN-REFRESH-PHASE-A-CLARIFICATION-002"
+      ],
+      "changes_summary": [
+        "content_diff.change_1_google_fonts_preconnect_and_stylesheet replaced by content_diff.change_1_self_host_font_faces (self-host WOFF2 under docs/fonts/; no third-party font CDN; OFL LICENSES.md committed alongside)",
+        "content_diff.change_3_no_changes_to: added explicit note that GA gtag block is unchanged; corrected font-family:monospace literal count (6 in sections.json, not 3)",
+        "acceptance_criteria: rewrote AC3-style criteria to test NC8 compliance (no third-party font origins, same-origin WOFF2 only, tcpdump/HAR confirmation); added measured-size criterion ≤150KB per file / ≤350KB aggregate",
+        "anticipated_objections[0]: acknowledged the pre-revision '60-90KB' estimate undershot (curmudgeon c_4 — by curmudgeon's index — was cold-load bandwidth); revised to 130-220KB aggregate with measurement committed",
+        "anticipated_objections[1]: rewrote the privacy response to correct the false 'zero third-party requests' premise; cites CLARIFICATION-002 + the curmudgeon finding",
+        "non_negotiable_constraints_preserved: added NC8 verbatim from CLARIFICATION-002",
+        "curmudgeon_finding_responses: new field with c_4 resolution entry",
+        "notes_for_human_review_group: removed 'PRIVACY DEFAULT' and Bunny-Fonts bullet; added 'LOOK-AND-FEEL ESCAPE HATCH' and subsetting bullets from CLARIFICATION-001; added 'OUTSTANDING CURMUDGEON FINDINGS' note listing c_2/c_3/c_5 as unaddressed-by-this-revision-by-design",
+        "cross_references: added both CLARIFICATION notes and the curmudgeon review ID",
+        "tldr_evidence / tldr_verdict: reflect self-host state and NC8 introduction",
+        "scope_item: updated to say SELF-HOSTED WOFF2 instead of Google Fonts load"
+      ],
+      "preserved_unchanged": [
+        "status: DRAFT_AWAITING_HUMAN_GROUP_REVIEW — per CLARIFICATION-002 instruction",
+        "expansion_type: FOUNDATIONAL_MODEL_CHANGE — per CLARIFICATION-002 instruction",
+        "integration_blocked_until: operator posts HNOTE-DESIGN-REFRESH-PHASE-A-INTEGRATION-APPROVED-NNN naming EXP-202 — per CLARIFICATION-002 instruction",
+        "human_note_source, companion_note — unchanged; CLARIFICATIONs are extensions of HNOTE-DESIGN-REFRESH-PHASE-A-001 not a replacement",
+        "content_diff.change_2_new_design_tokens_in_root — all :root token definitions unchanged (c_2 --rule WCAG fail and c_3 --semantic-accent/--heading hex collision remain unaddressed per revision scope note)",
+        "counter_considerations_the_analyst_must_address CC1-CC7 — unchanged",
+        "preserved_load_bearing_content — unchanged",
+        "out_of_scope_for_this_exp — unchanged",
+        "completion_signal — unchanged (draft-ready signal already fired at initial creation)"
+      ]
+    }
+  ],
+  "last_revised_at": "2026-04-22T05:05:51.523Z"
 }
