@@ -329,14 +329,20 @@ pq.queue=pq.queue.filter(item=>{
   return true;
 });
 // Flush claims onto review files (dual-write: workspace AND clone, additive only).
+// IMPORTANT: compute popped_by_queue_id_at ONCE per claim — hoisted outside the
+// per-base loop — so workspace and clone stamps are byte-identical. Previous
+// in-loop `new Date().toISOString()` drifted by 2-5 ms per write, causing
+// workspace-sync to perpetually flag "mtime-guard; git newer" on every popped
+// review file (symptom: skip-log growth with no underlying semantic divergence).
 for(const c of claimsToWrite){
+  const stamp=new Date().toISOString();
   for(const base of [WORKSPACE, CLONE]){
     const p=base+'/monitor/curmudgeon/reviews/'+c.file;
     try{
       const d=JSON.parse(fs.readFileSync(p,'utf8'));
       if(d.popped_by_queue_id==null){
         d.popped_by_queue_id=c.qid;
-        d.popped_by_queue_id_at=new Date().toISOString();
+        d.popped_by_queue_id_at=stamp;
         fs.writeFileSync(p,JSON.stringify(d,null,2));
       }
     }catch(e){/* absent on one side is fine */}
