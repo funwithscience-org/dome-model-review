@@ -158,6 +158,11 @@ function resolveTypeB(html, winsByVerdict, counts, wins, tally, sectionNav) {
     html = html.replace('{{PIE_CHART}}', chart);
   }
 
+  if (html.includes('{{VERDICT_BAR_CHART}}')) {
+    const barChart = generateVerdictBarChart(tally, wins.length);
+    html = html.replace('{{VERDICT_BAR_CHART}}', barChart);
+  }
+
   if (html.includes('{{WIN_TABLE}}')) {
     const table = wins.map(formatTableRow).join('\n');
     html = html.replace('{{WIN_TABLE}}', table);
@@ -202,7 +207,7 @@ function escapeHtml(s) {
 function renderFailureEntry(e) {
   const idLabel = escapeHtml(e.id);
   const refLabel = e.dome_ref_current
-    ? escapeHtml(e.dome_ref_current) + (e.dome_status_current ? ` <span style="color:#8b0000;font-weight:600">[${escapeHtml(e.dome_status_current)}]</span>` : '')
+    ? escapeHtml(e.dome_ref_current) + (e.dome_status_current ? ` <span style="color:var(--refuted-solid);font-weight:600">[${escapeHtml(e.dome_status_current)}]</span>` : '')
     : escapeHtml(e.dome_ref || 'unknown');
   const summary = escapeHtml(e.summary || '');
   const prediction = escapeHtml(e.prediction || '');
@@ -213,7 +218,7 @@ function renderFailureEntry(e) {
   const staleNote = e.needs_reconciliation
     ? `<p style="font-size:.85rem;color:#888;font-style:italic;margin:.5rem 0 0">Note: the <code>${escapeHtml(e.dome_ref || '')}</code> reference above is from an earlier dome version and may have been reused on the current site for an unrelated prediction. Reconciliation against the V50.6→V51.1 history is in progress.</p>`
     : '';
-  return `<div style="border-left:4px solid #c45050;background:var(--card-bg);padding:1rem 1.25rem;margin:1rem 0;border-radius:0 6px 6px 0">
+  return `<div style="border-left:4px solid var(--rule);background:var(--card-bg);padding:1rem 1.25rem;margin:1rem 0;border-radius:0 6px 6px 0">
 <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:.5rem">
   <strong>${idLabel}: ${summary}</strong>
   <span style="font-size:.85rem;color:#888">${refLabel}</span>
@@ -244,12 +249,12 @@ function renderFailuresBlock(failures, silentFailureEntries, acknowledgedBucketE
 <h2 id="p3-failures">Failures the dome doesn't count</h2>
 
 <div class="scorecard" style="grid-template-columns:repeat(3,1fr);margin:1rem 0">
-<div class="sc-card sc-sm" style="border-left:4px solid #c45050">
+<div class="sc-card sc-sm" style="border-left:4px solid var(--rule)">
 <div class="sc-number">${totalDome}</div>
 <div class="sc-label">Acknowledged</div>
 <div class="sc-sublabel">The dome's own count — items he labels "refined" and includes in his ${failures.dome_claimed_accuracy} denominator</div>
 </div>
-<div class="sc-card sc-sm" style="border-left:4px solid #8b0000">
+<div class="sc-card sc-sm" style="border-left:4px solid var(--refuted-solid)">
 <div class="sc-number">${totalSilent}</div>
 <div class="sc-label">Silent</div>
 <div class="sc-sublabel">Predictions visibly removed or suspended but excluded from his accuracy denominator</div>
@@ -426,17 +431,75 @@ function generatePieChart(tally, total) {
 `;
 }
 
+function generateVerdictBarChart(tally, total) {
+  // Anchor map — each verdict bar links to its grouped section in the WINS tab.
+  // 'Unfalsifiable' shares section 3.6 with 'Misleading' (combined heading id="misleading");
+  // both bars therefore route to the same anchor.
+  const ANCHOR = {
+    'Refuted by Data':     '#refuted',
+    'Self-Contradicted':   '#selfcon',
+    'Std Model Explains':  '#stdmodel',
+    'Misleading':          '#misleading',
+    'Not Demonstrated':    '#notdemo',
+    'Unfalsifiable':       '#misleading'
+  };
+  const SHORT_CLASS = {
+    'Refuted by Data':     'vb-refuted',
+    'Self-Contradicted':   'vb-selfcon',
+    'Std Model Explains':  'vb-stdmodel',
+    'Misleading':          'vb-misleading',
+    'Not Demonstrated':    'vb-notdemo',
+    'Unfalsifiable':       'vb-unfalsifiable'
+  };
+  // Sort by count descending; tie-break alphabetically (deterministic for build reproducibility).
+  const ordered = VERDICT_ORDER.slice().sort((a, b) => {
+    const ca = tally[a] || 0, cb = tally[b] || 0;
+    if (cb !== ca) return cb - ca;
+    return a.localeCompare(b);
+  });
+  const maxCount = ordered.reduce((m, v) => Math.max(m, tally[v] || 0), 0) || 1;
+  const rows = ordered.map(verdict => {
+    const count = tally[verdict] || 0;
+    const pct = total > 0 ? ((count / total) * 100).toFixed(0) : '0';
+    const widthPct = ((count / maxCount) * 100).toFixed(1);
+    const anchor = ANCHOR[verdict];
+    const shortCls = SHORT_CLASS[verdict];
+    return `<a class="verdict-bar-row" href="${anchor}" onclick="showTab('wins');return false" aria-label="${verdict}: ${count} of ${total} claims (${pct} percent). Click to view detailed analysis.">
+  <span class="vb-label">${verdict}</span>
+  <span class="vb-bar-container">
+    <span class="vb-bar ${shortCls}" style="width:${widthPct}%"><span class="vb-count">${count}</span></span>
+  </span>
+  <span class="vb-pct">${pct}%</span>
+</a>`;
+  }).join('\n');
+  return `
+<section class="verdict-bars" aria-labelledby="verdict-bars-heading">
+  <h2 id="verdict-bars-heading" class="vb-heading">How the ${total} claimed wins actually land</h2>
+  <p class="vb-caption">Sorted by count. Click any verdict to jump to the detailed analysis.</p>
+  <div class="vb-rows">
+    ${rows}
+  </div>
+</section>
+`;
+}
+
 // ════ CSS (EXACT FROM CURRENT INDEX.HTML + NEW TAB STYLES + SCORECARD) ════
 
 const CSS = `
 @font-face{font-family:'Source Serif 4';src:url('./fonts/source-serif-4-variable.woff2') format('woff2-variations'),url('./fonts/source-serif-4-variable.woff2') format('woff2');font-weight:400 700;font-style:oblique 0deg 15deg;font-display:swap}@font-face{font-family:'Inter';src:url('./fonts/inter-variable.woff2') format('woff2-variations'),url('./fonts/inter-variable.woff2') format('woff2');font-weight:400 700;font-style:normal;font-display:swap}@font-face{font-family:'JetBrains Mono';src:url('./fonts/jetbrains-mono-variable.woff2') format('woff2-variations'),url('./fonts/jetbrains-mono-variable.woff2') format('woff2');font-weight:400 500;font-style:normal;font-display:swap}
-:root{--bg:#fff;--text:#222;--heading:#2E4057;--accent:#4A6FA5;--link:#0563C1;--border:#ccc;--table-header:#2E4057;--refuted:rgba(229,115,115,0.25);--stdmodel:rgba(102,187,106,0.25);--selfcon:rgba(66,165,245,0.25);--misleading:rgba(255,167,38,0.25);--unfalsifiable:rgba(189,189,189,0.25);--notdemo:rgba(171,71,188,0.25);--refuted-solid:#E57373;--stdmodel-solid:#66BB6A;--selfcon-solid:#42A5F5;--misleading-solid:#FFA726;--unfalsifiable-solid:#BDBDBD;--notdemo-solid:#AB47BC;--code-bg:#f5f5f5;--card-bg:#fafafa;--serif:'Source Serif 4',Georgia,'Times New Roman',serif;--sans:'Inter',system-ui,-apple-system,'Segoe UI',Arial,Helvetica,sans-serif;--mono:'JetBrains Mono',ui-monospace,'SF Mono',Consolas,'Courier New',monospace;--ink:#181715;--ink-2:#3A352D;--ink-3:#6E675B;--rule:#E4DDCB;--semantic-accent:#1e5f8a;--semantic-accent-soft:#d8e8f2;--semantic-warn:#8a5a1e;--semantic-warn-soft:#f3e6d3;--semantic-crit:#7a2e2e;--semantic-crit-soft:#f2dada;--semantic-good:#2e5a2e;--semantic-good-soft:#d9ead9}
-@media(prefers-color-scheme:dark){:root{--bg:#1a1a2e;--text:#e0e0e0;--heading:#7eb8da;--accent:#8fafd4;--link:#5dade2;--border:#444;--table-header:#1c3045;--refuted:rgba(239,83,80,0.2);--stdmodel:rgba(67,160,71,0.2);--selfcon:rgba(30,136,229,0.2);--misleading:rgba(251,140,0,0.2);--unfalsifiable:rgba(117,117,117,0.25);--notdemo:rgba(142,36,170,0.2);--refuted-solid:#ef5350;--stdmodel-solid:#43a047;--selfcon-solid:#1e88e5;--misleading-solid:#fb8c00;--unfalsifiable-solid:#757575;--notdemo-solid:#8e24aa;--code-bg:#2a2a3e;--card-bg:#222240;--ink:#e8e6e1;--ink-2:#b8b5ad;--ink-3:#8a8680;--rule:#2e2e4a;--semantic-accent:#7eb8da;--semantic-accent-soft:#2a4a65;--semantic-warn:#d99860;--semantic-warn-soft:#3d2e20;--semantic-crit:#d46a6a;--semantic-crit-soft:#3d1f1f;--semantic-good:#7aa87a;--semantic-good-soft:#1f2e1f}}
+:root{--bg:#fff;--text:#222;--heading:#2E4057;--accent:#4A6FA5;--link:#0563C1;--border:#ccc;--table-header:#2E4057;--refuted:var(--semantic-crit-soft);--stdmodel:rgba(102,187,106,0.25);--selfcon:rgba(66,165,245,0.25);--misleading:rgba(255,167,38,0.25);--unfalsifiable:rgba(189,189,189,0.25);--notdemo:rgba(171,71,188,0.25);--refuted-solid:var(--semantic-crit);--stdmodel-solid:#66BB6A;--selfcon-solid:#42A5F5;--misleading-solid:#FFA726;--unfalsifiable-solid:#BDBDBD;--notdemo-solid:#AB47BC;--code-bg:#f5f5f5;--card-bg:#fafafa;--serif:'Source Serif 4',Georgia,'Times New Roman',serif;--sans:'Inter',system-ui,-apple-system,'Segoe UI',Arial,Helvetica,sans-serif;--mono:'JetBrains Mono',ui-monospace,'SF Mono',Consolas,'Courier New',monospace;--ink:#181715;--ink-2:#3A352D;--ink-3:#6E675B;--rule:#E4DDCB;--semantic-accent:#1e5f8a;--semantic-accent-soft:#d8e8f2;--semantic-warn:#8a5a1e;--semantic-warn-soft:#f3e6d3;--semantic-crit:#7a2e2e;--semantic-crit-soft:#f2dada;--semantic-good:#2e5a2e;--semantic-good-soft:#d9ead9}
+@media(prefers-color-scheme:dark){:root{--bg:#1a1a2e;--text:#e0e0e0;--heading:#7eb8da;--accent:#8fafd4;--link:#5dade2;--border:#444;--table-header:#1c3045;--refuted:var(--semantic-crit-soft);--stdmodel:rgba(67,160,71,0.2);--selfcon:rgba(30,136,229,0.2);--misleading:rgba(251,140,0,0.2);--unfalsifiable:rgba(117,117,117,0.25);--notdemo:rgba(142,36,170,0.2);--refuted-solid:var(--semantic-crit);--stdmodel-solid:#43a047;--selfcon-solid:#1e88e5;--misleading-solid:#fb8c00;--unfalsifiable-solid:#757575;--notdemo-solid:#8e24aa;--code-bg:#2a2a3e;--card-bg:#222240;--ink:#e8e6e1;--ink-2:#b8b5ad;--ink-3:#8a8680;--rule:#2e2e4a;--semantic-accent:#7eb8da;--semantic-accent-soft:#2a4a65;--semantic-warn:#d99860;--semantic-warn-soft:#3d2e20;--semantic-crit:#d46a6a;--semantic-crit-soft:#3d1f1f;--semantic-good:#7aa87a;--semantic-good-soft:#1f2e1f}}
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'Segoe UI',Arial,Helvetica,sans-serif;line-height:1.65;color:var(--text);background:var(--bg);max-width:960px;margin:0 auto;padding:1rem 1.5rem 3rem;padding-top:0}
+body{font-family:var(--serif);line-height:1.65;color:var(--text);background:var(--bg);max-width:960px;margin:0 auto;padding:1rem 1.5rem 3rem;padding-top:0;font-weight:400;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+h1,h2,h3,details .ps-summary h2{font-family:var(--serif);font-weight:600;letter-spacing:-0.005em}
 h1{font-size:1.8rem;color:var(--heading);margin:2.5rem 0 1rem;padding-bottom:.3rem;border-bottom:2px solid var(--accent)}
 h2{font-size:1.4rem;color:var(--heading);margin:2rem 0 .8rem}
 h3{font-size:1.15rem;color:var(--accent);margin:1.5rem 0 .6rem}
+details .ps-summary .ps-tldr,details .ks-summary .ks-tldr{font-family:var(--serif);font-style:italic}
+.tab-btn,.section-nav a,.section-nav span,.nav-prev,.nav-next,.dl-card,.dl-card .dl-label,nav.toc,nav.toc a,footer,th,.title-block .subtitle,.title-block .meta,.pred-meta,.scorecard-framing,.sc-label,.ca-tag,.ca-label,.verdict-tag,.vt-refuted,.vt-std,.vt-selfcon,.vt-misleading,.vt-unfalsifiable,.vt-notdemo,.vl,.vl-refuted,.vl-std,.vl-selfcon,.vl-misleading,.vl-unfalsifiable,.vl-notdemo,.ks-status{font-family:var(--sans)}
+th,.verdict-tag,.ks-status,.vl{letter-spacing:0.01em}
+code,kbd,samp,.formula{font-family:var(--mono);font-size:0.92em;font-feature-settings:"calt" 0,"liga" 0}
+.formula{display:block;text-align:center;padding:0.6em 0.8em;background:var(--code-bg);border-left:3px solid var(--rule);border-radius:0 4px 4px 0;margin:0.6em 0;overflow-x:auto;max-width:100%}
 p{margin:.5rem 0}
 a{color:var(--link);text-decoration:underline}
 a:hover{text-decoration:none}
@@ -444,6 +507,7 @@ a:hover{text-decoration:none}
 .title-block h1{border:none;font-size:2.4rem;margin:.3rem 0}
 .title-block .subtitle{font-size:1.1rem;color:#666;margin:.2rem 0}
 .title-block .meta{font-size:.95rem;color:#999;margin-top:1rem}
+.stance-statement{font-family:var(--serif);font-size:0.95rem;line-height:1.55;color:var(--ink-2);max-width:56ch;margin:0 auto 1.5rem;font-style:italic;text-wrap:pretty}
 .scorecard{display:grid;gap:1.5rem;margin:2rem 0;max-width:none}
 .sc-hero{grid-template-columns:repeat(4,1fr)}
 @media(max-width:1100px){.sc-hero{grid-template-columns:repeat(2,1fr)}}
@@ -461,6 +525,25 @@ a:hover{text-decoration:none}
 .scorecard .sc-card.sc-sm .sc-label{font-size:.85rem;margin:.4rem 0 .2rem}
 .scorecard .sc-card.sc-sm .sc-sublabel{font-size:.78rem}
 .sc-domains{grid-template-columns:repeat(3,1fr)}
+.verdict-bars{margin:1.5rem 0 2rem;padding:0;border:none}
+.verdict-bars .vb-heading{font-size:1.15rem;font-weight:600;color:var(--heading);margin:0 0 .35rem;border:none;padding:0;text-align:left}
+.verdict-bars .vb-caption{font-size:.9rem;color:var(--text);opacity:.75;margin:0 0 .8rem}
+.vb-rows{display:flex;flex-direction:column;gap:.45rem}
+.verdict-bar-row{display:flex;align-items:center;gap:.75rem;text-decoration:none;color:var(--text);padding:.15rem .25rem;border-radius:4px;transition:background .15s}
+.verdict-bar-row:hover{background:var(--card-bg);text-decoration:none}
+.verdict-bar-row:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.verdict-bar-row .vb-label{flex:0 0 11rem;font-weight:600;font-size:.95rem;color:var(--text);text-align:right}
+.verdict-bar-row .vb-bar-container{flex:1;background:var(--card-bg);border:1px solid var(--border);border-radius:4px;height:1.6rem;overflow:hidden;position:relative;min-width:0}
+.verdict-bar-row .vb-bar{height:100%;display:flex;align-items:center;justify-content:flex-end;padding:0 .55rem;color:#fff;font-weight:700;font-size:.85rem;text-shadow:0 1px 2px rgba(0,0,0,.45);min-width:1.6rem;border-radius:3px 0 0 3px;transition:filter .15s}
+.verdict-bar-row:hover .vb-bar{filter:brightness(1.08)}
+.verdict-bar-row .vb-bar .vb-count{display:inline-block}
+.verdict-bar-row .vb-pct{flex:0 0 3rem;text-align:right;font-size:.85rem;color:var(--text);opacity:.75;font-variant-numeric:tabular-nums}
+.vb-bar.vb-refuted{background:var(--refuted-solid)}
+.vb-bar.vb-selfcon{background:var(--selfcon-solid)}
+.vb-bar.vb-stdmodel{background:var(--stdmodel-solid)}
+.vb-bar.vb-misleading{background:var(--misleading-solid)}
+.vb-bar.vb-notdemo{background:var(--notdemo-solid)}
+.vb-bar.vb-unfalsifiable{background:var(--unfalsifiable-solid)}
 .verdict-legend{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:.5rem;margin:1rem 0}
 .verdict-legend .vl{padding:.5rem .8rem;border-radius:4px;font-size:.9rem;border-left:4px solid transparent}
 .vl-refuted{background:var(--refuted);border-left-color:var(--refuted-solid)}.vl-std{background:var(--stdmodel);border-left-color:var(--stdmodel-solid)}.vl-selfcon{background:var(--selfcon);border-left-color:var(--selfcon-solid)}.vl-misleading{background:var(--misleading);border-left-color:var(--misleading-solid)}.vl-unfalsifiable{background:var(--unfalsifiable);border-left-color:var(--unfalsifiable-solid)}.vl-notdemo{background:var(--notdemo);border-left-color:var(--notdemo-solid)}
@@ -484,7 +567,7 @@ td.v-notdemo{background:var(--notdemo);font-weight:700}
 .ca-tag{display:inline-flex;align-items:center;gap:.3rem;font-size:.75rem;font-weight:600;padding:.2rem .5rem;border-radius:3px;background:#f0f0f0;color:#555;border:1px solid #ddd}
 .ca-tag.tag-true{background:#FFF3E0;color:#BF360C;border-color:#FFCC80}
 .ca-tag.tag-false{background:#E8F5E9;color:#2E7D32;border-color:#A5D6A7}
-.ca-tag.tag-monitoring-hardcoded{background:#FFEBEE;color:#B71C1C;border-color:#EF9A9A}
+.ca-tag.tag-monitoring-hardcoded{background:var(--semantic-warn-soft);color:var(--semantic-warn);border-color:var(--semantic-warn)}
 .ca-tag.tag-monitoring-live{background:#E8F5E9;color:#1B5E20;border-color:#A5D6A7}
 .ca-tag.tag-monitoring-none{background:#FFF8E1;color:#F57F17;border-color:#FFE082}
 .ca-tag .ca-icon{font-size:.8rem}
@@ -551,9 +634,9 @@ details[open] .ps-summary::after{content:'▾ collapse'}
 details .ps-detail{padding:.6rem 1.2rem 1.2rem;border:1px solid var(--border);border-top:none;border-radius:0 0 6px 6px;background:var(--bg);margin-bottom:1.5rem}
 details[open] .ps-summary{border-radius:6px 6px 0 0;margin-bottom:0;border-bottom:none}
 
-@media(max-width:600px){body{padding:.5rem 1rem}h1{font-size:1.4rem}h2{font-size:1.2rem}table{font-size:.8rem}.tab-bar{padding:0.5rem .75rem;gap:.25rem}.tab-btn{padding:0.5rem 0.8rem;font-size:.85rem}.sc-hero{grid-template-columns:1fr}.sc-breakdown{grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:.6rem}.sc-domains{grid-template-columns:1fr}.ks-test{padding:.8rem 1rem}details .ks-summary{padding:.6rem .8rem}details .ks-summary::after{font-size:.65rem}details .ps-summary{padding:.6rem .8rem}details .ps-summary::after{font-size:.65rem}[style*="float:right"]{float:none!important;max-width:100%!important;margin:1rem 0!important}}
+@media(max-width:600px){body{padding:.5rem 1rem}h1{font-size:1.4rem}h2{font-size:1.2rem}table{font-size:.8rem}.tab-bar{padding:0.5rem .75rem;gap:.25rem}.tab-btn{padding:0.5rem 0.8rem;font-size:.85rem}.sc-hero{grid-template-columns:1fr}.sc-breakdown{grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:.6rem}.sc-domains{grid-template-columns:1fr}.ks-test{padding:.8rem 1rem}details .ks-summary{padding:.6rem .8rem}details .ks-summary::after{font-size:.65rem}details .ps-summary{padding:.6rem .8rem}details .ps-summary::after{font-size:.65rem}[style*="float:right"]{float:none!important;max-width:100%!important;margin:1rem 0!important}.stance-statement{font-size:0.9rem;max-width:90%;margin:0 auto 1rem}.verdict-bar-row .vb-label{flex:0 0 8.5rem;font-size:.85rem} .verdict-bar-row .vb-bar-container{height:1.4rem} .verdict-bar-row .vb-bar{font-size:.78rem;padding:0 .4rem} .verdict-bar-row .vb-pct{flex:0 0 2.5rem;font-size:.78rem}}
 
-@media print{:root{--bg:#fff;--text:#222;--heading:#2E4057;--accent:#4A6FA5;--link:#0563C1;--border:#999;--table-header:#2E4057;--refuted:rgba(229,115,115,0.25);--stdmodel:rgba(102,187,106,0.25);--selfcon:rgba(66,165,245,0.25);--misleading:rgba(255,167,38,0.25);--unfalsifiable:rgba(189,189,189,0.25);--notdemo:rgba(171,71,188,0.25);--refuted-solid:#E57373;--stdmodel-solid:#66BB6A;--selfcon-solid:#42A5F5;--misleading-solid:#FFA726;--unfalsifiable-solid:#BDBDBD;--notdemo-solid:#AB47BC;--code-bg:#f5f5f5;--card-bg:#fafafa;--serif:'Source Serif 4',Georgia,'Times New Roman',serif;--sans:'Inter',system-ui,-apple-system,'Segoe UI',Arial,Helvetica,sans-serif;--mono:'JetBrains Mono',ui-monospace,'SF Mono',Consolas,'Courier New',monospace;--ink:#181715;--ink-2:#3A352D;--ink-3:#6E675B;--rule:#E4DDCB;--semantic-accent:#1e5f8a;--semantic-accent-soft:#d8e8f2;--semantic-warn:#8a5a1e;--semantic-warn-soft:#f3e6d3;--semantic-crit:#7a2e2e;--semantic-crit-soft:#f2dada;--semantic-good:#2e5a2e;--semantic-good-soft:#d9ead9}
+@media print{:root{--bg:#fff;--text:#222;--heading:#2E4057;--accent:#4A6FA5;--link:#0563C1;--border:#999;--table-header:#2E4057;--refuted:var(--semantic-crit-soft);--stdmodel:rgba(102,187,106,0.25);--selfcon:rgba(66,165,245,0.25);--misleading:rgba(255,167,38,0.25);--unfalsifiable:rgba(189,189,189,0.25);--notdemo:rgba(171,71,188,0.25);--refuted-solid:var(--semantic-crit);--stdmodel-solid:#66BB6A;--selfcon-solid:#42A5F5;--misleading-solid:#FFA726;--unfalsifiable-solid:#BDBDBD;--notdemo-solid:#AB47BC;--code-bg:#f5f5f5;--card-bg:#fafafa;--serif:'Source Serif 4',Georgia,'Times New Roman',serif;--sans:'Inter',system-ui,-apple-system,'Segoe UI',Arial,Helvetica,sans-serif;--mono:'JetBrains Mono',ui-monospace,'SF Mono',Consolas,'Courier New',monospace;--ink:#181715;--ink-2:#3A352D;--ink-3:#6E675B;--rule:#E4DDCB;--semantic-accent:#1e5f8a;--semantic-accent-soft:#d8e8f2;--semantic-warn:#8a5a1e;--semantic-warn-soft:#f3e6d3;--semantic-crit:#7a2e2e;--semantic-crit-soft:#f2dada;--semantic-good:#2e5a2e;--semantic-good-soft:#d9ead9}
 body{max-width:100%;padding:0.6in 0.7in;font-size:9.5pt;line-height:1.5}
 h1{font-size:1.5rem;margin-top:1.5rem;page-break-before:always;page-break-after:avoid}
 .title-block h1{page-break-before:avoid;page-break-after:avoid}
@@ -582,15 +665,37 @@ details{display:block}details .ks-summary::after,details .ps-summary::after{disp
 .dedup-table table.dedup tr.dedup-total{background:#f9f9f9;font-weight:bold}
 .dedup-table table.dedup tfoot td{background:#f0f0f0;font-size:0.9em;padding:8px}
 @media (max-width:700px){.dedup-table table.dedup{font-size:0.82em}}
-.breaking-news{border:2px solid var(--accent);border-radius:10px;padding:1rem 1.2rem;margin:1.5rem 0;background:linear-gradient(135deg,var(--card-bg),rgba(42,100,150,0.04))}
-.bn-header{margin:0 0 .8rem;font-size:1.15rem;color:var(--accent);border:none}
-.bn-item{display:flex;gap:.8rem;padding:.6rem 0;border-bottom:1px solid var(--border);align-items:baseline}
+.breaking-news{border:1px solid var(--rule,var(--border));border-radius:6px;padding:.75rem 1rem;margin:2rem 0 1rem;background:var(--card-bg)}
+.bn-header{margin:0 0 .55rem;font-size:.78rem;color:var(--ink-2,#888);border:none;text-transform:uppercase;letter-spacing:.08em;font-weight:600;font-family:var(--sans,'Segoe UI',Arial,Helvetica,sans-serif)}
+.bn-item{display:flex;gap:.8rem;padding:.45rem 0;border-bottom:1px solid var(--rule,var(--border));align-items:baseline}
 .bn-item:last-child{border-bottom:none;padding-bottom:0}
-.bn-date{font-size:.8rem;color:#888;white-space:nowrap;min-width:5.5rem}
-.bn-text{font-size:.93rem;line-height:1.5}
-.bn-text strong{color:var(--text)}
-@media print{.breaking-news{border:1px solid #ccc;break-inside:avoid}}
+.bn-date{font-size:.75rem;color:var(--ink-2,#888);white-space:nowrap;min-width:5.5rem;font-family:var(--mono,ui-monospace,SFMono-Regular,Consolas,'Liberation Mono',monospace)}
+.bn-text{font-size:.85rem;line-height:1.5;color:var(--text)}
+.bn-text strong{color:var(--text);font-weight:600}
+
+/* === EXP-213 / EXP-A8 accessibility additions === */
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
+.skip-link{position:absolute;left:-9999px;top:0;background:var(--accent);color:#fff;padding:.65rem 1rem;z-index:10000;border-radius:0 0 4px 0;text-decoration:none;min-height:44px;display:inline-block;font-weight:600}
+.skip-link:focus,.skip-link:focus-visible{left:0}
+.vt-glyph,.vb-glyph{display:inline-block;margin-right:.35em;font-weight:700;line-height:1}
+.verdict-badge{display:inline-block;padding:.15rem .5rem;border-radius:3px;font-weight:600;font-size:.88rem;border-left:3px solid transparent}
+.verdict-badge.vb-standard_physics{background:var(--stdmodel,rgba(67,160,71,0.18));color:var(--text);border-left-color:var(--stdmodel-solid)}
+.verdict-badge.vb-recycled{background:var(--misleading,rgba(251,140,0,0.18));color:var(--text);border-left-color:var(--misleading-solid)}
+.verdict-badge.vb-falsified{background:var(--refuted,rgba(239,83,80,0.2));color:var(--text);border-left-color:var(--refuted-solid)}
+.verdict-badge.vb-unfalsifiable{background:var(--unfalsifiable,rgba(117,117,117,0.25));color:var(--text);border-left-color:var(--unfalsifiable-solid)}
+.verdict-badge.vb-pending{background:var(--notdemo,rgba(142,36,170,0.2));color:var(--text);border-left-color:var(--notdemo-solid)}
+.verdict-badge.vb-self_contradicted{background:var(--selfcon,rgba(30,136,229,0.2));color:var(--text);border-left-color:var(--selfcon-solid)}
+.verdict-badge.vb-misleading{background:var(--misleading,rgba(251,140,0,0.18));color:var(--text);border-left-color:var(--misleading-solid)}
+.toc a{display:block;padding:.65rem .5rem;text-decoration:none;border-radius:3px;min-height:44px;line-height:1.4}
+.toc a:hover{background:var(--card-bg);text-decoration:underline}
+.toc li{margin:0}
+.win-anchor{display:inline-block;padding:.45rem .6rem;min-width:44px;min-height:44px;text-align:center;border-radius:4px;text-decoration:none;font-weight:600}
+.win-anchor:hover{background:var(--card-bg);text-decoration:underline}
+@media(pointer:coarse){.win-anchor{padding:.6rem .7rem}}
+@media(max-width:600px){.tab-btn{padding:.7rem .9rem;font-size:.85rem;min-height:44px}}
+@media(max-width:720px){.stacked-card-table thead{display:none}.stacked-card-table tr{display:block;margin:0 0 1rem;border:1px solid var(--border);border-radius:6px;padding:.6rem .8rem;background:var(--card-bg)}.stacked-card-table td{display:block;border:none;padding:.3rem 0;font-size:.95rem}.stacked-card-table td::before{content:attr(data-label) ": ";font-weight:600;color:var(--ink-2,#888);display:inline-block;min-width:7rem;text-transform:uppercase;letter-spacing:.04em;font-size:.78rem;font-family:var(--sans,inherit)}.stacked-card-table td.v-refuted::before,.stacked-card-table td.v-std::before,.stacked-card-table td.v-selfcon::before,.stacked-card-table td.v-misleading::before,.stacked-card-table td.v-unfalsifiable::before,.stacked-card-table td.v-notdemo::before{content:"Verdict: "}}
 `;
+
 
 
 // ════ UTILITIES ════
@@ -763,14 +868,15 @@ function formatPredictionDetail(pred) {
   const anchorId = 'pred-' + pred.id.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 
   // Verdict badge color mapping (match kill-shot badge style)
-  const badgeColors = {
-    'standard_physics': 'background:#C8E6C9;color:#1B5E20',
-    'recycled': 'background:#FFE0B2;color:#BF360C',
-    'falsified': 'background:#FFCDD2;color:#B71C1C',
-    'unfalsifiable': 'background:#E0E0E0;color:#424242',
-    'pending': 'background:#D1C4E9;color:#4A148C',
+  // Verdict badge glyph mapping (paired with class-driven color via .vb-${verdict})
+  const badgeGlyphs = {
+    'standard_physics': '\u2713',  // ✓
+    'recycled':         '\u21BB',  // ↻
+    'falsified':        '\u2715',  // ✕
+    'unfalsifiable':    '\u25CC',  // ◌
+    'pending':          '\u29D6',  // ⧖ (hourglass)
   };
-  const badgeStyle = badgeColors[verdict] || badgeColors['pending'];
+  const badgeGlyph = badgeGlyphs[verdict] || badgeGlyphs['pending'];
 
   // TLDR: prefer dedicated tldr field, fall back to detail_reasoning, then generic
   const tldr = pred.tldr
@@ -782,7 +888,7 @@ function formatPredictionDetail(pred) {
   // ── Summary bar (always visible, kill-shot pattern) ──
   let html = `<div class="ks-test"><details id="${anchorId}"><summary class="ks-summary">`;
   html += `<h2 style="display:inline;margin:0">${escapeHtml(pred.id)}: ${escapeHtml(pred.claim || 'No claim text')}`;
-  html += ` <span class="verdict-badge" style="${badgeStyle};padding:2px 8px;border-radius:3px;font-weight:600;margin-left:8px;">${escapeHtml(verdictLabel)}</span>`;
+  html += ` <span class="verdict-badge vb-${verdict}" style="margin-left:8px"><span class="vb-glyph" aria-hidden="true">${badgeGlyph}</span>${escapeHtml(verdictLabel)}</span>`;
   html += `</h2>`;
   html += `<p class="ks-tldr">${tldr}</p>`;
   html += `</summary><div class="ks-detail">\n`;
@@ -1220,6 +1326,7 @@ ${CSS}
 </style>
 </head>
 <body>
+<a class="skip-link" href="#main">Skip to main content</a>
 
 <div class="tab-bar">
   <button class="tab-btn active" onclick="showTab('overview')">Overview</button>
@@ -1235,16 +1342,19 @@ ${CSS}
   <button class="tab-btn" onclick="showTab('ai')">AI & Conclusions</button>
   <button class="tab-btn" onclick="showTab('refs')">References</button>
 </div>
-
+<main id="main">
 <div class="tab-content active" id="overview">
 
 <div class="title-block">
+<p class="stance-statement">The world is a globe. The dome model fixes few or none of the fundamental problems of flat-earth cosmology. That does not prevent us from engaging with the specific claims it does make — and that is what this document does.</p>
 <h1 style="border:none">Critical Review</h1>
 <h1 style="border:none;font-size:1.6rem;font-weight:400">Ovoid Cavity Cosmological Model ${DOME_VERSION}</h1>
 <p class="subtitle">(formerly Dome Cosmological Model V50.6)</p>
 <p class="subtitle">Point-by-Point Analysis of ${counts.total} Claimed Wins, Live Power Dashboard,<br>Falsification Tests, Version Change Tracking, and AI Prompt Injection Analysis</p>
 <p class="meta">${BUILD_DATE} &nbsp;|&nbsp; Version ${REVIEW_VERSION}<br>Source: <a href="https://john09289.github.io/predictions">john09289.github.io/predictions</a></p>
 </div>
+
+${generateVerdictBarChart(tally, wins.length)}
 
 <div class="scorecard sc-hero" style="grid-template-columns:repeat(4,1fr)">
 <div class="sc-card">
@@ -1257,7 +1367,7 @@ ${CSS}
 <div class="sc-label">Actual Wins</div>
 <div class="sc-sublabel">Not one claim produces a result that the globe model can't explain and the dome uniquely can</div>
 </div>
-<div class="sc-card" style="border-left:4px solid #c45050">
+<div class="sc-card" style="border-left:4px solid var(--rule)">
 <div class="sc-number">${failures.dome_claimed_failures} + ${silentFailures}</div>
 <div class="sc-label">Actual Failures</div>
 <div class="sc-sublabel">He admits ${failures.dome_claimed_failures}. We found ${silentFailures} more he silently removed. Honest accuracy: <strong>${honestAccuracy}</strong>, not ${failures.dome_claimed_accuracy}. <a href="#p3-failures" onclick="showTab('wins');return false">Details →</a></div>
@@ -1267,60 +1377,7 @@ ${CSS}
 <div class="sc-label">Timestamp Error</div>
 <div class="sc-sublabel">His blockchain proof timestamps the <em>observations</em>, not the predictions. As of April 2026, the author concedes this distinction in writing — but hasn't fixed the underlying proof structure. <a href="#timestamp-error" onclick="showTab('timestamp');return false">Details →</a></div>
 </div>
-</div>
-
-<div class="breaking-news">
-<h2 class="bn-header">&#128240; Latest Findings</h2>
-<div class="bn-item">
-<span class="bn-date">2026-04-17</span>
-<span class="bn-text"><strong>Dome Author Changes Timestamp Narrative — But Doesn't Fix the Problem.</strong> A new <code>methodology.json</code> concedes that OpenTimestamps alone doesn't prove claim-level prospectivity — the exact critique from our Timestamp Error tab. The structural fix (a predictions-only file with its own blockchain anchor) is still not implemented. His own new claim taxonomy leaves the "prospective confirmed" column empty for every WIN classified so far. <a href="#ts-april-2026-update" onclick="showTab('timestamp');document.getElementById('ts-april-2026-update').open=true;return false">Full update →</a></span>
-</div>
-<div class="bn-item">
-<span class="bn-date">2026-04-12</span>
-<span class="bn-text"><strong>Dome's Refraction Fix Destroys Its Own Coordinate System.</strong> To avoid a sun/firmament collision, the model declares the sun an optical illusion — but the same refractive medium (n(r) = 1.2–2.8, vs Earth's 1.0003) contaminates every Polaris-based distance measurement the dome uses to build its map. The coordinate system collapses, taking 22 dependent WINs with it. <a href="#section-1-8">Full analysis →</a></span>
-</div>
-<div class="bn-item">
-<span class="bn-date">2026-04-10</span>
-<span class="bn-text"><strong>${context.predCounts.total} Predictions Cataloged — ${context.predCounts.deadOnArrival} Are Dead on Arrival.</strong> We datamined every testable claim from the dome's predictions page. Of ${context.predCounts.total} entries: ${context.predCounts.stdRelabel} are standard physics relabeled as dome predictions, ${context.predCounts.ourFalsified} are already falsified by hard data, ${context.predCounts.ourRecycled} recycle existing WINs, and ${context.predCounts.ourUnfalsifiable} are untestable. <a href="#pred-mined">See the full catalog →</a></span>
-</div>
-</div>
-
-<p style="text-align:center;font-size:.95rem;color:#888;margin:0 0 .5rem">Where the ${counts.total} claims actually land:</p>
-
-<div class="scorecard sc-breakdown">
-<div class="sc-card sc-sm" style="border-left:4px solid var(--refuted-solid)">
-<div class="sc-number">${tally['Refuted by Data'] || 0}</div>
-<div class="sc-label">Refuted by Data</div>
-<div class="sc-sublabel">Measurements directly contradict the claim</div>
-</div>
-<div class="sc-card sc-sm" style="border-left:4px solid var(--selfcon-solid)">
-<div class="sc-number">${tally['Self-Contradicted'] || 0}</div>
-<div class="sc-label">Self-Contradicted</div>
-<div class="sc-sublabel">The dome's own math gives the wrong answer</div>
-</div>
-<div class="sc-card sc-sm" style="border-left:4px solid var(--misleading-solid)">
-<div class="sc-number">${tally['Misleading'] || 0}</div>
-<div class="sc-label">Misleading</div>
-<div class="sc-sublabel">Data is cherry-picked, misrepresented, or duplicated</div>
-</div>
-<div class="sc-card sc-sm" style="border-left:4px solid var(--stdmodel-solid)">
-<div class="sc-number">${tally['Std Model Explains'] || 0}</div>
-<div class="sc-label">Std Model Explains</div>
-<div class="sc-sublabel">Real observation, but mainstream physics already explains it</div>
-</div>
-<div class="sc-card sc-sm" style="border-left:4px solid var(--notdemo-solid)">
-<div class="sc-number">${tally['Not Demonstrated'] || 0}</div>
-<div class="sc-label">Not Demonstrated</div>
-<div class="sc-sublabel">Based on unverified or unreplicated data</div>
-</div>
-<div class="sc-card sc-sm" style="border-left:4px solid var(--unfalsifiable-solid)">
-<div class="sc-number">${tally['Unfalsifiable'] || 0}</div>
-<div class="sc-label">Unfalsifiable</div>
-<div class="sc-sublabel">Cannot be tested — typically theological claims</div>
-</div>
-</div>
-
-<div style="border:2px solid var(--accent);border-radius:8px;padding:1.2rem 1.4rem;margin:1.5rem 0;background:var(--card-bg)">
+</div><div style="border:2px solid var(--accent);border-radius:8px;padding:1.2rem 1.4rem;margin:1.5rem 0;background:var(--card-bg)">
 <p style="margin-top:0"><strong>The headline "${failures.dome_claimed_accuracy}" accuracy is not computed by any script in the model's repository.</strong> It is a static string in the HTML source code — a <code>.score-number</code> CSS class rendering the percentage alongside the WIN count. No Python script, no JavaScript function, and no API endpoint produces this number. The arithmetic is stated on the wins page, but no script validates the count against the actual WIN registry. When the model's own internal data is queried, it returns ${accuracyVariantList} — depending on which data source and counting method is used. The denominator is chosen to include only ${failures.dome_claimed_failures} acknowledged falsifications while excluding unresolved open problems and below-detection-threshold entries. The headline number is manually entered with a self-serving denominator. See <a href="#part6" onclick="showTab('predictions');return false">Section 6.6</a> for the full source-code analysis.</p>
 </div>
 
@@ -1339,6 +1396,23 @@ ${CSS}
 <div class="vl vl-notdemo"><strong>Not Demonstrated:</strong> The claim relies on unreplicated fringe experiments or unverified data that has not been independently confirmed.</div>
 <div class="vl vl-unfalsifiable"><strong>Unfalsifiable:</strong> The claim cannot be tested by any physical measurement. Typically theological assertions.</div>
 </div>
+
+<div class="breaking-news">
+<h2 class="bn-header">Latest Findings</h2>
+<div class="bn-item">
+<span class="bn-date">2026-04-17</span>
+<span class="bn-text"><strong>Dome Author Changes Timestamp Narrative — But Doesn't Fix the Problem.</strong> A new <code>methodology.json</code> concedes that OpenTimestamps alone doesn't prove claim-level prospectivity — the exact critique from our Timestamp Error tab. The structural fix (a predictions-only file with its own blockchain anchor) is still not implemented. His own new claim taxonomy leaves the "prospective confirmed" column empty for every WIN classified so far. <a href="#ts-april-2026-update" onclick="showTab('timestamp');document.getElementById('ts-april-2026-update').open=true;return false">Full update →</a></span>
+</div>
+<div class="bn-item">
+<span class="bn-date">2026-04-12</span>
+<span class="bn-text"><strong>Dome's Refraction Fix Destroys Its Own Coordinate System.</strong> To avoid a sun/firmament collision, the model declares the sun an optical illusion — but the same refractive medium (n(r) = 1.2–2.8, vs Earth's 1.0003) contaminates every Polaris-based distance measurement the dome uses to build its map. The coordinate system collapses, taking 22 dependent WINs with it. <a href="#section-1-8">Full analysis →</a></span>
+</div>
+<div class="bn-item">
+<span class="bn-date">2026-04-10</span>
+<span class="bn-text"><strong>${context.predCounts.total} Predictions Cataloged — ${context.predCounts.deadOnArrival} Are Dead on Arrival.</strong> We datamined every testable claim from the dome's predictions page. Of ${context.predCounts.total} entries: ${context.predCounts.stdRelabel} are standard physics relabeled as dome predictions, ${context.predCounts.ourFalsified} are already falsified by hard data, ${context.predCounts.ourRecycled} recycle existing WINs, and ${context.predCounts.ourUnfalsifiable} are untestable. <a href="#pred-mined">See the full catalog →</a></span>
+</div>
+</div>
+
 
 <nav class="toc">
 <h2 style="margin-top:0">Table of Contents</h2>
@@ -1534,7 +1608,7 @@ ${sectionNav('pages', 'Live Power Dashboard', 'timestamp', 'Timestamp Error')}
 <h2 style="color:var(--accent);font-weight:400;margin-top:0">He timestamps the observations, not the predictions</h2>
 
 <div class="scorecard" style="grid-template-columns:1fr 1fr;margin:1.5em 0">
-<div class="sc-card" style="border-left:4px solid #c45050">
+<div class="sc-card" style="border-left:4px solid var(--rule)">
 <div class="sc-label" style="font-size:1.1em">What gets timestamped</div>
 <div class="sc-sublabel"><code>status_history.json</code> — observed values, pass/fail audit results, statistical comparisons. This is the <strong>answer sheet</strong>.</div>
 </div>
@@ -1676,6 +1750,7 @@ ${renderSectionFromJson('part10', context, winsByVerdict, wins, tally, sectionNa
 ${sectionNav('ai', 'AI & Conclusions', null, null)}
 
 </div>
+</main>
 
 <script>
 function showTab(tabId, opts) {

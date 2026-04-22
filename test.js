@@ -653,6 +653,89 @@ console.log('\n── 8. Prediction Panels ──');
   }
 }
 
+// ── 9. Phase A Design Refresh (EXP-207 Typography) ──
+{
+  console.log('\n── 9. Phase A Design Refresh ──');
+  const htmlContent = fs.readFileSync('docs/index.html', 'utf8');
+  const sectionsContent = fs.readFileSync('data/sections.json', 'utf8');
+
+  // EXP-207: No inline font-family:monospace literals in generated HTML
+  assertEq((htmlContent.match(/font-family:\s*monospace/g) || []).length, 0,
+    'docs/index.html still contains inline font-family:monospace literal(s)');
+
+  // EXP-207: No inline font-family:monospace literals in sections data
+  assertEq((sectionsContent.match(/font-family:\s*monospace/g) || []).length, 0,
+    'data/sections.json still contains inline font-family:monospace literal(s)');
+
+  // EXP-207: Body rule consumes --serif
+  assert(/body\{font-family:var\(--serif\)/.test(htmlContent), 'body font-family is not var(--serif)');
+
+  // EXP-207: .formula class present and routes to --mono
+  assert(/\.formula\s*\{[^}]*font-family:var\(--mono\)/.test(htmlContent), '.formula class missing or not mapped to var(--mono)');
+
+  // EXP-208: Stance statement present in HTML
+  assert(htmlContent.includes('class="stance-statement"'), 'EXP-208: .stance-statement element missing from docs/index.html');
+  assert(htmlContent.includes('The world is a globe.'), 'EXP-208: stance-statement text "The world is a globe." missing');
+  assert(htmlContent.includes('That does not prevent us from engaging'), 'EXP-208: stance-statement continuation text missing');
+  assert(/\.stance-statement\{/.test(htmlContent), 'EXP-208: .stance-statement CSS rule missing');
+
+  // EXP-209: Verdict bar chart section present
+  assert(htmlContent.includes('class="verdict-bars"'), 'EXP-209: .verdict-bars section missing from docs/index.html');
+  assert(htmlContent.includes('class="verdict-bar-row"'), 'EXP-209: .verdict-bar-row elements missing');
+  assert(/\.verdict-bars\{/.test(htmlContent), 'EXP-209: .verdict-bars CSS rule missing');
+  assert(htmlContent.includes('id="verdicts"'), 'EXP-209: verdict-distribution anchor #verdicts missing');
+  assert(!htmlContent.includes('class="sc-breakdown"'), 'EXP-209: old .sc-breakdown grid still present (should be removed)');
+
+  // EXP-212: Latest Findings placement (between verdict-legend and nav.toc)
+  {
+    const overviewSlice = htmlContent.split('class="tab-content" id="evaluate"')[0] || htmlContent;
+    const vlPos = overviewSlice.indexOf('class="verdict-legend"');
+    const bnPos = overviewSlice.indexOf('class="breaking-news"');
+    const tocPos = overviewSlice.indexOf('class="toc"');
+    assert(vlPos > -1 && bnPos > -1 && tocPos > -1, 'EXP-212: verdict-legend, breaking-news, or nav.toc missing from Overview');
+    assert(vlPos < bnPos && bnPos < tocPos, 'EXP-212: breaking-news must appear between verdict-legend and nav.toc on Overview');
+  }
+  // EXP-212: breaking-news has 3 bn-item entries
+  const bnMatch = htmlContent.match(/<div class="breaking-news">[\s\S]*?<\/div>\s*\n\s*<\/div>/);
+  if (bnMatch) {
+    const bnItems = (bnMatch[0].match(/<div class="bn-item">/g) || []).length;
+    assertEq(bnItems, 3, 'EXP-212: breaking-news must retain exactly 3 bn-item entries');
+    assert(bnMatch[0].includes('#ts-april-2026-update'), 'EXP-212: bn-item #1 timestamp-tab link preserved');
+    assert(bnMatch[0].includes('#section-1-8'), 'EXP-212: bn-item #2 refraction section link preserved');
+    assert(bnMatch[0].includes('#pred-mined'), 'EXP-212: bn-item #3 predictions catalog link preserved');
+  }
+  // EXP-212: chrome weight reduced (1px border, no gradient, no accent color, uppercase eyebrow)
+  assert(/\.breaking-news\{[^}]*border:1px/.test(htmlContent), 'EXP-212: .breaking-news must use 1px border (was 2px)');
+  assert(!htmlContent.includes('linear-gradient(135deg,var(--card-bg)'), 'EXP-212: .breaking-news must not use linear-gradient background');
+  assert(/\.bn-header\{[^}]*text-transform:uppercase/.test(htmlContent), 'EXP-212: .bn-header must be uppercase eyebrow');
+  // EXP-212: no newspaper emoji in bn-header
+  assert(!htmlContent.includes('&#128240;'), 'EXP-212: &#128240; newspaper emoji must not appear in docs/index.html');
+
+  // EXP-213: verdict-badge class migration (spans may have additional attributes like style="margin-left:8px")
+  const vbClassCount = (htmlContent.match(/class="verdict-badge vb-[a-z_]+"/g) || []).length;
+  assert(vbClassCount > 50, `EXP-213: expected 90+ verdict-badge.vb-* spans, got ${vbClassCount}`);
+  // No inline-style hex backgrounds on verdict-badge
+  const inlineHexBadges = htmlContent.match(/class="verdict-badge"[^>]*style="[^"]*background:#[A-Fa-f0-9]{3,6}/g);
+  assert(!inlineHexBadges, `EXP-213: verdict-badge must not carry inline-style hex backgrounds; found ${inlineHexBadges ? inlineHexBadges.length : 0}`);
+  // Tap target minimums in CSS source
+  const cssSource = fs.readFileSync('build-scripts/generate-html.js', 'utf8');
+  assert(cssSource.includes('.tab-btn{padding:.7rem') && cssSource.includes('min-height:44px'), 'EXP-213: mobile .tab-btn rule must pin min-height:44px');
+  assert(/\.toc a\{[^}]*min-height:44px/.test(cssSource), 'EXP-213: .toc a rule must pin min-height:44px');
+  assert(/\.skip-link\{[^}]*min-height:44px/.test(cssSource), 'EXP-213: .skip-link rule must pin min-height:44px');
+  assert(/\.win-anchor\{[^}]*min-height:44px/.test(cssSource), 'EXP-213: .win-anchor rule must pin min-height:44px');
+  // Stacked card table media block
+  assert(/@media\(max-width:720px\)\{\.stacked-card-table/.test(cssSource), 'EXP-213: .stacked-card-table @media(max-width:720px) block missing');
+  // Integrity flag cleanup: no #f5f5f5 or background:#fff in sections.json
+  assert(!sectionsContent.includes('background: #f5f5f5') && !sectionsContent.includes('background:#f5f5f5'), 'EXP-213: data/sections.json still contains background:#f5f5f5 (integrity-flagged light panel)');
+  const whiteRe = /background:\s*#fff[";]/;
+  assert(!whiteRe.test(sectionsContent), 'EXP-213: data/sections.json still contains background:#fff (integrity-flagged light panel)');
+  // Skip-link present in HTML
+  assert(htmlContent.includes('class="skip-link"'), 'EXP-213: .skip-link missing from docs/index.html');
+  assert(htmlContent.includes('href="#main"'), 'EXP-213: skip-link href="#main" missing');
+  // Main landmark present
+  assert(htmlContent.includes('<main id="main">'), 'EXP-213: <main id="main"> landmark missing from docs/index.html');
+}
+
 // ════════════════════════════════════════════
 // Results
 // ════════════════════════════════════════════
