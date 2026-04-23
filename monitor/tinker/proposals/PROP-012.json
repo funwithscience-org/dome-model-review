@@ -1,0 +1,211 @@
+{
+  "id": "PROP-012",
+  "created_at": "2026-04-23T11:10:00Z",
+  "created_by": "tinker (dome-tinker)",
+  "category": "workflow_redesign",
+  "status": "proposed",
+  "target": "monitor/prompts/curmudgeon.md (primary), monitor/prompts/analyst.md (secondary — category stamping), monitor/prompts/reference/decider-curmudgeon.md (tertiary — advisory severity triage)",
+  "derived_from_directive": "monitor/tinker/operator-directives/DIRECTIVE-20260422-003-curmudgeon-design-rubric.json",
+  "problem": "Curmudgeon applies a single adversarial register calibrated for truth-preservation on dome content. On the Phase A design-refresh batch (EXP-202, 207-213) this register produced a 4:1 false-positive ratio by the operator's standard: of six pending-human ISS (1334, 1346, 1365, 1366, 1367, 1368), only ISS-1367 landed as a real blocker and ISS-1368 required a post-integration visual check. The other four (ISS-1334, 1346, 1365, 1366) were design-standards pedantry — proposal-prose inconsistency, internal EXP estimates, theoretical fallback-CSS concerns, test-regex robustness.\n\nThe current prompt has no discriminator between `design choices that affect on-page truth parsing` (where the adversarial lens should stay — arguably intensify) and `design-standards compliance that doesn't affect on-page truth` (where the lens is miscalibrated). Both currently route to major/critical severity and both burn operator triage time at the same rate.\n\nOperator impact: triaging false-positive blockers in the middle of a coordinated design refresh. Signal impact: the 4 false-positives dilute the 1 real blocker; if curmudgeon cries wolf at the same severity on pedantry, operator eventually stops reading carefully.\n\nSource evidence: monitor/curmudgeon/reviews/EXP-202-proposal.json (11 holes — 1 critical, 3 major, 3 moderate, 4 minor), EXP-208-proposal.json (6 holes — 1 major, 3 moderate, 2 minor), EXP-210-proposal.json (7 holes — 2 major, 2 moderate, 3 minor). Operator HNOTE-DESIGN-REFRESH-PHASE-A-ISS-DISPOSITIONS-001 supplies the ground-truth dispositions.",
+  "retroactive_calibration": {
+    "summary": "Proposed rubric classified against the 6 ISS the operator triaged. All 6 land on the same disposition the operator did, with the mechanism made explicit.",
+    "per_iss": [
+      {
+        "iss": "ISS-1334",
+        "source": "EXP-202-proposal.json hole 1 (critical)",
+        "finding_text": "Privacy objection response contains a false premise — docs/index.html already loads gtag.js from googletagmanager.com (line 7), so adding Google Fonts is not the 'first' third-party request.",
+        "operator_disposition": "CLOSE (resolved by clarifications)",
+        "rubric_classification": "TRUTH-IMPACT — factual error about current rendered-page state. Qualifies under 'any design choice that alters how a reader would parse a reviewed claim' because the EXP's anticipated-objection prose would mislead operator/reader about privacy posture. Keep at major+ severity.",
+        "divergence_from_operator": "NONE — rubric correctly flags the factual error. Operator closed via clarifications pre-integration, not by downgrading severity. Rubric behaviour: keep strict, which is what happened."
+      },
+      {
+        "iss": "ISS-1346",
+        "source": "EXP-202-proposal.json hole 3 (major)",
+        "finding_text": "Cold-load bandwidth estimate undershot — '~60-90 KB' cited, actual ~100-130 KB.",
+        "operator_disposition": "CLOSE AS NOTED",
+        "rubric_classification": "NON-TRUTH-IMPACT. The estimate lives in proposal prose, not on the rendered page. Does not affect how a reader parses a reviewed claim. Falls under 'internal EXP estimates of cost/bandwidth/deltaE/JND'. Route to ADVISORY severity class.",
+        "divergence_from_operator": "NONE — rubric surfaces the concern but at advisory class, which the decider's triage would normally close-as-noted without operator burden."
+      },
+      {
+        "iss": "ISS-1365",
+        "source": "EXP-208-proposal.json hole 1 (major)",
+        "finding_text": "Graceful-degradation fallback claim references undefined CSS vars — fallback path will break if EXP-202 hasn't landed.",
+        "operator_disposition": "CLOSE AS WONT-FIX",
+        "rubric_classification": "NON-TRUTH-IMPACT under production rendering path (EXP-202 is a hard prerequisite; fallback path never fires). Falls under 'theoretical fallback-CSS correctness when the fallback render path is unreachable in production'. Route to ADVISORY.",
+        "divergence_from_operator": "NONE — rubric classifies as advisory and attaches `resurface_on: [\"EXP-202-reverted-or-delayed\"]` so if the prerequisite dependency breaks later, the advisory auto-promotes to major. This is a slight IMPROVEMENT over operator wontfix — preserves the catch if the dependency graph changes."
+      },
+      {
+        "iss": "ISS-1366",
+        "source": "EXP-208-proposal.json hole 3 (moderate)",
+        "finding_text": "DOM-order regex fragility — non-greedy match may stop at the wrong </div> in multi-child blocks.",
+        "operator_disposition": "CLOSE AS ACCEPTED-FRAGILITY",
+        "rubric_classification": "NON-TRUTH-IMPACT. Test harness concern; test passes on current DOM. Falls under 'test-harness robustness concerns without current-DOM failure'. Route to ADVISORY.",
+        "divergence_from_operator": "NONE."
+      },
+      {
+        "iss": "ISS-1367",
+        "source": "EXP-210-proposal.json hole 1 (major)",
+        "finding_text": "EXP-210 missed the second #8b0000 occurrence in generate-html.js line 250 (Silent-failures scorecard border).",
+        "operator_disposition": "KEEP AS BLOCKER",
+        "rubric_classification": "TRUTH-IMPACT. Falls under 'color semantics that flatten, invert, or erase a severity or status hierarchy on the rendered page'. Silent-failures tier must read harsher than Acknowledged tier; leaving one color unmigrated while others migrate collapses the semantic distinction. Keep at major+ severity.",
+        "divergence_from_operator": "NONE — rubric correctly identifies this as a truth-preservation concern."
+      },
+      {
+        "iss": "ISS-1368",
+        "source": "EXP-210-proposal.json hole 2 (major)",
+        "finding_text": "Anticipated objection mischaracterizes the light-theme color shift as roughly JND; only discloses dark-theme deltaE in proposal prose.",
+        "operator_disposition": "DEFER TO POST-INTEGRATION VISUAL CHECK",
+        "rubric_classification": "SPLIT. The proposal-prose disclosure gap is NON-TRUTH-IMPACT at the prose level → advisory. BUT the underlying question — does the new light-theme refuted color still read as the harsher-tier color — is a TRUTH-IMPACT check that belongs on the rendered page. Route to ADVISORY + attach `post_integration_visual_check` obligation: a lightweight follow-up review after EXP-210 integrates, re-graded to major if the rendered-page check fails.",
+        "divergence_from_operator": "NONE — rubric explicitly encodes the 'defer to post-integration visual check' disposition as a first-class outcome rather than an ad-hoc operator decision."
+      }
+    ],
+    "aggregate_result": "6/6 ISS land on operator-compatible dispositions under the proposed rubric. No operator-overruled flags. Net operator-surface reduction: from 6 blockers to 2 blockers + 1 post-integration check + 3 advisories. The two wouldnt-have-been-flagged conclusions are: (a) the a11y carveout still catches WCAG functional concerns as major even if proposal-prose-framed (mitigation below), and (b) the 'factual-claim-about-page-state' sub-rule (ISS-1334) still routes truth-about-the-current-page to major even when it lives in proposal prose.",
+    "caveat": "This is n=1 calibration on one design batch. The proposal includes a shadow-run migration plan (below) to re-calibrate against Phase B and Phase C before enforcing."
+  },
+  "proposed_fix": {
+    "summary": "Introduce a two-register review model in curmudgeon.md. Register A (truth-preservation) is the current register, unchanged — the default for all content reviews. Register B (design-category) applies when the EXP is tagged as a design-refresh/typography/palette/a11y EXP; it retargets the adversarial lens onto design choices that affect on-page truth parsing, and routes non-truth-impacting pedantry to a new `advisory` severity class. The a11y carveout keeps WCAG functional concerns at major+ under either register. Routing is by explicit analyst-stamped `review_register` field with a category-name fallback heuristic; default is Register A (fail-safe strict).",
+    "files_to_modify": [
+      {
+        "path": "monitor/prompts/curmudgeon.md",
+        "find": "## Per-Run Procedure\n\n**Step 0: Setup — get fresh data.**",
+        "replace": "## Review Register Selection (applies to every item reviewed)\n\nThe curmudgeon operates in one of two registers per item:\n\n- **Register A — Truth-Preservation (default).** The existing adversarial lens. Calibrated for dome-content WINs, SECs, prediction batches, and any EXP whose scope is prose/content/verdict/evidence. Strict on factual accuracy, mischaracterization, missing counterarguments, citation integrity, and code-analysis tag correctness. This is the register you have always operated in.\n- **Register B — Design-Category.** Applies when the item is a design/typography/palette/layout/a11y EXP where the review target is HOW content is presented (tokens, fonts, colors, spacing, contrast), not WHAT the content says. Register B retargets the adversarial lens onto design choices that affect on-page truth parsing. It is NOT a relaxation — on truth-obscuring design choices and a11y functional concerns, Register B is as strict or stricter than Register A. It IS a retargeting — non-truth-impacting pedantry (proposal-prose inconsistency, internal EXP estimates, theoretical fallback paths that never fire, test-harness robustness without current-DOM failure) routes to a new `advisory` severity class instead of burning a major-severity flag.\n\n### Register selection rule (check in order)\n\n1. **Explicit tag.** If the EXP file contains `\"review_register\": \"design\"` (or `\"review_register\": \"content\"`), honor it. Authoritative; no override.\n2. **Category fallback.** If no explicit tag, inspect the `category` field. Register B applies when category matches any of: `design-refresh-*`, `typography`, `palette`, `a11y-*`, `layout`, `design-system`. Everything else → Register A.\n3. **Default.** If neither is present and category is ambiguous, default to Register A (fail-safe strict). Log in your review: `register_inference: \"defaulted to A — no tag, ambiguous category <value>\"`.\n\nFor WIN reviews, SEC reviews, prediction-batch reviews, proposal-package reviews whose target is prose/content, and anything about dome claims/citations/verdicts — always Register A. Register B is strictly for design-surface EXPs.\n\n### Register B procedure (design-category reviews only)\n\nWhen Register B applies, execute the normal review procedure below with these modifications:\n\n**Keep adversarial on (emit major/critical as usual):**\n- Color semantics that flatten, invert, or erase a severity or status hierarchy on the rendered page (e.g., collapsing the Silent/Acknowledged failure distinction).\n- Typography choices that bury, demote, or hide a truth-bearing claim (headline, refutation, killshot, methodology callout).\n- Contrast failures that render claim text unreadable or near-unreadable (WCAG AA contrast <4.5:1 for text, <3:1 for large text or UI components).\n- Spacing or layout that collapses a semantic distinction readers rely on to parse the argument.\n- **a11y functional carveout (always strict, both registers):** WCAG 2.1 AA failures, keyboard-nav loss, focus-visible loss, screen-reader context loss, ARIA role regressions, touch-target-size failures. A reader who cannot read the claim cannot evaluate it — functional a11y IS truth-preservation. Never downgrade a11y findings to advisory.\n- Any design choice that alters how a reader would parse a reviewed claim on the rendered page.\n- Factual errors about the current rendered-page state (e.g., claiming the page loads no third-party scripts when it does), even if the error lives in proposal prose — because the operator relies on this prose to make integration decisions that affect the rendered page.\n\n**Relax to `advisory` severity class (emit, but decider triage defaults to close-as-noted):**\n- Proposal-prose inconsistency about states, dependencies, or estimates that do not anchor an integration decision.\n- Internal EXP estimates of cost/bandwidth/deltaE/JND/file size — provided the estimate does not anchor an integration decision that affects on-page truth (if it does, keep strict).\n- Theoretical fallback-CSS correctness when the fallback render path is unreachable in production (note: attach `resurface_on: [\"<prerequisite>-reverted-or-delayed\"]` so the advisory auto-promotes to major if the dependency graph changes).\n- Test-harness robustness concerns (regex fragility, assertion ordering) without current-DOM failure.\n- Style-guide adherence that does not affect on-page truth parsing.\n- Proposal-prose disclosure gaps about deltas that are better evaluated against the rendered page post-integration (attach `post_integration_visual_check: true` + the exact visual check to run; an advisory finding with this flag becomes a lightweight EXP-linked follow-up review after integration, re-graded to major if the rendered-page check fails).\n\n**Discriminator test (write this in your review for every finding in a Register B review):** For each hole, state explicitly: (a) on-page truth impact — does this design choice alter how a reader parses a reviewed claim on the rendered page? (b) a11y functional impact — does this fail WCAG AA or lose keyboard/screen-reader context? If the answer to either is yes, the finding is at major+ severity. If both are no, the finding is advisory. The act of stating the classification is the safety net against confirmation bias; do not emit a finding without it.\n\n**Register B output schema additions (in the review JSON):**\n- `review_register: \"B\"` at the top of the review JSON.\n- `register_source: \"explicit\" | \"category_fallback\" | \"inferred_default\"` — where the register came from.\n- For each hole in `holes_found`, add: `discriminator: { truth_impact: true|false, a11y_impact: true|false, reasoning: \"...\" }` and `severity_class: \"critical|major|moderate|minor|advisory\"` (the new class). The legacy `severity` field continues to carry the operator-facing label; for advisories, set `severity: \"advisory\"`.\n- For advisory findings where a post-integration or dependency condition could re-promote them, add the optional `resurface_on: [...]` and `post_integration_visual_check: true|false` fields.\n\n**No finding may be routed to advisory purely to shrink the pending-human flag count.** If you are unsure whether a finding is truth-impact, default to major — the point of Register B is NOT to reduce volume, it is to retarget register. Overuse of the advisory class is itself a signal to tinker (tinker audits the register-B advisory rate per run).\n\n## Per-Run Procedure\n\n**Step 0: Setup — get fresh data.**"
+      },
+      {
+        "path": "monitor/prompts/curmudgeon.md",
+        "find": "### 7. Write the Review JSON\n\n**File naming:** Write to `monitor/curmudgeon/reviews/WIN-{id}.c{cycle}.json` (e.g., `WIN-001.c3.json`).",
+        "replace": "### 7. Write the Review JSON\n\n**Register selection at this point:** before writing the review JSON, determine the review register per the \"Review Register Selection\" section at the top of this prompt. Stamp `review_register` and `register_source` into the review. For Register B reviews, also stamp `discriminator` on each hole and use the extended `severity_class` enum (which includes `advisory`).\n\n**File naming:** Write to `monitor/curmudgeon/reviews/WIN-{id}.c{cycle}.json` (e.g., `WIN-001.c3.json`)."
+      },
+      {
+        "path": "monitor/prompts/curmudgeon.md",
+        "find": "## Severity Guidelines\n\n- **Critical**: Factual error that a dome defender could use to discredit our entire review. Wrong data values, fabricated citations, claims about things the dome model doesn't actually say.\n- **Major**: Significant weakness that undermines a specific argument. Missing the strongest counterpoint, mischaracterizing the dome's position, citing the wrong paper.\n- **Moderate**: Our argument works but could be stronger. Missing context, imprecise language, weaker framing than available.\n- **Minor**: Cosmetic or stylistic issues. Incomplete sentences, formatting, minor imprecision that doesn't affect the argument.",
+        "replace": "## Severity Guidelines\n\n- **Critical**: Factual error that a dome defender could use to discredit our entire review. Wrong data values, fabricated citations, claims about things the dome model doesn't actually say.\n- **Major**: Significant weakness that undermines a specific argument. Missing the strongest counterpoint, mischaracterizing the dome's position, citing the wrong paper.\n- **Moderate**: Our argument works but could be stronger. Missing context, imprecise language, weaker framing than available.\n- **Minor**: Cosmetic or stylistic issues. Incomplete sentences, formatting, minor imprecision that doesn't affect the argument.\n- **Advisory** (Register B only, introduced by PROP-012): A design-standards observation that does NOT affect on-page truth parsing and does NOT fail WCAG AA. Surfaced for the operator's awareness; decider triage defaults to close-as-noted without operator action unless `resurface_on` or `post_integration_visual_check` conditions fire. An advisory is never emitted for: factual errors about rendered-page state, a11y functional regressions, or color/typography/layout changes that alter how a reader parses a reviewed claim. Advisories are data, not noise — they preserve institutional memory of the concerns we chose not to escalate, so that if a later EXP breaks the assumption (e.g., a prerequisite gets reverted), the decider can promote the advisory back to major."
+      },
+      {
+        "path": "monitor/prompts/analyst.md",
+        "find_hint": "Insert a new paragraph immediately after the section that describes EXP file schema output (near Mode 1 expansions), before the 'Content Security' or 'Critical Rules' section. Exact find-string supplied below targets the top of the analyst's Mode-1 EXP write step — if that text has moved, see 'manual_instructions' below.",
+        "find": "## Critical Rules",
+        "replace": "## Review Register Stamping (PROP-012)\n\nWhen writing an EXP file whose scope is design-surface (typography, tokens, palette, color, spacing, contrast, a11y, layout), stamp `review_register: \"design\"` at the top of the EXP JSON. For every other EXP (prose patch, verdict rewrite, win expansion, section restructure, defense neutralization, kill-shot edit, etc.), stamp `review_register: \"content\"` or omit the field (default is content under curmudgeon's fallback rule). This tag is the authoritative routing signal for curmudgeon's Register B review procedure.\n\nUse `review_register: \"design\"` when the EXP's `target` is:\n- `docs/index.html <head>` / `<style>` blocks, `:root` declarations, `@media` theme overrides\n- `build-scripts/generate-html.js` CSS blocks (token declarations, selector rules)\n- `data/sections.json` inline style attributes, pill-badge colors, stat-card borders\n- Font / typography / webfont loading changes\n- Color-token migrations, palette restrictions, contrast tuning\n- Layout/spacing changes that do not alter semantic content\n- a11y-only changes (focus rings, ARIA roles, keyboard nav, screen-reader context)\n\nUse `review_register: \"content\"` (or omit) when the EXP's `target` is:\n- `data/wins.json` field values (claim, evidence, verdict, detail_*)\n- `data/sections.json` prose content inside HTML blocks (not the inline styles)\n- `data/predictions.json` verdicts or evidence\n- Kill-shot text, methodology callouts, citation additions\n- Analyst Mode 0 (new WIN onboarding), Mode 2b (defense neutralization), Mode 3 (neutralization prose)\n\n**Mixed EXPs** (e.g., a design change that also rewrites prose): stamp `review_register: \"content\"` so curmudgeon applies the strict register. The design-surface sub-findings will still be reviewed — just at the default stricter register. Register B is an opt-in relaxation targeted at purely-design scopes.\n\n**Fallback:** if you forget to stamp, curmudgeon's category-name heuristic may still route correctly for EXPs with category starting `design-refresh-*`, `typography`, `palette`, `a11y-*`, `layout`, `design-system`. But explicit stamping is always preferred. Tinker will audit stamping rate and flag unstamped design EXPs for retroactive tagging.\n\n## Critical Rules"
+      },
+      {
+        "path": "monitor/prompts/reference/decider-curmudgeon.md",
+        "find_hint": "The decider consumes curmudgeon reviews via build-scripts/digest-reviews.js → pending-digest.json → decider triage. Advisory severity needs a triage rule so the decider doesn't promote advisories to major ISS by default.",
+        "manual_instructions": "After applying this PROP, locate the decider's severity-to-ISS mapping (probably in decider-curmudgeon.md or digest-reviews.js) and add: advisory severity → decider closes as 'advisory-noted' without creating an open ISS, UNLESS the finding has `resurface_on` / `post_integration_visual_check` attached, in which case the decider opens a low-priority ISS tagged `advisory-deferred` that the operator can sweep at integration time. Exact find/replace text is supplied separately by the implementer after reading the current decider reference file; this PROP does not hard-code it because the decider prompt has iterated faster than other prompts and the anchor text is volatile. See monitor/prompts/reference/decider-curmudgeon.md (current file length ~200-400L) and monitor/prompts/reference/decider-patches-and-selfapply.md for where severity-class triage lives.",
+        "find": null,
+        "replace": null
+      }
+    ],
+    "files_to_create": [],
+    "files_to_delete": []
+  },
+  "migration_plan": {
+    "phase_1_shadow_run": {
+      "duration": "72 hours from curmudgeon.md commit (≈3 full curmudgeon cycles at current churn-and-burn pace)",
+      "behavior": "Curmudgeon runs Register B on tagged EXPs but emits BOTH: (a) the register-A severities it would have used (in a new `shadow_register_a_severities` block) and (b) the register-B severities it actually uses. Tinker compares the two each run and reports divergence in its daily Mode 3 report.",
+      "entry_condition": "PROP-012 applied to curmudgeon.md AND analyst.md AND at least one design-category EXP has been reviewed under the new register (sanity check).",
+      "exit_condition": "Either (a) operator reviews the shadow comparison for the Phase B batch (when it arrives) and approves; or (b) 72h elapses with zero register-B findings that operator overrules back to major+. Whichever comes first.",
+      "rollback_trigger": "If operator in the shadow window identifies ANY finding that register B routed to advisory but that would have been a legitimate truth-impact blocker under register A, STOP the shadow run, post HNOTE-PROP-012-CALIBRATION-ISSUE, and revert before enforcement."
+    },
+    "phase_2_enforce": {
+      "behavior": "Drop the `shadow_register_a_severities` block. Register B is authoritative for tagged EXPs.",
+      "monitoring": "Tinker audits monthly: (i) advisory-class emission rate per Register B review — flag if >50% (possible over-use); (ii) advisory-class reversion rate — count how many advisories the operator later promotes to major via HNOTE; (iii) cross-register consistency — ensure Register A findings on design-surface EXPs aren't slipping through (shouldn't happen post-enforce, but catch drift)."
+    }
+  },
+  "rollback_plan": {
+    "trigger_conditions": [
+      "An advisory-class finding is later found to have been a truth-impact miss (operator or subsequent review escalates it back to major). 2+ instances in 30 days triggers automatic revert.",
+      "Register-B review coverage of a design EXP misses a WCAG AA failure that Register A would have caught (single-instance trigger — a11y carveout is non-negotiable).",
+      "Tinker audit shows advisory-emission rate exceeding 70% on any single Register B review (suggests rubric is being abused to shrink flag count)."
+    ],
+    "mechanism": "Operator writes HNOTE-PROP-012-REVERT with specific trigger evidence. Revert = restore curmudgeon.md to pre-PROP-012 state (the git revert of the commit that landed this PROP) + optionally keep the `review_register` analyst stamp as a no-op field so the infrastructure isn't lost. Advisories already emitted are retained in the review history; decider does not retro-promote them unless operator does so explicitly.",
+    "data_preservation": "All Register B reviews produced during shadow + enforce periods stay in monitor/curmudgeon/reviews/ under their original filenames. Advisories are data — revert does not delete them."
+  },
+  "tradeoffs": {
+    "gains": [
+      "Eliminates the 4:1 false-positive ratio observed on Phase A (the most recent, largest design-category batch).",
+      "Makes the discriminator explicit — curmudgeon must state on-page truth impact and a11y impact for every Register B finding, which forces engagement rather than rote pattern-matching.",
+      "Preserves the adversarial edge on the narrow set of design choices that can distort truth (color semantics, typography hierarchy, contrast, layout collapse of semantic distinctions).",
+      "Adds a first-class mechanism (`post_integration_visual_check`, `resurface_on`) for deferred truth-impact checks, replacing ad-hoc operator notes.",
+      "Advisory class is append-only data — no information is lost even when findings are downgraded."
+    ],
+    "losses_and_risks": [
+      {
+        "risk": "The operator might be wrong about the 4 'false positives.'",
+        "detail": "E.g. ISS-1365 (fallback CSS referencing undefined vars) is only safe under the assumption EXP-202 remains landed. If EXP-202 is reverted or Phase A is rolled back, the theoretical fallback becomes real. Under the current strict rubric this is caught as major; under Register B it's advisory.",
+        "mitigation": "The `resurface_on: [\"EXP-202-reverted-or-delayed\"]` annotation explicitly ties the advisory to its precondition. Decider on future EXP-202 reverts must scan for advisories with this resurface condition and promote them. Tinker audits resurface-on annotations monthly.",
+        "residual_risk": "If the decider misses the resurface scan, the catch is lost. Mitigation-of-mitigation: make resurface-on scanning a mandatory step in the decider's EXP-revert checklist."
+      },
+      {
+        "risk": "The rubric could create confirmation bias.",
+        "detail": "Once curmudgeon is told 'relax when it's design,' it may also relax on edge cases where a design choice genuinely obscures truth but is framed like pedantry. The substance/pedantry boundary is judgment, and LLMs compress toward 'sounds like pedantry.'",
+        "mitigation": "The mandatory `discriminator` field — truth_impact yes/no, a11y_impact yes/no, reasoning — forces the reviewer to make the classification explicitly. The explicit act is the safety net. If the reviewer writes 'truth_impact: false' for ISS-1367 (which should be true), the error is visible and auditable.",
+        "residual_risk": "LLM reviewers might write a plausible-sounding false reasoning. Mitigation-of-mitigation: tinker spot-checks 10% of Register B reviews per month for discriminator correctness; operator reviews tinker's audit."
+      },
+      {
+        "risk": "N=1 calibration — one design batch (Phase A) is thin evidence.",
+        "detail": "The 4:1 ratio is a single sample. Phase B might have 1:4 (a11y-heavy, mostly truth-impacting), in which case Register B would correctly keep most findings strict — but the calibration wasn't on that data.",
+        "mitigation": "Shadow run for 72h with side-by-side comparison on the next design batch (Phase B when it arrives). Operator reviews the shadow data before enforcement."
+      },
+      {
+        "risk": "Analyst-side stamping is fragile.",
+        "detail": "Only 60/318 existing EXPs have a `category` field. Analysts may forget to stamp `review_register`, and the category-name fallback only covers some cases.",
+        "mitigation": "Fail-safe default is Register A (strict). Unstamped or ambiguous EXPs stay strict. Tinker audits stamping rate and flags unstamped design EXPs for retroactive tagging. An optional future enhancement: have analyst pre-push linter reject design-scope EXPs missing `review_register`.",
+        "residual_risk": "Minimal — the worst case is 'strict review on a design EXP that would have benefited from Register B,' which is the status quo, not a regression."
+      },
+      {
+        "risk": "'Advisory' class becomes a dumping ground.",
+        "detail": "Curmudgeon could over-use advisory for anything annoying to escalate, gradually reducing review value.",
+        "mitigation": "Tinker audits advisory-emission rate per Register B review each month. >50% flags suspicion; >70% triggers automatic rollback. The discriminator field makes misclassification detectable."
+      },
+      {
+        "risk": "Register selection itself is a judgment — what if curmudgeon mis-classifies an EXP as design when it's actually content?",
+        "detail": "E.g., an EXP that reframes a kill-shot headline (content) but stamps itself as typography (design).",
+        "mitigation": "The explicit `review_register` stamp at analyst-write time is the authoritative signal. If analyst gets it wrong, curmudgeon still follows the stamp but a human reviewing the review can override via HNOTE. Decider also cross-checks register-classification before acting on advisories.",
+        "residual_risk": "Residual but small — mixed EXPs default to content register per the analyst.md amendment, which is strict-fail-safe."
+      },
+      {
+        "risk": "Operator trust erosion from the OPPOSITE direction.",
+        "detail": "If Register B catches fewer flags, operator might worry we're going soft on design. Signal volume can itself be a trust signal.",
+        "mitigation": "Register B advisories are still emitted and visible in the review JSON and digest. The reduction is in major-severity noise, not total coverage. Operator can always read the advisory list to see what was caught-but-deferred."
+      }
+    ]
+  },
+  "estimated_impact": {
+    "operator_time_savings": "On Phase A, this rubric would have reduced operator-triage load from 6 pending-human flags to 2 (major blockers) + 1 post-integration visual check + 3 advisories reviewed in batch. At ~10 min/flag average, that's ~40 min saved on the Phase A batch alone.",
+    "signal_quality": "Expected increase in per-flag operator-agreement rate from ~33% (2/6 on Phase A) to ~90%+ by triaging pedantry before it hits operator screen.",
+    "token_cost": "+~60 lines in curmudgeon.md (currently 369L → ~430L), +~30 lines in analyst.md (currently 193L → ~220L). Both Opus agents; ~5% context-load growth per agent, under the 10% threshold tinker flags. No new script needed.",
+    "operational_risk": "Low. The change is additive (new register + new severity class). The old register remains the default and is fail-safe on unstamped/ambiguous items. Shadow run catches calibration errors before enforcement."
+  },
+  "requires_human_judgment": true,
+  "why_human_needed": "Operator approves the retroactive calibration: does Register B actually produce the same dispositions the operator reached on the 6 Phase A ISS? (The PROP claims yes 6/6; operator verifies.)\n\nOperator approves the exact severity-mapping in the rubric: is 'advisory' the right severity class name? Is the discriminator wording correct? Is the a11y carveout strict enough?\n\nOperator decides migration sequencing: apply curmudgeon.md + analyst.md changes together, or stage? (Recommendation: together, because analyst stamping without curmudgeon honoring it is a no-op, and curmudgeon honoring a non-existent stamp falls back correctly via the category heuristic.)\n\nOperator decides the decider-curmudgeon.md severity-triage mapping for advisory class — the PROP does not hard-code this because the decider prompt text is volatile; the implementer should write the exact find/replace after reading the current state.\n\nOperator approves shadow-run duration (recommended 72h, but operator may want to tie it to the Phase B batch arriving rather than a time window).",
+  "verification_pattern": "grep -q 'Review Register Selection' monitor/prompts/curmudgeon.md && grep -q 'Register B — Design-Category' monitor/prompts/curmudgeon.md && grep -q 'Advisory' monitor/prompts/curmudgeon.md && grep -q 'Review Register Stamping' monitor/prompts/analyst.md && echo FIXED || echo STILL_BROKEN",
+  "verification_notes": "The pattern checks four landing conditions: (1) the new Review Register Selection section exists in curmudgeon.md, (2) Register B — Design-Category subheading exists, (3) Advisory severity is documented in the Severity Guidelines, (4) the analyst.md amendment is in place. All four must pass for FIXED. A decider-curmudgeon.md triage update is part of the proposal but is not included in the verification pattern because its find/replace is deferred to the implementer per the file's volatile anchor text.",
+  "escalation_history": [
+    {
+      "run": "2026-04-23T11",
+      "status": "proposed",
+      "note": "Created in response to DIRECTIVE-20260422-003 issued 2026-04-22T12:34Z."
+    }
+  ],
+  "cross_references": {
+    "directive": "monitor/tinker/operator-directives/DIRECTIVE-20260422-003-curmudgeon-design-rubric.json",
+    "related_hnote": "monitor/decisions/human-notes.json :: HNOTE-DESIGN-REFRESH-PHASE-A-ISS-DISPOSITIONS-001",
+    "related_iss": [
+      "ISS-1334",
+      "ISS-1346",
+      "ISS-1365",
+      "ISS-1366",
+      "ISS-1367",
+      "ISS-1368"
+    ],
+    "source_reviews": [
+      "monitor/curmudgeon/reviews/EXP-202-proposal.json",
+      "monitor/curmudgeon/reviews/EXP-208-proposal.json",
+      "monitor/curmudgeon/reviews/EXP-210-proposal.json"
+    ],
+    "related_prompt_files": [
+      "monitor/prompts/curmudgeon.md",
+      "monitor/prompts/analyst.md",
+      "monitor/prompts/reference/decider-curmudgeon.md"
+    ]
+  }
+}
