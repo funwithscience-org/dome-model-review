@@ -1,24 +1,36 @@
 # Font Licenses
 
 This directory contains self-hosted web fonts used by funwithscience.net/dome-model-review/.
+All three families are distributed under the SIL Open Font License 1.1 (OFL-1.1).
 
 ## Source Serif 4
-- Author: Frank Grießhammer (Google Fonts)
+- Version shipped: 4.005R (April 2024)
+- Author: Frank Grießhammer
 - License: SIL Open Font License 1.1
-- Source: https://fonts.google.com/specimen/Source+Serif+4
-- Repository: https://github.com/adobe-fonts/source-serif
+- Source: https://github.com/adobe-fonts/source-serif/releases/tag/4.005R
+- Files:
+  - `source-serif-4-variable.woff2` (upstream `VAR/SourceSerif4Variable-Roman.ttf.woff2`)
+  - `source-serif-4-variable-italic.woff2` (upstream `VAR/SourceSerif4Variable-Italic.ttf.woff2`)
 
 ## Inter
+- Version shipped: 4.0 (2023-08)
 - Author: Rasmus Andersson
 - License: SIL Open Font License 1.1
-- Source: https://fonts.google.com/specimen/Inter
-- Repository: https://github.com/rsms/inter
+- Source: https://github.com/rsms/inter/releases/tag/v4.0
+- Files:
+  - `inter-variable.woff2` (upstream `web/InterVariable.woff2`)
+  - `inter-variable-italic.woff2` (upstream `web/InterVariable-Italic.woff2`)
+  - Static fallbacks: `Inter-Regular.woff2`, `Inter-Italic.woff2`, `Inter-Bold.woff2`, `Inter-BoldItalic.woff2`
 
 ## JetBrains Mono
+- Version shipped: 2.304 (2023-10)
 - Author: JetBrains
 - License: SIL Open Font License 1.1
-- Source: https://fonts.google.com/specimen/JetBrains+Mono
-- Repository: https://github.com/JetBrains/JetBrainsMono
+- Source: https://github.com/JetBrains/JetBrainsMono/releases/tag/v2.304
+- Files:
+  - `jetbrains-mono-variable.woff2` (converted from upstream `fonts/variable/JetBrainsMono[wght].ttf` via fontTools, flavor=woff2)
+  - `jetbrains-mono-variable-italic.woff2` (converted from upstream `fonts/variable/JetBrainsMono-Italic[wght].ttf`)
+  - Static fallbacks: `JetBrainsMono-Regular.woff2`, `JetBrainsMono-Italic.woff2`, `JetBrainsMono-Bold.woff2`, `JetBrainsMono-BoldItalic.woff2`
 
 ---
 
@@ -30,11 +42,10 @@ without permission of the copyright holder. See https://scripts.sil.org/OFL for 
 
 ---
 
-NOTE: WOFF2 font files are not yet committed to this repository. To complete EXP-202
-integration, download variable WOFF2 subsets (latin) for each family and place them here:
-  - source-serif-4-variable.woff2
-  - inter-variable.woff2
-  - jetbrains-mono-variable.woff2
+## Build history
 
-Use pyftsubset (fonttools) to subset to U+0000-U+00FF (Basic Latin + Latin-1 Supplement).
-Recommended target: ≤150KB per file, ≤350KB aggregate.
+- **2026-04-23** — Fonts committed to repo, closing EXP-202 integration TODO. Variable WOFF2
+  primaries + italics + static Regular/Bold/Italic/BoldItalic fallbacks. Full Latin coverage
+  (no subsetting applied — the variable-font byte overhead is acceptable for a predominantly
+  English-language site, and a future EXP may revisit subsetting for performance). See
+  `build-scripts/generate-html.js` `@font-face` block for CSS wiring.
