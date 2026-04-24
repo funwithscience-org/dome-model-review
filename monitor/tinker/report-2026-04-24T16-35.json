@@ -1,0 +1,208 @@
+{
+  "generated_at": "2026-04-24T16:35:00Z",
+  "report_date": "2026-04-24",
+  "mode_selected": "pipeline_health",
+  "mode_reason": "Dispatcher quick-check found two daily agents that produced no 2026-04-24 output at the time of selection (integrity, social) and workspace-sync trailing 3+ four-hour cycles behind schedule. Integrity completed mid-run (see below), but social and workspace-sync are both stalled for the day. This is Mode 1 territory (broken handoff / missed fires), not a cost-engineering run.",
+  "modes_checked": {
+    "pipeline_health": "yellow — poller 15:53 fresh, analyst 15:53 fresh, decider 16:05 fresh, curmudgeon 16:28 fresh (all 5 churn-and-burn agents ran this window). Integrity finished mid-tinker-run at 16:33 (34-minute execution) — report 2026-04-24T16-30.json landed on FUSE with overall_status=FAIL flagging 2 majors for decider. Social did NOT fire 2026-04-24 (lastRunAt 2026-04-23T10:57:00Z, nextRunAt 2026-04-25T10:05:47Z — one entire daily cycle skipped). Workspace-sync last commit 2026-04-24T02:52:49Z (14h ago) — schedule every 4h, missed ≥3 cycles (06:00 / 10:00 / 14:00 UTC). monitor/status.json has drifted (FUSE newer than git) as a direct consequence.",
+    "infrastructure": "green on FUSE/auth — 5/5 probed git-owned files md5-match main (data/wins.json, data/sections.json, build-scripts/digest-reviews.js, build-scripts/generate-html.js, docs/index.html). GitHub API auth 200. Disk 84% / 1607 MB free — at the WARNING threshold (≥80%) but flat vs yesterday's 83%. No CRITICAL (≥90%) yet; no action needed beyond continued watch. One workspace-owned file drifted (monitor/status.json) — symptom of stalled workspace-sync, not FUSE malfunction.",
+    "cost_engineering": "last cost run 2026-04-22T08-44. PROP-011 (integration_blocked_until HELD filter) still proposed — single-file edit to tinker-cost-engineering.md, untouched 2 days. Not a Mode 3 day.",
+    "proposals": "PROP verification walk: PROP-005 STILL_BROKEN (13+ days, recommended close-as-wontfix in last 2 runs), PROP-008 STILL_BROKEN (6 days), PROP-009r2 FIXED under CLEAN_CLONE=1 gate, PROP-011 STILL_BROKEN (2 days), PROP-012 STILL_BROKEN (1 day — normal, freshly proposed). No new PROPs needed this run — findings are operational (missed cron fires) not design-level."
+  },
+  "pipeline_health": {
+    "agents_running": 5,
+    "agents_stalled": ["dome-social", "dome-workspace-sync"],
+    "agents_slow": ["dome-integrity (34-minute run, usually ≤5 min)"],
+    "output_freshness": {
+      "poller": "42m ago (15:53Z) — healthy",
+      "analyst": "42m ago (15:53Z) — healthy",
+      "curmudgeon": "7m ago (16:28Z) — healthy",
+      "decider": "30m ago (16:05Z) — healthy",
+      "integrity": "2m ago (16:33Z) — just completed after 34m run; report 2026-04-24T16-30.json FAIL (2 majors for decider)",
+      "social": "30h ago (2026-04-23T10:57Z) — MISSED today's 11:00 UTC fire; nextRunAt 2026-04-25",
+      "workspace-sync": "14h ago git commit (2026-04-24T02:52Z) — missed 06:00/10:00/14:00 UTC fires; FUSE status.json already drifted"
+    }
+  },
+  "findings": [
+    {
+      "severity": "major",
+      "category": "schedule",
+      "description": "dome-social skipped its 2026-04-24 fire entirely. Scheduler shows lastRunAt=2026-04-23T10:57:00.809Z, nextRunAt=2026-04-25T10:05:47.000Z — today's 11:00 UTC fire is not pending, not failed, just absent. Task is enabled=true with cron '0 11 * * *'. docs/llms.txt, search-rankings.json, and monitor/social/report-*.json all carry 2026-04-23 timestamps. No external blocker on the dome site (poller ran fine at 15:53); no upstream input dependency that would make a no-op day legitimate. This is a silent scheduler miss, not a clean no-op.",
+      "evidence": "mcp__scheduled-tasks__list_scheduled_tasks shows dome-social nextRunAt=2026-04-25T10:05:47Z despite current time 2026-04-24T16:30Z and enabled=true. `ls -lt monitor/social/` — newest file report-2026-04-23.json (Apr 23 11:06). No social commit on GitHub since 2026-04-21T18:12 (operator move-to-funwithscience.net).",
+      "suggested_fix": {
+        "file": "(operator action — scheduler)",
+        "find": "dome-social stuck with nextRunAt in the future despite missed fire",
+        "replace": "Manually trigger dome-social once (one-off scheduled task firing at T+5min) to generate the 2026-04-24 report, then verify nextRunAt rolls forward to 2026-04-25 as expected. If a second daily miss occurs on 2026-04-25, escalate — likely a scheduler bug, not a task-level issue.",
+        "rationale": "A missed daily fire is recoverable (the agent is idempotent for its own outputs), but two consecutive misses would indicate a persistent scheduling bug. One-off trigger confirms the task itself works before we conclude it's a scheduler issue vs an agent issue."
+      },
+      "self_fixable": false,
+      "fix_applied": false
+    },
+    {
+      "severity": "major",
+      "category": "schedule",
+      "description": "dome-workspace-sync last pushed at 2026-04-24T02:52:49Z — 14 hours ago. Cron is '0 */4 * * *' (every 4 hours at the top of the hour), so fires at 06:00, 10:00, and 14:00 UTC on 2026-04-24 have all been skipped. Scheduler says nextRunAt=2026-04-24T19:03:24Z, which is itself 1h after the 18:00 slot it should have taken — suggesting the 16:00 fire is also gone. Consequence: workspace-owned files (monitor/status.json, monitor/review-state.json, monitor/decisions/morning-briefing.txt) stay in FUSE and are not pushed to git. Concrete drift already present: monitor/status.json md5=5955497e on FUSE vs 67cb2be1 on main. Integrity's fresh 16:33 report files (report-2026-04-24T16-30.json, alerts.txt, latest-integrity-summary.txt) are sitting in FUSE waiting for workspace-sync to commit them; until then the alerts are invisible to any clean-clone consumer.",
+      "evidence": "Scheduler lastRunAt=2026-04-24T01:48:40.925Z, nextRunAt=2026-04-24T19:03:24.000Z. GitHub commit log: last 'Workspace sync:' commit is 2026-04-24T02:52:49Z (subsequent commits 02:56, 03:15, 16:02, 16:05 are all Decider pushes from its own clean clone). FUSE status.json mtime 2026-04-23T17:12:17Z vs git 2026-04-23T20:28:57Z (git newer — from last successful workspace-sync yesterday) — confirms no sync has landed today. Integrity's report-2026-04-24T16-30.json exists on FUSE (Apr 24 16:32) but is not yet on GitHub main.",
+      "suggested_fix": {
+        "file": "(operator action — scheduler)",
+        "find": "workspace-sync 3+ missed fires today; integrity output stuck in FUSE",
+        "replace": "Manually trigger dome-workspace-sync once (one-off, T+5min) to push the fresh integrity report, alerts, latest-integrity-summary, and any other workspace-only files accumulated since 02:52. Then monitor the 19:03 auto-fire — if it hits, the system is recovering; if it also skips, escalate as a persistent scheduler issue covering both social AND workspace-sync.",
+        "rationale": "Two independent daily-ish agents (social + workspace-sync) both dropping fires on the same day is suspicious — likely a scheduler hiccup, not two separate task-level bugs. Force a sync to unblock the integrity alerts reaching the decider on its next run (which is 17:18 UTC — within the hour). Integrity flagged a BLOCKER ('expansion-tracker collision imminent') that decider needs to see."
+      },
+      "self_fixable": false,
+      "fix_applied": false
+    },
+    {
+      "severity": "moderate",
+      "category": "schedule",
+      "description": "priority-queue.json schedule_state is out of sync with actual cron in TWO directions. schedule_state shows analyst=30, curmudgeon=30, decider=60 minute intervals with 'churn-and-burn' note dated 2026-04-20T14:54:23Z. Actual cron: analyst '50 * * * *' (hourly, 60m), curmudgeon '20 * * * *' (hourly, 60m), decider '15 */2 * * *' (every 2h, 120m). Decider's own daily-report-2026-04-24T05-30.json flags this: curmudgeon_queue.schedule_action_needed='restore_to_bau' with note 'Mode is BAU but curmudgeon_current_interval_minutes=30 (fast). Schedules should be restored to BAU defaults (curmudgeon 240min, analyst 120min, decider 240min).' The decider has flagged this for multiple runs now — it knows the schedule_state is wrong but 'decider does not call update_scheduled_task' (human gate). Compound problem: (a) schedule_state claims 30m but actual cron is 60m, so even the 'current' number is fiction; (b) BAU defaults should probably be 240/120/240 per decider's note, but schedule_state says default is 30/30/60. Neither the current-vs-actual nor the default-vs-spec lines up.",
+      "evidence": "monitor/curmudgeon/priority-queue.json: schedule_state.analyst_current_interval_minutes=30, curmudgeon=30, decider=60, default=30/30/60. note='Churn-and-burn: dome author reactive update detected 2026-04-17. Canary soft-triggered. 5 change files pending analysis. Analyst/curmudgeon 30m, decider 1h.' last_schedule_change='2026-04-20T14:54:23.804Z' (4 days stale). Actual cron per mcp__scheduled-tasks__list_scheduled_tasks: analyst=60m, curmudgeon=60m, decider=120m. Decider daily-report-2026-04-24T05-30.json curmudgeon_queue.schedule_action_needed='restore_to_bau'.",
+      "suggested_fix": {
+        "file": "(operator action — scheduler + priority-queue.json)",
+        "find": "priority-queue.json schedule_state drifted from actual cron; decider flagging restore_to_bau for multiple runs",
+        "replace": "Operator to decide the intended BAU cadence and THEN reconcile both sides in one pass: (1) update cron if churn-and-burn should continue (analyst 30m '*/30 * * * *', curmudgeon 30m, decider 60m '0 * * * *'); OR (2) if canary has cooled off and we should restore to BAU, update priority-queue.json schedule_state to match current 60/60/120 cron AND clear the 'canary-triggered-reactive-update' override reason on analyst. The mismatch is currently harmless (agents are running; decider compensates with pulls) but it defeats the Mode 1 'metadata-vs-reality' check and causes a persistent restore_to_bau flag in every decider daily report.",
+        "rationale": "Per tinker-pipeline-health.md Step 6: a current-vs-default mismatch IS a flaggable drift because the override clear-when condition ('all 5 chg-20260417 change files processed and curmudgeon has reviewed analyst output') is likely met (4 days later, 390/394 reviews processed). Decider has flagged this autonomously; tinker is amplifying and providing concrete cron expressions for the operator."
+      },
+      "self_fixable": false,
+      "fix_applied": false
+    },
+    {
+      "severity": "moderate",
+      "category": "staleness",
+      "description": "dome-integrity ran noticeably slow today — started 15:59:19Z, completed 16:32-16:33Z (report + alerts + summary file write timestamps). 34-minute run vs prior-week norm of <5 minutes (prior reports at 07:17, 07:20, 07:21, 09:25, 11:13 — delta between run-start-in-filename and file-mtime typically ~1 minute). Could be coincidental (large WIN count to audit, external link checks slow) or symptom of the same underlying scheduler issue. Note this is NOT a missed fire — the report landed — but the duration is anomalous.",
+      "evidence": "Scheduler lastRunAt=2026-04-24T15:59:19.870Z. FUSE file mtimes: report-2026-04-24T16-30.json=Apr 24 16:32, alerts.txt=Apr 24 16:33, latest-integrity-summary.txt=Apr 24 16:33. Filename timestamp '16-30' suggests the agent named the file at 16:30 but wrote it at 16:32 — 2 minutes of writing after naming (acceptable) but 31 minutes from scheduler trigger to file-name timestamp (not acceptable for a normal run). Overall_status=fail with 2 majors — substantive work done, not a timeout.",
+      "suggested_fix": {
+        "file": "(observational — flag and monitor)",
+        "find": "integrity agent took 34 minutes today vs prior-week norm of <5 minutes",
+        "replace": "Watch tomorrow's integrity run duration. If ≥10 minutes again, investigate: external_links check (83/84 domains) may be timing out, or the agent may be doing repeated clone operations. A sustained 10x slowdown costs tokens and risks running past the next scheduled agent's window.",
+        "rationale": "Single-instance slow run isn't actionable without more data points. But it lines up suspiciously with the social/workspace-sync misses — all three are daily-or-quarter-daily agents, all three had anomalies on the same day. Worth tracking as one incident, not three."
+      },
+      "self_fixable": false,
+      "fix_applied": false
+    }
+  ],
+  "previous_followup": [
+    {
+      "finding": "PROP-005 — decider pre-flight validation (stale clone drift)",
+      "status": "STILL_BROKEN",
+      "evidence": "grep -q 'Pre-flight Work Check' monitor/prompts/decider.md → STILL_BROKEN. PROP is now 14 days old. Previous 2 runs recommended close-as-wontfix. No change in operator position. Recommendation: operator closes as wontfix, or accept continued STILL_BROKEN status indefinitely. Not re-escalated."
+    },
+    {
+      "finding": "PROP-007 — OWNERSHIP table alignment",
+      "status": "FIXED",
+      "evidence": "status=implemented in PROP file; verification stable across 7+ runs; no action."
+    },
+    {
+      "finding": "PROP-008 — curmudgeon gate enforcement",
+      "status": "STILL_BROKEN",
+      "evidence": "verification_pattern returns STILL_BROKEN. PROP is 6 days old. Queue depth steady (2 today vs 4 yesterday vs 3 the day before) — not hot. Not re-escalated."
+    },
+    {
+      "finding": "PROP-009r2 — queue_id strict enforcement",
+      "status": "FACTUAL_FIXED_VERIFICATION_GATED",
+      "evidence": "status=applied on the PROP. verification_pattern returns FIXED with CLEAN_CLONE=1 set and STILL_BROKEN without it. Same as previous 2 runs. Recommendation restated: pattern author drop the CLEAN_CLONE env-gate OR tinker dispatcher add CLEAN_CLONE=1 to its PROP walk. Preferring the former — the env-gate is a self-defense check that no longer adds value now that the PROP is applied in all environments."
+    },
+    {
+      "finding": "PROP-010 — reverse workspace sync",
+      "status": "FIXED",
+      "evidence": "status=implemented (auto-detected by previous run). 3rd consecutive FUSE-clean day for git-owned files (0 drift in probed files today). Holding."
+    },
+    {
+      "finding": "PROP-011 — integration_blocked_until filter in tinker Mode 3",
+      "status": "STILL_BROKEN",
+      "evidence": "verification_pattern returns STILL_BROKEN. PROP created 2026-04-22, 2 days old, single-file edit unimplemented. Still low-urgency since today is Mode 1 not Mode 3, but should apply before next Mode 3 run to avoid false-positive stale-complete findings."
+    },
+    {
+      "finding": "PROP-012 — curmudgeon design-category rubric",
+      "status": "STILL_BROKEN",
+      "evidence": "verification_pattern returns STILL_BROKEN. PROP created 2026-04-23 (yesterday) — implementation pending is normal. Per the PROP migration plan, 72h shadow run expected before enforce. No action this run."
+    },
+    {
+      "finding": "Open-issues net-positive watch — 38→73→91→110 across 4 days",
+      "status": "RESOLVING",
+      "evidence": "Today: 108 open issues vs yesterday's 110 (first net-negative day in 4). Phase A integration burst (WIN-010/061 expansions, EXP-239-242 integrated yesterday) appears to be landing. Expected continued decline as remaining Phase A EXPs integrate and curmudgeon queue stabilizes (queue=2 today vs 4 yesterday). Stop monitoring unless day-5 flips back to net-positive."
+    }
+  ],
+  "open_issue_health": {
+    "total_open": 108,
+    "severity_distribution": {"major": 14, "moderate": 32, "minor": 61, "info": 1},
+    "aged_out_over_7d": [],
+    "repeated_deferrals": [],
+    "missing_patches": [],
+    "zombie_fixes": [],
+    "note": "Zero critical issues. Zero major+ issues aged over 7 days. Healthy by tinker standards. Bulk of major-severity items are Phase A design-refresh integration work, actively being processed by decider."
+  },
+  "self_fixes_applied": [],
+  "proposals_written": [],
+  "recommendations": [
+    {
+      "priority": 1,
+      "type": "human_decision",
+      "description": "Manually trigger dome-social AND dome-workspace-sync as one-off T+5min fires. Goal: (a) unblock today's social report, (b) push integrity's fresh FAIL alerts (expansion-tracker collision + workspace-only WIN-067.c10.json) to git so the 17:18 decider run can see them. Both fires are idempotent — safe to run manually.",
+      "prop_id": null
+    },
+    {
+      "priority": 2,
+      "type": "human_decision",
+      "description": "Resolve priority-queue.json schedule_state drift. Either restore cron to match the 30/30/60 'churn-and-burn' claim (aggressive), or edit priority-queue.json schedule_state to match current 60/60/120 cron and clear analyst_override_reason (conservative — dome site manual-commit drought is 7+ days, canary pressure has eased). Decider has been flagging restore_to_bau for multiple runs; leaving it unresolved means every decider daily report carries a known-stale recommended_action.",
+      "prop_id": null
+    },
+    {
+      "priority": 3,
+      "type": "human_decision",
+      "description": "Action integrity's 2 majors from the 16:30 report: (a) back-fill tracker.next_id from 238 to 243 and add EXP-238 through EXP-242 as status=integrated entries — one-liner is in issues_found[0].suggested_fix; (b) commit monitor/curmudgeon/reviews/WIN-067.c10.json from clean clone before workspace recycle. Neither is tinker's territory (decider handles tracker writes, operator handles manual commits), but both are real data-loss risks if left past tonight's workspace cycle.",
+      "prop_id": null
+    },
+    {
+      "priority": 4,
+      "type": "prop",
+      "description": "Close PROP-005 as wontfix. Three consecutive tinker runs have recommended it; the finding is stable (STILL_BROKEN) but operator has not prioritized. Either accept it's wontfix or commit to a resolution. Keeping it in the STILL_BROKEN list indefinitely is noise.",
+      "prop_id": "PROP-005"
+    },
+    {
+      "priority": 5,
+      "type": "self_fix",
+      "description": "Strip CLEAN_CLONE env-gate from PROP-009r2.verification_pattern. The PROP is applied in all environments (FUSE and clean clones) and the gate serves no purpose now. This is mechanical — edit the PROP's verification_pattern field, removing the '[ -n \"${CLEAN_CLONE:-}\" ] && ' prefix. Not self-applying this run because the PROP is decider-adjacent infrastructure and a wrong edit could cause silent bad verifications later; proposing instead.",
+      "prop_id": null
+    }
+  ],
+  "counter_arguments_considered": [
+    {
+      "position": "Mode 3 (cost engineering) was the right call — pipeline is 5/7 agents running, that's not red.",
+      "rebuttal": "The two stalled agents (social, workspace-sync) are BOTH in the data-flow path to git. Missing them means fresh integrity MAJORs stay invisible to any clean-clone consumer for hours. That's a broken handoff (Mode 1), not a cost opportunity. If I'd picked Mode 3, the three operator-action recommendations above would have been deferred to tomorrow's tinker — and one of them (expansion-tracker collision) would have collided with the 17:18 decider run in the meantime."
+    },
+    {
+      "position": "Integrity took 34 minutes — that's a real incident, should be a finding, not a sidebar.",
+      "rebuttal": "One-instance slowness without a second data point isn't actionable. The agent completed successfully; it just took longer than usual. Possible causes (large WIN count, slow external link check, FUSE latency) all resolve on their own. Flagging it as 'watch' rather than 'investigate' keeps the report focused on fires we can actually put out today. If tomorrow's run also takes >10 min, escalate it — not before."
+    },
+    {
+      "position": "The priority-queue schedule_state drift is harmless — agents are running, who cares?",
+      "rebuttal": "It's harmless to the analysts but it poisons the Mode 1 'metadata-vs-reality' check, which IS tinker's job. Every future tinker run (not just this one) will have to manually reconcile schedule_state vs cron before it can legitimately flag or clear a schedule anomaly. The fix is a single priority-queue.json edit by the decider (the owner); not fixing it is paying a token tax forever."
+    },
+    {
+      "position": "I should have self-fixed PROP-009r2's CLEAN_CLONE gate rather than recommending it.",
+      "rebuttal": "The PROP is decider-gated infrastructure (enforces queue_id validation on commits). A wrong edit that accidentally makes the verification always return FIXED would mask a future genuine regression silently. The mechanical nature (just strip a bash prefix) doesn't outweigh the asymmetric downside. Proposing is the right conservative call — the operator can rubber-stamp it in a minute."
+    }
+  ],
+  "context_load": {
+    "claude_md_lines": 148,
+    "claude_md_bytes": 14662,
+    "claude_md_est_tokens": 3665,
+    "this_run_loaded": [
+      "monitor/prompts/tinker.md (135 lines)",
+      "monitor/prompts/reference/tinker-pipeline-health.md (87 lines)",
+      "monitor/prompts/reference/tinker-proposals-and-fixes.md (170 lines)"
+    ],
+    "this_run_est_tokens": "~4000 prompt + ~4000 tools/data probes",
+    "trend_alert": null,
+    "note": "Tinker loaded pipeline-health AND proposals-and-fixes this run (two reference modules) because Mode 1 still needs the Step 2b PROP verification walk for previous_followup. That's per the main tinker.md dispatcher instruction, not overreach. If this becomes a pattern for Mode 1 runs, consider either (a) moving the Step 2b walk into tinker-pipeline-health.md (code duplication) or (b) keeping the cross-load (small, ~170 lines). Current load is well under budget; no action."
+  },
+  "audit_self": {
+    "prompt_size_lines": 135,
+    "no_op_rate_last_7_runs": "0/7 — every run produced findings or PROPs",
+    "mode_distribution_last_7": "Mode 1 (health)×1, Mode 2 (infra)×0, Mode 3 (cost)×2, Mode 4 (proposals)×4 — weighted toward proposals, consistent with PROP backlog",
+    "proposal_implementation_rate": "7/13 PROPs implemented (54%) — PROP-001/002/003/004/006/007/010 implemented; 005/008/009(r/r2)/011/012 in various proposed/applied/superseded states",
+    "self_check_pass": true,
+    "self_check_notes": "Did I mark anything STILL_BROKEN based on md5 vs main? No — all PROP statuses verified via verification_pattern bash run, not file-hash comparison. Did I duplicate decider's findings? Partially — the schedule_state drift is flagged by decider's own report; tinker is amplifying it with concrete cron expressions and a specific operator action, which adds value beyond just repeating. The expansion-tracker + WIN-067.c10 issues are deliberately NOT re-stated as tinker findings — integrity already has them, my recommendation just points the operator at integrity's report. Good ownership boundary."
+  }
+}
