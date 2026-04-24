@@ -1,0 +1,26 @@
+{
+  "type": "integrity_notice",
+  "proposed_by": "scheduled-analyst-run",
+  "created_at": "2026-04-24T17:01:34.588Z",
+  "source": "analyst-assigned-issue-workflow",
+  "summary": "expansion-tracker.json next_id stale: next_id=238 while disk contains EXP-238 through EXP-242. Also: ISS-1496.assigned_exp='EXP-240' collides with existing EXP-240-WIN069-circuity-citation-retraction-iss1487-iss1488.json (created 2026-04-23). Root cause inferred, not investigated further in this run.",
+  "recommended_action": "audit-and-reconcile",
+  "severity": "medium",
+  "category": "pipeline-integrity",
+  "detail": "During ISS-1496 work this run, the analyst found that monitor/analyst/expansion-tracker.json had next_id=238 but the expansions/ directory on disk held EXP-238, EXP-239, EXP-240, EXP-241, EXP-242 — all registered to other issues across Apr 23 decider runs. This means: (a) the tracker did NOT grow with disk writes for five consecutive decider-side allocations (EXP-238..242), and (b) the decider itself assigned 'EXP-240' to ISS-1496 (at 2026-04-24T16:01:01Z per assigned_at) despite the EXP-240 file already existing for WIN-069. If the analyst had honored the assigned_exp literally, our EXP-240 output would have overwritten the WIN-069 citation retraction work. This run defensively allocated EXP-243 (disk-max+1) and bumped next_id to 244. Issue-proposal proposal-ISS-1496-resolution.json documents the same.",
+  "diagnostic_checks_recommended": [
+    "Confirm whether EXP-238..242 were registered under different IDs in the tracker (check for any items with status ready-for-integration referring to WIN-010/025/061/068/069 created 2026-04-23 that match these files).",
+    "If EXP-238..242 are absent from the tracker, decide whether to back-fill them or accept the gap as 'disk is the source of truth' and the tracker is purely a status index for pending work.",
+    "Trace the decider step (reference: EXP-234 → EXP-242 decider runs on 2026-04-23) that writes expansion files — identify where the tracker update is missing.",
+    "Check that the decider's assigned_exp allocation code reads from max(tracker.next_id, disk_max) rather than raw tracker.next_id, to prevent future collisions."
+  ],
+  "blast_radius_if_ignored": "Next decider run that honors tracker.next_id and writes an expansion will collide with an existing file. If assigned_exp fields are used literally by the analyst, more collisions are possible. The integrity_gate (pre-push) may or may not catch this — it depends on whether the gate checks for existing file overwrite.",
+  "mitigations_already_applied": [
+    "This run allocated EXP-243 (not EXP-238/239/240/241/242/238 which would have collided) and bumped tracker.next_id from 238 to 244.",
+    "proposal-ISS-1496-resolution.json flags the assigned_exp=EXP-240 collision for decider reconciliation."
+  ],
+  "do_not": [
+    "Do NOT blindly trust tracker.next_id in future allocation code paths without cross-checking against disk.",
+    "Do NOT close this notice by merely reconciling ISS-1496.assigned_exp — the underlying allocation bug deserves a trace."
+  ]
+}
