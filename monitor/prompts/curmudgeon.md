@@ -61,7 +61,9 @@ In short: read data from the clone (guaranteed fresh), write outputs to the work
 
 **Step 0b: Check the priority queue** (`${CLONE}/monitor/curmudgeon/priority-queue.json` — read from the CLONE, not the workspace mount, because the mount can be stale). This is the urgent re-review queue. Items here are freshly onboarded WINs, rewritten sections, new proposal packages, or anything else the decider flagged as needing immediate attention. **They jump ALL other work — change-driven reviews, holistic checks, and spot-checks.**
 
-**Hard rule: review ONE queue item per run, then STOP all priority work.** Do not drain the queue in a single invocation. Do not "while you're at it" a second item. One item, full focus, fresh context next run. The scheduler (not you) decides throughput via the decider's churn-and-burn mode.
+**Default rule: review ONE queue item per run, then STOP all priority work.** Do not drain the queue in a single invocation. One item, full focus, fresh context next run. The scheduler (not you) decides throughput via the decider's churn-and-burn mode.
+
+**Batching exception (added 2026-04-25):** When the items at the head of the queue are clearly *minor re-reviews* — the decider just self-applied small patches and pushed the target back to verify the patch closed the hole cleanly — you MAY process up to **3 items in a single run** if every batched item passes the gate in **Step 8a (Batch triage)** below. Each batched item still gets its own review file (one queue_id per file; PROP-009 applies per-item). Batching saves only the per-run startup overhead, not the per-item review effort. Items that fail the gate fall back to singleton: process the head item normally, STOP after, defer the rest to the next run.
 
 Queue structure:
 ```json
@@ -114,7 +116,34 @@ Queue structure:
 
 6. Write the review to the normal `reviews/` location.
 7. **Do NOT modify `priority-queue.json`.** The decider is the primary writer; the human operator may also push items directly as an escape hatch (look for `pushed_by` containing `"operator"`). You never write to the queue. Note: `priority-queue.json` is git-owned — you see it from your fresh clone each run, so operator pushes via the FUSE workspace will be invisible to you; operators are expected to push via a git clone. The decider will pop reviewed items and append history records when it processes your review files. Your review file IS the signal that the item is done — treat operator-pushed and decider-pushed items identically. **PROP-009: when the triggering work is a queue-sourced item, your review JSON MUST contain a top-level `queue_id` field copied verbatim from `item.queue_id` (integer) and a `queue_pushed_at` field copied from `item.pushed_at`. This is the load-bearing identifier the decider uses to match your review to the push; without it the decider falls back to a timestamp heuristic, and with a wrong value the decider may pop the wrong queue entry. Before writing the review file, assert in your own output: `queue_id set to <N>, matches queue item`. If you are unsure which queue_id you are servicing (e.g., two concurrent pushes of the same target_id), stop and leave a human note rather than guessing.**
-8. **STOP** (unless Step 5 sent you back for another item). Do not continue to normal cycle work this run. Save/commit and exit.
+8. **STOP** (unless Step 5 sent you back for another item, OR Step 8a authorizes batching to a 2nd/3rd item). Do not continue to normal cycle work this run. Save/commit and exit.
+
+**Step 8a: Batch triage (optional — extends Step 8)**
+
+After completing review item #1 normally (steps 1–7), check whether the next item in the queue qualifies for batching. If yes, return to Step 2 with the next item. Repeat until the batch reaches 3 items OR an item fails the gate. Then STOP.
+
+**Batchability gate — ALL of the following must hold for an item to be batched:**
+
+1. **Decider classified the triggering patches as `severity: minor`.** Look up the queue item's `context_hints.related_issues` (or `related_issues`); for each ISS-NNN, find its closure record in `${CLONE}/monitor/decisions/closed-issues.json` and check the `severity` field. **All** related issues must be `severity: minor`. Any `moderate`, `major`, or `critical` → the item is substantive, do not batch.
+
+2. **No verdict change recommended.** If the queue item's `reason` text mentions verdict shifts ("verdict change", "Std Model → Refuted", "promoted to Self-Contradicted", etc.) or if the most recent review on this `target_id` had `verdict_change_recommended: true`, this is by definition not minor. Do not batch.
+
+3. **Combined batch byte budget < 10 KB.** Estimate each item's diff size from its `reason` (e.g., "4 minor text patches" ≈ 1–2 KB; "stutter fix" ≈ <500 bytes; "EXP integration" ≈ NOT batchable, regardless of severity). If adding the next item would push combined batch beyond ~10 KB of new text to read, stop adding to the batch.
+
+4. **Anti-staleness guard.** Look up the target's review history in `${WORKSPACE}/monitor/curmudgeon/tracker.json` (or scan `reviews/` filenames). If the target's most recent **singleton-deep** review (i.e., a review NOT marked `batched: true` in its JSON) is more than **3 cycles** ago, force singleton on this item — the WIN is overdue for fresh full attention regardless of how minor the patches look. Do not batch.
+
+5. **Item must not be a fresh onboard.** `target_type: win-new`, `target_type: section-new`, or `target_type: proposal` are foundational and always singleton. Batching applies to re-reviews of already-reviewed targets only (`win-detail-rewrite`, `section-rewrite`, `killshot-rewrite`).
+
+**Batching procedure when gate passes:**
+
+a. Mark each batched review file with `"batched": true` and `"batch_position": N` (1, 2, or 3) at the top level.
+b. Each review still gets its own queue_id and queue_pushed_at copied from its specific queue item — they are NOT shared.
+c. Run the Step 5 staleness check (`git pull --rebase`) ONCE before starting the batch, not per-item — fresh data carries over.
+d. If during batch processing you discover a finding that's actually `major` or `critical` (the decider's classification was wrong), abort the batch: write the current review marking it `batch_aborted_due_to_severity_upgrade: true`, do NOT process further items, STOP.
+
+**Why this exists:** at q4h cadence, the queue can accumulate 2-3 minor re-reviews between curmudgeon fires (decider self-applies several minor patch sets back-to-back). Without batching, the queue takes 8-12 hours to drain even when each item is a 5-minute verification of "did the patch close the hole." With batching, a single fire processes the trivial cases and singletons reserve capacity for substantive work.
+
+**Counter-argument the operator considered and accepted:** batching dilutes adversarial focus — items 2 and 3 may inherit a "this WIN is fine" prior from item 1. The anti-staleness guard (criterion 4) and the abort-on-severity-upgrade rule (procedure d) are the mitigations. If you find yourself batching the same target across multiple consecutive runs, that's a signal the target has stagnated; surface it in your next run's `summary_for_decider`.
 
 If the queue had no items, continue to Step 0c.
 
@@ -133,7 +162,7 @@ When this exception applies, write a short consolidation file `monitor/curmudgeo
 → Read `monitor/prompts/reference/curmudgeon-change-and-holistic.md` and execute the first applicable procedure (change detection → holistic review → spot-check).
 
 **Priority order each run:**
-1. **Priority queue** (Step 0b) — one item, FIFO, then STOP
+1. **Priority queue** (Step 0b) — one item, FIFO, then STOP. **Exception:** Step 8a may authorize batching up to 3 minor re-review items in a single run when all gate criteria pass.
 2. **Human notes** (Step 0c) — explicit human requests, then STOP
 3. **Major external change workload audit** (Step 0c2) — gap analysis after dome author reactive updates, then STOP
 4. **Change-driven review** (Step 0d) — content that changed since last review
