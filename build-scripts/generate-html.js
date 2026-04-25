@@ -460,11 +460,17 @@ function generateVerdictBarChart(tally, total) {
   const maxCount = ordered.reduce((m, v) => Math.max(m, tally[v] || 0), 0) || 1;
   const rows = ordered.map(verdict => {
     const count = tally[verdict] || 0;
-    const pct = total > 0 ? ((count / total) * 100).toFixed(0) : '0';
+    // ISS-1458: one-decimal precision so rounded percentages sum to 100.0 (not 101).
+    const pct = total > 0 ? ((count / total) * 100).toFixed(1) : '0.0';
     const widthPct = ((count / maxCount) * 100).toFixed(1);
     const anchor = ANCHOR[verdict];
     const shortCls = SHORT_CLASS[verdict];
-    return `<a class="verdict-bar-row" href="${anchor}" onclick="showTab('wins');return false" aria-label="${verdict}: ${count} of ${total} claims (${pct} percent). Click to view detailed analysis.">
+    // ISS-1459: aria-label mentions combined Misleading/Unfalsifiable section
+    // when href routes to it (Unfalsifiable shares section 3.6 with Misleading).
+    const ariaSuffix = (verdict === 'Unfalsifiable')
+      ? ` Click to view the combined Misleading/Unfalsifiable section.`
+      : ` Click to view detailed analysis.`;
+    return `<a class="verdict-bar-row" href="${anchor}" onclick="showTab('wins');return false" aria-label="${verdict}: ${count} of ${total} claims (${pct}%).${ariaSuffix}">
   <span class="vb-label">${verdict}</span>
   <span class="vb-bar-container">
     <span class="vb-bar ${shortCls}" style="width:${widthPct}%"><span class="vb-count">${count}</span></span>
@@ -474,8 +480,8 @@ function generateVerdictBarChart(tally, total) {
   }).join('\n');
   return `
 <section class="verdict-bars" aria-labelledby="verdict-bars-heading">
-  <h2 id="verdict-bars-heading" class="vb-heading">How the ${total} claimed wins actually land</h2>
-  <p class="vb-caption">Sorted by count. Click any verdict to jump to the detailed analysis.</p>
+  <h2 id="verdict-bars-heading" class="vb-heading">How the ${total} catalog entries actually land</h2>
+  <p class="vb-caption">${total} catalog entries = 69 dome-claimed wins plus 2 numbered-collision sub-claims. Sorted by count; percentages rounded to one decimal so they sum to 100. Click any verdict to jump to the detailed analysis.</p>
   <div class="vb-rows">
     ${rows}
   </div>
