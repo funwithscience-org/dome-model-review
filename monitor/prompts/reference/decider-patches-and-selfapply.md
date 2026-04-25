@@ -175,7 +175,38 @@ if [ $? -ne 0 ]; then
   exit 1
 fi
 
-git push origin main
+# Push with one transient-403 retry (added 2026-04-25). The PAT genuinely
+# has contents:write — verified via SHA256 match between operator clone PAT
+# and FUSE remote-URL PAT, and via successful API write tests. See
+# HNOTE-OPERATOR-PAT-DIAGNOSIS-CORRECTION-001 in
+# monitor/decisions/human-notes.json. A 403 here is most likely a transient
+# GitHub or per-session environmental hiccup rather than a scope problem.
+# Do NOT diagnose 403 as "PAT lacks contents:write" — that diagnosis was
+# wrong on 2026-04-25 and led to a wasted operator round-trip.
+PUSH_OUT=$(git push origin main 2>&1)
+PUSH_RC=$?
+if [ $PUSH_RC -ne 0 ] && echo "$PUSH_OUT" | grep -qE "403|Resource not accessible"; then
+  echo "Push hit 403; waiting 30s and retrying ONCE before declaring failure."
+  sleep 30
+  PUSH_OUT=$(git push origin main 2>&1)
+  PUSH_RC=$?
+fi
+echo "$PUSH_OUT"
+if [ $PUSH_RC -ne 0 ]; then
+  echo "Push failed (after retry if 403). Files synced to FUSE workspace as fallback. Operator may rescue-push from cowork session per HNOTE-OPERATOR-PAT-DIAGNOSIS-CORRECTION-001 procedure."
+  # Log push failure for operator visibility — keep schema consistent with
+  # prior push-failure logs but DO NOT claim the PAT lacks contents:write.
+  cat > "${WORKSPACE}/monitor/integrity/push-failure-$(date -u +%Y-%m-%dT%H-%M).json" <<JSON
+{
+  "event": "push-failure",
+  "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "error": $(printf '%s' "$PUSH_OUT" | jq -Rs .),
+  "diagnosis": "Push failed after one transient-403 retry. PAT is known to have contents:write (per HNOTE-OPERATOR-PAT-DIAGNOSIS-CORRECTION-001); cause is environmental, transient, or a non-PAT git issue. Operator should rescue-push from cowork session.",
+  "files_synced_to_fuse": true
+}
+JSON
+  exit 1
+fi
 
 # PROP-010: immediately sync git→FUSE so agents reading from the workspace
 # (integrity, social, poller) see the post-push content on their next run.
@@ -196,6 +227,7 @@ echo "SELF-APPLY FAILED: tests did not pass. Patch file left for human review."
 - Only `git push origin main` (fast-forward only) — if it fails, stop and leave for human
 - Only create NEW commits — never amend
 - If `git push` is rejected (someone else pushed), do `git pull --rebase origin main` then try push once more. If that also fails, stop.
+- If `git push` returns 403 ("Permission denied" / "Resource not accessible by personal access token"), wait 30s and retry ONCE per the wrapped block above. The PAT genuinely has `contents:write` (verified 2026-04-25; see `HNOTE-OPERATOR-PAT-DIAGNOSIS-CORRECTION-001`). Persistent 403 after retry is an environmental issue, not a scope problem — log push-failure with `files_synced_to_fuse: true` so operator can rescue-push, but do NOT write a diagnosis claiming the PAT lacks write scope.
 
 **After successful publish — close issues and clean up:**
 
@@ -234,7 +266,10 @@ mv /path/to/suggested-patches-YYYY-MM-DDTHH-MM.json monitor/decisions/applied-pa
 
 **Safety net:** The test suite (2000+ tests) validates schema, HTML consistency, links, tabs, and data-prose cross-references. If tests pass, the patch is safe to publish. If you're ever unsure whether a patch is "easy" or consequential, err on the side of leaving it for human review.
 
-**Important:** Because you clone fresh each run, you always have the latest code. If `git push` is rejected, someone pushed while you were working — do ONE `git pull --rebase origin main` and retry. If that also fails, stop and leave for human.
+**Important:** Because you clone fresh each run, you always have the latest code.
+
+- If `git push` is **rejected** (non-fast-forward), someone pushed while you were working — do ONE `git pull --rebase origin main` and retry. If that also fails, stop and leave for human.
+- If `git push` returns **403** (permission denied / "Resource not accessible by personal access token"), wait 30s and retry ONCE — this is a transient/environmental hiccup, not a PAT scope problem. The wrapped retry block above does this automatically. If 403 persists after retry, files have been synced to FUSE; operator will rescue-push. Do NOT diagnose 403 as a missing contents:write scope (verified 2026-04-25 — see `HNOTE-OPERATOR-PAT-DIAGNOSIS-CORRECTION-001`).
 
 ## Cleanup (mandatory, run last)
 
