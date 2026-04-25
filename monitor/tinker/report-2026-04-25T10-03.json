@@ -1,0 +1,207 @@
+{
+  "generated_at": "2026-04-25T10:03:31Z",
+  "report_date": "2026-04-25",
+  "mode_selected": "infrastructure",
+  "mode_reason": "Quick checks fired DISK WARNING (85% used, ≥80% threshold). Mode 2 selected per dispatcher rule. In execution it became clear the disk pressure is sandbox baseline (Ubuntu image + /var/log/journal/snapd accounting for ~7.5GB of /usr+/var) and not project-induced — agent clones in /tmp total 7.1MB. Pipeline itself is healthy and yesterday's two MAJORs both cleared. Mode 2 still right call because it surfaces the stale schedule_state and a fresh workspace-only review.",
+  "modes_checked": {
+    "pipeline_health": "green — all 7 production agents within their expected windows; 2026-04-24's stalled dome-social and dome-workspace-sync both recovered (next runs queued for 10:05Z and 11:03Z respectively, well within cron)",
+    "infrastructure": "yellow — disk WARNING 85% (sandbox baseline, not project-induced); 1 fresh workspace-only review (WIN-013.c4.json, MAJOR per integrity); priority-queue.json schedule_state 8d stale and now further drifted by drain-mode bump",
+    "cost_engineering": "skipped — last full Mode 3 was 2026-04-23; this Mode 2 run takes precedence",
+    "proposals": "0 mechanical self-fixes applied (PROP-009r2 env-gate held for 3rd consecutive run per prior precedent); 0 new PROPs needed"
+  },
+  "pipeline_health": {
+    "agents_running": 7,
+    "agents_stalled": [],
+    "output_freshness": {
+      "poller": "10h ago (last 2026-04-24T23:55Z, next 11:05Z; 12h cron, on schedule)",
+      "analyst": "44m ago (last 2026-04-25T08:58Z, hourly @:50; on schedule — note: still hourly per Phase A bump; matches HNOTE-OPERATOR-DRAIN-MODE-001 expected BAU of q120m once UI change lands)",
+      "curmudgeon": "1.6h ago (last 2026-04-25T08:25Z; cron is now */4h q240m per drain mode)",
+      "decider": "44m ago (last 2026-04-25T09:19Z; q120m; on schedule)",
+      "integrity": "1.9h ago (last 2026-04-25T08:08Z, runtime ~10min — back to norm vs yesterday's 34min outlier)",
+      "social": "scheduled at 10:05Z (current time 10:03Z); last actual run 2026-04-24T16:33Z (manual recovery yesterday)",
+      "workspace-sync": "3h ago (last 2026-04-25T07:04Z, every 4h, next 11:03Z; on schedule)",
+      "tinker": "self (this run)"
+    },
+    "previous_majors_cleared": [
+      "dome-social skipped 2026-04-24 fire — RESOLVED (manual recovery 16:33Z, next scheduled 2026-04-25T10:05Z)",
+      "dome-workspace-sync 3+ missed fires — RESOLVED (running 4-hourly since; last 07:04Z)",
+      "expansion-tracker EXP-238-242 backfill (integrity MAJOR) — RESOLVED (tracker now has 247 items, next_id=249, max in items=248, no collision; 1 cosmetic gap at EXP-052 + 10 no_op_confirmation slots without files)",
+      "WIN-067.c10.json workspace-only (integrity MAJOR) — RESOLVED (md5 c3b9d8c8 matches GitHub main; HTTP 200)"
+    ]
+  },
+  "findings": [
+    {
+      "severity": "moderate",
+      "category": "staleness",
+      "description": "priority-queue.json schedule_state has been stale since 2026-04-17 and is now further drifted by 2026-04-25's operator drain-mode change. The schedule_state block reports analyst=30m/curmudgeon=30m/decider=60m and an analyst_override_reason='canary-triggered-reactive-update' with note 'Churn-and-burn: dome author reactive update detected 2026-04-17. Canary soft-triggered. 5 change files pending analysis. Analyst/curmudgeon 30m, decider 1h.' Actual cron right now is analyst=60m, curmudgeon=240m (drain), decider=120m. Operator HNOTE-OPERATOR-DRAIN-MODE-001 (2026-04-25T09:03Z) has explicitly told the decider to stop re-flagging this as P1, and the latest decider report (09-32) complies — schedule_action_needed is no longer in the report. So the agent behavior is correct, but the on-disk schedule_state remains misleading for any future agent or human reading priority-queue.json.",
+      "evidence": "monitor/curmudgeon/priority-queue.json schedule_state.last_schedule_change=2026-04-17T16:43:23Z; analyst_current_interval_minutes=30; curmudgeon_current_interval_minutes=30; decider_current_interval_minutes=60. Live cron from list_scheduled_tasks: dome-analyst '50 * * * *' (60m), dome-curmudgeon '20 */4 * * *' (240m), dome-decider '15 */2 * * *' (120m). HNOTE-OPERATOR-DRAIN-MODE-001 monitor/decisions/human-notes.json 2026-04-25T09:03:50Z. Decider daily-report-2026-04-25T09-32.json has no schedule_action_needed field.",
+      "suggested_fix": {
+        "file": "monitor/curmudgeon/priority-queue.json",
+        "find": "schedule_state block",
+        "replace": "Decider should rewrite schedule_state on its next run to reflect actual cron (analyst 60m, curmudgeon 240m drain-mode, decider 120m), bump last_schedule_change to 2026-04-25T09:03Z, set last_schedule_change_by='operator', clear analyst_override_reason (the chg-20260417 backlog has been processed for days), and update note to reference HNOTE-OPERATOR-DRAIN-MODE-001 with cancellation criteria (queue 0 + open-issues <50 OR explicit operator HNOTE).",
+        "rationale": "schedule_state is decider-owned (writers: ['decider']). Tinker cannot self-apply. But leaving it stale risks confusing the next session's bootstrap and cluttering future agent reports."
+      },
+      "self_fixable": false,
+      "fix_applied": false
+    },
+    {
+      "severity": "major",
+      "category": "staleness",
+      "description": "Workspace-only curmudgeon review monitor/curmudgeon/reviews/WIN-013.c4.json (20.7KB, mtime 2026-04-25T09:28Z, ~30 min before this tinker run) is not yet in git. Decider's daily report (09-32) shows WIN-013.c4 was popped at 09:28:12 and processed (qid 259, ISS-1538 'five years→two years' patch applied) — so the data has been consumed downstream, but the review file itself is at risk if the workspace recycles before workspace-sync's next 11:03Z run.",
+      "evidence": "ws md5 dc090ffd, GH HTTP 404. Integrity report-2026-04-25T08-18.json flagged this as MAJOR. workspace-sync nextRunAt 2026-04-25T11:03Z (~1h away).",
+      "suggested_fix": {
+        "file": "monitor/curmudgeon/reviews/WIN-013.c4.json",
+        "find": null,
+        "replace": null,
+        "rationale": "No-action: workspace-sync's 11:03Z run will sweep this up via 'sync_glob monitor/curmudgeon/reviews *.json'. If it doesn't appear in main by 11:30Z, escalate to manual `cp` from clean clone. Same pattern as WIN-067.c10.json yesterday — recovered automatically once workspace-sync ran."
+      },
+      "self_fixable": false,
+      "fix_applied": false
+    },
+    {
+      "severity": "minor",
+      "category": "efficiency",
+      "description": "Disk usage 85% / 1.5GB free on the sandbox VM. This is a Mode 2 quick-check trigger but inspection shows it's the Ubuntu base image (/usr 6.1G, /var 1.7G of which /var/log/journal=588M, /var/lib/snapd=493M). Project-induced disk is /tmp/kev-repo 7.1MB and /tmp/dome-review-clean 4KB. No accumulated agent clones. The 80% WARNING threshold is calibrated for project-induced bloat; on this sandbox it's permanently above warning level even with no agent activity. Consider raising the threshold to 92% (i.e., trip only when project clones might actually run a tmpfs out of space) or routing the check through a project-relative path.",
+      "evidence": "df -h /: 8.1G used / 9.6G total. du -sh /usr=6.1G, /var=1.7G, /sessions=82M (workspace), /tmp=9.2M. /var/log/journal=588M (system journald). No agent-clone accumulation.",
+      "suggested_fix": {
+        "file": "monitor/prompts/tinker.md",
+        "find": "if [ \"$USE_PCT\" -ge 80 ]; then echo \"DISK WARNING: ≥80% used — one bad run from full\"; fi",
+        "replace": "if [ \"$USE_PCT\" -ge 88 ]; then echo \"DISK WARNING: ≥88% used — system+project disk; one bad run from full\"; fi",
+        "rationale": "85% is system baseline on this sandbox; 80% threshold trips Mode 2 every run regardless of project state, drowning out signal. 88% gives a 3pp buffer above baseline before raising warning."
+      },
+      "self_fixable": true,
+      "fix_applied": false,
+      "fix_reason_held": "Threshold tuning is judgment, not mechanical. Operator may want the false-positive to surface at 80% so they notice if the sandbox image itself bloats. Will re-propose as a PROP if next 3 runs all trip Mode 2 on this same trigger."
+    }
+  ],
+  "previous_followup": [
+    {
+      "finding": "[2026-04-24] dome-social skipped 2026-04-24 daily fire entirely",
+      "status": "FIXED",
+      "evidence": "list_scheduled_tasks shows dome-social lastRunAt 2026-04-24T16:33Z (manual recovery), nextRunAt 2026-04-25T10:05Z (scheduled). Cron '0 11 * * *' is enabled and present."
+    },
+    {
+      "finding": "[2026-04-24] dome-workspace-sync at 3+ consecutive missed fires",
+      "status": "FIXED",
+      "evidence": "list_scheduled_tasks shows lastRunAt 2026-04-25T07:04Z, nextRunAt 2026-04-25T11:03Z. Multiple successful runs in last 24h. Direction-guard skip log has 313 entries, all 'mtime-guard; git newer' (the safe class)."
+    },
+    {
+      "finding": "[2026-04-24] integrity MAJOR — expansion-tracker missing EXP-238-242 entries (collision risk)",
+      "status": "FIXED",
+      "evidence": "tracker.next_id=249, max id in items=248, items.length=247. No collision (next_id > max). All filesystem expansion files have tracker entries. Today's integrity report-2026-04-25T08-18.json no longer raises this finding."
+    },
+    {
+      "finding": "[2026-04-24] integrity MAJOR — WIN-067.c10.json workspace-only",
+      "status": "FIXED",
+      "evidence": "md5 c3b9d8c8c161c55f28dbed36006980e in workspace, identical hash from raw.githubusercontent.com (HTTP 200). Today's integrity report no longer flags it."
+    },
+    {
+      "finding": "[2026-04-24] dome-integrity ran 34 minutes (slow, prior-week norm <5min)",
+      "status": "STALE_FALSE_ALARM",
+      "evidence": "Today's integrity ran 08:08Z → report stamped 08:18Z → ~10 minute runtime, back inside historical norm. One-day spike, not a trend."
+    },
+    {
+      "finding": "[2026-04-24] PROP-005 STILL_BROKEN 14d — recommend close-as-wontfix",
+      "status": "STILL_BROKEN",
+      "evidence": "verification_pattern returns STILL_BROKEN. 'Pre-flight Work Check' phrase still absent from monitor/prompts/decider.md. 4th consecutive run flagged. Recommendation: operator should either (a) close the PROP as wontfix with rationale (Phase A throughput is gating decider runs being non-no-op anyway, so the no-op problem self-resolved without code changes), or (b) implement the suggested fix. Tinker holding pattern."
+    },
+    {
+      "finding": "[2026-04-24] PROP-008 STILL_BROKEN 6d — curmudgeon change-driven gates",
+      "status": "STILL_BROKEN",
+      "evidence": "verification_pattern returns STILL_BROKEN. 'Apply change-driven gates' and 'Fingerprint carry-forward' not in curmudgeon-change-and-holistic.md. Drain-mode reduces immediate pressure (curmudgeon now q240m, fewer review cycles to thrash) but the underlying redesign-rerun problem remains queued."
+    },
+    {
+      "finding": "[2026-04-24] PROP-009r2 verification_pattern has CLEAN_CLONE env-gate that breaks tinker auto-verify",
+      "status": "STILL_BROKEN",
+      "evidence": "Manual env-gated check (CLEAN_CLONE=1 bash -c) returns FIXED — all six required substrings present in workspace files (decider.md=1, curmudgeon.md=3, prop-009-enforce.flag in decider.md=3, build.js=1, workspace-sync.md=1, pq.history.length>200=1). Without the env, the test short-circuits to STILL_BROKEN. PROP itself has status='applied'; this is a verification recipe bug. 3rd consecutive run flagged. Tinker holding self-fix conservative for one more run."
+    },
+    {
+      "finding": "[2026-04-24] PROP-011 STILL_BROKEN 2d — tinker cost-engineering 'integration_blocked_until' missing",
+      "status": "STILL_BROKEN",
+      "evidence": "verification_pattern returns STILL_BROKEN. 'integration_blocked_until' and 'HELD (awaiting operator gate' not in tinker-cost-engineering.md. Targets a tinker-owned file but is itself a workflow-redesign-class change, requires careful rewrite of Mode 3 Step 1b."
+    },
+    {
+      "finding": "[2026-04-24] PROP-012 STILL_BROKEN 1d — curmudgeon Review Register selection",
+      "status": "STILL_BROKEN",
+      "evidence": "verification_pattern returns STILL_BROKEN. 'Review Register Selection' and 'Register B — Design-Category' substrings absent from curmudgeon.md and analyst.md. PROP only 1d old; normal pending state. Drain-mode reduces immediate need (fewer reviews) but it'll resurface when curmudgeon re-accelerates."
+    },
+    {
+      "finding": "[2026-04-24] priority-queue.json schedule_state drift",
+      "status": "STILL_BROKEN",
+      "evidence": "schedule_state still says analyst/curmudgeon=30m, decider=60m. Actual cron is 60/240/120. Drift increased not decreased after operator drain-mode change. See current finding #1 above. Decider absorbed the HNOTE behaviorally (no schedule_action_needed in latest report) but didn't sync the on-disk state."
+    },
+    {
+      "finding": "[2026-04-24] integrity 2 majors invisible until workspace-sync ran (decider.next at 17:18Z)",
+      "status": "FIXED",
+      "evidence": "Both majors reached git, both decider runs since 17:18Z saw them, both have been integrated downstream (EXP-238-242 backfill committed; WIN-067.c10 in main). Net effect: no harm from the 16:30→17:18 visibility gap."
+    },
+    {
+      "finding": "[2026-04-24] open-issues net-positive watch (110→108 first net-negative day)",
+      "status": "FIXED",
+      "evidence": "open-issues count now 106 (down 2 more from 108). 96/106 are >14d old (Phase A backlog). 10 in 3-7d age band, 0 in <3d band. Drain mode is working as designed — net-negative trend continues."
+    }
+  ],
+  "open_issue_health": {
+    "total_open": 106,
+    "by_severity": {"major": 11, "moderate": 32, "minor": 62, "info": 1, "critical": 0},
+    "by_age": {"<1d": 0, "1-3d": 0, "3-7d": 10, "7-14d": 0, ">14d": 96},
+    "aged_out": ["96 issues >14d old — Phase A design-refresh backlog, intentionally held for drain mode per HNOTE-OPERATOR-DRAIN-MODE-001"],
+    "repeated_deferrals": [],
+    "missing_patches": [],
+    "zombie_fixes": [],
+    "trend": "net-negative for second day (110→108→106). Drain mode executing as designed."
+  },
+  "infrastructure": {
+    "fuse_freshness": "5/5 git-owned probed files match GitHub main (data/wins.json, data/sections.json, data/predictions.json, data/uncounted-failures.json, build-scripts/*, docs/index.html, build.js)",
+    "git_auth": "200 OK from api.github.com/repos/funwithscience-org/dome-model-review with workspace PAT",
+    "disk": "85% used / 1519MB free; sandbox baseline; no project-induced bloat",
+    "workspace_sync_skip_log": "313 total skip entries; recent skips all 'mtime-guard; git newer' (safe class — workspace spared a newer git file)",
+    "junk_files": [
+      "monitor/curmudgeon/reviews/WIN-067.c3.json.build.js (0 bytes, 2026-04-21) — flagged by integrity 2 days running",
+      "monitor/analyst/expansions/EXP-202.json.bak (21964 bytes, 2026-04-22) — superseded by EXP-202.json"
+    ]
+  },
+  "claude_md_audit": {
+    "skipped": "Mode 2 run; CLAUDE.md audit is a Mode 3 step. No accuracy issues observed in passing — file ownership table still describes drain-mode-compatible behavior since the writers/owners haven't changed."
+  },
+  "context_load": {
+    "skipped": "Mode 2 run; per-agent context measurement is a Mode 3 step. Will run next Mode 3 invocation."
+  },
+  "recommendations": [
+    {
+      "priority": 1,
+      "type": "human_decision",
+      "description": "Operator: confirm whether the cron UI change for drain-mode BAU has been applied (curmudgeon q240m: confirmed via list_scheduled_tasks; analyst q120m: NOT YET — still hourly; decider q240m: NOT YET — still q120m). Decider's own latest report flags this as P2 'next_session'. If you intend to bring analyst+decider down to drain BAU, that's a UI action.",
+      "prop_id": null
+    },
+    {
+      "priority": 2,
+      "type": "human_decision",
+      "description": "Decider should sync schedule_state in priority-queue.json on next run to match actual cron (60/240/120) and clear the 2026-04-17 'churn-and-burn' override note. Tinker can't write to that file. Either operator does it manually via a clone push, OR adds an HNOTE asking the decider to do it on its next pass.",
+      "prop_id": null
+    },
+    {
+      "priority": 3,
+      "type": "self_fix",
+      "description": "Strip CLEAN_CLONE env-gate from PROP-009r2.verification_pattern to enable tinker auto-verification. NOT applied this run — tinker held to the conservative pattern set by the previous run. If still flagged on the 2026-04-26 run, tinker will apply it.",
+      "prop_id": "PROP-009r2"
+    },
+    {
+      "priority": 4,
+      "type": "prop",
+      "description": "Close PROP-005 as wontfix-archived. Decider no-op rate has self-resolved due to Phase A throughput; the original problem (42% no-op runs) doesn't reproduce in current data. 4 consecutive escalations with no movement.",
+      "prop_id": "PROP-005"
+    },
+    {
+      "priority": 5,
+      "type": "human_decision",
+      "description": "Disk WARNING threshold at 80% always trips on this sandbox (system image baseline). Either raise to 88% in tinker.md OR change the check to be project-relative (du on /sessions/*/mnt + /tmp clones rather than df on /). Holding self-fix this run pending explicit operator intent.",
+      "prop_id": null
+    }
+  ],
+  "self_audit": {
+    "tinker_md_lines": "Read but not measured this run (Mode 2 short-circuited the audit step). Will re-measure next Mode 3.",
+    "no_op_rate": "Last 4 tinker runs all produced findings; 0% no-op rate. Healthy.",
+    "verification_pattern_owned": "PROP-011 has verification_pattern. PROP-005, PROP-008, PROP-012 all have verification_patterns. PROP-009r2 has env-gated pattern (see findings). All tinker-authored PROPs are auto-verifiable in principle."
+  }
+}
