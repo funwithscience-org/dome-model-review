@@ -48,8 +48,17 @@ git pull --rebase origin main
 Copy files from workspace to clone using a **direction-aware smart_copy** helper. This prevents the sync bot from silently reverting commits that landed on main directly from a human session (e.g. PROP lifecycle updates) when the workspace hasn't seen those commits yet because `build.js publish` sync was broken or hadn't run.
 
 ```bash
-SKIP_LOG=/tmp/workspace-sync-skips.log
-: > "$SKIP_LOG"
+# Per-run unique tmpfile via mktemp. Previous design used a fixed path
+# /tmp/workspace-sync-skips.log; when a prior session left that file with
+# permissions the current session couldn't write, `: > "$SKIP_LOG"` would
+# silently fail and subsequent `>>` appends also failed, so the cat + node-
+# encode step at end-of-run read the PRIOR run's stale content. Operator
+# 2026-04-26 sync report flagged this — current run reported skips that
+# were actually carry-over from a previous session. mktemp gives us a
+# fresh inode per run with this session's owner and permissions, no race,
+# no leftover. The trap ensures cleanup even if a later step exits early.
+SKIP_LOG=$(mktemp -t workspace-sync-skips.XXXXXX.log)
+trap "rm -f \"$SKIP_LOG\"" EXIT
 
 # UNIVERSAL PUSHER MODE (added 2026-04-26 by operator directive — see
 # HNOTE-OPERATOR-UNIVERSAL-PUSHER-001). Workspace-sync now pushes most
