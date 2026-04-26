@@ -265,8 +265,8 @@ if (html) {
     tabTargets.add(match[1]);
   }
   // showTab targets should map to tab-content div IDs
-  // Tab content sections use: <div class="tab-content" id="tabname">
-  const tabContentRegex = /class="tab-content[^"]*"\s+id="([^"]+)"/g;
+  // Tab content sections use: <div class="ds-tab-content" id="tabname">
+  const tabContentRegex = /class="ds-tab-content[^"]*"\s+id="([^"]+)"/g;
   const definedTabs = new Set();
   while ((match = tabContentRegex.exec(html)) !== null) {
     definedTabs.add(match[1]);
@@ -425,7 +425,7 @@ if (html) {
   }
 
   // Re-extract tab IDs for this scope
-  const tabContentRegex2 = /class="tab-content[^"]*"\s+id="([^"]+)"/g;
+  const tabContentRegex2 = /class="ds-tab-content[^"]*"\s+id="([^"]+)"/g;
   const definedTabs2 = new Set();
   let m2;
   while ((m2 = tabContentRegex2.exec(html)) !== null) {
@@ -434,7 +434,7 @@ if (html) {
 
   // Each tab-content div should have non-trivial content
   for (const tab of definedTabs2) {
-    const tabRegex = new RegExp(`id="${tab}"[^>]*>([\\s\\S]*?)(?=<div[^>]*class="tab-content"|$)`);
+    const tabRegex = new RegExp(`id="${tab}"[^>]*>([\\s\\S]*?)(?=<div[^>]*class="ds-tab-content"|$)`);
     const tabMatch = html.match(tabRegex);
     if (tabMatch) {
       // Strip HTML tags to get text content length
@@ -674,54 +674,54 @@ console.log('\n── 8. Prediction Panels ──');
   assert(/\.formula\s*\{[^}]*font-family:var\(--mono\)/.test(htmlContent), '.formula class missing or not mapped to var(--mono)');
 
   // EXP-208: Stance statement present in HTML
-  assert(htmlContent.includes('class="stance-statement"'), 'EXP-208: .stance-statement element missing from docs/index.html');
+  assert(htmlContent.includes('class="ds-stance-statement"'), 'EXP-208: .ds-stance-statement element missing from docs/index.html');
   assert(htmlContent.includes('The world is a globe.'), 'EXP-208: stance-statement text "The world is a globe." missing');
   assert(htmlContent.includes('That does not prevent us from engaging'), 'EXP-208: stance-statement continuation text missing');
-  assert(/\.stance-statement\{/.test(htmlContent), 'EXP-208: .stance-statement CSS rule missing');
+  assert(/\.ds-stance-statement\{/.test(htmlContent), 'EXP-208: .ds-stance-statement CSS rule missing');
 
   // EXP-209: Verdict bar chart section present
-  assert(htmlContent.includes('class="verdict-bars"'), 'EXP-209: .verdict-bars section missing from docs/index.html');
-  assert(htmlContent.includes('class="verdict-bar-row"'), 'EXP-209: .verdict-bar-row elements missing');
-  assert(/\.verdict-bars\{/.test(htmlContent), 'EXP-209: .verdict-bars CSS rule missing');
+  assert(htmlContent.includes('class="ds-verdict-bars"'), 'EXP-209: .ds-verdict-bars section missing from docs/index.html');
+  assert(htmlContent.includes('class="ds-verdict-bar-row"'), 'EXP-209: .ds-verdict-bar-row elements missing');
+  assert(/\.ds-verdict-bars\{/.test(htmlContent), 'EXP-209: .ds-verdict-bars CSS rule missing');
   assert(htmlContent.includes('id="verdicts"'), 'EXP-209: verdict-distribution anchor #verdicts missing');
-  assert(!htmlContent.includes('class="sc-breakdown"'), 'EXP-209: old .sc-breakdown grid still present (should be removed)');
+  assert(!htmlContent.includes('class="ds-sc-breakdown"'), 'EXP-209: old .ds-sc-breakdown grid still present (should be removed)');
 
-  // EXP-212: Latest Findings placement (between verdict-legend and nav.toc)
+  // EXP-212: Latest Findings placement (between verdict-legend and nav.ds-toc)
   {
-    const overviewSlice = htmlContent.split('class="tab-content" id="evaluate"')[0] || htmlContent;
-    const vlPos = overviewSlice.indexOf('class="verdict-legend"');
-    const bnPos = overviewSlice.indexOf('class="breaking-news"');
-    const tocPos = overviewSlice.indexOf('class="toc"');
-    assert(vlPos > -1 && bnPos > -1 && tocPos > -1, 'EXP-212: verdict-legend, breaking-news, or nav.toc missing from Overview');
-    assert(vlPos < bnPos && bnPos < tocPos, 'EXP-212: breaking-news must appear between verdict-legend and nav.toc on Overview');
+    const overviewSlice = htmlContent.split('class="ds-tab-content" id="evaluate"')[0] || htmlContent;
+    const vlPos = overviewSlice.indexOf('class="ds-verdict-legend"');
+    const bnPos = overviewSlice.indexOf('class="ds-breaking-news"');
+    const tocPos = overviewSlice.indexOf('class="ds-toc"');
+    assert(vlPos > -1 && bnPos > -1 && tocPos > -1, 'EXP-212: verdict-legend, breaking-news, or nav.ds-toc missing from Overview');
+    assert(vlPos < bnPos && bnPos < tocPos, 'EXP-212: breaking-news must appear between verdict-legend and nav.ds-toc on Overview');
   }
   // EXP-212: breaking-news has 3 bn-item entries
-  const bnMatch = htmlContent.match(/<div class="breaking-news">[\s\S]*?<\/div>\s*\n\s*<\/div>/);
+  const bnMatch = htmlContent.match(/<div class="ds-breaking-news">[\s\S]*?<\/div>\s*\n\s*<\/div>/);
   if (bnMatch) {
-    const bnItems = (bnMatch[0].match(/<div class="bn-item">/g) || []).length;
+    const bnItems = (bnMatch[0].match(/<div class="ds-bn-item">/g) || []).length;
     assertEq(bnItems, 3, 'EXP-212: breaking-news must retain exactly 3 bn-item entries');
     assert(bnMatch[0].includes('#ts-april-2026-update'), 'EXP-212: bn-item #1 timestamp-tab link preserved');
     assert(bnMatch[0].includes('#section-1-8'), 'EXP-212: bn-item #2 refraction section link preserved');
     assert(bnMatch[0].includes('#pred-mined'), 'EXP-212: bn-item #3 predictions catalog link preserved');
   }
   // EXP-212: chrome weight reduced (1px border, no gradient, no accent color, uppercase eyebrow)
-  assert(/\.breaking-news\{[^}]*border:1px/.test(htmlContent), 'EXP-212: .breaking-news must use 1px border (was 2px)');
-  assert(!htmlContent.includes('linear-gradient(135deg,var(--card-bg)'), 'EXP-212: .breaking-news must not use linear-gradient background');
-  assert(/\.bn-header\{[^}]*text-transform:uppercase/.test(htmlContent), 'EXP-212: .bn-header must be uppercase eyebrow');
+  assert(/\.ds-breaking-news\{[^}]*border:1px/.test(htmlContent), 'EXP-212: .ds-breaking-news must use 1px border (was 2px)');
+  assert(!htmlContent.includes('linear-gradient(135deg,var(--card-bg)'), 'EXP-212: .ds-breaking-news must not use linear-gradient background');
+  assert(/\.ds-bn-header\{[^}]*text-transform:uppercase/.test(htmlContent), 'EXP-212: .ds-bn-header must be uppercase eyebrow');
   // EXP-212: no newspaper emoji in bn-header
   assert(!htmlContent.includes('&#128240;'), 'EXP-212: &#128240; newspaper emoji must not appear in docs/index.html');
 
   // EXP-213: verdict-badge class migration (spans may have additional attributes like style="margin-left:8px")
-  const vbClassCount = (htmlContent.match(/class="verdict-badge vb-[a-z_]+"/g) || []).length;
+  const vbClassCount = (htmlContent.match(/class="ds-verdict-badge vb-[a-z_]+"/g) || []).length;
   assert(vbClassCount > 50, `EXP-213: expected 90+ verdict-badge.vb-* spans, got ${vbClassCount}`);
   // No inline-style hex backgrounds on verdict-badge
-  const inlineHexBadges = htmlContent.match(/class="verdict-badge"[^>]*style="[^"]*background:#[A-Fa-f0-9]{3,6}/g);
+  const inlineHexBadges = htmlContent.match(/class="ds-verdict-badge"[^>]*style="[^"]*background:#[A-Fa-f0-9]{3,6}/g);
   assert(!inlineHexBadges, `EXP-213: verdict-badge must not carry inline-style hex backgrounds; found ${inlineHexBadges ? inlineHexBadges.length : 0}`);
   // Tap target minimums in CSS source
   const cssSource = fs.readFileSync('build-scripts/generate-html.js', 'utf8');
-  assert(cssSource.includes('.tab-btn{padding:.7rem') && cssSource.includes('min-height:44px'), 'EXP-213: mobile .tab-btn rule must pin min-height:44px');
-  assert(/\.toc a\{[^}]*min-height:44px/.test(cssSource), 'EXP-213: .toc a rule must pin min-height:44px');
-  assert(/\.skip-link\{[^}]*min-height:44px/.test(cssSource), 'EXP-213: .skip-link rule must pin min-height:44px');
+  assert(cssSource.includes('.ds-tab-btn{padding:.7rem') && cssSource.includes('min-height:44px'), 'EXP-213: mobile .ds-tab-btn rule must pin min-height:44px');
+  assert(/\.ds-toc a\{[^}]*min-height:44px/.test(cssSource), 'EXP-213: .ds-toc a rule must pin min-height:44px');
+  assert(/\.ds-skip-link\{[^}]*min-height:44px/.test(cssSource), 'EXP-213: .ds-skip-link rule must pin min-height:44px');
   assert(/\.win-anchor\{[^}]*min-height:44px/.test(cssSource), 'EXP-213: .win-anchor rule must pin min-height:44px');
   // Stacked card table media block
   assert(/@media\(max-width:720px\)\{\.stacked-card-table/.test(cssSource), 'EXP-213: .stacked-card-table @media(max-width:720px) block missing');
@@ -730,7 +730,7 @@ console.log('\n── 8. Prediction Panels ──');
   const whiteRe = /background:\s*#fff[";]/;
   assert(!whiteRe.test(sectionsContent), 'EXP-213: data/sections.json still contains background:#fff (integrity-flagged light panel)');
   // Skip-link present in HTML
-  assert(htmlContent.includes('class="skip-link"'), 'EXP-213: .skip-link missing from docs/index.html');
+  assert(htmlContent.includes('class="ds-skip-link"'), 'EXP-213: .ds-skip-link missing from docs/index.html');
   assert(htmlContent.includes('href="#main"'), 'EXP-213: skip-link href="#main" missing');
   // Main landmark present
   assert(htmlContent.includes('<main id="main">'), 'EXP-213: <main id="main"> landmark missing from docs/index.html');

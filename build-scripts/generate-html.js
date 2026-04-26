@@ -248,21 +248,21 @@ function renderFailuresBlock(failures, silentFailureEntries, acknowledgedBucketE
   return `
 <h2 id="p3-failures">Failures the dome doesn't count</h2>
 
-<div class="scorecard" style="grid-template-columns:repeat(3,1fr);margin:1rem 0">
-<div class="sc-card sc-sm" style="border-left:4px solid var(--rule)">
-<div class="sc-number">${totalDome}</div>
-<div class="sc-label">Acknowledged</div>
-<div class="sc-sublabel">The dome's own count — items he labels "refined" and includes in his ${failures.dome_claimed_accuracy} denominator</div>
+<div class="ds-scorecard" style="grid-template-columns:repeat(3,1fr);margin:1rem 0">
+<div class="ds-sc-card ds-sc-sm" style="border-left:4px solid var(--rule)">
+<div class="ds-sc-number">${totalDome}</div>
+<div class="ds-sc-label">Acknowledged</div>
+<div class="ds-sc-sublabel">The dome's own count — items he labels "refined" and includes in his ${failures.dome_claimed_accuracy} denominator</div>
 </div>
-<div class="sc-card sc-sm" style="border-left:4px solid var(--refuted-solid)">
-<div class="sc-number">${totalSilent}</div>
-<div class="sc-label">Silent</div>
-<div class="sc-sublabel">Predictions visibly removed or suspended but excluded from his accuracy denominator</div>
+<div class="ds-sc-card ds-sc-sm" style="border-left:4px solid var(--refuted-solid)">
+<div class="ds-sc-number">${totalSilent}</div>
+<div class="ds-sc-label">Silent</div>
+<div class="ds-sc-sublabel">Predictions visibly removed or suspended but excluded from his accuracy denominator</div>
 </div>
-<div class="sc-card sc-sm" style="border-left:4px solid #666">
-<div class="sc-number">${honestPct}</div>
-<div class="sc-label">Honest Accuracy</div>
-<div class="sc-sublabel">Counting all ${totalFailures} failures: <code>${totalWins} / (${totalWins} + ${totalDome} + ${totalSilent})</code> = ${honestPct}, not ${failures.dome_claimed_accuracy}</div>
+<div class="ds-sc-card ds-sc-sm" style="border-left:4px solid #666">
+<div class="ds-sc-number">${honestPct}</div>
+<div class="ds-sc-label">Honest Accuracy</div>
+<div class="ds-sc-sublabel">Counting all ${totalFailures} failures: <code>${totalWins} / (${totalWins} + ${totalDome} + ${totalSilent})</code> = ${honestPct}, not ${failures.dome_claimed_accuracy}</div>
 </div>
 </div>
 
@@ -313,7 +313,7 @@ const VERDICT_CLASSES = {
 };
 
 // ════ PIE CHART COLORS — token-driven, see CSS :root for light/dark/print values ════
-// Slice fills route through --*-solid (the same tokens that drive .vb-bar.vb-refuted, td.v-refuted, etc.).
+// Slice fills route through --*-solid (the same tokens that drive .ds-vb-bar.vb-refuted, td.v-refuted, etc.).
 // Per-verdict label ink is picked once per theme via --label-* tokens (see EXP-249).
 // EXP-249 (Phase B1): replaces prior VERDICT_COLORS_LIGHT/DARK hex maps + matchMedia DOM-toggle.
 
@@ -361,7 +361,7 @@ function generatePieChart(tally, total) {
     const labelVar = `var(${VERDICT_LABEL_TOKENS[verdict]})`;
 
     // EXP-249: fill resolved via CSS token; no data-dark needed (theme is in CSS).
-    slices.push(`<path d="M${cx},${cy} L${x1.toFixed(2)},${y1.toFixed(2)} A${r},${r} 0 ${largeArc},1 ${x2.toFixed(2)},${y2.toFixed(2)} Z" fill="${fillVar}" class="pie-slice pie-slice-${verdict.toLowerCase().replace(/[^a-z0-9]+/g,'-')}" stroke="var(--bg)" stroke-width="2"/>`);
+    slices.push(`<path d="M${cx},${cy} L${x1.toFixed(2)},${y1.toFixed(2)} A${r},${r} 0 ${largeArc},1 ${x2.toFixed(2)},${y2.toFixed(2)} Z" fill="${fillVar}" class="ds-pie-slice pie-slice-${verdict.toLowerCase().replace(/[^a-z0-9]+/g,'-')}" stroke="var(--bg)" stroke-width="2"/>`);
 
     const midAngle = angle + sweep / 2;
     const pct = ((count / total) * 100).toFixed(0);
@@ -378,17 +378,17 @@ function generatePieChart(tally, total) {
       const tailDir = Math.cos(midAngle) >= 0 ? 1 : -1;
       const tx = ox + tailDir * 20;
       const anchor = tailDir > 0 ? 'start' : 'end';
-      callouts.push(`<line x1="${ix.toFixed(1)}" y1="${iy.toFixed(1)}" x2="${ox.toFixed(1)}" y2="${oy.toFixed(1)}" stroke="${fillVar}" stroke-width="1.2" class="callout-line"/>`);
-      callouts.push(`<line x1="${ox.toFixed(1)}" y1="${oy.toFixed(1)}" x2="${tx.toFixed(1)}" y2="${oy.toFixed(1)}" stroke="${fillVar}" stroke-width="1.2" class="callout-line"/>`);
-      callouts.push(`<text x="${(tx + tailDir * 3).toFixed(1)}" y="${(oy + 1).toFixed(1)}" text-anchor="${anchor}" dominant-baseline="central" font-size="11" font-weight="700" fill="${fillVar}" class="pie-callout">${count} (${pct}%)</text>`);
+      callouts.push(`<line x1="${ix.toFixed(1)}" y1="${iy.toFixed(1)}" x2="${ox.toFixed(1)}" y2="${oy.toFixed(1)}" stroke="${fillVar}" stroke-width="1.2" class="ds-callout-line"/>`);
+      callouts.push(`<line x1="${ox.toFixed(1)}" y1="${oy.toFixed(1)}" x2="${tx.toFixed(1)}" y2="${oy.toFixed(1)}" stroke="${fillVar}" stroke-width="1.2" class="ds-callout-line"/>`);
+      callouts.push(`<text x="${(tx + tailDir * 3).toFixed(1)}" y="${(oy + 1).toFixed(1)}" text-anchor="${anchor}" dominant-baseline="central" font-size="11" font-weight="700" fill="${fillVar}" class="ds-pie-callout">${count} (${pct}%)</text>`);
     } else {
       // Large slice: label inside, ink picked per verdict for WCAG AA contrast (EXP-249).
       // Text-shadow removed — proper ink choice means we no longer need a band-aid.
       const labelR = r * 0.6;
       const lx = cx + labelR * Math.cos(midAngle);
       const ly = cy + labelR * Math.sin(midAngle);
-      callouts.push(`<text x="${lx.toFixed(1)}" y="${(ly - 6).toFixed(1)}" text-anchor="middle" dominant-baseline="central" font-size="16" font-weight="700" fill="${labelVar}" class="pie-label">${count}</text>`);
-      callouts.push(`<text x="${lx.toFixed(1)}" y="${(ly + 10).toFixed(1)}" text-anchor="middle" dominant-baseline="central" font-size="10.5" font-weight="600" fill="${labelVar}" class="pie-label">${pct}%</text>`);
+      callouts.push(`<text x="${lx.toFixed(1)}" y="${(ly - 6).toFixed(1)}" text-anchor="middle" dominant-baseline="central" font-size="16" font-weight="700" fill="${labelVar}" class="ds-pie-label">${count}</text>`);
+      callouts.push(`<text x="${lx.toFixed(1)}" y="${(ly + 10).toFixed(1)}" text-anchor="middle" dominant-baseline="central" font-size="10.5" font-weight="600" fill="${labelVar}" class="ds-pie-label">${pct}%</text>`);
     }
 
     angle += sweep;
@@ -411,8 +411,8 @@ function generatePieChart(tally, total) {
     const pct = ((count / total) * 100).toFixed(0);
     const y = i * ROW_STRIDE;
     const fillVar = `var(${VERDICT_FILL_TOKENS[verdict]})`;
-    return `<g transform="translate(0,${y})" class="pie-legend-row">
-      <rect width="${SWATCH}" height="${SWATCH}" x="0" y="${SWATCH_TOP}" rx="4" fill="${fillVar}" class="legend-swatch"/>
+    return `<g transform="translate(0,${y})" class="ds-pie-legend-row">
+      <rect width="${SWATCH}" height="${SWATCH}" x="0" y="${SWATCH_TOP}" rx="4" fill="${fillVar}" class="ds-legend-swatch"/>
       <text x="${TEXT_X}" y="${TEXT_Y}" font-size="13" fill="var(--text)"><tspan font-weight="700">${count}</tspan> ${verdict} (${pct}%)</text>
     </g>`;
   });
@@ -473,19 +473,19 @@ function generateVerdictBarChart(tally, total) {
     const ariaSuffix = (verdict === 'Unfalsifiable')
       ? ` Click to view the combined Misleading/Unfalsifiable section.`
       : ` Click to view detailed analysis.`;
-    return `<a class="verdict-bar-row" href="${anchor}" onclick="showTab('wins');return false" aria-label="${verdict}: ${count} of ${total} claims (${pct}%).${ariaSuffix}">
-  <span class="vb-label">${verdict}</span>
-  <span class="vb-bar-container">
-    <span class="vb-bar ${shortCls}" style="width:${widthPct}%"><span class="vb-count">${count}</span></span>
+    return `<a class="ds-verdict-bar-row" href="${anchor}" onclick="showTab('wins');return false" aria-label="${verdict}: ${count} of ${total} claims (${pct}%).${ariaSuffix}">
+  <span class="ds-vb-label">${verdict}</span>
+  <span class="ds-vb-bar-container">
+    <span class="ds-vb-bar ${shortCls}" style="width:${widthPct}%"><span class="ds-vb-count">${count}</span></span>
   </span>
-  <span class="vb-pct">${pct}%</span>
+  <span class="ds-vb-pct">${pct}%</span>
 </a>`;
   }).join('\n');
   return `
-<section class="verdict-bars" aria-labelledby="verdict-bars-heading">
-  <h2 id="verdict-bars-heading" class="vb-heading">How the ${total} catalog entries actually land</h2>
-  <p class="vb-caption">${total} catalog entries = 69 dome-claimed wins plus 2 numbered-collision sub-claims. Sorted by count; percentages rounded to one decimal so they sum to 100. Click any verdict to jump to the detailed analysis.</p>
-  <div class="vb-rows">
+<section class="ds-verdict-bars" aria-labelledby="verdict-bars-heading">
+  <h2 id="verdict-bars-heading" class="ds-vb-heading">How the ${total} catalog entries actually land</h2>
+  <p class="ds-vb-caption">${total} catalog entries = 69 dome-claimed wins plus 2 numbered-collision sub-claims. Sorted by count; percentages rounded to one decimal so they sum to 100. Click any verdict to jump to the detailed analysis.</p>
+  <div class="ds-vb-rows">
     ${rows}
   </div>
 </section>
@@ -505,57 +505,57 @@ h1{font-size:1.8rem;color:var(--heading);margin:2.5rem 0 1rem;padding-bottom:.3r
 h2{font-size:1.4rem;color:var(--heading);margin:2rem 0 .8rem}
 h3{font-size:1.15rem;color:var(--accent);margin:1.5rem 0 .6rem}
 details .ps-summary .ps-tldr,details .ks-summary .ks-tldr{font-family:var(--serif);font-style:italic}
-.tab-btn,.section-nav a,.section-nav span,.nav-prev,.nav-next,.dl-card,.dl-card .dl-label,nav.toc,nav.toc a,footer,th,.title-block .subtitle,.title-block .meta,.pred-meta,.scorecard-framing,.sc-label,.ca-tag,.ca-label,.verdict-tag,.vt-refuted,.vt-std,.vt-selfcon,.vt-misleading,.vt-unfalsifiable,.vt-notdemo,.vl,.vl-refuted,.vl-std,.vl-selfcon,.vl-misleading,.vl-unfalsifiable,.vl-notdemo,.ks-status{font-family:var(--sans)}
-th,.verdict-tag,.ks-status,.vl{letter-spacing:0.01em}
+.ds-tab-btn,.ds-section-nav a,.ds-section-nav span,.ds-nav-prev,.ds-nav-next,.ds-dl-card,.ds-dl-card .ds-dl-label,nav.ds-toc,nav.ds-toc a,footer,th,.ds-title-block .ds-subtitle,.ds-title-block .ds-meta,.ds-pred-meta,.scorecard-framing,.ds-sc-label,.ds-ca-tag,.ds-ca-label,.ds-verdict-tag,.vt-refuted,.vt-std,.vt-selfcon,.vt-misleading,.vt-unfalsifiable,.vt-notdemo,.ds-vl,.vl-refuted,.vl-std,.vl-selfcon,.vl-misleading,.vl-unfalsifiable,.vl-notdemo,.ks-status{font-family:var(--sans)}
+th,.ds-verdict-tag,.ks-status,.ds-vl{letter-spacing:0.01em}
 code,kbd,samp,.formula{font-family:var(--mono);font-size:0.92em;font-feature-settings:"calt" 0,"liga" 0}
 .formula{display:block;text-align:center;padding:0.6em 0.8em;background:var(--code-bg);border-left:3px solid var(--rule);border-radius:0 4px 4px 0;margin:0.6em 0;overflow-x:auto;max-width:100%}
 p{margin:.5rem 0}
 a{color:var(--link);text-decoration:underline}
 a:hover{text-decoration:none}
-.title-block{text-align:center;padding:3rem 0 2rem;border-bottom:3px solid var(--accent);margin-bottom:2rem}
-.title-block h1{border:none;font-size:2.4rem;margin:.3rem 0}
-.title-block .subtitle{font-size:1.1rem;color:#666;margin:.2rem 0}
-.title-block .meta{font-size:.95rem;color:#999;margin-top:1rem}
-.stance-statement{font-family:var(--serif);font-size:0.95rem;line-height:1.55;color:var(--ink-2);max-width:56ch;margin:0 auto 1.5rem;font-style:italic;text-wrap:pretty}
-.scorecard{display:grid;gap:1.5rem;margin:2rem 0;max-width:none}
-.sc-hero{grid-template-columns:repeat(4,1fr)}
-@media(max-width:1100px){.sc-hero{grid-template-columns:repeat(2,1fr)}}
-.sc-breakdown{grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:1rem;margin-top:.5rem}
-.scorecard .sc-card{background:var(--card-bg);border:2px solid var(--border);border-radius:8px;padding:1.5rem 1.2rem;text-align:center;transition:all .2s}
-.scorecard .sc-card:hover{box-shadow:0 4px 12px rgba(0,0,0,.1);border-color:var(--accent)}
-.scorecard .sc-card .sc-number{font-size:2.8rem;font-weight:700;color:var(--heading);margin:.5rem 0}
-.scorecard .sc-card .sc-label{font-size:1rem;font-weight:600;color:var(--text);margin:.8rem 0 .4rem}
-.scorecard .sc-card .sc-sublabel{font-size:.85rem;color:#888;line-height:1.4}
-.scorecard .sc-card.accent{border-color:var(--accent);background:rgba(74,111,165,0.05)}
-.scorecard .sc-card.accent .sc-number{color:var(--accent)}
+.ds-title-block{text-align:center;padding:3rem 0 2rem;border-bottom:3px solid var(--accent);margin-bottom:2rem}
+.ds-title-block h1{border:none;font-size:2.4rem;margin:.3rem 0}
+.ds-title-block .ds-subtitle{font-size:1.1rem;color:#666;margin:.2rem 0}
+.ds-title-block .ds-meta{font-size:.95rem;color:#999;margin-top:1rem}
+.ds-stance-statement{font-family:var(--serif);font-size:0.95rem;line-height:1.55;color:var(--ink-2);max-width:56ch;margin:0 auto 1.5rem;font-style:italic;text-wrap:pretty}
+.ds-scorecard{display:grid;gap:1.5rem;margin:2rem 0;max-width:none}
+.ds-sc-hero{grid-template-columns:repeat(4,1fr)}
+@media(max-width:1100px){.ds-sc-hero{grid-template-columns:repeat(2,1fr)}}
+.ds-sc-breakdown{grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:1rem;margin-top:.5rem}
+.ds-scorecard .ds-sc-card{background:var(--card-bg);border:2px solid var(--border);border-radius:8px;padding:1.5rem 1.2rem;text-align:center;transition:all .2s}
+.ds-scorecard .ds-sc-card:hover{box-shadow:0 4px 12px rgba(0,0,0,.1);border-color:var(--accent)}
+.ds-scorecard .ds-sc-card .ds-sc-number{font-size:2.8rem;font-weight:700;color:var(--heading);margin:.5rem 0}
+.ds-scorecard .ds-sc-card .ds-sc-label{font-size:1rem;font-weight:600;color:var(--text);margin:.8rem 0 .4rem}
+.ds-scorecard .ds-sc-card .ds-sc-sublabel{font-size:.85rem;color:#888;line-height:1.4}
+.ds-scorecard .ds-sc-card.accent{border-color:var(--accent);background:rgba(74,111,165,0.05)}
+.ds-scorecard .ds-sc-card.accent .ds-sc-number{color:var(--accent)}
 .scorecard-framing{font-size:.9em;text-align:center;margin-bottom:.5rem;color:#888}
-.scorecard .sc-card.sc-sm{padding:1rem .8rem}
-.scorecard .sc-card.sc-sm .sc-number{font-size:2rem;margin:.3rem 0}
-.scorecard .sc-card.sc-sm .sc-label{font-size:.85rem;margin:.4rem 0 .2rem}
-.scorecard .sc-card.sc-sm .sc-sublabel{font-size:.78rem}
+.ds-scorecard .ds-sc-card.ds-sc-sm{padding:1rem .8rem}
+.ds-scorecard .ds-sc-card.ds-sc-sm .ds-sc-number{font-size:2rem;margin:.3rem 0}
+.ds-scorecard .ds-sc-card.ds-sc-sm .ds-sc-label{font-size:.85rem;margin:.4rem 0 .2rem}
+.ds-scorecard .ds-sc-card.ds-sc-sm .ds-sc-sublabel{font-size:.78rem}
 .accuracy-math-section{margin:1rem 0 1.5rem;padding:0.85rem 1.05rem;border-left:3px solid var(--rule);background:transparent;font-size:0.92rem;color:var(--ink-2)}.accuracy-math-section .ams-heading{font-family:var(--sans);font-size:0.82rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--ink-3);margin:0 0 0.55rem;font-weight:600;border:none;padding:0}.accuracy-math-section .ams-grid{display:grid;grid-template-columns:1fr 1fr;gap:1.1rem}.accuracy-math-section .ams-p{margin:0 0 0.55rem;line-height:1.5}.accuracy-math-section .ams-p:last-child{margin-bottom:0}.accuracy-math-section .ams-variant,.accuracy-math-section .ams-cross{font-size:0.88rem;color:var(--ink-3)}.accuracy-math-section code{font-family:var(--mono);font-size:0.9em}@media(max-width:720px){.accuracy-math-section .ams-grid{grid-template-columns:1fr;gap:0.75rem}}
-.sc-domains{grid-template-columns:repeat(3,1fr)}
-.verdict-bars{margin:1.5rem 0 2rem;padding:0;border:none}
-.verdict-bars .vb-heading{font-size:1.15rem;font-weight:600;color:var(--heading);margin:0 0 .35rem;border:none;padding:0;text-align:left}
-.verdict-bars .vb-caption{font-size:.9rem;color:var(--text);opacity:.75;margin:0 0 .8rem}
-.vb-rows{display:flex;flex-direction:column;gap:.45rem}
-.verdict-bar-row{display:flex;align-items:center;gap:.75rem;text-decoration:none;color:var(--text);padding:.15rem .25rem;border-radius:4px;transition:background .15s}
-.verdict-bar-row:hover{background:var(--card-bg);text-decoration:none}
-.verdict-bar-row:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.verdict-bar-row .vb-label{flex:0 0 11rem;font-weight:600;font-size:.95rem;color:var(--text);text-align:right}
-.verdict-bar-row .vb-bar-container{flex:1;background:var(--card-bg);border:1px solid var(--border);border-radius:4px;height:1.6rem;overflow:hidden;position:relative;min-width:0}
-.verdict-bar-row .vb-bar{height:100%;display:flex;align-items:center;justify-content:flex-end;padding:0 .55rem;color:#fff;font-weight:700;font-size:.85rem;text-shadow:0 1px 2px rgba(0,0,0,.45);min-width:1.6rem;border-radius:3px 0 0 3px;transition:filter .15s}
-.verdict-bar-row:hover .vb-bar{filter:brightness(1.08)}
-.verdict-bar-row .vb-bar .vb-count{display:inline-block}
-.verdict-bar-row .vb-pct{flex:0 0 3rem;text-align:right;font-size:.85rem;color:var(--text);opacity:.75;font-variant-numeric:tabular-nums}
-.vb-bar.vb-refuted{background:var(--refuted-solid)}
-.vb-bar.vb-selfcon{background:var(--selfcon-solid)}
-.vb-bar.vb-stdmodel{background:var(--stdmodel-solid)}
-.vb-bar.vb-misleading{background:var(--misleading-solid)}
-.vb-bar.vb-notdemo{background:var(--notdemo-solid)}
-.vb-bar.vb-unfalsifiable{background:var(--unfalsifiable-solid)}
-.verdict-legend{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:.5rem;margin:1rem 0}
-.verdict-legend .vl{padding:.5rem .8rem;border-radius:4px;font-size:.9rem;border-left:4px solid transparent}
+.ds-sc-domains{grid-template-columns:repeat(3,1fr)}
+.ds-verdict-bars{margin:1.5rem 0 2rem;padding:0;border:none}
+.ds-verdict-bars .ds-vb-heading{font-size:1.15rem;font-weight:600;color:var(--heading);margin:0 0 .35rem;border:none;padding:0;text-align:left}
+.ds-verdict-bars .ds-vb-caption{font-size:.9rem;color:var(--text);opacity:.75;margin:0 0 .8rem}
+.ds-vb-rows{display:flex;flex-direction:column;gap:.45rem}
+.ds-verdict-bar-row{display:flex;align-items:center;gap:.75rem;text-decoration:none;color:var(--text);padding:.15rem .25rem;border-radius:4px;transition:background .15s}
+.ds-verdict-bar-row:hover{background:var(--card-bg);text-decoration:none}
+.ds-verdict-bar-row:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.ds-verdict-bar-row .ds-vb-label{flex:0 0 11rem;font-weight:600;font-size:.95rem;color:var(--text);text-align:right}
+.ds-verdict-bar-row .ds-vb-bar-container{flex:1;background:var(--card-bg);border:1px solid var(--border);border-radius:4px;height:1.6rem;overflow:hidden;position:relative;min-width:0}
+.ds-verdict-bar-row .ds-vb-bar{height:100%;display:flex;align-items:center;justify-content:flex-end;padding:0 .55rem;color:#fff;font-weight:700;font-size:.85rem;text-shadow:0 1px 2px rgba(0,0,0,.45);min-width:1.6rem;border-radius:3px 0 0 3px;transition:filter .15s}
+.ds-verdict-bar-row:hover .ds-vb-bar{filter:brightness(1.08)}
+.ds-verdict-bar-row .ds-vb-bar .ds-vb-count{display:inline-block}
+.ds-verdict-bar-row .ds-vb-pct{flex:0 0 3rem;text-align:right;font-size:.85rem;color:var(--text);opacity:.75;font-variant-numeric:tabular-nums}
+.ds-vb-bar.vb-refuted{background:var(--refuted-solid)}
+.ds-vb-bar.vb-selfcon{background:var(--selfcon-solid)}
+.ds-vb-bar.vb-stdmodel{background:var(--stdmodel-solid)}
+.ds-vb-bar.vb-misleading{background:var(--misleading-solid)}
+.ds-vb-bar.vb-notdemo{background:var(--notdemo-solid)}
+.ds-vb-bar.vb-unfalsifiable{background:var(--unfalsifiable-solid)}
+.ds-verdict-legend{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:.5rem;margin:1rem 0}
+.ds-verdict-legend .ds-vl{padding:.5rem .8rem;border-radius:4px;font-size:.9rem;border-left:4px solid transparent}
 .vl-refuted{background:var(--refuted);border-left-color:var(--refuted-solid)}.vl-std{background:var(--stdmodel);border-left-color:var(--stdmodel-solid)}.vl-selfcon{background:var(--selfcon);border-left-color:var(--selfcon-solid)}.vl-misleading{background:var(--misleading);border-left-color:var(--misleading-solid)}.vl-unfalsifiable{background:var(--unfalsifiable);border-left-color:var(--unfalsifiable-solid)}.vl-notdemo{background:var(--notdemo);border-left-color:var(--notdemo-solid)}
 table{width:100%;border-collapse:collapse;margin:1rem 0;font-size:.88rem}
 th{background:var(--table-header);color:#fff;padding:.5rem .6rem;text-align:left;font-weight:600}
@@ -568,49 +568,49 @@ td.v-misleading{background:var(--misleading);font-weight:700}
 td.v-unfalsifiable{background:var(--unfalsifiable);font-weight:700}
 td.v-notdemo{background:var(--notdemo);font-weight:700}
 .tally{background:var(--card-bg);padding:.8rem 1rem;border-left:4px solid var(--accent);margin:1rem 0;font-size:.95rem}
-.evidence{background:var(--card-bg);border:1px solid var(--border);border-radius:6px;padding:1rem 1.2rem;margin:.8rem 0}
-.evidence p{margin:.4rem 0}
-.pred-meta{font-size:.85rem;color:#888;margin:.2rem 0 .6rem}
-.verdict-tag{display:inline-block;padding:.15rem .5rem;border-radius:3px;font-weight:700;font-size:.85rem;margin:.3rem 0;border-left:3px solid transparent}
+.ds-evidence{background:var(--card-bg);border:1px solid var(--border);border-radius:6px;padding:1rem 1.2rem;margin:.8rem 0}
+.ds-evidence p{margin:.4rem 0}
+.ds-pred-meta{font-size:.85rem;color:#888;margin:.2rem 0 .6rem}
+.ds-verdict-tag{display:inline-block;padding:.15rem .5rem;border-radius:3px;font-weight:700;font-size:.85rem;margin:.3rem 0;border-left:3px solid transparent}
 .vt-refuted{background:var(--refuted);border-left-color:var(--refuted-solid)}.vt-std{background:var(--stdmodel);border-left-color:var(--stdmodel-solid)}.vt-selfcon{background:var(--selfcon);border-left-color:var(--selfcon-solid)}.vt-misleading{background:var(--misleading);border-left-color:var(--misleading-solid)}.vt-unfalsifiable{background:var(--unfalsifiable);border-left-color:var(--unfalsifiable-solid)}.vt-notdemo{background:var(--notdemo);border-left-color:var(--notdemo-solid)}
-.ca-tags{display:flex;flex-wrap:wrap;gap:.4rem;margin:.6rem 0 .2rem;padding:.5rem 0 0;border-top:1px solid var(--border)}
-.ca-tag{display:inline-flex;align-items:center;gap:.3rem;font-size:.75rem;font-weight:600;padding:.2rem .5rem;border-radius:3px;background:#f0f0f0;color:#555;border:1px solid #ddd}
-.ca-tag.tag-true{background:#FFF3E0;color:#BF360C;border-color:#FFCC80}
-.ca-tag.tag-false{background:#E8F5E9;color:#2E7D32;border-color:#A5D6A7}
-.ca-tag.tag-monitoring-hardcoded{background:var(--semantic-warn-soft);color:var(--semantic-warn);border-color:var(--semantic-warn)}
-.ca-tag.tag-monitoring-live{background:#E8F5E9;color:#1B5E20;border-color:#A5D6A7}
-.ca-tag.tag-monitoring-none{background:#FFF8E1;color:#F57F17;border-color:#FFE082}
-.ca-tag .ca-icon{font-size:.8rem}
-.ca-label{font-size:.7rem;color:#888;font-weight:400;margin-right:.3rem}
-.ca-tag.tag-pending{background:#f5f5f5;color:#999;border-color:#e0e0e0}
-nav.toc{background:var(--card-bg);border:1px solid var(--border);border-radius:6px;padding:1.2rem 1.5rem;margin:1.5rem 0}
-nav.toc ul{list-style:none;padding-left:1.2rem}
-nav.toc>ul{padding-left:0}
-nav.toc li{margin:.25rem 0}
-nav.toc a{text-decoration:none}
-nav.toc a:hover{text-decoration:underline}
-.downloads{display:flex;gap:1rem;flex-wrap:wrap;margin:1rem 0}
-.dl-card{border:1px solid var(--border);border-radius:6px;padding:.8rem 1.2rem;background:var(--card-bg);text-decoration:none;color:var(--text);transition:box-shadow .2s}
-.dl-card:hover{box-shadow:0 2px 8px rgba(0,0,0,.15)}
-.dl-card .dl-icon{font-size:1.5rem}
-.dl-card .dl-label{font-weight:600}
+.ds-ca-tags{display:flex;flex-wrap:wrap;gap:.4rem;margin:.6rem 0 .2rem;padding:.5rem 0 0;border-top:1px solid var(--border)}
+.ds-ca-tag{display:inline-flex;align-items:center;gap:.3rem;font-size:.75rem;font-weight:600;padding:.2rem .5rem;border-radius:3px;background:#f0f0f0;color:#555;border:1px solid #ddd}
+.ds-ca-tag.tag-true{background:#FFF3E0;color:#BF360C;border-color:#FFCC80}
+.ds-ca-tag.tag-false{background:#E8F5E9;color:#2E7D32;border-color:#A5D6A7}
+.ds-ca-tag.tag-monitoring-hardcoded{background:var(--semantic-warn-soft);color:var(--semantic-warn);border-color:var(--semantic-warn)}
+.ds-ca-tag.tag-monitoring-live{background:#E8F5E9;color:#1B5E20;border-color:#A5D6A7}
+.ds-ca-tag.tag-monitoring-none{background:#FFF8E1;color:#F57F17;border-color:#FFE082}
+.ds-ca-tag .ds-ca-icon{font-size:.8rem}
+.ds-ca-label{font-size:.7rem;color:#888;font-weight:400;margin-right:.3rem}
+.ds-ca-tag.tag-pending{background:#f5f5f5;color:#999;border-color:#e0e0e0}
+nav.ds-toc{background:var(--card-bg);border:1px solid var(--border);border-radius:6px;padding:1.2rem 1.5rem;margin:1.5rem 0}
+nav.ds-toc ul{list-style:none;padding-left:1.2rem}
+nav.ds-toc>ul{padding-left:0}
+nav.ds-toc li{margin:.25rem 0}
+nav.ds-toc a{text-decoration:none}
+nav.ds-toc a:hover{text-decoration:underline}
+.ds-downloads{display:flex;gap:1rem;flex-wrap:wrap;margin:1rem 0}
+.ds-dl-card{border:1px solid var(--border);border-radius:6px;padding:.8rem 1.2rem;background:var(--card-bg);text-decoration:none;color:var(--text);transition:box-shadow .2s}
+.ds-dl-card:hover{box-shadow:0 2px 8px rgba(0,0,0,.15)}
+.ds-dl-card .ds-dl-icon{font-size:1.5rem}
+.ds-dl-card .ds-dl-label{font-weight:600}
 .star-table{margin:.5rem 0 .8rem}
 .star-table td{padding:.3rem .6rem;font-size:.88rem}
 footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--border);font-size:.85rem;color:#888;text-align:center}
 
-.tab-bar{position:sticky;top:0;z-index:100;background:var(--bg);border-bottom:2px solid var(--accent);display:flex;gap:.5rem;flex-wrap:wrap;padding:0.75rem 1.5rem;box-shadow:0 2px 4px rgba(0,0,0,.1)}
-.tab-btn{padding:0.6rem 1.2rem;border:none;background:var(--card-bg);color:var(--text);cursor:pointer;border-radius:4px 4px 0 0;font-size:.95rem;font-weight:600;transition:all .2s;border:1px solid var(--border);border-bottom:none}
-.tab-btn:hover{background:var(--border)}
-.tab-btn.active{background:var(--accent);color:#fff;border-color:var(--accent)}
-.tab-content{display:none;padding:1.5rem 0}
-.tab-content.active{display:block}
+.ds-tab-bar{position:sticky;top:0;z-index:100;background:var(--bg);border-bottom:2px solid var(--accent);display:flex;gap:.5rem;flex-wrap:wrap;padding:0.75rem 1.5rem;box-shadow:0 2px 4px rgba(0,0,0,.1)}
+.ds-tab-btn{padding:0.6rem 1.2rem;border:none;background:var(--card-bg);color:var(--text);cursor:pointer;border-radius:4px 4px 0 0;font-size:.95rem;font-weight:600;transition:all .2s;border:1px solid var(--border);border-bottom:none}
+.ds-tab-btn:hover{background:var(--border)}
+.ds-tab-btn.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.ds-tab-content{display:none;padding:1.5rem 0}
+.ds-tab-content.active{display:block}
 
-.section-nav{display:flex;justify-content:space-between;align-items:center;margin-top:2rem;padding-top:1.5rem;border-top:1px solid var(--border)}
-.section-nav a,.section-nav span{padding:.6rem 1rem;border-radius:4px;text-decoration:none;font-weight:600}
-.nav-prev{color:var(--link);background:var(--card-bg)}
-.nav-prev:hover{background:var(--border)}
-.nav-next{color:var(--link);background:var(--card-bg)}
-.nav-next:hover{background:var(--border)}
+.ds-section-nav{display:flex;justify-content:space-between;align-items:center;margin-top:2rem;padding-top:1.5rem;border-top:1px solid var(--border)}
+.ds-section-nav a,.ds-section-nav span{padding:.6rem 1rem;border-radius:4px;text-decoration:none;font-weight:600}
+.ds-nav-prev{color:var(--link);background:var(--card-bg)}
+.ds-nav-prev:hover{background:var(--border)}
+.ds-nav-next{color:var(--link);background:var(--card-bg)}
+.ds-nav-next:hover{background:var(--border)}
 
 .ks-test{border:1px solid var(--border);border-left:4px solid var(--accent);border-radius:6px;padding:1.2rem 1.4rem;margin:1.5rem 0;background:var(--card-bg)}
 .ks-test h3{margin-top:0;font-size:1.1rem;color:var(--heading)}
@@ -630,7 +630,7 @@ details .ks-summary::after{content:'▸ expand';display:block;font-size:.75rem;c
 details[open] .ks-summary::after{content:'▾ collapse'}
 details .ks-detail{padding:.6rem 1.2rem 1.2rem;border:1px solid var(--border);border-top:none;border-radius:0 0 6px 6px;background:var(--bg);margin-bottom:1.5rem}
 details[open] .ks-summary{border-radius:6px 6px 0 0;margin-bottom:0;border-bottom:none}
-.evidence details.win-section{margin:.8rem 0}.evidence details.win-section .ks-summary{border-left-width:3px;padding:.6rem 1rem;margin:0}.evidence details.win-section .ks-detail{padding:.4rem 1rem 1rem}
+.ds-evidence details.ds-win-section{margin:.8rem 0}.ds-evidence details.ds-win-section .ks-summary{border-left-width:3px;padding:.6rem 1rem;margin:0}.ds-evidence details.ds-win-section .ks-detail{padding:.4rem 1rem 1rem}
 
 details .ps-summary{cursor:pointer;list-style:none;padding:.8rem 1.2rem;border-radius:6px;background:var(--card-bg);border:1px solid var(--border);border-left:4px solid var(--heading);margin:1.2rem 0 0}
 details .ps-summary::-webkit-details-marker{display:none}
@@ -644,27 +644,27 @@ details[open] .ps-summary::after{content:'▾ collapse'}
 details .ps-detail{padding:.6rem 1.2rem 1.2rem;border:1px solid var(--border);border-top:none;border-radius:0 0 6px 6px;background:var(--bg);margin-bottom:1.5rem}
 details[open] .ps-summary{border-radius:6px 6px 0 0;margin-bottom:0;border-bottom:none}
 
-@media(max-width:600px){body{padding:.5rem 1rem}h1{font-size:1.4rem}h2{font-size:1.2rem}table{font-size:.8rem}.tab-bar{padding:0.5rem .75rem;gap:.25rem}.tab-btn{padding:0.5rem 0.8rem;font-size:.85rem}.sc-hero{grid-template-columns:1fr}.sc-breakdown{grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:.6rem}.sc-domains{grid-template-columns:1fr}.ks-test{padding:.8rem 1rem}details .ks-summary{padding:.6rem .8rem}details .ks-summary::after{font-size:.65rem}details .ps-summary{padding:.6rem .8rem}details .ps-summary::after{font-size:.65rem}[style*="float:right"]{float:none!important;max-width:100%!important;margin:1rem 0!important}.stance-statement{font-size:0.9rem;max-width:90%;margin:0 auto 1rem}.verdict-bar-row .vb-label{flex:0 0 8.5rem;font-size:.85rem} .verdict-bar-row .vb-bar-container{height:1.4rem} .verdict-bar-row .vb-bar{font-size:.78rem;padding:0 .4rem} .verdict-bar-row .vb-pct{flex:0 0 2.5rem;font-size:.78rem}}
+@media(max-width:600px){body{padding:.5rem 1rem}h1{font-size:1.4rem}h2{font-size:1.2rem}table{font-size:.8rem}.ds-tab-bar{padding:0.5rem .75rem;gap:.25rem}.ds-tab-btn{padding:0.5rem 0.8rem;font-size:.85rem}.ds-sc-hero{grid-template-columns:1fr}.ds-sc-breakdown{grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:.6rem}.ds-sc-domains{grid-template-columns:1fr}.ks-test{padding:.8rem 1rem}details .ks-summary{padding:.6rem .8rem}details .ks-summary::after{font-size:.65rem}details .ps-summary{padding:.6rem .8rem}details .ps-summary::after{font-size:.65rem}[style*="float:right"]{float:none!important;max-width:100%!important;margin:1rem 0!important}.ds-stance-statement{font-size:0.9rem;max-width:90%;margin:0 auto 1rem}.ds-verdict-bar-row .ds-vb-label{flex:0 0 8.5rem;font-size:.85rem} .ds-verdict-bar-row .ds-vb-bar-container{height:1.4rem} .ds-verdict-bar-row .ds-vb-bar{font-size:.78rem;padding:0 .4rem} .ds-verdict-bar-row .ds-vb-pct{flex:0 0 2.5rem;font-size:.78rem}}
 
 @media print{:root{--bg:#fff;--text:#222;--heading:#2E4057;--accent:#4A6FA5;--link:#0563C1;--border:#999;--table-header:#2E4057;--refuted:var(--semantic-crit-soft);--stdmodel:rgba(102,187,106,0.25);--selfcon:rgba(66,165,245,0.25);--misleading:rgba(255,167,38,0.25);--unfalsifiable:rgba(189,189,189,0.25);--notdemo:rgba(171,71,188,0.25);--refuted-solid:var(--semantic-crit);--stdmodel-solid:#66BB6A;--selfcon-solid:#42A5F5;--misleading-solid:#FFA726;--unfalsifiable-solid:#BDBDBD;--notdemo-solid:#AB47BC;--code-bg:#f5f5f5;--card-bg:#fafafa;--serif:'Source Serif 4',Georgia,'Times New Roman',serif;--sans:'Inter',system-ui,-apple-system,'Segoe UI',Arial,Helvetica,sans-serif;--mono:'JetBrains Mono',ui-monospace,'SF Mono',Consolas,'Courier New',monospace;--ink:#181715;--ink-2:#3A352D;--ink-3:#6E675B;--rule:#E4DDCB;--semantic-accent:#1e5f8a;--semantic-accent-soft:#d8e8f2;--semantic-warn:#8a5a1e;--semantic-warn-soft:#f3e6d3;--semantic-crit:#7a2e2e;--semantic-crit-soft:#f2dada;--semantic-good:#2e5a2e;--semantic-good-soft:#d9ead9;--label-refuted:#fff;--label-stdmodel:#1a1a1a;--label-selfcon:#1a1a1a;--label-misleading:#1a1a1a;--label-notdemo:#fff;--label-unfalsifiable:#1a1a1a}
 body{max-width:100%;padding:0.6in 0.7in;font-size:9.5pt;line-height:1.5}
 h1{font-size:1.5rem;margin-top:1.5rem;page-break-before:always;page-break-after:avoid}
-.title-block h1{page-break-before:avoid;page-break-after:avoid}
+.ds-title-block h1{page-break-before:avoid;page-break-after:avoid}
 h2{font-size:1.2rem}
 h3{font-size:1rem}
-.evidence{padding:0.6rem 0.8rem;page-break-inside:avoid;margin:0.6rem 0}
+.ds-evidence{padding:0.6rem 0.8rem;page-break-inside:avoid;margin:0.6rem 0}
 .ks-test{page-break-inside:avoid}
 details{display:block}details .ks-summary::after,details .ps-summary::after{display:none}details .ks-detail,details .ps-detail{border:none;padding:0}
-.scorecard .sc-card{padding:0.8rem;page-break-inside:avoid}
-.scorecard .sc-card .sc-number{font-size:2rem}
-.tab-bar{display:none}
-.tab-content{display:block!important}
-.section-nav{display:none}
-.downloads,h2:has(+.downloads){display:none}
-.pie-slice{stroke:#999;stroke-width:1}
-.pie-label{text-shadow:none;fill:#333}
-.pie-callout{fill:#333}
-.callout-line{stroke:#333}
+.ds-scorecard .ds-sc-card{padding:0.8rem;page-break-inside:avoid}
+.ds-scorecard .ds-sc-card .ds-sc-number{font-size:2rem}
+.ds-tab-bar{display:none}
+.ds-tab-content{display:block!important}
+.ds-section-nav{display:none}
+.ds-downloads,h2:has(+.ds-downloads){display:none}
+.ds-pie-slice{stroke:#999;stroke-width:1}
+.ds-pie-label{text-shadow:none;fill:#333}
+.ds-pie-callout{fill:#333}
+.ds-callout-line{stroke:#333}
 }
 /* De-duplication table (EXP-032) */
 .dedup-table summary{cursor:pointer;font-size:1.05em;padding:8px 0;user-select:none}
@@ -675,34 +675,34 @@ details{display:block}details .ks-summary::after,details .ps-summary::after{disp
 .dedup-table table.dedup tr.dedup-total{background:#f9f9f9;font-weight:bold}
 .dedup-table table.dedup tfoot td{background:#f0f0f0;font-size:0.9em;padding:8px}
 @media (max-width:700px){.dedup-table table.dedup{font-size:0.82em}}
-.breaking-news{border:1px solid var(--rule,var(--border));border-radius:6px;padding:.75rem 1rem;margin:2rem 0 1rem;background:var(--card-bg)}
-.bn-header{margin:0 0 .55rem;font-size:.78rem;color:var(--ink-2,#888);border:none;text-transform:uppercase;letter-spacing:.08em;font-weight:600;font-family:var(--sans,'Segoe UI',Arial,Helvetica,sans-serif)}
-.bn-item{display:flex;gap:.8rem;padding:.45rem 0;border-bottom:1px solid var(--rule,var(--border));align-items:baseline}
-.bn-item:last-child{border-bottom:none;padding-bottom:0}
-.bn-date{font-size:.75rem;color:var(--ink-2,#888);white-space:nowrap;min-width:5.5rem;font-family:var(--mono,ui-monospace,SFMono-Regular,Consolas,'Liberation Mono',monospace)}
-.bn-text{font-size:.85rem;line-height:1.5;color:var(--text)}
-.bn-text strong{color:var(--text);font-weight:600}
+.ds-breaking-news{border:1px solid var(--rule,var(--border));border-radius:6px;padding:.75rem 1rem;margin:2rem 0 1rem;background:var(--card-bg)}
+.ds-bn-header{margin:0 0 .55rem;font-size:.78rem;color:var(--ink-2,#888);border:none;text-transform:uppercase;letter-spacing:.08em;font-weight:600;font-family:var(--sans,'Segoe UI',Arial,Helvetica,sans-serif)}
+.ds-bn-item{display:flex;gap:.8rem;padding:.45rem 0;border-bottom:1px solid var(--rule,var(--border));align-items:baseline}
+.ds-bn-item:last-child{border-bottom:none;padding-bottom:0}
+.ds-bn-date{font-size:.75rem;color:var(--ink-2,#888);white-space:nowrap;min-width:5.5rem;font-family:var(--mono,ui-monospace,SFMono-Regular,Consolas,'Liberation Mono',monospace)}
+.ds-bn-text{font-size:.85rem;line-height:1.5;color:var(--text)}
+.ds-bn-text strong{color:var(--text);font-weight:600}
 
 /* === EXP-213 / EXP-A8 accessibility additions === */
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
-.skip-link{position:absolute;left:-9999px;top:0;background:var(--accent);color:#fff;padding:.65rem 1rem;z-index:10000;border-radius:0 0 4px 0;text-decoration:none;min-height:44px;display:inline-block;font-weight:600}
-.skip-link:focus,.skip-link:focus-visible{left:0}
-.vt-glyph,.vb-glyph{display:inline-block;margin-right:.35em;font-weight:700;line-height:1}
-.verdict-badge{display:inline-block;padding:.15rem .5rem;border-radius:3px;font-weight:600;font-size:.88rem;border-left:3px solid transparent}
-.verdict-badge.vb-standard_physics{background:var(--stdmodel,rgba(67,160,71,0.18));color:var(--text);border-left-color:var(--stdmodel-solid)}
-.verdict-badge.vb-recycled{background:var(--misleading,rgba(251,140,0,0.18));color:var(--text);border-left-color:var(--misleading-solid)}
-.verdict-badge.vb-falsified{background:var(--refuted,rgba(239,83,80,0.2));color:var(--text);border-left-color:var(--refuted-solid)}
-.verdict-badge.vb-unfalsifiable{background:var(--unfalsifiable,rgba(117,117,117,0.25));color:var(--text);border-left-color:var(--unfalsifiable-solid)}
-.verdict-badge.vb-pending{background:var(--notdemo,rgba(142,36,170,0.2));color:var(--text);border-left-color:var(--notdemo-solid)}
-.verdict-badge.vb-self_contradicted{background:var(--selfcon,rgba(30,136,229,0.2));color:var(--text);border-left-color:var(--selfcon-solid)}
-.verdict-badge.vb-misleading{background:var(--misleading,rgba(251,140,0,0.18));color:var(--text);border-left-color:var(--misleading-solid)}
-.toc a{display:block;padding:.65rem .5rem;text-decoration:none;border-radius:3px;min-height:44px;line-height:1.4}
-.toc a:hover{background:var(--card-bg);text-decoration:underline}
-.toc li{margin:0}
+.ds-skip-link{position:absolute;left:-9999px;top:0;background:var(--accent);color:#fff;padding:.65rem 1rem;z-index:10000;border-radius:0 0 4px 0;text-decoration:none;min-height:44px;display:inline-block;font-weight:600}
+.ds-skip-link:focus,.ds-skip-link:focus-visible{left:0}
+.vt-glyph,.ds-vb-glyph{display:inline-block;margin-right:.35em;font-weight:700;line-height:1}
+.ds-verdict-badge{display:inline-block;padding:.15rem .5rem;border-radius:3px;font-weight:600;font-size:.88rem;border-left:3px solid transparent}
+.ds-verdict-badge.vb-standard_physics{background:var(--stdmodel,rgba(67,160,71,0.18));color:var(--text);border-left-color:var(--stdmodel-solid)}
+.ds-verdict-badge.vb-recycled{background:var(--misleading,rgba(251,140,0,0.18));color:var(--text);border-left-color:var(--misleading-solid)}
+.ds-verdict-badge.vb-falsified{background:var(--refuted,rgba(239,83,80,0.2));color:var(--text);border-left-color:var(--refuted-solid)}
+.ds-verdict-badge.vb-unfalsifiable{background:var(--unfalsifiable,rgba(117,117,117,0.25));color:var(--text);border-left-color:var(--unfalsifiable-solid)}
+.ds-verdict-badge.vb-pending{background:var(--notdemo,rgba(142,36,170,0.2));color:var(--text);border-left-color:var(--notdemo-solid)}
+.ds-verdict-badge.vb-self_contradicted{background:var(--selfcon,rgba(30,136,229,0.2));color:var(--text);border-left-color:var(--selfcon-solid)}
+.ds-verdict-badge.vb-misleading{background:var(--misleading,rgba(251,140,0,0.18));color:var(--text);border-left-color:var(--misleading-solid)}
+.ds-toc a{display:block;padding:.65rem .5rem;text-decoration:none;border-radius:3px;min-height:44px;line-height:1.4}
+.ds-toc a:hover{background:var(--card-bg);text-decoration:underline}
+.ds-toc li{margin:0}
 .win-anchor{display:inline-block;padding:.45rem .6rem;min-width:44px;min-height:44px;text-align:center;border-radius:4px;text-decoration:none;font-weight:600}
 .win-anchor:hover{background:var(--card-bg);text-decoration:underline}
 @media(pointer:coarse){.win-anchor{padding:.6rem .7rem}}
-@media(max-width:600px){.tab-btn{padding:.7rem .9rem;font-size:.85rem;min-height:44px}}
+@media(max-width:600px){.ds-tab-btn{padding:.7rem .9rem;font-size:.85rem;min-height:44px}}
 @media(max-width:720px){.stacked-card-table thead{display:none}.stacked-card-table tr{display:block;margin:0 0 1rem;border:1px solid var(--border);border-radius:6px;padding:.6rem .8rem;background:var(--card-bg)}.stacked-card-table td{display:block;border:none;padding:.3rem 0;font-size:.95rem}.stacked-card-table td::before{content:attr(data-label) ": ";font-weight:600;color:var(--ink-2,#888);display:inline-block;min-width:7rem;text-transform:uppercase;letter-spacing:.04em;font-size:.78rem;font-family:var(--sans,inherit)}.stacked-card-table td.v-refuted::before,.stacked-card-table td.v-std::before,.stacked-card-table td.v-selfcon::before,.stacked-card-table td.v-misleading::before,.stacked-card-table td.v-unfalsifiable::before,.stacked-card-table td.v-notdemo::before{content:"Verdict: "}}
 `;
 
@@ -744,7 +744,7 @@ function formatWinDetail(win) {
 
   const verdictClass = VERDICT_CLASSES[win.verdict] || '';
   const verdictShortClass = verdictClass.replace('v-', 'vt-');
-  let html = `<div class="evidence" id="win${win.id}">
+  let html = `<div class="ds-evidence" id="win${win.id}">
 <h3>WIN-${win.id}: ${escapeHtml(win.claim)}</h3>
 `;
 
@@ -757,7 +757,7 @@ function formatWinDetail(win) {
       ? `<p class="ks-tldr">${escapeHtml(win.tldr_evidence)}</p>`
       : '';
     if (evTldr) {
-      html += `<details class="win-section"><summary class="ks-summary"><strong>Evidence</strong>${evTldr}</summary>\n`;
+      html += `<details class="ds-win-section"><summary class="ks-summary"><strong>Evidence</strong>${evTldr}</summary>\n`;
       html += `<div class="ks-detail"><p>${win.detail_evidence}</p></div>\n</details>\n`;
     } else {
       html += `<p><strong>Evidence:</strong> ${win.detail_evidence}</p>\n`;
@@ -770,10 +770,10 @@ function formatWinDetail(win) {
       : '';
     const extraHtml = win.detail_extra ? `<p>${win.detail_extra}</p>\n` : '';
     if (vdTldr) {
-      html += `<details class="win-section"><summary class="ks-summary"><span class="verdict-tag ${verdictShortClass}">${escapeHtml(win.verdict).toUpperCase()}</span>${vdTldr}</summary>\n`;
+      html += `<details class="ds-win-section"><summary class="ks-summary"><span class="ds-verdict-tag ${verdictShortClass}">${escapeHtml(win.verdict).toUpperCase()}</span>${vdTldr}</summary>\n`;
       html += `<div class="ks-detail"><p>${win.detail_verdict_text}</p>${extraHtml}</div>\n</details>\n`;
     } else {
-      html += `<p><span class="verdict-tag ${verdictShortClass}">${escapeHtml(win.verdict).toUpperCase()}</span> ${win.detail_verdict_text}</p>\n`;
+      html += `<p><span class="ds-verdict-tag ${verdictShortClass}">${escapeHtml(win.verdict).toUpperCase()}</span> ${win.detail_verdict_text}</p>\n`;
       if (win.detail_extra) {
         html += `<p>${win.detail_extra}</p>\n`;
       }
@@ -791,42 +791,42 @@ function formatWinDetail(win) {
 function formatCodeAnalysisTags(win) {
   const ca = win.code_analysis;
   if (!ca) {
-    return `<div class="ca-tags"><span class="ca-label">Code analysis:</span><span class="ca-tag tag-pending"><span class="ca-icon">\u2026</span> Pending review</span></div>\n`;
+    return `<div class="ds-ca-tags"><span class="ds-ca-label">Code analysis:</span><span class="ds-ca-tag tag-pending"><span class="ds-ca-icon">\u2026</span> Pending review</span></div>\n`;
   }
   if (!ca.reviewed) {
-    return `<div class="ca-tags"><span class="ca-label">Code analysis:</span><span class="ca-tag tag-pending"><span class="ca-icon">\u2026</span> Pending review</span></div>\n`;
+    return `<div class="ds-ca-tags"><span class="ds-ca-label">Code analysis:</span><span class="ds-ca-tag tag-pending"><span class="ds-ca-icon">\u2026</span> Pending review</span></div>\n`;
   }
 
-  let tags = '<div class="ca-tags"><span class="ca-label">Code analysis:</span>';
+  let tags = '<div class="ds-ca-tags"><span class="ds-ca-label">Code analysis:</span>';
 
   // Monitoring
   if (ca.monitoring === 'hardcoded') {
-    tags += '<span class="ca-tag tag-monitoring-hardcoded"><span class="ca-icon">\u26A0</span> Hardcoded check</span>';
+    tags += '<span class="ds-ca-tag tag-monitoring-hardcoded"><span class="ds-ca-icon">\u26A0</span> Hardcoded check</span>';
   } else if (ca.monitoring === 'live_fetch') {
-    tags += '<span class="ca-tag tag-monitoring-live"><span class="ca-icon">\u25C9</span> Live monitoring</span>';
+    tags += '<span class="ds-ca-tag tag-monitoring-live"><span class="ds-ca-icon">\u25C9</span> Live monitoring</span>';
   } else {
-    tags += '<span class="ca-tag tag-monitoring-none"><span class="ca-icon">\u2298</span> No monitoring</span>';
+    tags += '<span class="ds-ca-tag tag-monitoring-none"><span class="ds-ca-icon">\u2298</span> No monitoring</span>';
   }
 
   // Relabels standard
   if (ca.relabels_standard) {
-    tags += '<span class="ca-tag tag-true"><span class="ca-icon">\u21BB</span> Relabels standard physics</span>';
+    tags += '<span class="ds-ca-tag tag-true"><span class="ds-ca-icon">\u21BB</span> Relabels standard physics</span>';
   } else {
-    tags += '<span class="ca-tag tag-false"><span class="ca-icon">\u2713</span> Distinct from standard model</span>';
+    tags += '<span class="ds-ca-tag tag-false"><span class="ds-ca-icon">\u2713</span> Distinct from standard model</span>';
   }
 
   // Post-hoc
   if (ca.post_hoc) {
-    tags += '<span class="ca-tag tag-true"><span class="ca-icon">\u25F7</span> Post-hoc</span>';
+    tags += '<span class="ds-ca-tag tag-true"><span class="ds-ca-icon">\u25F7</span> Post-hoc</span>';
   } else {
-    tags += '<span class="ca-tag tag-false"><span class="ca-icon">\u2713</span> Prospective</span>';
+    tags += '<span class="ds-ca-tag tag-false"><span class="ds-ca-icon">\u2713</span> Prospective</span>';
   }
 
   // Derives from dome
   if (ca.derives_from_dome) {
-    tags += '<span class="ca-tag tag-false"><span class="ca-icon">\u2713</span> Geometrically derived</span>';
+    tags += '<span class="ds-ca-tag tag-false"><span class="ds-ca-icon">\u2713</span> Geometrically derived</span>';
   } else {
-    tags += '<span class="ca-tag tag-true"><span class="ca-icon">\u2717</span> No geometric derivation</span>';
+    tags += '<span class="ds-ca-tag tag-true"><span class="ds-ca-icon">\u2717</span> No geometric derivation</span>';
   }
 
   tags += '</div>\n';
@@ -834,10 +834,10 @@ function formatCodeAnalysisTags(win) {
 }
 
 function sectionNav(prevTab, prevLabel, nextTab, nextLabel) {
-  let html = '<div class="section-nav">';
-  if (prevTab) html += `<a href="#" onclick="showTab('${prevTab}');window.scrollTo(0,0);return false" class="nav-prev">← ${prevLabel}</a>`;
+  let html = '<div class="ds-section-nav">';
+  if (prevTab) html += `<a href="#" onclick="showTab('${prevTab}');window.scrollTo(0,0);return false" class="ds-nav-prev">← ${prevLabel}</a>`;
   else html += '<span></span>';
-  if (nextTab) html += `<a href="#" onclick="showTab('${nextTab}');window.scrollTo(0,0);return false" class="nav-next">${nextLabel} →</a>`;
+  if (nextTab) html += `<a href="#" onclick="showTab('${nextTab}');window.scrollTo(0,0);return false" class="ds-nav-next">${nextLabel} →</a>`;
   else html += '<span></span>';
   html += '</div>';
   return html;
@@ -898,7 +898,7 @@ function formatPredictionDetail(pred) {
   // ── Summary bar (always visible, kill-shot pattern) ──
   let html = `<div class="ks-test"><details id="${anchorId}"><summary class="ks-summary">`;
   html += `<h2 style="display:inline;margin:0">${escapeHtml(pred.id)}: ${escapeHtml(pred.claim || 'No claim text')}`;
-  html += ` <span class="verdict-badge vb-${verdict}" style="margin-left:8px"><span class="vb-glyph" aria-hidden="true">${badgeGlyph}</span>${escapeHtml(verdictLabel)}</span>`;
+  html += ` <span class="ds-verdict-badge vb-${verdict}" style="margin-left:8px"><span class="ds-vb-glyph" aria-hidden="true">${badgeGlyph}</span>${escapeHtml(verdictLabel)}</span>`;
   html += `</h2>`;
   html += `<p class="ks-tldr">${tldr}</p>`;
   html += `</summary><div class="ks-detail">\n`;
@@ -911,7 +911,7 @@ function formatPredictionDetail(pred) {
   if (pred.test_window) meta.push(`<strong>Test window:</strong> ${escapeHtml(typeof pred.test_window === 'string' ? pred.test_window : pred.test_window.closes || 'open')}`);
   if (pred.author_status) meta.push(`<strong>Author status:</strong> ${escapeHtml(pred.author_status)}`);
   if (meta.length) {
-    html += `<p class="pred-meta">${meta.join(' · ')}</p>\n`;
+    html += `<p class="ds-pred-meta">${meta.join(' · ')}</p>\n`;
   }
 
   // Restates WIN cross-reference
@@ -923,11 +923,11 @@ function formatPredictionDetail(pred) {
 
   // Verdict tag + reasoning (full form in detail)
   if (pred.detail_reasoning) {
-    html += `<p><span class="verdict-tag ${verdictClass}">${escapeHtml(verdictLabel).toUpperCase()}</span> ${escapeHtml(pred.detail_reasoning)}</p>\n`;
+    html += `<p><span class="ds-verdict-tag ${verdictClass}">${escapeHtml(verdictLabel).toUpperCase()}</span> ${escapeHtml(pred.detail_reasoning)}</p>\n`;
   } else if (verdict !== 'pending') {
-    html += `<p><span class="verdict-tag ${verdictClass}">${escapeHtml(verdictLabel).toUpperCase()}</span></p>\n`;
+    html += `<p><span class="ds-verdict-tag ${verdictClass}">${escapeHtml(verdictLabel).toUpperCase()}</span></p>\n`;
   } else {
-    html += `<p><span class="verdict-tag vt-notdemo">AWAITING ASSESSMENT</span></p>\n`;
+    html += `<p><span class="ds-verdict-tag vt-notdemo">AWAITING ASSESSMENT</span></p>\n`;
   }
 
   html += `</div></details></div>\n`;
@@ -969,26 +969,26 @@ function _splitPredictions(predictions) {
 function renderPredictionScorecard(predictions) {
   const { entries, tombstone, mined, domeClaimed } = _splitPredictions(predictions);
   let html = '';
-  html += `<div class="scorecard" style="grid-template-columns:repeat(4,1fr);margin:1rem 0">\n`;
-  html += `<div class="sc-card sc-sm" style="border-left:4px solid #2a6496">
-<div class="sc-number">${domeClaimed}</div>
-<div class="sc-label">Dome Claims</div>
-<div class="sc-sublabel">Total predictions on the dome's registry</div>
+  html += `<div class="ds-scorecard" style="grid-template-columns:repeat(4,1fr);margin:1rem 0">\n`;
+  html += `<div class="ds-sc-card ds-sc-sm" style="border-left:4px solid #2a6496">
+<div class="ds-sc-number">${domeClaimed}</div>
+<div class="ds-sc-label">Dome Claims</div>
+<div class="ds-sc-sublabel">Total predictions on the dome's registry</div>
 </div>\n`;
-  html += `<div class="sc-card sc-sm" style="border-left:4px solid #555">
-<div class="sc-number">${entries.length}</div>
-<div class="sc-label">We Cataloged</div>
-<div class="sc-sublabel">Our independent tally from the same source pages</div>
+  html += `<div class="ds-sc-card ds-sc-sm" style="border-left:4px solid #555">
+<div class="ds-sc-number">${entries.length}</div>
+<div class="ds-sc-label">We Cataloged</div>
+<div class="ds-sc-sublabel">Our independent tally from the same source pages</div>
 </div>\n`;
-  html += `<div class="sc-card sc-sm" style="border-left:4px solid var(--accent)">
-<div class="sc-number">${tombstone.length}</div>
-<div class="sc-label">Genuinely Prospective</div>
-<div class="sc-sublabel">Registered before the data — the only ones with real evidential weight</div>
+  html += `<div class="ds-sc-card ds-sc-sm" style="border-left:4px solid var(--accent)">
+<div class="ds-sc-number">${tombstone.length}</div>
+<div class="ds-sc-label">Genuinely Prospective</div>
+<div class="ds-sc-sublabel">Registered before the data — the only ones with real evidential weight</div>
 </div>\n`;
-  html += `<div class="sc-card sc-sm" style="border-left:4px solid var(--misleading-solid)">
-<div class="sc-number">${mined.length}</div>
-<div class="sc-label">Extracted / Mined</div>
-<div class="sc-sublabel">Registered after the data was already public — postdictions, recycled WINs, standard physics</div>
+  html += `<div class="ds-sc-card ds-sc-sm" style="border-left:4px solid var(--misleading-solid)">
+<div class="ds-sc-number">${mined.length}</div>
+<div class="ds-sc-label">Extracted / Mined</div>
+<div class="ds-sc-sublabel">Registered after the data was already public — postdictions, recycled WINs, standard physics</div>
 </div>\n`;
   html += `</div>\n`;
   return html;
@@ -1006,10 +1006,10 @@ function renderPredictionPanels(predictions) {
   html += `<h2 id="pred-tombstone">The Dome's Official Prospective Predictions</h2>\n`;
   html += `<p>The dome's predictions page designates ${tombstone.length} entries as genuinely prospective — predictions registered <em>before</em> the data comes in. These are the strongest category: if even one produces a novel, verified result that standard physics cannot explain, the dome model would earn real scientific credibility. So far, none do: most predict the same ranges as standard models (non-discriminating), and the timestamp infrastructure anchors the observations file, not the predictions. The prospective label is earned; the evidential weight is not.</p>\n`;
 
-  html += `<div class="scorecard" style="grid-template-columns:repeat(${Object.keys(tombstoneTally).length},1fr)">\n`;
+  html += `<div class="ds-scorecard" style="grid-template-columns:repeat(${Object.keys(tombstoneTally).length},1fr)">\n`;
   for (const [v, count] of Object.entries(tombstoneTally)) {
-    html += `<div class="sc-card sc-sm" style="border-left:4px solid var(--${verdictCardColor(v)}-solid)">\n`;
-    html += `<div class="sc-number">${count}</div>\n<div class="sc-label">${escapeHtml(PRED_VERDICT_LABELS[v] || v)}</div>\n</div>\n`;
+    html += `<div class="ds-sc-card ds-sc-sm" style="border-left:4px solid var(--${verdictCardColor(v)}-solid)">\n`;
+    html += `<div class="ds-sc-number">${count}</div>\n<div class="ds-sc-label">${escapeHtml(PRED_VERDICT_LABELS[v] || v)}</div>\n</div>\n`;
   }
   html += `</div>\n`;
 
@@ -1024,10 +1024,10 @@ function renderPredictionPanels(predictions) {
   html += `<h2 id="pred-mined">Extracted Predictions — Registered After the Data</h2>\n`;
   html += `<p>The predictions page contains ${mined.length} additional entries registered <em>after</em> the relevant data was already published. Most restate existing WINs under new prediction IDs — what we classify as "recycled." Others are standard physics results repackaged with dome terminology. A prediction registered after its outcome is known is not a prediction; it is a postdiction. The volume pads the catalog without adding evidential weight.</p>\n`;
 
-  html += `<div class="scorecard" style="grid-template-columns:repeat(${Object.keys(minedTally).length},1fr)">\n`;
+  html += `<div class="ds-scorecard" style="grid-template-columns:repeat(${Object.keys(minedTally).length},1fr)">\n`;
   for (const [v, count] of Object.entries(minedTally)) {
-    html += `<div class="sc-card sc-sm" style="border-left:4px solid var(--${verdictCardColor(v)}-solid)">\n`;
-    html += `<div class="sc-number">${count}</div>\n<div class="sc-label">${escapeHtml(PRED_VERDICT_LABELS[v] || v)}</div>\n</div>\n`;
+    html += `<div class="ds-sc-card ds-sc-sm" style="border-left:4px solid var(--${verdictCardColor(v)}-solid)">\n`;
+    html += `<div class="ds-sc-number">${count}</div>\n<div class="ds-sc-label">${escapeHtml(PRED_VERDICT_LABELS[v] || v)}</div>\n</div>\n`;
   }
   html += `</div>\n`;
 
@@ -1336,56 +1336,56 @@ ${CSS}
 </style>
 </head>
 <body>
-<a class="skip-link" href="#main">Skip to main content</a>
+<a class="ds-skip-link" href="#main">Skip to main content</a>
 
-<div class="tab-bar">
-  <button class="tab-btn active" onclick="showTab('overview')">Overview</button>
-  <button class="tab-btn" onclick="showTab('evaluate')">Evaluation Guide</button>
-  <button class="tab-btn" onclick="showTab('model')">The Model</button>
-  <button class="tab-btn" onclick="showTab('selftest')">Self-Contradictions</button>
-  <button class="tab-btn" onclick="showTab('wins')">${counts.total} Wins Reviewed</button>
-  <button class="tab-btn" onclick="showTab('pages')">Live Power Dashboard</button>
-  <button class="tab-btn" onclick="showTab('killshots')">Kill Shots</button>
-  <button class="tab-btn" onclick="showTab('timestamp')">Timestamp Error</button>
-  <button class="tab-btn" onclick="showTab('predictions')">Predictions Analysis</button>
-  <button class="tab-btn" onclick="showTab('falsify')">External Tests</button>
-  <button class="tab-btn" onclick="showTab('ai')">AI & Conclusions</button>
-  <button class="tab-btn" onclick="showTab('refs')">References</button>
+<div class="ds-tab-bar">
+  <button class="ds-tab-btn active" onclick="showTab('overview')">Overview</button>
+  <button class="ds-tab-btn" onclick="showTab('evaluate')">Evaluation Guide</button>
+  <button class="ds-tab-btn" onclick="showTab('model')">The Model</button>
+  <button class="ds-tab-btn" onclick="showTab('selftest')">Self-Contradictions</button>
+  <button class="ds-tab-btn" onclick="showTab('wins')">${counts.total} Wins Reviewed</button>
+  <button class="ds-tab-btn" onclick="showTab('pages')">Live Power Dashboard</button>
+  <button class="ds-tab-btn" onclick="showTab('killshots')">Kill Shots</button>
+  <button class="ds-tab-btn" onclick="showTab('timestamp')">Timestamp Error</button>
+  <button class="ds-tab-btn" onclick="showTab('predictions')">Predictions Analysis</button>
+  <button class="ds-tab-btn" onclick="showTab('falsify')">External Tests</button>
+  <button class="ds-tab-btn" onclick="showTab('ai')">AI & Conclusions</button>
+  <button class="ds-tab-btn" onclick="showTab('refs')">References</button>
 </div>
 <main id="main">
-<div class="tab-content active" id="overview">
+<div class="ds-tab-content active" id="overview">
 
-<div class="title-block">
-<p class="stance-statement">The world is a globe. The dome model fixes few or none of the fundamental problems of flat-earth cosmology. That does not prevent us from engaging with the specific claims it does make — and that is what this document does.</p>
+<div class="ds-title-block">
+<p class="ds-stance-statement">The world is a globe. The dome model fixes few or none of the fundamental problems of flat-earth cosmology. That does not prevent us from engaging with the specific claims it does make — and that is what this document does.</p>
 <h1 style="border:none">Critical Review</h1>
 <h1 style="border:none;font-size:1.6rem;font-weight:400">Ovoid Cavity Cosmological Model ${DOME_VERSION}</h1>
-<p class="subtitle">(formerly Dome Cosmological Model V50.6)</p>
-<p class="subtitle">Point-by-Point Analysis of ${counts.total} Claimed Wins, Live Power Dashboard,<br>Falsification Tests, Version Change Tracking, and AI Prompt Injection Analysis</p>
-<p class="meta">${BUILD_DATE} &nbsp;|&nbsp; Version ${REVIEW_VERSION}<br>Source: <a href="https://john09289.github.io/predictions">john09289.github.io/predictions</a></p>
+<p class="ds-subtitle">(formerly Dome Cosmological Model V50.6)</p>
+<p class="ds-subtitle">Point-by-Point Analysis of ${counts.total} Claimed Wins, Live Power Dashboard,<br>Falsification Tests, Version Change Tracking, and AI Prompt Injection Analysis</p>
+<p class="ds-meta">${BUILD_DATE} &nbsp;|&nbsp; Version ${REVIEW_VERSION}<br>Source: <a href="https://john09289.github.io/predictions">john09289.github.io/predictions</a></p>
 </div>
 
 ${generateVerdictBarChart(tally, wins.length)}
 
-<div class="scorecard sc-hero" style="grid-template-columns:repeat(4,1fr)">
-<div class="sc-card">
-<div class="sc-number">${counts.total}</div>
-<div class="sc-label">Claimed "Wins"</div>
-<div class="sc-sublabel">The author claims ${counts.total} confirmed predictions and zero falsifications</div>
+<div class="ds-scorecard ds-sc-hero" style="grid-template-columns:repeat(4,1fr)">
+<div class="ds-sc-card">
+<div class="ds-sc-number">${counts.total}</div>
+<div class="ds-sc-label">Claimed "Wins"</div>
+<div class="ds-sc-sublabel">The author claims ${counts.total} confirmed predictions and zero falsifications</div>
 </div>
-<div class="sc-card accent">
-<div class="sc-number">0</div>
-<div class="sc-label">Actual Wins</div>
-<div class="sc-sublabel">Not one claim produces a result that the globe model can't explain and the dome uniquely can</div>
+<div class="ds-sc-card accent">
+<div class="ds-sc-number">0</div>
+<div class="ds-sc-label">Actual Wins</div>
+<div class="ds-sc-sublabel">Not one claim produces a result that the globe model can't explain and the dome uniquely can</div>
 </div>
-<div class="sc-card" style="border-left:4px solid var(--rule)">
-<div class="sc-number">${failures.dome_claimed_failures} + ${silentFailures}</div>
-<div class="sc-label">Actual Failures</div>
-<div class="sc-sublabel">He admits ${failures.dome_claimed_failures}. We found ${silentFailures} more he silently removed. <a href="#p3-failures" onclick="showTab('wins');return false">Details →</a></div>
+<div class="ds-sc-card" style="border-left:4px solid var(--rule)">
+<div class="ds-sc-number">${failures.dome_claimed_failures} + ${silentFailures}</div>
+<div class="ds-sc-label">Actual Failures</div>
+<div class="ds-sc-sublabel">He admits ${failures.dome_claimed_failures}. We found ${silentFailures} more he silently removed. <a href="#p3-failures" onclick="showTab('wins');return false">Details →</a></div>
 </div>
-<div class="sc-card" style="border-left:4px solid #2a6496">
-<div class="sc-number" style="font-size:1.4rem">Wrong Side</div>
-<div class="sc-label">Timestamp Error</div>
-<div class="sc-sublabel">His blockchain proof timestamps the <em>observations</em>, not the predictions. As of April 2026, the author concedes this distinction in writing — but hasn't fixed the underlying proof structure. <a href="#timestamp-error" onclick="showTab('timestamp');return false">Details →</a></div>
+<div class="ds-sc-card" style="border-left:4px solid #2a6496">
+<div class="ds-sc-number" style="font-size:1.4rem">Wrong Side</div>
+<div class="ds-sc-label">Timestamp Error</div>
+<div class="ds-sc-sublabel">His blockchain proof timestamps the <em>observations</em>, not the predictions. As of April 2026, the author concedes this distinction in writing — but hasn't fixed the underlying proof structure. <a href="#timestamp-error" onclick="showTab('timestamp');return false">Details →</a></div>
 </div>
 </div>
 <section role="region" class="accuracy-math-section" aria-labelledby="accuracy-math-heading">
@@ -1403,39 +1403,39 @@ ${accuracyVariantList ? `<p class="ams-p ams-variant">Internal queries return ${
 </section>
 
 <h2>Downloads</h2>
-<div class="downloads">
-<a class="dl-card" href="../downloads/critical-review-dome-model-v6.pdf"><span class="dl-icon">&#128203;</span> <span class="dl-label">PDF Version</span><br><small>Print-ready format</small></a>
-<a class="dl-card" href="../security-audit.md"><span class="dl-icon">&#128274;</span> <span class="dl-label">Security Audit</span><br><small>Prompt injection findings</small></a>
+<div class="ds-downloads">
+<a class="ds-dl-card" href="../downloads/critical-review-dome-model-v6.pdf"><span class="ds-dl-icon">&#128203;</span> <span class="ds-dl-label">PDF Version</span><br><small>Print-ready format</small></a>
+<a class="ds-dl-card" href="../security-audit.md"><span class="ds-dl-icon">&#128274;</span> <span class="ds-dl-label">Security Audit</span><br><small>Prompt injection findings</small></a>
 </div>
 
 <h1 id="verdicts">Verdict Categories Used in This Review</h1>
-<div class="verdict-legend">
-<div class="vl vl-refuted"><strong>Refuted by Data:</strong> Direct physical measurements or experiments contradict the specific claim. Hard evidence exists proving the stated behavior does not occur or the cited source does not contain what is claimed.</div>
-<div class="vl vl-std"><strong>Standard Model Explains:</strong> The observation cited is real, but mainstream physics already provides a complete, quantitative explanation. The dome model adds no predictive power beyond what existing models already achieve.</div>
-<div class="vl vl-selfcon"><strong>Self-Contradicted:</strong> The dome's own stated geometry, if worked through honestly, predicts a value radically different from what the author claims. Agreement with observations is achieved only by substituting globe formulas, ignoring the dome's own geometry, or curve-fitting. See <a href="#part2" onclick="showTab('selftest');return false">Part 2</a> for derivations.</div>
-<div class="vl vl-misleading"><strong>Misleading:</strong> The data is misrepresented, cherry-picked, the cited values do not match the actual source, logically contradictory results are both claimed as confirmations, or the same observation is counted as multiple independent wins.</div>
-<div class="vl vl-notdemo"><strong>Not Demonstrated:</strong> The claim relies on unreplicated fringe experiments or unverified data that has not been independently confirmed.</div>
-<div class="vl vl-unfalsifiable"><strong>Unfalsifiable:</strong> The claim cannot be tested by any physical measurement. Typically theological assertions.</div>
+<div class="ds-verdict-legend">
+<div class="ds-vl vl-refuted"><strong>Refuted by Data:</strong> Direct physical measurements or experiments contradict the specific claim. Hard evidence exists proving the stated behavior does not occur or the cited source does not contain what is claimed.</div>
+<div class="ds-vl vl-std"><strong>Standard Model Explains:</strong> The observation cited is real, but mainstream physics already provides a complete, quantitative explanation. The dome model adds no predictive power beyond what existing models already achieve.</div>
+<div class="ds-vl vl-selfcon"><strong>Self-Contradicted:</strong> The dome's own stated geometry, if worked through honestly, predicts a value radically different from what the author claims. Agreement with observations is achieved only by substituting globe formulas, ignoring the dome's own geometry, or curve-fitting. See <a href="#part2" onclick="showTab('selftest');return false">Part 2</a> for derivations.</div>
+<div class="ds-vl vl-misleading"><strong>Misleading:</strong> The data is misrepresented, cherry-picked, the cited values do not match the actual source, logically contradictory results are both claimed as confirmations, or the same observation is counted as multiple independent wins.</div>
+<div class="ds-vl vl-notdemo"><strong>Not Demonstrated:</strong> The claim relies on unreplicated fringe experiments or unverified data that has not been independently confirmed.</div>
+<div class="ds-vl vl-unfalsifiable"><strong>Unfalsifiable:</strong> The claim cannot be tested by any physical measurement. Typically theological assertions.</div>
 </div>
 
-<div class="breaking-news">
-<h2 class="bn-header">Latest Findings</h2>
-<div class="bn-item">
-<span class="bn-date">2026-04-17</span>
-<span class="bn-text"><strong>Dome Author Changes Timestamp Narrative — But Doesn't Fix the Problem.</strong> A new <code>methodology.json</code> concedes that OpenTimestamps alone doesn't prove claim-level prospectivity — the exact critique from our Timestamp Error tab. The structural fix (a predictions-only file with its own blockchain anchor) is still not implemented. His own new claim taxonomy leaves the "prospective confirmed" column empty for every WIN classified so far. <a href="#ts-april-2026-update" onclick="showTab('timestamp');document.getElementById('ts-april-2026-update').open=true;return false">Full update →</a></span>
+<div class="ds-breaking-news">
+<h2 class="ds-bn-header">Latest Findings</h2>
+<div class="ds-bn-item">
+<span class="ds-bn-date">2026-04-17</span>
+<span class="ds-bn-text"><strong>Dome Author Changes Timestamp Narrative — But Doesn't Fix the Problem.</strong> A new <code>methodology.json</code> concedes that OpenTimestamps alone doesn't prove claim-level prospectivity — the exact critique from our Timestamp Error tab. The structural fix (a predictions-only file with its own blockchain anchor) is still not implemented. His own new claim taxonomy leaves the "prospective confirmed" column empty for every WIN classified so far. <a href="#ts-april-2026-update" onclick="showTab('timestamp');document.getElementById('ts-april-2026-update').open=true;return false">Full update →</a></span>
 </div>
-<div class="bn-item">
-<span class="bn-date">2026-04-12</span>
-<span class="bn-text"><strong>Dome's Refraction Fix Destroys Its Own Coordinate System.</strong> To avoid a sun/firmament collision, the model declares the sun an optical illusion — but the same refractive medium (n(r) = 1.2–2.8, vs Earth's 1.0003) contaminates every Polaris-based distance measurement the dome uses to build its map. The coordinate system collapses, taking 22 dependent WINs with it. <a href="#section-1-8">Full analysis →</a></span>
+<div class="ds-bn-item">
+<span class="ds-bn-date">2026-04-12</span>
+<span class="ds-bn-text"><strong>Dome's Refraction Fix Destroys Its Own Coordinate System.</strong> To avoid a sun/firmament collision, the model declares the sun an optical illusion — but the same refractive medium (n(r) = 1.2–2.8, vs Earth's 1.0003) contaminates every Polaris-based distance measurement the dome uses to build its map. The coordinate system collapses, taking 22 dependent WINs with it. <a href="#section-1-8">Full analysis →</a></span>
 </div>
-<div class="bn-item">
-<span class="bn-date">2026-04-10</span>
-<span class="bn-text"><strong>${context.predCounts.total} Predictions Cataloged — ${context.predCounts.deadOnArrival} Are Dead on Arrival.</strong> We datamined every testable claim from the dome's predictions page. Of ${context.predCounts.total} entries: ${context.predCounts.stdRelabel} are standard physics relabeled as dome predictions, ${context.predCounts.ourFalsified} are already falsified by hard data, ${context.predCounts.ourRecycled} recycle existing WINs, and ${context.predCounts.ourUnfalsifiable} are untestable. <a href="#pred-mined">See the full catalog →</a></span>
+<div class="ds-bn-item">
+<span class="ds-bn-date">2026-04-10</span>
+<span class="ds-bn-text"><strong>${context.predCounts.total} Predictions Cataloged — ${context.predCounts.deadOnArrival} Are Dead on Arrival.</strong> We datamined every testable claim from the dome's predictions page. Of ${context.predCounts.total} entries: ${context.predCounts.stdRelabel} are standard physics relabeled as dome predictions, ${context.predCounts.ourFalsified} are already falsified by hard data, ${context.predCounts.ourRecycled} recycle existing WINs, and ${context.predCounts.ourUnfalsifiable} are untestable. <a href="#pred-mined">See the full catalog →</a></span>
 </div>
 </div>
 
 
-<nav class="toc">
+<nav class="ds-toc">
 <h2 style="margin-top:0">Table of Contents</h2>
 <ul>
 <li><a href="#evaluation-guide" onclick="showTab('evaluate');return false">Evaluation Guide: How to Assess This Review</a></li>
@@ -1476,7 +1476,7 @@ ${sectionNav(null, null, 'evaluate', 'Evaluation Guide')}
 </div>
 
 <!-- ═══ TAB: Evaluation Guide ═══ -->
-<div class="tab-content" id="evaluate">
+<div class="ds-tab-content" id="evaluate">
 
 <!-- ═══ EVALUATION GUIDE ═══ -->
 <h1 id="evaluation-guide">Evaluation Guide: How to Assess This Review</h1>
@@ -1574,7 +1574,7 @@ ${sectionNav('overview', 'Overview', 'model', 'The Model')}
 </div>
 
 <!-- ═══ TAB: The Model (Parts 1, 1b) ═══ -->
-<div class="tab-content" id="model">
+<div class="ds-tab-content" id="model">
 
 ${renderSectionFromJson('part1', context, winsByVerdict, wins, tally, sectionNav)}
 ${renderSectionFromJson('part1b', context, winsByVerdict, wins, tally, sectionNav)}
@@ -1584,7 +1584,7 @@ ${sectionNav('evaluate', 'Evaluation Guide', 'selftest', 'Self-Contradictions')}
 </div>
 
 <!-- ═══ TAB: Self-Contradictions (Parts 2, 2b) ═══ -->
-<div class="tab-content" id="selftest">
+<div class="ds-tab-content" id="selftest">
 
 ${renderSectionFromJson('part2', context, winsByVerdict, wins, tally, sectionNav)}
 ${renderSectionFromJson('part2b', context, winsByVerdict, wins, tally, sectionNav)}
@@ -1594,7 +1594,7 @@ ${sectionNav('model', 'The Model', 'wins', counts.total + ' Wins Reviewed')}
 </div>
 
 <!-- ═══ TAB: Wins Reviewed (Part 3) ═══ -->
-<div class="tab-content" id="wins">
+<div class="ds-tab-content" id="wins">
 
 ${renderSectionFromJson('part3', context, winsByVerdict, wins, tally, sectionNav)}
 
@@ -1605,7 +1605,7 @@ ${sectionNav('selftest', 'Self-Contradictions', 'pages', 'Live Power Dashboard')
 </div>
 
 <!-- ═══ TAB: Live Power Dashboard (Part 4) ═══ -->
-<div class="tab-content" id="pages">
+<div class="ds-tab-content" id="pages">
 
 ${renderSectionFromJson('part4', context, winsByVerdict, wins, tally, sectionNav)}
 
@@ -1614,7 +1614,7 @@ ${sectionNav('wins', counts.total + ' Wins Reviewed', 'killshots', 'Kill Shots')
 </div>
 
 <!-- ═══ TAB: Kill Shots (Part 5) ═══ -->
-<div class="tab-content" id="killshots">
+<div class="ds-tab-content" id="killshots">
 
 ${renderSectionFromJson('part5', context, winsByVerdict, wins, tally, sectionNav)}
 
@@ -1623,19 +1623,19 @@ ${sectionNav('pages', 'Live Power Dashboard', 'timestamp', 'Timestamp Error')}
 </div>
 
 <!-- ═══ TAB: Timestamp Error ═══ -->
-<div class="tab-content" id="timestamp">
+<div class="ds-tab-content" id="timestamp">
 
 <h1 id="timestamp-error">The Timestamp Error</h1>
 <h2 style="color:var(--accent);font-weight:400;margin-top:0">He timestamps the observations, not the predictions</h2>
 
-<div class="scorecard" style="grid-template-columns:1fr 1fr;margin:1.5em 0">
-<div class="sc-card" style="border-left:4px solid var(--rule)">
-<div class="sc-label" style="font-size:1.1em">What gets timestamped</div>
-<div class="sc-sublabel"><code>status_history.json</code> — observed values, pass/fail audit results, statistical comparisons. This is the <strong>answer sheet</strong>.</div>
+<div class="ds-scorecard" style="grid-template-columns:1fr 1fr;margin:1.5em 0">
+<div class="ds-sc-card" style="border-left:4px solid var(--rule)">
+<div class="ds-sc-label" style="font-size:1.1em">What gets timestamped</div>
+<div class="ds-sc-sublabel"><code>status_history.json</code> — observed values, pass/fail audit results, statistical comparisons. This is the <strong>answer sheet</strong>.</div>
 </div>
-<div class="sc-card" style="border-left:4px solid #2a6496">
-<div class="sc-label" style="font-size:1.1em">What should get timestamped</div>
-<div class="sc-sublabel">The prediction itself — the formula, the expected value, the tolerance — in a <strong>separate document, before the data arrives</strong>.</div>
+<div class="ds-sc-card" style="border-left:4px solid #2a6496">
+<div class="ds-sc-label" style="font-size:1.1em">What should get timestamped</div>
+<div class="ds-sc-sublabel">The prediction itself — the formula, the expected value, the tolerance — in a <strong>separate document, before the data arrives</strong>.</div>
 </div>
 </div>
 
@@ -1724,14 +1724,14 @@ ${sectionNav('pages', 'Live Power Dashboard', 'timestamp', 'Timestamp Error')}
 
 </div></details>
 
-<div class="ts-related-callout"><p><strong>Related: methodology.json 5-class claim taxonomy.</strong> Alongside the OTS timestamping methodology, the April 17 rigor push introduced a 5-class claim taxonomy (<code>retrospective_structural</code>, <code>pending_contested</code>, <code>supportive_nonunique</code>, <code>prospective_confirmed</code>, <code>open_refinement</code>) in methodology.json, applied to 9 of 69+ claims in claim_index.json. For the registry-level audit of how that taxonomy and other API-level concessions compare to the visible headline, see <a href="#registry-framing-audit" onclick="showTab('pages');return false">Section 4.2 — Registry Framing Audit</a>. For per-WIN author-rating fields, see the <em>Author's Self-Rating</em> block on each WIN detail card.</p></div>
+<div class="ds-ts-related-callout"><p><strong>Related: methodology.json 5-class claim taxonomy.</strong> Alongside the OTS timestamping methodology, the April 17 rigor push introduced a 5-class claim taxonomy (<code>retrospective_structural</code>, <code>pending_contested</code>, <code>supportive_nonunique</code>, <code>prospective_confirmed</code>, <code>open_refinement</code>) in methodology.json, applied to 9 of 69+ claims in claim_index.json. For the registry-level audit of how that taxonomy and other API-level concessions compare to the visible headline, see <a href="#registry-framing-audit" onclick="showTab('pages');return false">Section 4.2 — Registry Framing Audit</a>. For per-WIN author-rating fields, see the <em>Author's Self-Rating</em> block on each WIN detail card.</p></div>
 
 ${sectionNav('killshots', 'Kill Shots', 'predictions', 'Predictions Analysis')}
 
 </div>
 
 <!-- ═══ TAB: Predictions Analysis (Part 6) ═══ -->
-<div class="tab-content" id="predictions">
+<div class="ds-tab-content" id="predictions">
 
 ${renderPredictionScorecard(predictions)}
 
@@ -1744,7 +1744,7 @@ ${sectionNav('timestamp', 'Timestamp Error', 'falsify', 'External Tests')}
 </div>
 
 <!-- ═══ TAB: External Tests (Part 7) ═══ -->
-<div class="tab-content" id="falsify">
+<div class="ds-tab-content" id="falsify">
 
 ${renderSectionFromJson('part7', context, winsByVerdict, wins, tally, sectionNav)}
 
@@ -1753,7 +1753,7 @@ ${sectionNav('predictions', 'Predictions Analysis', 'ai', 'AI & Conclusions')}
 </div>
 
 <!-- ═══ TAB: AI & Conclusions (Parts 8, 9) ═══ -->
-<div class="tab-content" id="ai">
+<div class="ds-tab-content" id="ai">
 
 ${renderSectionFromJson('part8', context, winsByVerdict, wins, tally, sectionNav)}
 ${renderSectionFromJson('part8b', context, winsByVerdict, wins, tally, sectionNav)}
@@ -1764,7 +1764,7 @@ ${sectionNav('falsify', 'External Tests', 'refs', 'References')}
 </div>
 
 <!-- ═══ TAB: References (Part 10) ═══ -->
-<div class="tab-content" id="refs">
+<div class="ds-tab-content" id="refs">
 
 ${renderSectionFromJson('part10', context, winsByVerdict, wins, tally, sectionNav)}
 
@@ -1777,11 +1777,11 @@ ${sectionNav('ai', 'AI & Conclusions', null, null)}
 function showTab(tabId, opts) {
   opts = opts || {};
   // Hide all tabs
-  const allTabs = document.querySelectorAll('.tab-content');
+  const allTabs = document.querySelectorAll('.ds-tab-content');
   allTabs.forEach(tab => tab.classList.remove('active'));
 
   // Remove active class from all buttons
-  const allButtons = document.querySelectorAll('.tab-btn');
+  const allButtons = document.querySelectorAll('.ds-tab-btn');
   allButtons.forEach(btn => btn.classList.remove('active'));
 
   // Show selected tab
@@ -1818,12 +1818,12 @@ window.addEventListener('load', function() {
     const el = document.getElementById(hash);
     if (el) {
       // Check if hash IS a tab
-      if (el.classList.contains('tab-content')) {
+      if (el.classList.contains('ds-tab-content')) {
         showTab(hash, { skipHash: true });
         history.replaceState({ tab: hash, anchor: null }, '', '#' + hash);
       } else {
         // Find which tab contains this element
-        const parentTab = el.closest('.tab-content');
+        const parentTab = el.closest('.ds-tab-content');
         if (parentTab) {
           showTab(parentTab.id, { skipHash: true, skipScroll: true });
           history.replaceState({ tab: parentTab.id, anchor: hash }, '', '#' + hash);
@@ -1854,7 +1854,7 @@ window.addEventListener('load', function() {
         const element = document.getElementById(target);
         if (element) {
           // Find which tab contains this element
-          let parentTab = element.closest('.tab-content');
+          let parentTab = element.closest('.ds-tab-content');
           if (parentTab) {
             const tabId = parentTab.id;
             // Use skipHash + skipScroll so showTab doesn't clobber our anchor or fight scrollIntoView
@@ -1884,10 +1884,10 @@ window.addEventListener('load', function() {
     }
     const el = document.getElementById(hash);
     if (el) {
-      if (el.classList.contains('tab-content')) {
+      if (el.classList.contains('ds-tab-content')) {
         showTab(hash, { skipHash: true });
       } else {
-        const parentTab = el.closest('.tab-content');
+        const parentTab = el.closest('.ds-tab-content');
         if (parentTab) {
           showTab(parentTab.id, { skipHash: true, skipScroll: true });
           expandToElement(el);
