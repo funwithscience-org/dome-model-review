@@ -29,8 +29,14 @@ if (!VALID_TARGETS.has(target)) {
 // Every file that crosses the workspace↔git boundary is classified here.
 // Three categories:
 //   - 'git'           : authoritative in git. publish copies git → workspace.
-//                       workspace-sync MUST NEVER copy this file back (see
-//                       workspace-sync.md's is_git_owned guard, Change 1.2).
+//                       Under universal-pusher mode (2026-04-26), workspace-sync
+//                       MAY push these back when FUSE has newer content (rescue
+//                       path for decider 403s) — see workspace-sync.md's
+//                       smart_copy mtime guard. EXCEPT for files in workspace-
+//                       sync.md's smaller NEVER_PUSH deny-list (build artifacts,
+//                       source code, clone-internal generated files, semantic
+//                       flags, monitor/prompts/*.md), which still must never
+//                       round-trip from FUSE under any circumstances.
 //   - 'workspace'     : authoritative on the workspace FUSE mount.
 //                       publish does NOT copy this file in either direction
 //                       — workspace-sync owns the workspace→git push.
@@ -88,9 +94,9 @@ const OWNERSHIP = {
   //       view at the first copy anyway.
   // The 'git' override forces unconditional git→workspace copy every publish,
   // so integrity 7d sees fresh skip records. The same-named entry in
-  // workspace-sync.md's OWNED_BY_GIT array does NOT regress the writer:
+  // workspace-sync.md's NEVER_PUSH array does NOT regress the writer:
   // workspace-sync writes via fs.appendFileSync directly, not smart_copy, so
-  // the direction guard never fires on the authoritative writer.
+  // the deny-list never fires on the authoritative writer.
   'monitor/integrity/workspace-sync-skips.jsonl': 'git',
 
   // workspace-owned: workspace-sync owns direction; build.js does NOT sync these

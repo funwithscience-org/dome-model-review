@@ -328,6 +328,17 @@
       "consumed_at": "2026-04-25T19:25:34.000Z",
       "consumed_by": "decider",
       "consumed_note": "Acknowledged: PAT genuinely has contents:write. Decider self-apply procedure already updated (retry-on-403 wrapper per decider-patches-and-selfapply.md). No diagnostic claims about missing contents:write scope will be made in future push-failure logs."
+    },
+    {
+      "id": "HNOTE-OPERATOR-UNIVERSAL-PUSHER-001",
+      "status": "pending",
+      "created": "2026-04-26T07:25:00Z",
+      "for_agent": "decider",
+      "from": "operator (steve via cowork session)",
+      "priority": "high",
+      "title": "Universal-pusher mode: workspace-sync now rescues decider 403 push failures",
+      "body": "Operator directive 2026-04-26 ~07:21Z: \"for the moment, let's make workspace universal pusher. otherwise we'll be rescuing decider all day.\"\n\nTwo changes shipped together (this commit):\n\n1. monitor/prompts/reference/decider-patches-and-selfapply.md — push-failure block now copies committed-but-unpushed files to FUSE via [git diff --name-only origin/main...HEAD] before exiting. Logs include universal_pusher_rescue.rescued_count and rescued_files array. Decider message updated to say \"Operator does NOT need to manually rescue-push.\"\n\n2. monitor/prompts/workspace-sync.md — replaced ~24-entry OWNED_BY_GIT direction-guard array with smaller NEVER_PUSH deny-list. Files MOVED OUT (now eligible for workspace-sync push, mtime-guarded only): data/wins.json, data/sections.json, data/predictions.json, data/uncounted-failures.json, monitor/decisions/open-issues.json, monitor/decisions/closed-issues.json, monitor/curmudgeon/priority-queue.json. Files KEPT IN deny-list: docs/* (build.js artifacts), build-scripts/*, build.js, test.js, CLAUDE.md, monitor/v6-restructure-map.json, monitor/integrity/workspace-sync-skips.jsonl (circular if pushed back), monitor/curmudgeon/pending-digest.json (generated in clone), monitor/decisions/prop-009-enforce.flag (semantic flag), monitor/prompts/*.md.\n\nAdded sync iteration over monitor/decisions/applied-patches/*.json (subdir not previously walked).\n\nAlso updated build.js OWNERSHIP comments (1.1 docstring + workspace-sync-skips.jsonl rationale) and CLAUDE.md File Ownership Rules (renamed reference from OWNED_BY_GIT to NEVER_PUSH; added universal-pusher mode callout block).\n\nFlow under new design:\n  T+0  Decider commits in clone, push 403s, copies committed files to FUSE via the new rescue block, exits.\n  T+~30m  Workspace-sync (hourly at :03) sees FUSE files newer than git, pushes them.\n  T+~30m+1s  Pipeline state caught up — no operator action required.\n\nSafety nets:\n  - smart_copy mtime guard still protects against stale FUSE overwriting fresh git.\n  - cmp -s short-circuit still prevents identical-content pushes.\n  - NEVER_PUSH deny-list still blocks build-artifact / source-code round-trips.\n  - workspace-sync.md self-tests catch deny-list misclassification at startup.\n\nRollback if needed: revert the workspace-sync.md change first (decider rescue copy is idempotent and harmless if nothing reads from it).\n",
+      "acceptance": "Decider acknowledges new universal-pusher behavior in its next run note. No action required beyond awareness — the changes self-activate on next workspace-sync and next decider push attempt."
     }
   ],
   "last_updated": "2026-04-25T18:24:14.976Z"

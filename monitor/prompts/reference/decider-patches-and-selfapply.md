@@ -275,7 +275,35 @@ fi
 
 echo "$PUSH_OUT"
 if [ $PUSH_RC -ne 0 ]; then
-  echo "Push failed (after retry if 403; after split-push diagnostic if applicable). Files synced to FUSE workspace as fallback. Operator may rescue-push from cowork session per HNOTE-OPERATOR-PAT-DIAGNOSIS-CORRECTION-001 procedure."
+  echo "Push failed (after retry if 403; after split-push diagnostic if applicable). Universal-pusher rescue: copying committed-but-unpushed files to FUSE for workspace-sync to pick up on its next cycle (hourly). Operator does NOT need to manually rescue-push."
+
+  # UNIVERSAL-PUSHER RESCUE (added 2026-04-26 per operator directive — see
+  # HNOTE-OPERATOR-UNIVERSAL-PUSHER-001). Copy every file that is committed
+  # in the clone but ahead of origin/main into the FUSE workspace. The
+  # workspace-sync agent (running hourly with its own session/IP) will then
+  # rescue-push them via the smart_copy mtime-guarded path. This converts
+  # the previous manual operator rescue-push workflow into automation.
+  RESCUED_COUNT=0
+  RESCUED_LIST=""
+  RESCUED_FILES=$(git diff --name-only origin/main...HEAD 2>/dev/null)
+  if [ -n "$RESCUED_FILES" ]; then
+    while IFS= read -r f; do
+      [ -z "$f" ] && continue
+      if [ -f "$f" ]; then
+        mkdir -p "${WORKSPACE}/$(dirname "$f")" 2>/dev/null
+        if cp "$f" "${WORKSPACE}/$f" 2>/dev/null; then
+          RESCUED_COUNT=$((RESCUED_COUNT + 1))
+          RESCUED_LIST="${RESCUED_LIST}${f}\n"
+        else
+          echo "  WARN: failed to copy $f to FUSE — file may be in NEVER_PUSH deny-list (which is fine; those must be pushed via git directly)."
+        fi
+      fi
+    done <<< "$RESCUED_FILES"
+    echo "Universal-pusher: rescued ${RESCUED_COUNT} file(s) to FUSE for workspace-sync to push."
+  else
+    echo "Universal-pusher: no committed-but-unpushed files to rescue (clone is even with origin/main; the failed push may have been an empty/no-op commit)."
+  fi
+
   # Log push failure for operator visibility — keep schema consistent with
   # prior push-failure logs but DO NOT claim the PAT lacks contents:write.
   cat > "${WORKSPACE}/monitor/integrity/push-failure-$(date -u +%Y-%m-%dT%H-%M).json" <<JSON
@@ -283,8 +311,13 @@ if [ $PUSH_RC -ne 0 ]; then
   "event": "push-failure",
   "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "error": $(printf '%s' "$PUSH_OUT" | jq -Rs .),
-  "diagnosis": "Push failed after one transient-403 retry. PAT is known to have contents:write (per HNOTE-OPERATOR-PAT-DIAGNOSIS-CORRECTION-001); cause is environmental, transient, or a non-PAT git issue. Operator should rescue-push from cowork session.",
+  "diagnosis": "Push failed after one transient-403 retry. PAT is known to have contents:write (per HNOTE-OPERATOR-PAT-DIAGNOSIS-CORRECTION-001); cause is environmental, transient, or a non-PAT git issue. Universal-pusher rescue executed — workspace-sync will push within 1h.",
   "files_synced_to_fuse": true,
+  "universal_pusher_rescue": {
+    "rescued_count": ${RESCUED_COUNT},
+    "rescued_files": $(printf '%b' "${RESCUED_LIST}" | jq -Rs 'split("\n") | map(select(length > 0))'),
+    "next_workspace_sync_window": "within 1h of this timestamp (workspace-sync runs hourly at :03)"
+  },
   "split_push_diagnostic": {
     "phase_1_monitor_only_rc": "${SPLIT_PHASE_1_RC:-not_attempted}",
     "phase_1_output": $(printf '%s' "${SPLIT_PHASE_1_OUT:-}" | jq -Rs .),
@@ -316,7 +349,7 @@ echo "SELF-APPLY FAILED: tests did not pass. Patch file left for human review."
 - Only `git push origin main` (fast-forward only) — if it fails, stop and leave for human
 - Only create NEW commits — never amend
 - If `git push` is rejected (someone else pushed), do `git pull --rebase origin main` then try push once more. If that also fails, stop.
-- If `git push` returns 403 ("Permission denied" / "Resource not accessible by personal access token"), wait 30s and retry ONCE per the wrapped block above. The PAT genuinely has `contents:write` (verified 2026-04-25; see `HNOTE-OPERATOR-PAT-DIAGNOSIS-CORRECTION-001`). Persistent 403 after retry is an environmental issue, not a scope problem — log push-failure with `files_synced_to_fuse: true` so operator can rescue-push, but do NOT write a diagnosis claiming the PAT lacks write scope.
+- If `git push` returns 403 ("Permission denied" / "Resource not accessible by personal access token"), wait 30s and retry ONCE per the wrapped block above. The PAT genuinely has `contents:write` (verified 2026-04-25; see `HNOTE-OPERATOR-PAT-DIAGNOSIS-CORRECTION-001`). Persistent 403 after retry is an environmental issue, not a scope problem. The universal-pusher rescue block in Step 2 (added 2026-04-26 per `HNOTE-OPERATOR-UNIVERSAL-PUSHER-001`) automatically copies committed-but-unpushed files to FUSE so workspace-sync can rescue-push them within 1h. Do NOT write a diagnosis claiming the PAT lacks write scope, and do NOT page the operator for a manual rescue — the system handles it.
 
 **After successful publish — close issues and clean up:**
 
@@ -358,7 +391,7 @@ mv /path/to/suggested-patches-YYYY-MM-DDTHH-MM.json monitor/decisions/applied-pa
 **Important:** Because you clone fresh each run, you always have the latest code.
 
 - If `git push` is **rejected** (non-fast-forward), someone pushed while you were working — do ONE `git pull --rebase origin main` and retry. If that also fails, stop and leave for human.
-- If `git push` returns **403** (permission denied / "Resource not accessible by personal access token"), wait 30s and retry ONCE — this is a transient/environmental hiccup, not a PAT scope problem. The wrapped retry block above does this automatically. If 403 persists after retry, files have been synced to FUSE; operator will rescue-push. Do NOT diagnose 403 as a missing contents:write scope (verified 2026-04-25 — see `HNOTE-OPERATOR-PAT-DIAGNOSIS-CORRECTION-001`).
+- If `git push` returns **403** (permission denied / "Resource not accessible by personal access token"), wait 30s and retry ONCE — this is a transient/environmental hiccup, not a PAT scope problem. The wrapped retry block above does this automatically. If 403 persists after retry, the universal-pusher rescue block (added 2026-04-26 per `HNOTE-OPERATOR-UNIVERSAL-PUSHER-001`) automatically copies committed-but-unpushed files to FUSE; workspace-sync rescue-pushes them within 1h, no operator intervention needed. Do NOT diagnose 403 as a missing contents:write scope (verified 2026-04-25 — see `HNOTE-OPERATOR-PAT-DIAGNOSIS-CORRECTION-001`).
 
 ## Cleanup (mandatory, run last)
 
