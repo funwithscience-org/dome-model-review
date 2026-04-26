@@ -241,6 +241,22 @@ smart_copy "${WORKSPACE}/monitor/decisions/open-issues.json" monitor/decisions/o
 smart_copy "${WORKSPACE}/monitor/decisions/closed-issues.json" monitor/decisions/closed-issues.json
 smart_copy "${WORKSPACE}/monitor/curmudgeon/priority-queue.json" monitor/curmudgeon/priority-queue.json
 
+# Authored visualization assets (added 2026-04-26 — see HNOTE-OPERATOR-EXP-254-
+# SVG-RESCUE-GAP-001). When the analyst writes a new SVG/PNG/PDF illustration
+# alongside a section EXP, the asset file ends up in FUSE via the decider's
+# universal-pusher rescue (which copies committed-but-unpushed files from clone).
+# Without this iteration, the asset would stay orphaned in FUSE while the
+# referencing prose ships to git, breaking the rendered page (broken <img>).
+# All files in docs/assets/ are authored content (no build-generated artifacts
+# live here — those are docs/index.html / docs/llms.txt / etc., which ARE in
+# NEVER_PUSH). Glob is unrestricted so future asset types (gif, webp, etc.)
+# are picked up automatically.
+mkdir -p docs/assets
+for f in "${WORKSPACE}/docs/assets/"*; do
+  [ -e "$f" ] || continue
+  [ -f "$f" ] && smart_copy "$f" "docs/assets/$(basename "$f")"
+done
+
 # Social outputs (drafts directory has mixed file types)
 mkdir -p monitor/social/drafts
 for f in "${WORKSPACE}/monitor/social/drafts/"*; do
