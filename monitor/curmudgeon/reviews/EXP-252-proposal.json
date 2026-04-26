@@ -1,0 +1,100 @@
+{
+  "point_id": "EXP-252",
+  "topic": "Phase B4 — verdict-chip → definition click-through (F3 recommendation)",
+  "queue_id": 263,
+  "queue_pushed_at": "2026-04-25T19:24:49.000Z",
+  "trigger": "priority-queue-expansion-proposal",
+  "reviewed_at": "2026-04-26T03:32:11.790Z",
+  "cycle": 1,
+  "current_verdict_holds": true,
+  "confidence": 0.78,
+  "our_argument_summary": "Adversarial review of EXP-252 proposal package. The expansion proposes wrapping every verdict chip (WIN summary table cells, prediction badges, in-prose verdict-tag spans, kill-shot badges, single WIN-011 detail_extra span) in <a class='verdict-link'> anchors that navigate to six new def-* IDs on the verdict-legend block in Overview. Adds CSS, a goToDefinition() helper, a hashchange listener, and six test.js assertions. Pending verdicts stay unwrapped. Operator-commissioned via HNOTE-PHASE-B-VERDICT-CHIP-DEFINITION-LINK-002.",
+  "proposal_review": {
+    "package_completeness": "high — analyst documented 8 coupled changes (CSS, ids, mappings, JS helper, two function rewrites, sections.json patch, wins.json patch), 6 test assertions, 7 anticipated objections with responses, 6 acceptance criteria including a11y constraints, full inventory of chip emission sites with line numbers, and explicit cross-references to companion EXPs (B1=EXP-249, B3=EXP-251).",
+    "verdict_flip_plausibility": "n/a — no WIN verdict change. This is a design/a11y augmentation EXP. Mode is functional accessibility under DIRECTIVE-20260422-003.",
+    "new_tag_naming_appropriate": "Yes. The six def-* slugs (def-refuted, def-standard-model, def-self-contradicted, def-misleading, def-not-demonstrated, def-unfalsifiable) are URL-fragment-friendly and human-readable. The PRED_DEF_ID mapping correctly mirrors PRED_TD_CLASSES (recycled → def-misleading via the existing recycled→v-misleading semantic alias). Naming is consistent with EXP-213 conventions.",
+    "alternatives_considered": "Yes, three alternatives explicitly discussed: (a) tooltip-on-hover — rejected per HNOTE-002 mobile-fragility note; (b) cluster-by-verdict regroup — deferred to Phase C; (c) permanent visible underline on chips — rejected per operator minimal-chrome preference. Rejection rationale is sound and traceable to operator notes.",
+    "unknowns_acknowledged": "Discoverability is acknowledged as the primary unknown — analyst flags this in notes_for_human_review_group with a recommended post-integration usability test (2-3 first-time readers, <50% discovery threshold for a future EXP). This is appropriately humble.",
+    "integration_order_handled": "Yes. notes_for_decider explicitly addresses the EXP-251 (Phase B3 prefix-rename) ordering question and recommends integrating EXP-252 AFTER EXP-251, with a fallback path (option a) if shipped first."
+  },
+  "holes_found": [
+    {
+      "severity": "major",
+      "description": "Click-handler collision with existing a[href^=\"#\"] global click listener. The site already has a load-time handler (build-scripts/generate-html.js lines 1846-1872) that binds a click listener to ALL same-page anchors. That listener calls showTab(...), pushes history, expandToElement(), and scrollIntoView({block: 'start'}). The proposal adds inline onclick=\"goToDefinition(...);return false\" on every new verdict-link anchor. Inline onclick attribute handlers and addEventListener-bound handlers BOTH fire on the same element — `return false` from inline onclick prevents default navigation but does NOT stop subsequent bound listeners. Result: clicking a verdict chip would fire goToDefinition() (scroll to block:center, push history, add flash class), then the bound listener would re-fire (showTab again — harmless, but pushState AGAIN creating duplicate history entries, and scrollIntoView with block:'start' overriding the goToDefinition block:'center'). Net effect: history back-button is broken (two pushes per click), the flash animation may be aborted by the second scroll, and the visual landing position is inconsistent (sometimes start, sometimes center). The proposal's anticipated_objections does not address this collision.",
+      "recommendation": "Either (a) modify goToDefinition's inline-onclick to call event.stopImmediatePropagation() and accept the event parameter (onclick=\"event.stopImmediatePropagation(); goToDefinition('def-X'); return false\"), OR (b) add an early-return to the existing a[href^=\"#\"] listener that skips elements with class verdict-link — e.g. `if (this.classList.contains('verdict-link')) return;` at the top of the bound click callback. Option (b) is cleaner because it keeps the def-* logic centralized in goToDefinition and avoids relying on stopImmediatePropagation timing. Either fix needs to be added to change_4 and locked by a test assertion."
+    },
+    {
+      "severity": "moderate",
+      "description": "Redundant :focus-visible rule. The site already has a global `:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}` rule at line 684 (per EXP-213). The proposed `.verdict-link:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}` is byte-for-byte identical to the global rule that would already match. This is harmless but adds noise — and the change_1 rationale claims the rule 'reuses the existing accent outline pattern from .skip-link / .toc a / .tab-btn' without acknowledging the global :focus-visible already provides exactly this style on every focusable element.",
+      "recommendation": "Drop `.verdict-link:focus-visible` from the CSS additions — it is a no-op given the global rule. Keep `.verdict-link:hover` (the underline-on-hover) and the `td .verdict-link` block-display trick. Update test assertion #4 to drop the .verdict-link:focus-visible regex (the assertion would FAIL after the cleanup); rewrite it to assert the global rule is still present, OR remove that part of the assertion entirely."
+    },
+    {
+      "severity": "moderate",
+      "description": "Test assertion #5 fragility on td.v-* row count. The assertion `winTableRowMatches.length >= 60` locks the wrap rate to ≥60 verdict-link cells in the 69-WIN table. If a future analyst removes WINs (e.g., a Mode 2b verdict downgrade to a removed/deprecated state) and the count drops to 58, this test breaks even though the wrap pattern is still working correctly on every remaining row. The right invariant is: every td.v-* cell in the rendered table contains a verdict-link wrap — not an absolute count.",
+      "recommendation": "Rewrite assertion #5 as a ratio check: count td.v-* cells (with regex /<td class=\"v-/g) and count td.v-* with verdict-link wraps; assert that wraps == cells (i.e., 100% wrap rate). This makes the test invariant against WIN-count drift while still catching the regression scenario the analyst is worried about (formatTableRow edit didn't apply correctly)."
+    },
+    {
+      "severity": "moderate",
+      "description": "Negative-margin click-target trick is fragile. The proposal's `td .verdict-link{display:block;margin:-.45rem -.6rem;padding:.45rem .6rem}` mirrors the existing td padding values (.45rem .6rem) by hand. The proposal acknowledges this in non_negotiable_constraints_preserved: 'If td padding ever changes, this rule needs to track it.' That is a real coupling but it is not enforced by any test. A future EXP that tightens table padding (or a refresh-driven CSS change) could silently de-fill the click target, leaving a tiny inline anchor inside a colored cell — exactly the 'hostile tap target' the design warns against, with no test to catch it.",
+      "recommendation": "Add a test assertion that extracts td padding values from the CSS string and compares them to the negative-margin and padding values on `td .verdict-link`. Or, refactor to use CSS variables: `--td-pad-y` and `--td-pad-x` defined once and consumed by both `td{padding:var(--td-pad-y) var(--td-pad-x)}` and `td .verdict-link{margin:calc(-1*var(--td-pad-y)) calc(-1*var(--td-pad-x));padding:var(--td-pad-y) var(--td-pad-x)}`. The variable approach is more robust; either way, a guard is needed."
+    },
+    {
+      "severity": "minor",
+      "description": "Duplicate variable hoisting in change_6 (formatPredictionDetail wraps). The proposal's edit at line ~772 introduces winDefId2/winChip2/winChipWrapped2 to avoid scoping conflict with the line ~769 const declarations. The note acknowledges 'Refactoring to lift the chip-build out of the branches would reduce duplication but increase the diff surface beyond the wrap-only scope of this EXP.' Defensible scope-discipline but produces awkward suffixed variable names that future readers will have to decode. Three identical chip-build blocks across three branches is brittle.",
+      "recommendation": "Either accept the scope-discipline argument and add a code comment explaining the suffixed names, OR refactor by hoisting a small helper function `wrapVerdictChip(verdict, innerSpan)` inside formatPredictionDetail. The helper version adds ~5 lines but eliminates three near-duplicate blocks. Decider can pick which way to ship; either is fine, but the current proposal silently accumulates duplication."
+    },
+    {
+      "severity": "minor",
+      "description": "PRED_DEF_ID `recycled → def-misleading` mapping is correct per the existing PRED_TD_CLASSES alias, but this collapses TWO categorical claims into one definition. The verdict-legend block defines 'Misleading' generically (data misrepresented, cherry-picked, count-inflation, etc.). It does not specifically explain the recycled sub-pattern. A user clicking a `vb-recycled` chip lands on the Misleading definition and may be confused: 'Why does this say misleading when the chip said recycled?' The semantic mapping is correct, but the user-facing experience could surprise.",
+      "recommendation": "Either (a) sharpen the Misleading definition to highlight the recycled sub-pattern with <em> wrapping or a dash-separated bullet, OR (b) add a 7th def-* anchor for def-recycled that points to that specific phrase. Option (b) is heavier but more discoverable. Can be deferred — flag for Phase C consideration."
+    }
+  ],
+  "stronger_arguments": [
+    {
+      "description": "The proposal could explicitly note that adding def-* anchors creates a permalink-format API for external citations (mentioned in notes_for_human_review_group but not in the change rationale). External citations to funwithscience.net/dome-model-review/#def-refuted become a load-bearing forward-compatibility commitment. Worth flagging in non_negotiable_constraints_preserved as: 'def-* IDs are now external-facing permalinks; any future renaming requires URL-redirect handling.'",
+      "sources": [
+        "EXP-252 notes_for_human_review_group",
+        "principle: stable URL fragments are an API surface"
+      ]
+    },
+    {
+      "description": "The hashchange listener's load-handler-not-firing-on-runtime gap is a real bug that the proposal closes. Worth noting as an independent fix that benefits more than just verdict chips — any future intra-page navigation will benefit. Could be sold as 'EXP-252 also fixes a latent navigation bug,' which strengthens the integration case.",
+      "sources": [
+        "build-scripts/generate-html.js lines 1809-1843 (load handler) vs no hashchange listener pre-EXP"
+      ]
+    }
+  ],
+  "kernel_of_truth": {
+    "description": "The HNOTE author and the analyst are correct that verdict chips are a categorical claim and currently dead-end. F3 from the 2026-04-17 external review identifies this as a real evidence-UX gap. The proposal delivers F3 with appropriate scope discipline (no cluster-by-verdict, no underline, no tooltip — just the click-through). The implementation is largely sound — eight coupled changes, all small, with tests. The only structural mistake is the click-handler collision (the major hole above), which is fixable.",
+    "why_it_doesnt_save_claim": "n/a — this is not a WIN being attacked. Proposal is endorsable with the major + moderate fixes applied. Recommend the analyst write prose after applying: (a) click-handler collision fix in change_4, (b) drop redundant :focus-visible rule, (c) ratio-based test for td.v-* wrap rate, (d) padding-coupling guard via CSS variables or test assertion."
+  },
+  "recommended_action": "minor_edit",
+  "text_fingerprint": {
+    "proposal_size_bytes": 51391,
+    "target_files_count": 4,
+    "test_assertions_added": 6,
+    "new_def_ids": 6,
+    "chip_emission_sites": 6
+  },
+  "deeper_analysis": "Well-scoped functional augmentation with strong analyst documentation. The major hole (click-handler collision) is the only blocker — without it, integration would produce intermittently-broken back-button behavior and inconsistent scroll landings, both of which would surface in user testing within hours and require a follow-up patch. The fix is small (one early-return in the existing handler, OR an event.stopImmediatePropagation in the inline onclick). The three moderate holes are quality-of-life: redundant :focus-visible CSS, absolute-count test fragility, padding-coupling fragility. None block integration but all three deserve to be fixed in this EXP rather than deferred. The two minor holes (variable suffixing, recycled→misleading collapse) are tolerable as-is. Overall: endorse with mandatory click-handler-collision fix, recommended cleanup of the three moderate items, accept the minors. Analyst should write prose after applying these. DIRECTIVE-20260422-003 (design rubric) applies — the click-handler collision is truth-impacting because broken back-button behavior degrades user trust in the artifact.",
+  "citation_check": {
+    "citations_verified": [
+      "build-scripts/generate-html.js line 684 :focus-visible global rule — verified present",
+      "build-scripts/generate-html.js lines 1409-1415 verdict-legend block — verified six div.vl entries match proposal's edit targets",
+      "build-scripts/generate-html.js lines 729-732 formatTableRow — verified current pattern matches proposal's `from`",
+      "build-scripts/generate-html.js lines 1846-1872 a[href^='#'] handler — verified existing global click listener (basis of major hole)",
+      "build-scripts/generate-html.js line 306 VERDICT_CLASSES keys — verified matches proposal's VERDICT_DEF_ID keys including 'Std Model Explains'",
+      "data/wins.json WIN-011 detail_extra — verified contains the single verdict-tag.vt-notdemo span",
+      "EXP-252 file exists at monitor/analyst/expansions/EXP-252-phase-b4-verdict-chip-deflinks.json (53,875 bytes)"
+    ],
+    "citations_failed": [],
+    "citations_unchecked": [
+      "data/sections.json part5 14-instance count — proposal claims 14 verdict-badge spans across slugs recycled/pending/standard_physics/falsified; not independently verified in this review",
+      "EXP-251 prefix-rename details — proposal references coordination with EXP-251 but EXP-251's exact rename surface not cross-checked in this review",
+      "Contrast-table claim in acceptance_criteria — proposal claims WCAG AA contrast verified for focus ring on every verdict chip background in light/dark themes; the contrast table itself was not enumerated in the JSON fragments read"
+    ]
+  },
+  "summary_for_decider": "Endorse EXP-252 with one MAJOR fix mandatory (click-handler collision in change_4) and three MODERATE cleanups recommended (drop redundant :focus-visible, ratio-based td.v-* test, padding-coupling guard). Analyst can write prose after applying the major fix; the moderate items can be addressed in the same prose pass or deferred to a follow-up if scope-bound. Do NOT integrate as-is — the back-button bug from the click-handler collision is a real regression.",
+  "popped_by_queue_id": 263,
+  "popped_by_queue_id_at": "2026-04-26T05:25:42.758Z"
+}
