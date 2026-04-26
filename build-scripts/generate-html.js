@@ -312,24 +312,27 @@ const VERDICT_CLASSES = {
   'Unfalsifiable': 'v-unfalsifiable'
 };
 
-// ════ PIE CHART COLORS (match CSS verdict colors) ════
+// ════ PIE CHART COLORS — token-driven, see CSS :root for light/dark/print values ════
+// Slice fills route through --*-solid (the same tokens that drive .vb-bar.vb-refuted, td.v-refuted, etc.).
+// Per-verdict label ink is picked once per theme via --label-* tokens (see EXP-249).
+// EXP-249 (Phase B1): replaces prior VERDICT_COLORS_LIGHT/DARK hex maps + matchMedia DOM-toggle.
 
-const VERDICT_COLORS_LIGHT = {
-  'Refuted by Data': '#E57373',
-  'Std Model Explains': '#66BB6A',
-  'Self-Contradicted': '#42A5F5',
-  'Misleading': '#FFA726',
-  'Not Demonstrated': '#AB47BC',
-  'Unfalsifiable': '#BDBDBD'
+const VERDICT_FILL_TOKENS = {
+  'Refuted by Data':     '--refuted-solid',
+  'Std Model Explains':  '--stdmodel-solid',
+  'Self-Contradicted':   '--selfcon-solid',
+  'Misleading':          '--misleading-solid',
+  'Not Demonstrated':    '--notdemo-solid',
+  'Unfalsifiable':       '--unfalsifiable-solid'
 };
 
-const VERDICT_COLORS_DARK = {
-  'Refuted by Data': '#ef5350',
-  'Std Model Explains': '#43a047',
-  'Self-Contradicted': '#1e88e5',
-  'Misleading': '#fb8c00',
-  'Not Demonstrated': '#8e24aa',
-  'Unfalsifiable': '#757575'
+const VERDICT_LABEL_TOKENS = {
+  'Refuted by Data':     '--label-refuted',
+  'Std Model Explains':  '--label-stdmodel',
+  'Self-Contradicted':   '--label-selfcon',
+  'Misleading':          '--label-misleading',
+  'Not Demonstrated':    '--label-notdemo',
+  'Unfalsifiable':       '--label-unfalsifiable'
 };
 
 const VERDICT_ORDER = [
@@ -354,10 +357,11 @@ function generatePieChart(tally, total) {
     const x2 = cx + r * Math.cos(angle + sweep);
     const y2 = cy + r * Math.sin(angle + sweep);
     const largeArc = sweep > Math.PI ? 1 : 0;
-    const lightColor = VERDICT_COLORS_LIGHT[verdict];
-    const darkColor = VERDICT_COLORS_DARK[verdict];
+    const fillVar = `var(${VERDICT_FILL_TOKENS[verdict]})`;
+    const labelVar = `var(${VERDICT_LABEL_TOKENS[verdict]})`;
 
-    slices.push(`<path d="M${cx},${cy} L${x1.toFixed(2)},${y1.toFixed(2)} A${r},${r} 0 ${largeArc},1 ${x2.toFixed(2)},${y2.toFixed(2)} Z" fill="${lightColor}" class="pie-slice" data-dark="${darkColor}" stroke="var(--bg)" stroke-width="2"/>`);
+    // EXP-249: fill resolved via CSS token; no data-dark needed (theme is in CSS).
+    slices.push(`<path d="M${cx},${cy} L${x1.toFixed(2)},${y1.toFixed(2)} A${r},${r} 0 ${largeArc},1 ${x2.toFixed(2)},${y2.toFixed(2)} Z" fill="${fillVar}" class="pie-slice pie-slice-${verdict.toLowerCase().replace(/[^a-z0-9]+/g,'-')}" stroke="var(--bg)" stroke-width="2"/>`);
 
     const midAngle = angle + sweep / 2;
     const pct = ((count / total) * 100).toFixed(0);
@@ -371,38 +375,51 @@ function generatePieChart(tally, total) {
       const iy = cy + innerR * Math.sin(midAngle);
       const ox = cx + outerR * Math.cos(midAngle);
       const oy = cy + outerR * Math.sin(midAngle);
-      // Horizontal tail
       const tailDir = Math.cos(midAngle) >= 0 ? 1 : -1;
       const tx = ox + tailDir * 20;
       const anchor = tailDir > 0 ? 'start' : 'end';
-      callouts.push(`<line x1="${ix.toFixed(1)}" y1="${iy.toFixed(1)}" x2="${ox.toFixed(1)}" y2="${oy.toFixed(1)}" stroke="${darkColor}" stroke-width="1.2" class="callout-line" data-dark="${darkColor}" data-light="${darkColor}"/>`);
-      callouts.push(`<line x1="${ox.toFixed(1)}" y1="${oy.toFixed(1)}" x2="${tx.toFixed(1)}" y2="${oy.toFixed(1)}" stroke="${darkColor}" stroke-width="1.2" class="callout-line" data-dark="${darkColor}" data-light="${darkColor}"/>`);
-      callouts.push(`<text x="${(tx + tailDir * 3).toFixed(1)}" y="${(oy + 1).toFixed(1)}" text-anchor="${anchor}" dominant-baseline="central" font-size="11" font-weight="700" fill="${darkColor}" class="pie-callout">${count} (${pct}%)</text>`);
+      callouts.push(`<line x1="${ix.toFixed(1)}" y1="${iy.toFixed(1)}" x2="${ox.toFixed(1)}" y2="${oy.toFixed(1)}" stroke="${fillVar}" stroke-width="1.2" class="callout-line"/>`);
+      callouts.push(`<line x1="${ox.toFixed(1)}" y1="${oy.toFixed(1)}" x2="${tx.toFixed(1)}" y2="${oy.toFixed(1)}" stroke="${fillVar}" stroke-width="1.2" class="callout-line"/>`);
+      callouts.push(`<text x="${(tx + tailDir * 3).toFixed(1)}" y="${(oy + 1).toFixed(1)}" text-anchor="${anchor}" dominant-baseline="central" font-size="11" font-weight="700" fill="${fillVar}" class="pie-callout">${count} (${pct}%)</text>`);
     } else {
-      // Large slice: label inside
+      // Large slice: label inside, ink picked per verdict for WCAG AA contrast (EXP-249).
+      // Text-shadow removed — proper ink choice means we no longer need a band-aid.
       const labelR = r * 0.6;
       const lx = cx + labelR * Math.cos(midAngle);
       const ly = cy + labelR * Math.sin(midAngle);
-      callouts.push(`<text x="${lx.toFixed(1)}" y="${(ly - 6).toFixed(1)}" text-anchor="middle" dominant-baseline="central" font-size="16" font-weight="700" fill="#fff" class="pie-label" style="text-shadow:0 1px 3px rgba(0,0,0,.4)">${count}</text>`);
-      callouts.push(`<text x="${lx.toFixed(1)}" y="${(ly + 10).toFixed(1)}" text-anchor="middle" dominant-baseline="central" font-size="10.5" font-weight="600" fill="#fff" class="pie-label" style="text-shadow:0 1px 3px rgba(0,0,0,.4)">${pct}%</text>`);
+      callouts.push(`<text x="${lx.toFixed(1)}" y="${(ly - 6).toFixed(1)}" text-anchor="middle" dominant-baseline="central" font-size="16" font-weight="700" fill="${labelVar}" class="pie-label">${count}</text>`);
+      callouts.push(`<text x="${lx.toFixed(1)}" y="${(ly + 10).toFixed(1)}" text-anchor="middle" dominant-baseline="central" font-size="10.5" font-weight="600" fill="${labelVar}" class="pie-label">${pct}%</text>`);
     }
 
     angle += sweep;
   }
 
-  // Legend items — wide enough viewBox so text isn't clipped
-  const legendItems = VERDICT_ORDER.filter(v => (tally[v] || 0) > 0).map((verdict, i) => {
+  // Legend — EXP-249: 24×24 visible swatch, 48px row stride. Note: 24×24 alone does
+  // not satisfy WCAG 2.5.5 AAA (44×44 minimum); the 48px stride provides a 48×320
+  // wide pointer-event row that exceeds 44px in the dimension that matters for vertical
+  // tap separation, but the swatch itself remains below AAA. AA spacing exception (24×24
+  // minimum with 24px clearance) IS satisfied. See ISS-1566 close note.
+  const SWATCH = 24;
+  const ROW_STRIDE = 48;
+  const SWATCH_TOP = (ROW_STRIDE - SWATCH) / 2;
+  const TEXT_X = SWATCH + 12;
+  const TEXT_Y = ROW_STRIDE / 2 + 4.5;
+
+  const visibleVerdicts = VERDICT_ORDER.filter(v => (tally[v] || 0) > 0);
+  const legendItems = visibleVerdicts.map((verdict, i) => {
     const count = tally[verdict] || 0;
     const pct = ((count / total) * 100).toFixed(0);
-    const y = i * 28;
-    return `<g transform="translate(0,${y})">
-      <rect width="16" height="16" rx="3" fill="${VERDICT_COLORS_LIGHT[verdict]}" class="legend-swatch" data-dark="${VERDICT_COLORS_DARK[verdict]}"/>
-      <text x="24" y="12.5" font-size="13" fill="var(--text)"><tspan font-weight="700">${count}</tspan> ${verdict} (${pct}%)</text>
+    const y = i * ROW_STRIDE;
+    const fillVar = `var(${VERDICT_FILL_TOKENS[verdict]})`;
+    return `<g transform="translate(0,${y})" class="pie-legend-row">
+      <rect width="${SWATCH}" height="${SWATCH}" x="0" y="${SWATCH_TOP}" rx="4" fill="${fillVar}" class="legend-swatch"/>
+      <text x="${TEXT_X}" y="${TEXT_Y}" font-size="13" fill="var(--text)"><tspan font-weight="700">${count}</tspan> ${verdict} (${pct}%)</text>
     </g>`;
   });
 
-  const legendH = VERDICT_ORDER.filter(v => (tally[v] || 0) > 0).length * 28;
+  const legendH = visibleVerdicts.length * ROW_STRIDE;
   const svgW = 340, svgH = 340;
+  const legendW = 320;
 
   return `
 <div style="display:flex;align-items:center;justify-content:center;gap:2.5rem;flex-wrap:wrap;margin:1.2rem 0 1.5rem">
@@ -410,24 +427,10 @@ function generatePieChart(tally, total) {
     ${slices.join('\n    ')}
     ${callouts.join('\n    ')}
   </svg>
-  <svg viewBox="0 0 300 ${legendH}" width="300" height="${legendH}" role="img" aria-label="Verdict legend">
+  <svg viewBox="0 0 ${legendW} ${legendH}" width="${legendW}" height="${legendH}" role="img" aria-label="Verdict legend">
     ${legendItems.join('\n    ')}
   </svg>
 </div>
-<script>
-(function(){
-  const mq = window.matchMedia('(prefers-color-scheme:dark)');
-  document.querySelectorAll('.pie-slice').forEach(el => el.dataset.light = el.getAttribute('fill'));
-  document.querySelectorAll('.legend-swatch').forEach(el => el.dataset.light = el.getAttribute('fill'));
-  function apply(dark) {
-    document.querySelectorAll('.pie-slice').forEach(el => el.setAttribute('fill', dark ? el.dataset.dark : el.dataset.light));
-    document.querySelectorAll('.legend-swatch').forEach(el => el.setAttribute('fill', dark ? el.dataset.dark : el.dataset.light));
-    document.querySelectorAll('.pie-label').forEach(el => el.setAttribute('fill', '#fff'));
-  }
-  apply(mq.matches);
-  mq.addEventListener('change', e => apply(e.matches));
-})();
-</script>
 `;
 }
 
@@ -493,8 +496,8 @@ function generateVerdictBarChart(tally, total) {
 
 const CSS = `
 @font-face{font-family:'Source Serif 4';src:url('./fonts/source-serif-4-variable.woff2') format('woff2-variations'),url('./fonts/source-serif-4-variable.woff2') format('woff2');font-weight:400 700;font-style:normal;font-display:swap}@font-face{font-family:'Source Serif 4';src:url('./fonts/source-serif-4-variable-italic.woff2') format('woff2-variations'),url('./fonts/source-serif-4-variable-italic.woff2') format('woff2');font-weight:400 700;font-style:italic;font-display:swap}@font-face{font-family:'Inter';src:url('./fonts/inter-variable.woff2') format('woff2-variations'),url('./fonts/inter-variable.woff2') format('woff2');font-weight:400 700;font-style:normal;font-display:swap}@font-face{font-family:'Inter';src:url('./fonts/inter-variable-italic.woff2') format('woff2-variations'),url('./fonts/inter-variable-italic.woff2') format('woff2');font-weight:400 700;font-style:italic;font-display:swap}@font-face{font-family:'JetBrains Mono';src:url('./fonts/jetbrains-mono-variable.woff2') format('woff2-variations'),url('./fonts/jetbrains-mono-variable.woff2') format('woff2');font-weight:400 500;font-style:normal;font-display:swap}@font-face{font-family:'JetBrains Mono';src:url('./fonts/jetbrains-mono-variable-italic.woff2') format('woff2-variations'),url('./fonts/jetbrains-mono-variable-italic.woff2') format('woff2');font-weight:400 500;font-style:italic;font-display:swap}
-:root{--bg:#fff;--text:#222;--heading:#2E4057;--accent:#4A6FA5;--link:#0563C1;--border:#ccc;--table-header:#2E4057;--refuted:var(--semantic-crit-soft);--stdmodel:rgba(102,187,106,0.25);--selfcon:rgba(66,165,245,0.25);--misleading:rgba(255,167,38,0.25);--unfalsifiable:rgba(189,189,189,0.25);--notdemo:rgba(171,71,188,0.25);--refuted-solid:var(--semantic-crit);--stdmodel-solid:#66BB6A;--selfcon-solid:#42A5F5;--misleading-solid:#FFA726;--unfalsifiable-solid:#BDBDBD;--notdemo-solid:#AB47BC;--code-bg:#f5f5f5;--card-bg:#fafafa;--serif:'Source Serif 4',Georgia,'Times New Roman',serif;--sans:'Inter',system-ui,-apple-system,'Segoe UI',Arial,Helvetica,sans-serif;--mono:'JetBrains Mono',ui-monospace,'SF Mono',Consolas,'Courier New',monospace;--ink:#181715;--ink-2:#3A352D;--ink-3:#6E675B;--rule:#E4DDCB;--semantic-accent:#1e5f8a;--semantic-accent-soft:#d8e8f2;--semantic-warn:#8a5a1e;--semantic-warn-soft:#f3e6d3;--semantic-crit:#7a2e2e;--semantic-crit-soft:#f2dada;--semantic-good:#2e5a2e;--semantic-good-soft:#d9ead9}
-@media(prefers-color-scheme:dark){:root{--bg:#1a1a2e;--text:#e0e0e0;--heading:#7eb8da;--accent:#8fafd4;--link:#5dade2;--border:#444;--table-header:#1c3045;--refuted:var(--semantic-crit-soft);--stdmodel:rgba(67,160,71,0.2);--selfcon:rgba(30,136,229,0.2);--misleading:rgba(251,140,0,0.2);--unfalsifiable:rgba(117,117,117,0.25);--notdemo:rgba(142,36,170,0.2);--refuted-solid:var(--semantic-crit);--stdmodel-solid:#43a047;--selfcon-solid:#1e88e5;--misleading-solid:#fb8c00;--unfalsifiable-solid:#757575;--notdemo-solid:#8e24aa;--code-bg:#2a2a3e;--card-bg:#222240;--ink:#e8e6e1;--ink-2:#b8b5ad;--ink-3:#8a8680;--rule:#2e2e4a;--semantic-accent:#7eb8da;--semantic-accent-soft:#2a4a65;--semantic-warn:#d99860;--semantic-warn-soft:#3d2e20;--semantic-crit:#d46a6a;--semantic-crit-soft:#3d1f1f;--semantic-good:#7aa87a;--semantic-good-soft:#1f2e1f}}
+:root{--bg:#fff;--text:#222;--heading:#2E4057;--accent:#4A6FA5;--link:#0563C1;--border:#ccc;--table-header:#2E4057;--refuted:var(--semantic-crit-soft);--stdmodel:rgba(102,187,106,0.25);--selfcon:rgba(66,165,245,0.25);--misleading:rgba(255,167,38,0.25);--unfalsifiable:rgba(189,189,189,0.25);--notdemo:rgba(171,71,188,0.25);--refuted-solid:var(--semantic-crit);--stdmodel-solid:#66BB6A;--selfcon-solid:#42A5F5;--misleading-solid:#FFA726;--unfalsifiable-solid:#BDBDBD;--notdemo-solid:#AB47BC;--code-bg:#f5f5f5;--card-bg:#fafafa;--serif:'Source Serif 4',Georgia,'Times New Roman',serif;--sans:'Inter',system-ui,-apple-system,'Segoe UI',Arial,Helvetica,sans-serif;--mono:'JetBrains Mono',ui-monospace,'SF Mono',Consolas,'Courier New',monospace;--ink:#181715;--ink-2:#3A352D;--ink-3:#6E675B;--rule:#E4DDCB;--semantic-accent:#1e5f8a;--semantic-accent-soft:#d8e8f2;--semantic-warn:#8a5a1e;--semantic-warn-soft:#f3e6d3;--semantic-crit:#7a2e2e;--semantic-crit-soft:#f2dada;--semantic-good:#2e5a2e;--semantic-good-soft:#d9ead9;--label-refuted:#fff;--label-stdmodel:#1a1a1a;--label-selfcon:#1a1a1a;--label-misleading:#1a1a1a;--label-notdemo:#fff;--label-unfalsifiable:#1a1a1a}
+@media(prefers-color-scheme:dark){:root{--bg:#1a1a2e;--text:#e0e0e0;--heading:#7eb8da;--accent:#8fafd4;--link:#5dade2;--border:#444;--table-header:#1c3045;--refuted:var(--semantic-crit-soft);--stdmodel:rgba(67,160,71,0.2);--selfcon:rgba(30,136,229,0.2);--misleading:rgba(251,140,0,0.2);--unfalsifiable:rgba(117,117,117,0.25);--notdemo:rgba(142,36,170,0.2);--refuted-solid:var(--semantic-crit);--stdmodel-solid:#43a047;--selfcon-solid:#1e88e5;--misleading-solid:#fb8c00;--unfalsifiable-solid:#757575;--notdemo-solid:#8e24aa;--code-bg:#2a2a3e;--card-bg:#222240;--ink:#e8e6e1;--ink-2:#b8b5ad;--ink-3:#8a8680;--rule:#2e2e4a;--semantic-accent:#7eb8da;--semantic-accent-soft:#2a4a65;--semantic-warn:#d99860;--semantic-warn-soft:#3d2e20;--semantic-crit:#d46a6a;--semantic-crit-soft:#3d1f1f;--semantic-good:#7aa87a;--semantic-good-soft:#1f2e1f;--label-refuted:#1a1a1a;--label-stdmodel:#1a1a1a;--label-selfcon:#1a1a1a;--label-misleading:#1a1a1a;--label-notdemo:#fff;--label-unfalsifiable:#fff}}
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:var(--serif);line-height:1.65;color:var(--text);background:var(--bg);max-width:960px;margin:0 auto;padding:1rem 1.5rem 3rem;padding-top:0;font-weight:400;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
 h1,h2,h3,details .ps-summary h2{font-family:var(--serif);font-weight:600;letter-spacing:-0.005em}
@@ -643,7 +646,7 @@ details[open] .ps-summary{border-radius:6px 6px 0 0;margin-bottom:0;border-botto
 
 @media(max-width:600px){body{padding:.5rem 1rem}h1{font-size:1.4rem}h2{font-size:1.2rem}table{font-size:.8rem}.tab-bar{padding:0.5rem .75rem;gap:.25rem}.tab-btn{padding:0.5rem 0.8rem;font-size:.85rem}.sc-hero{grid-template-columns:1fr}.sc-breakdown{grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:.6rem}.sc-domains{grid-template-columns:1fr}.ks-test{padding:.8rem 1rem}details .ks-summary{padding:.6rem .8rem}details .ks-summary::after{font-size:.65rem}details .ps-summary{padding:.6rem .8rem}details .ps-summary::after{font-size:.65rem}[style*="float:right"]{float:none!important;max-width:100%!important;margin:1rem 0!important}.stance-statement{font-size:0.9rem;max-width:90%;margin:0 auto 1rem}.verdict-bar-row .vb-label{flex:0 0 8.5rem;font-size:.85rem} .verdict-bar-row .vb-bar-container{height:1.4rem} .verdict-bar-row .vb-bar{font-size:.78rem;padding:0 .4rem} .verdict-bar-row .vb-pct{flex:0 0 2.5rem;font-size:.78rem}}
 
-@media print{:root{--bg:#fff;--text:#222;--heading:#2E4057;--accent:#4A6FA5;--link:#0563C1;--border:#999;--table-header:#2E4057;--refuted:var(--semantic-crit-soft);--stdmodel:rgba(102,187,106,0.25);--selfcon:rgba(66,165,245,0.25);--misleading:rgba(255,167,38,0.25);--unfalsifiable:rgba(189,189,189,0.25);--notdemo:rgba(171,71,188,0.25);--refuted-solid:var(--semantic-crit);--stdmodel-solid:#66BB6A;--selfcon-solid:#42A5F5;--misleading-solid:#FFA726;--unfalsifiable-solid:#BDBDBD;--notdemo-solid:#AB47BC;--code-bg:#f5f5f5;--card-bg:#fafafa;--serif:'Source Serif 4',Georgia,'Times New Roman',serif;--sans:'Inter',system-ui,-apple-system,'Segoe UI',Arial,Helvetica,sans-serif;--mono:'JetBrains Mono',ui-monospace,'SF Mono',Consolas,'Courier New',monospace;--ink:#181715;--ink-2:#3A352D;--ink-3:#6E675B;--rule:#E4DDCB;--semantic-accent:#1e5f8a;--semantic-accent-soft:#d8e8f2;--semantic-warn:#8a5a1e;--semantic-warn-soft:#f3e6d3;--semantic-crit:#7a2e2e;--semantic-crit-soft:#f2dada;--semantic-good:#2e5a2e;--semantic-good-soft:#d9ead9}
+@media print{:root{--bg:#fff;--text:#222;--heading:#2E4057;--accent:#4A6FA5;--link:#0563C1;--border:#999;--table-header:#2E4057;--refuted:var(--semantic-crit-soft);--stdmodel:rgba(102,187,106,0.25);--selfcon:rgba(66,165,245,0.25);--misleading:rgba(255,167,38,0.25);--unfalsifiable:rgba(189,189,189,0.25);--notdemo:rgba(171,71,188,0.25);--refuted-solid:var(--semantic-crit);--stdmodel-solid:#66BB6A;--selfcon-solid:#42A5F5;--misleading-solid:#FFA726;--unfalsifiable-solid:#BDBDBD;--notdemo-solid:#AB47BC;--code-bg:#f5f5f5;--card-bg:#fafafa;--serif:'Source Serif 4',Georgia,'Times New Roman',serif;--sans:'Inter',system-ui,-apple-system,'Segoe UI',Arial,Helvetica,sans-serif;--mono:'JetBrains Mono',ui-monospace,'SF Mono',Consolas,'Courier New',monospace;--ink:#181715;--ink-2:#3A352D;--ink-3:#6E675B;--rule:#E4DDCB;--semantic-accent:#1e5f8a;--semantic-accent-soft:#d8e8f2;--semantic-warn:#8a5a1e;--semantic-warn-soft:#f3e6d3;--semantic-crit:#7a2e2e;--semantic-crit-soft:#f2dada;--semantic-good:#2e5a2e;--semantic-good-soft:#d9ead9;--label-refuted:#fff;--label-stdmodel:#1a1a1a;--label-selfcon:#1a1a1a;--label-misleading:#1a1a1a;--label-notdemo:#fff;--label-unfalsifiable:#1a1a1a}
 body{max-width:100%;padding:0.6in 0.7in;font-size:9.5pt;line-height:1.5}
 h1{font-size:1.5rem;margin-top:1.5rem;page-break-before:always;page-break-after:avoid}
 .title-block h1{page-break-before:avoid;page-break-after:avoid}
