@@ -56,15 +56,22 @@ done
 # Quick auth check
 TOKEN=$(git -C "${WORKSPACE}" remote get-url origin 2>/dev/null | grep -oP 'x-access-token:\K[^@]+')
 [ -n "$TOKEN" ] && curl -s -o /dev/null -w "Auth: %{http_code}" -H "Authorization: token $TOKEN" "https://api.github.com/repos/funwithscience-org/dome-model-review" || echo "Auth: NO TOKEN"
-# Disk space check — the sandbox has ~10GB total with ~8GB used by the system image.
-# Agent clones (~76MB each) accumulate fast at churn-and-burn rates.
-AVAIL_MB=$(df --output=avail -BM / | tail -1 | tr -d ' M')
-USE_PCT=$(df --output=pcent / | tail -1 | tr -d ' %')
-echo "DISK: ${AVAIL_MB}MB free (${USE_PCT}% used)"
-if [ "$USE_PCT" -ge 90 ]; then echo "DISK CRITICAL: ≥90% used — agents will fail on next clone"; fi
-if [ "$USE_PCT" -ge 80 ]; then echo "DISK WARNING: ≥80% used — one bad run from full"; fi
+# Disk space check — PROJECT-RELATIVE measurement (changed 2026-04-26 per
+# operator directive). The sandbox has ~10GB total but ~8GB is system image
+# baseline (Ubuntu /usr, /var/log/journal, /var/lib/snapd) which the pipeline
+# CANNOT shrink and which slowly creeps as the image evolves. df-on-/ trips
+# on every Mode 2 run with no actionable response. Switch to project-induced
+# footprint: /sessions/*/mnt (FUSE workspaces), /tmp/*-clone (ephemeral
+# agent clones), /tmp/dome-* (other agent scratch). Trip thresholds are
+# absolute MB now, not %, since project-relative percent has no useful
+# denominator (the sandbox isn't dedicated to the pipeline).
+SESSION=$(pwd | grep -oP '/sessions/[^/]+')
+PROJ_MB=$(du -sm "${SESSION}/mnt" /tmp/*-clone /tmp/dome-* 2>/dev/null | awk '{s+=$1} END{print s+0}')
+echo "DISK: project-induced footprint ${PROJ_MB}MB (FUSE workspaces + ephemeral agent clones + agent scratch)"
+if [ "$PROJ_MB" -ge 1000 ]; then echo "DISK CRITICAL: project footprint ≥1000MB — likely accumulated clone leak"; fi
+if [ "$PROJ_MB" -ge 500 ]; then echo "DISK WARNING: project footprint ≥500MB — investigate clone cleanup"; fi
 ```
-Trigger: Any STALE file, auth failure, disk ≥80%, or previous report flagged FUSE/infra issues.
+Trigger: Any STALE file, auth failure, project footprint ≥500MB, or previous report flagged FUSE/infra issues.
 → Read `monitor/prompts/reference/tinker-infrastructure.md`, execute that procedure.
 
 **Mode 3 — Cost Engineering & Architecture** (run when pipeline is healthy)
