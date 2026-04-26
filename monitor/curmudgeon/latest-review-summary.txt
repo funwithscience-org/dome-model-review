@@ -1,105 +1,61 @@
-==========================================================
-CURMUDGEON REVIEW — EXP-249 (Phase B1 pie chart cleanup)
-queue_id 261, pushed_at 2026-04-25T17:27:34.426Z
-reviewed_at: see review file (cycle 1)
-==========================================================
+EXP-252 PROPOSAL REVIEW — Phase B4 verdict-chip → definition click-through
+queue_id: 263 | reviewed_at: 2026-04-26 (curmudgeon scheduled run)
+Trigger: priority-queue-expansion-proposal
+Recommendation: minor_edit (endorse with mandatory + recommended fixes)
 
-VERDICT: minor_edit. PROCEED under conditional-approval rubric.
-SEVERITY BREAKDOWN: 0 ESCALATE / 0 critical / 0 major / 3 moderate / 4 minor.
+WHAT THE PROPOSAL DELIVERS
+EXP-252 wraps every verdict chip on the site (WIN summary table cells, prediction
+badges, in-prose verdict-tag spans, kill-shot badges, single WIN-011 detail_extra
+span) in <a class="verdict-link"> anchors that navigate to six new def-* IDs added
+to the verdict-legend block on Overview. Adds CSS, a goToDefinition() helper, a
+hashchange listener, and six test.js assertions. Pending verdicts stay unwrapped.
+F3 from the 2026-04-17 external Claude design review.
+
+HOLES FOUND
+1 MAJOR — Click-handler collision with existing a[href^="#"] global click listener
+  (lines 1846-1872). Inline onclick="goToDefinition(...);return false" does NOT
+  stop the bound listener — both will fire on every chip click, producing
+  duplicate history.pushState calls (broken back-button) and conflicting
+  scrollIntoView positions (block:'start' overrides block:'center'). Proposal's
+  anticipated_objections does not address this. Fix: add early-return for
+  .verdict-link in the existing handler, OR use event.stopImmediatePropagation in
+  the inline onclick.
+
+3 MODERATE
+  - Redundant .verdict-link:focus-visible rule duplicates the global :focus-visible
+    rule at line 684; drop it and update test assertion #4 accordingly.
+  - Test assertion #5 (winTableRowMatches.length >= 60) is fragile to WIN-count
+    drift. Rewrite as a ratio check: every td.v-* cell must contain a verdict-link
+    wrap.
+  - td .verdict-link negative-margin trick hardcodes .45rem .6rem padding values.
+    No test guards the coupling. Add a coupling test or refactor to CSS variables.
+
+2 MINOR
+  - Duplicate variable hoisting (winDefId/winDefId2/winChip2) in change_6 — defensible
+    scope-discipline but adds future-reader friction.
+  - PRED_DEF_ID maps recycled→def-misleading; user clicking 'recycled' chip lands on
+    'Misleading' definition. Semantically correct, may surprise. Defer to Phase C.
 
 KERNEL OF TRUTH
-The proposal is fundamentally sound. Token routing for slice fills is the
-correct fix and brings the pie chart into line with the rest of the design
-system (EXP-209/210). The current WCAG AA failures (white-on-orange ~1.94:1
-and white-on-gray ~1.88:1) are real, and the per-verdict --label-* ink
-choice clears 4.5:1 in every combo. Removing the matchMedia DOM-toggle is
-genuinely better engineering. Function signature, returned HTML envelope,
-class names, ARIA labels, geometry, and SMALL_THRESHOLD are all preserved
-verbatim.
+F3 click-through is a real evidence-UX gap. Verdict chips are categorical claims and
+currently dead-end. Proposal scopes correctly (no cluster, no underline, no tooltip).
+Implementation is largely sound — eight coupled changes, all small, with tests. The
+hashchange listener also closes a latent navigation bug (load handler never re-fired
+on runtime hash mutations). The major hole is a fixable structural mistake.
 
-3 MODERATE FINDINGS (recommend fix at integration or v2 redraft)
+DECIDER ACTION
+Endorse with the major fix mandatory and the three moderate cleanups recommended.
+Do NOT integrate as-is — back-button regression is a real bug. Analyst can write
+prose after applying these. Integration order recommendation from analyst (after
+EXP-251) is sound.
 
-H1 — Visual contradiction on Refuted slice.
-acceptance_criteria.visual[a] says "the slice itself was already on
-var(--refuted-solid) per EXP-210; no shift". Both clauses are wrong: the
-pie chart was NOT routed through --refuted-solid by EXP-210 (the EXP
-itself acknowledges this), and the Refuted slice DOES shift visually
-from #E57373 to #7a2e2e. The EXP's own counter_considerations[2] has
-the correct framing.
+CITATION VERIFICATION (SUFFICIENT)
+- generate-html.js global :focus-visible rule (line 684) — verified
+- verdict-legend block (lines 1409-1415) — verified
+- formatTableRow (lines 729-732) — verified
+- a[href^="#"] global click handler (lines 1846-1872) — verified (basis of major hole)
+- VERDICT_CLASSES keys (line 306) — verified match VERDICT_DEF_ID
+- WIN-011 detail_extra contains verdict-tag.vt-notdemo — verified
+- EXP-252 file exists at the documented path — verified
 
-H2 — Contrast table arithmetic does not reproduce.
-Independent recomputation of all 12 stated ratios via WCAG 2.1 luminance
-formula yields deltas from -3.04 (Misleading-light claimed 12:1, actual
-8.96:1) to +0.84 (Misleading-dark). Direction correct in every case (all
-combos pass AA), but the EXP's "auditable arithmetic, not vibes" framing
-is undercut. Operationally important: the actual borderline dark case
-is Unfalsifiable-dark at 4.61:1, not SelfCon-dark at 4.73:1 as the EXP
-flags. Recomputed table embedded in the review JSON.
-
-H3 — Tap-target AAA claim overstates.
-acceptance_criteria.visual[c] says "tap target envelope now satisfies
-WCAG 2.5.5 AAA (44x44)". Legend rows are <g> with <rect> + <text> and
-no enclosing <a>, no click handler, no row-spanning background — there
-is no tap target. The 48px row stride is forward-compat sizing for
-HNOTE-002 / EXP-252 (verdict-chip click-through), not an AAA delivery.
-Honest reframe: "sized so that, when made interactive in a subsequent
-EXP, will satisfy AAA without further reflow."
-
-4 MINOR FINDINGS
-
-H4 — Line-number drift: change_3 cites line 645 (actual 646);
-anticipated_objections[1] cites line 547 (actual 548). Off-by-one.
-
-H5 — Two grep-style acceptance criteria (no hex inside generatePieChart;
-no matchMedia inside pie SVG) are not enforced by test.js. Decider can
-add 2 lightweight assertions at integration.
-
-H6 — Callout-line color behavior changes silently. Currently locked to
-darkColor in both themes; after, responds to theme via var(--*-solid).
-Light-mode callouts for Not Demonstrated and Unfalsifiable get noticeably
-darker. EXP visual list does not enumerate this.
-
-H7 — Print rendering rationale slightly oversold. Current print pathway
-already produces light-themed output (matchMedia returns false during
-Playwright print emulation). EXP framing as "implicit -> explicit" is
-right; framing as bug-fix would be wrong.
-
-INTEGRATION RECOMMENDATION
-PROCEED. Conditional-approval rubric ("no new ESCALATE") is met cleanly.
-Two pathways for the moderate findings:
-  (a) decider applies the three moderate fixes inline at integration — fast,
-      consistent with conditional-approval rubric.
-  (b) route back to analyst for a v2 with the three fixes applied — slower
-      but the EXP-249 file ends self-consistent for future audits.
-Pathway (a) is acceptable; integration commit message should note that
-acceptance_criteria.visual and contrast_table were corrected at integration
-so future audits trust the closed-out file. Minor findings (H4-H7) can
-defer to a follow-up polish issue.
-
-CITATION FAILURES
-- "slice already on var(--refuted-solid) per EXP-210" — false; pie chart
-  was the lone holdout per the EXP's own kernel.
-- Misleading-light 12:1 — recomputed 8.96:1.
-- SelfCon-dark 4.3:1 borderline — recomputed 4.73:1; actual borderline is
-  Unfalsif-dark at 4.61:1.
-- "tap target envelope ... satisfies WCAG 2.5.5 AAA" — overstated; no
-  target exists yet.
-- Line numbers 645, 547 — off-by-one (646, 548).
-
-CONSIDER THE OTHER SIDE
-Defender of contrast values: the WCAG-G18 simplified formula or a tool
-like WebAIM rounds within ~10%. Plausible explanation for +/- 0.5 deltas
-but not for the 25% Misleading-light overstatement. The "auditable
-arithmetic, not vibes" framing is what creates the discrepancy — soften
-it OR fix the table, not both.
-Defender of "no shift" on Refuted: charitable reading is "now matches
-other surfaces, net visual unification" which is true — but the literal
-"the slice itself was already" is wrong.
-Defender of AAA tap target: argues role=img makes the legend
-"interactive". WCAG 2.5.5 applies to controls; role=img is non-interactive.
-Defender position weak.
-
-NEXT QUEUE ITEM (DEFERRED — singleton-only per Step 8a criterion 5)
-queue_id 262 (EXP-251 Phase B3 prefix unification) — also target_type
-proposal, must run as a singleton in the next curmudgeon fire. Phase B
-proposals are foundational and never batchable.
+REVIEW FILE: monitor/curmudgeon/reviews/EXP-252-proposal.json (15,791 bytes)
