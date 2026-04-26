@@ -391,6 +391,64 @@ If push fails due to remote changes, pull --rebase and retry once:
 git pull --rebase origin main && git push origin main
 ```
 
+### Step 4b: Write run report (for tinker visibility)
+
+Write a JSON report capturing this run's outcome AND any narrative observations
+you noticed during the run. This is the only durable record of workspace-sync's
+narrative — without it, agent-side observations (e.g. "the /tmp permission issue
+swallowed the skip log writes") are invisible to tinker and to operator review.
+
+The /tmp skip-log permission bug lived undetected for 17 days / 100 runs because
+workspace-sync had no report file for tinker's soft-complaints grep to scan. Do
+not skip this step.
+
+```bash
+mkdir -p monitor/integrity/workspace-sync-runs
+RUN_REPORT_PATH="monitor/integrity/workspace-sync-runs/run-$(date -u +%Y-%m-%dT%H-%M-%SZ).json"
+SKIPS_COUNT=$([ -f "$SKIP_LOG" ] && wc -l < "$SKIP_LOG" || echo 0)
+NEVER_PUSH_COUNT=$([ -f "$SKIP_LOG" ] && grep -c "never-push" "$SKIP_LOG" || echo 0)
+MTIME_GUARD_COUNT=$([ -f "$SKIP_LOG" ] && grep -c "mtime-guard" "$SKIP_LOG" || echo 0)
+FILES_COMMITTED=$(git log -1 --name-only --pretty=format: HEAD 2>/dev/null | grep -c .)
+
+# AGENT_NOTES is the narrative field. You (the LLM) MUST fill it with a one-to-
+# few-sentence observation about the run. Required strings to include if they
+# apply to this run:
+#   - "permission denied" or "permission issue" if any file write reported EACCES/EPERM
+#   - "swallowed" or "leftover" if you suspect prior-run state contaminated this run
+#   - "fallback" if you took an alternative path because the primary path failed
+#   - "warning" if anything looked off
+#   - "routine" if the run was completely uneventful (this is also useful — tinker's
+#     soft-complaints grep ignores "routine"; the field needs SOMETHING for the JSON
+#     to be valid)
+# Keep it to <=300 chars. The grep target is the prose, not a structured enum,
+# so write what you'd say to the operator if they asked "anything weird?"
+AGENT_NOTES="<<<FILL_THIS_IN — see comment above>>>"
+
+node -e "
+const fs=require('fs');
+const out=process.env.OUT;
+const rec={
+  run_id: process.env.RUN_ID || ('ws-sync-'+new Date().toISOString().replace(/[:.]/g,'').slice(0,15)+'Z-'+process.pid),
+  timestamp: new Date().toISOString(),
+  files_committed: parseInt(process.env.FILES_COMMITTED||'0',10),
+  skips_total: parseInt(process.env.SKIPS_COUNT||'0',10),
+  skip_breakdown: {
+    never_push: parseInt(process.env.NEVER_PUSH_COUNT||'0',10),
+    mtime_guard: parseInt(process.env.MTIME_GUARD_COUNT||'0',10)
+  },
+  agent_notes: process.env.AGENT_NOTES || ''
+};
+fs.writeFileSync(out, JSON.stringify(rec, null, 2));
+console.log('Run report written:', out);
+" OUT="$RUN_REPORT_PATH" RUN_ID="${RUN_ID:-}" FILES_COMMITTED="$FILES_COMMITTED" SKIPS_COUNT="$SKIPS_COUNT" NEVER_PUSH_COUNT="$NEVER_PUSH_COUNT" MTIME_GUARD_COUNT="$MTIME_GUARD_COUNT" AGENT_NOTES="$AGENT_NOTES"
+
+# Stage and commit the run report itself in a follow-up commit so it lands in git
+# (it's append-only and tinker reads from git, not from FUSE).
+git add "$RUN_REPORT_PATH"
+git commit -m "workspace-sync run report: $(date -u +%Y-%m-%dT%H:%M:%SZ)" 2>&1 | tail -1
+git push origin main 2>&1 | tail -1
+```
+
 ### Step 5: Report
 
 Output a one-line summary: how many files were new, how many modified, or "Nothing to sync."

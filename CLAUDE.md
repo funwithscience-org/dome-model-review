@@ -89,7 +89,7 @@ Every file that crosses the workspace↔git boundary has exactly one authoritati
 
 **append-only** — directories of immutable, per-ID or per-timestamp files. Either direction can write a NEW file, but NEVER overwrite an existing one.
 
-- `monitor/curmudgeon/reviews/`, `monitor/analyst/new-wins/`, `monitor/analyst/expansions/`, `monitor/analyst/category-proposals/`, `monitor/analyst/globe-fingerprints/`, `monitor/analyst/issue-proposals/`, `monitor/tinker/proposals/`, `monitor/integrity/`, `monitor/changes/`, `monitor/social/drafts/` — one file per ID.
+- `monitor/curmudgeon/reviews/`, `monitor/analyst/new-wins/`, `monitor/analyst/expansions/`, `monitor/analyst/category-proposals/`, `monitor/analyst/globe-fingerprints/`, `monitor/analyst/issue-proposals/`, `monitor/tinker/proposals/`, `monitor/integrity/`, `monitor/integrity/workspace-sync-runs/` (per-run reports from workspace-sync, scanned by tinker's soft-complaints grep — added 2026-04-26), `monitor/changes/`, `monitor/social/drafts/` — one file per ID.
 - `monitor/decisions/` and `monitor/tinker/` as "append_only_glob" — mixed directories with timestamped files.
 
 **Unclassified — `monitor/curmudgeon/tracker.json`, `monitor/analyst/expansion-tracker.json`, and `monitor/analyst/attention-inbox.json`.** Known multi-writer files (tracker.json: decider + curmudgeon; expansion-tracker.json: analyst + decider; attention-inbox.json: decider writes items + analyst marks resolved). Protected by: (a) `git pull --rebase` at run start, (b) pre-push integrity gate, (c) git merge-conflict detection, (d) non-concurrent scheduling. **Do not add to OWNERSHIP in build.js or NEVER_PUSH in workspace-sync.md.**

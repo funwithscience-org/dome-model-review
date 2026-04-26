@@ -74,13 +74,19 @@ Rotate which code blocks you check across runs.
 
 ```bash
 # Hard errors
-grep -ri "command not found\|Authentication failed\|Operation not permitted\|ENOENT\|403\|: -1[,}]" monitor/decisions/daily-report-*.json monitor/social/report-*.json monitor/analysis/*.json monitor/tinker/report-*.json 2>/dev/null | tail -20
+grep -ri "command not found\|Authentication failed\|Operation not permitted\|ENOENT\|403\|: -1[,}]\|EACCES\|EPERM" monitor/decisions/daily-report-*.json monitor/social/report-*.json monitor/analysis/*.json monitor/tinker/report-*.json monitor/integrity/workspace-sync-runs/*.json 2>/dev/null | tail -20
 
 # Soft complaints
-grep -ri "not available\|unavailable\|could not\|unable to\|failed to\|WARNING\|fallback\|push fail\|cannot check\|skipping" monitor/decisions/daily-report-*.json monitor/social/report-*.json monitor/analysis/*.json 2>/dev/null | grep -v "node_modules" | tail -20
+# Updated 2026-04-26: now also scans monitor/integrity/workspace-sync-runs/*.json
+# (workspace-sync's per-run agent_notes field). The /tmp permission bug in
+# workspace-sync's skip-log handling went undetected for 17 days / 100 runs
+# because workspace-sync had no report file for this grep to scan. The scan
+# also picks up the new "swallowed", "leftover", "permission issue" tokens
+# that signal stale-state bleed-through bugs of that class.
+grep -ri "not available\|unavailable\|could not\|unable to\|failed to\|WARNING\|fallback\|push fail\|cannot check\|skipping\|swallowed\|leftover\|permission issue\|permission denied" monitor/decisions/daily-report-*.json monitor/social/report-*.json monitor/analysis/*.json monitor/integrity/workspace-sync-runs/*.json 2>/dev/null | grep -v "node_modules" | tail -20
 ```
 
-Trace patterns to root cause. A `-1` in social's `github_activity.forks` = gh auth issue. Analyst writing "GitHub CLI unavailable" for 5 runs = missing auth step in prompt.
+Trace patterns to root cause. A `-1` in social's `github_activity.forks` = gh auth issue. Analyst writing "GitHub CLI unavailable" for 5 runs = missing auth step in prompt. Workspace-sync agent_notes saying "permission issue" or "swallowed" across multiple consecutive runs = stale-state-bleed-through (the kind of bug the /tmp skip-log path lived through 17 days unnoticed).
 
 ## Step 5: State Hygiene
 
