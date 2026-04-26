@@ -312,6 +312,19 @@ const VERDICT_CLASSES = {
   'Unfalsifiable': 'v-unfalsifiable'
 };
 
+// EXP-252: WIN-verdict label → verdict-legend definition id. Used by
+// formatTableRow / formatPredictionDetail to wrap verdict chips in <a href="#def-X">.
+// The global a[href^="#"] handler (window.load registration) handles the navigation;
+// the hashchange listener fires the ds-verdict-def-flash class on arrival.
+const VERDICT_DEF_ID = {
+  'Refuted by Data':     'def-refuted',
+  'Std Model Explains':  'def-standard-model',
+  'Self-Contradicted':   'def-self-contradicted',
+  'Misleading':          'def-misleading',
+  'Not Demonstrated':    'def-not-demonstrated',
+  'Unfalsifiable':       'def-unfalsifiable'
+};
+
 // ════ PIE CHART COLORS — token-driven, see CSS :root for light/dark/print values ════
 // Slice fills route through --*-solid (the same tokens that drive .ds-vb-bar.vb-refuted, td.v-refuted, etc.).
 // Per-verdict label ink is picked once per theme via --label-* tokens (see EXP-249).
@@ -696,6 +709,17 @@ details{display:block}details .ks-summary::after,details .ps-summary::after{disp
 .ds-verdict-badge.vb-pending{background:var(--notdemo,rgba(142,36,170,0.2));color:var(--text);border-left-color:var(--notdemo-solid)}
 .ds-verdict-badge.vb-self_contradicted{background:var(--selfcon,rgba(30,136,229,0.2));color:var(--text);border-left-color:var(--selfcon-solid)}
 .ds-verdict-badge.vb-misleading{background:var(--misleading,rgba(251,140,0,0.18));color:var(--text);border-left-color:var(--misleading-solid)}
+.ds-verdict-link{color:inherit;text-decoration:none;display:inline-block}
+.ds-verdict-link:hover{text-decoration:underline;text-underline-offset:2px}
+/* :focus-visible reuses the global rule at :focus-visible (no per-class override needed; ISS-1561). */
+/* td .ds-verdict-link: negative-margin trick expands the click target to fill the cell. The
+   margin/padding values MUST track td's own padding (currently .45rem .6rem); if td padding
+   ever changes, this rule needs to track it. ISS-1563 acknowledged — the test suite below
+   includes a guard that re-extracts both pairs and asserts equality. */
+td .ds-verdict-link{display:block;margin:-.45rem -.6rem;padding:.45rem .6rem}
+.ds-vl.ds-verdict-def-flash{animation:ds-verdict-def-flash 1.5s ease-out}
+@keyframes ds-verdict-def-flash{0%{box-shadow:0 0 0 0 var(--accent)}20%{box-shadow:0 0 0 4px var(--accent)}100%{box-shadow:0 0 0 0 var(--accent)}}
+@media(prefers-reduced-motion:reduce){.ds-vl.ds-verdict-def-flash{animation:none;outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}}
 .ds-toc a{display:block;padding:.65rem .5rem;text-decoration:none;border-radius:3px;min-height:44px;line-height:1.4}
 .ds-toc a:hover{background:var(--card-bg);text-decoration:underline}
 .ds-toc li{margin:0}
@@ -731,8 +755,15 @@ function computeVerdictTallies(wins) {
 
 function formatTableRow(win) {
   const verdictClass = VERDICT_CLASSES[win.verdict] || '';
+  const defId = VERDICT_DEF_ID[win.verdict] || '';
   const id = `win${win.id}`;
-  return `<tr><td><a href="#${id}">${win.id}</a></td><td>${escapeHtml(win.claim)}</td><td class="${verdictClass}">${escapeHtml(win.verdict)}</td><td>${escapeHtml(win.finding)}</td></tr>`;
+  // EXP-252: wrap verdict cell text in <a href="#def-X" class="ds-verdict-link">.
+  // No inline onclick — the global a[href^="#"] handler dispatches it (ISS-1560).
+  // td .ds-verdict-link uses negative margins to fill the colored cell as the click target.
+  const verdictCell = defId
+    ? `<a class="ds-verdict-link" href="#${defId}" aria-label="See definition of ${escapeHtml(win.verdict)}">${escapeHtml(win.verdict)}</a>`
+    : escapeHtml(win.verdict);
+  return `<tr><td><a href="#${id}">${win.id}</a></td><td>${escapeHtml(win.claim)}</td><td class="${verdictClass}">${verdictCell}</td><td>${escapeHtml(win.finding)}</td></tr>`;
 }
 
 function hasDetailContent(win) {
@@ -769,11 +800,17 @@ function formatWinDetail(win) {
       ? `<p class="ks-tldr">${escapeHtml(win.tldr_verdict)}</p>`
       : '';
     const extraHtml = win.detail_extra ? `<p>${win.detail_extra}</p>\n` : '';
+    // EXP-252: wrap verdict-tag in <a href="#def-X">. No inline onclick (ISS-1560).
+    const winDefId = VERDICT_DEF_ID[win.verdict] || '';
+    const winChip = `<span class="ds-verdict-tag ${verdictShortClass}">${escapeHtml(win.verdict).toUpperCase()}</span>`;
+    const winChipWrapped = winDefId
+      ? `<a class="ds-verdict-link" href="#${winDefId}" aria-label="See definition of ${escapeHtml(win.verdict)}">${winChip}</a>`
+      : winChip;
     if (vdTldr) {
-      html += `<details class="ds-win-section"><summary class="ks-summary"><span class="ds-verdict-tag ${verdictShortClass}">${escapeHtml(win.verdict).toUpperCase()}</span>${vdTldr}</summary>\n`;
+      html += `<details class="ds-win-section"><summary class="ks-summary">${winChipWrapped}${vdTldr}</summary>\n`;
       html += `<div class="ks-detail"><p>${win.detail_verdict_text}</p>${extraHtml}</div>\n</details>\n`;
     } else {
-      html += `<p><span class="ds-verdict-tag ${verdictShortClass}">${escapeHtml(win.verdict).toUpperCase()}</span> ${win.detail_verdict_text}</p>\n`;
+      html += `<p>${winChipWrapped} ${win.detail_verdict_text}</p>\n`;
       if (win.detail_extra) {
         html += `<p>${win.detail_extra}</p>\n`;
       }
@@ -869,6 +906,20 @@ const PRED_TD_CLASSES = {
   'pending': 'v-notdemo',
 };
 
+// EXP-252: prediction verdict slug → verdict-legend definition id. Mirrors
+// VERDICT_DEF_ID above but keyed by the slugs used in predictions data.
+// 'pending' maps to null — pending predictions get no click-through (no
+// canonical verdict definition to land on).
+const PRED_DEF_ID = {
+  'falsified':         'def-refuted',
+  'standard_physics':  'def-standard-model',
+  'self_contradicted': 'def-self-contradicted',
+  'misleading':        'def-misleading',
+  'recycled':          'def-misleading',
+  'unfalsifiable':     'def-unfalsifiable',
+  'pending':           null
+};
+
 function formatPredictionDetail(pred) {
   if (!pred.detail_reasoning && !pred.claim) return '';
 
@@ -898,7 +949,13 @@ function formatPredictionDetail(pred) {
   // ── Summary bar (always visible, kill-shot pattern) ──
   let html = `<div class="ks-test"><details id="${anchorId}"><summary class="ks-summary">`;
   html += `<h2 style="display:inline;margin:0">${escapeHtml(pred.id)}: ${escapeHtml(pred.claim || 'No claim text')}`;
-  html += ` <span class="ds-verdict-badge vb-${verdict}" style="margin-left:8px"><span class="ds-vb-glyph" aria-hidden="true">${badgeGlyph}</span>${escapeHtml(verdictLabel)}</span>`;
+  // EXP-252: wrap verdict-badge in <a href="#def-X"> when verdict has a definition
+  // (PRED_DEF_ID['pending'] === null → fall through to unwrapped badge).
+  const _badgeDefId = PRED_DEF_ID[verdict];
+  const _badgeChip = `<span class="ds-verdict-badge vb-${verdict}" style="margin-left:8px"><span class="ds-vb-glyph" aria-hidden="true">${badgeGlyph}</span>${escapeHtml(verdictLabel)}</span>`;
+  html += _badgeDefId
+    ? ` <a class="ds-verdict-link" href="#${_badgeDefId}" aria-label="See definition of ${escapeHtml(verdictLabel)}">${_badgeChip}</a>`
+    : ` ${_badgeChip}`;
   html += `</h2>`;
   html += `<p class="ks-tldr">${tldr}</p>`;
   html += `</summary><div class="ks-detail">\n`;
@@ -921,11 +978,19 @@ function formatPredictionDetail(pred) {
     html += `<p><strong>Restates:</strong> <a href="#win${winId}" onclick="showTab('wins');return false">WIN-${escapeHtml(winId)}</a></p>\n`;
   }
 
-  // Verdict tag + reasoning (full form in detail)
+  // Verdict tag + reasoning (full form in detail).
+  // EXP-252: wrap verdict-tag in <a href="#def-X">. AWAITING ASSESSMENT (pending)
+  // is intentionally NOT wrapped — pending predictions have no canonical definition
+  // and PRED_DEF_ID['pending'] === null.
+  const _predTagDefId = PRED_DEF_ID[verdict];
+  const _predTagChip = `<span class="ds-verdict-tag ${verdictClass}">${escapeHtml(verdictLabel).toUpperCase()}</span>`;
+  const _predTagWrapped = _predTagDefId
+    ? `<a class="ds-verdict-link" href="#${_predTagDefId}" aria-label="See definition of ${escapeHtml(verdictLabel)}">${_predTagChip}</a>`
+    : _predTagChip;
   if (pred.detail_reasoning) {
-    html += `<p><span class="ds-verdict-tag ${verdictClass}">${escapeHtml(verdictLabel).toUpperCase()}</span> ${escapeHtml(pred.detail_reasoning)}</p>\n`;
+    html += `<p>${_predTagWrapped} ${escapeHtml(pred.detail_reasoning)}</p>\n`;
   } else if (verdict !== 'pending') {
-    html += `<p><span class="ds-verdict-tag ${verdictClass}">${escapeHtml(verdictLabel).toUpperCase()}</span></p>\n`;
+    html += `<p>${_predTagWrapped}</p>\n`;
   } else {
     html += `<p><span class="ds-verdict-tag vt-notdemo">AWAITING ASSESSMENT</span></p>\n`;
   }
@@ -942,7 +1007,14 @@ function formatPredictionTableRow(pred) {
   const restatesDisplay = pred.restates_win
     ? 'WIN-' + String(pred.restates_win).replace(/^WIN-/i, '').padStart(3, '0')
     : '';
-  return `<tr><td><a href="#${anchorId}">${escapeHtml(pred.id)}</a></td><td>${escapeHtml(pred.claim || '')}</td><td class="${tdClass}">${escapeHtml(verdictLabel)}</td><td>${escapeHtml(restatesDisplay)}</td></tr>`;
+  // EXP-252: wrap prediction-table verdict cell in <a href="#def-X"> when verdict has a definition.
+  // pending → no def, leaves the cell text un-wrapped (matches AWAITING ASSESSMENT pattern).
+  const _predRowDefId = PRED_DEF_ID[verdict];
+  const _predRowCellText = escapeHtml(verdictLabel);
+  const predRowVerdictCell = _predRowDefId
+    ? `<a class="ds-verdict-link" href="#${_predRowDefId}" aria-label="See definition of ${_predRowCellText}">${_predRowCellText}</a>`
+    : _predRowCellText;
+  return `<tr><td><a href="#${anchorId}">${escapeHtml(pred.id)}</a></td><td>${escapeHtml(pred.claim || '')}</td><td class="${tdClass}">${predRowVerdictCell}</td><td>${escapeHtml(restatesDisplay)}</td></tr>`;
 }
 
 function _splitPredictions(predictions) {
@@ -1410,12 +1482,12 @@ ${accuracyVariantList ? `<p class="ams-p ams-variant">Internal queries return ${
 
 <h1 id="verdicts">Verdict Categories Used in This Review</h1>
 <div class="ds-verdict-legend">
-<div class="ds-vl vl-refuted"><strong>Refuted by Data:</strong> Direct physical measurements or experiments contradict the specific claim. Hard evidence exists proving the stated behavior does not occur or the cited source does not contain what is claimed.</div>
-<div class="ds-vl vl-std"><strong>Standard Model Explains:</strong> The observation cited is real, but mainstream physics already provides a complete, quantitative explanation. The dome model adds no predictive power beyond what existing models already achieve.</div>
-<div class="ds-vl vl-selfcon"><strong>Self-Contradicted:</strong> The dome's own stated geometry, if worked through honestly, predicts a value radically different from what the author claims. Agreement with observations is achieved only by substituting globe formulas, ignoring the dome's own geometry, or curve-fitting. See <a href="#part2" onclick="showTab('selftest');return false">Part 2</a> for derivations.</div>
-<div class="ds-vl vl-misleading"><strong>Misleading:</strong> The data is misrepresented, cherry-picked, the cited values do not match the actual source, logically contradictory results are both claimed as confirmations, or the same observation is counted as multiple independent wins.</div>
-<div class="ds-vl vl-notdemo"><strong>Not Demonstrated:</strong> The claim relies on unreplicated fringe experiments or unverified data that has not been independently confirmed.</div>
-<div class="ds-vl vl-unfalsifiable"><strong>Unfalsifiable:</strong> The claim cannot be tested by any physical measurement. Typically theological assertions.</div>
+<div class="ds-vl vl-refuted" id="def-refuted"><strong>Refuted by Data:</strong> Direct physical measurements or experiments contradict the specific claim. Hard evidence exists proving the stated behavior does not occur or the cited source does not contain what is claimed.</div>
+<div class="ds-vl vl-std" id="def-standard-model"><strong>Standard Model Explains:</strong> The observation cited is real, but mainstream physics already provides a complete, quantitative explanation. The dome model adds no predictive power beyond what existing models already achieve.</div>
+<div class="ds-vl vl-selfcon" id="def-self-contradicted"><strong>Self-Contradicted:</strong> The dome's own stated geometry, if worked through honestly, predicts a value radically different from what the author claims. Agreement with observations is achieved only by substituting globe formulas, ignoring the dome's own geometry, or curve-fitting. See <a href="#part2" onclick="showTab('selftest');return false">Part 2</a> for derivations.</div>
+<div class="ds-vl vl-misleading" id="def-misleading"><strong>Misleading:</strong> The data is misrepresented, cherry-picked, the cited values do not match the actual source, logically contradictory results are both claimed as confirmations, or the same observation is counted as multiple independent wins.</div>
+<div class="ds-vl vl-notdemo" id="def-not-demonstrated"><strong>Not Demonstrated:</strong> The claim relies on unreplicated fringe experiments or unverified data that has not been independently confirmed.</div>
+<div class="ds-vl vl-unfalsifiable" id="def-unfalsifiable"><strong>Unfalsifiable:</strong> The claim cannot be tested by any physical measurement. Typically theological assertions.</div>
 </div>
 
 <div class="ds-breaking-news">
@@ -1866,6 +1938,13 @@ window.addEventListener('load', function() {
             // Scroll to element after a brief delay
             setTimeout(() => {
               element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              // EXP-252: if the target is a verdict-legend definition,
+              // briefly flash it as visual confirmation of the click-through.
+              // Reduced-motion users get the static-outline fallback via CSS.
+              if (target.indexOf('def-') === 0 && element.classList.contains('ds-vl')) {
+                element.classList.add('ds-verdict-def-flash');
+                setTimeout(() => element.classList.remove('ds-verdict-def-flash'), 1600);
+              }
             }, 100);
             e.preventDefault();
           }
@@ -1891,7 +1970,14 @@ window.addEventListener('load', function() {
         if (parentTab) {
           showTab(parentTab.id, { skipHash: true, skipScroll: true });
           expandToElement(el);
-          setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'start' }), 150);
+          setTimeout(() => {
+            el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            // EXP-252: flash verdict definitions on back/forward arrival too.
+            if (hash.indexOf('def-') === 0 && el.classList.contains('ds-vl')) {
+              el.classList.add('ds-verdict-def-flash');
+              setTimeout(() => el.classList.remove('ds-verdict-def-flash'), 1600);
+            }
+          }, 150);
         }
       }
     }

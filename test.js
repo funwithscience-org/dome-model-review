@@ -737,6 +737,72 @@ console.log('\n── 8. Prediction Panels ──');
 }
 
 // ════════════════════════════════════════════
+// EXP-252 — verdict-chip click-through to definition
+// ════════════════════════════════════════════
+{
+  const htmlContent = fs.readFileSync(path.join(__dirname, 'docs/index.html'), 'utf8');
+  const generateSrc = fs.readFileSync(path.join(__dirname, 'build-scripts/generate-html.js'), 'utf8');
+
+  // (a) All 6 def-* ids present on verdict-legend entries
+  assert(
+    htmlContent.includes('id="def-refuted"') &&
+    htmlContent.includes('id="def-standard-model"') &&
+    htmlContent.includes('id="def-self-contradicted"') &&
+    htmlContent.includes('id="def-misleading"') &&
+    htmlContent.includes('id="def-not-demonstrated"') &&
+    htmlContent.includes('id="def-unfalsifiable"'),
+    'EXP-252: all 6 def-* ids must be present on verdict-legend entries'
+  );
+
+  // (b) ds-verdict-link CSS rule present (no per-class :focus-visible — uses global rule per ISS-1561)
+  assert(/\.ds-verdict-link\{[^}]*color:inherit/.test(htmlContent),
+    'EXP-252: .ds-verdict-link CSS rule with color:inherit missing');
+  assert(/\.ds-verdict-link:hover\{[^}]*text-decoration:underline/.test(htmlContent),
+    'EXP-252: .ds-verdict-link:hover underline rule missing');
+
+  // (c) Definition-flash keyframe + class
+  assert(/@keyframes ds-verdict-def-flash/.test(htmlContent),
+    'EXP-252: ds-verdict-def-flash keyframe missing');
+  assert(/\.ds-vl\.ds-verdict-def-flash\{animation:ds-verdict-def-flash/.test(htmlContent),
+    'EXP-252: .ds-vl.ds-verdict-def-flash class binding missing');
+
+  // (d) prefers-reduced-motion override present
+  assert(/@media\(prefers-reduced-motion:reduce\)\{\.ds-vl\.ds-verdict-def-flash/.test(htmlContent),
+    'EXP-252: prefers-reduced-motion override for ds-verdict-def-flash missing');
+
+  // (e) Click-through wraps in WIN table — RATIO check (per ISS-1562: not absolute count).
+  // Every td.v-* cell with a verdict label should contain a ds-verdict-link <a>. Compute ratio.
+  const tdVerdictCells = (htmlContent.match(/<td class="v-[a-z]+">/g) || []).length;
+  const tdVerdictLinkWraps = (htmlContent.match(/<td class="v-[a-z]+"><a class="ds-verdict-link" href="#def-/g) || []).length;
+  assert(tdVerdictCells > 0, 'EXP-252: no td.v-* verdict cells found in HTML — WIN table likely broken');
+  const wrapRatio = tdVerdictLinkWraps / tdVerdictCells;
+  // Threshold 90% leaves headroom for pending predictions (which are intentionally
+  // unwrapped per PRED_DEF_ID['pending'] === null). Currently ~8 pending predictions
+  // out of ~148 v-* cells = ~5% unwrapped by design.
+  assert(wrapRatio >= 0.90,
+    `EXP-252: expected >=90% of td.v-* cells wrapped in ds-verdict-link, got ${(wrapRatio*100).toFixed(1)}% (${tdVerdictLinkWraps}/${tdVerdictCells})`);
+
+  // (f) Negative-margin click-target guard (per ISS-1563): the td .ds-verdict-link rule's
+  // margin must equal the negative of td's padding. If td padding ever changes, this test
+  // will fail and force the rule to be updated in lockstep.
+  const tdPaddingMatch = generateSrc.match(/td\{[^}]*padding:([^;}]+)/);
+  const verdictLinkMatch = generateSrc.match(/td \.ds-verdict-link\{[^}]*margin:([^;}]+)[^}]*padding:([^;}]+)/);
+  assert(tdPaddingMatch, 'EXP-252: could not locate td padding in generate-html.js for negative-margin guard');
+  assert(verdictLinkMatch, 'EXP-252: could not locate td .ds-verdict-link margin/padding in generate-html.js');
+  if (tdPaddingMatch && verdictLinkMatch) {
+    // td padding ".45rem .6rem" → expected margin "-.45rem -.6rem", expected link padding ".45rem .6rem"
+    const tdPad = tdPaddingMatch[1].trim();                  // ".45rem .6rem"
+    const linkMargin = verdictLinkMatch[1].trim();           // "-.45rem -.6rem"
+    const linkPad = verdictLinkMatch[2].trim();              // ".45rem .6rem"
+    const expectedMargin = tdPad.split(/\s+/).map(v => '-' + v.replace(/^-/, '')).join(' ');
+    assert(linkMargin === expectedMargin,
+      `EXP-252 / ISS-1563: td .ds-verdict-link margin (${linkMargin}) must equal -td.padding (${expectedMargin}); update both together`);
+    assert(linkPad === tdPad,
+      `EXP-252 / ISS-1563: td .ds-verdict-link padding (${linkPad}) must equal td.padding (${tdPad}); update both together`);
+  }
+}
+
+// ════════════════════════════════════════════
 // Results
 // ════════════════════════════════════════════
 
