@@ -1,0 +1,213 @@
+{
+  "point_id": "EXP-251",
+  "topic": "EXP-251 — Phase B3 design-system prefix unification (PREPEND ds- across 58 component classes via 4-pass rename script)",
+  "queue_id": 262,
+  "queue_pushed_at": "2026-04-25T17:27:34.427Z",
+  "reviewed_at": "2026-04-25T23:37:02.699Z",
+  "cycle": 1,
+  "trigger": "priority-queue-expansion-proposal",
+  "current_verdict_holds": true,
+  "confidence": 0.88,
+  "our_argument_summary": "EXP-251 is the third of four commissioned Phase B EXPs (HNOTE-PHASE-B-DESIGN-REFRESH-COMMISSION-001 §B3). It renames every Phase A1 component class in build-scripts/generate-html.js, data/sections.json, data/wins.json, and test.js to a unified ds-* prefix while preserving (a) progressive-disclosure scaffold ps-*, (b) kill-shot scaffold ks-*, (c) verdict tokens v-*, vb-*, vt-*, vl-*, (d) state tag tokens tag-*, (e) state modifiers .active/.accent, and (f) sections.json prose-content classes (formula, footnote, etc.). The mechanism is a self-contained rename script run from repo root with four context-aware passes: (1) HTML class=\"...\" attributes (whitespace tokenize), (2) JSON-escaped class=\\\"...\\\" in sections.json/wins.json, (3) CSS selectors `.NAME` followed by a CSS-terminator lookahead, (4) DOM API calls (querySelector*, closest, getElementsByClassName, classList.{add,remove,contains,toggle}). The script self-verifies with a class-name-aware boundary regex (PRE/POST `[a-zA-Z0-9_-]` lookarounds, NOT `\\b` — the EXP author correctly identified that `\\b` falsely matches inside ds-tab-content because hyphens are non-word). EXPECTED_RESIDUALS allow-list two regex literals in test.js (lines ~268 and ~428) where the rename script’s pass-1 regex cannot safely rewrite the surrounding class-attribute pattern; those are covered by a TEST_JS_PATCHES table. Decision rationale (PREPEND vs REPLACE) is documented and matches operator phrasing. Out-of-scope decisions (verdict-token unification, sections.json prose-content rename) are explicit.",
+  "proposal_review_lens": "DIRECTIVE-003 design rubric. Phase B3 is a design-system housekeeping refactor with zero rendered-truth impact (rendered output unchanged except class strings). Per the rubric, the adversarial register stays strict on truth-distorting design choices and relaxes on documentation/style/test-harness pedantry. For EXP-251 the relevant adversarial axis is technical correctness of the rename mechanism (does it do what it says, does it miss anything, does it leave ambiguous documentation that will mis-direct the integration tester) — NOT design aesthetics or proposal-prose polish.",
+  "empirical_reproduction": {
+    "method": "Cloned the repo to a scratch workspace, copied generate-html.js + sections.json + wins.json + test.js into a tempdir, wrote the rename_script.contents string to disk, and ran `node EXP-251-rename.js`. Then validated JSON parsing on both data files and `node --check` on both JS files post-rename.",
+    "smoke_test_replications": {
+      "build-scripts/generate-html.js replacements": {
+        "claimed": 406,
+        "observed": 406,
+        "match": true
+      },
+      "data/sections.json replacements": {
+        "claimed": 71,
+        "observed": 71,
+        "match": true
+      },
+      "data/wins.json replacements": {
+        "claimed": 1,
+        "observed": 1,
+        "match": true
+      },
+      "test.js replacements": {
+        "claimed": 38,
+        "observed": 38,
+        "match": true
+      },
+      "total replacements": {
+        "claimed": 516,
+        "observed": 516,
+        "match": true
+      },
+      "expected residuals in test.js": {
+        "claimed": 2,
+        "observed": 2,
+        "match": true
+      },
+      "verifier exit status": {
+        "claimed": "All renames verified clean",
+        "observed": "All renames verified clean",
+        "match": true
+      },
+      "post_rename_syntax_check generate-html.js": {
+        "claimed": "node --check passed",
+        "observed": "passed",
+        "match": true
+      },
+      "post_rename_syntax_check test.js": {
+        "claimed": "node --check passed",
+        "observed": "passed",
+        "match": true
+      },
+      "post_rename_json_parse sections.json": {
+        "claimed": "JSON.parse passed",
+        "observed": "passed",
+        "match": true
+      },
+      "post_rename_json_parse wins.json": {
+        "claimed": "JSON.parse passed",
+        "observed": "passed",
+        "match": true
+      }
+    },
+    "diff_size_observed": "858 lines via plain `diff` across all four files (756 + 16 + 4 + 82). EXP claims ~2840 diff lines — likely measured with `git diff` (which adds 3 lines context above/below each hunk). Direction is consistent; no concern.",
+    "rename_script_size_bytes": 10000,
+    "inventory_consistency": "rename_table has 58 unique entries. The embedded RENAMES const array in the script body has 59 entries (one duplicate of `stance-statement`, lines 11 and 14 of the array literal). The Map de-dup in `new Map(RENAMES)` makes this benign at runtime — same 58 unique names execute. Cosmetic doc smell but no functional impact.",
+    "classes_in_pristine_verified": [
+      "legend-swatch (3 occurrences)",
+      "callout-line (3)",
+      "pie-callout (2)",
+      "pie-label (4)",
+      "pie-slice (4)",
+      "evidence (1, on the KS evidence block at generate-html.js line 744)"
+    ]
+  },
+  "proposal_code_analysis": {
+    "relevant_files": [
+      "monitor/analyst/expansions/EXP-251-phase-b3-prefix-unification.json (the proposal under review)",
+      "build-scripts/generate-html.js (primary target — 406 replacements)",
+      "data/sections.json (71 replacements — JSON-escaped class attributes)",
+      "data/wins.json (1 replacement — verdict-tag span)",
+      "test.js (38 replacements + 2 expected residuals)",
+      "monitor/analyst/expansions/EXP-249-phase-b1-pie-chart-cleanup.json (sequencing dependency — Phase B1 not yet integrated as of pull at review time)"
+    ],
+    "rename_pipeline": "Four passes with class-name-aware boundary regex. Pass 3 explicitly excludes JS variable contexts (e.g., `const evidence = ...`) by anchoring on the leading `.` for CSS selectors. Pass 1 tokenizes class-attribute values on whitespace and looks up exact tokens in the rename map — variant tokens like `pie-slice-refuted` survive because they are not exact matches for `pie-slice`.",
+    "boundary_regex_correctness": "PRE = `(?<![a-zA-Z0-9_-])`, POST = `(?![a-zA-Z0-9_-])`. The author specifically flagged the `\\b`-falls-into-hyphenated-name pitfall in the script header comment. CSS terminator set `[\\s.,:;{}>+~)\\[!\\\\]` covers all combinator and pseudo-class boundaries plus the backslash for regex-literal contexts in test.js. Independently traced: `.vl-stdmodel{...}` is NOT incorrectly renamed when `vl` is in the map because `-` is not in the terminator set; `.vl{...}` and `.vl,` and `.vl.vl-stdmodel` ARE correctly renamed.",
+    "structural_preservation": "Function signature unchanged. Returned HTML envelope unchanged. Class-name STRINGS change but no DOM structure changes. ARIA labels and SVG geometry untouched. Test harness contract preserved (tests still pass per smoke).",
+    "our_proposal_claims_accurate": false,
+    "documentation_drift_observed": "Three documentation issues observed empirically. (1) RENAMES array contains a literal duplicate of `stance-statement`. (2) TEST_JS_PATCHES claims 7 substring substitutions are needed by hand because the rename script cannot rewrite regex literals — empirical run shows 5 of those 7 are auto-handled by passes 1–3, with only the two `tab-content[^\"]*` regex literals at lines ~268 and ~428 genuinely needing manual application. (3) `acceptance_criteria.zero_visual_regression` description says docs/index.html will be byte-identical except for `class=` attribute strings — true ingredient list also includes CSS selector text inside `<style>` blocks and querySelector/closest argument strings inside `<script>` blocks."
+  },
+  "code_analysis_tags": {
+    "monitoring": "none",
+    "monitoring_evidence": "Not applicable — project-internal CSS/HTML/test refactor, not a dome-model claim review.",
+    "relabels_standard": false,
+    "relabels_standard_evidence": "Not applicable.",
+    "post_hoc": false,
+    "post_hoc_evidence": "Not applicable.",
+    "derives_from_dome": false,
+    "derives_from_dome_evidence": "Not applicable.",
+    "reviewed": true
+  },
+  "scope_and_boundary_audit": {
+    "boundary_respected": "Yes for the in-scope set. Verdict tokens (vb-/vt-/vl-/v-/tag-) preserved; ps-/ks- progressive-disclosure scaffold preserved; sections.json prose-content classes preserved; .active/.accent state modifiers preserved. The 67-class exclusion list categorizes correctly.",
+    "pie_slice_variant_tokens_undocumented": "EXP-249 (Phase B1, currently in-queue and reviewed but not yet integrated as of this review) emits a verdict-keyed slice class via interpolation: `class=\"pie-slice pie-slice-${verdict.toLowerCase().replace(/[^a-z0-9]+/g,‘-’)}\"`. After EXP-251 ships, pass-1 tokenization produces `class=\"ds-pie-slice pie-slice-refuted\"` (token 1 renamed, token 2 preserved as a verdict-keyed variant). Functionally consistent with the vb-bar / vb-stdmodel split (component renamed, verdict token preserved), but pie-slice variants are NOT enumerated in `excluded_tokens_and_rationale`. Cosmetic doc gap, not a functional defect.",
+    "forward_compat": "PREPEND keeps every old name 1:1 mappable to a new name and preserves grep-ability. Any future Phase C verdict-token unification can independently rename the v-/vb-/vt-/vl-/tag- families without colliding with the ds-* component namespace. The forward-compat reasoning in `rationale_for_prepend_not_replace` holds."
+  },
+  "rename_completeness_audit": {
+    "pristine_classes_covered": "rename_table covers every Phase A1 component class observed in the pristine generate-html.js. Spot-check: `meta`, `subtitle`, `toc`, `evidence` are in the table; `.evidence-roadmap` (sections.json prose-content) is excluded; tested. `meta` rename is safe because pass-1 tokenizes class attributes (so `meta-tag` doesn’t match `meta`) and pass-3 requires CSS terminator after `.meta` (so `.meta-foo{...}` doesn’t match because `-` is not in the terminator set).",
+    "sequencing_dependency_with_EXP_249": "EXP-249 (B1) is queued ahead of EXP-251 (B3) per HNOTE-001 sequencing recommendation: “land B3 LAST in Phase B.” The rename_table covers EXP-249-related classes (legend-swatch, callout-line, pie-callout, pie-label, pie-slice) which already exist in the pristine pie-chart code. HOWEVER, EXP-249’s replacement HTML adds a NEW class `pie-legend-row` (verified by inspecting EXP-249 JSON). This class is NOT in EXP-251’s rename_table because EXP-251 was inventoried against the pre-EXP-249 pristine. If both ship, `pie-legend-row` will escape the ds- normalization and remain un-prefixed. Severity: moderate — not a visual regression, but the design-system uniformity criterion (`acceptance_criteria.ds_prefix_uniformity`) is no longer met for that class.",
+    "additional_coverage_not_a_problem": "JS API forms NOT covered by pass 4 / verifier: `el.className = ‘...’`, `el.matches(‘.foo’)`, `setAttribute(‘class’, ‘...’)`, `[class~=‘foo’]` attribute selectors, jQuery-style `$(‘.foo’)`. Empirical grep across the four target files: zero matches. So no current gap, but the assumption is undocumented. If a future commit introduces such a form before another rename refactor, the script would silently miss it.",
+    "test_js_patches_drift": "Empirical test of the 7-row TEST_JS_PATCHES table: only patches 1 and 2 (the two `tab-content[^\"]*` regex literals at lines ~268 and ~428) actually need manual application. Patches 3–7 are already handled by the rename script’s pass 1 (HTML class attributes), pass 2 (JSON-escaped attributes), or pass 3 (CSS selector with backslash terminator for regex literals). A decider executing the recipe verbatim with 7 substring substitutions will see 5 substring-not-found failures — looks like a problem, isn’t. Documentation should be tightened to flag the 2 genuine patches and label the other 5 as “pre-handled by rename script, included for completeness only.”"
+  },
+  "test_impact": {
+    "test_js_runs_now": "Smoke-test sequence pre-rename then post-rename: `node test.js` against pristine reports 3452 passed, 0 failed (per EXP-249 review observation, unchanged at this review time). After running the rename script (without applying TEST_JS_PATCHES), `node --check test.js` passes for syntax. Whether `node test.js` PASSES the assertion suite depends on the two regex-literal patches being applied (those govern HTML extraction for tab-content sections); not validated end-to-end here because that requires a full `node build.js html` run, which the EXP’s smoke_test_results already attests succeeds.",
+    "untested_acceptance_criteria": "`acceptance_criteria.no_orphan_old_classes` is enforced by the script’s own verifier, which emits non-zero exit on unexpected residuals. `ds_prefix_uniformity` is verified by the inventory itself plus the verifier. `diff_review_clean` (“only class-attribute / CSS-selector renames”) is a manual integration-time spot-check; no automated test enforces this. Recommend the decider add a one-time grep assertion at integration time: `grep -E ‘[^’‘]\\bclass=”[^”’]+”[^’’]‘ build-scripts/generate-html.js` against the rename_table’s OLD names — should return zero matches. Two-line addition; locks in regression resistance."
+  },
+  "kernel_of_truth": {
+    "description": "EXP-251 is fundamentally sound. The PREPEND-not-REPLACE decision is correct: it makes every old class 1:1 mappable, preserves grep-ability, defers the verdict-token-unification question (v-/vb-/vt-/vl-/tag-) to a future Phase C without forcing it now, and matches the operator’s phrasing of ‘a single design-system prefix’ (singular) over a renaming pass. The 4-pass rename architecture handles every context that exists in the four target files (HTML class attrs, JSON-escaped class attrs, CSS selectors, DOM API calls). The boundary regex is correct — the author specifically called out the `\\b` pitfall in the script header. The smoke-test claims reproduce exactly: 406+71+1+38=516 valid replacements, two expected residuals, all four files pass syntax/JSON validation. Inventory of 58 component classes plus 67 excluded classes is internally consistent (table-side and script-side both hit the same de-duplicated set). Out-of-scope decisions (verdict tokens, sections.json prose-content) are explicit and well-justified.",
+    "why_it_doesnt_save_claim": "Not applicable — this is an internal proposal review, not a dome-model claim review. The kernel here is acknowledging that EXP-251 is integratable with documentation tightening; the holes below are documentation precision and one EXP-249-sequencing gap (pie-legend-row), not structural defects."
+  },
+  "holes_found": [
+    {
+      "severity": "moderate",
+      "id": "H1",
+      "description": "EXP-249 (Phase B1) introduces a new class `pie-legend-row` in its replacement pie-chart HTML (verified by parsing EXP-249 JSON: the class= tokens emitted include callout-line, legend-swatch, pie-callout, pie-label, pie-legend-row, pie-slice, and pie-slice-${verdict}). EXP-251’s rename_table does NOT include `pie-legend-row` because EXP-251 was inventoried against the pre-EXP-249 pristine generate-html.js, where `pie-legend-row` does not yet exist (`grep -c pie-legend-row build-scripts/generate-html.js` against pristine = 0). HNOTE-001 explicitly recommends ‘land B3 LAST in Phase B’, so the integration order will be EXP-249 → EXP-251. After both ship, `class=‘pie-legend-row’` survives un-prefixed, breaking the `acceptance_criteria.ds_prefix_uniformity` claim that ‘Every Phase A1 component class in build-scripts/generate-html.js now starts with ds-’.",
+      "recommendation": "Two safe options. (a) Add `[‘pie-legend-row’, ‘ds-pie-legend-row’]` to the RENAMES const in the rename script AND to the rename_table. (b) Defer to EXP-249 review notes: have the decider, when integrating EXP-249, change the pie-chart code to emit `ds-pie-legend-row` directly (consistent with the post-B3 design system). Option (a) is lower-risk because it doesn’t require coordinating with EXP-249 review notes. Either way, the inventory-vs-EXP-249 divergence should be called out in `notes_for_decider` so the integration-time tester knows to verify pie-legend-row got prefixed."
+    },
+    {
+      "severity": "moderate",
+      "id": "H2",
+      "description": "TEST_JS_PATCHES table claims 7 patches must be hand-applied because ‘regex source lives in JS literals, not in class= attributes.’ Empirical run on a fresh copy of test.js shows that the rename script auto-handles 5 of the 7 patches: patch 3 (line 437 JSON-escaped class) via pass 2; patch 4 (line 685 .verdict-bars\\{) via pass 3 because the backslash IS in the CSS terminator set; patch 5 (line 691 string literal `class=\"tab-content\" id=\"evaluate\"`) via pass 1; patches 6 and 7 (lines 715, 718 regex literals matching plain `class=”verdict-badge...”`) via pass 1 because the regex literal characters happen to satisfy pass 1’s `class\\s*=\\s*\"([^\"]*)\"` pattern. Only patches 1 and 2 (lines ~268, ~428: `class=”tab-content[^”]*”`) genuinely need manual application — those have `[^”]*` after the class name, which terminates pass 1’s greedy match early.",
+      "recommendation": "Reword the TEST_JS_PATCHES section. Either (a) reduce the table to the 2 genuinely-needed patches and add a note `the other 5 are auto-handled by passes 1–3 — listed elsewhere only if you want to verify the rename outcome by hand`, or (b) keep the 7-row table but add a `auto_applied_by` column (‘script pass 1’, ‘script pass 2’, etc.) and annotate the 2 genuinely-manual ones explicitly. As written, a decider executing the verification_steps verbatim will see 5 substring-not-found failures and may misinterpret them as a bug. The substring substitutions are idempotent against an already-renamed file (no-op), so this is presentation rather than correctness — but `decider_integration_recipe step 5` says ‘each is a precise substring substitution’ which sets the wrong expectation."
+    },
+    {
+      "severity": "minor",
+      "id": "H3",
+      "description": "The RENAMES array embedded in the rename script body has 59 entries with one literal duplicate (`stance-statement` appears at array indices 1 and 10 of the const). The script’s `new Map(RENAMES)` line de-dups so runtime behavior is unaffected (verified empirically: 58 unique replacement targets execute, smoke-test reports 0 false positives). The rename_table outside the script body has 58 unique entries. So `inventory_summary.total_component_classes_to_rename: 58` matches the table, but the script’s array length of 59 is misleading at a quick glance.",
+      "recommendation": "Remove the duplicate `[‘stance-statement’, ‘ds-stance-statement’]` line at array index 10 of the embedded RENAMES const. Optional follow-up: drop the comment `// De-dupe (some entries above may appear twice for clarity)` once the duplicates are gone (the comment exists to excuse the duplication; with no duplication it is misleading)."
+    },
+    {
+      "severity": "minor",
+      "id": "H4",
+      "description": "`acceptance_criteria.zero_visual_regression` says ‘docs/index.html visual rendering must be byte-identical EXCEPT for class= attribute strings.’ The actual delta also includes CSS selector strings inside `<style>` blocks (because pass 3 renames `.NAME` selectors) and querySelector/closest/getElementsByClassName/classList argument strings inside `<script>` blocks (because pass 4 renames those). For an integration tester running `diff /tmp/index.pre-EXP251.html docs/index.html`, the larger-than-expected diff could read as a problem when it isn’t.",
+      "recommendation": "Reword to ‘byte-identical EXCEPT for: (1) class= attribute values, (2) CSS selectors inside <style> blocks, (3) querySelector/closest/classList/getElementsByClassName argument strings inside <script> blocks. No DOM structure, semantic, color, typography, spacing, or accessibility-tree change.’ Same intent, less mis-direction."
+    },
+    {
+      "severity": "minor",
+      "id": "H5",
+      "description": "`scope_creep_flags[1]` says: ‘sc-breakdown still appears in CSS rules but EXP-209 test asserts it should NOT appear in HTML output (negative assertion). Renaming sc-breakdown to ds-sc-breakdown means the test assertion `!class=”sc-breakdown”` becomes weaker. The test should be updated to assert `!class=”ds-sc-breakdown”`. Adding to TEST_JS_PATCHES.’ But the TEST_JS_PATCHES table does NOT include this row. Empirical check: pass 1 of the rename script DOES auto-rewrite `class=”sc-breakdown”` (line 687 of test.js) to `class=”ds-sc-breakdown”` because pass 1 matches any `class=”...”` regardless of whether it lives in a regular string, an `htmlContent.includes(...)` arg, or a regex literal. So the assertion strength is preserved. The flag is correct in spirit (the assertion gets the new name) but the ‘Adding to TEST_JS_PATCHES’ claim is false — the row was not added.",
+      "recommendation": "Either delete the ‘Adding to TEST_JS_PATCHES’ sentence and replace with ‘Auto-handled by pass 1 of the rename script.’, or actually add a row to TEST_JS_PATCHES if the operator wants the explicit-list form. Cosmetic; no functional impact."
+    },
+    {
+      "severity": "minor",
+      "id": "H6",
+      "description": "Pass 4 (DOM API renames) and the verifier’s `reDom` regex cover `querySelectorAll`, `querySelector`, `closest`, `getElementsByClassName`, `classList.{add,remove,contains,toggle}`. NOT covered: `el.className = ‘...’` direct assignment, `el.matches(‘.foo’)`, `setAttribute(‘class’, ‘...’)`, attribute selectors `[class~=‘foo’]`, jQuery-style `$(‘.foo’)` or `find(‘.foo’)`. Empirical grep across all four target files: zero matches in any of those forms. So no current gap. But the assumption is undocumented — if a future commit introduces one of these forms before another rename refactor, the script would silently miss them and the verifier would not flag.",
+      "recommendation": "Add a one-line comment to the rename script header: ‘Pass 4 covers the DOM API forms used in the current codebase. If new forms appear in the future (`el.className = X`, `el.matches`, `setAttribute(‘class’, X)`, attribute selectors, jQuery-style class lookups), extend pass 4 and the verifier accordingly.’ Alternatively, add a CI-time grep that fails if any of those forms appear in generate-html.js or test.js. Either keeps future maintainers from quietly stepping on this assumption."
+    },
+    {
+      "severity": "minor",
+      "id": "H7",
+      "description": "Two cosmetic doc gaps: (1) `excluded_tokens_and_rationale` lists vb-/vt-/vl-/v-/tag- as preserved verdict-token namespaces but does NOT mention that EXP-249 (Phase B1) introduces a `pie-slice-${verdict}` variant pattern that will live in the same verdict-token namespace post-integration. (2) The `notes_for_decider` cross-EXP sequencing block discusses EXP-211-redesign-v2 (sc-card) but not EXP-249 (pie chart) — yet HNOTE-001’s recommendation ‘land B3 LAST in Phase B’ specifically targets the EXP-249/B3 sequencing relationship.",
+      "recommendation": "Add a bullet to `excluded_tokens_and_rationale.categories` (perhaps `pie_slice_verdict_variants`) listing `pie-slice-refuted`, `pie-slice-self-contradicted`, etc. as verdict-keyed tokens that survive the rename intentionally. Add a bullet to `notes_for_decider`: ‘Sequence after EXP-249 per HNOTE-001. The rename_table covers all classes EXP-249 inherits from the pristine pie chart but does NOT cover `pie-legend-row` (a new class EXP-249 introduces) — see H1.’"
+    }
+  ],
+  "stronger_arguments": [
+    {
+      "description": "If the operator wants the rename to be self-validating against future regressions, the smoke-test could be promoted to a permanent test. Add a `tests/test-design-system-prefix.js` that scans generate-html.js, sections.json, wins.json, and test.js for any class name from the OLD-name set (rename_table.old) appearing in a class attribute, CSS selector, or DOM API context, and fails the build if any are found. This would catch a future maintainer copy-pasting old-style classes. Two-screen test, low cost.",
+      "sources": [
+        "EXP-251 acceptance_criteria.no_orphan_old_classes (already aspirational; this would make it enforced)"
+      ]
+    },
+    {
+      "description": "The dedupe behavior of `new Map(RENAMES)` quietly ate the duplicate `stance-statement`, but if a future maintainer adds a SEMANTIC duplicate (same old name with different new name, e.g., `[‘foo’, ‘ds-foo’]` then later `[‘foo’, ‘ds-typo-foo’]`), Map-dedup would silently keep the LAST entry. Add an assertion at the top of the script: `if (new Set(RENAMES.map(r => r[0])).size !== RENAMES.length) throw new Error(‘duplicate keys in RENAMES’);` so accidental duplicates fail loudly.",
+      "sources": [
+        "Standard defensive-programming practice; observed empirically that the current array has 1 cosmetic duplicate that survives quietly"
+      ]
+    }
+  ],
+  "recommended_action": "minor_edit",
+  "text_fingerprint": {
+    "proposal_size_bytes": 24400,
+    "rename_script_size_bytes": 10000,
+    "rename_table_count": 58,
+    "excluded_classes_count": 67,
+    "files_touched_count": 4,
+    "smoke_test_total_replacements": 516,
+    "expected_residuals_count": 2,
+    "proposal_status": "complete",
+    "proposal_integrated": false
+  },
+  "citation_check": {
+    "citations_verified": [
+      "HNOTE-PHASE-B-DESIGN-REFRESH-COMMISSION-001 §B3 — confirmed by reading monitor/analyst/human-notes.json; the §B3 commission text matches the EXP scope.",
+      "HNOTE-OPERATOR-PHASE-B-DRAIN-PRIORITY-003 — confirmed in human-notes; sequencing recommendation documented.",
+      "DIRECTIVE-20260422-003 — confirmed in monitor/tinker/operator-directives/; rubric content matches the EXP’s framing of design-vs-truth-impact register.",
+      "EXP-211-redesign-v2 sc-card sequencing — confirmed by checking that EXP-211-redesign exists in monitor/analyst/expansions/.",
+      "EXP-249 pie-chart classes inventory — confirmed by parsing EXP-249 JSON; pristine generate-html.js has 3+3+2+4+4 occurrences of legend-swatch/callout-line/pie-callout/pie-label/pie-slice respectively."
+    ],
+    "citations_failed": [],
+    "citations_unchecked": []
+  },
+  "summary_for_decider": "Recommend INTEGRATE with documentation cleanup. The mechanism is correct: 4-pass rename script with proper class-name boundary regex, smoke-test claims fully reproduce on a fresh scratch copy (516 replacements; 2 expected residuals; clean syntax/JSON validation post-rename). DIRECTIVE-003 lens: this is design-system housekeeping with zero rendered-truth impact. No blocking findings under the strict-on-truth rubric. Six minor-to-moderate documentation findings. The two moderate ones: (H1) EXP-249 introduces `pie-legend-row` which is missing from EXP-251’s rename_table — add to RENAMES or coordinate with EXP-249 integration; (H2) TEST_JS_PATCHES table overstates manual work (5 of 7 patches are auto-handled by the rename script — only the 2 `tab-content[^\"]*` regex literals genuinely need manual application). Minor: stance-statement duplicated in RENAMES const (cosmetic; Map de-dup makes it benign); zero_visual_regression description should enumerate CSS selectors and JS query args; sc-breakdown scope_creep_flag claims TEST_JS_PATCHES addition that wasn’t made; pass-4 / verifier coverage of less-common DOM APIs is undocumented (no current gap, but assumption isn’t flagged); pie-slice-${verdict} variant tokens not enumerated in excluded_tokens. Sequence: integrate AFTER EXP-249 per HNOTE-001 ‘land B3 LAST in Phase B’. After integration, run `node test.js` — must pass; visual diff docs/index.html and confirm only class-string deltas inside attrs / CSS / JS query args.",
+  "popped_by_queue_id": 262,
+  "popped_by_queue_id_at": "2026-04-26T01:25:35.541Z"
+}
