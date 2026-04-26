@@ -109,7 +109,7 @@ Trigger: Pending human notes exist.
 
 **Mode 2b — Attention Inbox**
 ```bash
-cat monitor/analyst/attention-inbox.json 2>/dev/null | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const a=JSON.parse(d);const p=a.items?a.items.filter(x=>x.status==='pending'):[];console.log(p.length?'ATTENTION ITEMS: '+p.length+' pending':'NO ATTENTION ITEMS')}catch(e){console.log('NO ATTENTION ITEMS')}})"
+cat monitor/analyst/attention-inbox.json 2>/dev/null | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const a=JSON.parse(d);const arr=Array.isArray(a)?a:(a.items||[]);const p=arr.filter(x=>x.status==='pending');console.log(p.length?'ATTENTION ITEMS: '+p.length+' pending':'NO ATTENTION ITEMS')}catch(e){console.log('NO ATTENTION ITEMS')}})"
 ```
 Trigger: The decider (or human) flagged something for the analyst to re-examine. This is the "take a look at this" inbox — items that changed in ways that might affect your prior analysis, or new content the decider wants scientific review on before committing. Process one item per run. For each item:
 - Read the `reason` field to understand what changed
