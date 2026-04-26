@@ -305,10 +305,41 @@ if [ -s "$SKIP_LOG" ]; then
 fi
 ```
 
-### Step 3: Check for changes
+### Step 3: Check for changes; regenerate docs/index.html if data changed
 
 ```bash
-git add -A monitor/
+# Stage workspace-sync's contributions: monitor/ files + data/ files (the
+# universal-pusher rescue path). Without `data/` in this list, the smart_copy
+# iterations would write to the working tree but the changes would never
+# reach the commit.
+git add -A monitor/ data/
+
+# Universal-pusher follow-up (added 2026-04-26 — see HNOTE-OPERATOR-
+# UNIVERSAL-PUSHER-002 / integrity 2026-04-26T08:15Z build-drift alert):
+# if any source data file was just staged, regenerate docs/index.html so
+# the live site doesn't drift from data. Without this step, the rescue
+# path lands wins.json + sections.json in git but leaves docs/index.html
+# at its previous HEAD — which the integrity agent flags as a critical
+# build-drift alert. The regen is deterministic (HTML is a pure function
+# of the data) and idempotent (running it when nothing changed is a no-op
+# at the diff level). It does NOT trigger PDF regeneration (that's a
+# heavier `build.js publish` operation reserved for the decider).
+DATA_STAGED=$(git diff --cached --name-only -- data/ 2>/dev/null)
+if [ -n "$DATA_STAGED" ]; then
+  echo ""
+  echo "Data files staged — regenerating docs/index.html to keep live site in sync:"
+  echo "$DATA_STAGED" | sed 's/^/  /'
+  if node build.js html 2>&1 | tail -3; then
+    git add docs/index.html 2>/dev/null
+    echo "  → Staged regenerated docs/index.html (md5 $(md5sum docs/index.html | cut -c1-8))."
+  else
+    echo "WARN: 'node build.js html' failed. Continuing without docs/ regen."
+    echo "      The data sync will still commit; the integrity agent will catch any"
+    echo "      resulting build drift on its next run (daily 09:08Z). Operator can"
+    echo "      manually run 'node build.js publish' from a clone to clear it."
+  fi
+fi
+
 git status --porcelain
 ```
 
@@ -317,10 +348,15 @@ If no changes, output "Nothing to sync" and exit. Do not create empty commits.
 ### Step 4: Commit and push
 
 ```bash
+DOCS_NOTE=""
+if git diff --cached --name-only -- docs/index.html | grep -q .; then
+  DOCS_NOTE="
+docs/index.html regenerated from staged data files (universal-pusher follow-up)."
+fi
 git commit -m "Workspace sync: $(date -u +%Y-%m-%dT%H:%M:%SZ)
 
 Auto-committed workspace-only files from FUSE mount.
-Files from: analyst, curmudgeon, poller, decider, social, integrity, tinker."
+Files from: analyst, curmudgeon, poller, decider, social, integrity, tinker.${DOCS_NOTE}"
 
 git push origin main
 ```
@@ -336,11 +372,11 @@ Output a one-line summary: how many files were new, how many modified, or "Nothi
 
 ## Rules
 
-- **Do NOT modify any file content.** Copy only.
+- **Do NOT modify any file content.** Copy only. (Exception: regenerating `docs/index.html` from current data via `node build.js html` is permitted under universal-pusher follow-up — see Step 3. The output is a deterministic function of `data/wins.json` + `data/sections.json`, not a content edit.)
 - **Do NOT analyze or review files.** You are a file mover, not a reviewer.
-- **Do NOT run build.js or test.js.** The decider handles builds.
+- **Do NOT run `node build.js publish`, `node build.js pdf`, or `node test.js`.** Those are reserved for the decider. You MAY run `node build.js html` when source data has been staged (see Step 3) — that target only regenerates `docs/index.html` from the data files, no git ops, no PDF, no tests, no commits.
 - **Never revert git.** Always use `smart_copy` instead of raw `cp`. The helper refuses to overwrite a clone file whose last git commit is newer than the workspace file's mtime — this protects direct-to-git commits from being silently undone. If you find yourself wanting to force-overwrite a skipped file, stop and escalate to tinker or a human instead.
-- **Universal-pusher mode (2026-04-26):** runtime data files (data/, decision state, applied-patches) ARE eligible to push when FUSE has newer content. This is the rescue path for decider 403 push failures. Generated/source files (docs/, build-scripts/, build.js, prompts) remain in the NEVER_PUSH deny-list — those must never round-trip from FUSE.
+- **Universal-pusher mode (2026-04-26):** runtime data files (data/, decision state, applied-patches) ARE eligible to push when FUSE has newer content. This is the rescue path for decider 403 push failures. Generated/source files (docs/, build-scripts/, build.js, prompts) remain in the NEVER_PUSH deny-list — those must never round-trip from FUSE. The one exception: when source data is being pushed, this agent regenerates `docs/index.html` itself in the clone (Step 3) so the live site doesn't drift.
 - If git pull --rebase fails with merge conflicts, do NOT attempt to resolve. Output the error and stop. A human or the tinker agent will fix it.
 - Use your own clone directory (`dome-sync-clone`), never touch `dome-review-clean`.
 
