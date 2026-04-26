@@ -111,12 +111,38 @@ Trigger: Pending human notes exist.
 ```bash
 cat monitor/analyst/attention-inbox.json 2>/dev/null | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const a=JSON.parse(d);const arr=Array.isArray(a)?a:(a.items||[]);const p=arr.filter(x=>x.status==='pending');console.log(p.length?'ATTENTION ITEMS: '+p.length+' pending':'NO ATTENTION ITEMS')}catch(e){console.log('NO ATTENTION ITEMS')}})"
 ```
-Trigger: The decider (or human) flagged something for the analyst to re-examine. This is the "take a look at this" inbox — items that changed in ways that might affect your prior analysis, or new content the decider wants scientific review on before committing. Process one item per run. For each item:
+Trigger: The decider (or human) flagged something for the analyst to re-examine. This is the "take a look at this" inbox — items that changed in ways that might affect your prior analysis, or new content the decider wants scientific review on before committing.
+
+**Process in three phases per run** (added 2026-04-26 to drain a 71-item / 14-day backlog accumulated during the dispatcher-shape silent-skip bug; mirrors curmudgeon Step 8a pattern):
+
+**Phase 1 — OBE triage (up to 10 items, no analysis).** Many old items reference an ISS or EXP whose state has since moved on (closed / integrated). For each pending item, run mechanical checks. If any pass, mark `status: "resolved"`, set `resolved_at` (ISO timestamp), set `resolved_by: "mode2b-obe-triage"`, and `resolved_reason: "OBE: <one-liner>"` — no expansion or proposal written. Limit: 10 OBEs per run so a bad heuristic can't dismiss the whole inbox.
+
+OBE criteria — any ONE triggers dismissal:
+- Item references `ISS-N` (regex `\bISS-\d+\b` in reason); look up N in `monitor/decisions/closed-issues.json`. If found AND closed ≥3 days ago, OBE: `"OBE: ISS-N closed <date>"`.
+- Item references `EXP-N`; look up N in `monitor/analyst/expansion-tracker.json`. If `status: "integrated"` AND `integrated_at` ≥3 days ago, OBE: `"OBE: EXP-N integrated <date>"`.
+- Item is >14 days old AND references a state token (WIN-NNN, SEC-X.Y) that no longer exists in current `data/wins.json` or `data/sections.json` (renumbered/removed). OBE: `"OBE: target no longer exists post-renumber"`.
+- Item is >7 days old AND the affected WIN/section has had a newer curmudgeon review file in `monitor/curmudgeon/reviews/` (filename mtime > item's created_at). OBE: `"OBE: superseded by curmudgeon review <filename>"` — curmudgeon caught anything that mattered.
+
+Do NOT OBE if the item is `priority: high` or has any "blocker" / "critical" tag, regardless of age. Substantive items with closed-issue references still warrant the singleton path (Phase 3).
+
+**Phase 2 — Small-item batch (up to 3 items, quick verification).** After OBE, look at remaining pending items. Batch up to 3 per run if ALL of:
+1. `reason` field <300 chars (long reasons usually mean substantive re-examination needed)
+2. References a single ISS or EXP only (no cross-cutting impact)
+3. Verification is empirical — comparing a stated claim against a data file value (numeric or string check), not a prose-rewrite or re-analysis
+4. `priority` not in {`high`, `blocker`} and reason doesn't contain "verdict change", "promoted to", "neutralization"
+5. Doesn't require touching `data/sections.json` or `data/wins.json` or writing a new EXP
+
+For each batched item: do the empirical verification (one bash/node check), mark resolved with `resolved_by: "mode2b-batch"` and `resolved_reason: "<one-liner of what was verified>"`. If verification fails (claim doesn't match data), abort batch — write a normal expansion or issue-proposal for that one and STOP for this run.
+
+**Phase 3 — Singleton substantive (1 item per run, original procedure).** If anything remains after OBE and batch, process ONE per the original procedure:
 - Read the `reason` field to understand what changed
 - Re-examine the affected WIN/section/prediction with fresh eyes
-- If your prior analysis still holds, mark the item `"status": "resolved"` with a brief note
+- If your prior analysis still holds, mark the item `"status": "resolved"` with `resolved_by: "mode2b-singleton"` and a brief note
 - If your analysis needs updating, write an expansion or patch proposal as usual, then mark resolved
-→ Write updates directly to `monitor/analyst/attention-inbox.json` (mark items resolved) and any analysis output to the normal expansion/proposal paths.
+
+→ Write all updates directly to `monitor/analyst/attention-inbox.json` (mark items resolved with the new fields above) and any analysis output to the normal expansion/proposal paths.
+
+**Counter-argument the operator considered and accepted:** OBE risks dismissing a legitimately stale-but-still-needed re-analysis. Mitigations: every OBE has an explicit one-line rationale in `resolved_reason`; the integrity agent can spot-check OBE rates via grep over attention-inbox.json; high-priority items are excluded from OBE entirely. The real long-term fix is preventing the decider from creating attention items that curmudgeon already covers (de-duplication at source) — OBE is the pragmatic backstop.
 
 **Mode 3 — Surviving Defense Neutralization**
 ```bash
