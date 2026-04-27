@@ -23,7 +23,7 @@ The dedicated write-up lives in the **Timestamp Error tab** on the site. All ref
 
 ### Author Contact Status (added 2026-04-27)
 
-The dome author has made direct contact with the operator via DM (Sunday 2026-04-26, on a third-party messaging platform). Operator confirmed the contact is genuine via content match — the messages reference specific dome-model claims (Tesla 11.79 Hz resonance, piezoelectric measurements, the eclipse magnetic predictions) that are precisely the material this review covers.
+The dome author has made direct contact with the operator via DM (Sunday 2026-04-26, on a third-party messaging platform). Identity is established by **two independent lines**: (1) the messaging account's profile bio originally linked to the dome predictions site (john09289.github.io/predictions) — same account, same author, traceable handle-to-bio-to-published-URL chain; (2) message content matches dome-specific claims (Tesla 11.79 Hz resonance, piezoelectric crucible measurements, eclipse magnetic predictions for Hartland/Ebro/etc.) that exactly match material this review covers. The bio-link establishes identity without relying on content match; the content match is corroborating evidence.
 
 **What this means for agents:** the dome author is seeing at least some of what we're doing. Not every dome-site change is a response to our review, but when timing and content suggest a response, **it probably is**. Update your priors:
 
