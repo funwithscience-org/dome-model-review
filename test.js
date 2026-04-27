@@ -686,14 +686,22 @@ console.log('\n── 8. Prediction Panels ──');
   assert(htmlContent.includes('id="verdicts"'), 'EXP-209: verdict-distribution anchor #verdicts missing');
   assert(!htmlContent.includes('class="ds-sc-breakdown"'), 'EXP-209: old .ds-sc-breakdown grid still present (should be removed)');
 
-  // EXP-212: Latest Findings placement (between verdict-legend and nav.ds-toc)
+  // EXP-212: Latest Findings placement on Overview tab.
+  // Original EXP-212 order was: verdict-legend → breaking-news → nav.ds-toc.
+  // 2026-04-27 operator promoted breaking-news to top-of-page (before verdict-
+  // legend) and moved Downloads to the bottom (after nav.ds-toc). New order:
+  // breaking-news → verdict-legend → nav.ds-toc → downloads. The load-bearing
+  // EXP-212 invariant — that all three blocks exist on Overview AND that
+  // breaking-news appears before nav.ds-toc — is preserved by the assertion below.
   {
     const overviewSlice = htmlContent.split('class="ds-tab-content" id="evaluate"')[0] || htmlContent;
     const vlPos = overviewSlice.indexOf('class="ds-verdict-legend"');
     const bnPos = overviewSlice.indexOf('class="ds-breaking-news"');
     const tocPos = overviewSlice.indexOf('class="ds-toc"');
+    const dlPos = overviewSlice.indexOf('class="ds-downloads"');
     assert(vlPos > -1 && bnPos > -1 && tocPos > -1, 'EXP-212: verdict-legend, breaking-news, or nav.ds-toc missing from Overview');
-    assert(vlPos < bnPos && bnPos < tocPos, 'EXP-212: breaking-news must appear between verdict-legend and nav.ds-toc on Overview');
+    assert(bnPos < vlPos && vlPos < tocPos, 'EXP-212: Overview order must be breaking-news → verdict-legend → nav.ds-toc');
+    assert(dlPos === -1 || dlPos > tocPos, 'EXP-212: downloads (if present on Overview) must appear AFTER nav.ds-toc');
   }
   // EXP-212: breaking-news contains the original 3 anchor links and at least
   // that many entries. Operator added 3 new items 2026-04-27 (eclipse trilemma,
