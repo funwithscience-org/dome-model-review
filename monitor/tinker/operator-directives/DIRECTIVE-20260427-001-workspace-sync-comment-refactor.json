@@ -1,0 +1,49 @@
+{
+  "directive_id": "DIRECTIVE-20260427-001",
+  "issued_at": "2026-04-27T20:15:00Z",
+  "issued_by": "operator (steve via cowork session)",
+  "target_agent": "tinker",
+  "target_mode": "Mode 4 — Proposals & Self-Fixes",
+  "title": "Refactor workspace-sync.md explanatory comments — consolidate after 4 days of bug-fix layering",
+  "priority": "low",
+  "status": "pending",
+  "summary": "monitor/prompts/workspace-sync.md has grown to ~500 lines after four bug-fix commits between 2026-04-25 and 2026-04-27. Each fix added a multi-line explanatory comment block above the affected code (the universal-pusher pattern, the mktemp skip-log, the dropped EXIT trap, and the env-var ordering bug). The prompt is now dense enough that the actual flow is harder to follow than it should be. Tinker's job: refactor the comments — not the behavior — so the prompt reads cleanly while keeping the lessons-learned content discoverable.",
+  "context": {
+    "trigger": "Operator-flagged 2026-04-27 evening after the third self-caught workspace-sync narrative bug in 4 days. All three bugs were found and worked around by the agent itself; each fix added explanatory bash comments. The pattern is healthy (agents narrate, operator fixes structurally) but the explanation accretion is making the prompt heavy.",
+    "bug_history": [
+      {"date": "2026-04-26", "bug": "skip-log fixed-path /tmp collision across sessions", "fix_commit": "7f5afb9", "comment_lines_added": 9},
+      {"date": "2026-04-27 morning", "bug": "mktemp EXIT trap firing across LLM bash sessions", "fix_commit": "1807d16", "comment_lines_added": 11},
+      {"date": "2026-04-27 evening", "bug": "env vars after `node -e` instead of before", "fix_commit": "e713d8a", "comment_lines_added": 8}
+    ],
+    "current_state": "monitor/prompts/workspace-sync.md is 500 lines, with comment-to-code ratio noticeably higher than other agent prompts. Behavior is correct; just dense.",
+    "related_files": ["monitor/prompts/workspace-sync.md"]
+  },
+  "deliverable_requested": "A refactored monitor/prompts/workspace-sync.md that:\n  (1) Preserves all current behavior exactly (no functional changes — verify by running the prompt-extracted bash with `bash -n` and against a dry-run sync).\n  (2) Consolidates the explanatory comment blocks. Suggested patterns:\n      - Move the per-bug rationale comments into ONE concise 'Implementation notes' block at the top of Step 2, with bullet-style references to commit hashes for anyone who needs the full backstory. Each bullet should be 1-2 lines, not 8-11.\n      - Keep inline comments at the actual code locations only when needed to prevent immediate re-introduction of the bug (e.g., the `env vars BEFORE node -e` line still warrants a one-line inline reminder).\n      - Remove redundant historical narration that's already captured in commit messages.\n  (3) Targets a length reduction of at least 50 lines while preserving every operational instruction (the smart_copy logic, the universal-pusher iterations, NEVER_PUSH list, run-report block, sync-glob globs, all error handling).\n  (4) Keeps the prompt's overall structure (Setup → Sync iterations → Check changes → Commit and push → Run report → Report → Rules → Cleanup).",
+  "non_goals": [
+    "Do NOT change any of the deny-list (NEVER_PUSH) entries or any of the smart_copy direction logic.",
+    "Do NOT remove the run-report Step 4b — that's the new mechanism that surfaced two of the three recent bugs.",
+    "Do NOT change the cron schedule, the cleanup pattern, or the git auth handling.",
+    "Do NOT reword instructions where current wording is precise (e.g., 'mtime-guard; git newer' skip log strings are matched by integrity Section 7d's grep — keep them verbatim).",
+    "Do NOT touch any other prompt file in this directive's scope. If you find related issues in other prompts during the refactor, file them separately."
+  ],
+  "proposed_fix_spec": {
+    "approach": "Extract a 'WORKSPACE-SYNC OPERATIONAL NOTES' block at the top of Step 2 (right after the first SKIP_LOG/Phase 1 setup) that summarizes the three implementation gotchas in 4-6 lines total, with commit-hash links for backstory. Inline comments at code sites become single-line reminders pointing back at the operational-notes block.",
+    "verification_pattern": [
+      "After refactor: bash -n on prompt-extracted bash blocks must succeed.",
+      "After refactor: a dry-run mental walkthrough of the prompt should hit every operational instruction in the same order as before.",
+      "Diff vs current: should be net-negative line count, with no instruction-level deletions (only comment consolidation).",
+      "After deployment: next workspace-sync run's run-report should show no new agent_notes complaints about the refactored sections."
+    ]
+  },
+  "completion_criteria": [
+    "Tinker writes a PROP-NNN proposal under monitor/tinker/proposals/ with the proposed refactored workspace-sync.md content.",
+    "Proposal includes a side-by-side line count and a list of every behavioral check Tinker performed.",
+    "If Tinker is confident, it MAY self-apply the change directly to the prompt file (Mode 4 self-fix authority) — but ONLY if the proposed verification_pattern checks pass cleanly. Otherwise, leave as a proposal for operator review.",
+    "Either way: write the work to monitor/tinker/proposals/PROP-NNN-* AND, if self-applied, push the prompt file change with a commit message that references this directive."
+  ],
+  "cross_references": {
+    "related_commits": ["7f5afb9", "1807d16", "e713d8a", "2379de4 (universal-pusher origin)"],
+    "related_directives": ["DIRECTIVE-20260426-001-dispatcher-shape-audit (sibling — Tinker's last operator directive)"]
+  },
+  "supersedes": null
+}
