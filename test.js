@@ -695,14 +695,20 @@ console.log('\n── 8. Prediction Panels ──');
     assert(vlPos > -1 && bnPos > -1 && tocPos > -1, 'EXP-212: verdict-legend, breaking-news, or nav.ds-toc missing from Overview');
     assert(vlPos < bnPos && bnPos < tocPos, 'EXP-212: breaking-news must appear between verdict-legend and nav.ds-toc on Overview');
   }
-  // EXP-212: breaking-news has 3 bn-item entries
+  // EXP-212: breaking-news contains the original 3 anchor links and at least
+  // that many entries. Operator added 3 new items 2026-04-27 (eclipse trilemma,
+  // AI-auditor guidance, prediction lapse) — count assertion relaxed to "≥ 3"
+  // and bounded at "≤ 8" to catch unbounded growth without forcing the count
+  // to the exact original. The three original anchor links still must be
+  // present (preserves the EXP-212 invariant that those Findings stay linked).
   const bnMatch = htmlContent.match(/<div class="ds-breaking-news">[\s\S]*?<\/div>\s*\n\s*<\/div>/);
   if (bnMatch) {
     const bnItems = (bnMatch[0].match(/<div class="ds-bn-item">/g) || []).length;
-    assertEq(bnItems, 3, 'EXP-212: breaking-news must retain exactly 3 bn-item entries');
-    assert(bnMatch[0].includes('#ts-april-2026-update'), 'EXP-212: bn-item #1 timestamp-tab link preserved');
-    assert(bnMatch[0].includes('#section-1-8'), 'EXP-212: bn-item #2 refraction section link preserved');
-    assert(bnMatch[0].includes('#pred-mined'), 'EXP-212: bn-item #3 predictions catalog link preserved');
+    assert(bnItems >= 3 && bnItems <= 8,
+      `EXP-212: breaking-news must have between 3 and 8 bn-item entries (got ${bnItems})`);
+    assert(bnMatch[0].includes('#ts-april-2026-update'), 'EXP-212: original bn-item timestamp-tab link preserved');
+    assert(bnMatch[0].includes('#section-1-8'), 'EXP-212: original bn-item refraction section link preserved');
+    assert(bnMatch[0].includes('#pred-mined'), 'EXP-212: original bn-item predictions catalog link preserved');
   }
   // EXP-212: chrome weight reduced (1px border, no gradient, no accent color, uppercase eyebrow)
   assert(/\.ds-breaking-news\{[^}]*border:1px/.test(htmlContent), 'EXP-212: .ds-breaking-news must use 1px border (was 2px)');

@@ -1599,6 +1599,18 @@ ${accuracyVariantList ? `<p class="ams-p ams-variant">Internal queries return ${
 <div class="ds-breaking-news">
 <h2 class="ds-bn-header">Latest Findings</h2>
 <div class="ds-bn-item">
+<span class="ds-bn-date">2026-04-27</span>
+<span class="ds-bn-text"><strong>Eclipse Prediction Stuck on a Three-Way Choice.</strong> The dome's flagship August 12, 2026 eclipse prediction names nine INTERMAGNET stations on the path of totality. New Section 4.2.7 shows that under the dome's own published parameters (Sun 5,733 km, Moon 2,534 km), the geometry produces a totality circle roughly 1.3 km wide — not the observed 294-km path. The dome must concede the published parameters are wrong, admit the station list was imported from globe-geometry path-of-totality, or declare the eclipse a non-occultation aetheric phenomenon. None has happened. <a href="#p4-427" onclick="showTab('pages');document.getElementById('p4-427').open=true;return false">Full analysis →</a></span>
+</div>
+<div class="ds-bn-item">
+<span class="ds-bn-date">2026-04-27</span>
+<span class="ds-bn-text"><strong>AI-Auditor Reading Guide Sharpened.</strong> The site's How-to-Evaluate guidance now meets AI auditors arriving via the dome's published auditor-instructions on their own ground: a new falsifiability module names the specific conditions under which we'd revise verdicts, the Overview thesis lead is rewritten to surface the structural argument before the win count, and verdict chips throughout the site click through to their definitions. Designed to be read in order; designed to be hard to selectively quote. <a href="#evaluation-guide" onclick="showTab('evaluate');return false">Read the guide →</a></span>
+</div>
+<div class="ds-bn-item">
+<span class="ds-bn-date">2026-04-26</span>
+<span class="ds-bn-text"><strong>Dome's Own Prediction Lapses Without Invalidation.</strong> PRED-105 (copper coils + cucumber growth, 14-day window closing April 18) is now nine days past close with no dome update, retraction, or extension — the prediction has silently expired. Nine more dome predictions have April closure windows still open (geoid stationarity, mascon, P-wave and S-wave shadow zones, JWST z&lt;0.1, M2-tidal, TOA flux, TTB-night). Watch for the same silent-ignore pattern by April 30. <a href="#pred-mined" onclick="showTab('predictions');return false">Predictions catalog →</a></span>
+</div>
+<div class="ds-bn-item">
 <span class="ds-bn-date">2026-04-17</span>
 <span class="ds-bn-text"><strong>Dome Author Changes Timestamp Narrative — But Doesn't Fix the Problem.</strong> A new <code>methodology.json</code> concedes that OpenTimestamps alone doesn't prove claim-level prospectivity — the exact critique from our Timestamp Error tab. The structural fix (a predictions-only file with its own blockchain anchor) is still not implemented. His own new claim taxonomy leaves the "prospective confirmed" column empty for every WIN classified so far. <a href="#ts-april-2026-update" onclick="showTab('timestamp');document.getElementById('ts-april-2026-update').open=true;return false">Full update →</a></span>
 </div>
