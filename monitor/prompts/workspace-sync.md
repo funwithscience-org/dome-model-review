@@ -432,6 +432,20 @@ FILES_COMMITTED=$(git log -1 --name-only --pretty=format: HEAD 2>/dev/null | gre
 # so write what you'd say to the operator if they asked "anything weird?"
 AGENT_NOTES="<<<FILL_THIS_IN — see comment above>>>"
 
+# IMPORTANT: env vars MUST be set BEFORE the `node -e` invocation, not
+# after. Bash treats `VAR=value cmd args` as setting VAR for cmd's
+# environment; `cmd args VAR=value` instead passes VAR=value as an argv
+# string to cmd, leaving process.env.VAR undefined. Yesterday's prompt
+# had the env-var assignment list AFTER `node -e "..."` — agents had to
+# work around it by inlining the values into the script (operator
+# 2026-04-27 evening flagged this).
+OUT="$RUN_REPORT_PATH" \
+RUN_ID="${RUN_ID:-}" \
+FILES_COMMITTED="$FILES_COMMITTED" \
+SKIPS_COUNT="$SKIPS_COUNT" \
+NEVER_PUSH_COUNT="$NEVER_PUSH_COUNT" \
+MTIME_GUARD_COUNT="$MTIME_GUARD_COUNT" \
+AGENT_NOTES="$AGENT_NOTES" \
 node -e "
 const fs=require('fs');
 const out=process.env.OUT;
@@ -448,7 +462,7 @@ const rec={
 };
 fs.writeFileSync(out, JSON.stringify(rec, null, 2));
 console.log('Run report written:', out);
-" OUT="$RUN_REPORT_PATH" RUN_ID="${RUN_ID:-}" FILES_COMMITTED="$FILES_COMMITTED" SKIPS_COUNT="$SKIPS_COUNT" NEVER_PUSH_COUNT="$NEVER_PUSH_COUNT" MTIME_GUARD_COUNT="$MTIME_GUARD_COUNT" AGENT_NOTES="$AGENT_NOTES"
+"
 
 # Stage and commit the run report itself in a follow-up commit so it lands in git
 # (it's append-only and tinker reads from git, not from FUSE).
