@@ -56,9 +56,17 @@ Copy files from workspace to clone using a **direction-aware smart_copy** helper
 # 2026-04-26 sync report flagged this — current run reported skips that
 # were actually carry-over from a previous session. mktemp gives us a
 # fresh inode per run with this session's owner and permissions, no race,
-# no leftover. The trap ensures cleanup even if a later step exits early.
+# no leftover.
+#
+# NO EXIT TRAP: an earlier version of this prompt added a `trap "rm -f ..."
+# EXIT` line for cleanup. That broke when the LLM agent ran Step 2 and Step
+# 4b in separate bash sessions — the trap fired at end of Step 2's session
+# and deleted the file before Step 4b could read it (agent self-corrected
+# this in commit cdb62c4 on 2026-04-27). mktemp's per-run unique name
+# already prevents cross-session collision; the file is harmlessly small
+# (<1KB) and tmpfs-resident, and Step 4b cleans it up explicitly after the
+# run report is written.
 SKIP_LOG=$(mktemp -t workspace-sync-skips.XXXXXX.log)
-trap "rm -f \"$SKIP_LOG\"" EXIT
 
 # UNIVERSAL PUSHER MODE (added 2026-04-26 by operator directive — see
 # HNOTE-OPERATOR-UNIVERSAL-PUSHER-001). Workspace-sync now pushes most
@@ -447,6 +455,10 @@ console.log('Run report written:', out);
 git add "$RUN_REPORT_PATH"
 git commit -m "workspace-sync run report: $(date -u +%Y-%m-%dT%H:%M:%SZ)" 2>&1 | tail -1
 git push origin main 2>&1 | tail -1
+
+# Now safe to clean up the skip-log tmpfile (replaces the EXIT trap that was
+# removed because it fired across LLM bash sessions; see Step 2 comment).
+rm -f "$SKIP_LOG"
 ```
 
 ### Step 5: Report

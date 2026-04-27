@@ -108,8 +108,16 @@ Trigger: Pending human notes exist.
 → Read `monitor/prompts/reference/analyst-mode1-expansions.md` (human notes procedure is in that module), execute.
 
 **Mode 2b — Attention Inbox**
+
+*FUSE is the source of truth for `attention-inbox.json` — NOT your clone.* This
+file is workspace-canonical: analyst writes resolved-marks to FUSE, workspace-sync
+pushes them to git on hourly cycles, so the clone lags by up to ~1h on resolutions.
+Operator caught this 2026-04-27 morning — analyst's clone showed 70 pending while
+FUSE had 60 resolved, causing the agent to plan against stale state and discover
+the mismatch only when it tried to write. Always read AND write `${WORKSPACE}/monitor/analyst/attention-inbox.json` for this mode; never the relative path.
+
 ```bash
-cat monitor/analyst/attention-inbox.json 2>/dev/null | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const a=JSON.parse(d);const arr=Array.isArray(a)?a:(a.items||[]);const p=arr.filter(x=>x.status==='pending');console.log(p.length?'ATTENTION ITEMS: '+p.length+' pending':'NO ATTENTION ITEMS')}catch(e){console.log('NO ATTENTION ITEMS')}})"
+cat "${WORKSPACE}/monitor/analyst/attention-inbox.json" 2>/dev/null | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const a=JSON.parse(d);const arr=Array.isArray(a)?a:(a.items||[]);const p=arr.filter(x=>x.status==='pending');console.log(p.length?'ATTENTION ITEMS: '+p.length+' pending':'NO ATTENTION ITEMS')}catch(e){console.log('NO ATTENTION ITEMS')}})"
 ```
 Trigger: The decider (or human) flagged something for the analyst to re-examine. This is the "take a look at this" inbox — items that changed in ways that might affect your prior analysis, or new content the decider wants scientific review on before committing.
 
@@ -140,7 +148,9 @@ For each batched item: do the empirical verification (one bash/node check), mark
 - If your prior analysis still holds, mark the item `"status": "resolved"` with `resolved_by: "mode2b-singleton"` and a brief note
 - If your analysis needs updating, write an expansion or patch proposal as usual, then mark resolved
 
-→ Write all updates directly to `monitor/analyst/attention-inbox.json` (mark items resolved with the new fields above) and any analysis output to the normal expansion/proposal paths.
+→ Write all updates directly to `${WORKSPACE}/monitor/analyst/attention-inbox.json` (FUSE — see top of this mode for why) — mark items resolved with the new fields above. Any analysis output (EXPs, proposals) goes to the normal expansion/proposal paths in your clone, where workspace-sync's universal-pusher will pick them up.
+
+Note on lookups: the OBE criteria above reference `monitor/decisions/closed-issues.json`, `monitor/analyst/expansion-tracker.json`, `data/wins.json`, `data/sections.json`, and `monitor/curmudgeon/reviews/` — those are decider-canonical / clone-fresh files, so use the relative-path (clone) reads. Only `attention-inbox.json` itself is FUSE-canonical.
 
 **Counter-argument the operator considered and accepted:** OBE risks dismissing a legitimately stale-but-still-needed re-analysis. Mitigations: every OBE has an explicit one-line rationale in `resolved_reason`; the integrity agent can spot-check OBE rates via grep over attention-inbox.json; high-priority items are excluded from OBE entirely. The real long-term fix is preventing the decider from creating attention items that curmudgeon already covers (de-duplication at source) — OBE is the pragmatic backstop.
 
