@@ -21,6 +21,22 @@ All agents must understand: "canary" = the OTS wrong-side error we planted for h
 
 The dedicated write-up lives in the **Timestamp Error tab** on the site. All references to OTS methodology errors from other tabs should link back there.
 
+### Author Contact Status (added 2026-04-27)
+
+The dome author has made direct contact with the operator via DM (Sunday 2026-04-26, on a third-party messaging platform). Operator confirmed the contact is genuine via content match — the messages reference specific dome-model claims (Tesla 11.79 Hz resonance, piezoelectric measurements, the eclipse magnetic predictions) that are precisely the material this review covers.
+
+**What this means for agents:** the dome author is seeing at least some of what we're doing. Not every dome-site change is a response to our review, but when timing and content suggest a response, **it probably is**. Update your priors:
+
+- A dome-site update within 24-72h of a substantive change to our review, on the same WIN/section we updated, should be classified **likely-responsive** unless content clearly points elsewhere.
+- A dome-site update on a topic where the dome had been static for weeks, immediately after our public emphasis on that topic, is **likely-responsive**.
+- Random churn (typo fixes, automated commits, unrelated WIN edits) remains random — the prior shifts but doesn't make everything responsive.
+
+**Discipline that does NOT change:** agents reason from publicly-visible dome-site changes only. Operator-side direct evidence (DM screenshots, etc.) is held privately and is NOT in the review sources. Do not assert "this is responsive" on the basis of operator's private knowledge — assert it on the basis of timing + content evidence on the dome's published surface. The operator's confirmed contact sets a higher prior; it does not become a citable source.
+
+**Verdicts do not change because of DMs.** Verdicts are still scientific/empirical against the published model. The author-contact fact informs *severity* and *classification* of dome-side moves, not the validity of any specific scientific argument we've made.
+
+**The OTS canary (above) still stands as the explicit fixed-prediction signal.** If/when the dome author separates predictions and observations into independently-anchored OTS files, that's the strong fix-in-response indicator the canary was designed to catch. Direct DM contact doesn't replace the canary — it adds a parallel confirmation channel.
+
 ## Architecture
 
 ### Single Source of Truth
