@@ -1487,7 +1487,7 @@ ${generateVerdictBarChart(tally, wins.length)}
 <li class="fm-row">
 <div class="fm-condition">Genuine prospective prediction</div>
 <div class="fm-desc">Specific, quantitative, station-named, timestamped before the data &mdash; with the prediction document anchored independently from any observation file.</div>
-<div class="fm-status fm-status-partial" role="status" aria-label="Status: 1 partial &mdash; eclipse August 12, 2026"><span class="fm-status-num">1 partial</span><span class="fm-status-sub">eclipse Aug 12, 2026</span></div>
+<div class="fm-status fm-status-partial" role="status" aria-label="Status: 1 partial &mdash; eclipse August 12, 2026"><span class="fm-status-num">1 partial</span><span class="fm-status-sub">Eclipse</span><span class="fm-status-sub">Aug 12, 2026</span></div>
 </li>
 <li class="fm-row">
 <div class="fm-condition">Derive 7.83 Hz from dome geometry</div>
