@@ -439,6 +439,19 @@ AGENT_NOTES="<<<FILL_THIS_IN — see comment above>>>"
 # had the env-var assignment list AFTER `node -e "..."` — agents had to
 # work around it by inlining the values into the script (operator
 # 2026-04-27 evening flagged this).
+#
+# DO NOT try to persist RUN_ID across bash tool calls via /tmp/ws-sync-
+# runid.txt or any other cross-session scratchpad. Each `bash` tool call
+# in this prompt is a fresh shell session; variables don't survive
+# between them, and writing to a fixed /tmp path hits the same per-
+# session-uid permission collision that bit the SKIP_LOG path on
+# 2026-04-26 (workspace-sync 08:05Z run-report agent_notes 2026-04-28
+# flagged this for the second time). The node -e block below already
+# falls back to generating its own run_id from timestamp + process.pid
+# when process.env.RUN_ID is empty — that fallback is the intended
+# behavior; let it run. RUN_ID="${RUN_ID:-}" below passes through if
+# something earlier in the run set it, otherwise empties so the node
+# script generates fresh.
 OUT="$RUN_REPORT_PATH" \
 RUN_ID="${RUN_ID:-}" \
 FILES_COMMITTED="$FILES_COMMITTED" \
