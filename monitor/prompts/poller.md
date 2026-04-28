@@ -182,6 +182,69 @@ TEST WINDOWS:
 
 When a window expires, set `analyst_priority: "HIGH"` — the analyst needs to determine whether the outcome should be added to `data/uncounted-failures.json`.
 
+### 10b. Imminent Prediction Watch (next 7 days)
+
+Step 10's narrative covers W-numbered weekly predictions. This step adds a **programmatic scan** of every PRED-NNN entry in our own `data/predictions.json` whose `test_window` closes within the next 7 days from the poll timestamp, regardless of W-number. Operator added 2026-04-27 after PRED-105 silent-ignore at 9 days past close went unflagged for several polls.
+
+```bash
+# From the workspace clone (data files reflect what we know about dome predictions):
+node -e "
+const fs=require('fs');
+const p=JSON.parse(fs.readFileSync('data/predictions.json','utf8'));
+const entries=p.entries||p;
+const now=new Date();
+const horizon=new Date(now.getTime()+7*86400000);
+const items=entries.filter(e=>{
+  if(e.entry_type!=='prediction'&&e.entry_type!=='tracking')return false;
+  const tw=e.test_window;
+  let closeStr;
+  if(typeof tw==='string')closeStr=tw;
+  else if(tw&&tw.closes)closeStr=tw.closes;
+  else return false;
+  // Parse: accept ISO date, 'YYYY-MM-DD', or 'Month YYYY' (use month-end)
+  let closeDate;
+  if(/^\d{4}-\d{2}-\d{2}/.test(closeStr))closeDate=new Date(closeStr);
+  else if(/^[A-Za-z]+ \d{4}/.test(closeStr)){
+    const m=closeStr.match(/^([A-Za-z]+) (\d{4})/);
+    if(m){const monthIdx=['January','February','March','April','May','June','July','August','September','October','November','December'].indexOf(m[1]);if(monthIdx>=0){closeDate=new Date(parseInt(m[2]),monthIdx+1,0);}}
+  }
+  if(!closeDate||isNaN(closeDate))return false;
+  const daysUntil=(closeDate-now)/86400000;
+  return daysUntil<=7;  // within 7 days, includes already-past
+}).map(e=>{
+  const tw=e.test_window;
+  const closeStr=typeof tw==='string'?tw:(tw&&tw.closes)||'';
+  return {id:e.id,closes:closeStr,verdict:e.our_verdict,claim:(e.claim||'').substring(0,80)};
+});
+console.log(JSON.stringify(items,null,2));
+"
+```
+
+For each item returned, the poller MUST check (using the page fetches from Step 2 and the GitHub repo data from Step 4):
+
+1. **Has the dome posted a result?** Look for the prediction's ID, label, or claim text in the just-fetched predictions page, status_history.json, or any commit message in the last polling window. A "result" can be: PASS/FAIL annotation, status="confirmed/refuted", a new WIN entry referencing the prediction, or a clear retraction.
+
+2. **Has the dome extended or modified the window?** Search for changes to the `test_window`, `closes` field, or equivalent date marker on the prediction's entry. A goalpost-move (extending the window past its original close date) is a CRITICAL finding per Step 5b.
+
+3. **Has the dome silently dropped the prediction?** A removal from the predictions page without explicit retraction is the silent-ignore pattern — flag as `analyst_priority: "HIGH"` and note the old vs new content explicitly in the change record.
+
+4. **If the close date has passed AND no result, modification, or removal is visible** — this is the silent-ignore-in-progress pattern that PRED-105 exemplified. Each subsequent poll should escalate the visibility:
+   - Days 1-3 past close: flag in poll summary, severity LOW (dome may still be processing)
+   - Days 4-7 past close: severity MEDIUM, write a chg-* file specifically about the lapse
+   - Days 8+ past close: severity HIGH, set `analyst_priority: "HIGH"` so analyst can move the verdict to `silent_ignore` if not already
+
+**Always include in the poll summary**, after the existing Test Windows section:
+
+```
+IMMINENT WINDOW WATCH (next 7 days):
+  PRED-NNN — closes YYYY-MM-DD (N days from now)
+    dome status: [result posted | window extended | no action | silent-ignore d=N past close]
+    our_verdict: [from data/predictions.json]
+    poller action: [no action needed | flagged in chg-NNN-001 | analyst_priority HIGH]
+```
+
+The 2026-04-27 operator note specifically: 9 dome predictions (geoid stationarity, mascon, P-wave/S-wave shadow zones, JWST z<0.1, M2-tidal, TOA flux, TTB-night) had April closure windows. Step 10b is now the standing watch for that pattern, not just an April-specific pass.
+
 ### 11. Check Accuracy Data Sources
 
 Our review cites specific accuracy percentages computed from the dome's own API endpoints. These are stored in `data/uncounted-failures.json` under `dome_accuracy_variants.sources`. Each poll, spot-check these values — if the dome changes its data, our cited figures become wrong.
