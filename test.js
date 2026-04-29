@@ -686,6 +686,47 @@ console.log('\n── 8. Prediction Panels ──');
   assert(htmlContent.includes('id="verdicts"'), 'EXP-209: verdict-distribution anchor #verdicts missing');
   assert(!htmlContent.includes('class="ds-sc-breakdown"'), 'EXP-209: old .ds-sc-breakdown grid still present (should be removed)');
 
+  // EXP-271: Falsifiability module remediation (ds- prefix, WCAG, consistent framing, visual order)
+  // ISS-1633: ds- prefix on all module classes
+  assert(htmlContent.includes('class="ds-falsifiability-module"'), 'EXP-271: .ds-falsifiability-module section missing from docs/index.html');
+  assert(/\.ds-falsifiability-module\{/.test(htmlContent), 'EXP-271: .ds-falsifiability-module CSS rule missing');
+  assert(!htmlContent.includes('class="falsifiability-module"'), 'EXP-271: legacy unprefixed .falsifiability-module class must be gone');
+  // Module has exactly 4 condition rows
+  const fmRowCount = (htmlContent.match(/class="ds-fm-row"/g) || []).length;
+  assertEq(fmRowCount, 4, 'EXP-271: ds-falsifiability-module has exactly 4 ds-fm-row elements');
+  // All four condition titles present
+  assert(htmlContent.includes('Discriminating prediction from dome geometry'), 'EXP-271: condition 1 title present');
+  assert(htmlContent.includes('Genuine prospective prediction'), 'EXP-271: condition 2 title present');
+  assert(htmlContent.includes('Derive 7.83 Hz from dome geometry'), 'EXP-271: condition 3 title present');
+  assert(htmlContent.includes('Sub-5% coordinates without globe inputs'), 'EXP-271: condition 4 title present');
+  // fm-jump anchor href to eg-falsifiability
+  assert(/<a class="ds-fm-jump" href="#eg-falsifiability"/.test(htmlContent), 'EXP-271: ds-fm-jump anchor to #eg-falsifiability present');
+  // ISS-1632 + ISS-1637: consistent "0 / N met" framing across the three unmet conditions
+  // (no separate "pending" word for condition 4; sub-status carries the OPEN-001 nuance)
+  const zeroNumCount = (htmlContent.match(/class="ds-fm-status-num">0 \/ \d+ met/g) || []).length;
+  assertEq(zeroNumCount, 3, 'EXP-271: exactly 3 "0 / N met" status-num spans (conditions 1, 3, 4); condition 2 is "1 partial"');
+  assert(htmlContent.includes('2 attempted'), 'EXP-271: condition 1 sub-status "2 attempted" present');
+  assert(htmlContent.includes('imports globe radius'), 'EXP-271: condition 3 sub-status "imports globe radius" present');
+  assert(htmlContent.includes('OPEN-001'), 'EXP-271: condition 4 sub-status "OPEN-001" present (replaces standalone "pending")');
+  assert(!/class="ds-fm-status-num">pending</.test(htmlContent), 'EXP-271: standalone "pending" status-num removed (asymmetric framing fix)');
+  // ISS-1631: WCAG contrast — fm-status-num bumped to 1.2rem to clear AA "large text" threshold (18.7px bold)
+  assert(/\.ds-falsifiability-module \.ds-fm-status-num\{[^}]*font-size:1\.2rem/.test(htmlContent), 'EXP-271: ds-fm-status-num must use 1.2rem (WCAG large-text threshold)');
+  // Sub-status uses --ink-2 (better contrast than --ink-3 in dark mode)
+  assert(/\.ds-falsifiability-module \.ds-fm-status-sub\{[^}]*color:var\(--ink-2\)/.test(htmlContent), 'EXP-271: ds-fm-status-sub must use var(--ink-2) for AA dark-mode contrast');
+  // ISS-1638: visual order — thesis-hero before bar chart before falsifiability-module
+  {
+    const overviewSlice = htmlContent.split('class="ds-tab-content" id="evaluate"')[0] || htmlContent;
+    const thesisPos = overviewSlice.indexOf('class="ds-thesis-hero"');
+    const barPos = overviewSlice.indexOf('class="ds-verdict-bars"');
+    const modPos = overviewSlice.indexOf('class="ds-falsifiability-module"');
+    assert(thesisPos > -1 && barPos > -1 && modPos > -1, 'EXP-271: ds-thesis-hero, ds-verdict-bars, ds-falsifiability-module all present on Overview');
+    assert(thesisPos < barPos, 'EXP-271: ds-thesis-hero must appear BEFORE ds-verdict-bars (claim → result)');
+    assert(barPos < modPos, 'EXP-271: ds-verdict-bars must appear BEFORE ds-falsifiability-module (result → standard)');
+  }
+  // ISS-1636: factual fix in eg-falsifiability — sub-meter → sub-0.01%
+  assert(htmlContent.includes("sub-0.01% precision over similar distances"), 'EXP-271: eg-falsifiability factual fix (sub-meter → sub-0.01%) present');
+  assert(!htmlContent.includes("standard geodesy's sub-meter precision"), 'EXP-271: eg-falsifiability "sub-meter precision" wording removed');
+
   // EXP-212: Latest Findings placement on Overview tab.
   // Original EXP-212 order was: verdict-legend → breaking-news → nav.ds-toc.
   // 2026-04-27 operator promoted breaking-news to top-of-page (before verdict-
