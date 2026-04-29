@@ -1,0 +1,69 @@
+{
+  "id": "PROP-013",
+  "created_at": "2026-04-29T09:51:36Z",
+  "category": "workflow_redesign",
+  "target": "workspace-sync.md + decider rescue + operator daily-rescue cadence",
+  "problem": "NEVER_PUSH source files (build-scripts/generate-html.js, test.js, build.js, build-scripts/*.js, monitor/prompts/*.md) are stranded in FUSE every time the decider patches them and its push 403s. The decider 403 is now ENDEMIC (32 push-failures in the last 5 days; 3-13 per day; every recent decider run hits it). The universal-pusher rescue path correctly recovers data/ and monitor/ files but cannot recover NEVER_PUSH files. Result: every decider run that patches generate-html.js or test.js requires manual operator rescue. Yesterday: EXP-271 stranded for ~28 hours until operator rescue at 05:28:39Z (commit ac474a95). Today: EXP-277 stranded since 09:14Z this morning — generate-html.js has annular→total + claims→catalog-entries patches and test.js has 5 new assertions (lines 874→889) that the live site never gets. The test.js drift means a fresh-clone test run would lack those assertions. The integrity agent does not detect this strand because once workspace-sync regenerates docs/index.html from data/, source and built artifact agree (with the OLD generate-html.js). The drift is invisible until the operator runs `node build.js publish` from a clone with a fresh IP/session.",
+  "evidence": {
+    "push_failure_frequency": {
+      "2026-04-25": 3,
+      "2026-04-26": 13,
+      "2026-04-27": 7,
+      "2026-04-28": 6,
+      "2026-04-29 (so far)": 3
+    },
+    "stranded_today": {
+      "exp_id": "EXP-277",
+      "decider_run": "2026-04-29T09:14Z (push 403 at ~09:28Z)",
+      "files_stranded": [
+        "build-scripts/generate-html.js (annular→total solar eclipse for Aug 12 2026; aria-label claims→catalog entries)",
+        "test.js (lines 874→889; 5 new EXP-277 assertions)"
+      ],
+      "files_rescued": [
+        "data/sections.json (4 prose patches: part2b, part4, part8, part8b stat values)",
+        "data/uncounted-failures.json (1 last_updated bump)",
+        "monitor/decisions/open-issues.json (13 new issues)",
+        "monitor/decisions/daily-report-2026-04-29T09-27.json"
+      ]
+    },
+    "stranded_yesterday": {
+      "exp_id": "EXP-271",
+      "tinker_report": "monitor/tinker/report-2026-04-28T11-43.json",
+      "stranded_for_hours": 10.2,
+      "operator_rescue_commit": "ac474a95 at 2026-04-29T05:28:39Z"
+    },
+    "decider_rescue_comment_misleading": "decider-patches-and-selfapply.md:298 says 'failed to copy $f to FUSE — file may be in NEVER_PUSH deny-list (which is fine; those must be pushed via git directly)' — but cp succeeds; the issue is workspace-sync's NEVER_PUSH skip downstream. The comment is correct on intent (these need direct git push) but misleading on mechanism (cp doesn't fail; the workspace-sync deny-list skips them later)."
+  },
+  "proposed_fix": {
+    "summary": "Two-part fix: (A) workspace-sync detects stranded NEVER_PUSH files and writes an operator-action JSON with a copy-paste rescue recipe, so the operator's daily rescue is self-documenting and doesn't require reading tinker reports. (B) Optionally, workspace-sync attempts its own push-from-clone for NEVER_PUSH stranded files since it runs from a different session/IP than decider — if that succeeds, the strand resolves automatically without operator action. Implement (A) immediately; (B) is a follow-up if (A) shows operator-rescue still consumes time.",
+    "files_to_modify": [
+      {
+        "path": "monitor/prompts/workspace-sync.md",
+        "find": "  for p in \"${NEVER_PUSH[@]}\"; do\n    [ \"$dst\" = \"$p\" ] && return 0\n  done",
+        "replace": "  for p in \"${NEVER_PUSH[@]}\"; do\n    if [ \"$dst\" = \"$p\" ]; then\n      # Track stranded NEVER_PUSH files: FUSE has newer content than git\n      # for a file decider patched and couldn't push. Surface this to the\n      # operator via monitor/integrity/never-push-strand-NNN.json so the\n      # daily rescue is self-documenting (PROP-013).\n      local src_mtime=$(stat -c %Y \"$1\" 2>/dev/null || echo 0)\n      local git_commit_time=$(git log -1 --format=%ct -- \"$dst\" 2>/dev/null || echo 0)\n      if [ \"$src_mtime\" -gt \"$git_commit_time\" ] && [ \"$src_mtime\" -gt 0 ]; then\n        STRANDED_FILES[\"$dst\"]=\"$src_mtime|$git_commit_time\"\n      fi\n      return 0\n    fi\n  done",
+        "explanation": "When workspace-sync skips a NEVER_PUSH file because the workspace has newer content than git, record the strand for end-of-run reporting."
+      },
+      {
+        "path": "monitor/prompts/workspace-sync.md",
+        "find": "### Step 4: Commit and push",
+        "replace": "### Step 3.5: Surface stranded NEVER_PUSH files\n\n```bash\n# If the decider patched a NEVER_PUSH source file (generate-html.js, test.js,\n# etc.) and its push 403'd, the file is now in FUSE but the universal-pusher\n# can't push it. Write a structured rescue-recipe so the operator's daily\n# rescue doesn't require reading tinker reports. (PROP-013)\nif [ ${#STRANDED_FILES[@]} -gt 0 ]; then\n  STRAND_FILE=\"${WORKSPACE}/monitor/integrity/never-push-strand-$(date -u +%Y-%m-%dT%H-%M).json\"\n  {\n    echo '{'\n    echo '  \"event\": \"never-push-strand\",'\n    echo '  \"timestamp\": \"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'\",'\n    echo '  \"reason\": \"Decider patched NEVER_PUSH files and its push 403\\'d. Universal-pusher copied to FUSE but workspace-sync cannot push these by design.\",'\n    echo '  \"stranded_files\": ['\n    local first=1\n    for f in \"${!STRANDED_FILES[@]}\"; do\n      [ $first -eq 0 ] && echo ','\n      first=0\n      echo -n \"    \\\"$f\\\"\"\n    done\n    echo ''\n    echo '  ],'\n    echo '  \"operator_rescue_recipe\": ['\n    echo '    \"cd ~/dome-rescue-clone || git clone https://x-access-token:<PAT>@github.com/funwithscience-org/dome-model-review.git ~/dome-rescue-clone\",'\n    echo '    \"cd ~/dome-rescue-clone && git pull --rebase\",'\n    echo \"    \\\"# copy stranded files from FUSE: ${!STRANDED_FILES[*]}\\\",\"\n    echo '    \"# rsync each from the FUSE workspace into the clone:\",'\n    echo '    \"# for f in <files>; do cp \\\\\"<FUSE>/$f\\\\\" ~/dome-rescue-clone/$f; done\",'\n    echo '    \"node build.js publish  # builds, tests, commits, pushes from a clean session\"'\n    echo '  ]'\n    echo '}'\n  } > \"$STRAND_FILE\"\n  echo \"NEVER_PUSH strand detected: ${#STRANDED_FILES[@]} file(s). Recipe at $STRAND_FILE\"\nfi\n```\n\n### Step 4: Commit and push",
+        "explanation": "After the file copy loop, write a structured strand report whenever NEVER_PUSH files have FUSE-newer content than git. Filename pattern matches push-failure-*.json so it lands in monitor/integrity/ for operator visibility."
+      },
+      {
+        "path": "monitor/prompts/reference/decider-patches-and-selfapply.md",
+        "find": "        else\n          echo \"  WARN: failed to copy $f to FUSE — file may be in NEVER_PUSH deny-list (which is fine; those must be pushed via git directly).\"\n        fi",
+        "replace": "        else\n          echo \"  WARN: failed to copy $f to FUSE — investigate filesystem permissions. (Note: NEVER_PUSH does not block cp; it blocks workspace-sync push downstream. If you see this warning for a NEVER_PUSH file, something else is wrong.)\"\n        fi",
+        "explanation": "Fix the misleading comment that conflates `cp` failure (rare) with NEVER_PUSH-skip (downstream, doesn't trigger this warning). The current comment leads readers to think the system handles NEVER_PUSH correctly when it actually creates a strand."
+      }
+    ],
+    "files_to_create": [],
+    "files_to_delete": []
+  },
+  "tradeoffs": "What we gain: every NEVER_PUSH strand is now an explicit operator-actionable file with a copy-paste recipe. The operator no longer has to chase strands across tinker reports — the strand file appears in monitor/integrity/ alongside push-failure logs. The misleading comment in decider's rescue is corrected. What we might lose: if the strand is a false positive (e.g., the decider's clone had a transient state ahead of FUSE), we'd surface it. Mitigated by the mtime > git_commit_time check. We do NOT propose auto-pushing NEVER_PUSH files from workspace-sync — that would be a real safety regression (workspace-sync is trusted only for non-source-code paths). The right next step if (A) is insufficient is option (B): try a push from the workspace-sync session/IP, which is different from decider's session — but that's a Phase 2 proposal once we see whether (A) reduces operator overhead.",
+  "estimated_impact": "Operator time saved: ~5-15 min/day (no need to grep tinker reports for 'stranded' / 'EXP-XXX rescue'). Strand visibility goes from 'tinker daily report only' to 'real-time JSON file in monitor/integrity/'. Risk of stranded patches lingering >24h drops because they become discoverable on every workspace-sync run (hourly), not just on tinker (daily).",
+  "requires_human_judgment": true,
+  "why_human_needed": "Operator should decide: is the right long-term fix to (1) merely surface strands better, or (2) attempt push-from-different-session in workspace-sync, or (3) move some NEVER_PUSH files to git-owned (e.g., test.js could plausibly be data-like and pushed by workspace-sync, given it's deterministic from data + build-scripts), or (4) fix the underlying 403 root cause (Devilwitch authorship)? This PROP only covers (1).",
+  "verification_pattern": "grep -q 'never-push-strand-' monitor/prompts/workspace-sync.md && grep -q 'NEVER_PUSH does not block cp' monitor/prompts/reference/decider-patches-and-selfapply.md && echo FIXED || echo STILL_BROKEN",
+  "status": "proposed",
+  "escalation_history": []
+}
