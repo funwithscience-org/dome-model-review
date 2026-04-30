@@ -1,0 +1,117 @@
+{
+  "point_id": "SEC-4.2.7a",
+  "topic": "§4.2.7a Station-by-station coverage under dome geometry — post-EXP-276 integration review",
+  "queue_id": 286,
+  "queue_pushed_at": "2026-04-28T21:23:42.932Z",
+  "trigger": "priority-queue-section-rewrite",
+  "reviewed_at": "2026-04-30T13:50:00.000Z",
+  "cycle": 2,
+  "current_verdict_holds": true,
+  "confidence": 0.86,
+  "our_argument_summary": "§4.2.7a quantifies the 'Borrowed' branch of the §4.2.7 trilemma. Under the dome's published h_Sun=5,733 km / h_Moon=2,534 km, the August 12 2026 NASA umbra path projected onto the disc puts every one of the dome's nine published eclipse stations between 444 km (Ebro) and 4,084 km (Canary) from the projected path — vastly outside the 42-km penumbra radius (85-km band). The dome's own 0.40–0.95 per-station coverage values therefore cannot be a consequence of dome occultation geometry. EXP-276 layered three robustness paragraphs (P1: projection convention, P2: altitude convention, P3: time-distribution rebuttal) and a 'Notes on inputs' footnote, addressing all six issues from the c1 review (ISS-1687, 1688, 1689, 1700, 1701, 1702).",
+  "dome_code_analysis": {
+    "relevant_files": [
+      "raw-text/03-predictions.txt"
+    ],
+    "calculation_pipeline": "N/A — section-level, not a per-WIN code review. Dome's eclipse predictions are tabular outputs in the prediction page, not driven by a live monitor.py check.",
+    "hardcoded_vs_computed": "N/A — section-level review. The nine-station table in §4.2.7a is dome-published. Our minimum-distance-to-projected-path values are our own computation against NASA's SE2026Aug12T central line.",
+    "data_sources_used": [
+      "NASA SE2026Aug12T Besselian elements (eclipse.gsfc.nasa.gov)",
+      "INTERMAGNET observatory coordinates"
+    ],
+    "escape_clauses": "Footnote (i) acknowledges the parallel-ray approximation (R_p ∝ h_Moon) is dome-page convention and weakly non-linear under finite-source umbra geometry, but says corrected ratio still > 90×.",
+    "our_code_claims_accurate": true,
+    "code_discrepancies": "None at section level."
+  },
+  "code_analysis_tags": {
+    "monitoring": "none",
+    "monitoring_evidence": "Section-level review; not WIN-tagged.",
+    "relabels_standard": false,
+    "relabels_standard_evidence": "Section-level review; not WIN-tagged.",
+    "post_hoc": false,
+    "post_hoc_evidence": "Section-level review; not WIN-tagged.",
+    "derives_from_dome": true,
+    "derives_from_dome_evidence": "Section-level review; not WIN-tagged. The kill is derived from dome-published h_Sun/h_Moon parameters.",
+    "reviewed": true
+  },
+  "holes_found": [
+    {
+      "severity": "major",
+      "description": "P3 rewrite claims \"the optimum tour visiting all nine of the dome's published stations is bounded below by their minimum spanning tree (≈ 7,000 km for this set) — already 1.5× the realistic 4,500 km mid-disc arc\". The 7,000 km figure is the 1D Δr-MST (chain length when the nine stations are sorted by disc-radius and adjacent-radius differences are summed). It is NOT the 2D Euclidean MST of the actual point set on the disc. Independent computation (Kruskal on full 2D Euclidean distances using the AE-from-N projection the section itself defines) gives MST ≈ 11,696 km — about 1.65× the analyst's number. The 1D Δr chain (Lerwick→Eskdalemuir→Niemegk→Hartland→Chambon→Ebro→Coimbra→San Pablo→Canary, summed Δr's = 7,074 km) silently ignores the angular component of inter-station distance, which dominates for pairs like Coimbra–San Pablo (Δr=150 km but full 2D disc distance ≈ 805 km) and Niemegk–Hartland (Δr=239 km but full disc distance ≈ 2,569 km). The Hamiltonian-path lower bound argument (any path through all nine stations has length ≥ MST) only holds if the MST is in the same metric as the path traversal — and the Moon's ground projection traces a 2D curve, not a 1D radial trace, so the relevant MST is 2D Euclidean.",
+      "recommendation": "Replace '≈ 7,000 km' with the correct 2D Euclidean MST (Kruskal on AE-from-N projected coords gives 11,696 km; round to '≈ 11,700 km' or '≈ 12,000 km' depending on precision preference). Update '1.5× the realistic 4,500 km mid-disc arc' to '~2.6×' (or recompute with whatever rounded MST number the patch chooses). Note: the kill STRENGTHENS under the corrected number (the bound becomes more aggressive), so the analyst's anticipated_objection #1 (which framed 7,000 km as a 'rigorous lower bound replacing an unrigorous greedy-NN floor') is correct in spirit but lands on a wrong arithmetic answer. With the corrected MST (~11,700 km, very close to the prior NN-tour minimum of 12,400 km), the network turns out to be near-chain-like — MST and TSP-path are within 6% of each other — which makes the kill much sharper than the patch currently presents."
+    },
+    {
+      "severity": "minor",
+      "description": "Footnote (i) says under finite-source umbra geometry the R_p ∝ h_Moon scaling \"becomes weakly non-linear, but the corrected ratio at h_Moon ≈ 246,000 km still exceeds 90× the dome's published 2,534 km, so the kill is unaffected.\" No derivation or citation is given for the 90× residual. A determined defender will ask: 'show me the finite-source umbra calculation that gets to 90×.' The current text reads as hand-wave. Severity is minor because the kill clearly survives any plausible non-linear correction (97× → some-lower-but-still-high ratio), but a numerical anchor (e.g., 'using the standard finite-source umbra formula with R_sun_dome=600 km and h_Sun=5,733 km, the corrected ratio is X×') would close this.",
+      "recommendation": "Either (a) supply the finite-source umbra calculation (one inline equation), or (b) replace 'still exceeds 90×' with a more conservative 'still exceeds an order-of-magnitude factor' phrasing that doesn't invite arithmetic challenge. (a) is preferable because the current 97× is already arithmetically tight; the finite-source correction needs to be transparent enough that a defender cannot claim it secretly collapses the kill."
+    },
+    {
+      "severity": "minor",
+      "description": "Footnote (ii) on SNK→GUI station identification says the dome's published 28.32° N, 16.43° W coordinates 'identify Tenerife within ~25 km' of the INTERMAGNET observatory of record (Güimar, GUI). Actual GUI coordinates from the IAGA registry are 28.321° N, 16.432° W — identical to the dome-published values to three decimal places. The 'within ~25 km' framing is unnecessarily conservative and reads as if there is a meaningful spatial discrepancy. There isn't.",
+      "recommendation": "Replace 'identify Tenerife within ~25 km' with 'are coincident with GUI/Güimar to three decimal places (28.321°N, 16.432°W)' or simply 'match GUI's IAGA-registered coordinates'. Tightening this clarifies that the dome's E007 entry IS GUI, not 'something within 25 km of GUI'."
+    },
+    {
+      "severity": "minor",
+      "description": "Internal cross-convention tension: the constant-r 'Even more constrained' subsection says 'Under the strict constant-r orbital reading, no two of the nine stations can be in the penumbra band simultaneously, and at most one can be in the band at all.' The P1 robustness paragraph then notes that under the stricter R_disc/180 convention this softens to 'max 2.' The cross-reference between the two is implicit (\"would shift the strict constant-r reading from 'max 1 station in band' to 'max 2'\"); a careful reader has to hold both conventions in their head simultaneously to see that the constant-r section is implicitly using the standard R_disc/90 convention while the P1 robustness paragraph treats the stricter R_disc/180 case. This isn't wrong, but a single sentence stating the convention dependency at the top of the constant-r section would prevent confusion.",
+      "recommendation": "In the 'Even more constrained' subsection, replace 'The closest pair of stations in disc-radius is Coimbra–San Pablo at Δr = 150 km' with 'Under the standard R_disc/90 convention used in the table above, the closest pair of stations in disc-radius is Coimbra–San Pablo at Δr = 150 km. (The stricter R_disc/180 case is treated in the P1 robustness paragraph above.)' Optional but improves cross-paragraph coherence."
+    }
+  ],
+  "stronger_arguments": [
+    {
+      "description": "The corrected 2D MST (~11,700 km) is striking precisely because it is so close to the NN-tour minimum (~12,400 km). For arbitrary point sets, the ratio NN/MST can range from ~1 (chain-like) to ~2 (clustered with one outlier). Here the ratio is 1.06, which is the chain-like end of the spectrum. This is independent evidence that the dome's nine stations are NOT randomly arranged on the disc — they form a near-linear chain in the 2D projection, with Iberia (Ebro/Coimbra/San Pablo), central Europe (Chambon, Niemegk), the UK (Hartland/Eskdalemuir/Lerwick), and Canary Islands strung roughly along an arc. That kind of arrangement is exactly what you'd expect if the nine stations were chosen by intersecting the standard-physics path-of-totality across the European INTERMAGNET network — i.e., the 'Borrowed' branch of the trilemma. The MST/NN-tour ratio is itself an indictment of the station selection; the patch could fold one sentence noting this.",
+      "sources": [
+        "Independent Kruskal computation against AE-from-N projected coords"
+      ]
+    },
+    {
+      "description": "Cross-eclipse generalization (carried over from c1 stronger_argument S1, still applicable, still out of scope). The dome's nine-station array reportedly recurs across multiple predicted eclipse events. If so, the same 0/9-in-band kill applies to each — and a defender cannot rescue any one of them without rescuing all of them. A future patch could check 1–2 additional published eclipse predictions to demonstrate the kill is not specific to the August 12 2026 event. Marked again as out-of-scope for this robustness-fix patch.",
+      "sources": [
+        "dome predictions page"
+      ]
+    }
+  ],
+  "kernel_of_truth": {
+    "description": "The structure of the EXP-276 patch is excellent. P1 (projection convention), P2 (altitude convention), and P3 (time-distribution rebuttal) anticipate the three highest-leverage defender attacks and run the same calculation under each charitable convention to show the kill survives. The 'Notes on inputs' footnote closes three c1 carryovers (parallel-ray scaling, SNK/GUI station code, NASA path attribution) without altering the structural argument. The headline numbers (444 km, 4,084 km, 42 km, 85 km, 246,000 km, 97×, 0/9 in band, 1.26 billion km² disc area, 0.1% band coverage) are arithmetically correct to within rounding. The verdict 'three branches of a trilemma, each fatal to the dome's 9-station list' is robust. Every check I ran on the geometry, the projection, the convention-halving, and the per-station table came out within 1–2% of the section's published values.",
+    "why_it_doesnt_save_claim": "N/A — this is on the offensive side of the review (we are killing a dome claim, not defending one). The corrections recommended above harden the kill rather than soften it. The MST error is the only finding that requires a numerical change; the kill survives — and in fact strengthens — under the correction (the MST/realistic-arc ratio rises from 1.5× to 2.6×, and the network turns out to be chain-like, which is independent evidence for the 'Borrowed' branch of the trilemma)."
+  },
+  "recommended_action": "minor_edit",
+  "text_fingerprint": {
+    "section_length_bytes": 17228,
+    "tldr_length": 599,
+    "verdict": "section-level (no WIN verdict)"
+  },
+  "deeper_analysis": "The MST error is the kind of arithmetic mistake that converts an excellent robustness paragraph into a defender's free shot. The analyst's own reasoning in anticipated_objection #1 is correct in shape — replacing an empirical NN-tour floor with a true MST lower bound IS the right move when defending against rigour challenges — but the analyst then computed MST in the wrong metric (1D radial-axis chain instead of 2D Euclidean). The 1D chain happens to give 7,074 km, which probably looked plausible because it's smaller than the prior 12,000 km NN-tour figure, exactly as one would expect MST < NN-tour. But for THIS station set the gap is much smaller — 11,696 km vs 12,400 km — because the network is chain-like in 2D. The defender catch is unforgiving: 'You replaced your NN-tour bound with an MST bound for rigour, but you computed the MST wrong, so your rigorous bound is 40% too low. We don't trust the rest of your arithmetic.' Fix the number and the patch goes from B+ to A. The other three findings are housekeeping. None of them threaten the kill at any depth. The patch overall is a legitimate B → A- improvement of §4.2.7a; the c1 review's verdict_holds=true survives this c2 pass.",
+  "citation_check": {
+    "citations_verified": [
+      "NASA SE2026Aug12T greatest eclipse 17:46:13 UT at 65.0°N, 25.2°W (matches eclipse.gsfc.nasa.gov public catalog)",
+      "Disc rim 20,015 km = π × R_globe (6,371 × π = 20,015.1 km, ✓)",
+      "Per-station disc r values: Lerwick 6,642 km, Canary 13,717 km, etc. (all reproduced via r=(90-lat)/90 × 20015 to within 1 km)",
+      "h_Sun_physical = 4,200 km (firmament limit) and ratio 4200/5733 = 0.733 → h_Moon_physical ≈ 1,860 km (✓)",
+      "R_p_physical = 42 × (1860/2534) = 30.83 km, band ≈ 62 km (✓)",
+      "Required h_Moon under stricter convention = 2042/42 × 2534 = 123,200.7 km, ratio 48.619× (✓)",
+      "Required h_Moon under standard convention = 4084/42 × 2534 = 246,401 km, ratio 97.24× (✓ to rounding)",
+      "Δr under stricter convention: Coimbra–San Pablo 75 km, Ebro–Coimbra 82 km, Ebro–San Pablo 157 km (✓)",
+      "Disc area = π × 20015² ≈ 1.258 × 10⁹ km² ≈ 1.26 billion km² (✓)",
+      "Mid-disc arc 25 km/min × 180 min = 4,500 km (✓)",
+      "Rim arc 87 km/min × 180 min = 15,660 km (✓)"
+    ],
+    "citations_failed": [
+      "MST claim '≈ 7,000 km' — independent Kruskal on 2D Euclidean coords gives 11,696 km. The 7,074 km figure matches the 1D Δr chain MST (sum of adjacent-radius differences when stations are sorted by disc-r), which is NOT the 2D MST. See holes_found[0]."
+    ],
+    "citations_unchecked": [
+      "European-swath null probability ≈10⁻¹⁶ to 10⁻²¹ (order-of-magnitude check would require recomputing with explicit lat/lon swath area; the broad-strokes claim of 'vanishing' is robust regardless)",
+      "Real-observatory-set null ≈10⁻⁹ ('9 chosen from ~150 active observatories falling on a single 3-hour arc strip') — combinatorial calculation not independently verified, but order-of-magnitude plausible",
+      "Per-station min-distances to NASA umbra path (table in section). Independent computation against an approximate path reproduces the qualitative ordering and magnitude (444–4,084 km range) but not exact values; the section's values are computed from precise NASA Besselian elements which I did not re-derive. No challenge."
+    ]
+  },
+  "review_lenses": {
+    "advocate_mode_questions": [
+      "Could a dome defender argue the projection convention I haven't considered makes Coimbra–San Pablo–Ebro all sit within the band simultaneously? The patch covers AE-from-N at R/90 and R/180 — those are the two conventions consistent with the dome's published 20,015 km rim. Other projections (Mercator-like, equirectangular) don't carry the dome rim and aren't on offer. → Convention space is closed.",
+      "Could a defender argue the Moon's ground velocity at the high end (87 km/min rim) is the correct one, giving a 15,660 km arc that DOES exceed the 11,700 km MST? Yes, kinematically possible — but the rim velocity is the upper bound at the disc edge; the eclipse arc passes through mid-latitudes where the velocity is closer to 25–50 km/min. The patch already uses 4,500 km mid-disc as the realistic arc. Even at the upper bound, 15,660 km is only 1.34× the corrected MST — a determined defender would claim 'just barely possible', so the patch should explicitly note that even at maximum lateral velocity the band has to thread the optimal Hamiltonian path, leaving zero margin for stations to be off-axis from the moon's track.",
+      "Could a defender retreat to 'the dome's 9 stations are illustrative, not predictive'? The dome page publishes specific coverage values (0.40–0.95) and field-strength factors (0.642–2.075) for each station — those ARE predictive claims. A retreat to 'illustrative' would be a concession of the trilemma's 'Borrowed' branch."
+    ],
+    "cross_consistency_with_other_sections": "TLDR ('seven to nine of its nine named stations to record exactly zero magnetic eclipse signal') is consistent with the body. 7 zero comes from constant-r + stricter convention (max 2 in band), 8 zero from constant-r + standard convention (max 1 in band), 9 zero from projected-path reading (0 in band). Range 7–9 covers all three readings. ✓",
+    "quantitative_verification": "Kruskal MST on AE-from-N projected coords: 11,696 km (NOT 7,074 km claimed). Per-station radii reproduced to within 1 km. Required h_Moon under stricter convention: 123,201 km (matches section's 123,200). Required h_Moon under standard convention: 246,401 km (matches section's 246,000 to rounding). h_Moon physical via 4200/5733 ratio: 1,856 km (matches section's ~1,860 km). All Δr values under both conventions (R/90 and R/180) reproduce to within 1 km."
+  },
+  "summary_for_decider": "EXP-276 successfully closes ISS-1687, 1688, 1689, 1700, 1701, 1702 — the six c1 holes. The verdict from c1 (current_verdict_holds=true) survives c2. ONE major arithmetic error introduced: '≈ 7,000 km' MST claim should be '≈ 11,700 km' (independent Kruskal on 2D Euclidean coords), and '1.5× the realistic 4,500 km mid-disc arc' should be '~2.6×'. The kill STRENGTHENS under the correction — the network is chain-like (MST/NN ratio ~1.06), which is independent evidence for the 'Borrowed' branch. Three minor housekeeping items: footnote (i) hand-waves the finite-source umbra correction; footnote (ii) over-states the SNK/GUI distance gap; constant-r subsection should explicitly state which convention it uses. Recommend minor_edit. Single new ISS for the MST fix; the other three are optional polish."
+}
