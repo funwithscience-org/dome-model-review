@@ -727,6 +727,24 @@ console.log('\n── 8. Prediction Panels ──');
   assert(htmlContent.includes("sub-0.01% precision over similar distances"), 'EXP-271: eg-falsifiability factual fix (sub-meter → sub-0.01%) present');
   assert(!htmlContent.includes("standard geodesy's sub-meter precision"), 'EXP-271: eg-falsifiability "sub-meter precision" wording removed');
 
+  // EXP-277: Close out remaining EXP-256 c1/c2 holes (ISS-1694/1695/1696/1717/1718)
+  // ISS-1696 H3 / ISS-1718: eg-falsifiability eclipse pre-commitment paragraph factual error
+  // The August 12, 2026 eclipse is total (NASA Besselian magnitude 1.0386), not annular.
+  // Section 2.7 already correctly states 'total, not annular' — this fixes the eg-falsifiability prose.
+  assert(htmlContent.includes('the August 12, 2026 total solar eclipse'), 'EXP-277: eg-falsifiability eclipse pre-commitment must say "total solar eclipse" (was incorrectly "annular")');
+  assert(!htmlContent.includes('the August 12, 2026 annular solar eclipse'), 'EXP-277: legacy "annular" wording for August 12, 2026 eclipse must be gone');
+  // ISS-1696 H1: verdict-bar aria-label denominator alignment with visible caption noun
+  // Caption says "71 catalog entries = 69 dome-claimed wins plus 2 numbered-collision sub-claims".
+  // Bar aria-labels now use "catalog entries" (matches caption); module aria-labels keep "claims" (those ARE dome-claimed wins).
+  assert(/aria-label="[^"]*: \d+ of \d+ catalog entries \(/.test(htmlContent), 'EXP-277: verdict-bar aria-labels must say "of N catalog entries" (matches visible caption, disambiguates from falsifiability module)');
+  // Negative regex below uses ACTUAL verdict labels per data/wins.json (curmudgeon caught the original
+  // proposal's wrong labels: "Standard Model Explains|Speculative|Outside-Model" don't exist as verdicts).
+  // Real verdict labels: Refuted by Data, Std Model Explains, Self-Contradicted, Misleading, Not Demonstrated, Unfalsifiable.
+  assert(!/aria-label="(?:Misleading|Refuted by Data|Self-Contradicted|Std Model Explains|Not Demonstrated|Unfalsifiable)[^"]*: \d+ of \d+ claims \(/.test(htmlContent), 'EXP-277: legacy verdict-bar aria-label noun "claims" must be gone');
+  // ISS-1696 H2 / ISS-1717: missing exactly-once test for ds-falsifiability-module (proposal-spec item EXP-271 did not add)
+  const fmModuleCount = (htmlContent.match(/class="ds-falsifiability-module"/g) || []).length;
+  assertEq(fmModuleCount, 1, 'EXP-277: docs/index.html contains exactly one ds-falsifiability-module section (proposal-spec exactly-once check)');
+
   // EXP-212: Latest Findings placement on Overview tab.
   // Original EXP-212 order was: verdict-legend → breaking-news → nav.ds-toc.
   // 2026-04-27 operator promoted breaking-news to top-of-page (before verdict-
