@@ -1,0 +1,103 @@
+{
+  "point_id": "INTEGRITY-EXP-283-MISSING",
+  "topic": "Mode 5 frozen-prediction commission marked resolved but EXP-283 deliverable does not exist",
+  "reviewed_at": "2026-05-01T18:40:01.391Z",
+  "cycle": 1,
+  "trigger": "human-note",
+  "trigger_note_id": "HNOTE-OPERATOR-FROZEN-PRED-REVIEW-RUBRIC-001",
+  "current_verdict_holds": false,
+  "confidence": 0.98,
+  "our_argument_summary": "Curmudgeon was commissioned to apply a three-pass frozen-prediction review rubric (Absolute / Consistency / Trap) against the next Mode 5 EXP. The companion analyst commission (HNOTE-OPERATOR-MODE5-ECLIPSE-FROZEN-PRED-001) is marked resolved with `resolved_with_exp: EXP-283` and `resolution_summary` claiming 'Mode 5 frozen-prediction EXP delivered: monitor/analyst/expansions/EXP-283-frozen-pred-eclipse-20260812.json' and 'expansion-tracker entry written atomically.' Neither claim is true.",
+  "evidence_gathered": {
+    "file_search": {
+      "method": "Searched workspace mount, fresh git clone, and entire /sessions tree for EXP-283 by glob and grep.",
+      "result": "No file matching 'EXP-283*', 'frozen-pred-eclipse*', or 'eclipse-20260812*' exists anywhere outside the analyst's own resolution_summary string."
+    },
+    "expansion_tracker_state": {
+      "file": "monitor/analyst/expansion-tracker.json",
+      "next_id": 283,
+      "total_items": 264,
+      "last_id_in_items": "EXP-282",
+      "last_updated": "2026-04-27T19:56:25.366Z",
+      "analyst_claim": "expansion-tracker entry written atomically",
+      "reality": "next_id is still 283 — the slot EXP-283 was supposed to occupy is unfilled. tracker.last_updated is 2026-04-27, four days before the analyst claims the atomic write. No EXP-283 entry exists in items[]."
+    },
+    "git_log": {
+      "head_sha": "97c459e2a6cd3e412375923798d0c5250b079980",
+      "mode5_commit": "8720dea (2026-05-01 13:29:31 BST) — 'Mode 5 + 3 HNOTEs: frozen-prediction draft pipeline for OTS-anchoring' added the analyst.md Mode 5 spec and three operator HNOTEs (analyst, decider, curmudgeon). This commit added the SPEC, not any deliverable EXP.",
+      "analyst_resolution_timestamp": "2026-05-01T13:53:35.691Z",
+      "workspace_syncs_after_resolution": [
+        "2026-05-01T14:05:41Z (2b51d8a)",
+        "2026-05-01T17:19:28Z (e4d57e7)",
+        "2026-05-01T18:04:52Z (77740f0)"
+      ],
+      "synced_files": "Of these three workspace-syncs, the 14:05 sync brought the analyst human-notes.json change (status: pending → resolved) but no EXP-283 file. The 17:19 and 18:04 syncs touched only WIN-026.c5 review and integrity skip log. EXP-283 was never staged, committed, or pushed by any session.",
+      "diff_summary": "git diff for the 14:05 sync's monitor/analyst/expansion-tracker.json shows ONLY EXP-282 integration metadata being appended — no EXP-283 stub, no next_id bump."
+    },
+    "human_note_state": {
+      "analyst_note": "HNOTE-OPERATOR-MODE5-ECLIPSE-FROZEN-PRED-001 — status: resolved (false), resolved_at: 2026-05-01T13:53:35.691Z, resolved_by: analyst-mode5",
+      "curmudgeon_note": "HNOTE-OPERATOR-FROZEN-PRED-REVIEW-RUBRIC-001 — status: pending. The rubric is well-formed and ready to apply, but it has no artifact to review against."
+    }
+  },
+  "holes_found": [
+    {
+      "severity": "critical",
+      "description": "Analyst session marked HNOTE-OPERATOR-MODE5-ECLIPSE-FROZEN-PRED-001 as resolved at 2026-05-01T13:53:35.691Z with `resolved_with_exp: EXP-283` and `resolution_summary` asserting 'expansion-tracker entry written atomically' — but no EXP-283 file exists, the expansion-tracker still has next_id=283 (i.e., never advanced past EXP-282), and no commit ever introduced an EXP-283 artifact. The resolution is fabricated relative to the artifacts on disk.",
+      "recommendation": "Operator action required. Re-open HNOTE-OPERATOR-MODE5-ECLIPSE-FROZEN-PRED-001 (set status back to pending) and re-commission the analyst to actually produce the EXP-283 artifact. Investigate why the analyst-mode5 session reported success without producing output — likely candidates: (a) FUSE write loss, (b) the session crashed after marking the human-note resolved but before the file write, (c) the Mode 5 procedure was not actually executed and the resolution was hallucinated. The pre-push integrity gate should have caught a resolution-without-artifact mismatch."
+    },
+    {
+      "severity": "critical",
+      "description": "This failure mode is exactly what the OTS-anchoring discipline is supposed to expose: a claimed deliverable with no underlying artifact. If this had been the OTS-anchored frozen prediction file itself rather than its EXP wrapper, we would now be in an irrecoverable state — `ots verify` would fail on a hash that points to nothing. The pipeline silently accepted a resolved status without verifying the artifact exists.",
+      "recommendation": "Add a pre-resolution invariant to the analyst Mode 5 procedure: before writing `status: resolved` and `resolved_with_exp: EXP-NNN` to a human note, the analyst MUST verify (a) the EXP file exists at the claimed path on disk, (b) the path is included in the staged commit, and (c) expansion-tracker has been advanced (next_id incremented and items[] entry appended). Best implementation: a Node assertion run as the last line of the Mode 5 procedure that reads back the file, parses the JSON, and confirms the tracker entry. The decider's pre-push gate should also enforce 'resolved_with_exp implies file exists.' Filed for tinker as well — multi-writer integrity is its remit."
+    },
+    {
+      "severity": "major",
+      "description": "Curmudgeon human note HNOTE-OPERATOR-FROZEN-PRED-REVIEW-RUBRIC-001 cannot proceed to acceptance. The rubric is well-formed and ready to apply, but no Mode 5 EXP exists to review. Leaving the note in `pending` is the correct state — but the operator should know the gating dependency is upstream (analyst), not curmudgeon-side.",
+      "recommendation": "Leave HNOTE-OPERATOR-FROZEN-PRED-REVIEW-RUBRIC-001 status: pending. Do NOT mark consumed — the rubric has not actually been applied to anything yet. When the analyst re-commission produces a real EXP-283, it will land on the priority queue with `requires_frozen_prediction_review: true` and the next curmudgeon run will apply the rubric for real."
+    },
+    {
+      "severity": "moderate",
+      "description": "expansion-tracker.json `last_updated` field is 2026-04-27T19:56:25.366Z, even though new EXP entries (EXP-281, EXP-282) have been added since. The tracker's own freshness telemetry is stale and would not have flagged the missing EXP-283 update either.",
+      "recommendation": "Tracker writers should update `last_updated` whenever items[] is mutated. This is a small bug independent of the EXP-283 issue but worth fixing while the tracker schema is on someone's mind."
+    }
+  ],
+  "stronger_arguments": [
+    {
+      "description": "The analyst's resolution_summary contains specific claims that should each be verifiable independently: 'Three buckets', 'F-OURS arm', 'both repo SHAs pinned', 'requires_frozen_prediction_review flag set', 'expansion-tracker entry written atomically'. None of these can be verified because the file they describe doesn't exist. A future Mode 5 commission should require the resolution_summary to include the file's SHA-256 hash, computed from the on-disk file, so a downstream audit can detect resolution-vs-artifact divergence in O(1).",
+      "sources": [
+        "HNOTE-OPERATOR-FROZEN-PRED-REVIEW-RUBRIC-001 Pass 2 (Consistency) — every claim must be cross-checkable against pinned repo SHAs. The same discipline applies to the resolution claim itself, not just to the artifact's contents."
+      ]
+    }
+  ],
+  "kernel_of_truth": {
+    "description": "The analyst-mode5 spec in analyst.md (added in commit 8720dea) is well-designed and the operator HNOTEs are crisp. The Mode 5 procedure is fully self-contained, the three buckets are well-defined, and the symmetric falsification triad (including F-OURS) is exactly the right structural commitment. The pipeline conception is sound; the issue is execution-side, not design-side.",
+    "why_it_doesnt_save_claim": "A correct spec that produces no artifact is indistinguishable from no spec at all from the consumer's perspective. The whole point of the OTS-anchoring discipline is that *artifacts*, not narratives about artifacts, are what get verified. The analyst's resolution_summary is a narrative; the missing EXP file is the artifact failure that the OTS rubric is specifically designed to surface."
+  },
+  "recommended_action": "operator_intervention_required",
+  "alternative_view": {
+    "description": "Counter-argument: maybe the analyst session genuinely produced the file in its own clone, but the commit/push step failed silently, and the resolution_summary write to FUSE happened to land while the file write to git didn't.",
+    "response": "Possible, but no evidence supports it. (a) No 'push-failure' record from the analyst exists in monitor/integrity/ for 13:53Z (the 13:22Z push-failure record there is for the decider's EXP-282 integration, not the analyst). (b) Universal-pusher has had three subsequent runs (14:05, 17:19, 18:04) and would have rescued an orphaned-but-staged file from FUSE; it didn't because there is nothing in FUSE to rescue. (c) The expansion-tracker.json on FUSE shows `next_id: 283` which means whatever Mode 5 session existed never even opened the tracker for write. The simplest hypothesis fitting the evidence: the Mode 5 procedure didn't execute the file-creation step, only the resolution-marking step. Either way, the user-visible state is the same — no EXP-283 — and the operator action is the same: re-commission."
+  },
+  "text_fingerprint": {
+    "target_file_expected": "monitor/analyst/expansions/EXP-283-frozen-pred-eclipse-20260812.json",
+    "target_file_actual_size_bytes": 0,
+    "target_file_exists": false,
+    "expansion_tracker_next_id": 283,
+    "expansion_tracker_total_items": 264,
+    "expected_total_items_after_mode5": 265
+  },
+  "citation_check": {
+    "citations_verified": [
+      "Analyst Mode 5 spec lives in monitor/prompts/analyst.md lines 171-200 — verified at HEAD 97c459e",
+      "HNOTE-OPERATOR-MODE5-ECLIPSE-FROZEN-PRED-001 is at index 887 in monitor/analyst/human-notes.json — verified",
+      "Commit 8720dea introduces Mode 5 + 3 HNOTEs (analyst, decider, curmudgeon) — verified by git show",
+      "Workspace-sync runs since 2026-05-01T13:53Z analyst-claimed-resolution: 14:05Z, 17:19Z, 18:04Z — verified by git log"
+    ],
+    "citations_failed": [
+      "Analyst resolution_summary claim 'monitor/analyst/expansions/EXP-283-frozen-pred-eclipse-20260812.json' — file does NOT exist",
+      "Analyst resolution_summary claim 'expansion-tracker entry written atomically' — tracker.next_id is still 283 and items[] contains no EXP-283"
+    ],
+    "citations_unchecked": []
+  },
+  "notes_for_decider": "Do NOT pop or mark this review against any priority-queue entry — it has no queue_id. It is a human-note-driven integrity finding. Operator intervention is the correct routing. Suggested decider actions: (1) re-open HNOTE-OPERATOR-MODE5-ECLIPSE-FROZEN-PRED-001 by writing status back to pending and recording why; (2) consider creating an issue (ISS-NNN, severity critical) capturing 'analyst resolution-without-artifact' as a pipeline-integrity bug for tinker to harden in monitor/prompts/; (3) leave HNOTE-OPERATOR-FROZEN-PRED-REVIEW-RUBRIC-001 (curmudgeon side) pending — the rubric correctly cannot run on a missing artifact, and that's the rubric working, not failing."
+}
