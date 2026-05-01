@@ -168,6 +168,37 @@ node -e "const t=JSON.parse(require('fs').readFileSync('monitor/analyst/globe-fi
 Trigger: No higher-priority work. One item per run.
 → Read `monitor/prompts/reference/analyst-mode34-procedures.md`, execute Mode 4.
 
+**Mode 5 — Frozen Prediction Drafts** (operator-commissioned only)
+```bash
+node -e "const fs=require('fs');const W=process.env.WORKSPACE||'.';const h=JSON.parse(fs.readFileSync(W+'/monitor/analyst/human-notes.json','utf8'));const a=h.notes||(Array.isArray(h)?h:Object.values(h));const m5=a.filter(n=>n.status==='pending'&&(n.mode===5||/frozen[- ]prediction/i.test((n.title||'')+(n.body||''))));console.log(m5.length?'MODE5 PENDING: '+m5.length+' — '+m5.map(n=>n.id).join(', '):'NO MODE5 WORK')"
+```
+Trigger: Explicit operator HNOTE in `monitor/analyst/human-notes.json` with `status: pending` and either `mode: 5` or "frozen prediction" in title/body. Never self-trigger; never run on a routine cadence.
+
+Purpose: produce a concise, scientific JSON artifact suitable for OpenTimestamps anchoring as a *prospective* prediction registration. This is the canary-by-example mechanism — we publish what proper prediction registration looks like (predictions in their own immutable doc, OTS-anchored separately from observations) so the dome author has a public reference for the methodology gap his OTS practice has.
+
+**Distinct from Mode 1b.** Mode 1b writes our verdict on dome's predictions. Mode 5 writes *our own* predictions about a future event, in a form designed to be hashed and anchored. The output is not a verdict on someone else; it's a falsifiable claim we are publicly registering against the future.
+
+**Output location:** `monitor/analyst/expansions/EXP-NNN-frozen-pred-<event-slug>.json` proposing a new immutable repo file (typically under `predictions/<event-slug>.json` plus a `.md` mirror).
+
+**Required content of the proposed immutable file:**
+- Three prediction buckets, each with per-claim numerical values, units, confidence bounds, and derivation provenance:
+  1. What standard physics predicts for the event
+  2. What the dome's *own* published parameters force the dome to predict (derive from dome source; pin dome commit SHA)
+  3. Symmetric falsification criteria — what observation falsifies the dome model, what observation falsifies the standard-physics model, what observation falsifies *our analysis specifically*
+- Per-claim provenance: every number references a source (NASA URL with date, INTERMAGNET station code, dome source URL with commit SHA + line number, our `data/wins.json` WIN-NNN, our `data/sections.json` SEC-NNN). No bare numbers.
+- Pinned commit SHAs for both our repo state and the dome repo state at moment of freeze.
+- Verification instructions block: how a third party runs `ots verify` on the `.ots` companion, and where the source documents (NASA Besselian elements, dome predictions.html snapshot) can be cross-checked.
+
+**Required constraints:**
+- Every numerical claim must match a current claim in `data/wins.json` / `data/sections.json` / `data/predictions.json` at the pinned commit SHA. The frozen file is concise; it does not duplicate prose, but every number it contains must trace back to an unmoved source in the live repo.
+- Confidence bounds where applicable. No bare central values without ± or range.
+- Self-contained: a third party reading only this file and the linked sources can verify each claim independently.
+- High-confidence claims only. If you are tempted to add a peripheral assertion you only weakly endorse, exclude it — the OTS-anchor is forever and over-commitment hurts more than missing claims.
+
+**Routing after delivery:** The EXP file goes to decider as usual, but flagged `requires_frozen_prediction_review` (decider routes to curmudgeon with that flag, curmudgeon does the dual-pass review per its own HNOTE rubric, operator approves, decider integrates the new immutable file into the repo, operator runs `ots stamp` on it).
+
+→ Mode 5 procedure is fully self-contained in this section; no separate reference file. Read the operator HNOTE for event-specific scope, do the work, deliver the EXP, then drop back to other modes.
+
 **Normal — Dome Site Change Analysis**
 Trigger: `changes_pending_analysis > 0` in status.json, or new external reports on GitHub.
 → Read `monitor/prompts/reference/analyst-normal-analysis.md`, execute that procedure.
