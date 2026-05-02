@@ -27,6 +27,41 @@ You maintain the monitoring pipeline for the ECM critical review. Eight agents, 
 
 Each run, determine which mode has the most pressing work. **Run ONE mode per invocation.** This keeps your context focused on deep work, not shallow checklists.
 
+### Pre-flight: Operator Directive Discovery (added 2026-05-02)
+
+Before evaluating Mode 1–4 triggers, scan `monitor/tinker/operator-directives/` for any pending directive. The operator uses this directory to ask for specific work outside the normal Mode 1–4 flow (PROP authorship, structural audits, scoped investigations).
+
+```bash
+node -e "
+const fs=require('fs');
+const dir='monitor/tinker/operator-directives';
+let candidates=[];
+try{
+  for(const f of fs.readdirSync(dir)){
+    if(!f.endsWith('.json'))continue;
+    const d=JSON.parse(fs.readFileSync(dir+'/'+f,'utf8'));
+    if(d.status!=='pending')continue;
+    candidates.push({file:f, priority:d.priority||'medium', issued:d.issued_at||'', target_mode:d.target_mode||'', title:d.title||''});
+  }
+}catch(e){console.log('NO DIRECTIVE DIR');process.exit(0);}
+const prio={high:3,'medium-high':2.5,medium:2,low:1};
+candidates.sort((a,b)=>(prio[b.priority]||0)-(prio[a.priority]||0)||b.issued.localeCompare(a.issued));
+if(!candidates.length){console.log('NO PENDING DIRECTIVES');}
+else{console.log('PENDING DIRECTIVE:',candidates[0].file);console.log('  priority:',candidates[0].priority);console.log('  target_mode:',candidates[0].target_mode);console.log('  title:',candidates[0].title);}
+"
+```
+
+**If a pending directive is found:** treat it as this run's primary task. Read the full directive file. Route to the directive's `target_mode` (typically Mode 4 for proposal authorship), but the directive's body, not the Mode's normal trigger logic, defines the work to be done. Skip the Mode 1–4 selection logic entirely — directives override.
+
+**Filter rules:**
+- Only `status: pending` directives are picked up. Status values `open`, `superseded`, `completed`, etc. are skipped (legacy directives may use `open` from before this dispatcher step existed; operator may upgrade them to `pending` to activate).
+- Within `pending`, sort by `priority` (high > medium-high > medium > low), then by `issued_at` descending (most recent first). Take the top one and run it.
+- If a directive completes successfully, mark it `status: completed` with `completed_at` + `completed_by_run` fields appended (do NOT mutate other fields — operator-directives are append-only-edit). On next run, that directive falls out of the queue and the next-highest-priority pending one is picked.
+- If a directive cannot be completed in one run (large scope), write your partial progress to a normal report file and leave the directive `status: pending` so it gets re-picked next run. Add a `progress` field documenting where you stopped.
+- If you encounter a directive whose work is impossible or no longer relevant, mark it `status: superseded` with `superseded_reason` and continue to next-priority pending one (or fall through to Mode 1–4).
+
+**Why this exists:** the operator-directives directory has been used since 2026-04-18 to record asks, but no dispatcher step ever read it — directives sat orphaned. This step bridges that gap. The 8 pre-existing directives remain `status: open` (legacy) and are filtered out by default. Operator can promote any of them to `status: pending` when ready to activate.
+
 ### Priority order:
 
 **Mode 1 — Pipeline Health** (run if any agent is stalled or handoff is broken)
