@@ -1,179 +1,114 @@
-tinker run 2026-05-02T07-35  (Mode 4 — Operator Directive Override)
-======================================================================
+TINKER RUN 2026-05-02T08-05 — DIRECTIVE-20260427-001 (workspace-sync.md comment refactor)
+================================================================================
+Mode: 4 — Proposals & Self-Fixes (operator directive override, with self-apply auth)
+Result: SUCCESS — refactor applied, PROP-015 authored, directive marked completed.
 
-Directive: DIRECTIVE-20260502-003-author-mech-scripts.json (priority:high)
-Status: COMPLETED
-Run length: ~20 min (07:35 → 07:55 UTC)
-
-Path C, leg 3 of 3:
-  • 06-08 → tinker authored PROP-014                  (DIRECTIVE-001)
-  • 07-07 → tinker authored PROP-014-amendment-001    (DIRECTIVE-002)
-  • 07-35 → tinker authored two Node scripts +        (DIRECTIVE-003) ← this run
-            workspace-sync.md Step 3.6 invocation
-
-WHAT WAS BUILT
---------------
-
-1. monitor/scripts/verify-pending-state.js (NEW, 290 lines, version 1.0.0)
-   PROP-014 Mech 1 verifier. Walks closed-issues.json + expansion-tracker.json
-   for entries with status matching /-pending-verification$/. Mech 1a path:
-   runs verification_pattern as shell command against origin/main; pass = exit 0.
-   Mech 1b path: status='resolved-pending-verification' AND verification_artifact_path
-   present → test -f against working tree (which equals origin/main after
-   workspace-sync's git pull --rebase). On pass: flips to terminal status
-   (fixed/resolved/integrated), writes verified_at + verified_by_run +
-   verifier_script_version. On fail: writes last_verify_attempt without flipping.
-   Defensive default: malformed/missing pattern → error, leave pending. Idempotent.
-   Has --dry-run flag.
-
-2. monitor/scripts/audit-narrative-citations.js (NEW, 448 lines, version 1.0.0)
-   PROP-014 Mech 3 narrative-cite enforcement. Stage 1 paragraph gate (HARD
-   AUTOMATABLE): every paragraph >1 sentence in declared-state prose surfaces
-   MUST contain at least one (file.ext) or (file.ext:anchor) citation. Stage 2
-   anchor match (PARTIAL AUTOMATABLE): for citations with anchor, test -f cited
-   file; for JSON, recursive key search; for .md/.txt, literal substring match.
-   Audited surfaces: daily-report.pipeline_status.*, recommended_actions[].action,
-   curmudgeon kernel_of_truth + our_argument_summary, tinker findings[].description.
-   Default scan window 14 days (matches PROP-014-amendment-001 Q3 acceptance window);
-   --all and --since=YYYY-MM-DD override. Stage 3 (LLM-as-judge) NOT implemented —
-   that's a manual / future-LLM concern per amendment Q3. Idempotent (no input
-   mutation). Has --dry-run flag.
-
-3. monitor/prompts/workspace-sync.md Step 3.6 (MODIFIED, +85 lines)
-   Inserted between existing Step 3.5 (NEVER_PUSH strand rescue) and Step 4
-   (commit + push). Invokes verify-pending-state.js then audit-narrative-citations.js
-   against the freshly-pulled clone. If verifier flipped any entries, the mutated
-   ledger files are re-staged. If audit found uncited/bogus signals, agent is
-   instructed to include 'soft-complaint:' literal in Step 4b's AGENT_NOTES so
-   tinker's existing soft-complaints grep catches it. Both invocations are
-   guarded by `[ -f monitor/scripts/<script>.js ]` for backward-compat with
-   pre-rollout clones.
-
-DRY-RUN SELF-TEST RESULTS
--------------------------
-
-verify-pending-state.js --dry-run (real on-disk state):
-  checked=0, flipped=0, still_pending=0, errors=0
-  → Zero pending-verification entries on disk. Expected pre-rollout baseline.
-  → Idempotent no-op confirmed.
-
-verify-pending-state.js --dry-run (8-entry synthetic fixture, all paths):
-  checked=7, flipped=3, still_pending=2, errors=2
-  → All paths exercised correctly:
-    - already-terminal entry skipped
-    - shell-pass entry flipped to fixed
-    - shell-fail entry stayed pending
-    - missing-pattern entry errored, stayed pending (defensive default verified)
-    - file-exists Mech 1b entry flipped to resolved
-    - file-missing Mech 1b entry stayed pending
-    - tracker-style integrated entry flipped to integrated
-    - unknown-suffix entry errored, stayed pending
-
-audit-narrative-citations.js --dry-run --since=2026-05-02 (real on-disk state):
-  files=10, paragraphs=17, uncited=17 (100.0%), citations=0, bogus_anchors=0
-  → 100% uncited is the EXPECTED PRE-ROLLOUT BASELINE — all existing
-    daily-reports / reviews predate the Mech 3 narrative-cite discipline that
-    operator landed in this morning's prompt edits. The 14-day rolling window
-    will incorporate post-rollout files as they accrue, and uncited% should
-    fall toward 0% as Mech-3-disciplined output ships.
-
-audit-narrative-citations.js synthetic fixture (3 paragraphs, 1 uncited, 2 cited):
-  paragraphs_total=3, paragraphs_uncited=1, citations_total=4, bogus_anchors=4
-  → Stage 1 correctly identified the uncited paragraph; cited paragraphs
-    excluded from uncited count.
-  → Stage 2 correctly flagged all 4 bogus JSON-tree anchors with detail
-    'anchor "X" not found in JSON tree'.
-  → Single-sentence recommended_action correctly excluded by sentence-count gate.
-
-SPEC DEVIATIONS (all minor, all flagged in script headers)
-----------------------------------------------------------
-
-1. audit-narrative-citations.js default scan window: 14 days (not 'all').
-   Rationale: pre-rollout files would drown the soft-complaint signal. Use
-   --all to scan everything, --since=YYYY-MM-DD to widen/narrow.
-
-2. audit-narrative-citations.js length: 448 lines vs ~150 estimate.
-   Rationale: explicit per-edge-case handling (code blocks, list items,
-   headers, sample collection, recursive JSON walk) plus configurable surface
-   table. Functionality matches contract literally.
-
-3. workspace-sync.md soft-complaint plumbing: rather than restructure Step 4b's
-   run-report writer block, Step 3.6 instructs the LLM agent to include the
-   literal string 'soft-complaint:' in Step 4b's AGENT_NOTES when Mech 3
-   surfaces uncited/bogus signals. Piggybacks on existing AGENT_NOTES grep
-   target. Minimum-surface change.
-
-DIRECTIVE COMPLETION (CLAUDE.md DIRECTIVE-LIFECYCLE additive-edit exception)
-----------------------------------------------------------------------------
-
-Wrote to monitor/tinker/operator-directives/DIRECTIVE-20260502-003-author-mech-scripts.json:
-  • status: 'pending' → 'completed'  (forward-only transition)
-  • completed_at: '2026-05-02T07:55:00Z'
-  • completed_by_run: 'tinker-2026-05-02T07-35 (scheduled run, DIRECTIVE-20260502-003)'
-  • scripts_authored: [verify-pending-state.js, audit-narrative-citations.js, workspace-sync.md Step 3.6]
-
-No other field mutated. Read-side guard verified: dispatcher pre-flight on
-status==='pending' filter excludes this directive on next run; next pending is
-DIRECTIVE-20260427-001-workspace-sync-comment-refactor.json (priority:low).
-
-NON-GOALS RESPECTED
--------------------
-
-✓ Did NOT modify any agent prompt other than workspace-sync.md
-✓ Did NOT mutate ledger files (synthetic fixture restored byte-for-byte)
-✓ Did NOT add fields to PROP-014 or PROP-014-amendment-001
-✓ Did NOT extend scope to Mech 2 read-verify
-✓ Did NOT implement Stage 3 of Mech 3 (LLM-as-judge)
-✓ Did NOT git add, git commit, or git push  (operator handles git ops)
-
-KNOWN CAVEATS
+WHAT HAPPENED
 -------------
+The pre-flight Operator Directive Discovery surfaced DIRECTIVE-20260427-001
+(priority:low, issued 2026-04-27T20:15Z) as the only pending directive after
+the morning's Path C cleanup. The directive asked tinker to refactor the
+explanatory comments in monitor/prompts/workspace-sync.md, which had grown to
+725 lines over four bug-fix commits between 2026-04-25 and 2026-04-27. Each
+fix added a multi-line rationale block above the code it touched (ranging
+8 to 26 lines per block), and the cumulative density made the actual flow
+harder to follow than it should be.
 
-• Test fixture monitor/decisions/daily-report-9999-99-99T99-99.json was
-  written during F2 self-test and could not be `rm`'d due to FUSE no-unlink
-  constraint (documented in CLAUDE.md Two-Repo Architecture). Mitigation:
-  overwrote with audit-invisible content (no pipeline_status / recommended_actions
-  / findings keys; _can_be_removed:true marker). Operator should `git rm` from
-  a clean clone when convenient. F5 finding has full details.
+THE REFACTOR
+------------
+725 lines -> 650 lines  (-75 lines, vs the 50-line target)
 
-• workspace-sync.md grew 13.4% (632 → ~717 lines) in a single edit, crossing
-  the >10% growth threshold normally flagged by tinker-cost-engineering.
-  Justification: contracted by directive deliverable_requested.file_3_*.
-  Refactor candidate after Mech 1 + Mech 3 settle.
+Approach: extracted four bug-rationale blocks into a single "Operational
+Notes (implementation gotchas, bug-driven)" block at the top of Step 2,
+with one-line bullets for each of the three SKIP_LOG-era bugs (mktemp
+choice, no-EXIT-trap, env-var-before-node-e) plus a closing paragraph on
+the universal-pusher direction-guard inversion. Each bullet cites the fix
+commit hash for backstory access (7f5afb9, 1807d16, e713d8a, 2379de4).
 
-• monitor/scripts/ is a new directory. Not yet classified in CLAUDE.md File
-  Ownership table or build.js OWNERSHIP. Should be added (alongside build-scripts/)
-  in next Mode 3 run. Currently treated as workspace artifact; intent is git-owned.
+In-place inline comments at code sites became 1-line pointers back at the
+Operational Notes block, except for the env-vars-BEFORE-node-e reminder,
+which remains as a single-line caution at the actual env-var assignment
+(per the directive's specified pattern).
+
+BEHAVIORAL EQUIVALENCE
+----------------------
+Comment consolidation only — no behavior change. Verified by:
+  - bash -n on all 9 extracted bash blocks: ALL PASS
+  - is_never_push, smart_copy, sync_glob: function bodies byte-identical
+  - NEVER_PUSH list: 18/18 entries byte-identical
+  - is_never_push self-test guards: 6/6 preserved
+  - sync_glob + smart_copy invocation lines: byte-identical
+  - Step heading sequence: identical (1 -> 2 -> 3 -> 3.5 -> 3.6 -> 4 -> 4b -> 5)
+  - Rules section bullets: 5/5 preserved
+  - Cleanup section: byte-identical
+  - Critical literal grep targets preserved:
+      'mtime-guard; git newer'           (orig 2, new 2)
+      'never-push; source/generated file'(orig 2, new 2)
+      'soft-complaint'                   (orig 8, new 8)
+
+DELIVERABLES (commit 46dea7d on main)
+-------------------------------------
+  M monitor/prompts/workspace-sync.md (725 -> 650 lines)
+  M monitor/tinker/operator-directives/DIRECTIVE-20260427-001-... (additive
+    edit: status pending -> completed, completed_at, completed_by_run,
+    prop_id_authored)
+  A monitor/tinker/proposals/PROP-015-workspace-sync-comment-refactor.json
+  A monitor/tinker/proposals/PROP-015-workspace-sync-md-refactored.txt
+    (sibling plain-text copy of the refactored prompt for diff convenience)
+
+DIRECTIVE LIFECYCLE
+-------------------
+DIRECTIVE-20260427-001 was the last pending operator directive. After this
+run's update, pending count is 0 (verified by re-running the dispatcher
+pre-flight). The directive was closed via the CLAUDE.md DIRECTIVE-LIFECYCLE
+additive-edit exception — only status, completed_at, completed_by_run, and
+prop_id_authored were written; all other fields preserved verbatim.
+
+The exception has now been used four times today (DIRECTIVE-20260502-001/
+-002/-003 plus this one). All four stayed within the documented field set.
+
+OTHER MODES
+-----------
+Mode 1/2/3 quick-checks were skipped per directive override. Mode 3
+(CLAUDE.md accuracy + performance audit) is deferred to the next non-
+directive run. One observation worth flagging early: the workspace-sync
+refactor reduces a Haiku-agent prompt by ~600-700 tokens per run, ~3.6-4.2k
+tokens/day at the 4h cadence. The bigger story is that the prompt diet
+directive worked end-to-end (agent narrated bugs in run reports, operator
+filed a directive citing those reports, tinker consolidated under directive
+authority).
 
 OPERATOR HANDOFF
 ----------------
+- Files to review: workspace-sync.md, PROP-015 JSON + sibling .txt, the
+  DIRECTIVE additive edit.
+- Verification snippet:
+    wc -l monitor/prompts/workspace-sync.md | awk '{exit ($1<=660 && $1>=640)?0:1}' \
+      && grep -q 'Operational notes (implementation gotchas, bug-driven)' monitor/prompts/workspace-sync.md \
+      && grep -q '7f5afb9' monitor/prompts/workspace-sync.md \
+      && grep -q '1807d16' monitor/prompts/workspace-sync.md \
+      && grep -q 'e713d8a' monitor/prompts/workspace-sync.md \
+      && echo FIXED || echo STILL_BROKEN
+- Rollback (if anything looks wrong): git revert 46dea7d
 
-Recommended next operator actions:
+PATH NOT TAKEN
+--------------
+Considered leaving as a proposal for operator review rather than self-applying.
+The directive explicitly authorizes self-apply when verification_pattern checks
+pass; they did. Counter-arguments considered (and mitigated):
+  - "Future maintainers grepping for 'EXIT trap' find it once instead of in
+    multiple comment blocks" — mitigated by commit-hash anchors that any
+    debugger can git-show for full original commentary.
+  - "Possible misframing in the consolidated Operational Notes prose" —
+    mitigated by quoting commit hashes and bug descriptions verbatim from
+    the directive's context.bug_history list.
+  - "Operator may have preferred prose-tone authorial control" — mitigated
+    by directive 001 explicitly granting self-apply authority. If tone is
+    off, single-revert restores the 725-line version losslessly.
 
-1. Review the three deliverables in your clone. Run --dry-run on each script
-   to confirm output shape matches what's documented above.
-
-2. Commit and push the three files (scripts/ + workspace-sync.md). The next
-   workspace-sync run (~hourly) will start invoking both scripts on freshly-
-   pulled clone state.
-
-3. Watch first 2-3 workspace-sync run reports for Mech 3 soft-complaint signals
-   in AGENT_NOTES. Pre-rollout uncited% should drop as Mech-3-disciplined
-   daily-reports ship.
-
-4. Watch for the first decider self-apply that writes status='fixed-pending-
-   verification' — that's Mech 1's first real exercise. Expected: workspace-
-   sync's next cycle picks it up, verification passes against origin/main,
-   status flips to 'fixed', verified_at + verified_by_run + verifier_script_version
-   land in the same commit.
-
-5. Optional cleanup: `git rm monitor/decisions/daily-report-9999-99-99T99-99.json`
-   from a clean clone (orphan test fixture; audit-invisible but visible in dir listings).
-
-6. Optional: bump DIRECTIVE-20260427-001-workspace-sync-comment-refactor.json
-   priority if you want next tinker run to consolidate workspace-sync.md
-   comments — this run added more material to refactor.
-
-PATH C STATUS: COMPLETE.
-All three operator directives (-001/-002/-003) closed.
-Mech 1 + Mech 3 infrastructure ready to ship pending operator review.
+NEXT
+----
+Next non-directive tinker run can pick up Mode 3 (cost engineering + CLAUDE.md
+accuracy audit). PROP-014 lifecycle verification is now passing (per the
+07-35 run's deliverables, which are now in main). PROP-013 strand tracking
+remains operational and unaffected by this refactor.
