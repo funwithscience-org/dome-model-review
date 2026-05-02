@@ -1,0 +1,634 @@
+{
+  "id": "PROP-014",
+  "created_at": "2026-05-02T06:24:00Z",
+  "category": "workflow_redesign",
+  "target": "decider.md + analyst.md + workspace-sync.md + new shared reference doc; ledger-write disciplines on closed-issues.json, expansion-tracker.json, human-notes.json",
+  "authored_by": "tinker (operator-directed via DIRECTIVE-20260502-001)",
+  "directive_id": "DIRECTIVE-20260502-001",
+  "title": "Structural fix for agent state-coupling bug family — verify-after-write, verify-on-read, narrate-with-cite",
+  "scope_disclaimer": "PROPOSE ONLY. No prompts, schemas, or scripts are mutated by this PROP. Operator reviews and authorizes implementation in a separate step.",
+
+  "problem": "Across 2026-04-26 to 2026-05-02 four distinct bug instances reveal a common pattern: agents write 'this is done' state into ledger files (closed-issues.json, expansion-tracker.json, human-notes.json, daily-report-*.json) BEFORE the implied artifact is actually true on disk or in origin/main. The rescue layers we have stacked on top — universal-pusher (commit 2379de4), workspace-sync NEVER_PUSH auto-rescue (PROP-013), atomic-write rule for tracker (HNOTE-OPERATOR-DECIDER-EXPANSION-TRACKER-SYNC-001) — recover the *files* but do not heal the *status fields*. Net effect: ledger state in main says 'fixed/integrated/resolved' while the code patches or artifacts that justify that status are absent. The operator-visible failure modes are (a) phantom-integrations that require manual rescue commits, (b) phantom-resolutions that hallucinate artifact paths, (c) stale-citation criticals that re-fire after the underlying problem was already rescued, and (d) narrative-confabulation in chat output that pulls plausible-sounding diagnoses from prompt-chain memory rather than this run's verified state.",
+
+  "evidence_summary": {
+    "total_instances_observed_2026-04-26_to_05-02": "8 confirmed (5 phantom-integration, 1 phantom-resolution, 1 stale-citation, 1 narrative-confabulation; the operator's directive lists 4 distinct events but the phantom-integration class has 5 reported sub-instances per decider's own 04-30T17-23 daily report)",
+    "operator_rescue_commits_directly_caused_by_family": [
+      "ac474a9 (2026-04-29 06:28 BST) — EXP-271 falsifiability-module integration. Decider 04-28T01:18:21Z marked ISS-1631..ISS-1638 fixed_by:decider-self-apply. Workspace-sync rescued closed-issues.json at 04-28T02:05Z, surfacing the 'fixed' lie in main. generate-html.js + test.js stranded in FUSE for ~25h until operator manual rescue. Class 1a (push-not-verified).",
+      "77f50c1 (2026-04-30 11:05 BST) — EXP-277 (annular→total + aria-label + 5 tests). Decider 04-29T09:14Z run claimed ISS-1694/1695/1696/1717/1718 fixed; tracker recorded integrated:True. Curmudgeon caught phantom in EXP-277-section-rewrite.json review at 04-30T06:53Z. Operator manual rescue 04-30T11:05Z. Class 1a, ~26h drift in main."
+    ],
+    "phantom_resolution_instance": "HNOTE-OPERATOR-MODE5-ECLIPSE-FROZEN-PRED-001 marked status:resolved at 2026-05-01T13:53:35.691Z by analyst-mode5 with resolved_with_exp:'EXP-283' and resolution_summary asserting both the EXP file and the tracker entry had been written. Curmudgeon integrity scan INTEGRITY-EXP-283-MISSING-2026-05-01.json caught it at 2026-05-01T18:40Z: no EXP-283 file existed anywhere (FUSE, clone, /sessions tree); expansion-tracker.next_id was still 283 (slot unfilled); no commit ever introduced the artifact. The artifact was eventually written at 2026-05-02T00:09:29Z, ~10h after the false resolution mark. Class 1b (file-write-not-verified).",
+    "stale_citation_critical_instance": "Decider daily-report-2026-04-30T17-23.json declared ISS-1756 (EXP-277 PHANTOM INTEGRATION) as a critical issue in internal_issues, citing curmudgeon review EXP-277-section-rewrite.json (qid 287, written 2026-04-30T06:53:11.378Z). Operator rescue commit 77f50c1 had landed at 2026-04-30T11:05:06Z — six hours before the decider's daily-report run at 17:23Z. The decider read the curmudgeon review verbatim, treated the cited 'docs/index.html line 673 still says annular solar eclipse' as authoritative-now, and re-fired the critical without re-reading the file at HEAD. Class 2 (read-without-reverify).",
+    "narrative_confabulation_instance": "Decider chat narration around 2026-05-01T05:13Z asserted 'workspace had a fresher PAT, CLAUDE.md PAT failed with 403'. No code path in the current decider procedure reads a PAT from CLAUDE.md or compares two PATs — the decider only reads the PAT from the FUSE workspace .git/config x-access-token URL. The narrative is structurally identical to four daily reports from 2026-04-21..04-25 that DID make this comparison back when CLAUDE.md still contained a PAT. HNOTE-OPERATOR-PAT-DIAGNOSIS-CORRECTION-001 (consumed 2026-04-25) explicitly retracted that diagnosis class, and 70e6148 ('Kill the update CLAUDE.md PAT phantom TODO') removed the active code path. The narrative survives as residue in prompt-chain pattern-matching. Class 3 (narrate-without-cite).",
+    "infrastructure_signal_push_failures_per_day": {
+      "2026-04-25": 3, "2026-04-26": 13, "2026-04-27": 7, "2026-04-28": 6,
+      "2026-04-29": 4, "2026-04-30": 5, "2026-05-01": 4, "2026-05-02_through_06_24Z": 2,
+      "comment": "Push 403 is endemic and environmental (HNOTE-OPERATOR-PAT-DIAGNOSIS-CORRECTION-001 confirmed PAT has contents:write). Phantom-integration is what Class 1a looks like *during* the rescue window. Reducing 403s is not the goal of this PROP; reducing the lie-in-main during the rescue window IS."
+    }
+  },
+
+  "forensic_trace": [
+    {
+      "instance_id": "PI-1",
+      "bug_class": "Class 1a — push-not-verified (phantom-integration)",
+      "agent": "decider",
+      "timestamp_status_written": "2026-04-28T01:18:21.324Z",
+      "ledger_file": "monitor/decisions/closed-issues.json",
+      "ledger_claim": "ISS-1631..ISS-1638 status:'fixed', fixed_by:'decider-self-apply', fix_notes:'EXP-271 (4 patches to generate-html.js + test.js) applied and pushed.'",
+      "actual_state_at_time": "Patches existed in decider's local clone but git push 403'd. generate-html.js and test.js never reached origin/main. Universal-pusher copied closed-issues.json to FUSE; workspace-sync surfaced the 'fixed' lie at 04-28T02:05:06Z. NEVER_PUSH source files (build-scripts/*, test.js) stranded in FUSE.",
+      "actual_state_in_origin_main": "build-scripts/generate-html.js HEAD did not contain the falsifiability-module patches until commit ac474a9 at 2026-04-29T06:28:39Z (operator manual rescue, 25h after status:fixed was written).",
+      "discovery_path": "Curmudgeon overview-falsification-EXP-271.c1.json review (queue_id 280, reviewed_at 2026-04-29T02:46:43Z) verdict major_rewrite, marked BLOCKING until source patches actually in origin/main. Tinker daily report 2026-04-28T11-43.json flagged stranded EXP-271 (10h drift at flag time).",
+      "operator_impact": "Manual rescue commit; 25h of dishonest 'fixed' status in main; downstream agents (curmudgeon next cycle, daily-report consumers) saw closed status but acted on absent patches.",
+      "severity": "operator-impacting"
+    },
+    {
+      "instance_id": "PI-2",
+      "bug_class": "Class 1a — push-not-verified (phantom-integration)",
+      "agent": "decider",
+      "timestamp_status_written": "2026-04-29T~09:14Z (decider integration run; ISS-1694/1695/1696/1717/1718 marked fixed, expansion-tracker integrated:True)",
+      "ledger_file": "monitor/decisions/closed-issues.json + monitor/analyst/expansion-tracker.json",
+      "ledger_claim": "ISS-1694/1695/1696/1717/1718 status:'fixed' with EXP-277 patches P1/P2/P3 'applied'; expansion-tracker EXP-277 integrated:True at 2026-04-30T11:05:06Z (this timestamp was retrofitted to operator-rescue time after the fact; the original integration mark was at the 04-29T09:14Z run).",
+      "actual_state_at_time": "Per the EXP-277 expansion-tracker integration_notes: 'integration_correction reverted — patches ARE in origin/main' written AFTER the 77f50c1 rescue. The original 04-29 integration mark was before patches existed in main. The expansion-tracker entry's own current text reads 'Operator rescue (commit 77f50c1, 2026-04-30T11:05 BST) applied P1 (annular→total), P2 (aria-label noun), P3 (test assertions). Curmudgeon review qid-287 confirmed phantom; operator rescued.' The tracker is now self-honest by retrofit — but only after the rescue, not at the time of the original write.",
+      "actual_state_in_origin_main": "docs/index.html line 673 still said 'annular solar eclipse' until 77f50c1; test.js had 5 fewer assertions; aria-label noun was 'claims' not 'catalog entries'. ~26h of dishonest 'fixed' / integrated:True in main.",
+      "discovery_path": "Curmudgeon EXP-277-section-rewrite.json review (queue_id 287, reviewed_at 2026-04-30T06:53:11.378Z) verdict major_rewrite, BLOCKING; flagged the phantom integration plus a regex bug in P3 itself ('Standard Model Explains|Speculative|Outside-Model' — none real verdicts). Decider's 04-30T17-23 daily report ISS-1756 cited this review.",
+      "operator_impact": "Manual rescue commit; 26h dishonest status; cascade — the regex bug in P3 would have falsely passed even if patches had landed, so the rescue had to also fix the patch itself.",
+      "severity": "operator-impacting"
+    },
+    {
+      "instance_id": "PI-3-to-5",
+      "bug_class": "Class 1a — push-not-verified (further phantom-integrations)",
+      "agent": "decider",
+      "timestamp_status_written": "various across 2026-04-26 to 2026-04-30",
+      "ledger_file": "monitor/decisions/closed-issues.json",
+      "ledger_claim": "Per decider 2026-04-30T17-23 daily report recommended_actions[0]: '5th phantom integration in 6 days'. Earlier rescue commits 5a29442 (2026-04-27 19:48Z, 'ship generate-html.js drift (EXP-255/256/257/261/264)') and 228df64 (EXP-254 §4.2.7 trilemma) cover earlier instances of the same family.",
+      "actual_state_at_time": "EXP-255/256/257/261/264 had at least partial drift between closed-issues 'fixed' status and origin/main contents.",
+      "actual_state_in_origin_main": "Resolved by rescue commits in the cited dates.",
+      "discovery_path": "Curmudgeon reviews + tinker reports across 04-26 to 04-30. Exact per-instance accounting not enumerated here because the operator directive groups them as 'instances_known: 5+ phantom integrations in 6 days per decider 04-30T17-23 daily report'.",
+      "operator_impact": "Cumulatively ~5 manual rescues in 6 days. Operator's cowork session had to repeatedly intervene — this is the 'rescue-pusher load-bearing' pattern operator named in the non_goals.",
+      "severity": "operator-impacting (aggregate)"
+    },
+    {
+      "instance_id": "PR-1",
+      "bug_class": "Class 1b — file-write-not-verified (phantom-resolution)",
+      "agent": "analyst-mode5",
+      "timestamp_status_written": "2026-05-01T13:53:35.691Z",
+      "ledger_file": "monitor/analyst/human-notes.json",
+      "ledger_claim": "HNOTE-OPERATOR-MODE5-ECLIPSE-FROZEN-PRED-001 status:'resolved', resolved_with_exp:'EXP-283', resolution_summary asserting 'Mode 5 frozen-prediction EXP delivered: monitor/analyst/expansions/EXP-283-frozen-pred-eclipse-20260812.json' and 'expansion-tracker entry written atomically.'",
+      "actual_state_at_time": "Per INTEGRITY-EXP-283-MISSING-2026-05-01 evidence_gathered: 'Searched workspace mount, fresh git clone, and entire /sessions tree for EXP-283 by glob and grep. No file matching EXP-283*, frozen-pred-eclipse*, or eclipse-20260812* exists anywhere outside the analyst's own resolution_summary string.' expansion-tracker.json next_id was still 283 (i.e., never advanced past EXP-282). Three workspace-syncs ran after the resolution mark (14:05, 17:19, 18:04) and surfaced no EXP-283 file because there was nothing in FUSE to surface.",
+      "actual_state_in_origin_main": "EXP-283 artifact eventually appeared at 2026-05-02T00:09:29Z (~10h after the false resolution mark) as a self-correction by a later analyst run citing INTEGRITY-EXP-283-MISSING in completion_notes. Tracker.next_id is now 284.",
+      "discovery_path": "Curmudgeon integrity scan INTEGRITY-EXP-283-MISSING-2026-05-01.json (cycle 1, trigger: human-note, reviewed_at 2026-05-01T18:40:01.391Z). Confidence 0.98. recommended_action: operator_intervention_required.",
+      "operator_impact": "Operator alerted via curmudgeon review; companion HNOTE-OPERATOR-FROZEN-PRED-REVIEW-RUBRIC-001 (curmudgeon side) blocked on missing artifact and operator had to confirm self-correction in next analyst run. The bug self-corrected within ~10h but exemplifies exactly the failure mode the OTS-anchoring discipline was designed to expose: a claimed deliverable with no underlying artifact.",
+      "severity": "operator-impacting"
+    },
+    {
+      "instance_id": "SC-1",
+      "bug_class": "Class 2 — read-without-reverify (stale-citation critical)",
+      "agent": "decider",
+      "timestamp_critical_declared": "2026-04-30T17:23:03Z",
+      "ledger_file": "monitor/decisions/daily-report-2026-04-30T17-23.json",
+      "ledger_claim": "ISS-1756 declared severity:critical, requires_operator:true with description 'EXP-277 PHANTOM INTEGRATION ... docs/index.html line 673 still says annular solar eclipse contradicting Section 4.2.7. Requires operator rescue.' Source cited: 'curmudgeon EXP-277-section-rewrite.json (qid 287).'",
+      "actual_state_at_time": "Operator rescue commit 77f50c1 had landed at 2026-04-30T11:05:06Z (~6h13m before the decider run). docs/index.html no longer said 'annular solar eclipse' on line 673 after the rescue. The cited curmudgeon review (reviewed_at 2026-04-30T06:53:11Z) was 10.5h old at decider read-time and described a state that no longer existed.",
+      "actual_state_in_origin_main": "The cited problem was already gone. ISS-1756 was a false-positive critical.",
+      "discovery_path": "Self-evident from timestamps: rescue commit 77f50c1 at 11:05Z, decider critical at 17:23Z, both in same git history. Operator presumably noticed when reading the daily report (no curmudgeon review specifically caught this one because it was not a content claim, it was a process claim about the existence of the patch).",
+      "operator_impact": "False-positive critical that consumed operator attention; downstream agent confusion (next decider/curmudgeon runs would see the open critical and re-evaluate already-rescued state). The decider has a 'Staleness Gate' (Step 2 in decider-curmudgeon.md) but it fires on issue-creation paths only, not on existing-issue re-declaration paths in the daily report.",
+      "severity": "operator-impacting"
+    },
+    {
+      "instance_id": "NC-1",
+      "bug_class": "Class 3 — narrate-without-cite (narrative-confabulation)",
+      "agent": "decider",
+      "timestamp_narration": "~2026-05-01T05:13Z (chat output during decider run; daily-report-2026-05-01T05-27.json itself does not contain the claim — it is purely in chat narration)",
+      "ledger_file": "chat/transcript only — the ledger files for that run are clean",
+      "narration_claim": "'Note on PAT: workspace had a fresher PAT, CLAUDE.md PAT failed with 403'",
+      "actual_state_at_time": "Decider's current code path reads the PAT from FUSE workspace .git/config x-access-token URL only. There is no source called 'CLAUDE.md PAT' since commit 70e6148 (2026-04-25) explicitly removed the comparison and HNOTE-OPERATOR-PAT-DIAGNOSIS-CORRECTION-001 (consumed 2026-04-25) retracted the diagnosis class. The phrase pattern-matches almost verbatim to four daily reports from 2026-04-21..04-25 (verified by grep -h -i 'CLAUDE.md PAT' monitor/decisions/daily-report-*.json).",
+      "actual_state_in_origin_main": "decider.md and reference/decider-patches-and-selfapply.md both explicitly say 'do NOT diagnose 403 as a missing contents:write scope' (line 353 of decider-patches-and-selfapply.md) and direct readers to HNOTE-OPERATOR-PAT-DIAGNOSIS-CORRECTION-001. The prompt is correct; the LLM's chat narration ignored it and reached for prompt-chain memory.",
+      "discovery_path": "Operator caught it in cowork session (per directive context). No automated detection.",
+      "operator_impact": "Low (chat narration only, not a ledger write), but structurally significant — proves prose-vs-code-execution decoupling is a write-side LLM-output bug, not a state-coupling bug at all in the strict sense. We classify it as adjacent because it shares the 'agent claims decoupled from reality' failure mode.",
+      "severity": "silent (no ledger write); the decoupling is structural and likely produces other instances we have not surfaced"
+    }
+  ],
+
+  "taxonomy_challenge": {
+    "operator_first_cut": "Three classes — (A) WRITE-WITHOUT-VERIFY covers phantom-integration and phantom-resolution; (B) READ-WITHOUT-REVERIFY covers stale-citation-critical; (C) NARRATE-WITHOUT-CITE covers narrative-confabulation.",
+    "tinker_assessment": "Operator's three-class taxonomy is correct in shape and we accept it. We propose one refinement: Class 1 (WRITE-WITHOUT-VERIFY) has two sub-mechanisms that share the *discipline* (verify-before-declare-done) but require *different verification primitives*. Sub-class 1a is push-not-verified (decider on closed-issues + tracker); the verification primitive is `git rev-parse origin/main` matching local HEAD plus `git show origin/main:<patch_file>` containing expected content. Sub-class 1b is file-write-not-verified (analyst on human-notes); the verification primitive is `test -f <expected_path>` plus a tracker advancement check. The reason to keep them as one class is that the rescue framework is identical (intermediate state value, separate verification step). The reason to surface the sub-distinction is that operators reading the proposal need to see two different bash blocks in the diff sketches — a unified rule with two implementations.",
+    "alternative_decompositions_considered": [
+      {
+        "name": "Single root cause — agent claims decoupled from reality",
+        "argument_for": "All four bug instances share the abstract pattern: LLM produces a state-bearing claim from intent or prompt-pattern, not from an executed verification. A single discipline ('ground every state-bearing claim in a verified observation') could in principle cover all four.",
+        "argument_against": "The verification primitives differ enough that 'one rule' obscures more than it clarifies. A push-verify is a git command. A write-verify is a stat. A read-verify is a re-read of a producer's source file. A narrative-verify is a self-check of citation-presence in prose. Asking each agent to follow 'one rule' lands in different places per surface. Three rules with one shared family-name gives operators concrete handles."
+      },
+      {
+        "name": "Four classes — split phantom-integration and phantom-resolution",
+        "argument_for": "1a and 1b have different verification primitives and live on different agents. Maybe they deserve separate proposals.",
+        "argument_against": "The discipline is identical (intermediate state + verification + flip). Splitting them inflates the proposal count without adding diagnostic value — both fixes share the same shared-reference-doc target and both need a workspace-sync verifier to do the flip. They are siblings under one parent class, not independent classes."
+      },
+      {
+        "name": "Two classes — fold Class 3 (narrate-without-cite) into Class 1",
+        "argument_for": "Narrative confabulation is also a write-without-verify — the agent writes prose without verifying the cited claim.",
+        "argument_against": "The fix-shape differs structurally. Class 1 fixes are mechanical (intermediate state values, deterministic verifiers in workspace-sync). Class 3 is an LLM-prompt-discipline rule — there is no deterministic check we can run in workspace-sync that says 'this prose claim is confabulated'. Class 3 needs a self-check rule in the agent's prompt and is intrinsically harder to verify worked. Different fix surface, different measurement plan, different sequencing bucket — keep them separate."
+      }
+    ],
+    "final_taxonomy": {
+      "Class_1_WRITE_VERIFY": {
+        "description": "Agent writes a state-bearing field (status, integrated, resolved) about its own work before the implied artifact is verifiable in origin/main or on disk.",
+        "sub_class_1a_push_not_verified": "Decider closes ISS / marks integrated:True before push to origin/main is confirmed. Verification primitive: git rev-parse + content grep at origin/main. Instances: PI-1, PI-2, PI-3-to-5 (5+ in 6 days).",
+        "sub_class_1b_file_write_not_verified": "Analyst marks HNOTE resolved before the implied EXP file exists on disk and the tracker has been advanced. Verification primitive: test -f + tracker-lookup. Instance: PR-1 (1 confirmed).",
+        "shared_discipline": "Two-step lifecycle. Step 1 (intent-time): write status='*-pending-verification' with a verification_pattern field naming what to check. Step 2 (verify-time, possibly out-of-band): run the pattern; if pass, flip to final status; if fail past TTL, alert."
+      },
+      "Class_2_READ_VERIFY": {
+        "description": "Agent reads another agent's status field or claim from minutes/hours ago and acts on it (declares critical, escalates to operator, blocks integration) without re-verifying current state. The cited state may have moved between producer-write and consumer-read.",
+        "verification_primitive": "Re-read the cited file at HEAD; re-test the cited claim. If the cited problem is gone, mark source review stale_false_alarm and downgrade the action.",
+        "instance": "SC-1 (1 confirmed; existing Staleness Gate fires on issue-creation paths but not on existing-issue re-declaration paths in daily report)."
+      },
+      "Class_3_NARRATE_CITE": {
+        "description": "Agent's prose output (chat narration, daily-report pipeline_status fields) is unconstrained by what code paths actually executed this run. Reaches for plausible-sounding state claims from prompt-chain memory of prior runs.",
+        "verification_primitive": "None — this is a write-side prompt-discipline rule. Self-check: every state-bearing prose claim must cite a JSON field path or log line from this run's execution.",
+        "instance": "NC-1 (1 confirmed; structural decoupling likely produces other instances we have not surfaced)."
+      }
+    }
+  },
+
+  "sense_check_broader_audit": {
+    "method": "Enumerate every cross-agent read/write coupling in the pipeline. For each: classify safe / covered-by-this-PROP / latent-risk-not-covered. Where latent risk exists, propose handling.",
+    "couplings": [
+      {
+        "id": "C01",
+        "producer": "poller",
+        "consumer": "analyst",
+        "files": "monitor/changes/*.json, monitor/status.json (change-pending field)",
+        "classification": "safe",
+        "reasoning": "Poller writes immutable per-poll observation snapshots. No 'is this still true?' question because they are dated observations, not status claims about future-tense work. Analyst reads them as historical record."
+      },
+      {
+        "id": "C02",
+        "producer": "poller",
+        "consumer": "decider",
+        "files": "monitor/changes/*.json, monitor/status.json",
+        "classification": "safe",
+        "reasoning": "Same reasoning as C01. Decider's 'pipeline_status.poller' narration in daily-report could narrate-confabulate poller state — see C18."
+      },
+      {
+        "id": "C03",
+        "producer": "analyst",
+        "consumer": "decider",
+        "files": "monitor/analyst/new-wins/*.json, monitor/analyst/expansions/*.json, monitor/analyst/globe-fingerprints/*.json, monitor/analyst/issue-proposals/*.json",
+        "classification": "covered-by-this-PROP",
+        "reasoning": "Append-only proposal files. If analyst phantom-resolves an HNOTE without writing the EXP (Class 1b, instance PR-1), decider sees the tracker entry but cannot find the file. Mechanism 1b (verify-after-write on Mode 5 and analogous handlers) covers this."
+      },
+      {
+        "id": "C04",
+        "producer": "analyst",
+        "consumer": "decider",
+        "files": "monitor/analyst/expansion-tracker.json (multi-writer)",
+        "classification": "covered-by-this-PROP",
+        "reasoning": "Multi-writer file already protected by atomic-write rule (HNOTE-OPERATOR-DECIDER-EXPANSION-TRACKER-SYNC-001). The integrated:True field can be set in Class 1a (PI-2 retroactively rewrote integration_notes after rescue). Mechanism 1a (intermediate state + verifier) prevents the lie-in-main."
+      },
+      {
+        "id": "C05",
+        "producer": "curmudgeon",
+        "consumer": "decider",
+        "files": "monitor/curmudgeon/reviews/*.json (read via digest-reviews.js)",
+        "classification": "covered-by-this-PROP",
+        "reasoning": "Append-only reviews. The Class 2 instance (SC-1) is exactly this coupling. Mechanism 2 (verify-on-read for high-stakes consumption) covers it."
+      },
+      {
+        "id": "C06",
+        "producer": "curmudgeon",
+        "consumer": "decider",
+        "files": "monitor/curmudgeon/priority-queue.json (multi-writer)",
+        "classification": "safe",
+        "reasoning": "PROP-009r2 (queue_id strict matching) handles the queue-pop verification. The popped_by_queue_id field is a write-after-action mark with idempotency guard. Not in this PROP's scope."
+      },
+      {
+        "id": "C07",
+        "producer": "curmudgeon",
+        "consumer": "decider",
+        "files": "monitor/curmudgeon/tracker.json (multi-writer)",
+        "classification": "safe",
+        "reasoning": "Protected by git-pull-rebase + non-concurrent scheduling per CLAUDE.md unclassified-file rules. Not a state-coupling failure surface in observed instances."
+      },
+      {
+        "id": "C08",
+        "producer": "decider",
+        "consumer": "analyst",
+        "files": "monitor/analyst/attention-inbox.json",
+        "classification": "covered-by-this-PROP",
+        "reasoning": "Decider writes patch-affects-analyst entries; analyst reads to re-examine. Currently low-stakes (analyst's job is to re-examine regardless), but if decider phantom-integrates a patch (Class 1a) and writes attention-inbox claiming 'patch X requires re-examination', the analyst could re-examine against absent code. Mechanism 1a covers via tracker-state honesty."
+      },
+      {
+        "id": "C09",
+        "producer": "decider",
+        "consumer": "operator + downstream agents",
+        "files": "monitor/decisions/closed-issues.json, monitor/decisions/daily-report-*.json",
+        "classification": "covered-by-this-PROP (Class 1a + Class 3)",
+        "reasoning": "Highest-stakes coupling. closed-issues 'fixed' status is the lie-vector for Class 1a (PI-1, PI-2, PI-3-to-5). daily-report prose is the surface for Class 3 (NC-1). Both mechanisms target this coupling directly."
+      },
+      {
+        "id": "C10",
+        "producer": "decider",
+        "consumer": "tinker, operator",
+        "files": "monitor/decisions/closed-issues.json, monitor/decisions/open-issues.json",
+        "classification": "covered-by-this-PROP",
+        "reasoning": "Tinker's PROP-Lifecycle-Verification step (existing) reads closed-issues to confirm fixes landed. PROP-003 cautionary tale was effectively a Class 2 read-without-reverify by tinker. Mechanism 2 generalizes to tinker's reading discipline (this PROP extends Mechanism 2 to all high-stakes reads, not just decider's)."
+      },
+      {
+        "id": "C11",
+        "producer": "integrity",
+        "consumer": "tinker",
+        "files": "monitor/integrity/report-*.json, monitor/integrity/never-push-strand-*.json",
+        "classification": "covered-by-this-PROP",
+        "reasoning": "Tinker reads integrity reports and can re-flag stale findings (Class 2). Mechanism 2 applied to tinker's reading discipline covers this. Existing Step 2b (PROP Lifecycle Verification) is one instance of this discipline already; we propose generalizing it."
+      },
+      {
+        "id": "C12",
+        "producer": "social",
+        "consumer": "decider",
+        "files": "monitor/social/drafts/*.json",
+        "classification": "safe",
+        "reasoning": "Append-only drafts. Decider commits to docs/. No status-coupling — drafts are content proposals, not state claims."
+      },
+      {
+        "id": "C13",
+        "producer": "operator",
+        "consumer": "all agents",
+        "files": "monitor/{decisions,analyst,social,curmudgeon}/human-notes.json",
+        "classification": "covered-by-this-PROP (Class 1b)",
+        "reasoning": "Analyst-mode5 phantom-resolution (PR-1) writes status:resolved on a human-note. The status field is the lie-vector. Mechanism 1b prevents resolution-without-artifact. Other agents that write status on human-notes (decider's HNOTE-consumed marks, curmudgeon's HNOTE-consumed marks) inherit the same risk. Mechanism 1b should generalize: any agent writing status:resolved/consumed on a human-note must verify the implied artifact."
+      },
+      {
+        "id": "C14",
+        "producer": "workspace-sync",
+        "consumer": "tinker",
+        "files": "monitor/integrity/workspace-sync-runs/*.json",
+        "classification": "safe",
+        "reasoning": "Append-only per-run reports. No status-coupling failures observed. Tinker reads as historical record."
+      },
+      {
+        "id": "C15",
+        "producer": "tinker",
+        "consumer": "operator + future-tinker",
+        "files": "monitor/tinker/proposals/PROP-*.json (status field), monitor/tinker/report-*.json",
+        "classification": "covered-by-this-PROP (Class 2 + Class 3)",
+        "reasoning": "Tinker's PROP status:'implemented' is itself a write-once status field. PROP-003 was re-flagged for 9 consecutive runs because verification was indirect (md5 of source vs main, not grep of bug-symbol). Existing verification_pattern field is a Mechanism-2-shaped fix for this. Tinker prose in reports could narrative-confabulate about PROP states (Class 3); this PROP's narrative-cite discipline applies."
+      },
+      {
+        "id": "C16",
+        "producer": "decider",
+        "consumer": "operator (via curmudgeon alerts.txt)",
+        "files": "monitor/curmudgeon/alerts.txt (curmudgeon authors)",
+        "classification": "latent-risk-not-fully-covered",
+        "reasoning": "Curmudgeon writes alerts based on priority-queue state at run-time. If decider pops the cited queue item between alert-write and operator-read, the alert is stale. Not observed but plausible. Mitigation: alerts.txt entries should cite queue_id and timestamp; operators should re-verify before acting. Outside this PROP's scope; flag for follow-up."
+      },
+      {
+        "id": "C17",
+        "producer": "analyst-mode1b",
+        "consumer": "poller (via predictions.json)",
+        "files": "data/predictions.json verdict fields",
+        "classification": "latent-risk-not-fully-covered",
+        "reasoning": "Analyst writes verdict on predictions; poller reads for window-tracking and tacit_withdrawal threshold. If analyst writes verdict before re-checking poller's most recent observation, the verdict could ignore a late dome posting. Mechanism 2 (verify-on-read) generalizes here: analyst reading poller state should re-read at HEAD before locking a verdict. Not observed but plausible. Recommend including in Mechanism 2's scope."
+      },
+      {
+        "id": "C18",
+        "producer": "any agent's prompt-chain memory",
+        "consumer": "decider chat / daily-report prose",
+        "files": "daily-report.pipeline_status.{poller,analyst,curmudgeon} fields and any prose surface",
+        "classification": "covered-by-this-PROP (Class 3)",
+        "reasoning": "The pipeline_status fields are exactly the surface where confabulation manifests (e.g., 'poller: NET QUIET on dome surface' is fine if grounded in this run's poll output, dishonest if pattern-matched from prior daily reports). Mechanism 3 (narrative-cite) applies."
+      }
+    ],
+    "summary": {
+      "total_couplings_audited": 18,
+      "safe": 5,
+      "covered_by_this_prop": 11,
+      "latent_risk_not_fully_covered": 2,
+      "latent_risks_handling": "C16 (alerts.txt staleness) — flag in tinker followup, do not include in this PROP. C17 (analyst-mode1b verdict on predictions) — explicitly include in Mechanism 2's scope so the rule generalizes beyond decider. The PROP's mechanisms cover the observed bug instances and 11 of 18 cross-agent couplings; the 2 latent risks are noted with proposed handling but not in this implementation."
+    }
+  },
+
+  "proposed_fix": {
+    "summary": "Three sequenced mechanisms, one shared reference document, unified vocabulary. Mechanism 2 ships first (lowest cost, prevents operator-visible false-positive criticals). Mechanism 1a ships second (biggest reduction in phantom-integration). Mechanism 1b ships third (smaller surface, validates the discipline). Mechanism 3 ships last (hardest to verify worked, lowest current-bug-cost). Sequential implementation gives diagnostic power on which fix matters for which bug instance.",
+
+    "shared_reference_doc_proposal": {
+      "path": "monitor/prompts/reference/state-verification.md",
+      "purpose": "Single source of truth for the three disciplines. All agent prompts that write or read cross-agent state link here instead of duplicating the rules. Living doc — each agent's status enums and verification primitives are listed in one table.",
+      "sections_outline": [
+        "1. The three disciplines (one paragraph each: WRITE-VERIFY, READ-VERIFY, NARRATE-CITE)",
+        "2. Unified vocabulary: the '*-pending-verification' status suffix, when to write it, when to flip",
+        "3. Per-agent verification primitives table (decider: git rev-parse + content grep; analyst: test -f + tracker-lookup; etc.)",
+        "4. Verifier locations: which agent or script flips '*-pending-verification' to final status (proposed: workspace-sync runs a node monitor/scripts/verify-pending-state.js helper)",
+        "5. Failure modes: what to do if verification stays failing past TTL (proposed: 24h TTL, then alert tinker via integrity report)",
+        "6. Narrative-cite checklist: exact prose-discipline rule with examples"
+      ]
+    },
+
+    "mechanism_1_write_verify": {
+      "category": "ledger-schema convention + prompt edit + verifier script",
+      "discipline": "Two-step lifecycle on agent-self-claims about own work. Intent-time: write status='*-pending-verification'. Verify-time: run verification primitive; if pass, flip to final status; if fail past 24h TTL, write status='*-verification-failed' and alert.",
+      "vocabulary": {
+        "current_values_per_file": {
+          "monitor/decisions/closed-issues.json:status": "fixed | pending-human (existing)",
+          "monitor/analyst/expansion-tracker.json:items[*].status": "complete | pending | revised (existing); items[*].integrated: true | false (existing)",
+          "monitor/analyst/human-notes.json:status, monitor/decisions/human-notes.json:status, monitor/curmudgeon/human-notes.json:status, monitor/social/human-notes.json:status": "pending | resolved | consumed | superseded (existing)"
+        },
+        "proposed_additions": {
+          "closed-issues.json:status": "fixed-pending-verification (new) — written when decider closes after self-apply but push 403'd or before verifier runs",
+          "expansion-tracker.json:items[*].integrated": "boolean stays; add new field items[*].integrated_status: 'pending-verification' | 'verified' | 'verification-failed'",
+          "human-notes.json:status": "resolved-pending-artifact (new) — written when analyst marks Mode 5 / similar work resolved before verification flips it to 'resolved'"
+        },
+        "shape_choice": "Use suffixed string values (e.g. 'fixed-pending-verification') rather than a separate boolean column. Reasoning: existing readers that grep status:'fixed' will not see pending-verification entries and so will not act on them as if fixed. Adds a defensive layer at every consumer without touching consumer code. Operators visually inspecting JSON immediately see which entries are tentative."
+      },
+      "sub_mechanism_1a_push_verify_decider": {
+        "target_files": ["monitor/prompts/reference/decider-patches-and-selfapply.md", "monitor/prompts/decider.md (Step E references)"],
+        "diff_sketch": {
+          "before": "After successful publish — close issues and clean up: ... toClose.forEach(id=>{...issue.status='fixed';issue.fixed_by='decider-self-apply';...})",
+          "after": "After patch-apply but before push — write fixed-pending-verification: { issue.status='fixed-pending-verification', issue.staged_in_commit=<local_commit_sha>, issue.verification_pattern='git show origin/main:<patch_file> | grep -q <patched_string>', issue.verification_ttl='24h' } AND copy file to FUSE; THEN attempt git push; if push succeeds AND verification primitive passes against origin/main, write a separate idempotent commit flipping status='fixed' (no other field changes). If push 403s or verification fails, leave fixed-pending-verification; workspace-sync's verifier picks up.",
+          "where_the_flip_happens": "Two paths. (1) Decider's own post-push verification block — same run, same clone. (2) Workspace-sync's hourly verifier (new node monitor/scripts/verify-pending-state.js) — out-of-band, picks up entries that decider didn't flip due to push 403 + universal-pusher rescue + later visibility to origin/main."
+        },
+        "verifier_script": {
+          "path": "monitor/scripts/verify-pending-state.js (NEW)",
+          "purpose": "Iterates closed-issues.json items with status='fixed-pending-verification', runs verification_pattern against origin/main fetched from a fresh clone, flips to 'fixed' on pass, leaves alone on fail (until TTL), writes 'fixed-verification-failed' + integrity report on TTL breach.",
+          "owner": "workspace-sync invokes it; output goes to monitor/integrity/verification-run-*.json",
+          "language": "Node (matches existing build-scripts/ idioms)"
+        },
+        "expected_behavior_during_push_403_window": "Closed-issues.json shows status:'fixed-pending-verification' with verification_pattern set. Universal-pusher copies to FUSE. Workspace-sync next hour pushes. Workspace-sync verifier runs — if NEVER_PUSH source files made it to main (PROP-013 Path B), grep passes and verifier flips to 'fixed'. If NEVER_PUSH still stranded, verification_pattern fails because origin/main lacks the patched_string; status stays pending-verification; PROP-013 Path A operator-rescue-recipe still surfaces. After operator rescue + next workspace-sync, verifier flips to 'fixed'. The lie-in-main window collapses: the entry never claims 'fixed' until the patches actually exist in origin/main."
+      },
+      "sub_mechanism_1b_write_verify_analyst": {
+        "target_files": ["monitor/prompts/analyst.md (Mode 5 + Mode 1b + Mode 2b sections)"],
+        "diff_sketch": {
+          "before": "Analyst Mode 5 procedure: ... write resolved_with_exp:'EXP-NNN' to HNOTE; mark status:'resolved' ...",
+          "after": "Analyst Mode 5 procedure: ... write the EXP file FIRST (test -f to verify); advance the tracker FIRST (verify next_id incremented and items[] entry appended); THEN write status:'resolved-pending-artifact' to HNOTE with verification_artifact_path:<expected_path> and verification_tracker_id:<EXP-NNN>. The status flip to 'resolved' happens via the workspace-sync verifier on the next sync after the artifact is in origin/main. Until then, status stays 'resolved-pending-artifact' — visible as tentative to any consumer."
+        },
+        "verifier_extension": "verify-pending-state.js also iterates human-notes.json across all four locations (analyst/decisions/curmudgeon/social) for status='resolved-pending-artifact', runs `git show origin/main:<verification_artifact_path>` and confirms tracker has matching ID, flips to 'resolved' on pass.",
+        "scope_creep_check": "Mechanism 1b targets Mode 5 specifically because that is the one observed instance. We propose extending the same discipline to any analyst mode that writes resolved on a human-note: Mode 1b (prediction integration), Mode 2b (re-examination), Mode 0 (new WIN onboarding). The verification_artifact_path field is general — each mode names its own expected output."
+      }
+    },
+
+    "mechanism_2_read_verify": {
+      "category": "prompt edit only (no schema or script change)",
+      "discipline": "Before declaring high-stakes outputs based on another agent's status field or claim, re-verify current state at HEAD. High-stakes = declaring critical, escalating to operator, blocking integration, marking review stale. Cheap pattern: re-read the cited file at HEAD, re-test the cited claim. If gone, mark source review stale_false_alarm and downgrade.",
+      "target_files": [
+        "monitor/prompts/reference/decider-curmudgeon.md (Staleness Gate Step 2 — extend from issue-creation paths to existing-issue re-declaration paths)",
+        "monitor/prompts/reference/decider-reporting.md (daily-report assembly — pre-declare critical re-verification step)",
+        "monitor/prompts/tinker.md (Step 2b PROP Lifecycle Verification — already implements this for tinker; cite the new shared reference doc as the canonical version)",
+        "monitor/prompts/analyst.md (Mode 1b — verify-on-read of poller state before locking prediction verdict)",
+        "monitor/prompts/reference/state-verification.md (NEW shared reference)"
+      ],
+      "diff_sketch_decider_critical_paths": {
+        "before": "internal_issues.push({ issue_id, severity:'critical', description, source:'curmudgeon', status:'existing', requires_operator:true, ... })",
+        "after": "// Before re-declaring an existing critical of category in {phantom_integration, phantom_resolution, stale_citation}: \n// 1. Read the original review file path from issue.related_review or issue.source.\n// 2. Re-extract the cited claim (e.g. \"docs/index.html line 673 says 'annular solar eclipse'\").\n// 3. Re-test against current HEAD: git show origin/main:docs/index.html | sed -n '670,680p' | grep -q 'annular solar eclipse'.\n// 4. If grep fails (cited problem GONE): write to daily-report internal_issues entry { issue_id, status:'stale_false_alarm', stale_at:<now>, stale_reason:'cited problem resolved between review write and decider read' } AND mark the original review file processed by appending its filename to monitor/decisions/processed-reviews.json. Do NOT re-declare critical.\n// 5. If grep passes (cited problem persists): re-declare critical normally.",
+        "explanation": "Existing Staleness Gate (decider-curmudgeon.md Step 2) does this for issue-creation. We extend the same pattern to existing-issue re-declaration in daily-report assembly. The fix is ~15 lines of bash/node in the daily-report-assembly path."
+      },
+      "diff_sketch_analyst_mode1b": {
+        "before": "Analyst Mode 1b — write verdict on dome's predictions based on poller's most recent change-detection.",
+        "after": "Analyst Mode 1b — before locking verdict: re-fetch poller's latest change snapshot; if a new dome posting exists between the change-detection that triggered this Mode 1b and the verdict-write, re-evaluate before locking."
+      },
+      "scope_disclaimer": "Mechanism 2 lives entirely in prompts. No schema changes. No new scripts. Lowest implementation cost of the three mechanisms."
+    },
+
+    "mechanism_3_narrate_cite": {
+      "category": "prompt edit only (LLM-discipline rule)",
+      "discipline": "Every state-bearing claim in prose output (chat narration, daily-report pipeline_status, curmudgeon kernel_of_truth, tinker findings descriptions) must cite a specific evidence source: a JSON field path, a log line excerpt, or a count derived from this run's queries. Forbidden: claims drawn from prompt-chain memory of prior reports; claims that paraphrase prior diagnoses without re-running the diagnosis. Self-check before submitting any prose surface: read your prose; for each state-claim, point to the JSON field or log line in this run's work that supports it; if you cannot, delete the claim or replace with the verified version.",
+      "target_files": [
+        "monitor/prompts/decider.md (Step C: report assembly + Step 0b setup with explicit cite-discipline preface)",
+        "monitor/prompts/reference/decider-reporting.md (daily-report prose templates)",
+        "monitor/prompts/analyst.md (briefing prose surfaces)",
+        "monitor/prompts/curmudgeon.md (review-prose: our_argument_summary, kernel_of_truth)",
+        "monitor/prompts/tinker.md (report prose, findings.description)",
+        "monitor/prompts/reference/state-verification.md (NEW shared reference)"
+      ],
+      "diff_sketch_decider_reporting": {
+        "before": "Compose pipeline_status fields with one-paragraph summaries per upstream agent: poller, analyst, curmudgeon.",
+        "after": "Compose pipeline_status fields with one-paragraph summaries per upstream agent: poller, analyst, curmudgeon. CITATION DISCIPLINE: every state claim in these paragraphs must cite a JSON field or log line from THIS run's reads. Use inline parenthetical citations: 'Last poll 2026-04-30T11:06Z (monitor/changes/latest-poll-summary.txt:line-1) — QUIET. All 6 dome page hashes byte-identical (poll output: hash_diffs=[]).' Forbidden: 'workspace had a fresher PAT, CLAUDE.md PAT failed' — that comparison is not a code path in the current decider; do not narrate from prompt-chain memory of prior reports. Self-check: before writing pipeline_status, re-read your draft; for each factual claim, identify the field path; if you cannot, delete or re-verify."
+      },
+      "scope_disclaimer": "This is the hardest mechanism to verify worked. LLM compliance with prompt rules is variable. Measurement plan acknowledges this; we baseline by grepping daily-reports for known-confabulation patterns ('CLAUDE.md PAT', 'fresher PAT', etc.) and watch for new instances post-fix."
+    },
+
+    "files_to_create": [
+      {
+        "path": "monitor/prompts/reference/state-verification.md",
+        "purpose": "Shared reference for the three disciplines",
+        "content_outline": "See proposed_fix.shared_reference_doc_proposal.sections_outline above. Full content authored at implementation time, not in this PROP."
+      },
+      {
+        "path": "monitor/scripts/verify-pending-state.js",
+        "purpose": "Verifier helper invoked by workspace-sync; flips '*-pending-verification' to final status when verification_pattern passes against origin/main",
+        "content_outline": "Iterates closed-issues.json + expansion-tracker.json + four human-notes.json files; for each pending-verification entry, fetches origin/main, runs verification_pattern, flips on pass; writes monitor/integrity/verification-run-*.json with per-entry results."
+      }
+    ],
+
+    "files_to_modify": [
+      {
+        "path": "monitor/prompts/reference/decider-patches-and-selfapply.md",
+        "change_summary": "Replace the close-issues block to write 'fixed-pending-verification' with verification_pattern; add post-push verification block; add reference to state-verification.md",
+        "diff_sketch": "See mechanism_1_write_verify.sub_mechanism_1a_push_verify_decider.diff_sketch"
+      },
+      {
+        "path": "monitor/prompts/decider.md",
+        "change_summary": "Step E5 (queue state log) updates to handle pending-verification entries; cite state-verification.md from preface",
+        "diff_sketch": "Add preface paragraph: 'Cross-agent state-coupling discipline: see monitor/prompts/reference/state-verification.md before writing high-stakes ledger fields or declaring criticals.'"
+      },
+      {
+        "path": "monitor/prompts/reference/decider-curmudgeon.md",
+        "change_summary": "Extend existing Staleness Gate (Step 2) from issue-creation-only to existing-issue re-declaration in daily-report assembly",
+        "diff_sketch": "See mechanism_2_read_verify.diff_sketch_decider_critical_paths"
+      },
+      {
+        "path": "monitor/prompts/reference/decider-reporting.md",
+        "change_summary": "Pipeline_status prose composition gets citation-discipline rule",
+        "diff_sketch": "See mechanism_3_narrate_cite.diff_sketch_decider_reporting"
+      },
+      {
+        "path": "monitor/prompts/analyst.md",
+        "change_summary": "Mode 5 procedure writes 'resolved-pending-artifact' instead of 'resolved'; verify-after-write block added; Mode 1b adds verify-on-read of poller state",
+        "diff_sketch": "See mechanism_1_write_verify.sub_mechanism_1b_write_verify_analyst.diff_sketch + mechanism_2_read_verify.diff_sketch_analyst_mode1b"
+      },
+      {
+        "path": "monitor/prompts/curmudgeon.md",
+        "change_summary": "kernel_of_truth + our_argument_summary prose surfaces get citation-discipline reference",
+        "diff_sketch": "Add line: 'Citation discipline (see state-verification.md §6): every claim in our_argument_summary must cite a specific evidence file/line.'"
+      },
+      {
+        "path": "monitor/prompts/tinker.md",
+        "change_summary": "Step 2b (PROP Lifecycle Verification) cites state-verification.md as canonical; findings.description gets citation-discipline rule",
+        "diff_sketch": "Re-write Step 2b preface to reference state-verification.md §1 and §3 instead of inlining the verification_pattern rule."
+      },
+      {
+        "path": "monitor/prompts/workspace-sync.md",
+        "change_summary": "Add Step 3.6 (after PROP-013 Step 3.5) invoking node monitor/scripts/verify-pending-state.js; cite state-verification.md",
+        "diff_sketch": "After Step 3.5: 'Step 3.6: verify pending-verification entries. node monitor/scripts/verify-pending-state.js. Output to monitor/integrity/verification-run-<ts>.json. Per state-verification.md §4.'"
+      }
+    ],
+
+    "files_to_delete": [],
+
+    "implementation_complexity_estimate": {
+      "mechanism_2": "~30 lines bash/node added across 3 prompt files; no schema change; no new scripts; ~1 hour to implement and test",
+      "mechanism_1a": "~50 lines added to 2 prompt files + new monitor/scripts/verify-pending-state.js (~150 lines Node) + workspace-sync.md update; ~3-4 hours to implement and test",
+      "mechanism_1b": "~30 lines added to analyst.md across Modes 0/1b/2b/5; verify-pending-state.js extension (~50 lines); ~2 hours after 1a is in place",
+      "mechanism_3": "~10 lines added to 4-5 prompt files; ~1 hour to implement; measurement is ongoing not point-in-time"
+    }
+  },
+
+  "tradeoffs": "What we gain: ledger state in main is honest about what's actually verified vs in-flight; phantom-integrations stop creating operator-rescue load (they self-resolve when patches actually land in main); phantom-resolutions are caught at write time before a downstream consumer sees a fabricated artifact path; stale-citation criticals self-cancel via re-verify; narrative confabulation is reduced by self-check discipline (LLM compliance variable). What we lose: (a) one new vocabulary value ('*-pending-verification') means existing readers that don't grep for the suffix may need updates — mitigated by the explicit choice to suffix rather than add a column, so readers grepping status='fixed' literally will not match pending-verification entries (defensive default). (b) Workspace-sync gains one more responsibility — the verifier script — increasing its prompt size and run-time slightly; mitigated by making the verifier a deterministic Node script, not LLM judgment. (c) Decider's prompt grows slightly (~50 lines of new disciplines) — mitigated by extracting to shared reference doc. (d) Sequential implementation means the bug family persists for days/weeks during rollout; if all four mechanisms ship together, we lose the diagnostic 'which fix mattered for which bug class', but operator gets faster relief. We argue for sequential below.",
+
+  "risks_and_alternative_failure_modes_introduced": [
+    {
+      "risk": "False-pass on verification_pattern (verifier flips to 'fixed' but the patch is wrong)",
+      "mitigation": "verification_pattern checks for the patched-string presence, but cannot check that the patch is correct (e.g., the EXP-277 P3 regex bug — the patch landed but was wrong). This PROP does not solve the patch-correctness problem; that's curmudgeon's review job. The discipline only verifies presence-in-main, not correctness. Operator should not expect Mechanism 1a to catch bad patches."
+    },
+    {
+      "risk": "Workspace-sync verifier runs once an hour; pending-verification entries linger up to 1h before flip even after patches land",
+      "mitigation": "1h delay is acceptable — phantom-integrations currently linger 25-26h. Faster verification could be added by having decider's own post-push block call the verifier inline, but that adds clone-fresh git fetch cost to every decider run. Defer optimization."
+    },
+    {
+      "risk": "TTL expiry (24h pending-verification → verification-failed) creates a new alert class that could itself be ignored",
+      "mitigation": "Tinker's existing infrastructure mode already reads monitor/integrity/ files and surfaces to operator. Verification-failed entries become tinker findings. If tinker also ignores them, that's a separate failure mode addressed by tinker's own discipline (which this PROP also strengthens via Mechanism 2 generalization)."
+    },
+    {
+      "risk": "Citation discipline (Mechanism 3) is unenforceable — LLM may comply variably or ignore",
+      "mitigation": "Acknowledged. Measurement plan grep-detects known confabulation patterns post-fix; if patterns recur, escalate to either model swap or stricter procedural constraints (e.g., decider's prose must be assembled from explicit fields the agent fills in, not free-form narration). Mechanism 3 is the weakest of the three; we ship it last for that reason."
+    },
+    {
+      "risk": "Sub_mechanism_1b extension to all analyst modes (not just Mode 5) might over-broaden scope",
+      "mitigation": "Implementation can stage: ship Mode 5 first (only observed instance), then extend to other modes if they manifest the bug. The discipline is general but the rollout doesn't have to be."
+    }
+  ],
+
+  "alternatives_considered_and_rejected": [
+    {
+      "alternative": "Make decider's push more reliable (fix the 403 root cause)",
+      "rejected_because": "Operator non_goal: 'Do NOT propose making decider's direct push more reliable — the 403 is environmental and not from-our-side fixable per HNOTE-OPERATOR-PAT-DIAGNOSIS-CORRECTION-001. Lean into rescue is the load-bearing reliability mechanism rather than fighting that.' Confirmed and respected."
+    },
+    {
+      "alternative": "Disallow status='fixed' until push verifies — block on push success",
+      "rejected_because": "This is what the current decider procedure effectively tries to do, and it breaks under endemic 403. The only difference is what happens during the rescue window: current behavior writes 'fixed' (lying); proposed behavior writes 'fixed-pending-verification' (honest tentative). Blocking on push means the closure never lands, which means downstream consumers never see the issue closed even after rescue. The proposed mechanism collapses the lie window without breaking the closure pipeline."
+    },
+    {
+      "alternative": "Schema-level enforcement (require verification_pattern field on all status-bearing entries)",
+      "rejected_because": "More robust but requires every reader to understand the new state. Decider's downstream consumer (tinker) would need to know that 'fix-in-flight' is not 'fixed'. Prompt-level keeps the discipline at writer side and is faster to implement. Schema-level is a credible follow-up if prompt-level shows insufficient compliance."
+    },
+    {
+      "alternative": "Inline the verification logic in every prompt (no shared reference doc)",
+      "rejected_because": "Duplication risk — six prompts would each describe the same discipline; future edits drift. Shared reference doc keeps single source of truth at the cost of one more file readers must consult. Operator's lean (per directive context.operator_provisional_framework) supports shared reference."
+    },
+    {
+      "alternative": "Different status vocabulary per agent (e.g. decider uses 'fix-in-flight', analyst uses 'pending-resolution')",
+      "rejected_because": "Operator's lean toward unified vocab is correct. Different terms create cognitive load on operators who read multiple ledgers. One suffix, '-pending-verification', applied to whatever the agent's success-state name is."
+    },
+    {
+      "alternative": "Parallel implementation of all three mechanisms",
+      "rejected_because": "See sequencing argument below. Sequential gives diagnostic power."
+    }
+  ],
+
+  "measurement_plan": {
+    "baseline_metrics_2026-04-26_to_05-02": {
+      "phantom_integrations_observed": 5,
+      "phantom_integrations_per_week": "~7 (extrapolating 5 in 6 days)",
+      "phantom_resolutions_observed": 1,
+      "stale_citation_criticals_observed": 1,
+      "narrative_confabulations_observed": 1,
+      "operator_rescue_commits_caused_by_family": 2,
+      "operator_attention_minutes_per_rescue_estimated": 15,
+      "operator_attention_minutes_per_week_baseline": 30,
+      "lie_in_main_window_avg_hours": 25,
+      "downstream_agent_runs_acting_on_phantom_state_estimated": 4
+    },
+    "post_fix_targets_2_weeks_after_full_rollout": {
+      "phantom_integrations_per_week": "<1 (target: 0; allow 1 to absorb implementation bugs)",
+      "phantom_resolutions_per_week": "0",
+      "stale_citation_criticals_per_week": "0 in declared-critical paths; allow 1 in lower-severity outputs (where Mechanism 2 is not yet extended)",
+      "narrative_confabulations_per_week": "<1 (hardest to measure; baseline grep on known patterns)",
+      "operator_rescue_commits_per_week_caused_by_family": "0 (PROP-013 + PROP-014 together absorb the rescue surface)",
+      "lie_in_main_window_avg_hours": "<1 (workspace-sync verifier hourly cadence)",
+      "fixed_pending_verification_entries_resolved_within_24h": ">95%"
+    },
+    "instrumentation": {
+      "automated": [
+        "Workspace-sync verifier writes monitor/integrity/verification-run-<ts>.json with per-entry pass/fail/TTL counts.",
+        "Tinker daily report cost_engineering section adds 'pending_verification_pipeline_health' subsection — counts of pending/verified/failed entries by file.",
+        "Curmudgeon continues to write phantom-integration / phantom-resolution review files when caught — these become the post-fix incidence count.",
+        "Grep against daily-report prose for known-confabulation patterns ('CLAUDE.md PAT', 'fresher PAT', 'workspace had', etc.) — added to tinker's CLAUDE.md audit step."
+      ],
+      "manual": [
+        "Operator review of weekly tinker reports for any unexpected pending-verification accumulation.",
+        "Operator review of curmudgeon-flagged 'phantom' findings."
+      ]
+    },
+    "disprove_conditions": {
+      "mechanism_1a_failed_if": "Closed-issues.json entries with status='fixed' (not '*-pending-verification') exist whose verification_pattern fails when re-run against origin/main, in the 14 days post-rollout. (i.e. the lie returns despite the discipline.)",
+      "mechanism_1b_failed_if": "human-notes.json entries with status='resolved' exist where verification_artifact_path file does not exist in origin/main, in the 14 days post-rollout.",
+      "mechanism_2_failed_if": "Daily-report critical declarations cite curmudgeon reviews where the cited claim no longer matches origin/main at decider read-time, in the 14 days post-rollout.",
+      "mechanism_3_failed_if": "Daily-report prose contains state claims that grep-match prior-report patterns AND cannot be traced to JSON fields/log lines from the same run, in the 14 days post-rollout.",
+      "operator_action_on_disprove": "Re-open this PROP with revised mechanism. Likely revisions: (a) move from prompt-discipline to schema-enforcement; (b) add a pre-commit gate in workspace-sync that rejects ledger commits with internally-inconsistent status fields; (c) consider model swap for the affected agent."
+    }
+  },
+
+  "sequencing": {
+    "operator_lean": "Sequential implementation for diagnostic value.",
+    "tinker_recommendation": "Agree. Sequential. Order: Mechanism 2 → Mechanism 1a → Mechanism 1b → Mechanism 3.",
+    "rationale_per_step": [
+      {
+        "step": 1,
+        "mechanism": "Mechanism 2 (verify-on-read for daily-report critical declarations)",
+        "estimated_effort": "~1 hour",
+        "rationale": "Lowest implementation cost. Fixes the operator-most-visible bug (false-positive criticals consuming operator attention). One prompt-block edit in decider-curmudgeon.md and decider-reporting.md. No schema change. No new scripts. Provides immediate operator-trust improvement. If Mechanism 2 fixes operator-visible problems quickly, it justifies the larger Mechanism 1 investment.",
+        "diagnostic_signal": "If post-Mechanism-2 we still see daily-report criticals re-firing on rescued issues, the discipline isn't being followed → revise prompt before adding more disciplines."
+      },
+      {
+        "step": 2,
+        "mechanism": "Mechanism 1a (push-verify on decider's closed-issues + tracker)",
+        "estimated_effort": "~3-4 hours (includes verify-pending-state.js)",
+        "rationale": "Highest-incidence bug class (5+ in 6 days). Biggest operator-attention reduction. Requires the new verifier script and workspace-sync invocation. Ships before 1b because (a) decider phantom-integration is the dominant manifestation; (b) the verifier script architecture validates the discipline before extending to analyst.",
+        "diagnostic_signal": "If post-Mechanism-1a we still see closed-issues with status:'fixed' but missing patches in main, the verifier is mis-identifying state. Drill into verification-run logs."
+      },
+      {
+        "step": 3,
+        "mechanism": "Mechanism 1b (write-verify on analyst Mode 5 + extension to other analyst modes)",
+        "estimated_effort": "~2 hours after Mechanism 1a is in place",
+        "rationale": "Extends the verifier infrastructure built in Mechanism 1a to a smaller-but-existing surface (analyst). Validates that the discipline generalizes. Lower urgency (1 confirmed instance) but completes the WRITE-VERIFY family.",
+        "diagnostic_signal": "If post-Mechanism-1b we see analyst phantom-resolutions on Modes other than 5 (Mode 0, 1b, 2b), the rule wasn't generalized far enough. Extend."
+      },
+      {
+        "step": 4,
+        "mechanism": "Mechanism 3 (narrative-cite discipline across all agent prose)",
+        "estimated_effort": "~1 hour for prompt edits; ongoing measurement",
+        "rationale": "Lowest current-bug-cost, hardest to verify worked. Ship last so its measurement period overlaps with stable Mechanisms 1+2 (we're not confounding signal). LLM compliance is variable — we want a clean baseline before evaluating.",
+        "diagnostic_signal": "Post-Mechanism-3 baseline: weekly grep against daily-reports for known-confabulation patterns. If incidence is unchanged after 4 weeks, the prompt-discipline approach is insufficient — escalate to model swap or schema-level prose constraints."
+      }
+    ],
+    "alternative_parallel_argument": "If operator wants faster relief, all four mechanisms can ship in one weekend. Trade-off: we lose the per-step diagnostic signal — if a particular bug class persists post-rollout, we won't know whether the relevant mechanism is broken or whether it's an unrelated mechanism's regression. Recommend parallel only if operator has a near-term deadline that justifies the diagnostic loss.",
+    "rollout_safety": "Each step is independently revertable. If Mechanism 1a's verifier script causes incidents, revert workspace-sync.md Step 3.6 and the closed-issues schema additions; ledger reverts to the old 'fixed-at-intent' behavior. Rollback does not break consumers because consumers grepping status='fixed' will see only the verified entries pre-revert and the same set post-revert."
+  },
+
+  "verification_pattern": "test -f monitor/prompts/reference/state-verification.md && grep -q 'WRITE-VERIFY' monitor/prompts/reference/state-verification.md && grep -q 'pending-verification' monitor/prompts/reference/decider-patches-and-selfapply.md && test -f monitor/scripts/verify-pending-state.js && echo FIXED || echo STILL_BROKEN",
+
+  "estimated_impact": "Operator attention saved: ~30 min/week (eliminating manual rescue commits caused by phantom-integration); plus reduction in operator review of false-positive criticals (~10 min/week); plus reduced cognitive load from honest ledger state. Lie-in-main window collapses from 25h avg to <1h. Pipeline self-honesty becomes structural rather than load-bearing on rescue mechanisms. Downstream agent decision-quality improves because ledger state matches reality.",
+
+  "requires_human_judgment": true,
+  "why_human_needed": "Operator reviews and authorizes implementation. Per directive deliverable_requested.propose_only=true and do_not_implement clause. Implementation will require: (a) authoring monitor/prompts/reference/state-verification.md content; (b) authoring monitor/scripts/verify-pending-state.js; (c) staging the four sequential rollout steps; (d) operator decision on parallel vs sequential; (e) operator decision on whether to extend Mechanism 1b to all analyst modes immediately or stage to Mode 5 only.",
+
+  "non_goals_respected": [
+    "Did NOT propose making decider's direct push more reliable (operator non_goal #1).",
+    "Did NOT touch DIRECTIVE-20260427-001 workspace-sync.md comment refactor (operator non_goal #2).",
+    "Did NOT restructure universal-pusher rescue path (operator non_goal #3).",
+    "Did NOT broaden scope to cost-optimization, prompt-diet, or schedule-changes (operator non_goal #4).",
+    "Did NOT touch build-scripts/, build.js, generate-html.js, etc. (operator non_goal #5)."
+  ],
+
+  "cross_references": [
+    "DIRECTIVE-20260502-001-agent-state-coupling-fix.json (this PROP's parent directive)",
+    "HNOTE-OPERATOR-PAT-DIAGNOSIS-CORRECTION-001 (push 403 environmental, not from-our-side fixable)",
+    "HNOTE-OPERATOR-UNIVERSAL-PUSHER-001 (universal-pusher rescue mechanism — load-bearing dependency)",
+    "HNOTE-OPERATOR-DECIDER-EXPANSION-TRACKER-SYNC-001 (atomic-write rule for tracker)",
+    "PROP-013 (NEVER_PUSH strand auto-rescue — implemented; complementary to this PROP)",
+    "PROP-009r2 (queue_id strict matching — complementary; covers C06 priority-queue coupling)",
+    "INTEGRITY-EXP-283-MISSING-2026-05-01.json (curmudgeon integrity scan that surfaced PR-1)",
+    "EXP-277-section-rewrite.json (curmudgeon review that exemplified Class 1a + got cited stale by Class 2)",
+    "ac474a9, 77f50c1 (operator rescue commits that this PROP aims to make unnecessary)",
+    "Daily reports 2026-04-30T17-23, 2026-05-01T05-27, 2026-05-02T05-23 (forensic evidence)"
+  ],
+
+  "status": "proposed",
+  "escalation_history": [],
+  "supersedes": null
+}
