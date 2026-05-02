@@ -13,6 +13,31 @@ When fixed: move from open → closed with `status: "fixed"`, `fixed_at` timesta
 
 ## Step 4: Daily Report
 
+**Mech 2 verify-on-read gate (PROP-014).** Before writing any `severity: critical` entry in `internal_issues`, OR any `recommended_actions[].action` that contains "OPERATOR" / "REQUIRED" / `requires_operator: true`, AND the source is a curmudgeon review file ≥1h old, run the verify-on-read primitive (`monitor/prompts/reference/state-verification.md` Discipline 2; full procedure in `monitor/prompts/reference/decider-curmudgeon.md` Step 4b). If the cited content is no longer present at HEAD, downgrade severity for that finding and log it in the new `verify_on_read_outcomes` array. Do not write the critical declaration based on a stale citation.
+
+**Mech 3 narrate-cite discipline (PROP-014).** Every paragraph (>1 sentence) in declared-state prose surfaces — `pipeline_status.poller`, `pipeline_status.analyst`, `pipeline_status.curmudgeon`, `pipeline_status.decider` (if present), and `recommended_actions[].action` prose — MUST contain at least one inline citation matching `(file.json:anchor)` or `(file.json)` pointing to a JSON field, log line, or run-output file from THIS run. No narrating from prompt-chain memory of prior reports. Examples:
+
+- ❌ BAD: `"poller": "Net quiet — manual-commit drought continues at 13.5d."`
+- ✅ GOOD: `"poller": "Net quiet — manual-commit drought continues at 13.5d (monitor/status.json:last_poll_note)."`
+- ❌ BAD: `"action": "Push failure: workspace-sync rescue is in place. Operator may want to verify git PAT / credential configuration if recurring."` (the "if recurring" clause is unanchored speculation)
+- ✅ GOOD: `"action": "Push failure for commit <SHA>; workspace-sync rescue executed (monitor/integrity/push-failure-<ts>.json:rescue_outcome). 0 prior 403s in last 7 daily-reports per integrity log."`
+
+The `monitor/scripts/audit-narrative-citations.js` script (TBA, invoked by workspace-sync per Mech 3 Stage 1) will FAIL any paragraph in these surfaces without a citation. Stage 2 verifies the cited file/anchor exists. Stage 3 (semantic match) is operator-sampled.
+
+Add `verify_on_read_outcomes: []` to the daily-report schema below. Each outcome:
+```json
+{
+  "source_review": "monitor/curmudgeon/reviews/<file>.json",
+  "source_reviewed_at": "ISO timestamp of the review",
+  "cited_file": "docs/index.html or build-scripts/generate-html.js or similar",
+  "cited_pattern": "verbatim text the review cited as the problem",
+  "head_sha": "commit SHA verified against",
+  "verified_at": "ISO timestamp of the verify run",
+  "outcome": "still_present_critical_stands | gone_stale_downgraded",
+  "downgrade_target_severity": "moderate | minor (only if outcome=gone_stale)"
+}
+```
+
 Write to `monitor/decisions/daily-report-YYYY-MM-DDTHH-MM.json`:
 
 ```json

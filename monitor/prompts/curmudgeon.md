@@ -299,8 +299,8 @@ For every DOI, URL, or paper reference in our review text:
     }
   ],
   "kernel_of_truth": {
-    "description": "What the dome model gets genuinely right here",
-    "why_it_doesnt_save_claim": "Why being partially right doesn't validate the WIN"
+    "description": "What the dome model gets genuinely right here. NARRATE-CITE discipline (PROP-014 Mech 3): every paragraph >1 sentence must contain at least one inline (file.json:anchor) citation pointing to a JSON field or source URL from this review run. Don't narrate from prior-review memory.",
+    "why_it_doesnt_save_claim": "Why being partially right doesn't validate the WIN. Same NARRATE-CITE rule applies — cite specific WIN-NNN fields, dome source URLs, or section anchors from THIS review."
   },
   "recommended_action": "no_change|minor_edit|major_rewrite|verdict_change",  // USE THIS. If you find a self-contradiction, say verdict_change.
   "text_fingerprint": {

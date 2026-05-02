@@ -25,9 +25,11 @@ The recovery fixes the most common failure mode (unescaped double quotes inside 
 
 **Issue creation:** Cycle 1 issues already exist via `backfill-issues.js`. Your job is patches. For Cycle 2+ or new sections, create issues for new holes, then update the processed ledger.
 
-### Staleness Gate (before creating issues or assigning analyst)
+### Staleness Gate (before creating OR re-flagging issues, or assigning analyst)
 
-Curmudgeon reviews in the digest may predate patches that already fixed the issue. **Before creating an `assigned-analyst` issue from a digest entry**, run this check:
+Curmudgeon reviews in the digest may predate patches that already fixed the issue. **Before creating an `assigned-analyst` issue from a digest entry, OR re-flagging an existing issue as critical based on a prior curmudgeon review**, run this check.
+
+**Per `monitor/prompts/reference/state-verification.md` Discipline 2 (READ-VERIFY):** when an agent reads another agent's status field from a ledger written hours ago and acts on it for a high-stakes decision (declaring critical, escalating to operator, blocking integration, re-flagging an existing issue), verification of the cited current state is required. The SC-1 instance (decider 2026-04-30T17:23Z cited curmudgeon's 06:53Z review without re-verifying — operator rescue at 10:30Z had already landed) is exactly the failure mode this gate prevents. RS-a (creating new ISS) is already covered below; RS-b (re-flagging existing ISS) is the gap this revision closes.
 
 1. **Get the review date.** The digest entry's source review file has `reviewed_at`. Also check the review's `cycle` — cycle 1 reviews are older and more likely stale.
 2. **Check if the target was patched since the review.**
@@ -58,6 +60,38 @@ Verify by running `node build-scripts/digest-reviews.js --workspace .` — `pend
    - **Uncertain** → create the issue but at **one severity level lower** and add `"staleness_note": "Target was patched post-review; verify finding still applies before deep investigation"` to the issue. This lets the analyst do a quick triage rather than a full rewrite.
 
 This gate saves analyst Opus tokens. A 30-second git-log + content check here prevents a 5-minute analyst investigation that concludes "ALREADY_RESOLVED."
+
+**Step 4b: Re-flagging an existing critical (RS-b — Mech 2 primary target).** Before re-declaring an existing ISS as `severity: critical` based on a prior curmudgeon review (e.g., when carrying forward an unresolved item across daily-report cycles, or escalating severity after seeing the cited problem persist), apply the verify-on-read primitive from `state-verification.md` Discipline 2:
+
+```bash
+# Identify the critical declaration's source curmudgeon review
+SOURCE_REVIEW="$1"   # e.g. monitor/curmudgeon/reviews/EXP-277-section-rewrite.json
+REVIEWED_AT=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$SOURCE_REVIEW','utf8')).reviewed_at)")
+echo "Source review reviewed_at: $REVIEWED_AT"
+
+# Re-read the cited file at HEAD and grep for the cited content/claim
+# (e.g., the curmudgeon may have cited 'docs/index.html line 673 still says annular solar eclipse')
+# Run the grep against current HEAD, NOT the snapshot the review reflected.
+CITED_FILE="$2"      # e.g. docs/index.html or build-scripts/generate-html.js
+CITED_PATTERN="$3"   # e.g. "annular solar eclipse"
+git show HEAD:"$CITED_FILE" 2>/dev/null | grep -F "$CITED_PATTERN"
+GREP_RC=$?
+
+if [ $GREP_RC -eq 0 ]; then
+  echo "VERIFY_ON_READ: cited content STILL PRESENT at HEAD — re-declaration stands"
+else
+  echo "VERIFY_ON_READ: cited content NOT PRESENT at HEAD — review is stale on this point; downgrade severity"
+  # Downgrade to non-critical, log "verified-stale-via-Mech2: <SOURCE_REVIEW> at <REVIEWED_AT>; cited <CITED_PATTERN> no longer in <CITED_FILE> at HEAD <commit>"
+fi
+```
+
+**When this gate fires:** any time the daily-report assembly or issue-tracker update would write `severity: critical` (or escalate severity) on an existing ISS where the source is a curmudgeon review file written ≥1h ago. Skip the gate ONLY if the source review is from this same decider run.
+
+**What "stale on this point" means:** the curmudgeon review's overall verdict may still be valid, but the specific finding being cited is no longer reproducible against current HEAD. Downgrade severity for THAT finding only. Do not invalidate the whole review.
+
+**Logging requirement:** Every Mech 2 stale-detection MUST append a line to the daily report's `verify_on_read_outcomes` array (new field) with `source_review`, `cited_file`, `cited_pattern`, `head_sha`, `verified_at`. This is the measurement signal — Mech 2 succeeded if `verify_on_read_outcomes` accumulates legitimate stale-detections (and zero false-positives where the cited content was actually present).
+
+**RS-a is already handled by the gate above (Step 1–4): you re-grep the cited content before creating a new issue. Step 4b is the parallel rule for RE-DECLARATION.**
 
 ## Step 2a: Integrate Completed Expansions (EVERY run, do FIRST)
 
