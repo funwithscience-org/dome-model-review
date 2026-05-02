@@ -199,6 +199,8 @@ Purpose: produce a concise, scientific JSON artifact suitable for OpenTimestamps
 
 → Mode 5 procedure is fully self-contained in this section; no separate reference file. Read the operator HNOTE for event-specific scope, do the work, deliver the EXP, then drop back to other modes.
 
+**Mode 5 HNOTE consumption (PROP-014 Mech 1b WRITE-VERIFY).** When you've delivered the EXP and are about to mark the operator's Mode 5 HNOTE consumed in `monitor/analyst/human-notes.json`, follow the discipline in `monitor/prompts/reference/analyst-mode1-expansions.md` (Human Notes → Mech 1b block): set `verification_artifact_path: 'monitor/analyst/expansions/EXP-NNN-frozen-pred-...json'`, run `test -f` on it, write `consumed` only if it passes (otherwise `consumed-pending-verification`). Phantom-resolution PR-1 (HNOTE marked resolved with `resolved_with_exp: 'EXP-283'` before the file existed) is the exact failure mode this discipline prevents.
+
 **Normal — Dome Site Change Analysis**
 Trigger: `changes_pending_analysis > 0` in status.json, or new external reports on GitHub.
 → Read `monitor/prompts/reference/analyst-normal-analysis.md`, execute that procedure.

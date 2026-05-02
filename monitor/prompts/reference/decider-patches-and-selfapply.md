@@ -355,25 +355,66 @@ echo "SELF-APPLY FAILED: tests did not pass. Patch file left for human review."
 
 This is critical. You own the full lifecycle now. Don't leave zombie issues or stale patch files.
 
-1. **Close issues that were successfully patched.** For each patch that applied (the `✅` lines from apply-patches.js output), move its issue from `open-issues.json` to `closed-issues.json`:
+**PROP-014 Mech 1a — WRITE-VERIFY discipline (added 2026-05-02).** Per `monitor/prompts/reference/state-verification.md` Discipline 1a (push-verify), you must NOT write `status: 'fixed'` until you have verified the patches landed in `origin/main`. Use the `fixed-pending-verification` intermediate status instead. The workspace-sync verifier (`monitor/scripts/verify-pending-state.js`) flips it to `fixed` once verification passes. If you can self-verify in this same run (push succeeded AND `git rev-parse origin/main` matches local HEAD AND `verification_pattern` passes), you may flip to `fixed` yourself in a second commit — but that is optional optimization, not required.
+
+1. **Close issues that were successfully patched (write pending-verification).** For each patch that applied (the `✅` lines from apply-patches.js output), capture a unique fingerprint string from the patch's `replace` text — a contiguous ~30-60 character substring that did NOT exist in the file before the patch and is unlikely to appear elsewhere by coincidence. This is your `verification_pattern` ingredient. Then move the issue from `open-issues.json` to `closed-issues.json`:
 ```bash
 node -e "
 const fs=require('fs');
 const o=JSON.parse(fs.readFileSync('monitor/decisions/open-issues.json','utf8'));
 const c=JSON.parse(fs.readFileSync('monitor/decisions/closed-issues.json','utf8'));
-const toClose=['ISS-NNN','ISS-NNN']; // list the issue IDs that were successfully patched
+// Per-patch entries: { id: 'ISS-NNN', file: 'data/wins.json', fingerprint: '<unique substring from replace text>' }
+const toClose=[
+  {id:'ISS-NNN', file:'data/wins.json', fingerprint:'<unique-substring-from-replace>'}
+];
 const now=new Date().toISOString();
-toClose.forEach(id=>{
-  const idx=o.issues.findIndex(i=>i.id===id);
-  if(idx>=0){const issue=o.issues.splice(idx,1)[0];issue.status='fixed';issue.fixed_at=now;issue.fixed_by='decider-self-apply';c.issues.push(issue)}
+toClose.forEach(t=>{
+  const idx=o.issues.findIndex(i=>i.id===t.id);
+  if(idx>=0){
+    const issue=o.issues.splice(idx,1)[0];
+    issue.status='fixed-pending-verification';
+    issue.fixed_at=now;
+    issue.fixed_by='decider-self-apply';
+    // Mech 1a verification_pattern: shell command, exit 0 = patch landed
+    const escaped=t.fingerprint.replace(/'/g,\"'\\\\''\");  // shell-escape any single quotes
+    issue.verification_pattern=\`git show origin/main:\${t.file} | grep -qF '\${escaped}'\`;
+    issue.verification_target_file=t.file;
+    c.issues.push(issue);
+  }
 });
 o.last_updated=now;
 fs.writeFileSync('monitor/decisions/open-issues.json',JSON.stringify(o,null,2));
 fs.writeFileSync('monitor/decisions/closed-issues.json',JSON.stringify(c,null,2));
-console.log('Closed',toClose.length,'issues. Open:',o.issues.length,'Closed:',c.issues.length);
+console.log('Closed',toClose.length,'issues with status:fixed-pending-verification. Open:',o.issues.length,'Closed:',c.issues.length);
 "
 ```
-Do NOT mark issues as `"patched"` and leave them — that's the old human-will-flush model. You applied and published, so they're `"fixed"`.
+
+2. **Self-verify and flip to terminal status (optional optimization).** After the close-issues commit pushes successfully, run the verification primitive yourself. If it passes, flip to `fixed` in a separate commit. If push 403'd or self-verify failed, leave at `fixed-pending-verification` — the workspace-sync verifier will pick it up via the rescue path:
+```bash
+# Confirm push verified
+LOCAL_HEAD=$(git rev-parse HEAD)
+ORIGIN_HEAD=$(git rev-parse origin/main 2>/dev/null)
+if [ "$LOCAL_HEAD" = "$ORIGIN_HEAD" ]; then
+  # Local matches origin — run verifier in non-dry-run mode against the
+  # closed-issues entries we just wrote. Verifier flips status to 'fixed'
+  # for any pending-verification entry whose verification_pattern passes.
+  node monitor/scripts/verify-pending-state.js
+  # If anything flipped, re-stage and commit + push again
+  if ! git diff --quiet monitor/decisions/closed-issues.json; then
+    git add monitor/decisions/closed-issues.json monitor/integrity/
+    git commit -m "Mech 1a self-verify: flip <N> entries to status=fixed"
+    git push origin main
+  fi
+else
+  # Push didn't verify (403 path or rebase miss). Leave at pending-verification.
+  # Universal-pusher already copied closed-issues.json to FUSE; workspace-sync
+  # verifier picks up the pending entries within ~1h and flips them when
+  # patches actually land in main.
+  echo "Push not verified — leaving entries at fixed-pending-verification"
+fi
+```
+
+Do NOT mark issues as `"patched"` and leave them — that's the old human-will-flush model. You applied; the verifier confirms whether you also published.
 
 2. **Archive the patch file** to keep the decisions/ directory clean:
 ```bash

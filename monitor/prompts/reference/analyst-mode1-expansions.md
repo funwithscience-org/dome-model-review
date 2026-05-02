@@ -10,6 +10,40 @@ Read `monitor/analyst/human-notes.json` if it exists. For each note with `status
 
 After incorporating: set note `status` to `"consumed"`, add `consumed_at` timestamp and `consumed_by` note (e.g., `"consumed_by": "EXP-003 revision — added π×R critique to paragraph 3"`).
 
+**PROP-014 Mech 1b — WRITE-VERIFY discipline (added 2026-05-02).** Per `monitor/prompts/reference/state-verification.md` Discipline 1b (file-write-verify), if the consumption claim implies an artifact was written (the most common case — `consumed_by: "EXP-NNN revision"` or `resolved_with_exp: "EXP-NNN"` etc.), you MUST set `verification_artifact_path` pointing to the file you wrote, AND verify the file actually exists on disk before flipping status to `consumed` / `resolved`. The phantom-resolution failure (PR-1: HNOTE-OPERATOR-MODE5-ECLIPSE-FROZEN-PRED-001 marked resolved with `resolved_with_exp: 'EXP-283'` before EXP-283 was written) is exactly what this discipline prevents.
+
+Pattern:
+```bash
+# Step 1: write the artifact (your normal expansion / revision flow)
+# ... node -e "fs.writeFileSync('monitor/analyst/expansions/EXP-NNN.json', ...)"
+
+# Step 2: self-verify with test -f BEFORE marking note consumed
+ARTIFACT_PATH="monitor/analyst/expansions/EXP-NNN.json"
+if [ -f "$ARTIFACT_PATH" ]; then
+  STATUS_TO_WRITE="consumed"   # or "resolved" depending on the field convention used by this human-notes file
+else
+  STATUS_TO_WRITE="consumed-pending-verification"
+fi
+
+# Step 3: write the note status
+node -e "
+const fs=require('fs');
+const path='monitor/analyst/human-notes.json';   // or appropriate human-notes.json
+const data=JSON.parse(fs.readFileSync(path,'utf8'));
+const note=data.notes.find(n=>n.id==='HNOTE-XXX');
+note.status='$STATUS_TO_WRITE';
+note.consumed_at=new Date().toISOString();
+note.consumed_by='EXP-NNN revision — <brief reason>';
+note.verification_artifact_path='$ARTIFACT_PATH';   // REQUIRED for Mech 1b
+data.last_updated=new Date().toISOString();
+fs.writeFileSync(path,JSON.stringify(data,null,2));
+"
+```
+
+If you wrote `consumed-pending-verification`, the workspace-sync verifier will flip to `consumed` once the artifact is observed at `verification_artifact_path` (handles atomic-write race + universal-pusher rescue cases). If you wrote `consumed` directly because self-verify passed, the entry is already terminal.
+
+For HNOTEs that genuinely don't imply an artifact (e.g., a cross-cutting note you absorbed into ambient context, with no specific output file), set `verification_artifact_path: null` explicitly and the verifier will skip the entry. Don't omit the field — explicit null > absence (the verifier's `defensive default` would log a missing-pattern error otherwise).
+
 ## Check for Orphaned Issues
 
 The decider may assign issues to you without creating a matching expansion entry:
