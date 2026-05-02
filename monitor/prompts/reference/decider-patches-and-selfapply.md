@@ -110,7 +110,74 @@ node build-scripts/apply-patches.js /path/to/your/suggested-patches-YYYY-MM-DDTH
 node build.js html 2>&1 | tail -5
 node test.js 2>&1 | tail -5
 
-# 3a. If ALL tests pass → commit, run pre-push integrity gate, then push
+# 2b. PROP-016 Mechanism A — NEVER_PUSH_PRE_COMMIT_DETECT (added 2026-05-02).
+#
+# Before committing, detect whether any patch modified a NEVER_PUSH file
+# (test.js, build.js, build-scripts/*, CLAUDE.md, monitor/prompts/*.md, or
+# anything under docs/ that isn't auto-regenerated). If yes, HALT the entire
+# commit — do NOT split, do NOT push only the data half. The whole coherent
+# change is stranded and handed to operator. Rationale: universal-pusher
+# rescue copies only data files to FUSE on 403; if we commit the source
+# half, it survives in main only if push succeeds. If push 403s, source is
+# silently dropped while data lands. That asymmetry is the bug class
+# PROP-014/016 calls out (today's PRED-105 schema regression — INSTANCE-1).
+#
+# The whole-commit-is-coherent assumption matters: shipping just the data
+# half causes EXACTLY the drift we're trying to prevent (data has new
+# field, test.js has old schema, tests fail).
+#
+NEVER_PUSH_HITS=$(git status --porcelain | awk '{print $2}' | grep -E '^(test\.js|build\.js|CLAUDE\.md|build-scripts/|monitor/prompts/)' || true)
+if [ -n "$NEVER_PUSH_HITS" ]; then
+  STRANDED_TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)
+  STRANDED_FILE="monitor/decisions/stranded-patches-${STRANDED_TS}.json"
+  echo "PROP-016 Mech A HALT: detected modified NEVER_PUSH files. Stranding to ${STRANDED_FILE} for operator manual application."
+  echo "Hits:"
+  echo "$NEVER_PUSH_HITS"
+  # Capture the diffs (working-tree state, not yet committed) into the stranded file.
+  # The operator will read this in their own clone, apply the same diff, push.
+  node -e "
+const fs=require('fs');
+const {execSync}=require('child_process');
+const hits=process.env.NEVER_PUSH_HITS.trim().split('\n').filter(Boolean);
+const all_modified=execSync('git status --porcelain').toString().split('\n').filter(Boolean).map(l=>l.replace(/^.{2,3}/,'').trim()).filter(Boolean);
+const out={
+  id:'STRANDED-${STRANDED_TS}',
+  created_at:new Date().toISOString(),
+  reason:'PROP-016 Mech A halt — coherent multi-file commit included NEVER_PUSH files. Whole commit stranded for operator manual application in own-clone-with-direct-push (no rescue path).',
+  requires_human_to_apply:true,
+  trigger_files_in_never_push:hits,
+  all_modified_files:all_modified,
+  source_directive:'monitor/prompts/reference/decider-patches-and-selfapply.md Step 2b',
+  prop_reference:'monitor/tinker/proposals/PROP-016-source-file-rescue-gap.json',
+  per_file_diffs:{},
+  operator_action:'1) cd to your clone with direct push. 2) Apply each per_file_diff. 3) git add the listed all_modified_files. 4) Commit + push. 5) Move this file to monitor/decisions/applied-stranded-patches/ once landed.',
+};
+for(const f of all_modified){
+  try{ out.per_file_diffs[f]=execSync('git diff -- '+JSON.stringify(f)).toString(); }
+  catch(e){ out.per_file_diffs[f]='(could not capture diff: '+e.message.slice(0,200)+')'; }
+}
+fs.writeFileSync('${STRANDED_FILE}',JSON.stringify(out,null,2));
+console.log('Wrote stranded patch capture:', '${STRANDED_FILE}');
+"
+  # Restore working tree (we have NOT committed yet, so restore is safe).
+  # Keep the stranded-patches file (which is in monitor/decisions/, not in NEVER_PUSH).
+  git stash push -u -m "PROP-016-Mech-A-halt ${STRANDED_TS}" -- $(git status --porcelain | awk '{print $2}' | grep -v '^monitor/decisions/stranded-patches-') 2>&1 | tail -3
+  git stash drop 2>/dev/null  # discard the stash; we have the diffs captured in the stranded file
+  # Stage and commit ONLY the stranded-patches file — this is decider's "I tried, here's the work" artifact.
+  git add "${STRANDED_FILE}"
+  git commit -m "PROP-016 Mech A halt: ${STRANDED_TS} — patches stranded for operator manual application"
+  # Daily-report MUST flag this. Add to recommended_actions[] with priority 1:
+  #   "action": "OPERATOR APPLY STRANDED PATCHES: ${STRANDED_FILE} contains diffs across NEVER_PUSH files (test.js / build.js / build-scripts/* / CLAUDE.md / monitor/prompts/*.md). Apply in your direct-push clone within 24h to avoid backlog."
+  # Then exit cleanly — DO NOT continue to step 3a's commit. The coherent multi-file change is now operator's responsibility.
+  echo "Halted. Run continues with subsequent steps but does NOT attempt to commit the stranded patches."
+  PATCHES_STRANDED=1
+else
+  PATCHES_STRANDED=0
+fi
+
+# 3a. If ALL tests pass AND PATCHES_STRANDED=0 → commit, run pre-push integrity gate, then push
+# (If PATCHES_STRANDED=1, skip the commit/push of step 3a — the stranded-file commit above is the only commit this run.)
+if [ "${PATCHES_STRANDED:-0}" = "0" ]; then
 git add data/ docs/ downloads/ monitor/
 git commit -m "Decider self-apply: <brief summary of patches>
 
@@ -337,6 +404,8 @@ fi
 # roll back the push; the push already succeeded and the 4h workspace-sync
 # cycle is the backstop. Log the outcome but do not abort on sync failure.
 node build.js sync-workspace || echo "WARN: sync-workspace failed; workspace-sync will backfill within 4h."
+
+fi  # end of `if PATCHES_STRANDED == 0` (PROP-016 Mech A wrapper). If patches were stranded, none of step 3a ran.
 
 # 3b. If ANY test fails → abandon and leave for human
 echo "SELF-APPLY FAILED: tests did not pass. Patch file left for human review."

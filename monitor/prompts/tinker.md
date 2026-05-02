@@ -71,8 +71,24 @@ Check: Are all agents producing? Is data flowing between them? Any aged-out issu
 for f in monitor/changes/latest-poll-summary.txt monitor/curmudgeon/tracker.json monitor/decisions/daily-report-*.json monitor/analyst/expansion-tracker.json; do
   if [ -f "$f" ]; then echo "$(stat -c %Y "$f" 2>/dev/null || echo 0) $f"; fi
 done | sort -n | head -5
+
+# PROP-016 Mech A audit (added 2026-05-02): stranded patches >24h old
+# need operator attention. Each stranded file is decider's "I tried, here's
+# the work" artifact when its commit included NEVER_PUSH files. Operator
+# applies in own-clone-with-direct-push and moves the file to
+# monitor/decisions/applied-stranded-patches/. Files older than 24h are
+# either forgotten by operator or stuck pending review.
+NOW_TS=$(date -u +%s)
+for f in monitor/decisions/stranded-patches-*.json; do
+  [ -f "$f" ] || continue
+  AGE=$(( NOW_TS - $(stat -c %Y "$f" 2>/dev/null || echo $NOW_TS) ))
+  AGE_H=$(( AGE / 3600 ))
+  if [ "$AGE_H" -ge 24 ]; then
+    echo "STRANDED PATCH >24h: $f (age ${AGE_H}h) — flag in tinker report.findings as moderate, recommend operator action"
+  fi
+done
 ```
-Trigger: Any output older than expected, or previous report flagged a stalled agent.
+Trigger: Any output older than expected, OR any stranded-patches file >24h old, OR previous report flagged a stalled agent.
 → Read `monitor/prompts/reference/tinker-pipeline-health.md`, execute that procedure.
 
 **Mode 2 — Infrastructure & FUSE** (run if staleness, auth, or disk issues detected)
