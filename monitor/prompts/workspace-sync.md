@@ -497,6 +497,99 @@ JSON
 fi
 ```
 
+### Step 3.6: PROP-014 verify-pending-state + narrative-cite audit
+
+Run the Mech 1 verifier and the Mech 3 narrative-cite audit. Both operate
+on freshly-pulled clone state (we already did `git pull --rebase` in Step 1).
+
+  - **verify-pending-state.js (Mech 1):** walks `closed-issues.json` +
+    `expansion-tracker.json` for entries with `status` matching
+    `*-pending-verification`. Flips to terminal status (`fixed` /
+    `resolved` / `integrated`) when the entry's `verification_pattern`
+    passes against `origin/main`, or when `test -f` against the entry's
+    `verification_artifact_path` succeeds (Mech 1b). Defensive default:
+    if the verification primitive fails or is malformed, the entry is
+    left pending and `last_verify_attempt_failure_reason` is recorded.
+    Writes `monitor/integrity/verify-pending-run-<ts>.json`. If any
+    entries flipped, the mutated ledger files are re-staged so they
+    ride this run's commit.
+
+  - **audit-narrative-citations.js (Mech 3):** walks declared-state
+    prose surfaces — `daily-report.pipeline_status.*`,
+    `recommended_actions[].action`, curmudgeon `kernel_of_truth` /
+    `our_argument_summary`, tinker `findings[].description`. Counts
+    uncited multi-sentence paragraphs (Stage 1) and bogus-anchor
+    citations (Stage 2). Default scan window is the last 14 days
+    (matches PROP-014-amendment-001 Q3 acceptance window). Writes
+    `monitor/integrity/narrative-cite-audit-<ts>.json`. **Soft-complaint
+    only — no blocking, no commit gating.** Operator reviews on the next
+    morning briefing via tinker's soft-complaints grep.
+
+If either script is absent (e.g. running an old clone before this PROP
+lands), the step skips silently — preserves backward-compat during
+rollout.
+
+```bash
+echo ""
+echo "Step 3.6: PROP-014 state verification + narrative-cite audit"
+
+# 3.6a — Mech 1 verifier. Mutates closed-issues.json / expansion-tracker.json
+# in the clone when verification passes. Captures stdout for the run report.
+VERIFY_OUTPUT_FILE="$(mktemp -t verify-pending.XXXXXX.txt)"
+if [ -f monitor/scripts/verify-pending-state.js ]; then
+  node monitor/scripts/verify-pending-state.js | tee "$VERIFY_OUTPUT_FILE" || \
+    echo "WARN: verify-pending-state.js exited non-zero — continuing without flips"
+  # Re-stage any ledger mutations + the integrity report the verifier wrote.
+  git add monitor/decisions/closed-issues.json 2>/dev/null
+  git add monitor/analyst/expansion-tracker.json 2>/dev/null
+  git add monitor/integrity/ 2>/dev/null
+else
+  echo "  Skipping 3.6a (monitor/scripts/verify-pending-state.js not present)"
+fi
+
+# 3.6b — Mech 3 audit. Observational only; no input mutation.
+AUDIT_OUTPUT_FILE="$(mktemp -t narrative-audit.XXXXXX.txt)"
+if [ -f monitor/scripts/audit-narrative-citations.js ]; then
+  node monitor/scripts/audit-narrative-citations.js | tee "$AUDIT_OUTPUT_FILE" || \
+    echo "WARN: audit-narrative-citations.js exited non-zero — continuing"
+  git add monitor/integrity/ 2>/dev/null
+else
+  echo "  Skipping 3.6b (monitor/scripts/audit-narrative-citations.js not present)"
+fi
+
+# Capture counters for Step 4b's run report (so tinker's soft-complaints grep
+# can see them without re-parsing the integrity reports).
+MECH1_FLIPPED=$(grep -oP 'flipped=\K\d+' "$VERIFY_OUTPUT_FILE" 2>/dev/null | head -1 || echo 0)
+MECH1_STILL_PENDING=$(grep -oP 'still_pending=\K\d+' "$VERIFY_OUTPUT_FILE" 2>/dev/null | head -1 || echo 0)
+MECH3_UNCITED=$(grep -oP 'uncited=\K\d+' "$AUDIT_OUTPUT_FILE" 2>/dev/null | head -1 || echo 0)
+MECH3_BOGUS=$(grep -oP 'bogus_anchors=\K\d+' "$AUDIT_OUTPUT_FILE" 2>/dev/null | head -1 || echo 0)
+MECH1_FLIPPED=${MECH1_FLIPPED:-0}
+MECH1_STILL_PENDING=${MECH1_STILL_PENDING:-0}
+MECH3_UNCITED=${MECH3_UNCITED:-0}
+MECH3_BOGUS=${MECH3_BOGUS:-0}
+
+# Soft-complaint signal for Step 4b's AGENT_NOTES — if either Mech surfaces
+# something operator-visible, the run report's narrative field MUST mention
+# it so tinker's soft-complaints grep catches it. Use the literal word
+# "soft-complaint" (the grep target).
+if [ "$MECH3_UNCITED" -gt 0 ] || [ "$MECH3_BOGUS" -gt 0 ]; then
+  echo ""
+  echo "  → Mech 3 soft-complaint: uncited=$MECH3_UNCITED bogus_anchors=$MECH3_BOGUS"
+  echo "    (Step 4b: include 'soft-complaint: narrative-cite uncited=N bogus=N' in AGENT_NOTES.)"
+fi
+if [ "$MECH1_STILL_PENDING" -gt 0 ]; then
+  echo ""
+  echo "  → Mech 1 still-pending: $MECH1_STILL_PENDING entries failed verification this cycle"
+  echo "    (Soft-complaint candidate. Routine if first cycle after a recent decider self-apply;"
+  echo "    investigate if same entries linger past 24h TTL.)"
+fi
+
+rm -f "$VERIFY_OUTPUT_FILE" "$AUDIT_OUTPUT_FILE"
+```
+
+Per `monitor/prompts/reference/state-verification.md` §1 (WRITE-VERIFY)
+and §3 (NARRATE-CITE).
+
 ### Step 4: Commit and push
 
 ```bash
