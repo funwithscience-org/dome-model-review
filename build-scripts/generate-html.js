@@ -1591,7 +1591,7 @@ ${accuracyVariantList ? `<p class="ams-p ams-variant">Internal queries return ${
 </div>
 <div class="ds-bn-item">
 <span class="ds-bn-date">2026-04-26</span>
-<span class="ds-bn-text"><strong>Dome's Own Prediction Lapses Without Invalidation.</strong> PRED-105 (copper coils + cucumber growth, 14-day window closing April 18) is now nine days past close with no dome update, retraction, or extension — the prediction has silently expired. Nine more dome predictions have April closure windows still open (geoid stationarity, mascon, P-wave and S-wave shadow zones, JWST z&lt;0.1, M2-tidal, TOA flux, TTB-night). Watch for the same silent-ignore pattern by April 30. <a href="#pred-mined" onclick="showTab('predictions');return false">Predictions catalog →</a></span>
+<span class="ds-bn-text"><strong>April 2026: Eleven Test Windows Close, Zero Discriminating Predictions Survive.</strong> Of eleven dome predictions whose declared test windows closed in April 2026, nine restated phenomena that were already in the public scientific record at registration time (one of those nine — PRED-090 — also recycled WIN-066), one (PRED-105) was promoted to tacit-withdrawal under a 14-day-silence rule, and one (PRED-106) waits on an experiment the author has not run while citing a phantom WIN-071 that does not exist in the dome's own published registry. New §6.12 walks each closure in turn and cross-references the dome's own machine-readable claim_index.json. <a href="#p6-612-11" onclick="showTab('predictions');document.getElementById('p6-612-11').open=true;return false">Full analysis →</a></span>
 </div>
 <div class="ds-bn-item">
 <span class="ds-bn-date">2026-04-17</span>
