@@ -1,0 +1,86 @@
+{
+  "report_id": "tinker-2026-05-05T16-30",
+  "run_started_at": "2026-05-05T16:30:00Z",
+  "run_completed_at": "2026-05-05T16:40:00Z",
+  "mode_selected": "Mode 4 — Proposals & Self-Fixes (operator directive override)",
+  "mode_selection_reason": "Pre-flight directive discovery surfaced DIRECTIVE-20260505-001 with status:pending, priority:high, target_mode:Mode 4. Per dispatcher rules, directive overrides Mode 1–4 trigger logic and routes to the directive's target_mode. Skipped Mode 1/2/3 quick-checks for this run.",
+
+  "directive_handled": {
+    "directive_id": "DIRECTIVE-20260505-001",
+    "title": "Audit workspace-sync smart_copy iteration list for gaps; primary case: processed-reviews.json missing → digest-reviews.js sees stale 'already_processed' set → decider re-processes the same reviews each run",
+    "outcome": "completed",
+    "deliverable": "monitor/tinker/proposals/PROP-017-workspace-sync-smart-copy-gap.json",
+    "directive_marked_completed": true,
+    "directive_lifecycle_additive_edit_applied": "status: pending→completed; appended completed_at, completed_by_run, prop_id_authored, amendment_file_authored. No other fields mutated."
+  },
+
+  "modes_checked": {
+    "mode_1_pipeline_health": "skipped (directive override)",
+    "mode_2_infrastructure_fuse": "skipped (directive override)",
+    "mode_3_cost_engineering": "skipped (directive override)",
+    "mode_4_proposals_and_self_fixes": "executed via directive"
+  },
+
+  "previous_followup": "Skipped this run. Directive override consumed the full window; PROP lifecycle verification deferred to next normal-mode run. Note: this run did NOT walk monitor/tinker/proposals/ to mark fixed/still-broken statuses — operator should not interpret silence as 'all PROPs verified.'",
+
+  "findings": [
+    {
+      "id": "PROP-017-PRIMARY-CASE",
+      "severity": "moderate",
+      "title": "monitor/decisions/processed-reviews.json not in workspace-sync smart_copy iteration; FUSE +55h ahead of main",
+      "evidence": "FUSE last_updated=2026-05-05T13:24Z (451 entries); main last_updated=2026-05-03T05:21Z (447 entries); 4 missing entries match exactly the WIN-021.c3, WIN-014.c5, WIN-016.c6, WIN-017.c4 reviews that decider keeps flagging as 'verified stale' in daily-reports.",
+      "root_cause": "Enumeration omission in monitor/prompts/workspace-sync.md Step 2. The decider clone-side write reaches FUSE via universal-pusher on 403, but workspace-sync's smart_copy iteration never picks it up to round-trip back to git.",
+      "blast_radius": "~24 redundant Opus staleness checks per day; ~70 over the 3-day FUSE-vs-main staleness window. Daily-report 'verified stale' commentary clutters operator attention.",
+      "proposed_fix": "PROP-017 — add smart_copy line for processed-reviews.json plus 12 sibling fixes."
+    },
+    {
+      "id": "PROP-017-SIBLING-GAPS",
+      "severity": "moderate",
+      "title": "11 additional gap files surfaced by audit (same FUSE-newer-than-git pattern)",
+      "evidence": "monitor/curmudgeon/alerts.txt +98h, monitor/curmudgeon/latest-review-summary.txt +108h, monitor/analyst/attention-inbox.json +99h, monitor/analyst/processed-proposals.json +60h, monitor/integrity/prop-009-shadow.jsonl +81h. Plus 6 'untracked-on-main' files (integrity/alerts.txt, integrity/latest-integrity-summary.txt, social/report-*.json, social/latest-summary.txt, analyst/latest-analysis-summary.txt) that have never reached git.",
+      "root_cause": "Same enumeration-omission pattern as primary case. Each file is agent-written, not in NEVER_PUSH, but not enumerated in smart_copy or sync_glob.",
+      "blast_radius": "Decider intake reads stale alerts/summaries; tinker's PROP-009 shadow audit sees stale shadow log; analyst's attention-inbox round-trip is broken; daily social reports never reach git history.",
+      "proposed_fix": "Bundled into PROP-017."
+    },
+    {
+      "id": "PROP-017-STRUCTURAL-CONCERN",
+      "severity": "low",
+      "title": "Enumeration approach is fundamentally fragile; same gap class will recur",
+      "evidence": "12+ confirmed gaps across 5 directories. The pattern is: 'agent adds new write path → forgets to add line to workspace-sync.md → file silently strands on FUSE → invisible until someone investigates a stale-loop symptom downstream.' This is the second instance of this bug class (cf. PROP-016 source-file rescue gap).",
+      "root_cause": "Three-way duplication of file ownership classifications across build.js OWNERSHIP, workspace-sync.md NEVER_PUSH, and CLAUDE.md File Ownership Rules. Adding a new write path requires manual updates in all three; gaps go undetected for days.",
+      "proposed_fix": "Deferred follow-ups: (a) sync-manifest pattern to consolidate the three-way duplication; (b) integrity-side gap detector that flags FUSE-newer-than-main files not classified by workspace-sync. Both are documented in PROP-017 follow_up_recommendations but not bundled into the immediate fix."
+    }
+  ],
+
+  "self_audit": {
+    "tinker_prompt_size_lines": 194,
+    "tinker_prompt_size_audit_note": "Did not run full prompt-size measurement this run (directive scope precluded it). Recommend a Mode 3 run within the next ~2 days to refresh tinker's own prompt-size tracking.",
+    "directive_dispatcher_no_op_check": "The pre-flight directive scan added in 2026-05-02 (DIRECTIVE-20260502-* family) successfully fired today. This is its first known activation since being added. Confirms the dispatcher works end-to-end. The 'NO PENDING DIRECTIVES' branch had been the universal output for the prior 3 days.",
+    "context_load_audit_skipped": "CLAUDE.md performance audit deferred — would have been part of Mode 3."
+  },
+
+  "claude_md_audit": {
+    "performed_this_run": false,
+    "reason": "Directive override consumed full window. Recommend running this audit on next Mode 3 invocation. Specific item to check then: PROP-017's secondary edit (CLAUDE.md Human Notes Rule update) is post-fix-only — don't pre-audit it.",
+    "preliminary_observation_from_this_run": "The CLAUDE.md File Ownership Rules section enumerates ~25 file paths with directional classifications. Comparing against the audit's confirmed gaps: at least 5 currently-agent-written files (processed-reviews.json, attention-inbox.json, processed-proposals.json, prop-009-shadow.jsonl, monitor/social/report-*.json) are not classified in the table. This is in addition to the PROP-017 workspace-sync fix and is a separate cleanup that the next CLAUDE.md audit should pick up."
+  },
+
+  "context_load": {
+    "performed_this_run": false,
+    "reason": "Skipped per directive scope. Defer to next Mode 3 run."
+  },
+
+  "follow_up_for_next_run": [
+    "Run PROP Lifecycle Verification (walk monitor/tinker/proposals/ and check verification_pattern for each). Skipped this run.",
+    "Run Mode 3 cost engineering audit including CLAUDE.md accuracy + performance + per-agent context-load. Skipped this run.",
+    "After PROP-017 lands: run PROP-017's verification_pattern.primary_test (curl raw.githubusercontent.com/.../processed-reviews.json + diff vs FUSE) to confirm fix worked.",
+    "Watch for relic-file flood in workspace-sync commits in the first 48h post-PROP-017-land. If relic files start appearing, escalate to sync-manifest follow-up sooner."
+  ],
+
+  "files_written_this_run": [
+    "monitor/tinker/proposals/PROP-017-workspace-sync-smart-copy-gap.json (created — 31KB, 396 lines)",
+    "monitor/tinker/operator-directives/DIRECTIVE-20260505-001-workspace-sync-smart-copy-gap.json (additive edit per DIRECTIVE-LIFECYCLE exception: status pending→completed; appended completed_at, completed_by_run, prop_id_authored, amendment_file_authored)",
+    "monitor/tinker/report-2026-05-05T16-30.json (this file)",
+    "monitor/tinker/latest-tinker-summary.txt"
+  ]
+}
