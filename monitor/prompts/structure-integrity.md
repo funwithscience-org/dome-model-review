@@ -356,6 +356,48 @@ process.exit(1);
 
 **Bug history:** On 2026-04-15T08:17, integrity flagged 4 broken review files that had actually been recovered at 06:12 (commit bfbf663). The digest hadn't been regenerated since 21:26 the previous day, so integrity was reading a stale errors array. The mandatory regeneration above prevents that class of false positive.
 
+### 7g. Drift Audit (Curmudgeon Change-Detection Candidate List)
+
+The curmudgeon's Priority 3 change-detection scan (see `monitor/prompts/reference/curmudgeon-change-and-holistic.md`) historically read every review fingerprint in-LLM each cycle (~462 files, ~5K input tokens worth on the pick step alone, ~minutes wall-clock). PROP-020 split this work: integrity precomputes the candidate list deterministically via a Node script, curmudgeon reads the precomputed list. The result: curmudgeon hot-path drops to a single ~10KB read; integrity absorbs the full scan once every ~3 days.
+
+**Trigger:** Run the audit step if `monitor/integrity/drift-audit.json` is missing OR its `generated_at` is more than 72 hours old. Otherwise skip — the existing list is fresh enough for curmudgeon's purposes.
+
+```bash
+node -e "
+const fs=require('fs');
+const path='monitor/integrity/drift-audit.json';
+let stale=true;
+try{
+  const d=JSON.parse(fs.readFileSync(path,'utf8'));
+  const ageH=(Date.now()-Date.parse(d.generated_at))/3600000;
+  stale=ageH>72;
+  console.log('drift-audit age:', ageH.toFixed(1)+'h', stale?'STALE — refresh':'fresh — skip');
+}catch(e){console.log('drift-audit missing or unreadable; refresh required');}
+process.exit(stale?2:0);
+"
+DRIFT_GATE=$?
+if [ $DRIFT_GATE -eq 2 ]; then
+  INTEGRITY_RUN_ID="${INTEGRITY_RUN_ID:-integrity-$(date -u +%Y%m%dT%H%MZ)}" \
+    node monitor/scripts/compute-drift-audit.js 2>&1 | tee /tmp/drift-audit.log
+  if [ ${PIPESTATUS[0]} -ne 0 ]; then
+    echo "MAJOR FINDING: drift-audit script failed — curmudgeon will fall back to in-prompt scan."
+    echo "  Stack trace + diagnostics in /tmp/drift-audit.log (last 20 lines):"
+    tail -20 /tmp/drift-audit.log
+  else
+    echo "OK: drift-audit refreshed."
+  fi
+fi
+```
+
+**Severity rubric:**
+- **Major** if the script fails (non-zero exit, missing output). Curmudgeon falls back to in-prompt scan, but a chronic failure means the optimization is dead. Operator should investigate within 24h.
+- **Moderate** if the script ran but produced an empty `candidates` array. Could be legitimate (everything's freshly reviewed) or a bug (compare logic broken). Cross-check by spot-running the script standalone with `--workspace`; if still empty, file an issue.
+- **Informational otherwise**: report `candidates_count`, `verdict_changed_count`, `large_rewrite_count`, `pre_tldr_schema_count` from `monitor/integrity/drift-audit.json` so deep-tail health is visible at a glance in the daily integrity report.
+
+**Why integrity owns this**: integrity already runs daily, has the structural-audit charter, and a single context window in which all its checks fit. Adding a 5-second deterministic step on a 72h gate is the lightest possible intervention. A separate scheduled task was considered and rejected — it adds operational artifacts for no concrete benefit.
+
+**What does NOT change**: curmudgeon's Priority 3 review procedure (Steps 5-10 in the dispatcher) is unchanged. The fingerprint comparison rule (PROP-019 reduced-set, common fields only) is unchanged. The drift-magnitude tiebreak (commit 71be960) is unchanged. This step is purely a precomputation artifact — curmudgeon's review output is identical to what it would produce with the old in-prompt scan.
+
 ### 8. Project Documentation — Mechanical Checks
 
 `CLAUDE.md` and `SESSION-CONTEXT.md` are the first things new AI sessions read. Check the mechanical facts:
