@@ -279,6 +279,13 @@ smart_copy "${WORKSPACE}/monitor/integrity/latest-integrity-summary.txt" monitor
 smart_copy "${WORKSPACE}/monitor/integrity/prop-009-shadow.jsonl" monitor/integrity/prop-009-shadow.jsonl
 sync_glob monitor/tinker '*.json'
 sync_glob monitor/tinker/proposals '*.json'
+# Operator directives — tinker writes lifecycle status updates (status:
+# completed/superseded plus completed_at/completed_by_run/prop_id_authored)
+# per the DIRECTIVE-LIFECYCLE additive-edit exception. Without this glob,
+# the status update sits in FUSE while git stays at status:'pending', so
+# tinker's next run re-pops the same directive and re-authors a duplicate
+# PROP — wasted Opus tokens. Will be subsumed by PROP-018 sync manifest.
+sync_glob monitor/tinker/operator-directives '*.json'
 
 # Status files
 smart_copy "${WORKSPACE}/monitor/status.json" monitor/status.json
