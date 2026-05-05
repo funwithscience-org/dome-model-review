@@ -1,0 +1,178 @@
+{
+  "id": "PROP-019",
+  "created_at": "2026-05-05T19:56:00.000Z",
+  "category": "prompt_diet",
+  "target": "monitor/prompts/reference/curmudgeon-change-and-holistic.md (Step 3 of the Change Detection Procedure)",
+  "directive_id": "DIRECTIVE-20260505-003",
+  "title": "Curmudgeon change-detection misroutes pre-tldr-schema fingerprints, stranding ~22 high-drift WINs in the deep tail",
+  "problem": "DIRECTIVE-20260505-003 reports 14 WINs at 100-838% drift on detail_verdict_text whose latest curmudgeon review is a c2 dated 2026-04-07 / -08 / -09. Empirical re-confirmation (this run) widens the population: of 24 WINs whose latest review fingerprint predates the tldr schema (i.e. lacks `tldr_evidence_length` and `tldr_verdict_length`), 22 currently exhibit >20% drift on a legacy field or a verdict change. None has been re-reviewed in 28 days despite ~1-2 change-detect picks/day across that window — the probability of random misses on 22 high-drift items across ~42 chances is essentially zero, so the LLM is systematically NOT picking them. Fleet-wide, 146 of 164 distinct review items (89%) carry pre-tldr fingerprints; the bug class is structural, not specific to the April-7 batch. The directive's named hypothesis — NaN-propagation in (current-old)/old when old is undefined — is plausible but not the only mechanism: the prompt's prioritization step (Step 4) ranks 'TLDR-only changes' last, and when an item presents both real legacy-field drift AND missing-tldr-old, the LLM is liable to classify the salient delta as 'TLDR was added' and shunt it to the lowest bucket, where fresher items always outrank it. Either way, the prompt has a blind spot: it never tells the LLM how to handle a fingerprint whose schema is a strict subset of the current schema. Every future fingerprint-schema addition reproduces the failure.",
+  "diagnosis": {
+    "verification_pass": "Confirmed via empirical trace. The 14 deep-tail c2 review files all share a fingerprint of exactly {claim_length, finding_length, detail_evidence_length, detail_verdict_length, verdict} — no tldr_*_length keys. The current wins.json has tldr_evidence and tldr_verdict on every WIN. Per-WIN drift on the four legacy fields, computed against the c2 fingerprint as ((current - old) / old): WIN-050 +838%, WIN-028 +837%, WIN-009 +638%, WIN-036 +636%, WIN-060 +609%, WIN-018 +514%, WIN-059 +467%, WIN-057 +372%, WIN-023 +334%, WIN-048 +333%, WIN-063 +258%, WIN-006 +249%, WIN-043 +248%, WIN-066 +243% (all on detail_verdict_length). Under a literal reading of Step 3's >20% rule, all 14 should fire; under the literal reading of Step 4's prioritization, all 14 belong to the 'large text rewrites' bucket, the second-highest priority. They have not fired. The mechanism is Step 4's salience misrouting — confronted with 'two new tldr fields appeared, four old fields drifted', the LLM's narrative summary of 'what changed' is dominated by the schema delta, not the magnitude. The bucketing logic then drops the item to TLDR-only-changes (lowest priority), where the front of every run's queue holds a fresher candidate.",
+    "root_cause_classification": "schema-evolution-stranding. The prompt specifies a fingerprint shape that has been extended without articulating how to compare across the old and new shapes. Every future addition (`finding_tldr`, `detail_extra_length`, etc.) will create another stranded cohort.",
+    "supporting_audit": {
+      "deep_tail_drift_table_self_computed": [
+        {"id": "WIN-050", "vd_drift_pct": 838, "ev_drift_pct": 0, "verdict_changed": false},
+        {"id": "WIN-028", "vd_drift_pct": 837, "ev_drift_pct": 0, "verdict_changed": false},
+        {"id": "WIN-009", "vd_drift_pct": 638, "ev_drift_pct": 0, "verdict_changed": false},
+        {"id": "WIN-036", "vd_drift_pct": 636, "ev_drift_pct": 0, "verdict_changed": false},
+        {"id": "WIN-060", "vd_drift_pct": 609, "ev_drift_pct": 29, "verdict_changed": false},
+        {"id": "WIN-018", "vd_drift_pct": 514, "ev_drift_pct": 16, "verdict_changed": false},
+        {"id": "WIN-059", "vd_drift_pct": 467, "ev_drift_pct": 15, "verdict_changed": false},
+        {"id": "WIN-057", "vd_drift_pct": 372, "ev_drift_pct": 2, "verdict_changed": false},
+        {"id": "WIN-023", "vd_drift_pct": 334, "ev_drift_pct": 44, "verdict_changed": false},
+        {"id": "WIN-048", "vd_drift_pct": 333, "ev_drift_pct": -27, "verdict_changed": false},
+        {"id": "WIN-063", "vd_drift_pct": 258, "ev_drift_pct": 31, "verdict_changed": false},
+        {"id": "WIN-006", "vd_drift_pct": 249, "ev_drift_pct": 0, "verdict_changed": false},
+        {"id": "WIN-043", "vd_drift_pct": 248, "ev_drift_pct": 68, "verdict_changed": false},
+        {"id": "WIN-066", "vd_drift_pct": 243, "ev_drift_pct": 71, "verdict_changed": false}
+      ],
+      "wider_population_of_pre_tldr_c1c2_wins_with_legacy_drift_or_verdict_change": 22,
+      "wider_population_of_pre_tldr_c1c2_wins_total": 24,
+      "fleetwide_pre_tldr_fingerprints_total": 146,
+      "fleetwide_distinct_review_items_total": 164,
+      "tracker_state_interactions": "monitor/curmudgeon/tracker.json points-array entries carry only {id, type, section, topic, status, reviewed_at, last_reviewed_cycle}. Fingerprints are read from review files, not tracker. tracker.json does not interact with this fix; no edit to it is needed."
+    }
+  },
+  "fix_options_compared": [
+    {
+      "option_id": 1,
+      "label": "Forward-only treatment",
+      "spec": "If a field exists in the current fingerprint but not in the old fingerprint, treat the missing-old as a positive 'field was added → flag for review' signal regardless of the field's current value.",
+      "behavior_at_landing": "Every one of the ~146 pre-tldr fingerprints would flag on the next change-detect run. One-item-per-run preserves throughput, so no atomic flood, but the queue depth balloons.",
+      "pro": "Conceptually pure: a schema delta IS a reason to revisit the item, because the new field was authored without the curmudgeon's eye on it.",
+      "con": "Worsens the very salience bug that strands the deep tail. With ~146 items all flagging, the LLM's bucket-sort still ranks 'TLDR-only changes' last — and the highest-drift items remain bottom-bucketed. Likely produces months of low-value 'TLDR was added' picks before the deep tail surfaces.",
+      "risk_of_regression": "moderate — re-introduces the misrouting at scale.",
+      "verdict": "rejected — addresses a different problem (analyst-authored TLDR oversight) at the cost of worsening this one."
+    },
+    {
+      "option_id": 2,
+      "label": "Reduced-set comparison (RECOMMENDED)",
+      "spec": "When the old fingerprint is missing fields the current fingerprint has, compare ONLY the fields both fingerprints contain. If any common field shows >20% drift, flag the item under its true bucket (large text rewrite, etc.). Schema additions ARE NOT a drift signal in themselves; the new fields enter the fingerprint when the item gets its next review.",
+      "behavior_at_landing": "On the next change-detect run, 22 of 24 pre-tldr c1/c2 WINs fire under the 'large text rewrite' or 'verdict change' bucket (depending on which legacy field drifted). One per run — clears in 11-22 days at current cadence.",
+      "pro": "Routes the deep tail through the correct existing bucket without introducing a new one. Self-heals: each re-review writes a new fingerprint with the full current schema, so the item exits the pre-tldr cohort permanently. Resilient to future schema additions: the next field to be added (e.g., `tldr_finding_length`) will likewise be excluded from comparison until the fingerprint is rewritten.",
+      "con": "Misses the case where a tldr is genuinely wrong but the underlying detail text is unchanged. Mitigation: holistic-review check 'TLDRs vs expanded content' covers this; analyst Mode 0 owns initial tldr correctness.",
+      "risk_of_regression": "low — reduces, rather than expands, the conditions that flag.",
+      "verdict": "RECOMMENDED. Lowest-risk, structurally robust to future schema growth, no flood, no new bucket."
+    },
+    {
+      "option_id": 3,
+      "label": "Lazy backfill from git-blame",
+      "spec": "On first encounter with a missing-old-field fingerprint, derive the would-have-been values by checking out wins.json at the review's `reviewed_at` commit and computing the lengths.",
+      "behavior_at_landing": "Per-item: clone-side git-blame, file checkout, length computation. Then a comparable fingerprint exists for drift checking.",
+      "pro": "Most 'complete' — produces a real apples-to-apples comparison.",
+      "con": "Re-fingerprinting all 462 reviews is exactly the migration the directive's `non_goals` forbids. The curmudgeon comparison runs in the LLM, not in a script — git-blame is fiddly to drive in-prompt and very fiddly to do reliably for items whose target file moved or was renamed (sections.json went through several restructures; v6 happened on 2026-04-07). High implementation cost, marginal payoff over option 2.",
+      "risk_of_regression": "moderate — git-blame reproduction is brittle around restructures, may produce false drift readings.",
+      "verdict": "rejected — explicit non-goal of the directive and high complexity for marginal gain."
+    }
+  ],
+  "recommendation": "Option 2 (Reduced-set comparison). Argument: the bug isn't 'we lack pre-tldr-schema data', it's 'we treat missing-old-field as if it were a low-priority TLDR change'. Reduced-set fixes the misrouting without manufacturing data the prompt was never given. It propagates correctly through future schema evolutions because the rule is shape-agnostic — any time the current fingerprint has more fields than the old, the comparison is run on the intersection, and the schema gap closes naturally as items cycle.",
+  "proposed_fix": {
+    "summary": "Edit Step 3 of monitor/prompts/reference/curmudgeon-change-and-holistic.md to spell out the common-fields-only rule and explicitly state that schema additions are NOT a drift signal. Add a one-line note to Step 4 ensuring the LLM doesn't downgrade common-fields-only-flagged items into the TLDR bucket. Add a `change_summary` audit hint so we can verify the catch rate post-landing.",
+    "files_to_create": [],
+    "files_to_modify": [
+      {
+        "path": "monitor/prompts/reference/curmudgeon-change-and-holistic.md",
+        "find": "2. **Compare against current data.** Read the current `wins.json` and `sections.json` from the fresh clone. For each item, compute the current fingerprint (same fields: `claim_length`, `finding_length`, `detail_evidence_length`, `detail_verdict_length`, `verdict`). Compare against your stored fingerprint.\n\n3. **Flag changed items.** An item needs re-review if:\n   - Any text field length changed by >20%\n   - The `verdict` field is different\n   - The item has no prior review at all (newly added)\n   - A `tldr_evidence` or `tldr_verdict` was added or substantially changed\n\n4. **Prioritize.** Among flagged items, prefer: verdict changes > large text rewrites > new items > TLDR-only changes. If multiple items tie, prefer WINs over sections (WINs are what readers see first).",
+        "replace": "2. **Compare against current data.** Read the current `wins.json` and `sections.json` from the fresh clone. For each item, compute the current fingerprint (same fields: `claim_length`, `finding_length`, `detail_evidence_length`, `detail_verdict_length`, `tldr_evidence_length`, `tldr_verdict_length`, `verdict`). Compare against your stored fingerprint **on the fields that exist in both**. Many older fingerprints (anything written before 2026-04-09) lack `tldr_evidence_length` and `tldr_verdict_length` — that is normal. Schema growth is NOT a drift signal in itself; the new fields enter the fingerprint when the item gets its next review.\n\n3. **Flag changed items.** An item needs re-review if:\n   - Any text field length present in BOTH fingerprints changed by >20% (compute drift only on fields the old fingerprint actually has — never on fields it lacks)\n   - The `verdict` field is different\n   - The item has no prior review at all (newly added)\n   - A `tldr_evidence` or `tldr_verdict` is present in current data AND ALSO present in the old fingerprint AND changed by >20%\n\n   **Pre-tldr-schema fingerprints** (no `tldr_*_length` keys) are compared on the four legacy fields plus `verdict`. The fact that `tldr_*_length` is missing from the old fingerprint is NOT itself a re-review trigger — these tldrs were authored by the analyst at write-time and live on the holistic-review checklist for tldr-vs-detail consistency. If a pre-tldr-schema item flags via legacy-field drift, classify it by the legacy field that drifted; do NOT downgrade it to the TLDR-only bucket on the grounds that tldr fields are missing from the old fingerprint.\n\n4. **Prioritize.** Among flagged items, prefer: verdict changes > large text rewrites > new items > TLDR-only changes. If multiple items tie, prefer WINs over sections (WINs are what readers see first). When you record the chosen item's `change_summary` in the new review, name the field that drove the flag (e.g., \"detail_verdict_length grew from 123 to 1154 (+838%); pre-tldr-schema fingerprint, compared on common fields only\") so future audits can verify the catch rate.",
+        "explanation": "Spells out common-fields-only comparison; declares that schema additions are not a drift signal; adds a guard against the bucket-misrouting that strands the deep tail; mandates an audit-friendly change_summary."
+      }
+    ],
+    "files_to_delete": []
+  },
+  "implementation_sketch": {
+    "narrative": "The fix is a prompt edit in one file. The curmudgeon executes the comparison in-LLM, so we are reshaping the instructions, not editing code. The core change is two-fold: (a) rule 'Any text field length changed by >20%' becomes 'Any text field length present in BOTH fingerprints changed by >20%', and (b) a new explicit paragraph telling the LLM how to handle pre-tldr-schema fingerprints (compare on common fields, classify by the field that drifted, don't downgrade). The Step 4 prioritization rules are unchanged — the fix is upstream of prioritization, in the categorization step. Adding a `change_summary` directive is the one new piece of output, used solely to audit post-landing whether the catch rate matches the pre-landing prediction.",
+    "why_no_script": "Curmudgeon's comparison runs entirely in-prompt. There is no Python or Node helper to amend. The fingerprint is recorded by the LLM in the review JSON; the LLM reads other review JSONs to pull old fingerprints. A scripted comparator would be a larger architectural change (and would not fit DIRECTIVE-20260505-003's 'do not require re-fingerprinting all 462 reviews' constraint).",
+    "fingerprint_schema_documentation": "Optionally append a comment to the canonical text_fingerprint schema in monitor/prompts/curmudgeon.md (Section 7, the Review JSON Fields block) noting: 'Schema as of 2026-04-09: claim_length, finding_length, detail_evidence_length, detail_verdict_length, tldr_evidence_length, tldr_verdict_length, verdict. Older reviews may lack tldr_*_length; this is expected and handled in the change-detection procedure.' This is advisory only — the comparison logic is in the reference file. Holding this for a follow-up edit if operator wants to bundle it; not blocking PROP-019.",
+    "qa_after_landing": "Within 2-4 change-detect runs after the prompt edit, expect: WIN-050, WIN-028, WIN-009, WIN-036, or WIN-060 (the highest-drift items) to surface as the picked candidate. The chosen item's review file must include a `change_summary` field naming the drifted field. If 4 consecutive runs do NOT pick any of the deep-tail-14 (and the priority queue is empty for those runs), the fix did not land — open an issue."
+  },
+  "deep_tail_disposition": {
+    "auto_pop_after_fix": true,
+    "auto_pop_mechanism": "Reduced-set comparison: each pre-tldr c1/c2 item is now correctly evaluated against its old fingerprint on the four legacy fields. 22 of 24 fire under the >20% rule on detail_verdict_length (range 100-838%). They route to the 'large text rewrites' bucket, second-highest priority, beating only verdict-changes. WINs ahead of sections per Step 4 tiebreak.",
+    "expected_pick_order": [
+      "WIN-050 (vd 838%)",
+      "WIN-028 (vd 837%)",
+      "WIN-009 (vd 638%)",
+      "WIN-036 (vd 636%)",
+      "WIN-060 (vd 609%)",
+      "WIN-018 (vd 514%)",
+      "WIN-059 (vd 467%)",
+      "WIN-057 (vd 372%)",
+      "WIN-023 (vd 334%)",
+      "WIN-048 (vd 333%)",
+      "WIN-063 (vd 258%)",
+      "WIN-006 (vd 249%)",
+      "WIN-043 (vd 248%)",
+      "WIN-066 (vd 243%)"
+    ],
+    "expected_clear_time": "At ~1-2 change-detect picks/day, 14 items clear in 7-14 days. The wider population of 22 pre-tldr c1/c2 WINs with drift clears in 11-22 days. New decider work continues to flow through priority-queue (separate channel), so deep-tail clearance does not starve fresh adversarial review.",
+    "no_priority_queue_push_needed": "Operator's lean — let the structural fix do the work — is correct. A one-time priority-queue push of the 14 items would conflate two channels (queue is for decider-pushed work; change-detect is for organic drift) and mask whether the structural fix actually works. Recommend NOT pushing."
+  },
+  "side_effects": {
+    "flood_risk": "None. One-item-per-run is preserved (curmudgeon's STOP rule after a change-detect pick). Even if 100+ items fire on the same scan, the curmudgeon picks one and exits. The 'flood' the directive worried about would only occur if every flagged item were processed in a single run — that does not happen.",
+    "false_positives": "The fix REDUCES, rather than expands, the conditions under which flagging happens — the old prompt could in principle have classified 'tldr was added' as a flag-worthy change (line 17), and reduced-set comparison drops that line for missing-old-tldr cases. So this is a strict tightening, not a loosening. False-positive rate decreases, true-positive rate increases.",
+    "tldr_correctness_audit_path": "If the operator's concern is that pre-tldr-fingerprint items might have wrong analyst-authored TLDRs that never get adversarial review — that's a holistic-review concern, not a change-detection concern. The 'TLDRs vs expanded content' check belongs on the holistic_checks list (it already implicitly is, under 'Cross-reference integrity' / 'Consistency of tone' lenses). If operator wants to surface it explicitly, add 'TLDR factual consistency' to the holistic_checks rotation in monitor/curmudgeon/tracker.json. Out of scope for PROP-019.",
+    "interaction_with_priority_queue": "None. Priority queue is decider-driven and processed before change-detect (Priority 1 vs Priority 3). Reduced-set comparison only changes Priority 3 internals; Priority 1 ordering is untouched.",
+    "interaction_with_tracker_json": "None. tracker.json's points array is metadata; fingerprints live in review files. No tracker edit required."
+  },
+  "regression_test": {
+    "pre_fix_baseline": "Run synthetic change-detect against deep-tail-14 + a control set of 5 recently-cycled c4+ items. Expected pre-fix: control items show small drift and rotate normally; deep-tail-14 do NOT surface. Confirmed empirically by 28 days of observed cycles with zero deep-tail picks (this report's audit table is the synthetic compare).",
+    "post_fix_expected": "Within 4 change-detect runs (≈48-96 hours at q4h cadence), at least one of WIN-050 / WIN-028 / WIN-009 / WIN-036 / WIN-060 should surface as the picked item, and the chosen review file should contain a `change_summary` naming the legacy field that drove the flag (typically `detail_verdict_length`). Within 14 days, all 14 deep-tail items should be reviewed.",
+    "disprove_conditions": [
+      "If 4 consecutive change-detect runs after the prompt edit pick items NOT in the deep-tail-14 list AND NOT in the priority queue, the fix did not land as expected. Open an issue, escalate to PROP follow-up.",
+      "If a deep-tail item is picked but its `change_summary` does NOT name a legacy drift field (instead naming 'tldr added' or similar), the bucket-misrouting bug persists despite the prompt edit — escalate.",
+      "If post-fix the curmudgeon flags genuinely-unchanged items at >5% rate, the reduced-set rule has loosened comparison too much — escalate."
+    ],
+    "post_fix_confirmation_command": "node -e 'const fs=require(\"fs\");const glob=require(\"glob\");const targets=[\"WIN-050\",\"WIN-028\",\"WIN-009\",\"WIN-036\",\"WIN-060\",\"WIN-018\",\"WIN-059\",\"WIN-057\",\"WIN-023\",\"WIN-048\",\"WIN-063\",\"WIN-006\",\"WIN-043\",\"WIN-066\"];let hits=0;for(const t of targets){const files=glob.sync(\"monitor/curmudgeon/reviews/\"+t+\".c[3-9]*.json\");if(files.length){hits++;console.log(t,\"reviewed at cycle\",files[files.length-1])}else{console.log(t,\"STILL_UNREVIEWED_at_c3+\")}};console.log(hits+\"/14 deep-tail items now have a c3+ review\")'"
+  },
+  "future_schema_evolution_protection": {
+    "structural_principle": "The prompt is now shape-agnostic about fingerprints — it compares on the intersection of fields, not on a fixed schema. Future schema additions (e.g., adding `detail_extra_length` or `tldr_finding_length`) will: (a) enter the fingerprint of every newly-written review automatically; (b) be excluded from comparison against any review that predates the addition; (c) be carried by every item naturally as it cycles through next review. No item gets stranded by future schema growth.",
+    "documentation_recommendation": "Append a `fingerprint_schema_history` block to monitor/prompts/curmudgeon.md (or to the reference file) recording each schema addition with its date. Example seed: `2026-04-09: added tldr_evidence_length, tldr_verdict_length`. This gives future tinker / operator audits a quick way to identify which review batches predate which fields.",
+    "advisory_field_recommendation": "Add `\"fingerprint_schema_version\": \"2026-04-09\"` (or numeric `\"2\"`) to the canonical text_fingerprint shape, written by curmudgeon when it authors a review. Purely advisory — do NOT use it as a comparison gate. Reduced-set comparison handles versioning implicitly via field presence.",
+    "tinker_audit_recommendation": "Add a Mode 3 cost-engineering audit step: every Nth run, count the latest fingerprint of each reviewed item, identify items whose fingerprint shape is a strict subset of the canonical schema, and report the count. Threshold alert if >50% of items have outdated fingerprint shapes (signals review cadence is failing to refresh the corpus). This catches the failure mode preemptively the next time a schema addition lands."
+  },
+  "open_design_questions_addressed": [
+    {
+      "question": "Should the fix preserve the existing prioritization order (verdict changes > large text rewrites > new items > TLDR-only changes), or does the missing-field case demand a new priority bucket?",
+      "answer": "Preserve the existing order. The bug isn't that the buckets are wrong — it's that pre-tldr items get misrouted INTO the wrong (lowest) bucket. Reduced-set comparison keeps the four buckets intact and routes items to their correct bucket based on which legacy field drifted. WIN-050 with detail_verdict +838% sits in 'large text rewrites'; WIN-022 with verdict_changed=true sits in 'verdict changes'. No new bucket required."
+    },
+    {
+      "question": "If we choose option 1 (forward-only — missing-field = added → flag), how do we avoid all 199 old-schema reviews popping in a single run?",
+      "answer": "We don't choose option 1, partly for this reason. Under option 2 the question is moot: only items with legacy-field drift fire (~22 of the ~146 pre-tldr fingerprints). One-item-per-run preserves throughput. If operator chooses option 1 anyway, the mitigation would be a soft-cap built into the curmudgeon prompt: 'when more than 50 items flag in a single change-detect scan, process by drift magnitude only and explicitly defer items whose ONLY drift signal is 'tldr field added''. This would functionally degrade option 1 to option 2 under load, suggesting option 2 is the right baseline."
+    },
+    {
+      "question": "Should the fix also write a log/note when it triggers on missing-field-added, so operator can audit the catch rate?",
+      "answer": "Yes — the proposed prompt edit mandates a `change_summary` that names the field driving the flag (e.g., 'detail_verdict_length grew from 123 to 1154 (+838%); pre-tldr-schema fingerprint, compared on common fields only'). The presence of the 'pre-tldr-schema fingerprint' substring in change_summary is the audit hook: count those mentions across review files, plot the catch rate over the first 30 days, validate the 22-item prediction. This is light-weight (one prose line per affected review) and verifiable post-landing."
+    },
+    {
+      "question": "Curmudgeon's tracker.json — does it carry any state that would interact with this fix?",
+      "answer": "No. monitor/curmudgeon/tracker.json's points array entries are {id, type, section, topic, status, reviewed_at, last_reviewed_cycle} — metadata, not fingerprints. Fingerprints live in review JSON files. The fix operates entirely within the curmudgeon prompt and the review file format. No tracker edit, no migration, no risk of tracker drift. Verified against tracker.json structure (197 points, schema dumped this run)."
+    }
+  ],
+  "tradeoffs": "Gain: The 22-item deep tail clears organically in 11-22 days. Future schema additions stop creating stranded cohorts. The prompt becomes more honest about the data shape it will see. Lose: Items whose ONLY change since their pre-tldr review is 'analyst added a TLDR' will not flag — those rely on holistic review and analyst Mode 0 correctness for adversarial scrutiny. Net: substantial, since the deep-tail items have real drift (up to 838%) and the missed cases are low-stakes (analyst-authored TLDRs that the analyst presumably wrote correctly). The 'other side': arguably we should ALSO surface tldr-only-additions for adversarial review, but that's a separable concern — handle via a dedicated holistic check, not by tangling it with drift detection.",
+  "estimated_impact": {
+    "deep_tail_throughput": "+14 reviews over the next ~14 days that would otherwise never happen.",
+    "structural_resilience": "permanent — fixes the bug class, not just this instance.",
+    "token_cost": "neutral — one prompt edit (~12 lines added/changed), no new files, no per-run extra work.",
+    "adversarial_review_quality": "moderate uplift — the 14 deep-tail items have had 28 days of decider-driven changes layered on top of their last adversarial pass; surfacing them recovers significant lost coverage."
+  },
+  "requires_human_judgment": true,
+  "why_human_needed": "Operator must decide: (1) accept option 2 over options 1/3 (operator's lean is option 1 OR 2; we recommend 2); (2) authorize the prompt edit at monitor/prompts/reference/curmudgeon-change-and-holistic.md; (3) decide whether to bundle the optional follow-ups (fingerprint_schema_version field, tinker Mode 3 audit step). The directive is propose-only; tinker does NOT modify curmudgeon.md, reference/curmudgeon-change-and-holistic.md, or any review files in this run.",
+  "non_goal_compliance": {
+    "no_full_re_fingerprint_migration": "confirmed — option 2 leaves the existing 462 review files untouched.",
+    "no_priority_queue_routing_changes": "confirmed — Priority 1 (queue) is unchanged.",
+    "no_decider_or_consumer_changes": "confirmed — digest-reviews.js, decider's processing of reviews, and all review consumers are untouched.",
+    "narrow_scope": "confirmed — the proposed edit is in one file, ~12 lines, addressing only the missing-old-field stranding bug."
+  },
+  "verification_pattern": "grep -q 'on the fields that exist in both' monitor/prompts/reference/curmudgeon-change-and-holistic.md && echo FIXED || echo STILL_BROKEN",
+  "status": "proposed",
+  "escalation_history": [],
+  "cross_references": [
+    "DIRECTIVE-20260505-003-curmudgeon-fingerprint-compare-schema-mismatch.json",
+    "monitor/prompts/curmudgeon.md (Step 7, text_fingerprint schema)",
+    "monitor/prompts/reference/curmudgeon-change-and-holistic.md (target file)",
+    "monitor/curmudgeon/reviews/WIN-050.c2.json (canonical deep-tail example)",
+    "monitor/curmudgeon/tracker.json (verified non-interaction)",
+    "data/wins.json (current fingerprint source)",
+    "DIRECTIVE-20260422-003-curmudgeon-design-rubric.json (parallel curmudgeon design improvement; non-overlapping)"
+  ]
+}
