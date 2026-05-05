@@ -1,0 +1,71 @@
+{
+  "directive_id": "DIRECTIVE-20260418-001",
+  "issued_at": "2026-04-18T08:25:00Z",
+  "issued_by": "steve (via cowork session)",
+  "target_agent": "tinker",
+  "target_mode": "Mode 3 — Cost Engineering & Architecture (and/or Mode 4 — Proposals)",
+  "priority": "medium",
+  "status": "open",
+  "title": "Spec the change-detection cooldown + magnitude gate for curmudgeon.md Step 0d",
+  "summary": "Curmudgeon is burning cycles re-reviewing the same WINs every time prose shifts by a few characters. WIN-032 hit cycle 6 in consecutive runs, and multiple WINs are getting c3/c4/c5 passes driven purely by fingerprint deltas. Spec a prompt-level amendment to curmudgeon.md Step 0d that gates change-driven re-review on both (a) magnitude of fingerprint change and (b) cooldown since last review, so minor polish edits don't thrash the queue.",
+  "context": {
+    "observed_pattern": "Between 2026-04-17 and 2026-04-18, the curmudgeon produced these cycle numbers while priority queue was draining: WIN-032.c4 (priority), WIN-032.c5 (change-detected), WIN-032.c6 (change-detected). WIN-019.c3, WIN-020.c3, WIN-053.c3, WIN-015.c4, WIN-008.c4, WIN-051.c3 all change-detected. Priority queue items (SEC-2b.5, SEC-4.1, SEC-8.17, SEC-2b.5-post-apr18, timestamp-error-tab-apr2026-update) did get c1 priority treatment — that path works. The problem is the gap filler.",
+    "root_cause": "curmudgeon.md Step 0d change-driven scan compares current text fingerprint to stored fingerprint and flags any delta. No magnitude gate, no cooldown. A 10-character prose tweak registers identically to a structural rewrite.",
+    "impact": "Opus cycles spent on cycle-5/cycle-6 re-reviews that all land as minor_edit with moderate-or-minor holes. Meaningful adversarial capacity not available for analyst-drafted expansions that bypass priority queue. This is visible in pending-digest.json: severity_breakdown has zero critical/major entries across 200 tracked reviews.",
+    "related_priority_queue_state": "At directive-issue time, priority queue is empty (all 164 pops drained). Schedule just relaxed from hourly to BAU 4h (cron 20 */4 * * *). Related decider human-note HN-20260418-T0824-pre-integration-curmudgeon asks decider to queue the next two analyst expansions for pre-integration review."
+  },
+  "proposed_fix_spec": {
+    "change_location": "monitor/prompts/curmudgeon.md — Step 0d (change-driven scan)",
+    "proposed_gates": [
+      {
+        "gate": "magnitude",
+        "description": "Skip change-driven re-review if fingerprint delta is below a threshold. Specifically: compute percent change in total character length of reviewed fields AND percent change in word count. If both are below threshold, skip.",
+        "suggested_default": "5% character delta OR 3% word delta triggers review; below both triggers skip",
+        "rationale": "Catches substantive rewrites, filters cosmetic polish"
+      },
+      {
+        "gate": "cooldown",
+        "description": "Skip change-driven re-review if the item was last reviewed within N hours, regardless of fingerprint delta — unless the priority queue explicitly queues it.",
+        "suggested_default": "48 hours",
+        "rationale": "Prevents cycle-6 thrashing when an item is being iteratively polished. Priority queue still bypasses this (decider can force a review by queueing)."
+      },
+      {
+        "gate": "fingerprint_carry_forward",
+        "description": "When the cooldown or magnitude gate causes a skip, DO NOT update the stored fingerprint. The skip is invisible to future runs — the delta accumulates. When the cooldown expires or the delta crosses the magnitude gate, review fires against the accumulated delta, not against the most recent micro-edit.",
+        "rationale": "Without this, the skipped edits would quietly anchor a new baseline. We want accumulated small edits to eventually trigger review, not to individually reset the clock."
+      }
+    ],
+    "escape_hatches": [
+      "The magnitude gate must NOT apply to new content (no prior fingerprint) — first-pass reviews always run.",
+      "The cooldown must NOT apply when the trigger is priority-queue, human-note, or major-change-audit. Only change-detected reviews.",
+      "If severity of the PRIOR review was critical or major, shorten cooldown to 12 hours (want faster re-check of known-vulnerable content)."
+    ],
+    "concerns_to_address": [
+      "Risk that the magnitude gate silently hides a semantically-critical one-line change (e.g., a sign flip in a formula or a citation swap). MITIGATION: keep the full fingerprint record in tracker.json so a later run can compute accumulated delta and catch it; also the cooldown-expiration rereview will surface it within 48h.",
+      "Risk that 'skip' reviews silently accumulate without a ledger. MITIGATION: log every skip decision to a one-line-per-skip file (monitor/curmudgeon/skip-log.jsonl) with {target_id, reason, magnitude, last_review_cycle, timestamp}. Tinker can audit the skip-log monthly to tune thresholds.",
+      "Risk that tuning the thresholds will be hand-wavy. MITIGATION: run the existing 302 reviews through the proposed gates retroactively and report hit rates (how many would have been skipped vs. retained) before amending the prompt. That gives a data-driven threshold calibration."
+    ]
+  },
+  "deliverable_requested": {
+    "format": "PROP file in monitor/tinker/proposals/ following existing PROP-* naming conventions",
+    "contents": [
+      "Retroactive analysis: run the proposed gates against the last ~60 reviews and report what would have been skipped vs. what would have produced meaningful findings",
+      "Threshold calibration recommendation (magnitude % and cooldown hours) with justification",
+      "Proposed patch to curmudgeon.md Step 0d — exact text changes, not a description",
+      "Migration plan: do we apply the patch immediately, or run a shadow period where the gate logs would-have-skipped without actually skipping? Recommend one.",
+      "Rollback plan: if the gates suppress a legitimate finding, how do we notice and revert?"
+    ]
+  },
+  "non_goals": [
+    "Do NOT touch the priority-queue mechanism itself — that is working.",
+    "Do NOT touch Step 0c (human notes) or Step 0c2 (major-change audit) — those are orthogonal paths.",
+    "Do NOT propose removing change-detection entirely. The pattern is valuable when it catches substantive post-integration rewrites."
+  ],
+  "cross_references": {
+    "related_human_note": "monitor/decisions/human-notes.json :: HN-20260418-T0824-pre-integration-curmudgeon",
+    "related_schedule_change": "dome-curmudgeon cron 0 * * * * → 20 */4 * * * (applied 2026-04-18T08:23Z)",
+    "prompt_file": "monitor/prompts/curmudgeon.md",
+    "prompt_section": "Step 0d — Change-driven / holistic / spot-check"
+  },
+  "completion_criteria": "Tinker produces a PROP file addressing the deliverable list above. Operator (Steve) reviews the PROP and approves or revises the thresholds before the prompt patch is applied. The prompt patch itself is applied through the normal clone-side edit → build.js publish flow, since prompt files are git-owned."
+}
