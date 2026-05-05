@@ -8,15 +8,17 @@ Scan for content drift:
 
 1. **Load your most recent review fingerprints.** For every item you've reviewed, the review JSON contains a `text_fingerprint` with field lengths and verdict. Build a map of `item_id → {fingerprint, reviewed_at}`.
 
-2. **Compare against current data.** Read the current `wins.json` and `sections.json` from the fresh clone. For each item, compute the current fingerprint (same fields: `claim_length`, `finding_length`, `detail_evidence_length`, `detail_verdict_length`, `verdict`). Compare against your stored fingerprint.
+2. **Compare against current data.** Read the current `wins.json` and `sections.json` from the fresh clone. For each item, compute the current fingerprint (same fields: `claim_length`, `finding_length`, `detail_evidence_length`, `detail_verdict_length`, `tldr_evidence_length`, `tldr_verdict_length`, `verdict`). Compare against your stored fingerprint **on the fields that exist in both**. Many older fingerprints (anything written before 2026-04-09) lack `tldr_evidence_length` and `tldr_verdict_length` — that is normal. Schema growth is NOT a drift signal in itself; the new fields enter the fingerprint when the item gets its next review.
 
 3. **Flag changed items.** An item needs re-review if:
-   - Any text field length changed by >20%
+   - Any text field length present in BOTH fingerprints changed by >20% (compute drift only on fields the old fingerprint actually has — never on fields it lacks)
    - The `verdict` field is different
    - The item has no prior review at all (newly added)
-   - A `tldr_evidence` or `tldr_verdict` was added or substantially changed
+   - A `tldr_evidence` or `tldr_verdict` is present in current data AND ALSO present in the old fingerprint AND changed by >20%
 
-4. **Prioritize.** Among flagged items, prefer: verdict changes > large text rewrites > new items > TLDR-only changes. If multiple items tie, prefer WINs over sections (WINs are what readers see first).
+   **Pre-tldr-schema fingerprints** (no `tldr_*_length` keys) are compared on the four legacy fields plus `verdict`. The fact that `tldr_*_length` is missing from the old fingerprint is NOT itself a re-review trigger — these tldrs were authored by the analyst at write-time and live on the holistic-review checklist for tldr-vs-detail consistency. If a pre-tldr-schema item flags via legacy-field drift, classify it by the legacy field that drifted; do NOT downgrade it to the TLDR-only bucket on the grounds that tldr fields are missing from the old fingerprint.
+
+4. **Prioritize.** Among flagged items, prefer: verdict changes > large text rewrites > new items > TLDR-only changes. If multiple items tie, prefer WINs over sections (WINs are what readers see first). When you record the chosen item's `change_summary` in the new review, name the field that drove the flag (e.g., "detail_verdict_length grew from 123 to 1154 (+838%); pre-tldr-schema fingerprint, compared on common fields only") so future audits can verify the catch rate.
 
 5. **Review one item.** Full review using the standard procedure (Steps 1–10 in the dispatcher). Write the review with an incremented cycle number. Then stop.
 
