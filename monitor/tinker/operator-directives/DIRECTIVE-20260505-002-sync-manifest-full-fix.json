@@ -1,0 +1,70 @@
+{
+  "directive_id": "DIRECTIVE-20260505-002",
+  "issued_at": "2026-05-05T18:14:30.673Z",
+  "issued_by": "operator (steve via cowork session)",
+  "target_agent": "tinker",
+  "target_mode": "Mode 4 — Proposals & Self-Fixes",
+  "title": "Author PROP for Option B (sync manifest) — full structural fix replacing the smart_copy enumeration approach across workspace-sync, CLAUDE.md, build.js",
+  "priority": "high",
+  "status": "pending",
+  "summary": "Operator chose Option B over the PROP-017 targeted fix. Reason: the audit surfaced 15 gaps; the targeted approach treats the symptom but not the bug class. Operator wants the structural cleanup that eliminates the 'someone added a write path and forgot to add it to workspace-sync' failure mode entirely. Tinker authors a PROP designing the sync manifest, the migration plan, and the cross-prompt update strategy. PROPOSE ONLY.",
+  "context": {
+    "trigger": "Operator decision 2026-05-05 ~17:00Z after reviewing PROP-017's gap audit. PROP-017's recommendation was the targeted fix with Option B deferred. Operator overrides: go directly to Option B as the primary implementation path.",
+    "pre_existing_proposal": "PROP-017 already exists with a sketch of Option B in structural_alternative.options_considered[1]. Use it as the starting point but expand into a full design proposal.",
+    "why_full_fix_now": "Operator-stated rationale: the audit caught 15 gaps where 1 was visible. The 1-vs-15 ratio implies more gaps will appear over time as new agent write paths are introduced. A manifest eliminates the bug class. The 2-3 day implementation window is acceptable; the stale-loop in the meantime is non-critical (just wastes Opus tokens on verified-stale checks, doesn't corrupt data).",
+    "relationship_to_prop_017": "PROP-017's targeted fix is shelved (operator chose not to ship). PROP-017's audit findings (15 confirmed gaps + 11 covered paths + relic catalog + sync_glob recursion note) are CARRIED FORWARD as inputs to the manifest design. Any sync manifest must cover all 15 confirmed-active-writer paths.",
+    "operator_lean_on_paired_option_c": "Option C (integrity-side gap detector) should be folded INTO this PROP rather than filed separately. Once the manifest is the single source of truth, integrity's gap-detector check becomes 'walk the manifest entries, verify FUSE-mtime-newer files all have manifest entries, flag anything missing' — much cleaner than the standalone Option C design. Tinker should design Option C as part of the manifest enforcement story."
+  },
+  "deliverable_requested": {
+    "output_file": "monitor/tinker/proposals/PROP-NNN-sync-manifest.json (assign next available PROP number)",
+    "structure": {
+      "schema_design": "Define monitor/sync-manifest.json schema. Each entry should include at minimum: path (string or glob), direction (workspace_to_clone, clone_to_workspace, both, never), owner_agent (which agent writes to it — for diagnostic), classification (data | ledger | summary | scratch | source | docs), notes (free-form), added_at (ISO), added_by (operator | <agent>). Include validation rules for path uniqueness, glob format, direction transitions. Show example entries for each classification with at least 3 of the existing 15 confirmed-gap files plus 3 of the existing covered files.",
+      "migration_plan": "How does workspace-sync.md change? Sketch the new Step 2 that reads the manifest and iterates it instead of the current explicit smart_copy block. Show a side-by-side diff of before/after. How are NEVER_PUSH semantics preserved? (Likely: NEVER_PUSH is a special direction='never' value in the manifest, OR remains a separate filter applied after manifest iteration.) What happens to existing build.js OWNERSHIP and CLAUDE.md File Ownership Rules? (Likely: both become derived/duplicated views of the manifest, with a comment pointing back to the manifest as authoritative.)",
+      "lint_check": "Specify how tinker (Mode 1 or 4) lints that newly-introduced fs.writeFileSync paths in agent prompts are present in the manifest. Pseudo-code OK. Should the lint be in tinker, integrity, or both? My lean: integrity (its job is structural integrity); tinker also has the audit lens but runs less often. Argue.",
+      "option_c_integration": "Fold Option C (integrity-side gap detector) into the manifest enforcement story. Sketch the integrity check that walks FUSE mtime vs main, classifies each file as in-manifest / not-in-manifest / in-NEVER_PUSH-section / relic-candidate, flags non-trivial omissions. Include severity rubric: a non-trivial agent-written FUSE file with no manifest entry → moderate finding (same severity as schema regression).",
+      "relic_strategy": "PROP-017 audit identified relic files (FUSE-only one-off forensic artifacts in monitor/analyst/, monitor/decisions/) that a flat glob would force-sync. The manifest should explicitly classify these as direction='never' or 'workspace_only' so they're documented as intentional non-sync without inflating git history. Specify the relic catalog as part of the migration.",
+      "migration_steps": "Order of execution: 1. Create manifest skeleton; 2. Migrate explicit smart_copy entries; 3. Migrate sync_glob entries; 4. Add the 15 confirmed-gap entries; 5. Add NEVER_PUSH entries with direction='never'; 6. Add relic entries with direction='workspace_only' or similar; 7. Rewrite workspace-sync.md Step 2 to iterate manifest; 8. Update CLAUDE.md File Ownership Rules to reference manifest; 9. Update build.js OWNERSHIP if applicable; 10. Add integrity lint check; 11. Run a parity test (manifest-driven sync produces same set of git commits as the old enumeration would, on a synthetic workload).",
+      "measurement_plan": "How would we know the structural cleanup worked? Define: zero new gaps in 30d post-rollout (caught either by integrity lint or by absence of stale-loop incidents). Manifest passes its own validation script on every workspace-sync run. CLAUDE.md File Ownership Rules and build.js OWNERSHIP either eliminated or marked derived. Disprove conditions: any agent-written FUSE file appearing in main without a manifest entry; any manifest entry referencing a non-existent file (orphan).",
+      "side_effect_dual_write_rule": "PROP-017 noted that the CLAUDE.md Human Notes Rule dual-write requirement becomes optional once workspace-sync round-trips human-notes.json files. Tinker should explicitly address this in the proposal: keep the dual-write rule, drop it, or make it conditional? Argue.",
+      "sequencing_within_implementation": "Once operator authorizes, what's the implementation order? Probably: (a) author manifest as a sibling proposal artifact, (b) author the new workspace-sync.md Step 2 as a draft, (c) ship both in one commit alongside the integrity lint, (d) verify on next workspace-sync run."
+    },
+    "propose_only": true,
+    "do_not_implement": "DO NOT create monitor/sync-manifest.json or modify workspace-sync.md, CLAUDE.md, or build.js. Operator reviews PROP and authorizes implementation in a separate step. Treat as one-shot proposal-authorship with implementation deferred.",
+    "open_design_questions_for_tinker_to_address": [
+      "Should the manifest live at monitor/sync-manifest.json or workspace-manifest.json or somewhere else? Naming has implications for ownership.",
+      "Should NEVER_PUSH stay as a separate concept in workspace-sync.md or get folded into the manifest as direction='never'? Argue.",
+      "Should the manifest enforce uniqueness on path? What about overlapping globs? Conflict resolution rules.",
+      "Should the manifest be in NEVER_PUSH itself (i.e., operator-edited only) or eligible to be edited by agents? My lean: NEVER_PUSH for now (operator owns it); agents propose edits via PROPs. But argue.",
+      "What's the rollback story if the manifest-driven workspace-sync introduces a regression? Keep the old explicit enumeration commented out for one rollout cycle?"
+    ]
+  },
+  "non_goals": [
+    "Do NOT propose changes to NEVER_PUSH membership beyond the manifest migration. The audit found no file currently in NEVER_PUSH that should be eligible to push.",
+    "Do NOT propose changes to digest-reviews.js — staleness mechanism is correct.",
+    "Do NOT propose changes to decider's universal-pusher logic — universal-pusher correctly copies files to FUSE; the gap is on the FUSE→git return leg.",
+    "Do NOT broaden scope to other architectural cleanups (e.g., agent prompt restructuring). Focus is on the smart_copy iteration → manifest migration.",
+    "Do NOT remove PROP-017 — keep it as an alternative-not-chosen reference."
+  ],
+  "proposed_fix_spec": {
+    "note_to_tinker": "Operator's lean is the manifest design as outlined in PROP-017's structural_alternative section, with Option C folded in. If you propose a fundamentally different schema or migration approach, argue for it explicitly. The audit findings (15 confirmed gaps, relic catalog, covered-paths inventory) are inputs you can rely on without re-deriving."
+  },
+  "completion_criteria": {
+    "file_present": "monitor/tinker/proposals/PROP-NNN-sync-manifest.json exists with all 9 deliverable structure sections.",
+    "schema_concrete": "Manifest schema specified with example entries (≥3 per classification). Schema validation rules listed.",
+    "migration_steps_ordered": "11-step migration sequence enumerated; each step independently reversible if possible.",
+    "option_c_folded": "Integrity lint check designed and integrated into the manifest enforcement story, not as a separate proposal.",
+    "relic_strategy_clear": "Per PROP-017's relic catalog, each relic classified explicitly in the proposed manifest (direction='never' or 'workspace_only' or similar).",
+    "side_effects_addressed": "Dual-write Human Notes Rule disposition argued. CLAUDE.md File Ownership Rules disposition argued. build.js OWNERSHIP disposition argued.",
+    "open_questions_addressed": "All 5 open design questions answered with reasoning, not deferred.",
+    "mark_directive_completed": "Set status:'completed' with completed_at + completed_by_run + prop_id_authored fields appended per DIRECTIVE-LIFECYCLE additive-edit exception."
+  },
+  "cross_references": [
+    "DIRECTIVE-20260505-001 (parent — authorized PROP-017's audit; this directive supersedes the targeted-fix recommendation in favor of the structural alternative)",
+    "PROP-017 (gap audit + targeted-fix proposal — operator chose not to ship; carry forward audit findings)",
+    "PROP-016 (source-file rescue gap — same bug family, NEVER_PUSH-side)",
+    "monitor/prompts/workspace-sync.md (the file that needs the rewrite)",
+    "CLAUDE.md File Ownership Rules section (the duplicated policy that should become derived)",
+    "build.js OWNERSHIP table (the third duplication site)"
+  ],
+  "supersedes": null
+}
