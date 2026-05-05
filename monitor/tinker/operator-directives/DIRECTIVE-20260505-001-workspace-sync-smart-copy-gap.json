@@ -1,0 +1,64 @@
+{
+  "directive_id": "DIRECTIVE-20260505-001",
+  "issued_at": "2026-05-05T16:29:27.598Z",
+  "issued_by": "operator (steve via cowork session)",
+  "target_agent": "tinker",
+  "target_mode": "Mode 4 — Proposals & Self-Fixes",
+  "title": "Audit workspace-sync smart_copy iteration list for gaps; primary case: processed-reviews.json missing → digest-reviews.js sees stale 'already_processed' set → decider re-processes the same reviews each run",
+  "priority": "high",
+  "status": "pending",
+  "summary": "Operator-spotted bug. Decider's recent reports show the same curmudgeon reviews appearing as 'pending' across multiple decider runs, all flagged stale by the staleness gate. Trace: build-scripts/digest-reviews.js line 33 reads `monitor/decisions/processed-reviews.json` to build the `processedSet`. Decider updates that file in its clone after processing reviews. When decider's push 403s, universal-pusher rescue copies the file to FUSE (it's NOT in NEVER_PUSH). BUT workspace-sync's smart_copy iteration does NOT include `monitor/decisions/processed-reviews.json` — zero references in workspace-sync.md. So FUSE updates never reach git. Next decider run clones fresh from main, gets a stale processed-reviews.json, and rediscovers already-processed reviews as pending. Stale-loop. Tinker's job: confirm the bug independently, audit for other smart_copy gaps in monitor/decisions/ and monitor/curmudgeon/ and adjacent ledger directories, propose fix.",
+  "context": {
+    "trigger": "Operator-flagged 2026-05-05 ~14:00Z after reading decider's 13:22 daily report which says: 'all curmudgeon-flagged holes verified stale (already fixed by prior runs rescued via workspace-sync)' and 'pending-digest:pending_count was 4'. Operator's question: workspace-sync runs hourly — staleness should self-clear. Why is decider repeatedly seeing the same reviews?",
+    "forensic_evidence": {
+      "digest_reviews_js_line": "build-scripts/digest-reviews.js line 33: const PROCESSED_PATH = path.join(workspace, 'monitor/decisions/processed-reviews.json'); — confirmed staleness mechanism reads from this file",
+      "processed_reviews_main_state": "git show origin/main:monitor/decisions/processed-reviews.json shows last_updated: 2026-05-03T05:21:54Z (~58h stale relative to 2026-05-05T14:00Z operator check time)",
+      "processed_reviews_fuse_state": "FUSE copy at /sessions/.../mnt/dome-model-review/monitor/decisions/processed-reviews.json shows 451 entries with latest 5 = WIN-031.c8.json, WIN-021.c3.json, WIN-014.c5.json, WIN-016.c6.json, WIN-017.c4.json (current as of decider 13:22 run)",
+      "smart_copy_omission": "monitor/prompts/workspace-sync.md grep shows zero references to 'processed-review' or 'processed_review'; smart_copy iteration explicitly enumerates open-issues.json + closed-issues.json + morning-briefing.txt + priority-queue.json but NOT processed-reviews.json",
+      "never_push_status": "monitor/prompts/workspace-sync.md NEVER_PUSH array does NOT include processed-reviews.json — so the file is eligible to push, the gap is purely in smart_copy iteration",
+      "decider_run_evidence": "monitor/decisions/daily-report-2026-05-05T13-22.json patches_this_run.note: 'No data patches this run — all curmudgeon-flagged holes verified stale (already fixed by prior runs rescued via workspace-sync). ISS-1834 closed as stale.' This is the symptom: decider keeps doing staleness-gate work on already-processed reviews because processed-reviews.json on main never gets updated.",
+      "affected_runs_pattern": "operator reports observing this pattern across multiple recent decider runs; 13:22 is the example pulled but pattern likely extends backward several days"
+    },
+    "why_this_matters": "Compute waste: each decider run re-processes the same reviews. Each staleness check costs Opus tokens. At ~4 reviews per run, ~6 runs/day, that's ~24 redundant staleness checks per day, or ~70 over the 3 days the file has been stale. Plus the daily-report 'verified stale' commentary clutters operator attention with non-actionable observations. The bug is small and cheap to fix; the pattern is one we want to eliminate cleanly.",
+    "operator_provisional_fix": "Add `smart_copy \"${WORKSPACE}/monitor/decisions/processed-reviews.json\" monitor/decisions/processed-reviews.json` to monitor/prompts/workspace-sync.md alongside the existing closed-issues.json / open-issues.json / priority-queue.json lines. Tinker may propose a more structural fix (glob-based iteration of monitor/decisions/*.json with NEVER_PUSH as the only filter) if warranted; the targeted fix is sufficient if no other gaps exist."
+  },
+  "deliverable_requested": {
+    "output_file": "monitor/tinker/proposals/PROP-NNN-workspace-sync-smart-copy-gap.json (assign next available PROP number)",
+    "structure": {
+      "independent_verification": "Re-derive the bug from scratch. Open digest-reviews.js, confirm line 33 reads PROCESSED_PATH from monitor/decisions/processed-reviews.json. Open workspace-sync.md, confirm zero smart_copy reference to processed-reviews.json. Diff the FUSE copy vs origin/main copy of processed-reviews.json — confirm staleness > 24h. Operator's forensic chain may have errors; verify each step.",
+      "gap_audit": "Walk every file path in monitor/decisions/, monitor/curmudgeon/, monitor/analyst/, monitor/integrity/, monitor/changes/, monitor/social/. For each file that an agent (decider, curmudgeon, analyst, integrity, etc.) writes during normal operation, classify: (a) listed in workspace-sync.md smart_copy iteration, (b) covered by a sync_glob() pattern, (c) NEVER_PUSH (intentionally not synced), (d) UNLISTED — gap. The processed-reviews.json gap is one example; tinker's job is to find any others. Report a per-file table.",
+      "structural_alternative": "Consider whether the smart_copy enumeration approach is fundamentally fragile (every new agent-written file needs a manual addition; gaps go undetected for days) and propose a structural alternative if warranted. Options: (i) glob-based iteration of monitor/decisions/*.json + monitor/curmudgeon/*.json with NEVER_PUSH as the only filter; (ii) a 'sync manifest' file that agents update when they add new write paths; (iii) integrity-agent check that flags FUSE-newer files not present in smart_copy. Argue for one or accept the targeted fix.",
+      "proposed_fix": "Concrete prompt-edit. Either (a) targeted line-add for processed-reviews.json + any other gaps found in audit, or (b) structural rewrite of the iteration block. Diff sketches included.",
+      "measurement_plan": "How would we know the fix worked? E.g., 'processed-reviews.json on main updates within ~1h of decider's run, instead of staying stale for days.' Define metrics + disprove conditions.",
+      "sequencing": "Single-mechanism fix presumably; ship in one operator session."
+    },
+    "propose_only": true,
+    "do_not_implement": "DO NOT edit workspace-sync.md or any other prompt file. Operator reviews PROP and authorizes implementation in a separate step. Treat as one-shot proposal-authorship."
+  },
+  "non_goals": [
+    "Do NOT propose changes to NEVER_PUSH membership unless audit surfaces a file currently in NEVER_PUSH that should be eligible to push.",
+    "Do NOT propose changes to digest-reviews.js — the staleness mechanism is correct; the bug is in workspace-sync's missing copy.",
+    "Do NOT propose changes to decider's universal-pusher logic — universal-pusher correctly copies processed-reviews.json to FUSE; the gap is on the FUSE→git return leg.",
+    "Do NOT broaden scope to schedule frequency, cadence, or other tuning — focus is structural smart_copy coverage.",
+    "Do NOT propose changes to other agents' write paths — focus is workspace-sync's read paths."
+  ],
+  "proposed_fix_spec": {
+    "note_to_tinker": "Operator's lean is the targeted fix (add the one missing line). The audit is the load-bearing piece — if it surfaces no other gaps, ship the one-liner. If it surfaces 3+ other gaps, the structural alternative becomes more attractive. Argue from data."
+  },
+  "completion_criteria": {
+    "file_present": "monitor/tinker/proposals/PROP-NNN-workspace-sync-smart-copy-gap.json exists with all 6 deliverable structure sections.",
+    "bug_independently_verified": "Forensic chain re-derived. If any step of operator's chain is wrong, surface explicitly.",
+    "audit_complete": "Per-file classification table for monitor/decisions/, monitor/curmudgeon/, monitor/analyst/, monitor/integrity/, monitor/changes/, monitor/social/ with at least the agent-written subset enumerated.",
+    "fix_specified": "Concrete prompt-edit ready for operator to apply.",
+    "measurement_pre_committed": "Disprove conditions named (e.g., 'if processed-reviews.json on main is still stale after fix lands, the fix is wrong').",
+    "mark_directive_completed": "Set status:'completed' with completed_at + completed_by_run + prop_id_authored fields appended per DIRECTIVE-LIFECYCLE additive-edit exception."
+  },
+  "cross_references": [
+    "DIRECTIVE-20260502-004 (source-file rescue gap PROP-016 — same bug family: agent ledger updates lost on universal-pusher → workspace-sync return path)",
+    "PROP-016 (NEVER_PUSH source-file rescue) — relevant for pattern-matching, but THIS bug is the inverse: file is NOT in NEVER_PUSH but is also NOT in smart_copy iteration",
+    "monitor/prompts/workspace-sync.md — the file that needs the fix",
+    "build-scripts/digest-reviews.js line 33 — confirmed staleness mechanism reader",
+    "monitor/decisions/daily-report-2026-05-05T13-22.json — symptomatic run with patches_this_run.note documenting the stale-loop pattern"
+  ],
+  "supersedes": null
+}
