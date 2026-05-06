@@ -1,0 +1,72 @@
+{
+  "directive_id": "DIRECTIVE-20260506-002",
+  "issued_at": "2026-05-06T20:30:00.000Z",
+  "issued_by": "operator (steve via cowork session)",
+  "target_agent": "tinker",
+  "target_mode": "Mode 4 — Proposals & Self-Fixes",
+  "title": "PROP-022 phase 5 + phase 6 detail amendment — resolve internal inconsistency, supply missing code-change specs, define regression tests",
+  "priority": "medium",
+  "status": "pending",
+  "summary": "Phases 1-3 of PROP-022 have shipped successfully (analyst-notes, decisions/curmudgeon/social human-notes, priority-queue). Phases 5 and 6 need refinement before implementation: phase 5 (expansion-tracker.json, 922K weighted tokens/day, multi-writer) has an internal inconsistency about whether status:'complete' lives in live or archive, and is missing explicit code-change specs for the two load-bearing consumers (structure-integrity collision detection, Discipline 1a write-verify). Phase 6 (closed-issues.json, 2.8M tokens/day, highest blast radius, full-archive migration) is more detailed but its prerequisites are stale and its grep-pattern code needs verification against actual call sites. Tinker authors a focused amendment to PROP-022 covering both phases. PROPOSE ONLY — implementation comes later, per phase, on operator authorization.",
+  "context": {
+    "trigger": "Operator session 2026-05-06 ~20:30Z, after successfully shipping phases 1-3. About to plan phase 4 (attention-inbox + curmudgeon/tracker + workspace-sync-skips rotation) and beyond. Phase 5 was the next-largest weighted-value target; review of PROP-022's per-file plan surfaced gaps that warrant tinker attention before implementation.",
+    "context_snapshot": "PROP-022 was authored 2026-05-06 ~05:50Z. Phases 1-3 have since been implemented. Empirical learnings from those 3 phases inform what tinker should adjust in 5 and 6.",
+    "phases_already_shipped": [
+      "Phase 1 (commit 61b23c0): analyst/human-notes.json. 338KB → 347B. Backfill + writer prompt edit, no consumer code change.",
+      "Phase 2 (commit 92eeb3c, b13d162): decisions/curmudgeon/social human-notes.json. 188KB → 1.4KB. Multiple writer prompt edits, no consumer code change.",
+      "Phase 3 (commit bdc733b): priority-queue.json. 53KB → 4.7KB. Decider writer prompt edit (3 sites: pop history.push → appendFileSync, init removal, slice cap removal), decider-intake nextId reader switched to pq.next_id field, schema doc update."
+    ],
+    "phases_remaining": [
+      "Phase 4: attention-inbox.json + curmudgeon/tracker.json + workspace-sync-skips rotation. Lower priority — operator will tackle directly with current PROP-022 spec.",
+      "Phase 5: expansion-tracker.json (this directive — needs amendment)",
+      "Phase 6: closed-issues.json (this directive — needs amendment)"
+    ]
+  },
+  "deliverable_requested": {
+    "output_file": "monitor/tinker/proposals/PROP-022-amendment-001.json (assign as amendment to PROP-022, not a new PROP)",
+    "structure": {
+      "phase_5_resolutions": "Resolve the 5 specific gaps in PROP-022's expansion-tracker.json plan:",
+      "phase_5_gap_1_complete_status": "PROP-022's live_state_predicate says items[].status NOT in (complete, integrated, cancelled, superseded, subsumed) — i.e., 'complete' is TERMINAL (archived). But reader_change says 'filter by status in (complete, revised) + !integrated — these items are in live; integrated items are in archive' — i.e., 'complete' is LIVE until integrated. These are contradictory. Trace the analyst→decider handoff in current code (analyst.md, decider.md, decider-curmudgeon.md, expansion-tracker.json sample entries). Determine which interpretation matches actual usage. Tinker's lean: complete-but-not-yet-integrated stays in live until decider integrates, since the decider needs to see complete entries to act on them. But verify against the code.",
+      "phase_5_gap_2_structure_integrity_code": "PROP-022 says 'structure-integrity: collision detection MUST iterate both live + archive — code change required: replace items.find(...) with two-pass over live and archive.' But no actual code-change spec is given. Provide explicit before/after code blocks (PROP-020 precedent: the per-file plans for compute-drift-audit had concrete code sketches). Show: (a) where in structure-integrity.md the collision detection lives, (b) the exact node-script line to replace, (c) the replacement that walks live first then archive. Specify whether streaming line-by-line or full-load is correct given the expected archive size.",
+      "phase_5_gap_3_discipline_1a_verify_code": "PROP-022 says 'Discipline 1a write-verify: confirm integrated_at field appears in archive line within 1 cycle of the integration commit (push-verify reads archive grep for the EXP id).' Locate the verify-pending-state.js code that currently reads expansion-tracker.json for integrated_at. Provide explicit before/after node-script changes. The verifier's current SCAN_TARGETS array includes ['monitor/analyst/expansion-tracker.json', 'items', 'id']; the post-migration version needs to scan the archive's JSONL lines instead. Show the code.",
+      "phase_5_gap_4_id_generation": "Does expansion-tracker.json have a next_id field, or are EXP IDs derived elsewhere (e.g., max-of-existing-IDs)? Audit the codebase for EXP-NNN ID assignment. If a counter exists, add it to the live file post-migration (priority-queue precedent: pq.next_id). If IDs are derived from filenames or some other source, document that the migration doesn't affect them.",
+      "phase_5_gap_5_regression_test": "PROP-022's risk_callout for phase 5 acknowledges this is load-bearing but doesn't propose how to verify post-migration. Define: (a) a pre-migration baseline test (current collision-detect output on a known-collided EXP), (b) post-migration assertion that the same output is produced via two-pass logic, (c) a Discipline 1a verify-pending baseline (current behavior on a known consumed-pending-verification entry), (d) post-migration assertion the verifier still flips correctly. These can be one-shot verifications, not recurring tests.",
+      "phase_6_resolutions": "Resolve the 4 specific gaps in PROP-022's closed-issues.json plan:",
+      "phase_6_gap_1_stale_prerequisite": "PROP-022 phase 6 risk_callout says 'Validate convention on all 10 prior files before approaching closed-issues.' But the actual phasing has 5 files in phases 1-3 (already done), 3 files in phase 4 (next), 1 file in phase 5 (after this amendment), then closed-issues. The '10 prior files' framing is from the original equal-weighting view. Reconcile: state explicitly which files MUST be migrated (and observed for >X days) before phase 6 is authorized. Operator's lean: phases 1-5 complete + 7 days of clean operation post-phase-5 before phase 6 ships.",
+      "phase_6_gap_2_grep_pattern_correctness": "PROP-022's reader code uses grep '\"id\":\"${N}\"' to find an issue in the JSONL archive. Verify against actual call sites: do existing readers reference issues with the ISS-NNN prefix or as a bare integer? E.g., does analyst.md actually call lookup with N='ISS-887' or N='887'? Trace each of the 5 listed reader call sites (analyst_OBE_lookup, curmudgeon_severity_gate, decider_intake_dedup, decider_lifecycle_verification, social_dedup_before_filing) and confirm the grep pattern matches. If patterns differ across consumers, document each.",
+      "phase_6_gap_3_acceptance_wallclock": "Phase 6 says 'Wall-clock comparable (grep + JSON.parse 1 line vs JSON.parse-1.4MB)' but doesn't define an acceptance threshold. Specify: a single-issue grep+parse on a 5MB-equivalent archive (which is where closed-issues will be in ~3 months at current growth rate) must complete in <X ms. If multi-pattern bulk-OBE on N issues is in scope, specify the bulk-grep pattern and its wall-clock target. Use empirical numbers if possible — run a benchmark, not just an estimate.",
+      "phase_6_gap_4_dual_write_window": "PROP-022 says 'Dual-write phase: writer appends to archive AND keeps in live array for one full week. All four lookup readers fall back to live if archive grep returns nothing... After observation window, writer stops dual-writing and readers stop fallback.' Phases 1-3 all skipped the dual-write phase (single-commit migration with same-day flip). For phase 6's higher blast radius, is the 7-day dual-write phase still warranted, or can we observe phases 4-5 stability for those 7 days first and then ship phase 6 single-commit like the prior phases? Argue.",
+      "cross_cutting_observations": "Phases 1-3 yielded empirical learnings tinker should fold into the amendment: (a) operator-correctable schema mismatches happened on the analyst-notes migration (consumed:true field without status); (b) writers occasionally have inline state-mutation patterns the convention hasn't covered (pq.history.push appeared in 2 sites in decider.md); (c) integrity didn't object to any of the phase 1-3 migrations on its 02:00 BST run today, suggesting structural-integrity coverage is sufficient. Note any of these in the amendment if relevant to phase 5 or 6 design.",
+      "files_already_excluded": "Confirm phases 5 + 6 do NOT touch monitor/curmudgeon/reviews/*.json (PROP-019/020 fingerprint compare consumer, explicitly off-limits per PROP-022 non_goals). Cross-check.",
+      "open_design_questions_for_tinker_to_address": "1. For phase 5: should the migration be done in a single commit (like phases 1-3) or use the dual-write/dual-read 7-day phase? Argue. 2. For phase 6: same question, with the higher blast radius weighing in. 3. For both: are there integrity-side checks that should be added (or strengthened) to catch a regression that PROP-022's existing convention-doc-watch wouldn't catch?"
+    },
+    "propose_only": true,
+    "do_not_implement": "DO NOT modify any state file, prompt, or script. Operator reviews the amendment and authorizes implementation per phase in subsequent commits."
+  },
+  "non_goals": [
+    "Do NOT redesign the unified archive convention. PROP-022's convention has shipped successfully on 5 files; keep it.",
+    "Do NOT broaden scope to phase 4 (attention-inbox, curmudgeon/tracker, workspace-sync-skips rotation). Operator handles that with current PROP-022 spec.",
+    "Do NOT propose changes to monitor/curmudgeon/reviews/*.json (PROP-019/020 fingerprint compare, off-limits).",
+    "Do NOT propose schema changes beyond what's needed for the live/archive split. The expansion-tracker and closed-issues schemas stay otherwise unchanged.",
+    "Do NOT speculate beyond phase 6. Future state files are governed by the convention reference doc."
+  ],
+  "proposed_fix_spec": {
+    "note_to_tinker": "This is a focused amendment, not a re-design. PROP-022's framework is sound — phases 1-3 prove that. The amendment fills in the per-phase specifics that were intentionally light in the original PROP-022 (the file count was 11; not every per-file plan got the same depth). Treat it as: take PROP-022's phase 5 and phase 6 sections, add 5 + 4 specific clarifications respectively, and ship as PROP-022-amendment-001. Reference the empirical learnings from phases 1-3 where they inform a design choice. Operator's lean for the dual-write question across both phases: skip dual-write if phases 1-5 are clean for 7+ days; accept 7-day window only if there's a specific risk we can't otherwise mitigate."
+  },
+  "completion_criteria": {
+    "file_present": "monitor/tinker/proposals/PROP-022-amendment-001.json exists with phase_5 and phase_6 sections fully addressed.",
+    "phase_5_gaps_resolved": "All 5 phase 5 gaps have explicit answers; the complete-status inconsistency is resolved with reasoning.",
+    "phase_6_gaps_resolved": "All 4 phase 6 gaps have explicit answers; the grep-pattern verification is concrete (specific call sites checked).",
+    "code_change_specs_explicit": "Every consumer touched in phases 5 and 6 has an explicit before/after code block, not prose.",
+    "regression_tests_defined": "Phase 5 has a regression test plan; phase 6 has a wall-clock acceptance threshold.",
+    "open_questions_addressed": "All 3 open design questions answered with reasoning, not deferred.",
+    "mark_directive_completed": "Set status:'completed' with completed_at + completed_by_run + amendment_file_authored fields appended per DIRECTIVE-LIFECYCLE additive-edit exception."
+  },
+  "cross_references": [
+    "PROP-022 (the proposal being amended)",
+    "DIRECTIVE-20260506-001 (parent directive that produced PROP-022)",
+    "Commits 61b23c0 (phase 1), 92eeb3c + b13d162 (phase 2), bdc733b (phase 3)",
+    "monitor/prompts/reference/state-file-archives.md (the convention doc, updated through phase 3)"
+  ],
+  "supersedes": null
+}
