@@ -161,23 +161,36 @@ Keep this lightweight. The analyst already has a full mode dispatcher; the atten
 
 ### Step E1: Honor pending mode toggles from human notes
 
-Check `monitor/decisions/human-notes.json` for any unconsumed note with `action: "set_curmudgeon_mode"`. If present:
+Check `monitor/decisions/human-notes.json` for any unconsumed note with `action: "set_curmudgeon_mode"`. If present (live file holds only pending items per PROP-022 phase 2; consumed notes live in `human-notes-archive.jsonl`):
 ```bash
 node -e "
 const fs=require('fs');
 const CLONE='${CLEAN_CLONE}';
 const pq=JSON.parse(fs.readFileSync(CLONE+'/monitor/curmudgeon/priority-queue.json','utf8'));
-const notes=JSON.parse(fs.readFileSync(CLONE+'/monitor/decisions/human-notes.json','utf8'));
+const livePath=CLONE+'/monitor/decisions/human-notes.json';
+const archivePath=CLONE+'/monitor/decisions/human-notes-archive.jsonl';
+const notes=JSON.parse(fs.readFileSync(livePath,'utf8'));
 const pending=(notes.notes||notes).find(n=>n.status==='pending'&&n.action==='set_curmudgeon_mode');
 if(pending){
   pq.mode=pending.mode;
   pq.mode_set_by='human';
   pq.mode_set_at=new Date().toISOString();
   fs.writeFileSync(CLONE+'/monitor/curmudgeon/priority-queue.json',JSON.stringify(pq,null,2));
+  // Mark terminal + move to archive (PROP-022 convention)
   pending.status='consumed';
   pending.consumed_at=new Date().toISOString();
-  fs.writeFileSync(CLONE+'/monitor/decisions/human-notes.json',JSON.stringify(notes,null,2));
-  console.log('Mode set to:',pending.mode);
+  pending.consumed_by='decider — set_curmudgeon_mode action';
+  fs.appendFileSync(archivePath, JSON.stringify(pending)+'\n');
+  if(notes.notes){
+    notes.notes=notes.notes.filter(n=>n.id!==pending.id);
+    notes.last_updated=new Date().toISOString();
+  } else {
+    // bare-array variant
+    const idx=notes.findIndex(n=>n.id===pending.id);
+    if(idx>=0) notes.splice(idx,1);
+  }
+  fs.writeFileSync(livePath,JSON.stringify(notes,null,2));
+  console.log('Mode set to:',pending.mode,'— note archived');
 }
 "
 ```

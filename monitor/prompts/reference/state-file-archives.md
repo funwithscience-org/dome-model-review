@@ -85,10 +85,10 @@ Each migrated file has an expected live-state size annotation. If the live file 
 
 | File | Expected live (KB) | Notes |
 |------|-------------------:|-------|
-| monitor/analyst/human-notes.json | 5 | Phase 1 (2026-05-06). Pending notes only. |
-| monitor/decisions/human-notes.json | 5 | Phase 2 |
-| monitor/curmudgeon/human-notes.json | 5 | Phase 2 |
-| monitor/social/human-notes.json | 5 | Phase 2 |
+| monitor/analyst/human-notes.json | 5 | Phase 1 ✓ (2026-05-06). Pending notes only. |
+| monitor/decisions/human-notes.json | 5 | Phase 2 ✓ (2026-05-06). Pending notes only. 1 currently pending (HNOTE-OPERATOR-DRAIN-MODE-001). |
+| monitor/curmudgeon/human-notes.json | 5 | Phase 2 ✓ (2026-05-06). 0 currently pending. |
+| monitor/social/human-notes.json | 5 | Phase 2 ✓ (2026-05-06). 0 currently pending. |
 | monitor/curmudgeon/priority-queue.json | 2 | Phase 3. Live queue + schema metadata only. |
 | monitor/curmudgeon/tracker.json | 10 | Phase 4 |
 | monitor/analyst/attention-inbox.json | 25 | Phase 4 — non-trivial live state (active review backlog) |

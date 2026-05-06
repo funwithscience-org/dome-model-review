@@ -214,6 +214,8 @@ smart_copy "${WORKSPACE}/monitor/curmudgeon/tracker.json" monitor/curmudgeon/tra
 smart_copy "${WORKSPACE}/monitor/curmudgeon/alerts.txt" monitor/curmudgeon/alerts.txt
 smart_copy "${WORKSPACE}/monitor/curmudgeon/latest-review-summary.txt" monitor/curmudgeon/latest-review-summary.txt
 smart_copy "${WORKSPACE}/monitor/curmudgeon/human-notes.json" monitor/curmudgeon/human-notes.json
+# PROP-022 phase 2 (2026-05-06): archive sibling for curmudgeon human-notes
+smart_copy "${WORKSPACE}/monitor/curmudgeon/human-notes-archive.jsonl" monitor/curmudgeon/human-notes-archive.jsonl
 
 # Poller outputs
 sync_glob monitor/changes '*.json'
@@ -231,6 +233,8 @@ smart_copy "${WORKSPACE}/monitor/decisions/morning-briefing.txt" monitor/decisio
 # sync, the digest re-served already-processed reviews to the decider.
 smart_copy "${WORKSPACE}/monitor/decisions/processed-reviews.json" monitor/decisions/processed-reviews.json
 smart_copy "${WORKSPACE}/monitor/decisions/human-notes.json" monitor/decisions/human-notes.json
+# PROP-022 phase 2 (2026-05-06): archive sibling for decisions human-notes
+smart_copy "${WORKSPACE}/monitor/decisions/human-notes-archive.jsonl" monitor/decisions/human-notes-archive.jsonl
 sync_glob monitor/decisions 'stranded-patches-*.json'
 
 # Universal-pusher rescue path (see Operational Notes). The smart_copy mtime
@@ -272,6 +276,8 @@ smart_copy "${WORKSPACE}/monitor/social/search-rankings.json" monitor/social/sea
 sync_glob monitor/social 'report-*.json'
 smart_copy "${WORKSPACE}/monitor/social/latest-summary.txt" monitor/social/latest-summary.txt
 smart_copy "${WORKSPACE}/monitor/social/human-notes.json" monitor/social/human-notes.json
+# PROP-022 phase 2 (2026-05-06): archive sibling for social human-notes
+smart_copy "${WORKSPACE}/monitor/social/human-notes-archive.jsonl" monitor/social/human-notes-archive.jsonl
 
 # Integrity + Tinker reports and proposals
 sync_glob monitor/integrity '*.json'

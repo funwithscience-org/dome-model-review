@@ -147,7 +147,7 @@ d. If during batch processing you discover a finding that's actually `major` or 
 
 If the queue had no items, continue to Step 0c.
 
-**Step 0c: Check human notes** (`${WORKSPACE}/monitor/curmudgeon/human-notes.json`). If any notes have `status: "pending"`, they take priority over change-driven and holistic reviews. Review the item specified in the note, focusing on the questions asked. Mark the note as `"consumed"` after completing the review. Then stop.
+**Step 0c: Check human notes** (`${WORKSPACE}/monitor/curmudgeon/human-notes.json`). If any notes have `status: "pending"`, they take priority over change-driven and holistic reviews. Review the item specified in the note, focusing on the questions asked. After completing the review, mark the note as `"consumed"` (per-item `consumed_at` timestamp + `consumed_by`), append the full record to `${WORKSPACE}/monitor/curmudgeon/human-notes-archive.jsonl` (one JSON object per line, terminated by `\n`), and remove the note from the live file. Both writes happen together. Then stop. (PROP-022 phase 2 archive convention; see `monitor/prompts/reference/state-file-archives.md` for the canonical pattern.)
 
 **Coverage-already-exists exception (Step 0c):** Before writing a fresh review for a pending note, check whether existing reviews under `${WORKSPACE}/monitor/curmudgeon/reviews/` already cover the note's questions. To use this exception ALL of the following must hold:
 1. The covering review's `reviewed_at` post-dates the note's creation timestamp (so it reflects the post-note state of the content).

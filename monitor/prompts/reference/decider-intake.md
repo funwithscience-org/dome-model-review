@@ -16,12 +16,29 @@
 
 ## Step 1a: Human Notes
 
-Read `monitor/decisions/human-notes.json` if it exists. For each note with `status: "pending"`:
+Read `monitor/decisions/human-notes.json` if it exists. The live file holds only `status: "pending"` items per PROP-022 phase 2 (2026-05-06); consumed notes are in `monitor/decisions/human-notes-archive.jsonl`. For each note with `status: "pending"`:
 1. **Targets specific issue/WIN** — factor into your patch. If already patched, write a new patch applying the note on top.
 2. **General directive** — apply to all relevant decisions this and future runs.
 3. **Always act same run.** Don't defer human editorial intent.
 
-After acting: set `status: "consumed"`, add `consumed_at` and `consumed_by`.
+After acting on a pending note: set `status: "consumed"`, add `consumed_at` (per-item ISO timestamp at the moment of consumption — `new Date().toISOString()`, not a batch-rounded value) and `consumed_by` (e.g. `"decider — patched ISS-NNN per note"`). Then **append the full record to `monitor/decisions/human-notes-archive.jsonl`** (one JSON object per line, terminated by `\n`) and **remove the note from the live file**. Both writes happen together — never one without the other. See `monitor/prompts/reference/state-file-archives.md` for the canonical writer pattern and rationale.
+
+```bash
+node -e "
+const fs=require('fs');
+const livePath='monitor/decisions/human-notes.json';
+const archivePath='monitor/decisions/human-notes-archive.jsonl';
+const data=JSON.parse(fs.readFileSync(livePath,'utf8'));
+const note=data.notes.find(n=>n.id==='HNOTE-XXX');
+note.status='consumed';
+note.consumed_at=new Date().toISOString();
+note.consumed_by='decider — <brief reason>';
+fs.appendFileSync(archivePath, JSON.stringify(note)+'\n');
+data.notes=data.notes.filter(n=>n.id!==note.id);
+data.last_updated=new Date().toISOString();
+fs.writeFileSync(livePath,JSON.stringify(data,null,2));
+"
+```
 
 ## Step 1b: Pipeline Health
 
