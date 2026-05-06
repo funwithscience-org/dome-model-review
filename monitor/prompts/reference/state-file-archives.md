@@ -90,12 +90,12 @@ Each migrated file has an expected live-state size annotation. If the live file 
 | monitor/curmudgeon/human-notes.json | 5 | Phase 2 ✓ (2026-05-06). 0 currently pending. |
 | monitor/social/human-notes.json | 5 | Phase 2 ✓ (2026-05-06). 0 currently pending. |
 | monitor/curmudgeon/priority-queue.json | 5 | Phase 3 ✓ (2026-05-06). Live queue + schema metadata + `next_id` only. History (176 entries) → priority-queue-archive.jsonl. PROP-009r2 200-cap retired (audit consumers stream-filter the archive instead). |
-| monitor/curmudgeon/tracker.json | 10 | Phase 4 |
-| monitor/analyst/attention-inbox.json | 25 | Phase 4 — non-trivial live state (active review backlog) |
-| monitor/analyst/expansion-tracker.json | 30 | Phase 5 |
-| monitor/decisions/closed-issues.json | 10 | Phase 6. Highest-risk migration, decider lifecycle critical. |
+| monitor/curmudgeon/tracker.json | 6 | Phase 4 ✓ (2026-05-06). Live = headers + holistic_checks + pending points only. 181 reviewed/legacy points → tracker-archive.jsonl. |
+| monitor/analyst/attention-inbox.json | 25 | Phase 4 ✓ (2026-05-06). Live = pending + open items only. 61 resolved → attention-inbox-archive.jsonl. Array-at-root shape preserved. |
+| monitor/analyst/expansion-tracker.json | 30 | Phase 5 (awaiting tinker amendment per DIRECTIVE-20260506-002) |
+| monitor/decisions/closed-issues.json | 10 | Phase 6 (awaiting tinker amendment). Highest-risk migration, decider lifecycle critical. |
 | monitor/decisions/processed-reviews.json | 1 | Phase 6 (or skip — read by digest script, not LLM) |
-| monitor/integrity/workspace-sync-skips.jsonl | (already JSONL) | Phase 4 — rotation only |
+| monitor/integrity/workspace-sync-skips.jsonl | (already JSONL) | Phase 4 ✓ (2026-05-06) — VERIFY-ONLY, file already follows convention. No code changes. Future PROP can add bounded retention. |
 
 ## Recurring-prevention story
 

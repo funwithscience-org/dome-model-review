@@ -148,7 +148,26 @@ For each batched item: do the empirical verification (one bash/node check), mark
 - If your prior analysis still holds, mark the item `"status": "resolved"` with `resolved_by: "mode2b-singleton"` and a brief note
 - If your analysis needs updating, write an expansion or patch proposal as usual, then mark resolved
 
-→ Write all updates directly to `${WORKSPACE}/monitor/analyst/attention-inbox.json` (FUSE — see top of this mode for why) — mark items resolved with the new fields above. Any analysis output (EXPs, proposals) goes to the normal expansion/proposal paths in your clone, where workspace-sync's universal-pusher will pick them up.
+→ Write all updates directly to `${WORKSPACE}/monitor/analyst/attention-inbox.json` (FUSE — see top of this mode for why). The live file holds only `status: "pending"` or `status: "open"` items per PROP-022 phase 4 (2026-05-06). When you mark an item resolved (Phase 1 OBE / Phase 2 batch / Phase 3 singleton), append the full record to `${WORKSPACE}/monitor/analyst/attention-inbox-archive.jsonl` (one JSON object per line, terminated by `\n`) AND remove it from the live file's array. Both writes happen together — never one without the other. Use per-item `resolved_at` (`new Date().toISOString()` at the moment of resolution; not a batch-rounded timestamp). See `monitor/prompts/reference/state-file-archives.md` for the canonical writer pattern. Any analysis output (EXPs, proposals) goes to the normal expansion/proposal paths in your clone, where workspace-sync's universal-pusher will pick them up.
+
+```bash
+# canonical archive-on-resolve pattern (workspace-side per the FUSE-canonical note)
+node -e "
+const fs=require('fs');
+const livePath='${WORKSPACE}/monitor/analyst/attention-inbox.json';
+const archivePath='${WORKSPACE}/monitor/analyst/attention-inbox-archive.jsonl';
+const arr=JSON.parse(fs.readFileSync(livePath,'utf8'));
+const item=arr.find(x=>x.id===itemId);
+item.status='resolved';
+item.resolved_at=new Date().toISOString();
+item.resolved_by='mode2b-<phase>'; // obe-triage / batch / singleton
+item.resolved_reason='<one-liner>';
+fs.appendFileSync(archivePath, JSON.stringify(item)+'\n');
+const idx=arr.findIndex(x=>x.id===itemId);
+arr.splice(idx,1);
+fs.writeFileSync(livePath, JSON.stringify(arr,null,2));
+"
+```
 
 Note on lookups: the OBE criteria above reference `monitor/decisions/closed-issues.json`, `monitor/analyst/expansion-tracker.json`, `data/wins.json`, `data/sections.json`, and `monitor/curmudgeon/reviews/` — those are decider-canonical / clone-fresh files, so use the relative-path (clone) reads. Only `attention-inbox.json` itself is FUSE-canonical.
 

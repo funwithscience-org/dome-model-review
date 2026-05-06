@@ -130,7 +130,7 @@ After completing review item #1 normally (steps 1–7), check whether the next i
 
 3. **Combined batch byte budget < 10 KB.** Estimate each item's diff size from its `reason` (e.g., "4 minor text patches" ≈ 1–2 KB; "stutter fix" ≈ <500 bytes; "EXP integration" ≈ NOT batchable, regardless of severity). If adding the next item would push combined batch beyond ~10 KB of new text to read, stop adding to the batch.
 
-4. **Anti-staleness guard.** Look up the target's review history in `${WORKSPACE}/monitor/curmudgeon/tracker.json` (or scan `reviews/` filenames). If the target's most recent **singleton-deep** review (i.e., a review NOT marked `batched: true` in its JSON) is more than **3 cycles** ago, force singleton on this item — the WIN is overdue for fresh full attention regardless of how minor the patches look. Do not batch.
+4. **Anti-staleness guard.** Look up the target's review history. Per PROP-022 phase 4, reviewed-points history is in `${WORKSPACE}/monitor/curmudgeon/tracker-archive.jsonl` (append-only JSONL); the live `tracker.json` only carries pending points. Pattern: `grep '"point_id":"<TARGET-ID>"' tracker-archive.jsonl | tail -1` returns the most recent reviewed record for that target. If the target's most recent **singleton-deep** review (i.e., a review NOT marked `batched: true` in its JSON) is more than **3 cycles** ago, force singleton on this item — the WIN is overdue for fresh full attention regardless of how minor the patches look. Do not batch. Fallback: scan `reviews/` filenames if the archive grep returns nothing (handles in-flight migration / legacy items).
 
 5. **Item must not be a fresh onboard.** `target_type: win-new`, `target_type: section-new`, or `target_type: proposal` are foundational and always singleton. Batching applies to re-reviews of already-reviewed targets only (`win-detail-rewrite`, `section-rewrite`, `killshot-rewrite`).
 
@@ -345,7 +345,36 @@ If it fails, fix and rewrite before continuing. The most common failure is **une
 Four broken curmudgeon reviews (HOLISTIC-HOL-TONE, SEC-4.6.2, SEC-6.6.c2, WIN-068.c3) were wedged by this exact bug on 2026-04-14 — do not repeat.
 
 ### 8. Update the Tracker
-Update `monitor/curmudgeon/tracker.json` — update the item's `reviewed_at` and `last_reviewed_cycle` fields to reflect this review. For new items not yet in the tracker's `points` array, add them.
+
+Per PROP-022 phase 4 (2026-05-06), the tracker is split into live + archive:
+- **Live file** `monitor/curmudgeon/tracker.json` carries: top-level headers (cycle, last_reviewed, etc.), `holistic_checks[]` (all kept), and `points[]` filtered to `status: "pending"` only.
+- **Archive file** `monitor/curmudgeon/tracker-archive.jsonl` carries reviewed/legacy points as append-only JSONL.
+
+When reviewing an existing pending point: append the full record (with `status: "reviewed"`, `reviewed_at`, `last_reviewed_cycle`, and any other fields you'd normally set) to `monitor/curmudgeon/tracker-archive.jsonl` AND remove the corresponding pending entry from the live `points[]` array. Both writes happen together.
+
+When reviewing a NEW item not yet in the tracker: skip the live `points[]` add — the item never had a pending entry to remove. Just append the full reviewed record to `tracker-archive.jsonl`.
+
+```bash
+node -e "
+const fs=require('fs');
+const livePath='${WORKSPACE}/monitor/curmudgeon/tracker.json';
+const archPath='${WORKSPACE}/monitor/curmudgeon/tracker-archive.jsonl';
+const t=JSON.parse(fs.readFileSync(livePath,'utf8'));
+// Build the reviewed record (whether the item was previously pending or new)
+const reviewed={
+  point_id:'<ID>', topic:'<short>', status:'reviewed',
+  reviewed_at:new Date().toISOString(), last_reviewed_cycle:t.current_cycle,
+  // ...preserve any other existing fields if the point was pending
+};
+fs.appendFileSync(archPath, JSON.stringify(reviewed)+'\n');
+// Remove from live points[] if it was previously pending
+t.points=t.points.filter(p=>p.point_id!==reviewed.point_id);
+t.last_updated=new Date().toISOString();
+fs.writeFileSync(livePath, JSON.stringify(t,null,2));
+"
+```
+
+Lookup-by-point-id (e.g., the anti-staleness guard in Step 4 above checking 'reviewed in last 3 cycles'): grep the archive — `grep '"point_id":"<ID>"' tracker-archive.jsonl | tail -1` returns the latest reviewed record. The 3-cycle staleness check compares the archive's most recent `last_reviewed_cycle` for that ID against `current_cycle - 3`. See `monitor/prompts/reference/state-file-archives.md` for the canonical writer/reader patterns.
 
 ### 9. Write Summary
 Overwrite `monitor/curmudgeon/latest-review-summary.txt` with a human-readable summary of findings.
