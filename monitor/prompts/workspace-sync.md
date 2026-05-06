@@ -193,6 +193,9 @@ sync_glob monitor/analyst/issue-proposals '*.json'
 smart_copy "${WORKSPACE}/monitor/analyst/expansion-tracker.json" monitor/analyst/expansion-tracker.json
 smart_copy "${WORKSPACE}/monitor/analyst/globe-fingerprint-tracker.json" monitor/analyst/globe-fingerprint-tracker.json
 smart_copy "${WORKSPACE}/monitor/analyst/human-notes.json" monitor/analyst/human-notes.json
+# PROP-022 phase 1 (2026-05-06): archive sibling for analyst/human-notes.
+# Append-only JSONL. smart_copy mtime guard handles the round-trip.
+smart_copy "${WORKSPACE}/monitor/analyst/human-notes-archive.jsonl" monitor/analyst/human-notes-archive.jsonl
 smart_copy "${WORKSPACE}/monitor/analyst/exhibit-a-replication.json" monitor/analyst/exhibit-a-replication.json
 # PROP-017 gap fills (2026-05-05): files written by analyst that workspace-sync
 # previously omitted from its iteration, causing FUSE→git staleness.

@@ -25,22 +25,37 @@ else
   STATUS_TO_WRITE="consumed-pending-verification"
 fi
 
-# Step 3: write the note status
+# Step 3: write the note status (terminal: append to archive + remove from live;
+#         non-terminal 'consumed-pending-verification': mutate in place in live)
 node -e "
 const fs=require('fs');
-const path='monitor/analyst/human-notes.json';   // or appropriate human-notes.json
-const data=JSON.parse(fs.readFileSync(path,'utf8'));
+const livePath='monitor/analyst/human-notes.json';
+const archivePath='monitor/analyst/human-notes-archive.jsonl';
+const data=JSON.parse(fs.readFileSync(livePath,'utf8'));
 const note=data.notes.find(n=>n.id==='HNOTE-XXX');
 note.status='$STATUS_TO_WRITE';
 note.consumed_at=new Date().toISOString();
 note.consumed_by='EXP-NNN revision — <brief reason>';
 note.verification_artifact_path='$ARTIFACT_PATH';   // REQUIRED for Mech 1b
+
+if(note.status==='consumed' || note.status==='resolved'){
+  // Terminal state: append to archive (JSONL), remove from live.
+  // Per state-file-archives.md (PROP-022, phase 1).
+  fs.appendFileSync(archivePath, JSON.stringify(note)+'\n');
+  data.notes=data.notes.filter(n=>n.id!==note.id);
+} else {
+  // Non-terminal (consumed-pending-verification): keep in live so workspace-sync
+  // verifier can flip status. The verifier will trigger the archive-append/live-remove
+  // when it confirms the artifact and flips to 'consumed'.
+}
 data.last_updated=new Date().toISOString();
-fs.writeFileSync(path,JSON.stringify(data,null,2));
+fs.writeFileSync(livePath,JSON.stringify(data,null,2));
 "
 ```
 
-If you wrote `consumed-pending-verification`, the workspace-sync verifier will flip to `consumed` once the artifact is observed at `verification_artifact_path` (handles atomic-write race + universal-pusher rescue cases). If you wrote `consumed` directly because self-verify passed, the entry is already terminal.
+If you wrote `consumed-pending-verification`, the workspace-sync verifier will flip to `consumed` once the artifact is observed at `verification_artifact_path` (handles atomic-write race + universal-pusher rescue cases). The verifier ALSO handles the archive-append/live-remove transition at flip time per the state-file-archives.md convention. If you wrote `consumed` directly because self-verify passed, this snippet already moved the note to the archive — entry is terminal and not in the live file anymore.
+
+**Archive convention (PROP-022 phase 1, 2026-05-06):** terminal notes are stored in `monitor/analyst/human-notes-archive.jsonl` as append-only JSONL (one record per line). The live `human-notes.json` carries only `status: pending` and `status: consumed-pending-verification` notes. See `monitor/prompts/reference/state-file-archives.md` for the full convention. Lookup-by-id (e.g., decider verifier) reads archive via `grep id | tail -1`.
 
 For HNOTEs that genuinely don't imply an artifact (e.g., a cross-cutting note you absorbed into ambient context, with no specific output file), set `verification_artifact_path: null` explicitly and the verifier will skip the entry. Don't omit the field — explicit null > absence (the verifier's `defensive default` would log a missing-pattern error otherwise).
 
