@@ -1,0 +1,707 @@
+{
+  "prop_id": "PROP-022",
+  "title": "State-file archive architecture — separate live state from historical record across the whole pipeline",
+  "authored_by": "tinker",
+  "authored_at": "2026-05-06T10:30:00Z",
+  "directive_id": "DIRECTIVE-20260506-001",
+  "category": "architecture_split + bloat_reduction + sizing_re_examination",
+  "propose_only": true,
+  "do_not_implement": "DO NOT modify any state file, prompt, or script. Operator reviews and authorizes implementation in a separate step. Treat as a pure design exercise — the migration is staged across multiple subsequent operator-authorized commits, one per file.",
+  "status": "pending-operator-review",
+
+  "summary": "PROP-021's instrumentation surfaced one bloat case (priority-queue.json: 50KB on disk, 981B live state). The same shape lives in at least nine other agent state files across the pipeline. The pattern: one canonical file per concept carries BOTH 'live state I need to act on' AND 'every historical item that was ever live state' — and fast-path readers (dispatcher checks, OBE lookups, severity gates) pay the historical-record cost on every read. This PROP designs ONE unified archive convention applied across all bloat-affected files: live state stays in <name>.json (small, fast), historical record moves to <name>-archive.jsonl (append-only JSON-Lines, FUSE-friendly). Migration is per-file, atomic-per-file, ordered low-risk → high-risk. PROP-009r2 audit, decider lifecycle verification, integrity coverage checks, and operator workflow are each preserved by explicit design — see consumer_protection_matrix. The convention is documented as a new reference doc (monitor/prompts/reference/state-file-archives.md) so future state files inherit it correctly. PROP-018 sync-manifest absorbs the new archive files via consistent classifications. This is the broadened, pipeline-wide application of PROP-021's Option C (deferred); it makes the bloat fix structural, not one-off.",
+
+  "scope": {
+    "in_scope": [
+      "monitor/curmudgeon/priority-queue.json (canonical bloat example: 50KB / 981B live).",
+      "monitor/decisions/human-notes.json, monitor/curmudgeon/human-notes.json, monitor/analyst/human-notes.json, monitor/social/human-notes.json (4 files, 525KB total, ~95KB live).",
+      "monitor/decisions/closed-issues.json (1.4MB; lookup-by-ID dominant).",
+      "monitor/decisions/processed-reviews.json (14KB, all history; plus four redundant arrays — schema-cleanup byproduct).",
+      "monitor/curmudgeon/tracker.json (66KB; points array carries 197 review-history records).",
+      "monitor/analyst/expansion-tracker.json (381KB; 270/286 items in terminal state).",
+      "monitor/analyst/attention-inbox.json (67KB; 47/82 resolved).",
+      "monitor/integrity/workspace-sync-skips.jsonl (529KB; already JSONL-shaped — verify only, no migration needed)."
+    ],
+    "out_of_scope": [
+      "monitor/decisions/open-issues.json — already a live-only file by design (5 closed-status leaks observed are decider hygiene bugs, not architecture).",
+      "monitor/curmudgeon/reviews/*.json — per-file-per-review, already correctly sized. PROP-019/020 fingerprint compare reads these (off-limits per directive non_goals).",
+      "monitor/integrity/drift-audit.json — PROP-020 artifact, intentionally regenerated (off-limits).",
+      "monitor/decisions/applied-patches/*.json — per-file-per-patch directory, already the pattern to emulate.",
+      "monitor/analyst/new-wins/*.json, expansions/*.json, fingerprints/*.json, etc. — append-only directories, already correctly shaped.",
+      "data/wins.json, data/sections.json, data/predictions.json, data/uncounted-failures.json — canonical content data, no live/history split applies.",
+      "Schema changes to the live-state portion of any file beyond what's needed for the archive split.",
+      "Other architectural cleanups (open-issues hygiene, processed-reviews schema dedup outside the archive scope, etc.) — focused narrowly on the bloat pattern."
+    ]
+  },
+
+  "audit_pass": {
+    "method": "Walked candidate state files. For each: total bytes, decomposed into live-portion vs history-portion vs schema-overhead, identified primary readers and writers, characterized read-pattern (full-iteration vs lookup-by-ID vs status-filter), measured 'bloat impact' = approx live-state-readers-per-day × wasted-bytes-per-read.",
+    "files": {
+      "monitor/curmudgeon/priority-queue.json": {
+        "total_bytes": 50583,
+        "live_state_bytes": 17,
+        "history_bytes": 48242,
+        "schema_metadata_bytes": 2324,
+        "live_definition": "queue array (currently 0 items). Fast-path readers want yes/no on whether queue has un-reviewed items.",
+        "history_definition": "history array (currently 175 entries, capped at 200 by PROP-009r2; popped queue items with pop_reason, claimed_review_file, popped_at, operator_bypass_reason).",
+        "schema_overhead": "description, mode, mode_legal_values, mode_rules, writers, readers, schedule_state, last_updated.",
+        "writers": ["decider (Step E2 pop & E5 mode flip)"],
+        "readers": ["curmudgeon (dispatcher Step 0b)", "decider (Step E intake)", "tinker (Mode 1/3 audits)", "PROP-009r2 3-day rolling audit reader (in decider Step E2 enforcement check + tinker Mode 2 shadow log audit)"],
+        "read_pattern": "queue: full iteration. history: only the audit reader iterates; everyone else ignores history.",
+        "bloat_impact_per_day": "Curmudgeon ~16 runs/day × 50KB read = 800KB/day. ~95% of that is history bytes the dispatcher does not consult.",
+        "evidence_in_repo": "PROP-021 instrumentation_pass.state_file_reads_at_dispatcher_time.priority-queue.json"
+      },
+      "monitor/decisions/human-notes.json": {
+        "total_bytes": 112989,
+        "live_state_bytes": 3025,
+        "history_bytes": 102478,
+        "superseded_bytes": 3637,
+        "schema_overhead": 3849,
+        "live_definition": "notes[] entries with status='pending' (currently 1: HNOTE-OPERATOR-DRAIN-MODE-001).",
+        "history_definition": "notes[] entries with status='consumed' (31) or status='superseded' (1).",
+        "writers": ["operator (append pending)", "decider (mark consumed/superseded with consumed_at/consumed_by/consumed_action)"],
+        "readers": ["decider (every run, Step 0d operator-note triage)"],
+        "read_pattern": "filter by status='pending'.",
+        "bloat_impact_per_day": "Decider ~6 runs/day × 113KB read = 678KB/day. ~97% is consumed notes."
+      },
+      "monitor/curmudgeon/human-notes.json": {
+        "total_bytes": 39012,
+        "live_state_bytes": 1402,
+        "history_bytes": 37263,
+        "schema_overhead": 347,
+        "live_definition": "notes[] with status='pending' (currently 0).",
+        "history_definition": "notes[] with status='consumed' (9).",
+        "writers": ["operator", "curmudgeon (mark consumed)"],
+        "readers": ["curmudgeon (every run, Step 0c)"],
+        "read_pattern": "filter by status='pending'.",
+        "bloat_impact_per_day": "Curmudgeon ~16 runs/day × 39KB read = 624KB/day. 100% consumed bytes today."
+      },
+      "monitor/analyst/human-notes.json": {
+        "total_bytes": 338419,
+        "live_state_bytes": 1442,
+        "history_bytes": 327117,
+        "schema_overhead": 9860,
+        "live_definition": "notes[] with status='pending' or no status (currently 1 with no status field — likely operator append-in-progress).",
+        "history_definition": "notes[] with status='consumed' (47).",
+        "writers": ["operator", "analyst (mark consumed)"],
+        "readers": ["analyst (every run, dispatcher precheck)", "curmudgeon (Step 0c2 cross-check)"],
+        "read_pattern": "filter by status='pending'.",
+        "bloat_impact_per_day": "Analyst ~12 runs/day × 338KB read = 4.0MB/day. Largest single bloat source by daily byte volume."
+      },
+      "monitor/social/human-notes.json": {
+        "total_bytes": 35530,
+        "live_state_bytes": 350,
+        "history_bytes": 34358,
+        "schema_overhead": 822,
+        "live_definition": "notes[] with status='pending' (currently 0).",
+        "history_definition": "notes[] with status='consumed' (8).",
+        "writers": ["operator", "social (mark consumed)"],
+        "readers": ["social (daily run)"],
+        "read_pattern": "filter by status='pending'.",
+        "bloat_impact_per_day": "Social ~1 run/day × 36KB read = 36KB/day. Smallest of the four human-notes."
+      },
+      "monitor/decisions/closed-issues.json": {
+        "total_bytes": 1395696,
+        "live_state_bytes": 0,
+        "history_bytes": 1395696,
+        "live_definition": "(none — every entry is, by definition, closed; the file is pure archive).",
+        "history_definition": "issues[] with status in {fixed, wontfix, closed-wontfix, closed-fixed, closed, superseded, stale, stale-already-fixed, closed-duplicate, fixed-pending-verification} (1514 entries).",
+        "writers": ["decider (move from open-issues to closed-issues)"],
+        "readers": ["analyst (every run, OBE lookup by ISS-NNN regex)", "curmudgeon (Step 8a batch-triage severity gate)", "decider (intake dedup, lifecycle verification by id)", "social (dedup before filing new issues)"],
+        "read_pattern": "lookup-by-id (find single record). NO consumer iterates the array. Bulk-OBE pattern is one regex grep, then per-id targeted reads.",
+        "bloat_impact_per_day": "Cumulative across analyst (~12 runs/day), curmudgeon (~16/day), decider (~6/day), social (~1/day) = 35 runs/day × 1.4MB = 49MB/day of read tokens. Highest daily token cost.",
+        "fits_directive_rule": "Operator's stated rule: 'If the file is read on every dispatcher cycle, anything not actively-consulted is archive.' Every entry is closed; no entry is live. Therefore the entire file is archive."
+      },
+      "monitor/decisions/processed-reviews.json": {
+        "total_bytes": 14417,
+        "live_state_bytes": 0,
+        "history_bytes": 13900,
+        "schema_overhead": 517,
+        "live_definition": "(none — every entry is a 'review filename already processed' marker).",
+        "history_definition": "Four overlapping arrays (legacy schema duplication): processed (457 filenames), section_reviews_processed (2), holistic_reviews_processed (5), processed_reviews (71), processed_files (1). The 'processed' array is canonical per DATA-SCHEMAS.md.",
+        "writers": ["decider (append filename on review completion)"],
+        "readers": ["decider (cycle-aware dedup check at intake)"],
+        "read_pattern": "membership check: 'has filename X been processed?'",
+        "bloat_impact_per_day": "Decider ~6 runs/day × 14KB read = 84KB/day. Modest but file is also a schema-cleanup target (note: schema dedup outside scope per directive non_goals; only the live/archive split is in scope here)."
+      },
+      "monitor/curmudgeon/tracker.json": {
+        "total_bytes": 65770,
+        "live_state_bytes": 7000,
+        "history_bytes": 48000,
+        "schema_overhead": 10770,
+        "live_definition": "holistic_checks array (9 entries, ~1.3KB; rotation pre-Priority 4) + points[] entries with status='pending' (16 of 197, ~5KB) + cycle/last_run/last_review_time/etc. headers (~700B).",
+        "history_definition": "points[] entries with status='reviewed' (153) or no status (28 — likely legacy entries pre-status-field). Total ~48KB.",
+        "writers": ["curmudgeon (append point on review)", "decider (mark cycle/last_run; PROP-014-amendment additive edits)"],
+        "readers": ["curmudgeon (every run, Step 4 holistic rotation; pre-PROP-020 also fingerprint compare)", "tinker (Mode 1 staleness)"],
+        "read_pattern": "holistic_checks: filter by status='pending'. points[]: post-PROP-020 the fingerprint compare moved to drift-audit; current readers only check 'is this win/section already in points with last_reviewed_cycle ≥ N' (lookup-by-id or filter-by-status).",
+        "bloat_impact_per_day": "Curmudgeon ~16 runs/day × 66KB = 1.05MB/day. ~75% history."
+      },
+      "monitor/analyst/expansion-tracker.json": {
+        "total_bytes": 380771,
+        "live_state_bytes": 30000,
+        "history_bytes": 350771,
+        "live_definition": "items[] with status in {pending, draft_awaiting_human_group_review, operator-approved, DRAFT_AWAITING_OPERATOR_REVIEW} = 9 actionable + revised states (~30KB).",
+        "history_definition": "items[] with status in {complete (266), integrated (4), cancelled (2), superseded (2), subsumed (3)} = 277 items (~350KB).",
+        "writers": ["analyst (append new EXP, status: pending; later updates)", "decider (status: integrated, integrated_at; PROP-014-amendment additive edits)"],
+        "readers": ["analyst (every run, dispatcher precheck — filter by status='pending'+!blocked_on; mode-2b re-examination of EXP)", "decider (every run, integration loop — filter by status='complete'/'revised'+!integrated)", "structure-integrity (daily, walk for collisions and category coverage)", "tinker (Mode 1 staleness)"],
+        "read_pattern": "filter by status. NO consumer iterates terminal-state items in the fast path; integrated/cancelled/superseded/subsumed are dead weight for ALL fast-path readers. structure-integrity walks the full array for collision detection but that's daily, not per-run.",
+        "bloat_impact_per_day": "Analyst+decider+integrity ~18 runs/day × 381KB = 6.86MB/day. Second-highest daily token cost after closed-issues."
+      },
+      "monitor/analyst/attention-inbox.json": {
+        "total_bytes": 66841,
+        "live_state_bytes": 21017,
+        "history_bytes": 38530,
+        "schema_overhead": 7294,
+        "live_definition": "items with status in {pending (33), open (2)} = 35 items (~21KB).",
+        "history_definition": "items with status='resolved' (47, ~38.5KB).",
+        "writers": ["decider (push items needing analyst re-examination, with related_issues, reason)", "analyst (mark resolved with resolution_note)"],
+        "readers": ["analyst (every run, dispatcher precheck — filter by status='pending'/'open')"],
+        "read_pattern": "filter by status. structure-shape is array-at-root (no top-level wrapper)."
+      },
+      "monitor/integrity/workspace-sync-skips.jsonl": {
+        "total_bytes": 528956,
+        "shape": "ALREADY JSONL append-only.",
+        "live_definition": "(N/A — this is an append-only log, no live/history distinction).",
+        "history_definition": "1604 lines, span 2026-04-09 → 2026-05-06 (27 days).",
+        "writers": ["workspace-sync (every run, append SKIP entries)"],
+        "readers": ["tinker (Mode 1/2 forensics)", "structure-integrity (PROP-019/020 work)"],
+        "read_pattern": "tail-N or grep-by-path. No full-iteration in the fast path.",
+        "verification": "ALREADY archive-shaped per the convention proposed below. No migration needed. Recommend a future PROP add bounded retention (truncate after 90 days) — out of scope here.",
+        "bloat_impact_per_day": "Tinker daily × 529KB = 529KB/day. Tolerable; flagged as future-PROP target."
+      }
+    },
+    "totals": {
+      "total_state_file_bytes_today": 3037000,
+      "approximate_live_state_bytes_today": 65000,
+      "history_or_consumed_bytes": 2972000,
+      "live_to_history_ratio": "~2%",
+      "estimated_daily_read_token_cost_today": "~64MB/day across all dispatchers (closed-issues 49MB + expansion-tracker 7MB + analyst-notes 4MB + tracker 1MB + others)",
+      "estimated_daily_read_token_cost_post_migration": "~3MB/day (live-only files are tiny; archive only read on lookup-by-id grep, which streams not loads)"
+    },
+    "ranked_priority_for_migration": [
+      {"file": "monitor/integrity/workspace-sync-skips.jsonl", "rank": 1, "rationale": "Already correct shape — verify-only step. Lowest risk, validates the convention."},
+      {"file": "monitor/social/human-notes.json", "rank": 2, "rationale": "Smallest of the human-notes; only one reader (social, daily). Validates the human-notes pattern with minimum blast radius."},
+      {"file": "monitor/curmudgeon/human-notes.json", "rank": 3, "rationale": "Two readers (curmudgeon dispatcher + Step 0c2 cross-read by curmudgeon itself); 100% consumed today so migration is mostly schema."},
+      {"file": "monitor/decisions/human-notes.json", "rank": 4, "rationale": "One reader (decider). 1 pending note today (drain-mode); migration must preserve operator's pending note in the live file."},
+      {"file": "monitor/analyst/human-notes.json", "rank": 5, "rationale": "Largest human-notes (338KB). Two readers (analyst + curmudgeon Step 0c2). High savings, modest risk."},
+      {"file": "monitor/curmudgeon/priority-queue.json", "rank": 6, "rationale": "Canonical bloat case from PROP-021 instrumentation. PROP-009r2 audit reader is the load-bearing consumer that needs careful migration."},
+      {"file": "monitor/analyst/attention-inbox.json", "rank": 7, "rationale": "Single reader, status-filter pattern. Array-at-root shape requires slight migration variant."},
+      {"file": "monitor/curmudgeon/tracker.json", "rank": 8, "rationale": "Multi-writer, multiple status patterns inside points[]. Higher risk; migrate after all simpler files are validated."},
+      {"file": "monitor/analyst/expansion-tracker.json", "rank": 9, "rationale": "381KB, 4 readers, write-verify discipline (Discipline 1a) depends on integrated_at field. Higher risk than tracker.json."},
+      {"file": "monitor/decisions/processed-reviews.json", "rank": 10, "rationale": "Migrate together with closed-issues (both have lookup-by-id semantics; convention proves out)."},
+      {"file": "monitor/decisions/closed-issues.json", "rank": 11, "rationale": "HIGHEST RISK. 1.4MB, 4 readers, every reader uses lookup-by-id. Last because if anything is going to surprise us, it's the bulk-OBE reader pattern in analyst, and we want maximum prior-validation of the convention."}
+    ]
+  },
+
+  "unified_archive_convention": {
+    "name": "live-state / append-archive split",
+    "headline": "<name>.json holds ONLY items meeting the file's live-state predicate. <name>-archive.jsonl holds the full historical record (one JSON object per line, append-only).",
+    "naming_rule": {
+      "live_file": "<name>.json — unchanged path; same as today's file, but content scope shrinks to live-state-only.",
+      "archive_file": "<name>-archive.jsonl — sibling file, same directory, same basename + '-archive' suffix + '.jsonl' extension.",
+      "rationale": "JSONL is operationally simpler than a directory of per-event files: one open() per consumer; grep-friendly; jq-friendly; tail-friendly; FUSE no-unlink-friendly (append-only never unlinks). Per-event-files give finer git-blame granularity but at the cost of fs.readdir() + per-file open() and inode pressure. JSONL preserves git-blame-per-line, which is enough granularity for forensics."
+    },
+    "content_shape": {
+      "live_file_shape": "Identical to today's schema, except item arrays only contain live-state items per the file's live-state predicate. Top-level metadata (description, writers, readers, mode, last_updated, etc.) unchanged. The shape is a strict subset of today's file.",
+      "archive_file_shape": "One JSON object per line, no enclosing array. Each line carries the FULL record at the moment it was archived (i.e., includes the terminal-state fields like status:'consumed', consumed_at, consumed_by, popped_at, claimed_review_file, etc.). Records are immutable post-write.",
+      "no_indices_by_default": "No separate index file. Lookup-by-id is `grep '\"id\":\"X\"' <archive>` then JSON.parse the matching line. Indices invite their own staleness bug; grep-on-1.4MB is sub-100ms wall-clock at the FS level.",
+      "future_index_path": "If profiling shows lookup-by-id is hot enough to warrant indexing, add <name>-archive-index.json with {id: byte_offset} mapping. Defer until measured need."
+    },
+    "append_vs_mutate_semantics": {
+      "live_file": "Mutate freely. Writers add/remove/modify items in the live array; only items in the live-state predicate are kept. Same write semantics as today.",
+      "archive_file": "APPEND-ONLY via fs.appendFileSync. Never mutate, never rewrite, never delete. Each line is immutable once written.",
+      "transaction_pattern": "When an item transitions from live → terminal: (1) append the FULL terminal record to archive jsonl, (2) remove the item from live file, (3) commit both files in the same git commit. Order matters: append-first-remove-second so a crash between (1) and (2) leaves a duplicate in live (recoverable) rather than a vanished record in neither (unrecoverable).",
+      "reader_pattern": {
+        "live_state_reader": "JSON.parse(readFileSync(<name>.json)) — same code as today, file is just smaller.",
+        "lookup_by_id_reader": "execSync(`grep '\"id\":\"${X}\"' <name>-archive.jsonl | head -1`) → JSON.parse the line. Or: read line-by-line via readline interface, filter, return first match.",
+        "iteration_reader": "Streamed read line-by-line (Node's readline or `fs.createReadStream + split('\\n')`); JSON.parse each line. Memory footprint stays O(1) regardless of archive size."
+      }
+    },
+    "operator_workflow_contract": {
+      "for_human_notes": "Operator ALWAYS appends to <name>.json (the live file). The agent that consumes the note (decider, analyst, curmudgeon, social) does the live→archive move when it processes the note. Operator never writes directly to *-archive.jsonl. This is uniform across ALL human-notes files — no file-specific exception.",
+      "for_other_files": "Operator does NOT manually append to live state of agent-managed files (priority-queue, expansion-tracker, attention-inbox, tracker, etc.) under normal flow. The existing operator escape hatches (e.g., operator-pushed queue items per CLAUDE.md File Ownership Rules) continue to write to <name>.json — same as today.",
+      "rule_of_thumb": "If you're an operator and you want to add something, append to <name>.json. The agent will move it to archive when consumed. If you want to look something up historically, read <name>-archive.jsonl (or grep it)."
+    },
+    "documentation_location": {
+      "primary": "monitor/prompts/reference/state-file-archives.md — new reference doc that codifies the convention. Read by tinker (every Mode 3) and by the agent currently being modified (analyst, curmudgeon, decider, etc.) only when their state-file write logic is being touched. Most agents do not need to read this routinely.",
+      "secondary": "CLAUDE.md File Ownership Rules — add a one-paragraph summary cross-referencing state-file-archives.md and listing the affected files. Each affected file's classification gains an `archive_companion` annotation pointing to the sibling archive path.",
+      "tertiary": "PROP-018 sync-manifest.json — each new <name>-archive.jsonl entry is added with direction: workspace_to_clone, classification: 'log' (or 'ledger' for ID-lookup-critical archives), notes referencing this PROP."
+    },
+    "inheritance_for_new_state_files": {
+      "default_assumption": "Any new state file with a live/terminal status distinction inherits the convention by default: live file at <name>.json; archive at <name>-archive.jsonl.",
+      "exception_path": "If a new file is genuinely live-only (no terminal items ever) OR genuinely archive-only (no live items ever), document the exception in state-file-archives.md§exceptions with a one-paragraph rationale.",
+      "review_gate": "When a new file is introduced (a PROP or HNOTE proposes one), tinker's PROP-review pass checks whether the convention applies and flags missing archive companion as a finding."
+    }
+  },
+
+  "per_file_migration_plan": {
+    "common_template": {
+      "step_1_create_archive": "Create empty <name>-archive.jsonl (touch). Add to PROP-018 sync-manifest with direction and classification.",
+      "step_2_writer_dual_write": "Update writer code: when transitioning item to terminal state, append the FULL record (with terminal fields) to <name>-archive.jsonl AND keep the item in live file with status='consumed'/'integrated'/etc. — i.e., DUAL WRITE. This is the backward-compat phase.",
+      "step_3_reader_dual_read": "Update lookup readers (if any) to check archive first, then live file as fallback. Filter readers (status='pending') unchanged — they still ignore terminal items in the live file.",
+      "step_4_observe_one_cycle": "Run for one cycle (defined: ≥7 days of live operation, ≥4 representative dispatcher cycles per affected agent, no consumer regressions in tinker daily reports).",
+      "step_5_writer_archive_only": "Update writer code: when transitioning to terminal state, append to archive AND REMOVE from live file. End of dual-write.",
+      "step_6_reader_archive_canonical": "Lookup readers now read archive only. Filter readers continue to filter live file (terminal items no longer exist there).",
+      "step_7_one_time_backfill": "Migration script (one-shot, not a recurring agent): read existing <name>.json, identify all terminal-state items per the live-state predicate, append each as a JSONL line to <name>-archive.jsonl, write the slimmed live file. Verify integrity (record counts match before/after; backfill is idempotent on rerun).",
+      "step_8_close_observation_window": "Tinker confirms in two consecutive Mode 3 runs that file size has dropped to expected live-state size and no consumer regressions appeared. PROP marked applied."
+    },
+    "files_with_specific_plans": {
+      "monitor/integrity/workspace-sync-skips.jsonl": {
+        "rank": 1,
+        "live_state_predicate": "(N/A — log-only)",
+        "migration_steps": "VERIFY-ONLY. The file is already archive-shaped. Confirm naming follows convention (it does). Add to PROP-018 sync-manifest with classification: 'log'. No code changes. Future PROP can add bounded retention.",
+        "writer_change": "None.",
+        "reader_change": "None.",
+        "backfill": "None.",
+        "backward_compat": "100%."
+      },
+      "monitor/social/human-notes.json": {
+        "rank": 2,
+        "live_state_predicate": "notes[].status === 'pending'",
+        "migration_steps": "Standard 8-step template.",
+        "writer_change": "social.md: when consuming a note, append full record (with status:'consumed', consumed_at, consumed_by) to monitor/social/human-notes-archive.jsonl, remove from live notes array.",
+        "reader_change": "None — social filters by status='pending' today; post-migration, terminal items aren't in live, so the filter still works (now tautologically).",
+        "backfill_script": "node -e \"const fs=require('fs'); const live=JSON.parse(fs.readFileSync('monitor/social/human-notes.json','utf8')); const term=live.notes.filter(n=>n.status!=='pending'); for(const n of term)fs.appendFileSync('monitor/social/human-notes-archive.jsonl',JSON.stringify(n)+'\\n'); live.notes=live.notes.filter(n=>n.status==='pending'); live.last_updated=new Date().toISOString(); fs.writeFileSync('monitor/social/human-notes.json',JSON.stringify(live,null,2));\"",
+        "backward_compat": "Operator workflow unchanged (still appends pending to live file). All readers filter by status='pending' which works whether terminal items are present or absent.",
+        "expected_size_drop": "36KB → ~1KB live."
+      },
+      "monitor/curmudgeon/human-notes.json": {
+        "rank": 3,
+        "live_state_predicate": "notes[].status === 'pending'",
+        "migration_steps": "Standard 8-step template.",
+        "writer_change": "curmudgeon.md: same pattern as social.",
+        "reader_change": "None.",
+        "backfill_script": "Same as social with paths updated.",
+        "backward_compat": "100%.",
+        "expected_size_drop": "39KB → ~1KB live."
+      },
+      "monitor/decisions/human-notes.json": {
+        "rank": 4,
+        "live_state_predicate": "notes[].status in ('pending', 'superseded')  -- superseded kept in live for one week post-supersede so consumers see the supersede event without archive lookup",
+        "migration_steps": "Standard 8-step template, with the wrinkle that superseded notes stay live for a 7-day grace window.",
+        "writer_change": "decider.md Step 0d: when consuming a note (status: consumed), append to archive AND remove from live. When marking superseded, set superseded_at, leave in live for 7 days, then archive.",
+        "reader_change": "Decider already filters by status='pending'; superseded entries don't trigger action. No new code path.",
+        "backfill_script": "Filter terminal items (consumed, superseded with superseded_at <7d ago kept in live; consumed and old-superseded archived).",
+        "backward_compat": "Pending operator note (HNOTE-OPERATOR-DRAIN-MODE-001) is preserved in live file unchanged.",
+        "expected_size_drop": "113KB → ~5KB live (1 pending + 1 superseded within window + schema overhead)."
+      },
+      "monitor/analyst/human-notes.json": {
+        "rank": 5,
+        "live_state_predicate": "notes[].status === 'pending' OR notes[].status is missing (operator append-in-progress sentinel — analyst Mode 1c reads these for triage)",
+        "migration_steps": "Standard 8-step template.",
+        "writer_change": "analyst.md: when consuming a note, append to archive, remove from live.",
+        "reader_change": "Analyst already filters by status='pending'+missing-status. Curmudgeon Step 0c2 cross-reads — confirm filter matches new shape (it does; curmudgeon filters by status='pending' too).",
+        "backfill_script": "Same template.",
+        "backward_compat": "Operator append-in-progress (no status) is preserved in live, since the predicate keeps them.",
+        "expected_size_drop": "338KB → ~5KB live."
+      },
+      "monitor/curmudgeon/priority-queue.json": {
+        "rank": 6,
+        "live_state_predicate": "queue[] (the active queue) — KEEP. history[] — REMOVE from live, MOVE to archive.",
+        "migration_steps": "Standard 8-step template + load-bearing audit reader migration (PROP-009r2 3-day rolling audit). See consumer_protection_matrix entry for exact code change.",
+        "writer_change": "decider.md Step E2 pop block: replace `pq.history.push({...})` followed by `pq.history.slice(-200)` cap with `fs.appendFileSync(CLONE+'/monitor/curmudgeon/priority-queue-archive.jsonl', JSON.stringify({queue_id, target_id, target_type, popped_at, popped_by, pop_reason, claimed_review_file, operator_bypass_reason})+'\\n')`. Remove `pq.history` field from the live file. Remove the `history.length>200` cap entirely (PROP-009r2 obsolete justification — see obsolete_justification_cleanup).",
+        "reader_change": "PROP-009r2 audit reader (in tinker Mode 2 + decider's enforcement-flip prereq): change from `JSON.parse(pq).history.filter(h => h.popped_at >= cutoff)` to streaming read of `priority-queue-archive.jsonl` filtered by `popped_at >= cutoff`. The 3-day window naturally narrows to recent records — no 200-entry cap needed.",
+        "backfill_script": "Migrate existing 175 history entries to JSONL: `node -e \"const fs=require('fs'); const pq=JSON.parse(fs.readFileSync('monitor/curmudgeon/priority-queue.json','utf8')); for(const h of pq.history)fs.appendFileSync('monitor/curmudgeon/priority-queue-archive.jsonl', JSON.stringify(h)+'\\n'); delete pq.history; pq.last_updated=new Date().toISOString(); fs.writeFileSync('monitor/curmudgeon/priority-queue.json', JSON.stringify(pq,null,2));\"",
+        "backward_compat": "Dual-write phase: writer keeps last 200 in live history AND appends to archive. Audit reader checks archive first, falls back to live history (defensive). After 7+ days observation, live history dropped.",
+        "expected_size_drop": "50KB → ~1KB live (queue + schema metadata only)."
+      },
+      "monitor/analyst/attention-inbox.json": {
+        "rank": 7,
+        "live_state_predicate": "items[].status in ('pending', 'open')",
+        "migration_steps": "Standard 8-step template + array-at-root shape variant.",
+        "writer_change": "decider.md (push) and analyst.md (mark resolved): when transitioning to status='resolved', append full record to attention-inbox-archive.jsonl, remove from live array.",
+        "reader_change": "Analyst dispatcher precheck filters by status in ('pending','open') — works either way.",
+        "backfill_script": "node -e \"const fs=require('fs'); const arr=JSON.parse(fs.readFileSync('monitor/analyst/attention-inbox.json','utf8')); const live=arr.filter(i=>i.status==='pending'||i.status==='open'); const term=arr.filter(i=>i.status==='resolved'); for(const t of term)fs.appendFileSync('monitor/analyst/attention-inbox-archive.jsonl',JSON.stringify(t)+'\\n'); fs.writeFileSync('monitor/analyst/attention-inbox.json',JSON.stringify(live,null,2));\"",
+        "backward_compat": "Same array-at-root shape preserved in live file. No top-level wrapper introduced.",
+        "expected_size_drop": "67KB → ~30KB live (35 active items)."
+      },
+      "monitor/curmudgeon/tracker.json": {
+        "rank": 8,
+        "live_state_predicate": "holistic_checks[] (KEEP all) + points[] entries with status='pending' (KEEP) + cycle/last_run/last_review_time/last_review_item/last_review_result/last_item_reviewed/last_updated headers (KEEP).",
+        "history_definition": "points[] entries with status='reviewed' or no status (legacy entries). Move to monitor/curmudgeon/tracker-archive.jsonl.",
+        "migration_steps": "Standard 8-step template. Note: tracker.points[] is multi-writer (curmudgeon + decider), so dual-write phase requires both writers updated together.",
+        "writer_change": "curmudgeon.md (append point on review): when adding a 'reviewed' point, append to archive AND remove the corresponding 'pending' entry. decider.md PROP-014-amendment additive edits: continue to write completed_at/etc. to live, but if the point's status flips to 'reviewed' as part of integration, archive immediately.",
+        "reader_change": "Curmudgeon Step 4 holistic rotation reads holistic_checks (untouched). Curmudgeon legacy fingerprint compare moved to drift-audit (PROP-020) — tracker.points was already not the canonical source. Confirm no remaining reader needs reviewed-points history.",
+        "backfill_script": "node -e \"const fs=require('fs'); const t=JSON.parse(fs.readFileSync('monitor/curmudgeon/tracker.json','utf8')); const term=t.points.filter(p=>p.status==='reviewed'||!p.status); const live=t.points.filter(p=>p.status==='pending'); for(const r of term)fs.appendFileSync('monitor/curmudgeon/tracker-archive.jsonl',JSON.stringify(r)+'\\n'); t.points=live; t.last_updated=new Date().toISOString(); fs.writeFileSync('monitor/curmudgeon/tracker.json',JSON.stringify(t,null,2));\"",
+        "backward_compat": "Holistic_checks unchanged. Live points only carry pending. If anything wants to know 'has WIN-N been reviewed in cycle K', it reads archive (mechanical grep + JSON.parse).",
+        "expected_size_drop": "66KB → ~6KB live."
+      },
+      "monitor/analyst/expansion-tracker.json": {
+        "rank": 9,
+        "live_state_predicate": "items[].status NOT in ('complete', 'integrated', 'cancelled', 'superseded', 'subsumed')",
+        "history_definition": "items[].status in the 5 terminal states above.",
+        "migration_steps": "Standard 8-step template. Higher complexity because: (1) multi-writer (analyst + decider), (2) Discipline 1a write-verify reads integrated_at field across writes, (3) structure-integrity walks the full array daily for collision detection.",
+        "writer_change": "analyst.md (status:pending → status:complete on draft completion): keep in live until decider integrates. decider.md (status:complete → status:integrated, integrated_at:<ts>): append full record to expansion-tracker-archive.jsonl AND remove from live. PROP-014-amendment additive edits (write integrated_at, completed_at, etc.) execute against the live record before the move-to-archive happens — same atomic sequence.",
+        "reader_change": "analyst dispatcher precheck: filter by status='pending' + !blocked_on (works on live-only file). decider integration loop: filter by status in ('complete','revised') + !integrated (these items are in live; integrated items are in archive). structure-integrity: collision detection MUST iterate both live + archive — code change required: replace `items.find(...)` with two-pass over live and archive.",
+        "backfill_script": "Standard template adapted for items with status terminal vs non-terminal.",
+        "backward_compat": "Discipline 1a write-verify: confirm `integrated_at` field appears in archive line within 1 cycle of the integration commit (push-verify reads archive grep for the EXP id). Tracker-staleness fallback (analyst Mode 2b): for entries with status='ready-for-integration' but content already integrated, the fallback reads data/wins.json directly — unaffected by this change.",
+        "expected_size_drop": "381KB → ~30KB live.",
+        "risk_callout": "structure-integrity collision-detection code change is the load-bearing ask. If integrity fails to find an EXP because it only checked live, it could double-write or false-flag missing. Test plan in regression_test."
+      },
+      "monitor/decisions/processed-reviews.json": {
+        "rank": 10,
+        "live_state_predicate": "(N/A — every entry is a 'processed' marker, all are by definition history)",
+        "migration_pattern": "Convert entire file to archive. Replace processed-reviews.json with processed-reviews-archive.jsonl (one line per processed filename). Empty live file processed-reviews.json (kept as a sentinel for the agent that needs to know archive is initialized — or remove entirely once decider-intake confirms it doesn't need a sentinel).",
+        "writer_change": "decider.md: replace `pr.processed.push(filename); fs.writeFileSync(...)` with `fs.appendFileSync('monitor/decisions/processed-reviews-archive.jsonl', JSON.stringify({filename, processed_at: new Date().toISOString()})+'\\n')`.",
+        "reader_change": "decider intake dedup check: replace `pr.processed.includes(filename)` with `execSync(\\`grep -q '\"filename\":\"${filename}\"' monitor/decisions/processed-reviews-archive.jsonl\\`, {throwOnError:false}).status === 0`. Or readline + filter for in-process.",
+        "backfill_script": "node -e \"const fs=require('fs'); const pr=JSON.parse(fs.readFileSync('monitor/decisions/processed-reviews.json','utf8')); for(const f of pr.processed||[])fs.appendFileSync('monitor/decisions/processed-reviews-archive.jsonl',JSON.stringify({filename:f,processed_at:'(backfilled)'})+'\\n');\" then either delete monitor/decisions/processed-reviews.json or shrink to {description:'see processed-reviews-archive.jsonl', schema_version:'archived'}.",
+        "backward_compat": "Schema cleanup of the four overlapping arrays (processed, section_reviews_processed, processed_reviews, processed_files) is OUT OF SCOPE here per directive non_goals; only the live/archive split is in scope. Each of the four arrays migrates to archive separately or together — operator's call.",
+        "expected_size_drop": "14KB → ~0KB live (file removed or sentinel-only)."
+      },
+      "monitor/decisions/closed-issues.json": {
+        "rank": 11,
+        "live_state_predicate": "(N/A — every entry is, by definition, closed; the file is pure archive)",
+        "migration_pattern": "Convert entire file to archive. closed-issues.json → closed-issues-archive.jsonl. No live counterpart needed.",
+        "writer_change": "decider.md (move from open-issues to closed-issues): replace `c.issues.push({...closing_record}); fs.writeFileSync('monitor/decisions/closed-issues.json', JSON.stringify(c,null,2))` with `fs.appendFileSync('monitor/decisions/closed-issues-archive.jsonl', JSON.stringify(closing_record)+'\\n')`. The whole 1.4MB serialization-on-every-close goes away.",
+        "reader_changes": {
+          "analyst_OBE_lookup": "analyst.md line 129 (currently: `const c=JSON.parse(fs.readFileSync('monitor/decisions/closed-issues.json','utf8')); const issue=c.issues.find(i=>i.id===N)`). New: `const line=execSync(\\`grep '\"id\":\"${N}\"' monitor/decisions/closed-issues-archive.jsonl | head -1\\`, {encoding:'utf8'}); const issue=line.trim()?JSON.parse(line):null;`. Memory drops from 1.4MB to ~1KB. Wall-clock comparable (grep + JSON.parse 1 line vs JSON.parse-1.4MB).",
+          "curmudgeon_severity_gate": "curmudgeon.md Step 8a line 127: replace JSON.parse-and-find with grep-and-parse for each ISS-NNN in related_issues. Same pattern as analyst.",
+          "decider_intake_dedup": "decider-intake.md line 198 (current count query): replace `JSON.parse(...).issues.length` with `execSync('wc -l monitor/decisions/closed-issues-archive.jsonl').toString().trim().split(' ')[0]`.",
+          "decider_lifecycle_verification": "decider-patches-and-selfapply.md line 443 (currently: `const c=JSON.parse(fs.readFileSync('monitor/decisions/closed-issues.json','utf8')); c.issues.push({...closing_record})`). New: `fs.appendFileSync('monitor/decisions/closed-issues-archive.jsonl', JSON.stringify(closing_record)+'\\n')`. The verification_pattern field is preserved on the archived line, found by grep.",
+          "social_dedup_before_filing": "social.md line 331: replace JSON.parse-and-find with grep-and-parse for each candidate issue."
+        },
+        "backfill_script": "node -e \"const fs=require('fs'); const c=JSON.parse(fs.readFileSync('monitor/decisions/closed-issues.json','utf8')); for(const i of c.issues)fs.appendFileSync('monitor/decisions/closed-issues-archive.jsonl',JSON.stringify(i)+'\\n');\" then either delete monitor/decisions/closed-issues.json or shrink to a sentinel.",
+        "backward_compat": "Dual-write phase: writer appends to archive AND keeps in live array for one full week. All four lookup readers fall back to live if archive grep returns nothing (handles in-flight writes during dual-write). After observation window, writer stops dual-writing and readers stop fallback.",
+        "expected_size_drop": "1.4MB → ~0KB live (file removed or sentinel-only).",
+        "risk_callout": "Highest-risk migration. Validate convention on all 10 prior files before approaching closed-issues. Specifically: confirm the grep-by-id pattern works on a 1.4MB JSONL within acceptable wall-clock; confirm analyst's bulk-OBE pattern (multiple ISS references in one analyst run) works with a single multi-pattern grep."
+      }
+    }
+  },
+
+  "consumer_protection_matrix": [
+    {
+      "consumer": "PROP-009r2 3-day rolling audit",
+      "what_it_does": "Reads priority-queue.json history for last 3 days, computes ratio of strict_queue_id pops vs other pop_reasons. Audit's contract: at least one strict_queue_id pop per recent window, majority-strict ratio over 3 days. Drives the enforce-flag flip decision (decider Step E2 + tinker Mode 2 audit).",
+      "current_access_pattern": "JSON.parse priority-queue.json, filter pq.history by popped_at within 3-day window, count by pop_reason.",
+      "post_migration_access_pattern": "Streamed read of priority-queue-archive.jsonl line-by-line, filter by popped_at within 3-day window, count by pop_reason. Memory footprint drops; semantic identical.",
+      "exact_code_change": "Replace:\n```js\nconst pq=JSON.parse(fs.readFileSync('monitor/curmudgeon/priority-queue.json','utf8'));\nconst recent=pq.history.filter(h=>new Date(h.popped_at)>=cutoff);\n```\nWith:\n```js\nconst readline=require('readline');\nconst recent=[];\nconst rl=readline.createInterface({input:fs.createReadStream('monitor/curmudgeon/priority-queue-archive.jsonl')});\nawait new Promise(res=>{rl.on('line',l=>{const h=JSON.parse(l); if(new Date(h.popped_at)>=cutoff)recent.push(h);});rl.on('close',res);});\n```\nFor synchronous use (no top-level await): `const lines=fs.readFileSync('monitor/curmudgeon/priority-queue-archive.jsonl','utf8').split('\\n').filter(Boolean); const recent=lines.map(l=>JSON.parse(l)).filter(h=>new Date(h.popped_at)>=cutoff);`",
+      "verification": "Pre-migration: capture 3-day audit output. Post-migration: re-run audit on backfilled archive; output must be byte-identical. Tinker Mode 2 verifies on every audit run during the dual-write phase (both pre- and post-migration code paths produce identical results).",
+      "preservation_status": "PRESERVED with explicit code-change spec above."
+    },
+    {
+      "consumer": "PROP-019 + PROP-020 fingerprint compare",
+      "what_it_does": "Reads monitor/curmudgeon/reviews/*.json for fingerprint comparison (drift detection).",
+      "post_migration_access_pattern": "UNCHANGED. The reviews directory is per-file-per-review, already correctly shaped, NOT touched by this directive.",
+      "preservation_status": "PRESERVED — out of scope per directive non_goals.",
+      "verification": "Confirm tinker's PROP-022 implementation pass DOES NOT touch monitor/curmudgeon/reviews/ in any commit."
+    },
+    {
+      "consumer": "Decider lifecycle verification (closed-issues / verification_pattern)",
+      "what_it_does": "Decider writes closing records with verification_pattern field, then on next cycle workspace-sync's verifier flips status:fixed-pending-verification → status:fixed if the verification_pattern grep matches main HEAD. Decider also reads closed-issues to enforce write-verify discipline (Discipline 1a — push-verify).",
+      "current_access_pattern": "JSON.parse closed-issues.json, find by id, read verification_pattern; mutate status field; rewrite full file.",
+      "post_migration_access_pattern": "Append closing record to closed-issues-archive.jsonl. Verifier reads archive grep-by-id, performs main-HEAD content check, then APPENDS a status-update record to the archive (e.g., {id:'ISS-N', status:'fixed', verified_at:'<ts>', verified_by:'workspace-sync-verifier'}). Lookup readers always read the LAST archive line for a given id (since archive is immutable, status updates are append-only events that supersede prior records). Pattern: `grep '\"id\":\"X\"' archive | tail -1`.",
+      "exact_code_change_for_status_update": "Currently in workspace-sync verifier (workspace-sync.md Mech 1):\n```js\nconst c=JSON.parse(fs.readFileSync('monitor/decisions/closed-issues.json','utf8'));\nconst issue=c.issues.find(i=>i.id===id); issue.status='fixed';\nfs.writeFileSync('monitor/decisions/closed-issues.json',JSON.stringify(c,null,2));\n```\nNew:\n```js\nfs.appendFileSync('monitor/decisions/closed-issues-archive.jsonl', JSON.stringify({id, status:'fixed', verified_at:new Date().toISOString(), verified_by:'workspace-sync-verifier', supersedes_event:'fixed-pending-verification'})+'\\n');\n```\nReader (lookup by id) reads `tail -1` of grep matches; the most recent line wins. This matches event-sourcing semantics — old events are immutable, new events represent state transitions.",
+      "preservation_status": "PRESERVED with explicit code-change spec. Event-sourcing pattern is the correct fit for append-only archive + status updates.",
+      "verification": "Pre-migration: capture lifecycle of an issue (open → fixed-pending-verification → fixed). Post-migration: same lifecycle re-executed; final status reachable by `grep id | tail -1`."
+    },
+    {
+      "consumer": "Integrity coverage checks",
+      "what_it_does": "structure-integrity walks expansion-tracker.json for collision detection (concurrent agent writes silently dropping entries) and walks priority-queue + tracker for structural audits.",
+      "current_access_pattern": "JSON.parse, walk full array.",
+      "post_migration_access_pattern": "Walk LIVE file (small) for active items; walk ARCHIVE file (line-streamed) for terminal items if needed for collision detection. Code change: replace `t.items.find(i=>i.id===id)` with two-pass: live-find + archive-grep.",
+      "exact_code_change": "Currently in structure-integrity.md collision check:\n```js\nconst t=JSON.parse(fs.readFileSync('monitor/analyst/expansion-tracker.json','utf8'));\nconst dup=t.items.filter(i=>i.id===id);\n```\nNew:\n```js\nconst t=JSON.parse(fs.readFileSync('monitor/analyst/expansion-tracker.json','utf8'));\nconst liveDup=t.items.filter(i=>i.id===id);\nconst archDup=execSync(\\`grep '\"id\":\"${id}\"' monitor/analyst/expansion-tracker-archive.jsonl 2>/dev/null || true\\`,{encoding:'utf8'}).split('\\n').filter(Boolean).map(l=>JSON.parse(l));\nconst dup=[...liveDup, ...archDup];\n```\nNote: collision detection is daily, not per-run; wall-clock cost is tolerable.",
+      "preservation_status": "PRESERVED with explicit code-change spec.",
+      "verification": "Pre-migration: integrity report on a known-collided EXP. Post-migration: same EXP detected by two-pass logic."
+    },
+    {
+      "consumer": "Tinker's own audit lenses (Mode 1 pipeline-health, Mode 3 cost-engineering)",
+      "what_it_does": "Mode 1 reads tracker.json, expansion-tracker.json, priority-queue.json for staleness checks (mtime-based). Mode 3 reads file sizes for bloat tracking.",
+      "current_access_pattern": "stat-mtime + JSON.parse for size.",
+      "post_migration_access_pattern": "Mode 1 staleness — UNCHANGED (mtime works on live file; live file mtime updates on every write). Mode 3 bloat tracking — UPDATED: track live file size separately from archive file size; alert if live file exceeds expected live-state size by 5x (catches re-bloat).",
+      "exact_code_change": "Mode 3 cost-engineering: add per-file `expected_live_state_kb` to tinker config (in tinker-cost-engineering.md). Compute `actual_live_kb` from stat. Alert if actual > 5 × expected.",
+      "preservation_status": "PRESERVED + ENHANCED. Tinker gains a new lens: state-file bloat regression check (see open_design_question 4)."
+    },
+    {
+      "consumer": "Operator workflow",
+      "what_it_does": "Operator currently appends pending notes to <name>.json (human-notes files) and pushes operator-bypass queue items to priority-queue.json.",
+      "post_migration_access_pattern": "UNCHANGED. Operator still writes to <name>.json (live file). Agent moves to archive on consumption. This is the explicit operator contract documented in monitor/prompts/reference/state-file-archives.md.",
+      "preservation_status": "PRESERVED. Operator habits do not change; the convention is uniform across all human-notes files (no file-specific exceptions for operator)."
+    }
+  ],
+
+  "obsolete_justification_cleanup": {
+    "PROP-009r2_history_cap_200": {
+      "location": "monitor/prompts/decider.md line 370 — `// PROP-009r2: bumped history cap 50 -> 200 so 3-day rolling audit window always fits.`",
+      "original_justification": "PROP-009r2 (2026-04-18) was filed when curmudgeon's queue had a 50+ item backlog and the 3-day audit window needed to fit ALL of those events to compute a stable strict/soft/legacy ratio. With 50 history slots and ~16 pops/day, 3 days × 16/day = 48 events would not fit; 200 slots = ~12 days of cushion at peak load.",
+      "what_changed_since": "Live queue is currently 0. Recent throughput is ~3-4 reviews/day (per directive context). 3 days × 4/day = 12 events. Even the original 50-slot cap would suffice today.",
+      "new_sizing_in_archive_era": "No cap. The audit reader filters by popped_at >= cutoff against the full archive; there's no 'fixed-size window' anymore. The audit's contract is preserved (3-day rolling window) without caps.",
+      "code_to_remove": "decider.md line 370-371: the `if(pq.history.length>200) pq.history=pq.history.slice(-200)` line. Removed entirely. The history field itself is removed from priority-queue.json (lives in priority-queue-archive.jsonl now).",
+      "documentation_in_PROP_022": "The state-file-archives.md reference doc carries a 'historical caps removed' section listing this and any other caps that were sized for since-resolved load conditions, with links to the original PROPs."
+    }
+  },
+
+  "rollback_story": {
+    "granularity": "PER-FILE, ATOMIC PER FILE. One PR per file's migration. Operator's stated lean.",
+    "argument_for_per_file": "The 11 files have different risk profiles. workspace-sync-skips is verify-only (no rollback needed). closed-issues is highest risk (4 readers, 1.4MB, lookup-by-id critical). Bundling them into one all-or-nothing PR means a closed-issues regression rolls back human-notes too — overkill blast radius. Per-file PRs let each migration be reverted independently when its specific consumer trips a regression.",
+    "argument_against_per_file": "More PRs to track. Higher operator overhead. But the operator can choose to bundle low-risk files (e.g., human-notes ranks 2-5 as one PR) while keeping high-risk ones separate (priority-queue, expansion-tracker, closed-issues each in their own PR). This is the reasonable middle ground.",
+    "per_file_rollback_steps": {
+      "step_1": "Revert the writer code change (writer continues to dual-write).",
+      "step_2": "Revert the reader code change (reader reads live file again, ignores archive).",
+      "step_3": "If backfill ran: optionally re-merge archive entries back into live file via inverse-backfill script, OR leave the archive in place (archive is additive; doesn't break live readers).",
+      "step_4": "Mark PROP-022-<file> reverted in tinker tracking."
+    },
+    "rollback_invariants": "Archive files are NEVER deleted on rollback. They are immutable append-only logs. If a migration is reverted, the archive remains on disk as a forensic record but is no longer the canonical source. Re-applying the migration later is therefore cheap (idempotent backfill: skip entries already in archive)."
+  },
+
+  "PROP_018_classifications": {
+    "note": "Each new <name>-archive.jsonl file needs an entry in monitor/sync-manifest.json (PROP-018 schema). Direction: workspace_to_clone (decider/curmudgeon/analyst/social mutate from clone, but archives are append-only-friendly so workspace_to_clone via smart_copy mtime-guard works fine). Classification: 'log' for ID-lookup-light archives, 'ledger' for ID-lookup-critical archives.",
+    "entries": [
+      {
+        "path": "monitor/curmudgeon/priority-queue-archive.jsonl",
+        "direction": "workspace_to_clone",
+        "owner_agent": "decider",
+        "classification": "log",
+        "notes": "Archive of popped queue items. Append-only via decider Step E2. PROP-009r2 audit reader reads this for 3-day rolling window."
+      },
+      {
+        "path": "monitor/decisions/human-notes-archive.jsonl",
+        "direction": "workspace_to_clone",
+        "owner_agent": "decider",
+        "classification": "log",
+        "notes": "Archive of consumed/superseded notes from monitor/decisions/human-notes.json."
+      },
+      {
+        "path": "monitor/curmudgeon/human-notes-archive.jsonl",
+        "direction": "workspace_to_clone",
+        "owner_agent": "curmudgeon",
+        "classification": "log",
+        "notes": "Archive of consumed notes from monitor/curmudgeon/human-notes.json."
+      },
+      {
+        "path": "monitor/analyst/human-notes-archive.jsonl",
+        "direction": "workspace_to_clone",
+        "owner_agent": "analyst",
+        "classification": "log",
+        "notes": "Archive of consumed notes from monitor/analyst/human-notes.json."
+      },
+      {
+        "path": "monitor/social/human-notes-archive.jsonl",
+        "direction": "workspace_to_clone",
+        "owner_agent": "social",
+        "classification": "log",
+        "notes": "Archive of consumed notes from monitor/social/human-notes.json."
+      },
+      {
+        "path": "monitor/decisions/closed-issues-archive.jsonl",
+        "direction": "workspace_to_clone",
+        "owner_agent": "decider",
+        "classification": "ledger",
+        "notes": "Archive of closed issues — replaces monitor/decisions/closed-issues.json. ID-lookup critical (analyst OBE, curmudgeon batch-triage, decider intake, social dedup). Event-sourcing pattern: status updates append new lines; readers `grep id | tail -1`."
+      },
+      {
+        "path": "monitor/decisions/processed-reviews-archive.jsonl",
+        "direction": "workspace_to_clone",
+        "owner_agent": "decider",
+        "classification": "log",
+        "notes": "Archive of processed review filenames — replaces monitor/decisions/processed-reviews.json. Membership check via grep."
+      },
+      {
+        "path": "monitor/curmudgeon/tracker-archive.jsonl",
+        "direction": "workspace_to_clone",
+        "owner_agent": "curmudgeon",
+        "classification": "log",
+        "notes": "Archive of reviewed points from monitor/curmudgeon/tracker.json."
+      },
+      {
+        "path": "monitor/analyst/expansion-tracker-archive.jsonl",
+        "direction": "workspace_to_clone",
+        "owner_agent": "decider",
+        "classification": "ledger",
+        "notes": "Archive of integrated/cancelled/superseded/subsumed expansions. ID-lookup occasional (structure-integrity collision detection)."
+      },
+      {
+        "path": "monitor/analyst/attention-inbox-archive.jsonl",
+        "direction": "workspace_to_clone",
+        "owner_agent": "analyst",
+        "classification": "log",
+        "notes": "Archive of resolved attention-inbox items."
+      }
+    ],
+    "self_entry_note": "monitor/integrity/workspace-sync-skips.jsonl already has a PROP-018 entry (classification: log per the sample in PROP-018). No change needed."
+  },
+
+  "regression_test": {
+    "test_strategy": "Per-file pre/post assertions. Each file's migration must pass three classes of tests: (1) consumer regression — no consumer reads stale data or crashes on missing fields; (2) backfill correctness — archive contains every terminal record from pre-migration; (3) round-trip — a write → read sequence produces identical observable state pre- and post-migration.",
+    "per_file_tests": {
+      "monitor/curmudgeon/priority-queue.json": {
+        "pre_state": "Capture pq.history.filter(h=>popped_at>=cutoff) output for cutoff=3 days ago. Save as priority-queue-pre-migration.json.",
+        "migration_steps": "1. Touch priority-queue-archive.jsonl. 2. Run backfill script. 3. Update decider Step E2 writer. 4. Update audit reader. 5. Remove pq.history field from priority-queue.json.",
+        "post_state_assertions": [
+          "ASSERT: line count of priority-queue-archive.jsonl == pq.history.length pre-migration (175).",
+          "ASSERT: every (queue_id, popped_at) tuple from pre-migration history appears in archive.",
+          "ASSERT: PROP-009r2 audit re-run produces byte-identical output for 3-day window (or differs only by NEW pops post-migration which is expected).",
+          "ASSERT: priority-queue.json size <= 2KB (live state + schema metadata only).",
+          "ASSERT: no consumer (curmudgeon dispatcher, decider intake, tinker) crashes on missing pq.history field."
+        ]
+      },
+      "monitor/decisions/closed-issues.json": {
+        "pre_state": "Capture analyst OBE output for 10 known ISS-NNN ids. Capture curmudgeon Step 8a severity-gate output for 5 known queue items. Save as closed-issues-pre-migration.json.",
+        "migration_steps": "1. Touch closed-issues-archive.jsonl. 2. Run backfill script. 3. Update each of 4 readers (analyst, curmudgeon, decider, social) to grep-by-id pattern. 4. Update decider lifecycle writer to appendFileSync.",
+        "post_state_assertions": [
+          "ASSERT: line count of closed-issues-archive.jsonl == c.issues.length pre-migration (1514).",
+          "ASSERT: every issue id from pre-migration appears in archive as `grep '\"id\":\"X\"' archive | head -1`.",
+          "ASSERT: analyst OBE re-run produces identical output for 10 known ids.",
+          "ASSERT: curmudgeon Step 8a severity-gate re-run produces identical decisions for 5 known queue items.",
+          "ASSERT: decider intake count query returns 1514 (matches pre-migration).",
+          "ASSERT: a write → read round-trip (close issue ISS-X, then look up ISS-X) returns the just-written record.",
+          "ASSERT: workspace-sync verifier flips status:fixed-pending-verification → status:fixed for a known test issue, and `grep '\"id\":\"X\"' archive | tail -1` returns the verified-status line."
+        ]
+      },
+      "monitor/analyst/expansion-tracker.json": {
+        "pre_state": "Capture analyst dispatcher precheck (filter by status=pending+!blocked_on). Capture decider integration loop input (filter by status=complete/revised+!integrated). Capture structure-integrity collision-detection output. Save as expansion-tracker-pre-migration.json.",
+        "migration_steps": "1. Touch expansion-tracker-archive.jsonl. 2. Run backfill script. 3. Update analyst writer (status flips). 4. Update decider integration writer. 5. Update structure-integrity to two-pass over live + archive.",
+        "post_state_assertions": [
+          "ASSERT: line count of archive == 277 (terminal items pre-migration).",
+          "ASSERT: live items.length == 9 (active items pre-migration).",
+          "ASSERT: analyst dispatcher precheck returns same set as pre-migration.",
+          "ASSERT: decider integration loop returns same set as pre-migration.",
+          "ASSERT: structure-integrity collision detection finds the same collisions (two-pass over live + archive matches single-pass over old combined file).",
+          "ASSERT: a known integrated EXP from pre-migration is found by `grep '\"id\":\"EXP-NNN\"' archive | head -1`."
+        ]
+      },
+      "all_other_files": "Apply the same three-test class pattern adapted to file-specific predicates."
+    },
+    "acceptance_criteria": "Every existing consumer test still passes (where 'tests' = the consumer's pre-migration captured behavior). No consumer reads stale data. No consumer crashes on missing fields. Backfill is idempotent on rerun. Tinker's daily Mode 1 finds no stranded patches or staleness flags within 7 days post-migration of each file."
+  },
+
+  "estimated_impact": {
+    "token_reduction_per_dispatcher_run": {
+      "method": "Sum of (per-file dispatcher-time bytes pre-migration) - (per-file dispatcher-time bytes post-migration). Multiply by ~4 chars/token Opus heuristic.",
+      "per_run_savings": {
+        "curmudgeon_dispatcher": "150KB → 10KB = 140KB savings = ~35K tokens/run",
+        "decider_dispatcher": "150KB → 30KB = 120KB savings = ~30K tokens/run (largest savings comes from closed-issues which was loaded for severity lookups)",
+        "analyst_dispatcher": "350KB → 25KB = 325KB savings = ~80K tokens/run (largest single-agent saving — analyst-notes 338KB → 5KB and closed-issues memory drop)",
+        "social_daily": "50KB → 5KB = 45KB savings = ~11K tokens/run"
+      },
+      "daily_token_reduction": "Curmudgeon ~16 runs × 35K = 560K. Decider ~6 × 30K = 180K. Analyst ~12 × 80K = 960K. Social ~1 × 11K = 11K. **Total: ~1.7M tokens/day saved across dispatchers.**"
+    },
+    "wall_clock_reduction": {
+      "per_run": "JSON.parse-and-traverse of large files dominates: ~50-150ms per dispatcher cycle pre-migration. Post-migration: ~5-20ms. Per-run savings ~50-130ms.",
+      "per_day": "(16+6+12+1)×100ms ≈ 3.5 seconds/day. Negligible at the daily level; meaningful if a dispatcher is tail-latency-bound.",
+      "lookup_by_id_change": "JSON.parse-1.4MB-then-find: ~200-400ms. grep-1.4MB-then-JSON.parse-1-line: ~30-80ms. Wins on lookup-heavy paths."
+    },
+    "disk_space_cost": {
+      "archive_files_total": "~3MB across 10 new archive files (mirrors what's leaving live files). Workspace-sync-skips already 529KB.",
+      "live_file_savings": "~2.9MB freed from live files.",
+      "net_disk_change": "~0 (archive bytes ≈ live-file shrinkage). Disk-space concern is not the optimization target.",
+      "long_term": "Archives grow unbounded. At current rates: closed-issues +~1MB/year, expansion-tracker +~300KB/year, others negligible. 10MB threshold reached in ~10 years for closed-issues. Future PROP can add monthly partitioning when needed."
+    },
+    "maintenance_cost_going_forward": {
+      "convention_documentation": "ONE reference doc (monitor/prompts/reference/state-file-archives.md) defines the convention; new state files inherit by default; deviation requires documented exception.",
+      "agent_training_cost": "Agent prompts get a one-paragraph summary cross-referencing state-file-archives.md. New agents (or new prompts) reading the convention is mechanical — no agent-specific tribal knowledge.",
+      "ongoing_overhead_per_new_file": "Adding a new state file with the convention is cheap: <name>.json + <name>-archive.jsonl + one PROP-018 manifest entry. The dual-write pattern adds ~5 lines of code to the writer; the live/terminal split is mechanical.",
+      "regression_prevention": "Tinker Mode 3 gains a new check: state-file bloat regression. If any live file exceeds 5x expected live-state size, surface as soft alert. This catches re-accretion of bloat (e.g., a writer that forgot to move terminal items to archive)."
+    }
+  },
+
+  "open_design_questions_addressed": {
+    "q1_single_archive_vs_per_event_files": {
+      "question": "Should the unified convention be a single archive file per source (priority-queue + priority-queue-archive.jsonl) or a directory of per-event files (priority-queue/events/2026-05-05.jsonl)? Argue.",
+      "answer": "SINGLE ARCHIVE FILE PER SOURCE.",
+      "rationale": "JSONL is operationally simpler: one open() per consumer, grep-friendly, jq-friendly, tail-friendly, FUSE no-unlink-friendly. Per-event-files give finer git-blame granularity but: (a) git-blame on JSONL works per-line — already fine-grained; (b) per-event-files mean fs.readdir() then per-file open() for any iterator, which is more inodes and more syscalls; (c) writers would need unique file names per event (timestamp + hash), more complexity than appendFileSync. The win for per-event-files would be 'each event is its own commit, easier to revert one event' — but archives are immutable append-only logs; there is no 'revert one event' use case. Single archive file wins on every axis that matters.",
+      "tradeoff_acknowledged": "If a future use case demands per-event commit granularity (e.g., a per-event review workflow), the convention can specify exceptions. Default is single-file."
+    },
+    "q2_automatic_rotation_vs_unbounded": {
+      "question": "Should the convention include automatic rotation (e.g., monthly archive files) or unbounded append? Argue.",
+      "answer": "UNBOUNDED APPEND DEFAULT. Rotation only when individual archive exceeds 10MB.",
+      "rationale": "Today's largest archive after migration would be closed-issues at ~1.4MB. workspace-sync-skips at 0.5MB. None exceed 10MB. Adding rotation now is premature complexity. Rotation involves either rename() (FUSE-incompatible — see q3) or date-partitioned filenames (complicates readers). Both are deferrable.",
+      "rotation_trigger": "Single archive file exceeds 10MB.",
+      "rotation_mechanism_when_needed": "Operator runs a one-shot script: (1) write archive content into <name>-archive-history.jsonl (a NEW file containing all old data), (2) truncate <name>-archive.jsonl to empty (`fs.writeFileSync(path, '')` — works on FUSE since no unlink), (3) writers continue appending to <name>-archive.jsonl (now starts fresh). Readers iterate `<name>-archive*.jsonl` glob. No rename needed.",
+      "documentation": "The 10MB threshold and rotation procedure live in state-file-archives.md§rotation. Operators don't need to think about it until a file crosses the threshold."
+    },
+    "q3_fuse_no_unlink_interaction": {
+      "question": "How does the convention interact with FUSE's no-unlink limitation? Archive files should be append-only-friendly to avoid unlink entirely. Confirm the design doesn't require deleting old archive files.",
+      "answer": "FULLY COMPATIBLE. The convention NEVER unlinks any archive file.",
+      "details": [
+        "appendFileSync — works on FUSE (creates if absent, appends if present, no unlink).",
+        "Reader streaming — works on FUSE (open + read, no unlink).",
+        "Truncation (the rotation mechanism in q2) uses `writeFileSync(path, '')` which overwrites with empty content — does NOT call unlink. Works on FUSE.",
+        "Live file mutation — same as today (writeFileSync overwrites in place; no unlink). Works on FUSE.",
+        "Backfill scripts — write a NEW archive file (target file does not pre-exist before the touch). Append from there. No unlink."
+      ],
+      "lock_files_concern": "The known FUSE issue with .git/index.lock does not apply here because archives never use git lock files (appendFileSync doesn't take locks)."
+    },
+    "q4_integrity_bloat_lint": {
+      "question": "Should integrity gain a new check that surfaces 'state file's live portion exceeds N bytes' as a soft alert — i.e., catch the bloat before it accretes again? Argue.",
+      "answer": "YES. Add monitor/scripts/lint-state-file-bloat.js invoked by structure-integrity daily.",
+      "rationale": "The bloat pattern this PROP fixes is recurring — sizing decisions made under load become permanent unless re-examined (operator's framing). Without a regression check, future bloat can quietly re-accrete. A soft alert (warn, don't block) when a live file exceeds 5x its expected live-state size catches it.",
+      "implementation_sketch": "Each affected live file gets an `expected_live_state_kb` annotation in PROP-018 sync-manifest entry. The lint script reads each entry, computes actual size, alerts if actual > 5×expected. Soft alert lands in monitor/integrity/report-*.json.findings as severity:moderate. Tinker's Mode 1 escalates to recommended_action if 7 consecutive days of alerts.",
+      "deferrable": "Implementation can land as a separate PROP after PROP-022 migrations complete. Don't block PROP-022 on this lint."
+    },
+    "q5_operator_workflow_human_notes": {
+      "question": "Operator workflow: when an operator wants to write a new human note, do they always append to the live file (which is then immediately consumed → archived by the agent), or is there a different write target? Specify the operator-facing contract clearly. Bad answer: 'depends on the file' — the convention should be uniform.",
+      "answer": "ALWAYS APPEND TO THE LIVE FILE (<name>.json). UNIFORM ACROSS ALL HUMAN-NOTES FILES.",
+      "details": "Operator writes a new note with status='pending' to the live file (monitor/decisions/human-notes.json, monitor/curmudgeon/human-notes.json, monitor/analyst/human-notes.json, monitor/social/human-notes.json). The consuming agent (decider/curmudgeon/analyst/social) processes the note, then on completion appends the FULL record (with status='consumed', consumed_at, consumed_by, consumed_action) to <name>-archive.jsonl AND removes from live. Operator NEVER writes directly to <name>-archive.jsonl.",
+      "reading_history": "If an operator wants to look up a historical note, they read the archive file (cat or jq). The live file shows only what's currently pending — clean and readable.",
+      "rule_of_thumb": "Operator-write target is ALWAYS <name>.json. Operator-read target depends on intent: pending → live; historical → archive."
+    },
+    "q6_files_lacking_clear_distinction": {
+      "question": "If a state file currently lacks a clear consumed/active distinction (e.g., closed-issues.json — once an issue is closed, is it 'live state' or 'history'?), how does the archive design handle the ambiguity?",
+      "answer": "Apply the operator's stated rule: if the file is read on every dispatcher cycle, anything not actively-consulted is archive. closed-issues.json: every entry is closed; every reader does lookup-by-id (no iteration of live state); therefore the entire file is ARCHIVE. Live counterpart is empty (or the file is removed).",
+      "rationale": "The semantic test is: 'does any reader do array.filter(predicate) over the contents in the fast path?' For closed-issues, the answer is NO — every reader uses lookup-by-id. The 'live' set is therefore tautologically empty; the file IS the archive.",
+      "applied_to_processed_reviews": "Same logic. processed-reviews.json is read for membership check (`includes(filename)`) — equivalent to lookup-by-id. The whole file is archive. Migration: replace with processed-reviews-archive.jsonl; readers grep.",
+      "general_principle_for_future_files": "If a new file's primary access pattern is lookup-by-id or membership-check, NOT array-iteration, the file is purely archive. Skip the live counterpart. Document the exception in state-file-archives.md§exceptions.",
+      "counter_principle": "If a file has even ONE iteration-based reader in the fast path (e.g., 'list me all open EXPs with status=complete'), it has a live portion — apply the standard live + archive split."
+    }
+  },
+
+  "non_goals_acknowledged": [
+    "DO NOT propose changes to monitor/curmudgeon/reviews/*.json (off-limits).",
+    "DO NOT propose changes to monitor/integrity/drift-audit.json (off-limits).",
+    "DO NOT propose changes to data/wins.json, data/sections.json, etc. (canonical content data).",
+    "DO NOT propose schema changes beyond what's needed for the archive split (processed-reviews.json schema-cleanup is acknowledged but deferred).",
+    "DO NOT broaden scope to other architectural cleanups (open-issues hygiene leaks of 5 closed-status items)."
+  ],
+
+  "completion_criteria": {
+    "file_present": "monitor/tinker/proposals/PROP-022-state-file-archive-architecture.json exists with all 9 deliverable structure sections (audit_pass, unified_archive_convention, per_file_migration_plan, consumer_protection_matrix, obsolete_justification_cleanup, rollback_story, PROP_018_classifications, regression_test, estimated_impact). DONE in this PROP.",
+    "audit_quantified": "Every candidate state file has byte-size + live/history split numbers. DONE in audit_pass.",
+    "convention_concrete": "Unified archive convention specified with example file naming, schema, append semantics, documentation location. DONE in unified_archive_convention.",
+    "per_file_plans_drafted": "Each affected file has a specific migration plan with backward-compat strategy. DONE in per_file_migration_plan.",
+    "consumer_protection_explicit": "PROP-009r2 audit, decider lifecycle, integrity checks, operator workflow each have a verified-preservation entry with code-change spec. DONE in consumer_protection_matrix.",
+    "PROP_018_classifications_proposed": "Each new archive file has a proposed sync-manifest entry. DONE in PROP_018_classifications (10 entries).",
+    "open_questions_addressed": "All 6 open design questions answered with reasoning, not deferred. DONE in open_design_questions_addressed."
+  },
+
+  "cross_references": [
+    "DIRECTIVE-20260506-001 (this PROP responds to it)",
+    "PROP-021 (Option C deferred — this PROP is Option C done right, broadened to pipeline-wide)",
+    "PROP-009r2 (the bumped queue history cap — primary obsolete-justification example)",
+    "PROP-018 (sync manifest — must absorb new archive files in classifications; entries proposed above)",
+    "PROP-019/PROP-020 (fingerprint compare — explicitly off-limits, NOT touched)",
+    "PROP-014-amendment-001 (decider lifecycle additive-edit exception — preserved verbatim; archive event-sourcing is compatible)",
+    "monitor/prompts/decider.md line 370 (the 200-cap line carrying the original justification comment — to be removed in the priority-queue migration)",
+    "monitor/curmudgeon/priority-queue.json (canonical bloat example; rank 6 in migration order)",
+    "monitor/decisions/closed-issues.json (highest-risk migration target; rank 11 in migration order)",
+    "monitor/prompts/reference/state-file-archives.md (NEW reference doc proposed by this PROP; defines the convention; written as part of the migration's first step)"
+  ],
+
+  "supersedes": null,
+  "appendix_proposed_reference_doc_outline": {
+    "filename": "monitor/prompts/reference/state-file-archives.md",
+    "outline": [
+      "## State File Archive Convention",
+      "### Purpose — why state files are split into live + archive",
+      "### The Convention",
+      "  - File naming: <name>.json (live) + <name>-archive.jsonl (archive)",
+      "  - Live state predicate (per-file definition; e.g., `status === 'pending'`, `queue array`, etc.)",
+      "  - Append semantics: appendFileSync only; never unlink, never rewrite",
+      "  - Read patterns: live = JSON.parse; archive = grep-by-id OR streamed line iteration",
+      "### Operator Workflow",
+      "  - Always write to live file. Never write to archive directly.",
+      "  - Reading: pending → live; historical → archive",
+      "### Writer Discipline",
+      "  - Transition pattern: append-to-archive THEN remove-from-live (in that order, atomic per commit)",
+      "  - Event-sourcing for status updates (closed-issues style): append new line per state transition; readers `grep id | tail -1` for current state",
+      "### Reader Discipline",
+      "  - Filter-by-status readers: only read live (terminal items not present)",
+      "  - Lookup-by-id readers: read archive (live file is small or empty)",
+      "  - Iteration readers: read both live and archive (rare; typically structure-integrity collision detection)",
+      "### Files Following the Convention (table linking each live file to its archive sibling, with classification: log vs ledger)",
+      "### Exceptions (any files that legitimately deviate; documented per PROP)",
+      "### Rotation (deferred — rotation procedure documented but not active until any single archive >10MB)",
+      "### Historical Caps Removed (PROP-009r2 200-cap removed; future similar removals listed here)"
+    ],
+    "estimated_size": "~150 lines / ~6KB. Read by tinker (every Mode 3) and by agents only when their state-file write logic is being modified."
+  }
+}
