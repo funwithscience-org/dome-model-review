@@ -248,6 +248,8 @@ smart_copy "${WORKSPACE}/data/uncounted-failures.json" data/uncounted-failures.j
 smart_copy "${WORKSPACE}/monitor/decisions/open-issues.json" monitor/decisions/open-issues.json
 smart_copy "${WORKSPACE}/monitor/decisions/closed-issues.json" monitor/decisions/closed-issues.json
 smart_copy "${WORKSPACE}/monitor/curmudgeon/priority-queue.json" monitor/curmudgeon/priority-queue.json
+# PROP-022 phase 3 (2026-05-06): archive sibling for priority-queue
+smart_copy "${WORKSPACE}/monitor/curmudgeon/priority-queue-archive.jsonl" monitor/curmudgeon/priority-queue-archive.jsonl
 
 # Authored visualization assets. When the analyst writes a new SVG/PNG/PDF
 # illustration alongside a section EXP, the asset reaches FUSE via decider

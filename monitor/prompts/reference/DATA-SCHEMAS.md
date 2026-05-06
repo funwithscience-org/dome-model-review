@@ -106,9 +106,19 @@ Build computes from this file: {{KS_TOTAL}}, {{KS_DECISIVE}}, {{KS_MAJOR}}, {{KS
 
 ## priority-queue.json Schema
 
-Array-of-objects queue file at `monitor/curmudgeon/priority-queue.json`. Decider is the primary writer; operator may push directly via a git clone. History is capped at a rolling window (currently 200 entries per PROP-009r2; was 50).
+Live-state file at `monitor/curmudgeon/priority-queue.json` carrying ONLY the active queue + schema metadata + `next_id` field. Append-only archive at `monitor/curmudgeon/priority-queue-archive.jsonl` carries the full pop history (one JSON object per line). Decider is the primary writer of both; operator may push to the queue directly via a git clone. PROP-022 phase 3 (2026-05-06) split the file; PROP-009r2's 200-entry rolling cap was retired — audit consumers stream-filter the archive by `popped_at` window.
 
-**PROP-009+ history fields** (decider writes these on every pop starting with PROP-009 enforce):
-- `pop_reason` (string): one of `strict_queue_id`, `soft_reviewed_at_after_pushed_at`, `operator_bypass`, `shadow_legacy_substring`. Identifies how the decider's Step E2 filter matched this history entry.
+**Live file top-level fields:**
+- `queue` (array): active items awaiting curmudgeon. Each item has `queue_id`, `target_type`, `target_id`, `reason`, `pushed_by`, `pushed_at`, optional `context_hints`, `require_matching_review_file`, `operator_bypass_reason`.
+- `next_id` (integer): next queue_id to assign. Decider increments on every push.
+- `mode`, `mode_legal_values`, `mode_set_by`, `mode_set_at`, `mode_rules`: queue-mode metadata (PROP-009 enforce/shadow/etc.).
+- `writers`, `readers`: schema metadata.
+- `last_updated` (ISO timestamp).
+
+**Archive file shape (`priority-queue-archive.jsonl`):** one JSON object per line, append-only, no slice cap. Each line is a pop record. Required fields:
+- `queue_id`, `target_id`, `target_type`, `popped_at`, `popped_by`.
+- `pop_reason` (string): one of `strict_queue_id`, `soft_reviewed_at_after_pushed_at`, `operator_bypass`, `shadow_legacy_substring`. Identifies how the decider's Step E2 filter matched this entry.
 - `claimed_review_file` (string|null): basename of the curmudgeon review file this pop claimed, or null for operator bypass / shadow-mode legacy pops.
 - `operator_bypass_reason` (string|null): non-empty reason string when pop_reason is `operator_bypass`; null otherwise.
+
+**Audit consumer pattern (PROP-009r2 3-day rolling check):** stream-read the archive line-by-line, parse each JSON object, filter by `popped_at >= cutoff` (cutoff = now - 3 days), count by `pop_reason`. The strict-majority invariant continues to apply over that window.

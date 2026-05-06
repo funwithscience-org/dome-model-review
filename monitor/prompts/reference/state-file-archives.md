@@ -89,7 +89,7 @@ Each migrated file has an expected live-state size annotation. If the live file 
 | monitor/decisions/human-notes.json | 5 | Phase 2 ✓ (2026-05-06). Pending notes only. 1 currently pending (HNOTE-OPERATOR-DRAIN-MODE-001). |
 | monitor/curmudgeon/human-notes.json | 5 | Phase 2 ✓ (2026-05-06). 0 currently pending. |
 | monitor/social/human-notes.json | 5 | Phase 2 ✓ (2026-05-06). 0 currently pending. |
-| monitor/curmudgeon/priority-queue.json | 2 | Phase 3. Live queue + schema metadata only. |
+| monitor/curmudgeon/priority-queue.json | 5 | Phase 3 ✓ (2026-05-06). Live queue + schema metadata + `next_id` only. History (176 entries) → priority-queue-archive.jsonl. PROP-009r2 200-cap retired (audit consumers stream-filter the archive instead). |
 | monitor/curmudgeon/tracker.json | 10 | Phase 4 |
 | monitor/analyst/attention-inbox.json | 25 | Phase 4 — non-trivial live state (active review backlog) |
 | monitor/analyst/expansion-tracker.json | 30 | Phase 5 |

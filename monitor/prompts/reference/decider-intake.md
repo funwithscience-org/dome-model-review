@@ -213,7 +213,11 @@ For each assessment file found:
 6. Push a curmudgeon queue item for the batch so the verdicts get adversarial review:
 ```javascript
 const pq = JSON.parse(fs.readFileSync('monitor/curmudgeon/priority-queue.json','utf8'));
-const nextId = Math.max(0, ...pq.queue.map(i=>i.queue_id), ...(pq.history||[]).map(i=>i.queue_id)) + 1;
+// PROP-022 phase 3 (2026-05-06): nextId comes from pq.next_id (post-archive-split).
+// Fall back to live-queue-max if the field is somehow missing — defensive but
+// should never fire post-migration. Never re-derive from history; that field no
+// longer exists in the live file.
+const nextId = pq.next_id || (Math.max(0, ...pq.queue.map(i=>i.queue_id||0)) + 1);
 pq.queue.push({
   queue_id: nextId,
   target_type: 'prediction-batch',
@@ -227,6 +231,8 @@ pq.queue.push({
     verdicts_set: verdictSummary
   }
 });
+pq.next_id = nextId + 1;
+pq.last_updated = new Date().toISOString();
 fs.writeFileSync('monitor/curmudgeon/priority-queue.json', JSON.stringify(pq, null, 2));
 ```
    Where `assessedIds` is the list of prediction IDs processed this run. Batch them — one queue item per decider run, not per prediction.

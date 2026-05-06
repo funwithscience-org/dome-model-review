@@ -273,7 +273,12 @@ try{
 const shadow=[]; // would-have-blocked items for migration audit
 const claimsToWrite=[]; // {file, qid, paths:[...]} — flush after filter
 const before=pq.queue.length;
-if(!pq.history) pq.history=[];
+// PROP-022 phase 3 (2026-05-06): pop history moved to priority-queue-archive.jsonl
+// (append-only JSONL). pq.history field no longer exists in the live file. Append
+// directly to the sibling archive when popping. Buffer entries this run, flush
+// once after the queue filter completes.
+const historyArchivePath=CLONE+'/monitor/curmudgeon/priority-queue-archive.jsonl';
+const historyAppend=[]; // entries to append to archive at end of pop pass
 pq.queue=pq.queue.filter(item=>{
   const tid=item.target_id;
   const secMatch=tid.match(/^part(\d+[a-z]?)-(.+)$/);
@@ -304,7 +309,7 @@ pq.queue=pq.queue.filter(item=>{
       // Mark consumed in-memory so a second item this run cannot also claim it.
       for(const r of reviewsMeta){ if(r.file===claimedFile) r.popped_by_queue_id=item.queue_id; }
     }
-    pq.history.push({
+    historyAppend.push({
       queue_id:item.queue_id, target_id:tid, target_type:item.target_type,
       popped_at:new Date().toISOString(), popped_by:'decider',
       pop_reason: strictRev?'strict_queue_id':softRev?'soft_reviewed_at_after_pushed_at':'operator_bypass',
@@ -331,7 +336,7 @@ pq.queue=pq.queue.filter(item=>{
       // Shadow mode: still pop to avoid backlog, but do NOT claim the review file.
       // Deliberately claim-less — the review was written before the push, so it
       // cannot service that push. Binding popped_by_queue_id here would be a lie.
-      pq.history.push({
+      historyAppend.push({
         queue_id:item.queue_id, target_id:tid, target_type:item.target_type,
         popped_at:new Date().toISOString(), popped_by:'decider',
         pop_reason:'shadow_legacy_substring', claimed_review_file:null
@@ -380,8 +385,15 @@ if(shadow.length){
   console.log('PROP-009 shadow: '+shadow.length+' NEW item(s) '+(enforce?'BLOCKED (kept in queue)':'logged (shadow mode — popped anyway)')+' (dedupe skipped prior same-tuple entries)');
 }
 console.log('PROP-009 review read: fuse='+sourceCounts.fuse+' clone='+sourceCounts.clone+' union='+reviewFilesUnion.length+' enforce='+enforce);
-// PROP-009r2: bumped history cap 50 -> 200 so 3-day rolling audit window always fits.
-if(pq.history.length>200) pq.history=pq.history.slice(-200);
+// PROP-022 phase 3 (2026-05-06): flush pop history to archive (append-only JSONL).
+// PROP-009r2's 200-entry slice cap is OBSOLETE — archive carries the full record;
+// audit consumers stream-filter by popped_at timestamp window. Live file no longer
+// contains `history` at all. The cap was sized for an April-2026 backlog audit need
+// that has since drained; structural sizing replaces in-band caching.
+if(historyAppend.length>0){
+  const lines=historyAppend.map(h=>JSON.stringify(h)).join('\n')+'\n';
+  fs.appendFileSync(historyArchivePath, lines);
+}
 const after=pq.queue.length;
 fs.writeFileSync(CLONE+'/monitor/curmudgeon/priority-queue.json',JSON.stringify(pq,null,2));
 if(before!==after){
