@@ -477,7 +477,8 @@ Write to `monitor/integrity/report-YYYY-MM-DDTHH-MM.json` (include hour and minu
       "category": "broken_anchor|broken_link|nav_chain|data_mismatch|build_drift|heading_hierarchy",
       "description": "What's wrong",
       "location": "file:line or URL",
-      "suggested_fix": "How to fix it"
+      "suggested_fix": "How to fix it",
+      "tracked_under": "ISS-NNN | null"
     }
   ],
   "summary": "One-paragraph human-readable summary"
@@ -496,6 +497,16 @@ If `overall_status` is "fail", also write to `monitor/integrity/alerts.txt` so t
 - **Major**: Data-prose count mismatches, missing WIN detail popups, data source links broken (NOAA, USGS, etc.)
 - **Moderate**: External data source links timing out, heading hierarchy issues, minor formatting inconsistencies
 - **Minor**: Redirect changes on external links (still works but URL changed), cosmetic issues
+
+## Tracking Findings Against Open ISSs
+
+For every finding (any severity), before emitting it, search `monitor/decisions/open-issues.json` for an existing ISS that matches this finding by `category` + `location` (or close textual match). If matched, set `tracked_under: "ISS-NNN"` on the finding. Decider's Step 1d (per `reference/decider-intake.md`) uses this signal: a finding with `tracked_under` set is no-op'd by the decider (already-tracked); a finding with `tracked_under: null` triggers ISS creation.
+
+**Why this matters**: integrity historically had moderates that recurred on every run forever because the decider had no instruction to track them. Decider now creates ISSs for un-tracked moderates; integrity now annotates already-tracked findings so decider doesn't re-create duplicates. The two prompt edits (decider intake + integrity tracking) close the loop.
+
+**Severity downgrade for tracked findings**: a finding with `tracked_under` set MAY be downgraded one severity level in the report's `summary` and `latest-integrity-summary.txt` (e.g., a `moderate` tracked under an open ISS → mention as "informational, tracked under ISS-NNN"). The `issues_found[].severity` field stays at original severity for audit completeness, but the human-readable summary should reflect tracked status so operators don't see the same moderate flagged on every run.
+
+**Bug-class history**: the loop where a moderate finding recurs without action existed from at least 2026-04 through 2026-05-06, when integrity itself flagged it ("if no one ever picks them up the warn rating becomes meaningless"). The dual-prompt fix landed 2026-05-06 closes the loop. If you find moderates recurring without `tracked_under` post-fix, that's a regression — flag in the `summary`.
 
 ## Critical Rules
 

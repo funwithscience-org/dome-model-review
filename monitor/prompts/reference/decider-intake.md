@@ -53,6 +53,38 @@ Check `monitor/integrity/` for most recent `report-*.json`:
 - Broken external links → add as citation issues
 - Data-prose mismatches → flag for investigation
 
+**Moderate findings (`severity: "moderate"`)** — must be triaged on EVERY decider run. Background: integrity historically raised moderates that decider read but never actioned, because the only explicit guidance was for `overall_status: "fail"` (critical). Result: moderates recurred across integrity runs indefinitely with no tracking ISS, no action, and no audit trail of dismissal. Integrity itself flagged this gap (2026-05-06: "if no one ever picks them up the warn rating becomes meaningless"). New procedure:
+
+For each `severity: "moderate"` finding in the integrity report:
+
+1. **Dedupe against existing tracking.** Search `monitor/decisions/open-issues.json` and recently-closed (last 7 days) issues for an ISS that matches the finding by `category` + `location` (or close textual match if those fields aren't present). If found:
+   - If matched ISS is **open** → no action this run (already tracked; will route normally on its own ISS lifecycle).
+   - If matched ISS is **recently closed** → no action this run (recently resolved; if integrity is re-flagging the same thing, that's a moderate-becomes-major signal; surface in `recommended_actions` as "integrity re-flagged ISS-NNN within 7d of closure — verify fix took effect").
+
+2. **If not matched, create an open ISS** with:
+   ```json
+   {
+     "id": "ISS-{next_id}",
+     "title": "Integrity moderate: {finding.description first 80 chars}",
+     "description": "{full finding.description}",
+     "location": "{finding.location}",
+     "category": "integrity_finding",
+     "severity": "moderate",
+     "status": "open",
+     "source": "integrity-{report_date}",
+     "suggested_fix": "{finding.suggested_fix}",
+     "created_at": "{ISO now}",
+     "created_by": "decider-step1d-moderate-triage"
+   }
+   ```
+   Increment `next_id` per Step 5 conventions. The ISS routes normally on subsequent decider runs (analyst self-apply, fixer assignment, or pending-human escalation per the ISS's own routing rules).
+
+3. **Never silently drop** an unactioned moderate. The two acceptable paths are: (a) it's already tracked, no-op; (b) it's not tracked, create an ISS. If you believe a moderate is wontfix, create the ISS with `status: "wontfix"` and a one-line `wontfix_reason` so future readers know the finding was considered and dismissed deliberately. The pattern integrity recommends (and was used for EXP-052): explicit ISS classification beats silent drop.
+
+4. **Surface in daily report.** In `recommended_actions` of the daily report, emit a single concise line summarizing this run's moderate triage outcome — e.g., "Integrity report 2026-05-06T01:17 had 2 moderates: 1 already tracked (ISS-1218), 1 created (ISS-1859)." Don't echo individual finding text; the ISSs themselves carry it. This satisfies the existing "don't keep echoing" rule (decider-reporting.md L94-100) — once a finding has an ISS, it stops appearing in `recommended_actions` directly.
+
+**Why this matters more than it sounds**: integrity's "moderate" severity signal becomes meaningful only when there's a deterministic action attached. Without action, every recurrence is operator-attention-noise. With action (ISS creation + routing), the moderate becomes work that flows through the normal pipeline like any other ISS.
+
 ## Step 1e: Prediction Failures
 
 `data/uncounted-failures.json` tracks dome prediction failures. Add entries when:
