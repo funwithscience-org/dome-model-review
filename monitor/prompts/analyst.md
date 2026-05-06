@@ -123,7 +123,7 @@ Trigger: The decider (or human) flagged something for the analyst to re-examine.
 
 **Process in three phases per run** (added 2026-04-26 to drain a 71-item / 14-day backlog accumulated during the dispatcher-shape silent-skip bug; mirrors curmudgeon Step 8a pattern):
 
-**Phase 1 — OBE triage (up to 10 items, no analysis).** Many old items reference an ISS or EXP whose state has since moved on (closed / integrated). For each pending item, run mechanical checks. If any pass, mark `status: "resolved"`, set `resolved_at` (ISO timestamp), set `resolved_by: "mode2b-obe-triage"`, and `resolved_reason: "OBE: <one-liner>"` — no expansion or proposal written. Limit: 10 OBEs per run so a bad heuristic can't dismiss the whole inbox.
+**Phase 1 — OBE triage (up to 10 items, no analysis).** Many old items reference an ISS or EXP whose state has since moved on (closed / integrated). For each pending item, run mechanical checks. If any pass, mark `status: "resolved"`, set `resolved_at` to the **actual current time at the moment of resolution** (`new Date().toISOString()` — never a batch-rounded or template/nominal timestamp; each OBE'd item gets its own per-item timestamp even if 10 items resolve within the same run, so the audit trail reflects when each was actually evaluated), set `resolved_by: "mode2b-obe-triage"`, and `resolved_reason: "OBE: <one-liner>"` — no expansion or proposal written. Limit: 10 OBEs per run so a bad heuristic can't dismiss the whole inbox.
 
 OBE criteria — any ONE triggers dismissal:
 - Item references `ISS-N` (regex `\bISS-\d+\b` in reason); look up N in `monitor/decisions/closed-issues.json`. **Closure date field: `fixed_at` is canonical** (present on ~74% of closed issues). For older entries fall back through `closed_at` → `fix_date` → `resolved_at` if `fixed_at` is absent. If found AND closure date ≥3 days ago, OBE: `"OBE: ISS-N closed <date>"`. If the issue is in closed-issues but no closure date can be parsed, treat the *file-presence* itself as evidence of closure and OBE with `"OBE: ISS-N in closed-issues (date field missing)"` — being in closed-issues is the structural fact; the date is decoration.
@@ -140,7 +140,7 @@ Do NOT OBE if the item is `priority: high` or has any "blocker" / "critical" tag
 4. `priority` not in {`high`, `blocker`} and reason doesn't contain "verdict change", "promoted to", "neutralization"
 5. Doesn't require touching `data/sections.json` or `data/wins.json` or writing a new EXP
 
-For each batched item: do the empirical verification (one bash/node check), mark resolved with `resolved_by: "mode2b-batch"` and `resolved_reason: "<one-liner of what was verified>"`. If verification fails (claim doesn't match data), abort batch — write a normal expansion or issue-proposal for that one and STOP for this run.
+For each batched item: do the empirical verification (one bash/node check), mark resolved with `resolved_by: "mode2b-batch"` and `resolved_reason: "<one-liner of what was verified>"`. Set `resolved_at` to the actual current time at resolution (`new Date().toISOString()`) — per-item, not a batch-rounded timestamp. If verification fails (claim doesn't match data), abort batch — write a normal expansion or issue-proposal for that one and STOP for this run.
 
 **Phase 3 — Singleton substantive (1 item per run, original procedure).** If anything remains after OBE and batch, process ONE per the original procedure:
 - Read the `reason` field to understand what changed
