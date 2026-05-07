@@ -5,9 +5,7 @@
   "category": "workflow_redesign",
   "target": "decider self-apply path + apply-patches.js + workspace-sync NEVER_PUSH semantics + test.js schema coupling",
   "title": "Source-file rescue gap — decider's coherent multi-file commits silently drop their source-code half on universal-pusher rescue",
-
   "problem": "The universal-pusher rescue path (added 2026-04-26 commit 2379de4) rescues data/*.json + monitor/* files when decider's push 403s, but cannot rescue files in NEVER_PUSH (test.js, build.js, build-scripts/*, CLAUDE.md, monitor/prompts/*.md). When decider authors a coherent commit that crosses both buckets — e.g. data/predictions.json adds a new enum value AND test.js extends the validator array to accept it — and the push 403s, the data half survives and the source half is silently lost. origin/main now has the data delta but not the source delta, so tests fail at the next test cycle. Decider's daily report claims completion (in good faith — its local commit succeeded), but origin/main has only half the work. Operator must manually re-author the source half and force-resolve.",
-
   "forensic_trace": {
     "method": "Walked all decider/operator-rescue/PROP commits in main from 2026-04-18 through 2026-05-02 (14d window). For each, listed files touched. Filtered for commits that modified BOTH a data/*.json file AND a NEVER_PUSH source file (test.js, build.js, build-scripts/*, CLAUDE.md, monitor/prompts/*.md). Excluded docs/index.html and docs/assets/* because those are deterministic build products, not source-code changes that decider can author independently.",
     "decider_commits_scanned": 317,
@@ -18,8 +16,13 @@
         "commit_local": "decider 13:19Z run 2026-05-02 (commit hash never reached origin/main; lost when clone destroyed)",
         "commit_rescue": "ed5218660dd8fdd9b5bf4feece46e8c02bcf71ac (workspace-sync 14:05:52Z 2026-05-02)",
         "commit_operator_fix": "b2bfd7431029e5edf5880af0e5b764a0d8e96bdf (steve 16:23:01Z 2026-05-02)",
-        "data_files_touched": ["data/predictions.json", "data/uncounted-failures.json"],
-        "source_files_touched": ["test.js"],
+        "data_files_touched": [
+          "data/predictions.json",
+          "data/uncounted-failures.json"
+        ],
+        "source_files_touched": [
+          "test.js"
+        ],
         "push_outcome": "403 — confirmed via monitor/integrity/push-failure-2026-05-02T13-22.json. Universal-pusher rescued 15 files to FUSE but workspace-sync's NEVER_PUSH filter dropped test.js. Daily-report claims 'test.js updated to recognize tacit_withdrawal and dome_silent_terminal as valid enum values' but rescue commit ed521866 has no test.js entry.",
         "test_outcome": "2 test failures in main: 'PRED-105 author_status dome_silent_terminal is valid' FAIL, 'PRED-105 our_verdict tacit_withdrawal is valid' FAIL. Tests went 3518/0 → 3516/2 on main, undetected for ~3 hours until operator ran tests manually.",
         "operator_fix_summary": "b2bfd743 added both new enum values to validAuthorStatuses + validOurVerdicts in test.js. Tests back to 3518/0. Manual fix only — structural bug remains."
@@ -27,24 +30,40 @@
       {
         "instance": "INSTANCE-2 (clean push — no rescue gap, but same coupling shape)",
         "commit": "038abcfb94be7f3ee36ea09115902393d7f6bcde (Decider 2026-04-20T15:03Z)",
-        "data_files_touched": ["data/predictions.json", "data/uncounted-failures.json", "data/wins.json"],
-        "source_files_touched": ["test.js"],
+        "data_files_touched": [
+          "data/predictions.json",
+          "data/uncounted-failures.json",
+          "data/wins.json"
+        ],
+        "source_files_touched": [
+          "test.js"
+        ],
         "push_outcome": "Successful push (commit lives in main). test.js delta added 'dome_silent' and 'silent_ignore' to the same validator arrays — exact same shape of change as INSTANCE-1, executed cleanly because the push didn't 403. This commit predates universal-pusher (2026-04-26) so the bug couldn't have manifested even on 403 — the prior workflow required operator manual rescue, which carries source via clone.",
         "implication": "The pattern (decider extends a data/predictions.json enum AND extends the test.js validator array in the same commit) is RECURRING. We've seen it ~once per 12 days. INSTANCE-1 is the first time it intersected with universal-pusher's 403 path."
       },
       {
         "instance": "INSTANCE-3 (clean push)",
         "commit": "f8e275abfe1c9db27da6da76ebad5c299d932efb (Decider PROP-010 2026-04-21T22:34Z)",
-        "data_files_touched": ["data/sections.json", "data/wins.json"],
-        "source_files_touched": ["build.js", "monitor/prompts/reference/decider-patches-and-selfapply.md"],
+        "data_files_touched": [
+          "data/sections.json",
+          "data/wins.json"
+        ],
+        "source_files_touched": [
+          "build.js",
+          "monitor/prompts/reference/decider-patches-and-selfapply.md"
+        ],
         "push_outcome": "Successful push. PROP-010 was the canonical case where decider self-applied a multi-file PROP that included a source-code change to build.js plus a prompt edit to decider-patches-and-selfapply.md plus data updates. Worked because no 403.",
         "implication": "PROP integrations are the MOST EXPENSIVE class to lose if 403'd — they're large, multi-file, and human-authored intent. This is the second-rarest but highest-stakes shape of the bug."
       },
       {
         "instance": "INSTANCE-4 (operator rescue, source survived because of clone-based rescue)",
         "commit": "c8af541c928ffe737917f666d4863338535c474f (Operator FUSE→git rescue push 2026-04-25T19:11Z)",
-        "data_files_touched": ["data/wins.json"],
-        "source_files_touched": ["build-scripts/generate-html.js"],
+        "data_files_touched": [
+          "data/wins.json"
+        ],
+        "source_files_touched": [
+          "build-scripts/generate-html.js"
+        ],
         "push_outcome": "Decider 17:28Z push 403'd. Operator ran a manual full-clone rescue that included build-scripts/generate-html.js. Source survived because operator did the rescue from a clone, not via universal-pusher.",
         "implication": "Pre-universal-pusher (≤2026-04-26), 403s required operator clone-rescue — which carried source. Post-universal-pusher, automated rescue covers data only. INSTANCE-1 is the first observed silent-drift case under the new regime. The bug is NEW (introduced 2026-04-26 commit 2379de4)."
       }
@@ -52,7 +71,6 @@
     "incidence_estimate": "1 confirmed silent drift / 7 days post-universal-pusher (1 in window 2026-04-26 → 2026-05-02). Not zero, not high. Underlying coupling pattern (data + source in same commit) is ~1 per 12 days. Conditional on a 403, the silent-drift probability is high (most multi-file decider commits include source if they include schema or build-pipeline changes). 403 base rate over the 14d window: ~5 push failures (per push-failure-* logs) so roughly 36% of decider runs hit 403 at some point.",
     "underdetection_caveat": "The forensic trace is structural (file paths in commit), not semantic (whether the lost source delta actually broke anything). INSTANCE-1 broke 2 tests immediately because test.js is the tightest coupling. A lost build-scripts/generate-html.js delta would cause UI mismatch (no test failure). A lost CLAUDE.md or monitor/prompts/*.md delta would cause silent doc/agent-behavior drift undetected by tests. So the OBSERVED test-failure rate is the LOWER BOUND on actual drift — silent doc/UI drift could be happening every other 403 and we wouldn't notice until much later."
   },
-
   "taxonomy": {
     "summary": "NEVER_PUSH files differ in coupling tightness to data/. The bug bites at different latency depending on which file type was lost.",
     "buckets": [
@@ -95,10 +113,8 @@
     ],
     "headline_finding": "The bug class is REAL but the OBSERVED instance count is LOW (1 confirmed in 7d). The IMPORTANT thing is that the latent surface area is large — a single 403 at the wrong moment can drop a load-bearing source-code change. The directive's framing is correct: this is structural, not anecdotal."
   },
-
   "proposed_fix": {
     "summary": "Three independent mechanisms ranked by recommendation strength. The recommended primary is Mechanism A (HALT-AND-REQUIRE-HUMAN), with Mechanism E (POST-RESCUE FAIL-LOUD GATE) as defense-in-depth. Mechanism D (SCHEMA-OUT-OF-SOURCE) is appealing but optional. Mechanism C (UNIVERSAL-PUSHER EXPANSION) is rejected. Mechanism B (DETECT-AND-WARN PRE-FLIGHT) is the weakest acceptable fallback.",
-
     "mechanism_A_halt_and_require_human": {
       "name": "HALT-AND-REQUIRE-HUMAN at decider's apply step",
       "description": "Modify decider's self-apply procedure (monitor/prompts/reference/decider-patches-and-selfapply.md, Step 6b/3a) so that BEFORE committing, decider runs a pre-commit detection: 'git status --porcelain' finds any modified file in NEVER_PUSH (test.js, build.js, build-scripts/*, CLAUDE.md, monitor/prompts/*.md). If yes, decider STOPS, does NOT commit, writes the work to monitor/decisions/suggested-patches-NNN.json with requires_human_to_apply:true and a list of the source-file diffs, and exits cleanly with a daily-report note. Operator sees the request next cycle and applies in a clone where the push is reliable.",
@@ -126,7 +142,6 @@
       },
       "estimated_implementation_cost": "1-2 hour edit to decider-patches-and-selfapply.md (add pre-commit detect block + suggested-patches schema extension for source-file diffs); 30min smoke test in a clone."
     },
-
     "mechanism_B_detect_and_warn_preflight": {
       "name": "DETECT-AND-WARN PRE-FLIGHT in decider's daily report",
       "description": "Same detection as Mechanism A, but softer: decider STILL applies the patch and STILL pushes. After push, if the commit included NEVER_PUSH source files, decider writes a HARD WARNING in the daily report summary calling out the multi-file commit and instructing the operator to verify both halves landed. The warning includes the rescue-failure scenario explicitly so operator knows to check on a 403.",
@@ -146,7 +161,6 @@
       },
       "estimated_implementation_cost": "30min."
     },
-
     "mechanism_C_universal_pusher_expansion": {
       "name": "UNIVERSAL-PUSHER EXPANSION (allow specific source files into the rescue list)",
       "description": "Whitelist test.js (and possibly build-scripts/*) into the universal-pusher rescue list. Modify workspace-sync.md NEVER_PUSH array to remove these files, and add corresponding entries to the universal-pusher rescue's smart_copy. workspace-sync would then push test.js / build-scripts/ deltas from FUSE → git when FUSE is newer.",
@@ -167,7 +181,6 @@
       "recommendation": "REJECT for the test.js case. The architectural cost (loosening NEVER_PUSH) outweighs the convenience win, and Mechanism A solves the same problem without the loosening. May be reconsidered ONLY if Mechanism A proves too friction-heavy in practice (e.g., operator measures >1 stranded suggested-patches per week and judges the cost of manual application as exceeding the cost of NEVER_PUSH erosion).",
       "estimated_implementation_cost": "1 hour."
     },
-
     "mechanism_D_schema_out_of_source": {
       "name": "SCHEMA-OUT-OF-SOURCE — move test.js's validator arrays to data/schema-values.json",
       "description": "Refactor test.js so the validAuthorStatuses, validOurVerdicts, validEntryTypes, validTestability, validDerivation arrays are loaded from a new data file data/schema-values.json. test.js becomes 'const schemas = JSON.parse(fs.readFileSync(\"data/schema-values.json\",\"utf8\"))' then uses schemas.validAuthorStatuses etc. When decider needs to add a new enum value, it patches data/schema-values.json (a data file, naturally rescuable). test.js is unchanged and the rescue path covers the new enum automatically.",
@@ -190,7 +203,6 @@
       "recommendation": "OPTIONAL companion to Mechanism A. Worth doing IF operator agrees the test.js arrays are stable enough to commit to a one-time refactor. Independent of A — can ship in any order, no interaction. If shipped, INSTANCE-1's exact bug never recurs. If not shipped, INSTANCE-1's exact bug is prevented by Mechanism A's halt instead.",
       "estimated_implementation_cost": "2-3 hours — small data file extraction + test.js refactor + verification that all tests still pass + integrity agent should reference the new data file."
     },
-
     "mechanism_E_post_rescue_fail_loud_gate": {
       "name": "POST-RESCUE FAIL-LOUD TEST GATE in workspace-sync",
       "description": "Modify workspace-sync (monitor/prompts/workspace-sync.md, Step 3 or new Step 3.7) so that AFTER the universal-pusher rescue has staged its files but BEFORE the push, workspace-sync runs 'node test.js'. If tests fail, workspace-sync writes a CRITICAL alert to monitor/integrity/source-rescue-gap-alert-YYYY-MM-DDTHH-MM.json AND blocks the push (so the bad state doesn't propagate to main) AND notifies operator via human-facing summary. The alert names the failing tests, the data files in the rescue commit, and the suspected source-file delta that's missing.",
@@ -214,14 +226,12 @@
       "estimated_implementation_cost": "2 hours."
     }
   },
-
   "recommended_primary": {
     "mechanism": "Mechanism A (HALT-AND-REQUIRE-HUMAN)",
     "rationale": "It's the simplest defensive fix. It catches the bug at the source (the act of authoring the offending coherent commit) rather than at the rescue path. It aligns with existing patterns where decider already hands off non-mechanical changes to humans. It doesn't touch NEVER_PUSH semantics. It doesn't require a refactor. The estimated friction (1 stranded suggested-patches per ~12 days) is well below operator's pain threshold — operator already manually applies PROP integrations at higher cadence than that. The verification pattern is a clean grep against the prompt file. If A doesn't fully suffice — e.g., we observe a real source-file drift slipping through within 30 days — Mechanism E adds defense-in-depth at relatively low cost. Mechanism D ships independently and gives extra coverage for the test.js-schema case specifically; recommended IF the operator agrees the test.js validator arrays are stable enough to commit to a one-time data extraction. Mechanism C is rejected per the directive's non-goal #3 unless a compelling NEVER_PUSH-violation justification is constructed.",
     "secondary_recommendation": "Mechanism E (defense-in-depth) — implement after A has been in production 30 days and operator can decide whether the residual risk warrants the extra workspace-sync complexity.",
     "tertiary_recommendation": "Mechanism D (schema extraction) — useful, optional; ship if operator agrees the test.js arrays are settled."
   },
-
   "measurement_plan": {
     "primary_metric": "Source-file drift incidents in origin/main per 14-day window. Defined as: any commit in main where (a) a data file added a value not represented in the corresponding source-code validator/handler, AND (b) it was caused by decider authorship (not operator manual edit). Detected by running 'node test.js' daily on main HEAD and counting any failure attributable to enum/value mismatches.",
     "baseline_pre_implementation": "1 incident in 7 days (INSTANCE-1, 2026-05-02 PRED-105 schema drift). Extrapolating linearly: ~26 per year. NOT a high rate but unacceptable given the silent-rot variants in build-scripts and prompts that we DON'T detect with tests.",
@@ -230,7 +240,6 @@
     "secondary_metric": "Decider's stranded suggested-patches rate. How many suggested-patches files are written with requires_human_to_apply:true per 7d that operator has NOT applied within 48h of authorship. Target: <1 per 7d. If higher, Mechanism A is creating real friction for the operator and we should reconsider scope (e.g., add Mechanism D specifically to remove the most-frequent class).",
     "tertiary_metric": "False-positive rate on Mechanism A's halt. Cases where the halt fired but the change was actually safe (e.g., a comment-only edit to a build-script). Target: <10% of halts. If higher, refine the detect block (e.g., check 'git diff --stat' and skip if all source-file changes are comments-only)."
   },
-
   "sequencing": {
     "order": "D (independent, optional) -- A (recommended primary) -- E (defense-in-depth, optional)",
     "interactions": {
@@ -247,9 +256,7 @@
     },
     "first_step": "Operator approves PROP-016. Tinker (or operator) implements Mechanism A: edit monitor/prompts/reference/decider-patches-and-selfapply.md to add the NEVER_PUSH pre-commit detect block + suggested-patches schema extension. 30-day monitoring period. Then operator decides on D and E."
   },
-
   "verification_pattern": "[ -f monitor/tinker/proposals/PROP-016-source-file-rescue-gap.json ] && grep -qE 'NEVER_PUSH_PRE_COMMIT_DETECT|halt_on_source_file_diff' monitor/prompts/reference/decider-patches-and-selfapply.md && echo FIXED || echo STILL_BROKEN",
-
   "tradeoffs_meta": {
     "what_we_gain": "Eliminate silent source-file drift in main. Move decider from 'try to ship coherent multi-file changes and hope the push succeeds' to 'recognize coherent multi-file changes and route source-code halves to humans.' Preserve NEVER_PUSH semantics as a hard architectural invariant rather than letting it erode case-by-case.",
     "what_we_might_lose": "Some autonomy. Decider can no longer ship (data + source) coherent changes without operator. Frequency: ~1 per 12d per the trace. Operator becomes the rate-limiter on PROP-style multi-file integrations.",
@@ -265,16 +272,13 @@
       "Operator can absorb 1 stranded suggested-patches per 12d. If operator capacity drops, this assumption fails."
     ]
   },
-
   "estimated_impact": {
     "drift_incidents_prevented_per_year": "~26 (extrapolating INSTANCE-1's 1-per-7d cadence to a year). Conservative — true rate is higher because silent build-scripts/prompts drift would be caught by A but isn't currently detected.",
     "operator_friction_added": "~30 manual applications per year (1 per 12d cadence of multi-file-source+data commits). Each application = ~10min in a clone. Net: ~5 hours/year operator time added.",
     "implementation_cost": "1-2 hours (Mechanism A alone). 4-6 hours (A+D+E)."
   },
-
   "requires_human_judgment": true,
   "why_human_needed": "Operator must decide: (1) approve Mechanism A as primary; (2) decide whether to also ship D (test.js refactor) immediately or wait 30d to see if A is sufficient; (3) decide whether to ship E proactively or only as escalation. Tinker's recommendation is A immediately, D optional alongside, E only if A proves insufficient.",
-
   "non_goals_honored": {
     "no_decider_push_reliability_changes": "PROP-016 does not propose changing decider's PAT, retry behavior, or any push-environment variable. Per directive non_goal #1.",
     "no_prop_014_changes": "PROP-016 does not modify PROP-014 mechanisms or amend it. Per directive non_goal #2. PROP-014 is a sibling bug for state-coupling drift; PROP-016 addresses the disjoint case of source-file rescue gap.",
@@ -282,7 +286,6 @@
     "scope_held_to_NEVER_PUSH_class": "PROP-016 does not address data-only inter-file coherence (already handled by existing decider patterns). Per directive non_goal #4.",
     "no_external_repo_changes": "All proposed changes are within the dome-model-review repo. Per directive non_goal #5."
   },
-
   "cross_references": [
     "DIRECTIVE-20260502-004 (this directive)",
     "DIRECTIVE-20260502-001/002/003 (PROP-014 family — sibling bugs)",
@@ -299,8 +302,10 @@
     "HNOTE-OPERATOR-UNIVERSAL-PUSHER-001 (universal-pusher rationale)",
     "HNOTE-OPERATOR-PAT-DIAGNOSIS-CORRECTION-001 (push 403 is environmental — not the variable to fix)"
   ],
-
-  "status": "proposed",
+  "status": "implemented",
   "escalation_history": [],
-  "implementation_notes": "Mechanism A's exact text for decider-patches-and-selfapply.md will be drafted in the implementation step (separate authorization). Sketch: insert a new pre-commit subsection after Step 6b's 'node build-scripts/apply-patches.js' call and before 'git add data/ docs/ downloads/ monitor/'. Block uses 'git status --porcelain' to find any modified file matching the dynamic NEVER_PUSH list (read from workspace-sync.md array). If any matches, write monitor/decisions/suggested-patches-NNN.json with requires_human_to_apply:true, log to daily report, exit 0 (do NOT commit, do NOT push). If no source-file matches, proceed with normal commit + push flow as today."
+  "implementation_notes": "Mechanism A's exact text for decider-patches-and-selfapply.md will be drafted in the implementation step (separate authorization). Sketch: insert a new pre-commit subsection after Step 6b's 'node build-scripts/apply-patches.js' call and before 'git add data/ docs/ downloads/ monitor/'. Block uses 'git status --porcelain' to find any modified file matching the dynamic NEVER_PUSH list (read from workspace-sync.md array). If any matches, write monitor/decisions/suggested-patches-NNN.json with requires_human_to_apply:true, log to daily report, exit 0 (do NOT commit, do NOT push). If no source-file matches, proceed with normal commit + push flow as today.",
+  "implemented_at": "2026-05-02T17:23:58Z",
+  "implemented_by": "auto-detected by tinker (report-2026-05-07T02-40)",
+  "actual_result": "verification_pattern returned FIXED in tinker run 2026-05-07T02-40. NEVER_PUSH_PRE_COMMIT_DETECT first appeared in commit ae4dd02f (PROP-016 Mechanism A: NEVER_PUSH pre-commit detect — halt-and-strand) on 2026-05-02T18:23:58+01:00. Status field was stale until this run."
 }
