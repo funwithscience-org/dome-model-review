@@ -107,7 +107,7 @@ For each completed/revised expansion not yet integrated:
 
 1. **Read the expansion output file** (e.g., `monitor/analyst/expansions/EXP-001.json`).
 
-2. **CHECK FOR `no_op: true` FIRST.** If the expansion output file has `no_op: true`, the analyst investigated and found nothing to integrate (e.g., decider already patched the target directly via suggested-patches before analyst picked up the item). Do NOT write a patch. Do NOT push to the priority queue. Do NOT close issues (they should already be closed from the direct patch — verify, don't re-close). Just mark the tracker item `integrated: true` with `integrated_at` timestamp and `integration_mode: "no_op_confirmation"`, and log in the daily report: "EXP-NNN no-op: analyst confirmed <target> was already patched directly. Nothing to integrate." Then move to the next expansion.
+2. **CHECK FOR `no_op: true` FIRST.** If the expansion output file has `no_op: true`, the analyst investigated and found nothing to integrate (e.g., decider already patched the target directly via suggested-patches before analyst picked up the item). Do NOT write a patch. Do NOT push to the priority queue. Do NOT close issues (they should already be closed from the direct patch — verify, don't re-close). Mark the tracker item `integrated: true` with `integrated_at` timestamp and `integration_mode: "no_op_confirmation"`, then **archive-and-remove from live** per the same code as Step 6 below (PROP-022 phase 5 — `integrated:true` triggers the live→archive move). Log in the daily report: "EXP-NNN no-op: analyst confirmed <target> was already patched directly. Nothing to integrate." Then move to the next expansion.
 
 3. **CHECK CATEGORY FIRST — category-proposal-writeup items do NOT get integrated as prose.** If the tracker item has `category: "category-proposal-writeup"` (or the output file has `replacement_html: null` plus a `proposal_package` field), this is meta-work that routes through curmudgeon review BEFORE any section content is written. Do NOT write a patch. Instead:
    - **Push to the curmudgeon priority queue** (`monitor/curmudgeon/priority-queue.json`) with `target_type: "proposal"`, `target_id: "<EXP-ID>"`, `reason: "Category proposal package awaiting review before prose"`, and `context_hints.source_file: "monitor/analyst/expansions/<EXP-ID>.json"`, `context_hints.related_issues: [<linked ISS-IDs>]`, `context_hints.human_note: "<NOTE-ID if any>"`. Check for dedup (same target_type+target_id) before pushing.
@@ -131,7 +131,28 @@ For each completed/revised expansion not yet integrated:
    - **wins.json target** (mentions "WIN-NNN", detail fields): May use `replacement_detail_evidence`, `insertion_1`/`insertion_2` (targeted insertions with anchors), or `replacement_html` for full field replacement.
    - **Route patches correctly.** `"file": "wins.json"` or `"file": "sections.json"` so apply-patches.js routes correctly.
 
-6. **Mark expansion `"status": "complete"` AND `"integrated": true`** with `integrated_at` timestamp. Both fields MUST be set together — `integrated: true` with `status: "pending"` will cause the analyst to re-do work you already applied. If you are creating an EXP item and self-integrating it in the same run (e.g., you can apply the fix directly), set `status: "complete", integrated: true` from the start — do NOT leave it `status: "pending"` or the analyst will pick it up.
+6. **Mark expansion `"status": "complete"` AND `"integrated": true`** with `integrated_at` timestamp, then **archive-and-remove from live** (PROP-022 phase 5). Both status fields MUST be set together — `integrated: true` with `status: "pending"` will cause the analyst to re-do work you already applied. The integration writer is the authoritative archival point: setting `integrated:true` triggers the live→archive move per the live_state_predicate (`!integrated && status NOT in [cancelled,superseded,subsumed]`). Code:
+```bash
+node -e "
+const fs=require('fs');
+const livePath='monitor/analyst/expansion-tracker.json';
+const archPath='monitor/analyst/expansion-tracker-archive.jsonl';
+const t=JSON.parse(fs.readFileSync(livePath,'utf8'));
+const item=t.items.find(i=>i.id==='EXP-NNN');
+if(!item){console.error('FAIL: EXP-NNN not in live items');process.exit(1)}
+item.status='complete';
+item.integrated=true;
+item.integrated_at=new Date().toISOString();
+// Append the FULL terminal-state record to archive
+fs.appendFileSync(archPath, JSON.stringify(item)+'\n');
+// Remove from live
+t.items=t.items.filter(i=>i.id!=='EXP-NNN');
+t.last_updated=new Date().toISOString();
+fs.writeFileSync(livePath,JSON.stringify(t,null,2)+'\n');
+console.log('Integrated EXP-NNN: archived + removed from live. Live now:',t.items.length);
+"
+```
+If you are creating an EXP item and self-integrating it in the same run (e.g., you can apply the fix directly), set `status: "complete", integrated: true` from the start — do NOT leave it `status: "pending"` or the analyst will pick it up. In that case the new item never enters live: write it directly to the archive (`fs.appendFileSync(archPath, JSON.stringify(newItem)+'\n')`) and bump `t.next_id` in the live file. Verify by re-reading the live file and confirming the EXP id is NOT present in `t.items`.
 
 7. **Push the rewritten target to the curmudgeon priority queue.** An integrated expansion means a section or WIN just got materially rewritten — curmudgeon needs to re-attack the new text with fresh eyes before it accumulates readers. Pick the target_type that matches:
    - sections.json full replacement → `section-rewrite`
@@ -186,13 +207,21 @@ Set issue status to `"assigned-analyst"` in open-issues.json. Next available EXP
 node -e "
 const fs=require('fs');
 const path='monitor/analyst/expansion-tracker.json';
+const archPath='monitor/analyst/expansion-tracker-archive.jsonl';
 const t=JSON.parse(fs.readFileSync(path,'utf8'));
 if(typeof t.next_id!=='number'){
-  // Self-heal: compute from current items and write it back. This should never
-  // fire post-Phase 0 — a non-numeric next_id indicates either a fresh migration
-  // or a direct human edit that lost the counter. Log LOUDLY so tinker notices.
-  console.error('WARNING: next_id missing or non-numeric; self-heal engaged');
-  t.next_id=t.items.reduce((m,i)=>Math.max(m,parseInt((i.id||'EXP-0').replace('EXP-',''))||0),0)+1;
+  // Self-heal: compute from current items AND archive (PROP-022 phase 5) and
+  // write back. This should never fire post-Phase 0 — a non-numeric next_id
+  // indicates either a fresh migration or a direct human edit that lost the
+  // counter. Log LOUDLY so tinker notices. Post-phase-5 the live array can
+  // be mostly empty after a wave of integrations — max(live) alone would
+  // produce a next_id BELOW recently-archived IDs and cause collisions.
+  console.error('WARNING: next_id missing or non-numeric; self-heal engaged (PROP-022 phase 5 archive-aware)');
+  const liveMax=t.items.reduce((m,i)=>Math.max(m,parseInt((i.id||'EXP-0').replace('EXP-',''))||0),0);
+  const archMax=fs.existsSync(archPath)
+    ? fs.readFileSync(archPath,'utf8').split('\n').filter(Boolean).reduce((m,l)=>{try{return Math.max(m,parseInt((JSON.parse(l).id||'EXP-0').replace('EXP-',''))||0)}catch(e){return m}},0)
+    : 0;
+  t.next_id=Math.max(liveMax, archMax)+1;
   fs.writeFileSync(path,JSON.stringify(t,null,2));
 }
 console.log('EXP-'+String(t.next_id).padStart(3,'0'));
@@ -225,13 +254,19 @@ When `advocate_mode.defense_survives >= 3`:
 node -e "
 const fs=require('fs');
 const path='monitor/analyst/expansion-tracker.json';
+const archPath='monitor/analyst/expansion-tracker-archive.jsonl';
 const t=JSON.parse(fs.readFileSync(path,'utf8'));
 // ID allocation: ALWAYS use t.next_id, NEVER t.items.length+1. The length formula
 // collides on gaps (renames, concurrent allocation, or cross-writer allocation).
 // next_id is the canonical counter and the allocating writer bumps it.
 if(typeof t.next_id!=='number'){
-  console.error('WARNING: next_id missing or non-numeric; self-heal engaged');
-  t.next_id=t.items.reduce((m,i)=>Math.max(m,parseInt((i.id||'EXP-0').replace('EXP-',''))||0),0)+1;
+  // PROP-022 phase 5 archive-aware self-heal — must include archive max-id
+  console.error('WARNING: next_id missing or non-numeric; self-heal engaged (PROP-022 phase 5 archive-aware)');
+  const liveMax=t.items.reduce((m,i)=>Math.max(m,parseInt((i.id||'EXP-0').replace('EXP-',''))||0),0);
+  const archMax=fs.existsSync(archPath)
+    ? fs.readFileSync(archPath,'utf8').split('\n').filter(Boolean).reduce((m,l)=>{try{return Math.max(m,parseInt((JSON.parse(l).id||'EXP-0').replace('EXP-',''))||0)}catch(e){return m}},0)
+    : 0;
+  t.next_id=Math.max(liveMax, archMax)+1;
 }
 const nextNum=t.next_id;
 t.next_id++;

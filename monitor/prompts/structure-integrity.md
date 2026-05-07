@@ -140,31 +140,67 @@ Classify issues as:
 
 ### 7. Expansion Tracker Continuity
 
-Check `monitor/analyst/expansion-tracker.json` for signs of write collisions (concurrent agent writes that silently drop entries):
+Check `monitor/analyst/expansion-tracker.json` for signs of write collisions (concurrent agent writes that silently drop entries). **Post-PROP-022 phase 5 (2026-05-07): all five checks below must walk both live (`items[]`) AND archive (`expansion-tracker-archive.jsonl`).** The archive holds terminal-state items moved out of live by the verifier or decider integration writer. ID continuity, next_id correctness, and disjointness are GLOBAL invariants — gaps or collisions anywhere (live or archive) are bugs.
 
-- **ID continuity**: Extract all EXP-NNN IDs sorted numerically. Flag any gaps (e.g., EXP-030 jumps to EXP-035 means EXP-031–034 are missing).
-- **Orphaned output files**: List all files in `monitor/analyst/expansions/`. For each EXP-NNN.json file, verify a matching tracker entry exists. Flag orphans — these are completed work the decider will never integrate.
-- **Phantom tracker entries**: For each tracker entry with `status: complete` and an `output_file`, verify the file exists on disk. Flag entries pointing to missing files. **Skip entries that have a `no_output_file_reason` field** — these were completed via direct integration (e.g., decider field updates, template applications, batch outputs) and legitimately have no single EXP-NNN.json file.
-- **Stale pending items**: Flag any tracker entry with `status: pending` that was `created_at` more than 48 hours ago — the analyst may have lost track of it.
-- **`next_id` correctness** (Phase 0 invariant): Check that `tracker.next_id > max(tracker.items[].id)`. If `next_id <= max_id`, a writer used `items.length + 1` and skipped the canonical counter — **the next allocation will collide**. **Classify as major and block the next decider run.** Command:
+- **ID continuity** (live + archive): Extract all EXP-NNN IDs from `t.items[]` AND from each line in `expansion-tracker-archive.jsonl`. Sort numerically. Flag gaps (e.g., EXP-030 jumps to EXP-035 means EXP-031–034 are missing). Code:
   ```bash
   node -e "
-  const t=JSON.parse(require('fs').readFileSync('monitor/analyst/expansion-tracker.json','utf8'));
-  const maxId=t.items.reduce((m,i)=>Math.max(m,parseInt((i.id||'EXP-0').replace('EXP-',''))||0),0);
+  const fs=require('fs');
+  const t=JSON.parse(fs.readFileSync('monitor/analyst/expansion-tracker.json','utf8'));
+  const archPath='monitor/analyst/expansion-tracker-archive.jsonl';
+  const liveIds=t.items.map(i=>parseInt((i.id||'EXP-0').replace('EXP-',''))||0);
+  const archIds=fs.existsSync(archPath)
+    ? fs.readFileSync(archPath,'utf8').split('\n').filter(Boolean).map(l=>{try{return parseInt((JSON.parse(l).id||'EXP-0').replace('EXP-',''))||0}catch(e){return 0}})
+    : [];
+  const ids=[...liveIds,...archIds].sort((a,b)=>a-b);
+  const gaps=[];
+  for(let i=1;i<ids.length;i++){if(ids[i]!==ids[i-1]+1)gaps.push([ids[i-1],ids[i]])}
+  console.log('total_ids:',ids.length,'min:',ids[0],'max:',ids[ids.length-1],'gaps:',gaps.slice(0,10));
+  "
+  ```
+- **Orphaned output files**: List all files in `monitor/analyst/expansions/`. For each EXP-NNN.json file, verify a matching tracker entry exists in EITHER live items[] OR archive lines. Flag orphans — these are completed work the decider will never integrate.
+- **Phantom tracker entries**: For each tracker entry (live or archive) with `status: complete` and an `output_file`, verify the file exists on disk. Flag entries pointing to missing files. **Skip entries that have a `no_output_file_reason` field** — these were completed via direct integration (e.g., decider field updates, template applications, batch outputs) and legitimately have no single EXP-NNN.json file.
+- **Stale pending items** (live only — by definition not archived): Flag any live tracker entry with `status: pending` that was `created_at` more than 48 hours ago — the analyst may have lost track of it.
+- **`next_id` correctness** (Phase 0 invariant, archive-aware post phase 5): Check that `tracker.next_id > max(live_max_id, archive_max_id)`. Post-phase-5 the live array can be mostly empty after a wave of integrations — comparing against live alone would mask a real allocator bug. If `next_id <= computed_max`, a writer used `items.length + 1` or computed against live only — **the next allocation will collide**. **Classify as major and block the next decider run.** Command:
+  ```bash
+  node -e "
+  const fs=require('fs');
+  const t=JSON.parse(fs.readFileSync('monitor/analyst/expansion-tracker.json','utf8'));
+  const archPath='monitor/analyst/expansion-tracker-archive.jsonl';
+  const liveMax=t.items.reduce((m,i)=>Math.max(m,parseInt((i.id||'EXP-0').replace('EXP-',''))||0),0);
+  const archMax=fs.existsSync(archPath)
+    ? fs.readFileSync(archPath,'utf8').split('\n').filter(Boolean).reduce((m,l)=>{try{return Math.max(m,parseInt((JSON.parse(l).id||'EXP-0').replace('EXP-',''))||0)}catch(e){return m}},0)
+    : 0;
+  const maxId=Math.max(liveMax, archMax);
   if(typeof t.next_id!=='number'){
-    console.error('FAIL: next_id missing or non-numeric (max_id='+maxId+')');
+    console.error('FAIL: next_id missing or non-numeric (computed max='+maxId+', live_max='+liveMax+', arch_max='+archMax+')');
     process.exit(1);
   }
   if(t.next_id<=maxId){
-    console.error('FAIL: next_id='+t.next_id+' <= max_id='+maxId+' — COLLISION IMMINENT on next allocation');
+    console.error('FAIL: next_id='+t.next_id+' <= max_id='+maxId+' (live_max='+liveMax+', arch_max='+archMax+') — COLLISION IMMINENT on next allocation');
     process.exit(1);
   }
-  console.log('OK: next_id='+t.next_id+', max_id='+maxId);
+  console.log('OK: next_id='+t.next_id+', max_id='+maxId+' (live_max='+liveMax+', arch_max='+archMax+')');
   "
   ```
 - **`next_id` missing**: If the field is entirely absent, a writer has stripped it. Flag **major** — self-heal is possible but the writer bug must be found and fixed.
+- **Live-archive disjointness** (PROP-022 phase 5, NEW): No EXP-NNN id may appear in BOTH live `items[]` AND `expansion-tracker-archive.jsonl`. A duplicate means the integration writer or verifier failed to remove the live entry after appending to archive (a classic "atomic write half-applied" failure mode). **Classify as major** — the system will see the entry in two places and may double-process. Code:
+  ```bash
+  node -e "
+  const fs=require('fs');
+  const t=JSON.parse(fs.readFileSync('monitor/analyst/expansion-tracker.json','utf8'));
+  const archPath='monitor/analyst/expansion-tracker-archive.jsonl';
+  const liveIds=new Set(t.items.map(i=>i.id));
+  if(!fs.existsSync(archPath)){console.log('OK: no archive file yet');process.exit(0)}
+  const archIds=fs.readFileSync(archPath,'utf8').split('\n').filter(Boolean).map(l=>{try{return JSON.parse(l).id}catch(e){return null}}).filter(Boolean);
+  const dupes=archIds.filter(id=>liveIds.has(id));
+  if(dupes.length){console.error('FAIL: '+dupes.length+' EXP IDs in BOTH live and archive: '+dupes.slice(0,10).join(','));process.exit(1)}
+  console.log('OK: live ('+liveIds.size+') and archive ('+archIds.length+') are disjoint');
+  "
+  ```
+- **Live-state predicate verification** (PROP-022 phase 5, advisory): Confirm every live item satisfies `i.integrated !== true && i.status NOT in [cancelled,superseded,subsumed]`. A live item failing this predicate means the live→archive move never fired and the writer skipped it. **Classify as moderate** (data consistency drift, not collision-imminent). The verifier and decider integration writer both move on terminal-state — a stuck terminal item in live is a writer-side bug, not data loss.
 
-Classify: ID gaps, orphaned output files, and `next_id` inversions are **major** (lost work / imminent collision). Phantom entries and stale pending are **moderate**.
+Classify: ID gaps, orphaned output files, `next_id` inversions, and live-archive overlaps are **major** (lost work / imminent collision / double-processing). Phantom entries, stale pending, and predicate violations are **moderate**.
 
 ### 7b. Workspace-Only Files at Risk
 

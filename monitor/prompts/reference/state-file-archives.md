@@ -92,7 +92,7 @@ Each migrated file has an expected live-state size annotation. If the live file 
 | monitor/curmudgeon/priority-queue.json | 5 | Phase 3 ✓ (2026-05-06). Live queue + schema metadata + `next_id` only. History (176 entries) → priority-queue-archive.jsonl. PROP-009r2 200-cap retired (audit consumers stream-filter the archive instead). |
 | monitor/curmudgeon/tracker.json | 6 | Phase 4 ✓ (2026-05-06). Live = headers + holistic_checks + pending points only. 181 reviewed/legacy points → tracker-archive.jsonl. |
 | monitor/analyst/attention-inbox.json | 25 | Phase 4 ✓ (2026-05-06). Live = pending + open items only. 61 resolved → attention-inbox-archive.jsonl. Array-at-root shape preserved. |
-| monitor/analyst/expansion-tracker.json | 30 | Phase 5 (awaiting tinker amendment per DIRECTIVE-20260506-002) |
+| monitor/analyst/expansion-tracker.json | 5 | Phase 5 ✓ (2026-05-07). Live state predicate (corrected per amendment-001 phase_5_gap_1): `i.integrated !== true && i.status NOT in [cancelled,superseded,subsumed]`. 4 live items at migration time, 289 archived → expansion-tracker-archive.jsonl. NEW disjointness check added to integrity §7. verify-pending-state.js v1.1.0 owns the atomic flip+archive-move (Option A). |
 | monitor/decisions/closed-issues.json | 10 | Phase 6 (awaiting tinker amendment). Highest-risk migration, decider lifecycle critical. |
 | monitor/decisions/processed-reviews.json | 1 | Phase 6 (or skip — read by digest script, not LLM) |
 | monitor/integrity/workspace-sync-skips.jsonl | (already JSONL) | Phase 4 ✓ (2026-05-06) — VERIFY-ONLY, file already follows convention. No code changes. Future PROP can add bounded retention. |

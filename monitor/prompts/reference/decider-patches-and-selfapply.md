@@ -216,15 +216,34 @@ fi
 node -e "
 const fs=require('fs');
 const errors=[];
-// Invariant 1: next_id > max(items[].id) in expansion-tracker, no duplicate EXP ids
+// Invariant 1: next_id > max(live_max_id, archive_max_id) in expansion-tracker,
+// no duplicate EXP ids across live + archive. Post-PROP-022 phase 5 the live
+// array can be mostly empty after a wave of integrations — comparing next_id
+// against live alone would mask a real allocator bug (next_id could be set
+// below recently-archived IDs).
 try {
   const t=JSON.parse(fs.readFileSync('monitor/analyst/expansion-tracker.json','utf8'));
-  const ids=t.items.map(i=>i.id);
-  const maxId=t.items.reduce((m,i)=>Math.max(m,parseInt((i.id||'EXP-0').replace('EXP-',''))||0),0);
+  const liveIds=t.items.map(i=>i.id);
+  const archPath='monitor/analyst/expansion-tracker-archive.jsonl';
+  const archIds=fs.existsSync(archPath)
+    ? fs.readFileSync(archPath,'utf8').split('\n').filter(Boolean).map(l=>{try{return JSON.parse(l).id}catch(e){return null}}).filter(Boolean)
+    : [];
+  const liveMax=liveIds.reduce((m,id)=>Math.max(m,parseInt((id||'EXP-0').replace('EXP-',''))||0),0);
+  const archMax=archIds.reduce((m,id)=>Math.max(m,parseInt((id||'EXP-0').replace('EXP-',''))||0),0);
+  const maxId=Math.max(liveMax, archMax);
   if(typeof t.next_id!=='number') errors.push('expansion-tracker: next_id missing or non-numeric');
-  else if(t.next_id<=maxId) errors.push('expansion-tracker: next_id='+t.next_id+' <= max_id='+maxId+' (collision imminent)');
+  else if(t.next_id<=maxId) errors.push('expansion-tracker: next_id='+t.next_id+' <= max_id='+maxId+' (live='+liveMax+', arch='+archMax+', collision imminent)');
+  // Duplicate detection across BOTH live and archive
   const seen=new Set();
-  for(const id of ids){ if(seen.has(id)) errors.push('expansion-tracker: duplicate id '+id); seen.add(id); }
+  for(const id of liveIds){ if(seen.has(id)) errors.push('expansion-tracker: duplicate id '+id+' (within live)'); seen.add(id); }
+  for(const id of archIds){
+    if(seen.has(id)){
+      // If id is in live AND archive, that's a disjointness violation (atomic-write half-applied)
+      const inLive=liveIds.includes(id);
+      errors.push('expansion-tracker: duplicate id '+id+(inLive?' (in BOTH live AND archive — atomic-write half-applied)':' (within archive)'));
+    }
+    seen.add(id);
+  }
 } catch (e) { errors.push('expansion-tracker: read/parse failed: '+e.message); }
 
 // Invariant 2: no duplicate ISS ids, next_id monotonicity (if present)

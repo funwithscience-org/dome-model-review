@@ -191,6 +191,10 @@ sync_glob monitor/analyst/new-wins '*.json'
 sync_glob monitor/analyst/globe-fingerprints '*.json'
 sync_glob monitor/analyst/issue-proposals '*.json'
 smart_copy "${WORKSPACE}/monitor/analyst/expansion-tracker.json" monitor/analyst/expansion-tracker.json
+# PROP-022 phase 5 (2026-05-07): archive sibling for expansion-tracker.
+# Append-only JSONL. Verifier (verify-pending-state.js v1.1.0+) and decider
+# integration writer atomically append-and-remove on terminal flip / integration.
+smart_copy "${WORKSPACE}/monitor/analyst/expansion-tracker-archive.jsonl" monitor/analyst/expansion-tracker-archive.jsonl
 smart_copy "${WORKSPACE}/monitor/analyst/globe-fingerprint-tracker.json" monitor/analyst/globe-fingerprint-tracker.json
 smart_copy "${WORKSPACE}/monitor/analyst/human-notes.json" monitor/analyst/human-notes.json
 # PROP-022 phase 1 (2026-05-06): archive sibling for analyst/human-notes.

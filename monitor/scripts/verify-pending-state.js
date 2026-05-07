@@ -51,7 +51,7 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 
-const VERSION = '1.0.0';
+const VERSION = '1.1.0';
 const DRY_RUN = process.argv.includes('--dry-run');
 const NOW_ISO = new Date().toISOString();
 const RUN_ID = process.env.RUN_ID
@@ -66,10 +66,15 @@ const TERMINAL_MAP = {
 
 const PENDING_SUFFIX_RE = /-pending-verification$/;
 
-// Files to scan: [path, arrayKey, idField]
+// Files to scan: [path, arrayKey, idField, archivePath?]
+// archivePath (4th tuple member, optional) is the PROP-022 archive sibling.
+// When provided AND a status-flip lands on a terminal value, the verifier
+// atomically appends the flipped entry to the archive and removes it from
+// live (Option A from PROP-022 amendment-001 phase_5_gap_3 — verifier
+// owns the move because it's the authoritative writer at flip time).
 const SCAN_TARGETS = [
-  ['monitor/decisions/closed-issues.json',     'issues', 'id'],
-  ['monitor/analyst/expansion-tracker.json',   'items',  'id'],
+  ['monitor/decisions/closed-issues.json',     'issues', 'id', null],  // phase 6 will set last arg
+  ['monitor/analyst/expansion-tracker.json',   'items',  'id', 'monitor/analyst/expansion-tracker-archive.jsonl'],
 ];
 
 function logErr(msg) { process.stderr.write('[verify-pending] ' + msg + '\n'); }
@@ -131,7 +136,7 @@ function verifyEntry(entry) {
   };
 }
 
-function processFile(filePath, arrayKey, idField, summary) {
+function processFile(filePath, arrayKey, idField, summary, archivePath) {
   const r = readJsonSafe(filePath);
   if (!r.ok) {
     summary.errors.push({ file: filePath, reason: r.reason, err: r.err });
@@ -150,8 +155,12 @@ function processFile(filePath, arrayKey, idField, summary) {
     flipped: 0,
     still_pending: 0,
     errors: 0,
+    archived: 0,  // PROP-022 phase 5: count of entries appended to archive this run
   };
   let mutated = false;
+  // PROP-022 phase 5: queue archive-moves until end-of-loop so we don't
+  // mutate the array while iterating.
+  const toArchive = [];
 
   for (const entry of arr) {
     const status = entry.status || '';
@@ -171,7 +180,16 @@ function processFile(filePath, arrayKey, idField, summary) {
         entry.verified_at = NOW_ISO;
         entry.verified_by_run = RUN_ID;
         entry.verifier_script_version = VERSION;
+        // PROP-022 phase 5: integrated:true is the authoritative discriminator
+        // post-flip for expansion-tracker (live_state_predicate uses !integrated).
+        // Set it here so the live-state predicate sees the move atomically.
+        if (v.terminal === 'integrated' && filePath.endsWith('expansion-tracker.json')) {
+          entry.integrated = true;
+          entry.integrated_at = entry.integrated_at || NOW_ISO;  // preserve decider-stamped time if present
+        }
         mutated = true;
+        // Queue for archive-append + live-remove if this file has an archive sibling.
+        if (archivePath) toArchive.push(entry);
       }
     } else if (v.decision === 'still_pending') {
       perFile.still_pending++;
@@ -187,6 +205,22 @@ function processFile(filePath, arrayKey, idField, summary) {
       perFile.errors++;
       summary.errors.push({ file: filePath, id, reason: v.reason });
       // Defensive default: leave entry untouched. Do NOT flip on error.
+    }
+  }
+
+  // PROP-022 phase 5/6: atomic archive-append + live-remove for flipped-to-terminal
+  // entries. Append happens before the live-file write below, so a crash between
+  // the two writes leaves the archive ahead of live (recoverable forward — a
+  // future run sees the entry in archive, treats it as terminal, no double-flip).
+  if (archivePath && toArchive.length > 0 && !DRY_RUN) {
+    try {
+      const lines = toArchive.map(e => JSON.stringify(e)).join('\n') + '\n';
+      fs.appendFileSync(archivePath, lines);
+      const archivedIds = new Set(toArchive.map(e => e[idField]));
+      data[arrayKey] = arr.filter(e => !archivedIds.has(e[idField]));
+      perFile.archived = toArchive.length;
+    } catch (e) {
+      summary.errors.push({ file: filePath, reason: 'archive_append_failed:' + e.message });
     }
   }
 
@@ -214,11 +248,11 @@ function main() {
     flipped_entries:       [],
     still_pending_entries: [],
     errors:                [],
-    totals:                { checked: 0, flipped: 0, still_pending: 0, errors: 0 },
+    totals:                { checked: 0, flipped: 0, still_pending: 0, errors: 0, archived: 0 },
   };
 
-  for (const [fp, key, idField] of SCAN_TARGETS) {
-    processFile(fp, key, idField, summary);
+  for (const [fp, key, idField, archivePath] of SCAN_TARGETS) {
+    processFile(fp, key, idField, summary, archivePath);
   }
 
   // Tally
@@ -227,6 +261,7 @@ function main() {
     summary.totals.flipped       += pf.flipped;
     summary.totals.still_pending += pf.still_pending;
     summary.totals.errors        += pf.errors;
+    summary.totals.archived      += (pf.archived || 0);
   }
   summary.completed_at = new Date().toISOString();
 
