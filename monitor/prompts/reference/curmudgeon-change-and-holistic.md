@@ -12,11 +12,12 @@ Per PROP-020, the candidate list is precomputed by integrity (every ~3 days, gat
 
 2. **Validate the head against current review state.** For the top-of-list candidate `c`, look up the latest review file for `c.item_id` in `monitor/curmudgeon/reviews/`. If a review exists with `reviewed_at` newer than `c.last_review.reviewed_at` (or `c.last_review` is null and any review now exists), the candidate is **OBE** (obsolete on examination — already re-reviewed since the audit ran). Skip and move to the next candidate.
 
-   **OBE-skip cap: 3.** After 3 consecutive OBE-skips, fall through to §1f in-prompt scan rather than continuing down the list — repeated OBE-skips mean the list is significantly stale, and a fresh scan is cheaper than continuing to validate stale entries. (At 4h cadence and a 72h gate, the list should never produce more than 1-3 OBE-skips in normal operation. If you find yourself at 3, the system is in an unusual state and the fallback is the right answer.)
+   **No OBE cap — walk the full list.** Skip OBE candidates and continue down the list until you find a non-OBE candidate. Only fall through to §1f in-prompt scan if the entire list is exhausted (every candidate is OBE) — that's the genuine "the audit produced nothing actionable" signal.
+   *Calibration note:* the audit refreshes every ~72h while curmudgeon runs every ~4h (≈18 cycles between refreshes), so the head accumulates OBEs at the rate curmudgeon consumes them. The earlier "cap of 3" rule was wrong — it forced fallback after one busy day even when 10+ high-drift deep-tail candidates were still pending below the OBE head, leaving 500%+ drifted items unreviewed (observed 2026-05-07 morning check). Skipping past OBEs costs only one `glob`+read per candidate, which is cheap compared to the cost of letting deep-tail bloat persist.
 
-3. **Pick.** The first non-OBE candidate is your pick. The candidate's `priority_bucket`, `max_drift_pct`, and `drifted_fields` already encode the prioritization decision — no further triage needed. If the candidate's `in_priority_queue` is true, it means the priority queue already has this item routed; you can either skip it (to avoid duplicate work — the queue will service it on Priority 1) or proceed (your change-detect review and the queue review address different cycles). Default: skip if `in_priority_queue`, move to next candidate. This counts as an OBE-skip for the cap.
+3. **Pick.** The first non-OBE candidate is your pick. The candidate's `priority_bucket`, `max_drift_pct`, and `drifted_fields` already encode the prioritization decision — no further triage needed. If the candidate's `in_priority_queue` is true, it means the priority queue already has this item routed; either skip it (default — the queue will service it on Priority 1) or proceed (your change-detect review and the queue review address different cycles). When skipping for `in_priority_queue`, it counts the same as an OBE-skip — keep walking the list, do not fall back.
 
-4. **Record the change_summary.** In your review JSON, set `change_summary` to a string naming the drifted field, the old/new values, and the source (e.g., `"detail_verdict_length grew from 123 to 1154 (+838%); pre-tldr-schema fingerprint, compared on common fields only; sourced from drift-audit.json generated 2026-05-05T20:30Z"`). The `change_summary` is mandatory for change-detected reviews — future audits use it to verify catch rate and detect prioritization regressions.
+4. **Record the change_summary.** In your review JSON, set `change_summary` to a string naming the drifted field, the old/new values, the source, AND the OBE-skip count for this run (e.g., `"detail_verdict_length grew from 123 to 1154 (+838%); pre-tldr-schema fingerprint, compared on common fields only; sourced from drift-audit.json generated 2026-05-05T20:30Z; obe_skipped=5 (WIN-050/028/009/036/060 already re-reviewed since audit)"`). The `change_summary` is mandatory for change-detected reviews — future audits use it to verify catch rate. The `obe_skipped` count lets us spot if the audit is being consistently outpaced (signal that 72h refresh is too slow, candidate set is too narrow, or curmudgeon is sustaining a higher-than-expected cadence).
 
 5. **Review one item.** Full review using the standard procedure (Steps 1–10 in the dispatcher). Write the review with an incremented cycle number. Then stop.
 
@@ -26,7 +27,7 @@ Per PROP-020, the candidate list is precomputed by integrity (every ~3 days, gat
 
 ### §1f. In-Prompt Scan Fallback (legacy procedure, used when drift-audit.json is unusable)
 
-Activated when: drift-audit.json is missing, malformed, older than 168h, OR you've hit 3 consecutive OBE-skips during list traversal. This is the procedure that pre-existed PROP-020. Operate exactly as if drift-audit.json doesn't exist.
+Activated when: drift-audit.json is missing, malformed, older than 168h, OR every candidate in the list is OBE (entire list exhausted via OBE-skips). This is the procedure that pre-existed PROP-020. Operate exactly as if drift-audit.json doesn't exist.
 
 1f. **Load your most recent review fingerprints.** For every item you've reviewed, the review JSON contains a `text_fingerprint` with field lengths and verdict. Build a map of `item_id → {fingerprint, reviewed_at}`.
 
@@ -42,7 +43,7 @@ Activated when: drift-audit.json is missing, malformed, older than 168h, OR you'
 
 4f. **Prioritize.** Prefer: verdict changes > large text rewrites > new items > TLDR-only changes. **Within the 'large text rewrites' bucket, prefer the item with the largest drift magnitude.** WINs over sections as final tiebreak.
 
-5f. **Pick + review.** Same as §5 above. Set `change_summary` with `"used_fallback": true` and the reason (missing list / stale list / OBE-cap exceeded).
+5f. **Pick + review.** Same as §5 above. Set `change_summary` with `"used_fallback": true` and the reason (missing list / stale list / list-exhausted-via-OBE).
 
 ## Holistic Reviews (Priority 4)
 
