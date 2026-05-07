@@ -43,7 +43,10 @@ If commits exist after the review date touching the target file, the section may
 
 4. **Disposition:**
    - **Still present** → create issue normally, assign as needed.
-   - **Already fixed** → skip issue creation. Log in daily report: "Stale digest entry for <target>: <hole summary> — already resolved by commit <hash>. Skipping." **AND mark the review file processed by appending its filename to `monitor/decisions/processed-reviews.json` `processed` array.** This is REQUIRED — without it, the next digest run will re-discover the same stale review and you'll waste another cycle on it. Snippet:
+   - **Already fixed** → skip issue creation. Log in daily report: "Stale digest entry for <target>: <hole summary> — already resolved by commit <hash>. Skipping."
+   - **Uncertain** → create the issue but at **one severity level lower** and add `"staleness_note": "Target was patched post-review; verify finding still applies before deep investigation"` to the issue. This lets the analyst do a quick triage rather than a full rewrite.
+
+5. **Mark the review file processed (REQUIRED, all branches).** Whichever disposition fired above, append the review filename to `monitor/decisions/processed-reviews.json` `processed` array before exiting Step 4. This is the closing action of review processing — without it, the next digest run will re-discover the same review and burn a second decider cycle re-validating work that's already in flight. The historical bug (observed 2026-05-07) was that this step lived only under "Already fixed", so every "Still present" review was visited twice — once to create issues + apply patches, once to verify+mark via the second-pass "Already fixed" path. Lift it out and run it for all three branches:
 ```bash
 node -e "
 const fs=require('fs');
@@ -57,7 +60,8 @@ console.log('Marked',toAdd.length,'reviews processed. Ledger:',p.processed.lengt
 "
 ```
 Verify by running `node build-scripts/digest-reviews.js --workspace .` — `pending_count` should drop by the number of files you added. If it does not drop, your update did not take effect — investigate before exiting.
-   - **Uncertain** → create the issue but at **one severity level lower** and add `"staleness_note": "Target was patched post-review; verify finding still applies before deep investigation"` to the issue. This lets the analyst do a quick triage rather than a full rewrite.
+
+   *Note on Mech 1a interaction:* skipping the second pass does NOT reduce verification reliability. Mech 1a's `verify-pending-state.js` scans `open-issues.json` and `expansion-tracker.json` independently for `*-pending-verification` statuses each workspace-sync cycle — it does not depend on a review re-appearing in the digest to fire. The two mechanisms are decoupled.
 
 This gate saves analyst Opus tokens. A 30-second git-log + content check here prevents a 5-minute analyst investigation that concludes "ALREADY_RESOLVED."
 
