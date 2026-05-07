@@ -239,17 +239,30 @@ try {
   }
 } catch (e) { /* non-fatal — open-issues shape may vary */ }
 
-// Invariant 3: no duplicate WIN ids in curmudgeon/tracker, total_items correctness.
+// Invariant 3: curmudgeon/tracker.json structural correctness.
 // This is the only protection the unclassified multi-writer curmudgeon/tracker.json
 // has against decider-vs-curmudgeon rebase races in Phase 1.
+//
+// Post-PROP-022 phase 4 (2026-05-06): WINs moved from `points[]` (filtered by
+// type:'win') into `wins{}` (object keyed by WIN-NNN); the historical bulk
+// lives in tracker-archive.jsonl. The pre-phase-4 invariant compared
+// total_items against points.filter(type=win).length, which is now always 0
+// — false-positives every push (logged in
+// monitor/integrity/prop-009-gate-false-positive-2026-05-06T21-26.json).
+//
+// Replacement check: validate (a) the wins{} dict has well-formed keys,
+// (b) no stray type:'win' entries leaked back into points[]. Total_items is
+// now archive-aware so we don't compare it against a derived live count;
+// drift detection there belongs to integrity, not the rebase-race gate.
 try {
   const c=JSON.parse(fs.readFileSync('monitor/curmudgeon/tracker.json','utf8'));
-  const pts=(c.points||[]).filter(p=>p.type==='win');
-  const ids=pts.map(p=>p.id);
-  const seen=new Set();
-  for(const id of ids){ if(seen.has(id)) errors.push('curmudgeon/tracker: duplicate win '+id); seen.add(id); }
-  if(typeof c.total_items==='number' && c.total_items!==pts.length){
-    errors.push('curmudgeon/tracker: total_items='+c.total_items+' != actual '+pts.length);
+  const winsObj = (c.wins && typeof c.wins === 'object' && !Array.isArray(c.wins)) ? c.wins : {};
+  for(const k of Object.keys(winsObj)){
+    if(!/^WIN-\d+$/.test(k)) errors.push('curmudgeon/tracker: malformed wins key '+k);
+  }
+  const strayWins = (c.points||[]).filter(p=>p && p.type==='win');
+  if(strayWins.length){
+    errors.push('curmudgeon/tracker: '+strayWins.length+' stray win-typed entries in points[] (post-PROP-022 phase 4 they belong in wins{} or tracker-archive.jsonl)');
   }
 } catch (e) { /* non-fatal — tracker may be structured differently in older formats */ }
 
@@ -395,6 +408,39 @@ if [ $PUSH_RC -ne 0 ]; then
 }
 JSON
   exit 1
+fi
+
+# Push succeeded — clear stale push_status / push_failure_note from
+# monitor/status.json (workspace copy). If a prior run left the field set
+# (operator-set or self-set on a previous 403), the next successful push
+# means the rescue path completed and the field is now historical noise.
+# Without this, push_status accumulates as multi-day stale state — see
+# 2026-05-07 morning-check observation that 403_rescue_pending persisted
+# from 2026-05-05T01:20Z despite multiple successful decider pushes since.
+# Edit the FUSE copy (status.json is workspace-owned per CLAUDE.md), so the
+# next workspace-sync round-trips it to git. Failure here is non-fatal.
+if [ -f "${WORKSPACE}/monitor/status.json" ]; then
+  node -e "
+const fs=require('fs');
+const p='${WORKSPACE}/monitor/status.json';
+try {
+  const s=JSON.parse(fs.readFileSync(p,'utf8'));
+  let dirty=false;
+  if(s.push_status && s.push_status!=='ok'){
+    s.push_status='ok';
+    s.push_status_cleared_at=new Date().toISOString();
+    dirty=true;
+  }
+  if(s.push_failure_note){
+    delete s.push_failure_note;
+    dirty=true;
+  }
+  if(dirty){
+    fs.writeFileSync(p, JSON.stringify(s,null,2));
+    console.log('Cleared stale push_status / push_failure_note in '+p);
+  }
+} catch(e){ console.log('WARN: clear-push-status failed: '+e.message); }
+" || echo "WARN: status.json push_status clear failed (non-fatal — workspace-sync will not break)."
 fi
 
 # PROP-010: immediately sync git→FUSE so agents reading from the workspace
