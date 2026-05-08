@@ -490,10 +490,12 @@ JSON
 fi
 ```
 
-### Step 3.6: PROP-014 verify-pending-state + narrative-cite audit
+### Step 3.6: PROP-014 verify-pending-state + narrative-cite audit + deploy-watch
 
-Run the Mech 1 verifier and the Mech 3 narrative-cite audit. Both operate
-on freshly-pulled clone state (we already did `git pull --rebase` in Step 1).
+Run the Mech 1 verifier, the Mech 3 narrative-cite audit, AND the Pages
+deploy-watch poller. The first two operate on freshly-pulled clone state
+(we already did `git pull --rebase` in Step 1). The third polls the
+GitHub Actions API for failed Pages deployments in the last ~75 min.
 
   - **verify-pending-state.js (Mech 1):** walks `closed-issues.json` +
     `expansion-tracker.json` for entries with `status` matching
@@ -517,6 +519,25 @@ on freshly-pulled clone state (we already did `git pull --rebase` in Step 1).
     `monitor/integrity/narrative-cite-audit-<ts>.json`. **Soft-complaint
     only — no blocking, no commit gating.** Operator reviews on the next
     morning briefing via tinker's soft-complaints grep.
+
+  - **deploy-watch (Pages deploy poller):** polls
+    `GET /repos/<repo>/actions/runs?per_page=20` via PAT, filters to
+    `status:'completed' && conclusion:'failure'` runs whose
+    `name`/`event` matches `pages|deploy` and whose `created_at` falls
+    in the last 75 min. The window covers any deploy that completed
+    since the prior workspace-sync ran (cadence is 1h + jitter, deploy
+    typically 30-90s; 75 min has safety margin). THIS run's push (if
+    it triggered a deploy) is not visible yet — that deploy runs in
+    parallel; the next workspace-sync cycle catches its outcome.
+    **Soft-complaint only — no blocking, no commit gating.** When
+    failures are found, the AGENT_NOTES include `soft-complaint:
+    pages-deploy fails=N url=...` so tinker's grep catches it.
+    Tinker's escalation rubric (per its standing pattern): if the same
+    deploy failure persists across 2+ cycles, file
+    `HNOTE-OPERATOR-DEPLOY-FAILED-<run_id>` recommending operator
+    investigation (githubstatus.com check + manual re-run).
+    Self-clears: once a successful deploy lands, no failure shows in
+    the 75-min window on subsequent cycles.
 
 If either script is absent (e.g. running an old clone before this PROP
 lands), the step skips silently — preserves backward-compat during
@@ -550,16 +571,68 @@ else
   echo "  Skipping 3.6b (monitor/scripts/audit-narrative-citations.js not present)"
 fi
 
+# 3.6c — Pages deploy watch (added 2026-05-08). Polls the GitHub Actions API
+# for failed Pages deployments in the last ~75 min so the operator gets
+# operator-visible signal within one workspace-sync cycle. Until this check
+# existed, a failed Pages deploy (e.g. ECONNRESET / 500 from githubstatus
+# during a Pages incident) would silently leave the live site stale relative
+# to git — pipeline_status looked healthy but funwithscience.net wasn't
+# updated. Observed 2026-05-08T15:30Z incident: deploy ECONNRESET'd, operator
+# noticed manually, re-ran successfully. The check below catches the next one.
+#
+# Window: 75 min. Workspace-sync cadence is 1h + ~3min jitter; deploys
+# typically finish in 30-90s. 75 min covers any deploy whose outcome landed
+# since the previous workspace-sync ran. THIS run's push (if it triggered
+# a deploy) is not visible yet — the deploy runs in parallel; next cycle
+# catches it.
+DEPLOY_OUTPUT_FILE="$(mktemp -t deploy-watch.XXXXXX.txt)"
+PAT="$PAT" REPO="funwithscience-org/dome-model-review" node -e "
+const https=require('https');
+const pat=process.env.PAT;
+const repo=process.env.REPO;
+if(!pat){console.log('deploy-watch: 0 (no PAT env, skipping)');process.exit(0)}
+https.get({
+  hostname:'api.github.com',
+  path:'/repos/'+repo+'/actions/runs?per_page=20',
+  headers:{
+    Authorization:'token '+pat,
+    'User-Agent':'workspace-sync',
+    Accept:'application/vnd.github+json'
+  }
+},res=>{
+  let body='';res.on('data',c=>body+=c);
+  res.on('end',()=>{
+    if(res.statusCode!==200){console.log('deploy-watch: 0 (API '+res.statusCode+', skipping)');return}
+    try{
+      const d=JSON.parse(body);
+      const cutoff=Date.now()-75*60*1000;
+      // Filter: completed + failure + recent + name/event mentions pages/deploy.
+      // The default GitHub Pages workflow shows up as name='pages-build-deployment'
+      // (with event='dynamic') or display name 'deploy'. Match liberally.
+      const fails=(d.workflow_runs||[])
+        .filter(r=>r.status==='completed'&&r.conclusion==='failure')
+        .filter(r=>new Date(r.created_at).getTime()>=cutoff)
+        .filter(r=>/pages|deploy/i.test(r.name||'')||/pages/i.test(r.event||''));
+      console.log('deploy-watch: '+fails.length+(fails.length?' failed deploy(s) in last 75min':' (clean)'));
+      fails.slice(0,3).forEach(r=>console.log('  - run_id='+r.id+' name=\"'+(r.name||'')+'\" event='+(r.event||'')+' created='+r.created_at+' url='+r.html_url));
+    }catch(e){console.log('deploy-watch: 0 (parse error: '+e.message+')')}
+  });
+}).on('error',e=>console.log('deploy-watch: 0 (network error: '+e.message+')'));
+" 2>&1 | tee "$DEPLOY_OUTPUT_FILE"
+
 # Capture counters for Step 4b's run report (so tinker's soft-complaints grep
 # can see them without re-parsing the integrity reports).
 MECH1_FLIPPED=$(grep -oP 'flipped=\K\d+' "$VERIFY_OUTPUT_FILE" 2>/dev/null | head -1 || echo 0)
 MECH1_STILL_PENDING=$(grep -oP 'still_pending=\K\d+' "$VERIFY_OUTPUT_FILE" 2>/dev/null | head -1 || echo 0)
 MECH3_UNCITED=$(grep -oP 'uncited=\K\d+' "$AUDIT_OUTPUT_FILE" 2>/dev/null | head -1 || echo 0)
 MECH3_BOGUS=$(grep -oP 'bogus_anchors=\K\d+' "$AUDIT_OUTPUT_FILE" 2>/dev/null | head -1 || echo 0)
+DEPLOY_FAILS=$(grep -oP '^deploy-watch: \K\d+' "$DEPLOY_OUTPUT_FILE" 2>/dev/null | head -1 || echo 0)
+DEPLOY_FAIL_URL=$(grep -oP 'url=\Khttps://\S+' "$DEPLOY_OUTPUT_FILE" 2>/dev/null | head -1 || echo "")
 MECH1_FLIPPED=${MECH1_FLIPPED:-0}
 MECH1_STILL_PENDING=${MECH1_STILL_PENDING:-0}
 MECH3_UNCITED=${MECH3_UNCITED:-0}
 MECH3_BOGUS=${MECH3_BOGUS:-0}
+DEPLOY_FAILS=${DEPLOY_FAILS:-0}
 
 # Soft-complaint signal for Step 4b's AGENT_NOTES — if either Mech surfaces
 # something operator-visible, the run report's narrative field MUST mention
@@ -576,8 +649,15 @@ if [ "$MECH1_STILL_PENDING" -gt 0 ]; then
   echo "    (Soft-complaint candidate. Routine if first cycle after a recent decider self-apply;"
   echo "    investigate if same entries linger past 24h TTL.)"
 fi
+if [ "$DEPLOY_FAILS" -gt 0 ]; then
+  echo ""
+  echo "  → Deploy-watch soft-complaint: $DEPLOY_FAILS failed Pages deploy(s) in last 75min"
+  echo "    First failure URL: ${DEPLOY_FAIL_URL:-(see deploy-watch output above)}"
+  echo "    (Step 4b: include 'soft-complaint: pages-deploy fails=N url=...' in AGENT_NOTES."
+  echo "    Tinker should escalate to HNOTE-OPERATOR-DEPLOY-FAILED if same failures persist 2+ cycles.)"
+fi
 
-rm -f "$VERIFY_OUTPUT_FILE" "$AUDIT_OUTPUT_FILE"
+rm -f "$VERIFY_OUTPUT_FILE" "$AUDIT_OUTPUT_FILE" "$DEPLOY_OUTPUT_FILE"
 ```
 
 Per `monitor/prompts/reference/state-verification.md` §1 (WRITE-VERIFY)
