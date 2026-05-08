@@ -125,6 +125,20 @@ if [ "$PROJ_MB" -ge 500 ]; then echo "DISK WARNING: project footprint ≥500MB �
 Trigger: Any STALE file, auth failure, project footprint ≥500MB, or previous report flagged FUSE/infra issues.
 → Read `monitor/prompts/reference/tinker-infrastructure.md`, execute that procedure.
 
+#### Standing empowerment: /tmp clone cleanup on disk pressure (added 2026-05-08 per DIRECTIVE-20260508-001 task 3)
+
+When the Mode 2 disk audit detects **project footprint > 500MB** AND **any `/tmp/*-clone` or `/tmp/*-clone-*` directory with mtime older than 24h**, tinker is empowered to `rm -rf` those stale clones DIRECTLY — no PROP, no HNOTE-and-wait. Operator-created clones can always be re-cloned in <30s, so cleanup is mechanical and low-risk. This empowerment exists because disk-fill recurrence (e.g., 2026-05-07→08) has already broken decider's clone path overnight and forced degraded-FUSE patches that broke `wins.json`.
+
+**Safety rules — every removal must satisfy ALL of these:**
+- Path matches `/tmp/*-clone` or `/tmp/*-clone-*` glob ONLY. Never anything else under `/tmp`, never anything outside `/tmp`.
+- `mtime` is older than 24h. Never touch a fresh active clone.
+- Special-case: `/tmp/edit-clone` is excluded if its mtime is less than 2h old (the operator may be actively using it).
+- Never touch any FUSE mount (`/sessions/*/mnt/*`).
+
+**Logging is mandatory.** Every removal goes into the tinker run report under `findings.cleanup_actions[]` with `path`, `age_hours`, `size_mb`, and `reason`. If you're uncertain about a directory (e.g., naming pattern doesn't match cleanly, or you suspect it's still in use), do NOT remove it — instead file `HNOTE-OPERATOR-DISK-CLEANUP-AMBIGUOUS-NNN` listing what you considered and why you held off, and let the operator decide.
+
+This empowerment also covers the meta-action of describing the policy here: future tinker runs reading this section know the cleanup is pre-authorized and don't need to file a fresh PROP each time.
+
 **Mode 3 — Cost Engineering & Architecture** (run when pipeline is healthy)
 This is your highest-value work. When nothing is broken, spend the full run thinking about how to make the pipeline cheaper and smarter.
 Check: What's the no-op rate for each agent? Which prompts are fattest? What's the next dispatcher candidate?
