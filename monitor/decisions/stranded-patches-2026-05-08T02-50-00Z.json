@@ -1,0 +1,42 @@
+{
+  "id": "STRANDED-WINS-JSON-UNESCAPED-QUOTES-2026-05-08",
+  "created_at": "2026-05-08T02:50:00Z",
+  "authored_by": "tinker (2026-05-08T02:39 run)",
+  "severity": "critical",
+  "reason": "data/wins.json on origin/main is currently unparseable as JSON. node test.js, node build.js, and any agent that JSON.parse()s the file will throw at byte 418561 (line 1411 col 2374). Root cause: the WIN-064 detail_extra string had an HTML <span class=\"archive-cite\"> with embedded <a href=\"...\"> attributes inserted between commits 6e68bba and d09d978, but the four nested double quotes (class=\"archive-cite\" plus href=\"...\") were not escaped to \\\". The script build-scripts/fix-json-quotes.js was authored for exactly this class of bug and resolves it cleanly (verified: 4 unescaped quotes fixed in 4 passes, file then parses, all 71 wins recovered, byte-delta = +4).",
+  "requires_human_to_apply": true,
+  "applies_to": "data/wins.json on origin/main",
+  "introduced_by_commit": "d09d978 (Workspace sync: 2026-05-08T02:05:18Z)",
+  "broken_in_workspace": true,
+  "broken_on_main": true,
+  "operator_action": [
+    "1) cd to your clone with direct push (e.g., the workspace-sync clone or your hand clone).",
+    "2) git pull origin main so you have d09d978.",
+    "3) node build-scripts/fix-json-quotes.js data/wins.json — should report 'fixed 4 unescaped quotes in 4 passes'.",
+    "4) node -e \"console.log(JSON.parse(require('fs').readFileSync('data/wins.json','utf8')).length)\" — should print 71.",
+    "5) node test.js — re-run the suite. wins.json schema check should turn green.",
+    "6) (Optional but recommended) node build.js html — re-render docs/index.html now that wins.json parses.",
+    "7) git add data/wins.json docs/index.html && git commit -m 'Fix unescaped quotes in WIN-064 detail_extra (archive-cite span)' && git push.",
+    "8) ALSO copy the fixed data/wins.json from clone to FUSE: cp data/wins.json /sessions/<session>/mnt/dome-model-review/data/wins.json. Without this step, FUSE retains the broken copy and the next workspace-sync run could universal-pusher-rescue the broken content back over the fix. (workspace-sync's mtime-guard normally prevents this, but only if the clone-pushed commit's mtime is newer than the FUSE file's mtime — which it should be, but explicitly resyncing FUSE removes the race.)",
+    "9) Move this stranded-patches file to monitor/decisions/applied-stranded-patches/ once landed."
+  ],
+  "exact_diff_summary": {
+    "file": "data/wins.json",
+    "win": "WIN-064",
+    "field": "detail_extra",
+    "introduced_in_commit": "d09d978",
+    "char_offset": 418561,
+    "line_col": "1411:2374",
+    "fragment_with_unescaped_quotes": "<span class=\"archive-cite\">[both quotes archived verbatim at <a href=\"https://github.com/funwithscience-org/dome-model-review/blob/main/raw-text/02b-wins-V51-win064.txt\">raw-text/02b-wins-V51-win064.txt</a>, captured 2026-05-08; live page MD5 16d65a42722d2d5869842d14c8f699f0 has been byte-identical across 34 consecutive poller checks (~17 days through 2026-05-07T11:05:55Z), so the citation is auditable against both our archive and the dome's currently-served page]</span>",
+    "fix": "Escape the four bare \" characters as \\\" (two from class=\"archive-cite\", two from href=\"https://...02b-wins-V51-win064.txt\"). build-scripts/fix-json-quotes.js does this automatically.",
+    "verified_repair": "Tested on a copy in /sessions/friendly-relaxed-cori/mnt/outputs/wins-test.json: fix-json-quotes.js reports '4 unescaped quotes in 4 passes'; resulting file parses; 71 wins recovered; byte-delta = +4."
+  },
+  "current_pipeline_impact": {
+    "test_js": "FAILING (wins.json schema check, byte 418561)",
+    "build_js": "FAILING (printTally call at build.js:184)",
+    "decider_next_run_at": "2026-05-08T05:13Z (will throw on wins.json read unless fixed first)",
+    "curmudgeon_next_run_at": "2026-05-08T06:35Z (same fail mode — clones fresh)",
+    "analyst_next_run_at": "2026-05-08T07:57Z (cross-checks wins count vs GitHub raw — would fail same way)"
+  },
+  "preventive_proposal": "PROP-024 (file: monitor/tinker/proposals/PROP-024-workspace-sync-json-validity-gate.json) proposes a pre-push JSON validity gate in workspace-sync to prevent unparseable JSON from ever landing on main again."
+}
