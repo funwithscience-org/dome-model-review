@@ -150,7 +150,7 @@ const out={
   source_directive:'monitor/prompts/reference/decider-patches-and-selfapply.md Step 2b',
   prop_reference:'monitor/tinker/proposals/PROP-016-source-file-rescue-gap.json',
   per_file_diffs:{},
-  operator_action:'1) cd to your clone with direct push. 2) Apply each per_file_diff. 3) git add the listed all_modified_files. 4) Commit + push. 5) Move this file to monitor/decisions/applied-stranded-patches/ once landed.',
+  operator_action:'1) cd to your clone with direct push. 2) Apply each per_file_diff. 3) git add the listed all_modified_files. 4) Commit + push. 5) Tombstone this sentinel — see "Tombstone convention" subsection below. (Note: do NOT mv the file; the FUSE workspace does not support unlink, so a mv leaves the original re-resurrectable by workspace-sync round-trip. Tombstone-in-place + audit-trail copy is the convention.)',
 };
 for(const f of all_modified){
   try{ out.per_file_diffs[f]=execSync('git diff -- '+JSON.stringify(f)).toString(); }
@@ -174,6 +174,35 @@ console.log('Wrote stranded patch capture:', '${STRANDED_FILE}');
 else
   PATCHES_STRANDED=0
 fi
+
+### Tombstone convention for resolved stranded-patches sentinels (added 2026-05-09)
+
+When a stranded-patches sentinel's underlying patches have been applied (operator manual run from own-clone-with-direct-push, or any equivalent path that lands the diffs in HEAD), the sentinel file MUST be **tombstoned in place** rather than moved or deleted. The FUSE workspace filesystem does not support `unlink()`, so a `mv` leaves the original at its FUSE path; on the next `workspace-sync` cycle the `sync_glob 'stranded-patches-*.json'` iteration round-trips the file back into the clone, undoing the move. Tombstone-in-place keeps FUSE and git in agreement on a single canonical state with no diff to round-trip.
+
+**The lifecycle:**
+
+1. Apply the patches in your direct-push clone (steps 1–4 of `operator_action` above).
+2. Copy a record of the original sentinel into `monitor/decisions/applied-stranded-patches/applied-<descriptor>-<ts>.json` for audit trail. The record may be the entire original sentinel file's content; the path is the durable provenance reference.
+3. **Overwrite the original sentinel file's content in place** (in BOTH the FUSE workspace and the clone) with a tombstone JSON object using the schema below.
+4. Commit + push the tombstoned content from the clone. Workspace-sync will see git == FUSE and skip the round-trip.
+
+**Tombstone schema:**
+
+```json
+{
+  "tombstone_for": "STRANDED-<original-id>",
+  "tombstone_status": "applied",
+  "tombstone_at": "<ISO 8601 UTC timestamp of resolution>",
+  "tombstone_by_commit": "<short SHA of the commit that landed the underlying work>",
+  "tombstone_audit_record": "monitor/decisions/applied-stranded-patches/<applied-descriptor>.json",
+  "tombstone_note": "<one-sentence explanation of how the work was applied; cite verification (e.g. 'find-strings absent in HEAD per grep') if relevant>",
+  "do_not_treat_as_actionable": true
+}
+```
+
+The `do_not_treat_as_actionable` boolean is the contract for downstream scanners. Tinker's Mode 1 stranded-patches scan and decider's morning-briefing surfacing logic SHOULD check `tombstone_status === "applied"` (or the boolean `do_not_treat_as_actionable === true`) and skip such files from "needs operator action" tallies. Files with no `tombstone_status` field are still-actionable; the field's presence is the disambiguator.
+
+**Edge case — stranded duplicates.** If decider re-strands the same underlying patches under a fresh ID (e.g. EXP-294 P1-P3 are identical find/replace ops to EXP-290 P6-P8), tombstoning the originally-applied sentinel resolves the work but does NOT auto-tombstone the duplicates. Operator (or a future tinker run) MUST tombstone each duplicate sentinel individually after verifying its find-strings are also absent from HEAD. Reference the same `tombstone_audit_record` from each duplicate's tombstone for a clean cross-reference.
 
 # 3a. If ALL tests pass AND PATCHES_STRANDED=0 → commit, run pre-push integrity gate, then push
 # (If PATCHES_STRANDED=1, skip the commit/push of step 3a — the stranded-file commit above is the only commit this run.)

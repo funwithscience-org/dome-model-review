@@ -75,14 +75,25 @@ done | sort -n | head -5
 # PROP-016 Mech A audit (added 2026-05-02): stranded patches >24h old
 # need operator attention. Each stranded file is decider's "I tried, here's
 # the work" artifact when its commit included NEVER_PUSH files. Operator
-# applies in own-clone-with-direct-push and moves the file to
-# monitor/decisions/applied-stranded-patches/. Files older than 24h are
-# either forgotten by operator or stuck pending review.
+# applies in own-clone-with-direct-push and tombstones the sentinel
+# (see decider-patches-and-selfapply.md "Tombstone convention" subsection).
+# Files older than 24h that are NOT tombstoned are either forgotten by the
+# operator or stuck pending review. Files older than 24h that ARE tombstoned
+# (tombstone_status === "applied") have already been resolved; skip them.
 NOW_TS=$(date -u +%s)
 for f in monitor/decisions/stranded-patches-*.json; do
   [ -f "$f" ] || continue
   AGE=$(( NOW_TS - $(stat -c %Y "$f" 2>/dev/null || echo $NOW_TS) ))
   AGE_H=$(( AGE / 3600 ))
+  # Tombstone check (added 2026-05-09): skip files marked applied per the
+  # tombstone convention. A tombstoned file has tombstone_status="applied"
+  # and is retained in place because FUSE doesn't support unlink. Such files
+  # are NOT actionable; do not include them in the "needs operator attention"
+  # tally and do not reference them in tinker findings.
+  TOMBSTONE_STATUS=$(node -e "try{const j=JSON.parse(require('fs').readFileSync('$f','utf8'));process.stdout.write(j.tombstone_status||'')}catch(e){process.stdout.write('')}" 2>/dev/null)
+  if [ "$TOMBSTONE_STATUS" = "applied" ]; then
+    continue
+  fi
   if [ "$AGE_H" -ge 24 ]; then
     echo "STRANDED PATCH >24h: $f (age ${AGE_H}h) — flag in tinker report.findings as moderate, recommend operator action"
   fi
