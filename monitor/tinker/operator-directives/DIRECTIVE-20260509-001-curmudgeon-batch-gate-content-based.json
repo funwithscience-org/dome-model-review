@@ -1,0 +1,73 @@
+{
+  "directive_id": "DIRECTIVE-20260509-001",
+  "title": "Curmudgeon batch-gate revision: classify by remaining-work content, not original ISS severity",
+  "filed_by": "operator",
+  "filed_at": "2026-05-09T11:50:00Z",
+  "status": "pending",
+  "priority": "medium",
+  "scope_authority": "Design proposal only (PROP-NNN). Operator reviews before implementation.",
+
+  "context": [
+    "Curmudgeon has a 3-item-per-run batching mode (curmudgeon.md Step 8a, added 2026-04-25) gated on four conditions. The intent: bundle small-cleanup verification reviews to save Opus startup overhead per item.",
+    "Observed 2026-05-09 morning: four queue-driven verification reviews fired sequentially as singletons (WIN-043.c4 qid 314, WIN-033.c4 qid 315, WIN-066.c4 qid 316, WIN-028.c5 qid 317). Each was a c4/c5 verification of patches decider had just self-applied. None batched. Operator manually triggered each as a separate run (which itself prevents batching, but the gate would also have failed even within a single run).",
+    "Root cause analysis: gate (1) reads ALL related_issues from closed-issues.json and requires every one to be severity:'minor'. The triggering ISSs (1899/1900/1901/1902) carried severity major-and-up because the underlying findings were genuine — wrong author citation, post-hoc paragraph restructure, etc. The gate treated 'this WIN had a critical finding' as 'this re-review is non-trivial' even though decider had already applied the fix and the c4/c5 work was just verifying the patch landed cleanly with no new holes introduced.",
+    "Operator framing of the desired change: the gate should classify based on the REMAINING work content (close-out verification of actions decider has already thought hard about), not the original ISS severity. A verification cycle on a major-severity ISS is operationally a small task; the deep work was in cycle c2 or c3, and c4 is mechanical confirmation."
+  ],
+
+  "operator_intent": "Revise the batchability gate so verification-class queue items can batch even when their underlying ISSs are non-minor. The deep-attack vs verification distinction should be carried by signals about THIS cycle's expected work, not by the historical severity of the WIN's findings.",
+
+  "tasks": [
+    {
+      "task_id": "task_1_design_a_content_based_gate",
+      "description": "Propose a revised gate (1) that classifies queue items as batchable by signals on the CURRENT/REMAINING work, not on closed-issues.json severity history. Strawman options to evaluate:",
+      "options_to_consider": [
+        {
+          "option": "A — Reason-string classifier",
+          "description": "Pattern-match the queue item's `reason` field. Items whose reason starts with 'Expansion EXP-NNN integrated' or 'Patch applied for ISS-NNN' or 'Decider self-applied <N> patches' are verification-class and batchable. Items whose reason mentions 'new ISS', 'fresh attack', 'verdict change', or matches the holistic-review patterns are deep-attack-class and not batchable.",
+          "pro": "Decider already encodes intent in the queue push reason. No new field needed. Easy to implement.",
+          "con": "Brittle to free-text drift; if decider's reason format evolves the regex breaks. Mitigation: tinker maintains the regex set and the gate has a 'unrecognized → assume deep-attack' default."
+        },
+        {
+          "option": "B — Decider sets explicit class field on queue push",
+          "description": "Add a new field `queue_item.class` with values 'verification' | 'deep-attack' | 'holistic'. Decider sets it when pushing. Gate (1) checks `class === 'verification'`.",
+          "pro": "Explicit, schema-conformant, machine-readable. Easier to evolve over time (add 'no-op-confirmation' or 'minor-cleanup' subclasses if needed).",
+          "con": "Requires schema change in priority-queue.json. Requires decider prompt update at every push site. Requires backward-compat with existing un-classed queue items (treat absent field as 'deep-attack' default)."
+        },
+        {
+          "option": "C — Combined patch-size + cycle-number heuristic",
+          "description": "Add a new field `queue_item.combined_patch_size_bytes` set by decider at push time. Gate (1) becomes: batchable if combined_patch_size < 2KB AND target's most recent singleton-deep cycle is c2 or c3 (i.e., this is at minimum c4 or later, indicating prior deep attention).",
+          "pro": "Quantitative — makes 'small remaining work' explicit by byte count. Cycle threshold backstops against attempting batching on first-pass material.",
+          "con": "Requires decider to compute the size at push time (slight extra work). Cycle-threshold heuristic can misclassify (e.g., a real new attack on c4 of a heavily-edited WIN should not batch, but the gate would let it)."
+        },
+        {
+          "option": "D — Hybrid: A + B with backward compat",
+          "description": "Decider starts emitting `class` field per option B going forward. Gate (1) checks the class field if present, else falls back to reason-string classifier per option A. Backward-compat for legacy queue items: 'unrecognized' defaults to deep-attack (singleton-only).",
+          "pro": "Combines explicit signal (B) with fallback parsing (A). No prompt-change deadlines on decider — old queue items still work.",
+          "con": "More moving parts. Two code paths to maintain. Risk of A and B disagreeing if decider's class field and reason text drift apart."
+        }
+      ],
+      "tinker_evaluation_requested": "Pick the option (or hybrid not listed) and justify. Pay particular attention to: (1) what happens when curmudgeon discovers a new major/critical hole mid-batch — current `batch_aborted_due_to_severity_upgrade` logic still applies under any new gate, but the abort frequency may change; (2) backward-compat for queue items already pushed before the gate change lands; (3) whether the new gate should also relax the byte-budget gate (3) for verification-class items, which can run >10KB if curmudgeon is being thorough on a major-class WIN even when just verifying."
+    },
+    {
+      "task_id": "task_2_propose_implementation_PROP_NNN",
+      "description": "Once the design is selected, write a PROP-NNN proposal in monitor/tinker/proposals/ with: (a) chosen option's full schema/code spec, (b) decider-side change (how decider populates the new field or formats the reason string), (c) curmudgeon-side change (the revised gate logic in curmudgeon.md Step 8a), (d) backward-compat plan for in-flight queue items, (e) test plan (how do we verify the next morning's queue burst batches when it should). Operator reviews PROP-NNN before any implementation lands.",
+      "authority": "PROP-only — do NOT self-apply prompt changes. Schema changes to priority-queue.json need operator approval before shipping."
+    },
+    {
+      "task_id": "task_3_calibrate_byte_budget_for_verification_class",
+      "description": "Separately, evaluate whether gate (3) (combined batch byte budget < 10KB) is too tight for verification-class items. Empirical sample: the four c4/c5 reviews this morning ran 4-9KB each. A 3-item batch of verification reviews would be 12-27KB, exceeding the current 10KB cap. If verification-class items are systematically large enough that the byte cap blocks batching even when gate (1) passes, the cap may need to be relaxed for that class. Propose a number with reasoning. (Could be: keep 10KB for deep-attack-class, raise to 30KB for verification-class. Or single value if simpler.)",
+      "authority": "Bundled into the PROP-NNN under task 2."
+    }
+  ],
+
+  "completion_criteria": "(1) PROP-NNN filed in monitor/tinker/proposals/ with the full design choice. (2) Tinker run report cites this directive and the chosen option. (3) Directive status flips pending → completed with `completed_at` and `completed_by_run`.",
+
+  "supersedes": null,
+  "amends": null,
+  "cross_references": [
+    "monitor/prompts/curmudgeon.md Step 8a (current batching gate)",
+    "monitor/curmudgeon/reviews/WIN-043.c4.json + WIN-033.c4.json + WIN-066.c4.json + WIN-028.c5.json (four observed singletons that should have batched)",
+    "monitor/decisions/closed-issues.json (current source of severity classification used by gate (1))",
+    "monitor/curmudgeon/priority-queue.json (where new class field would live, if option B selected)"
+  ]
+}
