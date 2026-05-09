@@ -112,7 +112,7 @@ Every file that crosses the workspace↔git boundary has exactly one authoritati
 **workspace-owned** — `workspace-sync` pushes workspace → git. `build.js publish` MUST NOT copy these.
 
 - `monitor/status.json`, `monitor/review-state.json` — live pipeline state.
-- `monitor/decisions/morning-briefing.txt` — decider's human-facing daily briefing.
+- `monitor/decisions/latest-decider-summary.txt` — decider's human-facing latest-run summary (overwritten every decider run; ~6×/day post-2026-04-27 cadence change). Renamed from morning-briefing.txt on 2026-05-09 — the morning framing dated from when decider ran daily.
 
 **append-only** — directories of immutable, per-ID or per-timestamp files. Either direction can write a NEW file, but NEVER overwrite an existing one.
 

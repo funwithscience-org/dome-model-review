@@ -102,7 +102,7 @@ const OWNERSHIP = {
   // workspace-owned: workspace-sync owns direction; build.js does NOT sync these
   'monitor/status.json': 'workspace',
   'monitor/review-state.json': 'workspace',
-  'monitor/decisions/morning-briefing.txt': 'workspace',
+  'monitor/decisions/latest-decider-summary.txt': 'workspace',
   // NOTE: monitor/curmudgeon/tracker.json is DELIBERATELY NOT listed here.
   // It is a multi-writer file (decider + curmudgeon) and belongs in a future
   // Phase 2 shard split. Until then it is protected only by scheduling

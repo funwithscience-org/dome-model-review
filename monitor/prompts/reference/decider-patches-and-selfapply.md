@@ -200,7 +200,7 @@ When a stranded-patches sentinel's underlying patches have been applied (operato
 }
 ```
 
-The `do_not_treat_as_actionable` boolean is the contract for downstream scanners. Tinker's Mode 1 stranded-patches scan and decider's morning-briefing surfacing logic SHOULD check `tombstone_status === "applied"` (or the boolean `do_not_treat_as_actionable === true`) and skip such files from "needs operator action" tallies. Files with no `tombstone_status` field are still-actionable; the field's presence is the disambiguator.
+The `do_not_treat_as_actionable` boolean is the contract for downstream scanners. Tinker's Mode 1 stranded-patches scan and decider's latest-run-summary surfacing logic SHOULD check `tombstone_status === "applied"` (or the boolean `do_not_treat_as_actionable === true`) and skip such files from "needs operator action" tallies. Files with no `tombstone_status` field are still-actionable; the field's presence is the disambiguator.
 
 **Edge case — stranded duplicates.** If decider re-strands the same underlying patches under a fresh ID (e.g. EXP-294 P1-P3 are identical find/replace ops to EXP-290 P6-P8), tombstoning the originally-applied sentinel resolves the work but does NOT auto-tombstone the duplicates. Operator (or a future tinker run) MUST tombstone each duplicate sentinel individually after verifying its find-strings are also absent from HEAD. Reference the same `tombstone_audit_record` from each duplicate's tombstone for a clean cross-reference.
 

@@ -180,7 +180,7 @@ fs.writeFileSync('monitor/analyst/globe-fingerprint-tracker.json',JSON.stringify
 Check `monitor/analyst/category-proposals/` for CAT-NNN.json:
 1. Read proposal
 2. Create issue with `status: "needs-human"`, `severity: "high"`
-3. Summarize in morning briefing
+3. Summarize in run summary (`monitor/decisions/latest-decider-summary.txt`)
 4. After human approves: create expansion items, flag curmudgeon for first-review
 
 ## Step 1h: Social Analyst Outputs

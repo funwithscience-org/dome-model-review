@@ -234,7 +234,7 @@ sync_glob monitor/changes '*.txt'
 sync_glob monitor/decisions 'daily-report-*.json'
 sync_glob monitor/decisions 'suggested-patches-*.json'
 sync_glob monitor/decisions/applied-patches '*.json'
-smart_copy "${WORKSPACE}/monitor/decisions/morning-briefing.txt" monitor/decisions/morning-briefing.txt
+smart_copy "${WORKSPACE}/monitor/decisions/latest-decider-summary.txt" monitor/decisions/latest-decider-summary.txt
 # PROP-017 gap fills (2026-05-05): decider state files that workspace-sync
 # omitted, causing the curmudgeon-review stale-loop. processed-reviews.json
 # is the staleness ledger read by digest-reviews.js — when this fell out of
@@ -517,8 +517,8 @@ GitHub Actions API for failed Pages deployments in the last ~75 min.
     citations (Stage 2). Default scan window is the last 14 days
     (matches PROP-014-amendment-001 Q3 acceptance window). Writes
     `monitor/integrity/narrative-cite-audit-<ts>.json`. **Soft-complaint
-    only — no blocking, no commit gating.** Operator reviews on the next
-    morning briefing via tinker's soft-complaints grep.
+    only — no blocking, no commit gating.** Operator reviews via tinker's
+    soft-complaints grep on the next tinker run.
 
   - **deploy-watch (Pages deploy poller):** polls
     `GET /repos/<repo>/actions/runs?per_page=20` via PAT, filters to

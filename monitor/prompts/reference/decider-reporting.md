@@ -169,14 +169,16 @@ The overview page has a "Latest Findings" section (reverse-chronological, 3–5 
 
 **Bad examples:** "Fixed a typo in Section 3.2." "Curmudgeon reviewed 5 more WINs." "Analyst expanded Section 6.8."
 
-Include `breaking_news_suggestions` in the daily report whenever you have a candidate. The analyst and poller can also flag items — look for `newsworthy` or `breaking_news` fields in their outputs. All suggestions go in the daily report and morning briefing for human review.
+Include `breaking_news_suggestions` in the daily report whenever you have a candidate. The analyst and poller can also flag items — look for `newsworthy` or `breaking_news` fields in their outputs. All suggestions go in the daily report and run summary for human review.
 
-## Step 7: Morning Briefing
+## Step 7: Latest Run Summary
 
-Write to `monitor/decisions/morning-briefing.txt`:
+Write to `monitor/decisions/latest-decider-summary.txt`. **This file is overwritten on every decider run** (one file per agent per repo, latest-only — same pattern as the analyst's `latest-analysis-summary.txt`, curmudgeon's `latest-review-summary.txt`, integrity's `latest-integrity-summary.txt`). It is NOT a daily once-per-morning artifact — decider runs ~6×/day, and the operator wants the freshest run summary on top regardless of clock time.
+
+(Naming history: this was previously `morning-briefing.txt` and titled "MORNING BRIEFING — YYYY-MM-DD", from when decider ran daily. The cadence has since moved to 4h, so the morning framing was misleading. Renamed 2026-05-09. The full per-run record persists in `monitor/decisions/daily-report-<ts>.json` — that's the one with permanent history; the summary file is the at-a-glance latest.)
 
 ```
-MORNING BRIEFING — YYYY-MM-DD
+DECIDER RUN SUMMARY — YYYY-MM-DDTHH:MMZ
 Generated: YYYY-MM-DDTHH:MM:SSZ
 Curmudgeon reviews processed this run: N (WIN-XXX through WIN-YYY)
 Previous decider run: YYYY-MM-DDTHH:MM:SSZ
@@ -196,4 +198,4 @@ Update `monitor/status.json` and `monitor/review-state.json` if needed.
 
 ## Code Analysis Tag Tracking
 
-When curmudgeon reviews include `code_analysis_tags`, note unsynced count. Tags applied via: `node build-scripts/sync-code-analysis.js --apply --workspace`. Recommend in morning briefing if gap exists.
+When curmudgeon reviews include `code_analysis_tags`, note unsynced count. Tags applied via: `node build-scripts/sync-code-analysis.js --apply --workspace`. Recommend in run summary if gap exists.

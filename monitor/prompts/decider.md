@@ -123,7 +123,7 @@ Read all remaining upstream outputs, check human notes, pipeline health, integri
 **Every run — Patches and Reporting**
 After processing, always:
 → Read `monitor/prompts/reference/decider-patches-and-selfapply.md` for patch format and self-apply procedure.
-→ Read `monitor/prompts/reference/decider-reporting.md` for report schema, issue management, and morning briefing.
+→ Read `monitor/prompts/reference/decider-reporting.md` for report schema, issue management, and the latest-run summary file.
 
 ## End-of-Run Step A: Analyst Attention Inbox
 

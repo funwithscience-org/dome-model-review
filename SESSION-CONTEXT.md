@@ -327,7 +327,7 @@ dome-model-review/
 │   │   ├── processed-reviews.json    # Ledger of fully-processed review filenames
 │   │   ├── suggested-patches-*.json  # Timestamped patch files from decider runs
 │   │   ├── daily-report-*.json       # Timestamped daily reports
-│   │   └── morning-briefing.txt      # Daily briefing for human review
+│   │   └── latest-decider-summary.txt # Latest run summary for human review (overwritten each decider run)
 │   ├── integrity/
 │   │   └── report-YYYY-MM-DDTHH-MM.json # Site health reports (timestamped, multiple per day OK)
 │   ├── changes/                      # Poller change records
