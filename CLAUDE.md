@@ -74,6 +74,15 @@ The workspace mount (`/mnt/dome-model-review/`) uses a FUSE filesystem that **do
 
 **Prompt sync gotcha:** Prompt files are git-owned — pushed changes don't reach FUSE (and thus scheduled agents) without `build.js publish` or manual `cp`.
 
+**Per-session clone discipline (added 2026-05-09 after a near-miss):** The bash sandbox's root partition is ~9.6 GB. A fresh clone of `dome-model-review` is ~290 MB. Three or four accumulated clones in `/tmp` cross the 100%-full threshold; once that happens, decider's `git clone` fails, decider falls into degraded-FUSE mode (file-tools edits without test-running), and a single bad patch can break `wins.json` for hours. This has happened twice (2026-05-07→08 incident; 2026-05-09 near-miss). Operator-side rule:
+
+1. **One working clone per repo at a time.** For this project, the canonical name is `/tmp/edit-clone`. Do not create `/tmp/edit-clone-2`, `/tmp/check-state`, or other siblings. If the working clone gets into a confused state, prefer `git reset / stash / clean` to fix it; if `rm -rf` is needed, treat that as a *replacement*, not a sibling — clone afresh into the same `/tmp/edit-clone` path.
+2. **Read operations use `git -C $WORKING_CLONE <subcommand>` against the working clone.** `git pull`, `git log`, `git show`, `git diff` etc. against an existing clone are non-mutating to working-tree state and won't contaminate edits in flight (assuming the clone doesn't have unstaged changes you care about). Don't spawn a second clone just to inspect git state.
+3. **Cross-repo analysis is allowed** but `rm -rf` the cross-repo clone immediately on completion — don't leave it sitting. Use `--filter=blob:none --depth 1` to minimize size.
+4. **At session end (or every couple of hours during a long session), check `df -h /` and `du -sh /tmp/*-clone`.** If `/` is above 90% used, clean up. The auto-cleanup empowerment in `tinker.md` (added 2026-05-08) only catches clones older than 24h, so it won't help with same-session accumulation.
+
+This is operator-side discipline, not an agent rule. The four scheduled agents (decider, curmudgeon, analyst, workspace-sync) clone responsibly already — each `rm -rf`s its working clone at run end. The recurring failure mode is operator-Claude sessions creating multiple clones for ad-hoc inspection and not cleaning them up.
+
 ### File Ownership Rules (Phase 1)
 
 **PROP-009 additive-edit exception:** The decider may write `popped_by_queue_id` (integer) and `popped_by_queue_id_at` (ISO timestamp) onto an existing curmudgeon review file at pop-time. This is an additive edit — the new fields replace no existing fields and the write is idempotent (guarded by `if(d.popped_by_queue_id==null)`). This is the only permitted exception to the append-only-directory rule for `monitor/curmudgeon/reviews/`. No other field may be mutated.
