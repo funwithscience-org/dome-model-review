@@ -95,9 +95,17 @@ Work **one item per run** (first pending item). After completing, continue to ch
   "holes_addressed": ["hole 1", "hole 2"],
   "new_evidence_added": ["source 1", "source 2"],
   "anticipated_objections": ["objection 1 → rebuttal", "objection 2 → rebuttal"],
-  "kernel_of_truth": "What the dome genuinely gets right about this topic"
+  "kernel_of_truth": "What the dome genuinely gets right about this topic",
+  "review_class": "verification"
 }
 ```
+
+**`review_class` field (PROP-025, landed 2026-05-10):** declares what kind of curmudgeon attention the post-integration review needs. Values:
+- `"verification"` — refinement, wordsmithing, citation fixes, small additions to existing arguments. The deep adversarial work was done in a prior cycle (or already in this EXP's authoring); curmudgeon's job at re-review is just confirming the change landed cleanly. **Batchable** — multiple `verification` items can be reviewed together (up to 3 per run, ≤20 KB combined diff-to-read), saving Opus startup overhead.
+- `"deep-attack"` — new argument introduced, new sub-section under an existing WIN, defender-pivot adding a previously-absent cross-reference, verdict-changing rewrite. Curmudgeon needs fresh adversarial argumentation. **Singleton** — gets a full review run to itself.
+- `"holistic"` — cross-WIN or cross-section work (kill-shot rewrites touching multiple WINs, MOND-grouping verdict reviews). **Singleton.**
+
+**Author guidance:** be honest about which one this EXP is. A `verification` review is cheap (batches with neighbors); a `deep-attack` review is expensive (consumes a whole curmudgeon run). Marking a refinement EXP as `deep-attack` wastes attention budget; marking a new-argument EXP as `verification` lets it slip past curmudgeon's deeper scrutiny. Default if you omit the field: decider treats as `deep-attack` (singleton — same behavior we had pre-PROP-025, no regression). Only declare `verification` when you're confident the work is closing-out content the curmudgeon has already attacked.
 
 6. **VALIDATE JSON — mandatory, do not skip.** Before marking anything complete, run:
 ```bash

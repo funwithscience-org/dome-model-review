@@ -153,6 +153,7 @@ if(!existing){
     queue_id: pq.next_id++,
     target_type: 'win-new',
     target_id: 'WIN-NNN',
+    class: 'deep-attack',           // PROP-025: fresh-onboard WINs always singleton; never been reviewed.
     reason: 'New WIN onboarded from analyst Mode 0',
     pushed_by: 'decider',
     pushed_at: new Date().toISOString(),
@@ -222,6 +223,7 @@ pq.queue.push({
   queue_id: nextId,
   target_type: 'prediction-batch',
   target_id: `PRED-batch-${new Date().toISOString().slice(0,10)}`,
+  class: 'verification',           // PROP-025: prediction-batch is a verdict-spot-check, not deep argumentation. Curmudgeon checks for too-aggressive calls but doesn't re-derive.
   reason: `Prediction assessments integrated: ${assessedIds.join(', ')}. Spot-check verdict reasoning — are any recycled/standard_physics calls too aggressive? Any genuinely testable predictions dismissed?`,
   pushed_by: 'decider',
   pushed_at: new Date().toISOString(),

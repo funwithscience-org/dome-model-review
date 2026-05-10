@@ -110,7 +110,7 @@ For each completed/revised expansion not yet integrated:
 2. **CHECK FOR `no_op: true` FIRST.** If the expansion output file has `no_op: true`, the analyst investigated and found nothing to integrate (e.g., decider already patched the target directly via suggested-patches before analyst picked up the item). Do NOT write a patch. Do NOT push to the priority queue. Do NOT close issues (they should already be closed from the direct patch — verify, don't re-close). Mark the tracker item `integrated: true` with `integrated_at` timestamp and `integration_mode: "no_op_confirmation"`, then **archive-and-remove from live** per the same code as Step 6 below (PROP-022 phase 5 — `integrated:true` triggers the live→archive move). Log in the daily report: "EXP-NNN no-op: analyst confirmed <target> was already patched directly. Nothing to integrate." Then move to the next expansion.
 
 3. **CHECK CATEGORY FIRST — category-proposal-writeup items do NOT get integrated as prose.** If the tracker item has `category: "category-proposal-writeup"` (or the output file has `replacement_html: null` plus a `proposal_package` field), this is meta-work that routes through curmudgeon review BEFORE any section content is written. Do NOT write a patch. Instead:
-   - **Push to the curmudgeon priority queue** (`monitor/curmudgeon/priority-queue.json`) with `target_type: "proposal"`, `target_id: "<EXP-ID>"`, `reason: "Category proposal package awaiting review before prose"`, and `context_hints.source_file: "monitor/analyst/expansions/<EXP-ID>.json"`, `context_hints.related_issues: [<linked ISS-IDs>]`, `context_hints.human_note: "<NOTE-ID if any>"`. Check for dedup (same target_type+target_id) before pushing.
+   - **Push to the curmudgeon priority queue** (`monitor/curmudgeon/priority-queue.json`) with `target_type: "proposal"`, `target_id: "<EXP-ID>"`, `class: "deep-attack"` (PROP-025: proposal packages are foundational — singleton always), `reason: "Category proposal package awaiting review before prose"`, and `context_hints.source_file: "monitor/analyst/expansions/<EXP-ID>.json"`, `context_hints.related_issues: [<linked ISS-IDs>]`, `context_hints.human_note: "<NOTE-ID if any>"`. Check for dedup (same target_type+target_id) before pushing.
    - **Update any linked issues to `status: "blocked-on-curmudgeon"`** (not `fixed`). These issues are NOT closed — they're blocked pending curmudgeon signoff on the proposal package. Add a `blocked_at` timestamp and `blocked_reason: "awaiting curmudgeon review of <EXP-ID> proposal package"`.
    - **Mark the tracker item `"routed_to_curmudgeon": true`** with `routed_at` timestamp. Do NOT set `integrated: true` — integration only happens later when a follow-up EXP writes actual section prose after curmudgeon signoff.
    - **Mark the associated human note consumed** only after all three steps above complete. If any step fails, leave the note pending and flag in the daily report.
@@ -165,13 +165,19 @@ If you are creating an EXP item and self-integrating it in the same run (e.g., y
 node -e "
 const fs=require('fs');
 const pq=JSON.parse(fs.readFileSync('monitor/curmudgeon/priority-queue.json','utf8'));
+// PROP-025: read review_class from the EXP file. Analyst declared their
+// intent there. Absent → 'deep-attack' (safe default, today's behavior).
+const exp=JSON.parse(fs.readFileSync('monitor/analyst/expansions/EXP-NNN.json','utf8'));
+const reviewClass=exp.review_class || 'deep-attack';
 const existing=pq.queue.find(q=>q.target_type==='<TYPE>'&&q.target_id==='<ID>');
 if(!existing){
-  pq.queue.push({queue_id:pq.next_id++,target_type:'<TYPE>',target_id:'<ID>',reason:'Expansion EXP-NNN integrated — rewritten content needs fresh attack',pushed_by:'decider',pushed_at:new Date().toISOString(),context_hints:{source_file:'monitor/analyst/expansions/EXP-NNN.json',related_issues:['<ISS-IDs>'],human_note:null}});
+  pq.queue.push({queue_id:pq.next_id++,target_type:'<TYPE>',target_id:'<ID>',class:reviewClass,reason:'Expansion EXP-NNN integrated — rewritten content needs fresh attack',pushed_by:'decider',pushed_at:new Date().toISOString(),context_hints:{source_file:'monitor/analyst/expansions/EXP-NNN.json',related_issues:['<ISS-IDs>'],human_note:null}});
   fs.writeFileSync('monitor/curmudgeon/priority-queue.json',JSON.stringify(pq,null,2));
 }
 "
 ```
+
+**Class-field rule (PROP-025, landed 2026-05-10):** the analyst declares `review_class` on the EXP file when authoring (`'verification'` for refinements/wordsmithing/citation-fixes, `'deep-attack'` for new arguments / new sub-sections / defender-pivots that introduce new cross-references, `'holistic'` for cross-WIN/cross-section reviews). Decider's job at integration is pure pass-through: read `exp.review_class`, set `class` on the queue push. If the EXP omits the field, default to `'deep-attack'` (singleton — same behavior we had pre-PROP-025, no regression). Never infer the class from EXP content; trust the author's declaration. Curmudgeon's batchability gate uses this field directly (curmudgeon.md Step 8a gate 1).
 
 8. **Close related issues — do NOT skip.** For each issue ID in `issue_ids`, move from open-issues.json to closed-issues.json with `status: "fixed"`, `fixed_by: "expansion-integration"`. Verify removal. Unclosed issues become zombies.
 

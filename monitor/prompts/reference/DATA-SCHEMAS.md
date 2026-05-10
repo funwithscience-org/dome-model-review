@@ -109,11 +109,19 @@ Build computes from this file: {{KS_TOTAL}}, {{KS_DECISIVE}}, {{KS_MAJOR}}, {{KS
 Live-state file at `monitor/curmudgeon/priority-queue.json` carrying ONLY the active queue + schema metadata + `next_id` field. Append-only archive at `monitor/curmudgeon/priority-queue-archive.jsonl` carries the full pop history (one JSON object per line). Decider is the primary writer of both; operator may push to the queue directly via a git clone. PROP-022 phase 3 (2026-05-06) split the file; PROP-009r2's 200-entry rolling cap was retired — audit consumers stream-filter the archive by `popped_at` window.
 
 **Live file top-level fields:**
-- `queue` (array): active items awaiting curmudgeon. Each item has `queue_id`, `target_type`, `target_id`, `reason`, `pushed_by`, `pushed_at`, optional `context_hints`, `require_matching_review_file`, `operator_bypass_reason`.
+- `queue` (array): active items awaiting curmudgeon. Each item has `queue_id`, `target_type`, `target_id`, `class` (PROP-025: `'verification' | 'deep-attack' | 'holistic'`; absent → treated as `'deep-attack'` for backward-compat), `reason`, `pushed_by`, `pushed_at`, optional `context_hints`, `require_matching_review_file`, `operator_bypass_reason`.
 - `next_id` (integer): next queue_id to assign. Decider increments on every push.
 - `mode`, `mode_legal_values`, `mode_set_by`, `mode_set_at`, `mode_rules`: queue-mode metadata (PROP-009 enforce/shadow/etc.).
+- `schema_version` (integer, PROP-025): `2` after PROP-025 land. `schema_version_set_at` and `schema_version_set_by` track the bump.
 - `writers`, `readers`: schema metadata.
 - `last_updated` (ISO timestamp).
+
+**`class` field semantics (PROP-025):** drives curmudgeon's batchability gate (curmudgeon.md Step 8a gate 1). The class is set at push time by whoever creates the work. `'verification'` items can be batched up to 3 per run with ≤20 KB combined diff-to-read; `'deep-attack'` and `'holistic'` items singleton always. Source-of-truth rules:
+- For decider-initiated pushes (new WIN onboard, prediction-batch, patch self-apply, operator manual push): the pusher declares `class` directly.
+- For EXP-integration pushes: decider reads `exp.review_class` from the EXP file and propagates. The analyst is the author of `review_class` — they decide whether the EXP is refinement (`'verification'`) or introduces new arguments (`'deep-attack'`). If `exp.review_class` is absent, decider defaults to `'deep-attack'` (singleton — same behavior we had pre-PROP-025).
+- See `monitor/prompts/decider.md` ("Class field" note under "How to push items onto the queue") for the per-push-site default matrix.
+
+**EXP file schema (PROP-025 addition):** analyst's expansion files at `monitor/analyst/expansions/EXP-NNN.json` may carry a `review_class` field with values `'verification' | 'deep-attack' | 'holistic'`. Analyst declares this when authoring. Default if absent: decider treats as `'deep-attack'`. Author guidance: `'verification'` for refinements (wordsmithing, citation fixes, small additions to existing arguments), `'deep-attack'` for new arguments / new sub-sections / defender-pivots that add new cross-references / verdict-changing rewrites, `'holistic'` for cross-WIN or cross-section work. Analyst should consider the cost: a `'verification'` review can batch (cheap), a `'deep-attack'` review will singleton (expensive Opus startup) — declaring honestly preserves curmudgeon's anti-drift attention budget.
 
 **Archive file shape (`priority-queue-archive.jsonl`):** one JSON object per line, append-only, no slice cap. Each line is a pop record. Required fields:
 - `queue_id`, `target_id`, `target_type`, `popped_at`, `popped_by`.

@@ -470,6 +470,7 @@ pq.queue.push({
   queue_id: pq.next_id++,
   target_type: 'win-new',           // or win-detail-rewrite, section-new, section-rewrite, proposal, killshot-new, killshot-rewrite
   target_id: 'WIN-068',
+  class: 'deep-attack',             // PROP-025: 'verification' | 'deep-attack' | 'holistic'. See "Class field" note below.
   reason: 'New WIN onboarded from analyst Mode 0 output',
   pushed_by: 'decider',
   pushed_at: new Date().toISOString(),
@@ -482,6 +483,22 @@ pq.queue.push({
 fs.writeFileSync(CLONE+'/monitor/curmudgeon/priority-queue.json',JSON.stringify(pq,null,2));
 "
 ```
+
+**Class field (PROP-025, landed 2026-05-10):** Every push MUST carry `class: 'verification' | 'deep-attack' | 'holistic'`. The class drives curmudgeon's batchability gate — `'verification'` items can be batched (up to 3 per run, ≤20 KB combined diff-to-read); `'deep-attack'` and `'holistic'` items singleton always. The defaults you should apply when constructing a queue push:
+
+| Push site | Default `class` | Rule |
+|---|---|---|
+| Step 1f new WIN onboarded | `'deep-attack'` | Fresh content, never been reviewed. |
+| Step 1f new section onboarded | `'deep-attack'` | Same. |
+| Step 2a proposal package (CAT-NNN) | `'deep-attack'` | Same. |
+| Step 2a EXP integration (any target_type — section-rewrite, win-detail-rewrite, killshot-rewrite) | **Read `exp.review_class` from the EXP file**; if absent → `'deep-attack'` | Analyst declared their intent on the EXP. Decider propagates. Absent → safe default. |
+| Patch self-applied (decider just landed minor patches and pushes a re-review) | `'verification'` | Decider knows this is a "did the patch land cleanly" verification cycle. |
+| Defense neutralization integration (defender-pivot EXP integrated) | **Read `exp.review_class`**; if absent → `'deep-attack'` | Same as EXP integration — analyst's call. |
+| Step 1h2 prediction batch (verdict assignments integrated) | `'verification'` | Curmudgeon spot-checks for too-aggressive verdicts but doesn't re-derive. |
+| Killshot rewrite with substantive new content (not EXP-driven) | `'deep-attack'` | Singleton. |
+| Holistic-check push (rare — usually Priority 4 not queue) | `'holistic'` | Singleton. |
+
+**Why "read `exp.review_class` from the EXP" rather than always defaulting:** the analyst, when authoring the EXP, knows whether the work is a refinement (`'verification'`) or introduces new arguments (`'deep-attack'`). Letting the analyst declare keeps the call at the source. The decider does not need to inspect EXP content to classify — it just propagates. If the EXP omits `review_class`, treat as `'deep-attack'` (the safe default — same singleton behavior we had pre-PROP-025).
 
 **Dedup:** Before pushing, check if an item with the same `target_type` + `target_id` is already in the queue. If so, don't duplicate — just update its `reason` and `pushed_at`.
 
