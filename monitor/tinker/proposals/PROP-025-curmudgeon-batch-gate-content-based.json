@@ -1,0 +1,211 @@
+{
+  "id": "PROP-025",
+  "prop_id": "PROP-025",
+  "title": "Curmudgeon batch-gate revision: classify by remaining-work content (queue_item.class), not original ISS severity",
+  "authored_by": "tinker (2026-05-10 run, in response to DIRECTIVE-20260509-001)",
+  "authored_at": "2026-05-10T08:00:00Z",
+  "status": "proposed",
+  "category": "gate_revision",
+  "target": "monitor/prompts/curmudgeon.md Step 8a (gate (1) and gate (3)) + monitor/prompts/decider.md push sites + monitor/prompts/reference/decider-intake.md + monitor/prompts/reference/decider-curmudgeon.md + monitor/prompts/reference/DATA-SCHEMAS.md (priority-queue.json schema) + monitor/curmudgeon/priority-queue.json (schema_version bump)",
+  "directive": "DIRECTIVE-20260509-001-curmudgeon-batch-gate-content-based",
+
+  "problem": {
+    "summary": "On 2026-05-09 morning, four queue-driven c4/c5 verification reviews fired sequentially as singletons (queue_id 314 WIN-043, 315 WIN-033, 316 WIN-066, 317 WIN-028). Each was a re-review of patches/EXP integrations decider had just landed. None batched. Operationally these are short verification cycles where the deep adversarial work happened in c2/c3 — but the current Step 8a gate keeps them singleton because the underlying ISSs (1899/1900/1901/1902 — wrong author citation, post-hoc paragraph restructure, etc.) carry severity major/critical.",
+    "two_actual_blockers_identified": [
+      "Gate (1) — severity-based: reads context_hints.related_issues from closed-issues.json and requires every related issue to be severity:'minor'. The four observed pushes had related_issues array empty (vacuously minor — would have passed) but other recent pushes carrying populated related_issues with major/critical entries have been blocked here.",
+      "Gate (3) — byte-budget + EXP carve-out: combined batch byte cap is 10KB, AND the prompt explicitly carves out 'EXP integration ≈ NOT batchable, regardless of severity'. This is the bigger practical blocker for the 2026-05-09 cohort: queue_id 314 was an EXP-297 integration push (defender-pivot paragraph + cross-refs), and the carve-out forces singleton regardless of how minor the actual prose addition is."
+    ],
+    "operator_diagnosis": "The gate should classify based on the REMAINING work content (close-out verification of actions decider has already thought hard about), not on the historical severity of the WIN's prior findings. A verification cycle on a major-severity ISS is operationally a small task; the deep work was in cycle c2 or c3, and c4 is mechanical confirmation that the patch landed cleanly without introducing new holes.",
+    "evidence": [
+      "monitor/curmudgeon/reviews/WIN-043.c4.json (queue_id 314, 14.7 KB output, holes_found=0, EXP-297 integration verification — should have batched under class=verification)",
+      "monitor/curmudgeon/reviews/WIN-033.c4.json (queue_id 315, 20.7 KB output, holes_found=0)",
+      "monitor/curmudgeon/reviews/WIN-066.c4.json (queue_id 316, 25.3 KB output, holes_found=0)",
+      "monitor/curmudgeon/reviews/WIN-028.c5.json (queue_id 317, 18.7 KB output, holes_found=0)",
+      "monitor/curmudgeon/priority-queue-archive.jsonl entries 2026-05-09T13:20:52.299Z — all four popped strict_queue_id, no batch_position field, confirms singleton execution",
+      "monitor/decisions/closed-issues.json: ISS-1899 (critical), ISS-1900/1901 (major), ISS-1902 (major), ISS-1903/1904/1905/1906/1907 (moderate) — these are the underlying historical findings, not the work for c4/c5",
+      "monitor/analyst/expansions/EXP-297-WIN-043-defense.json (20 KB source) and EXP-296-WIN-066-defense.json (13 KB source) — full EXP files, but the actual rewritten-prose diff (the patches[].replace fields) is ~1-3 KB each. Curmudgeon attacks the FINAL prose, not the EXP wrapper."
+    ],
+    "why_directive_focused_on_gate_1": "DIRECTIVE-20260509-001 framed the issue around gate (1) severity-classification because the operator was looking at the underlying ISS severities (major/critical) and recognized that severity-history is the wrong signal. The carve-out in gate (3) ('EXP integration NOT batchable, regardless of severity') is a related but separate failure mode — both fire under the same misclassification. The fix needs to hit both."
+  },
+
+  "design_choice": {
+    "selected_option": "B (decider sets explicit class field) with absent-field default = 'deep-attack' for backward-compat",
+    "rejected_options_and_why": {
+      "A_reason_string_classifier": "Brittle. Decider's reason format evolves; today's 'EXP-NNN integrated — rewritten content needs fresh attack' could become 'Expansion EXP-NNN integration completed; review for new attack vectors' after any prompt edit, breaking the regex. The directive author explicitly flagged this risk.",
+      "C_patch_size_plus_cycle_heuristic": "Requires decider to compute byte size at every push site (real engineering work). Cycle threshold misclassifies — a real new attack on c4 should not batch, but the cycle heuristic would let it. Too many false positives.",
+      "D_hybrid_A_plus_B": "Two code paths to maintain. Risk of class-field and reason-string disagreeing if decider's prompt drift hits one but not the other. The hybrid's only real value is during a 24h transition window — and in our case the queue depth is typically <5 items with pushes ~10/day, so legacy un-classed items drain fast under the safe 'deep-attack' default. Pure B with default='deep-attack' achieves the same backward-compat without the regex code path."
+    },
+    "rationale": "Pure B is explicit, schema-conformant, and machine-readable. The legacy fallback (absent class → deep-attack) is the safe pre-PROP behavior — un-classed items behave exactly as today (singleton). Once decider's prompt is updated, all NEW pushes carry the class field; legacy items drain in <24h. No regex maintenance burden, no two-source-of-truth ambiguity."
+  },
+
+  "proposed_fix": {
+    "summary": "Add a queue_item.class field with values 'verification' | 'deep-attack' | 'holistic'. Decider populates on every push site. Curmudgeon Step 8a gate (1) checks class==='verification' (absent field → 'deep-attack', singleton). Gate (3) byte budget relaxes to 20KB for verification class (was 10KB), keeps 10KB for deep-attack class, removes the 'EXP integration NOT batchable' carve-out (replaced by class-based discrimination). The other gates (2 verdict change, 4 anti-staleness, 5 fresh onboard) are unchanged.",
+
+    "schema_change": {
+      "file": "monitor/curmudgeon/priority-queue.json",
+      "addition": "Each item in queue[] gains an optional `class` field with enum 'verification' | 'deep-attack' | 'holistic'. Absent → treated as 'deep-attack' (singleton, safe default).",
+      "schema_version_bump": "If priority-queue.json carries a schema_version field, bump it. (Spot-check shows the live file does NOT carry one — so this PROP also recommends adding `schema_version: 2` to priority-queue.json at land-time as a hygiene step, with `schema_version_set_at` and `schema_version_set_by` audit fields.)"
+    },
+
+    "class_definitions": {
+      "verification": "Re-review of a target where decider has just landed patches or integrated an expansion. The deep argumentation work happened in a prior cycle (c2 or c3). Curmudgeon's job here is 'did the patch/integration land cleanly without introducing new holes?' — a mechanical verification cycle with reduced cognitive load. BATCHABLE under gate (1).",
+      "deep-attack": "Re-review where curmudgeon is expected to do fresh adversarial argumentation — new evidence, new attacks, defense neutralization, structural rewrites with substantive argument changes, killshot rewrites with new content. NOT batchable. Singleton.",
+      "holistic": "Cross-WIN or cross-section reviews — kill-shot rewrites that touch multiple WINs, prediction batches with verdict assignments, MOND-grouping verdict reviews. NOT batchable. Singleton. (Note: most holistic checks are pulled from holistic_checks tracker by Priority 4, not pushed to the queue, so this enum value applies to the rare cases where a holistic check enters via the queue.)",
+      "absent_field_default": "If queue_item.class is undefined or null, treat as 'deep-attack' (singleton). This is the legacy-compat default — preserves pre-PROP behavior for any in-flight items."
+    },
+
+    "decider_population_matrix": [
+      {"push_site": "Step 1f (new WIN onboarded from analyst Mode 0)", "target_type": "win-new", "class": "deep-attack", "note": "Already singleton via gate-5 (fresh-onboard exclusion); class field is set for hygiene."},
+      {"push_site": "Step 1f (new section)", "target_type": "section-new", "class": "deep-attack", "note": "Same — fresh onboard."},
+      {"push_site": "Step 2a (proposal package CAT-NNN)", "target_type": "proposal", "class": "deep-attack", "note": "Same — fresh onboard."},
+      {"push_site": "Step 2a (EXP integrated → section-rewrite)", "target_type": "section-rewrite", "class": "verification", "note": "Analyst+decider already did the deep thinking in EXP authoring + integration. Curmudgeon verifies."},
+      {"push_site": "Step 2a (EXP integrated → win-detail-rewrite)", "target_type": "win-detail-rewrite", "class": "verification", "note": "Same."},
+      {"push_site": "Step 2a (EXP integrated → killshot-rewrite)", "target_type": "killshot-rewrite", "class": "verification", "note": "Same."},
+      {"push_site": "Patch self-applied (decider-patches-and-selfapply.md push, where applicable)", "target_type": "win-detail-rewrite | section-rewrite", "class": "verification", "note": "Mechanical patch landing — verification cycle."},
+      {"push_site": "Defense neutralization integration", "target_type": "win-detail-rewrite", "class": "verification", "note": "Defender-pivot anticipation prose was authored in EXP; integration is verification."},
+      {"push_site": "Step 1h2 (prediction batch)", "target_type": "prediction-batch", "class": "verification", "note": "Verdict-assignment integration; curmudgeon spot-checks for too-aggressive verdicts but does not re-derive."},
+      {"push_site": "Killshot rewrite (substantive new content, not EXP-driven)", "target_type": "killshot-rewrite", "class": "deep-attack", "note": "Singleton."},
+      {"push_site": "Holistic-check push (rare — usually Priority 4 not queue)", "target_type": "varies", "class": "holistic", "note": "Singleton."}
+    ],
+
+    "files_to_modify": [
+      {
+        "path": "monitor/prompts/curmudgeon.md",
+        "section": "Step 8a — Batch triage",
+        "change_summary": "Replace gate (1) and gate (3) language. Gate (1) becomes class-based; gate (3) becomes class-aware byte budget; remove 'EXP integration NOT batchable' carve-out.",
+        "find_gate_1": "1. **Decider classified the triggering patches as `severity: minor`.** Look up the queue item's `context_hints.related_issues` (or `related_issues`); for each ISS-NNN, find its closure record in `${CLONE}/monitor/decisions/closed-issues.json` and check the `severity` field. **All** related issues must be `severity: minor`. Any `moderate`, `major`, or `critical` → the item is substantive, do not batch.",
+        "replace_gate_1": "1. **Queue item classified `class: 'verification'` by decider.** Read `item.class` directly from the queue entry. Only `'verification'` is batchable; `'deep-attack'`, `'holistic'`, or any other value is singleton. **Backward-compat:** if `item.class` is absent or null (legacy un-classed items pushed before PROP-025 landed), treat as `'deep-attack'` — singleton. Do NOT fall back to severity-from-closed-issues lookup; that signal was retired in PROP-025 because it captured 'this WIN had a critical finding historically' rather than 'this re-review is shallow'. The deep argumentation work for verification-class items happened in cycle c2 or c3; c4/c5 is mechanical confirmation that decider's patch/integration landed cleanly.",
+        "find_gate_3": "3. **Combined batch byte budget < 10 KB.** Estimate each item's diff size from its `reason` (e.g., \"4 minor text patches\" ≈ 1–2 KB; \"stutter fix\" ≈ <500 bytes; \"EXP integration\" ≈ NOT batchable, regardless of severity). If adding the next item would push combined batch beyond ~10 KB of new text to read, stop adding to the batch.",
+        "replace_gate_3": "3. **Combined batch byte budget — class-aware.** The budget is the combined size of new prose the curmudgeon will actually attack (the `patches[].replace` field for EXP-integration pushes, the patch text for self-applied-patch pushes — NOT the entire EXP source file or the review JSON output). Caps: `class: 'verification'` → 20 KB combined. `class: 'deep-attack'` → 10 KB combined (unchanged). `class: 'holistic'` → singleton always (cap not applicable). The previous 'EXP integration NOT batchable, regardless of severity' carve-out is RETIRED — EXP integrations may batch under verification class within the 20KB cap. If adding the next item would exceed the class cap, stop adding to the batch."
+      },
+      {
+        "path": "monitor/prompts/decider.md",
+        "section": "lines 469-481 (How to push items onto the queue — the canonical example)",
+        "change_summary": "Add `class` field to the example push payload. Add a comment block defining the enum values.",
+        "find": "pq.queue.push({\n  queue_id: pq.next_id++,\n  target_type: 'win-new',           // or win-detail-rewrite, section-new, section-rewrite, proposal, killshot-new, killshot-rewrite\n  target_id: 'WIN-068',\n  reason: 'New WIN onboarded from analyst Mode 0 output',\n  pushed_by: 'decider',\n  pushed_at: new Date().toISOString(),\n  context_hints: {\n    source_file: 'monitor/analyst/new-wins/WIN-068.json',\n    related_issues: ['ISS-696'],\n    human_note: null\n  }\n});",
+        "replace": "pq.queue.push({\n  queue_id: pq.next_id++,\n  target_type: 'win-new',           // or win-detail-rewrite, section-new, section-rewrite, proposal, killshot-new, killshot-rewrite\n  target_id: 'WIN-068',\n  reason: 'New WIN onboarded from analyst Mode 0 output',\n  // PROP-025: queue_item.class drives curmudgeon Step 8a batchability.\n  //   'verification' = re-review of decider-landed patches/EXP integration; deep work\n  //                    happened in a prior cycle. BATCHABLE.\n  //   'deep-attack'  = fresh adversarial argumentation expected. SINGLETON.\n  //   'holistic'     = cross-cutting review (kill-shot, prediction batch). SINGLETON.\n  // Absent/null defaults to 'deep-attack' on the curmudgeon side — set it explicitly.\n  // Fresh onboards (win-new/section-new/proposal) are singleton regardless via gate-5;\n  // class is set for hygiene.\n  class: 'deep-attack',\n  pushed_by: 'decider',\n  pushed_at: new Date().toISOString(),\n  context_hints: {\n    source_file: 'monitor/analyst/new-wins/WIN-068.json',\n    related_issues: ['ISS-696'],\n    human_note: null\n  }\n});"
+      },
+      {
+        "path": "monitor/prompts/reference/decider-intake.md",
+        "section": "lines 152-162 (Step 1f new-WIN push) and lines 221-237 (Step 1h2 prediction-batch push)",
+        "change_summary": "Add `class: 'deep-attack'` to the win-new push (cosmetic — fresh onboard always singleton anyway). Add `class: 'verification'` to the prediction-batch push.",
+        "find_a": "  pq.queue.push({\n    queue_id: pq.next_id++,\n    target_type: 'win-new',\n    target_id: 'WIN-NNN',\n    reason: 'New WIN onboarded from analyst Mode 0',\n    pushed_by: 'decider',\n    pushed_at: new Date().toISOString(),\n    context_hints: {source_file:'monitor/analyst/new-wins/WIN-NNN.json',related_issues:[],human_note:null}\n  });",
+        "replace_a": "  pq.queue.push({\n    queue_id: pq.next_id++,\n    target_type: 'win-new',\n    target_id: 'WIN-NNN',\n    reason: 'New WIN onboarded from analyst Mode 0',\n    class: 'deep-attack',  // PROP-025 — fresh onboard always singleton via gate-5; field set for hygiene\n    pushed_by: 'decider',\n    pushed_at: new Date().toISOString(),\n    context_hints: {source_file:'monitor/analyst/new-wins/WIN-NNN.json',related_issues:[],human_note:null}\n  });",
+        "find_b": "pq.queue.push({\n  queue_id: nextId,\n  target_type: 'prediction-batch',\n  target_id: `PRED-batch-${new Date().toISOString().slice(0,10)}`,\n  reason: `Prediction assessments integrated: ${assessedIds.join(', ')}. Spot-check verdict reasoning — are any recycled/standard_physics calls too aggressive? Any genuinely testable predictions dismissed?`,\n  pushed_by: 'decider',\n  pushed_at: new Date().toISOString(),",
+        "replace_b": "pq.queue.push({\n  queue_id: nextId,\n  target_type: 'prediction-batch',\n  target_id: `PRED-batch-${new Date().toISOString().slice(0,10)}`,\n  reason: `Prediction assessments integrated: ${assessedIds.join(', ')}. Spot-check verdict reasoning — are any recycled/standard_physics calls too aggressive? Any genuinely testable predictions dismissed?`,\n  class: 'verification',  // PROP-025 — verdict integration is verification class\n  pushed_by: 'decider',\n  pushed_at: new Date().toISOString(),"
+      },
+      {
+        "path": "monitor/prompts/reference/decider-curmudgeon.md",
+        "section": "line 170 (EXP integration push)",
+        "change_summary": "Add `class: 'verification'` to the EXP integration push — this is the key change that lets the four observed singleton items batch.",
+        "find": "  pq.queue.push({queue_id:pq.next_id++,target_type:'<TYPE>',target_id:'<ID>',reason:'Expansion EXP-NNN integrated — rewritten content needs fresh attack',pushed_by:'decider',pushed_at:new Date().toISOString(),context_hints:{source_file:'monitor/analyst/expansions/EXP-NNN.json',related_issues:['<ISS-IDs>'],human_note:null}});",
+        "replace": "  // PROP-025: class='verification' — analyst+decider authored+integrated the EXP;\n  // curmudgeon's job is verifying the integration didn't introduce new holes.\n  pq.queue.push({queue_id:pq.next_id++,target_type:'<TYPE>',target_id:'<ID>',reason:'Expansion EXP-NNN integrated — rewritten content needs fresh attack',class:'verification',pushed_by:'decider',pushed_at:new Date().toISOString(),context_hints:{source_file:'monitor/analyst/expansions/EXP-NNN.json',related_issues:['<ISS-IDs>'],human_note:null}});"
+      },
+      {
+        "path": "monitor/prompts/reference/DATA-SCHEMAS.md",
+        "section": "## priority-queue.json Schema",
+        "change_summary": "Document the new class field, the enum values, and the absent-field default. Document the schema_version bump from absent to 2.",
+        "addition": "Add a section under priority-queue.json schema:\n\n**class field (PROP-025, added 2026-05-XX):** Each queue item carries an optional `class` field with enum values:\n- `'verification'` — re-review of decider-landed patches/EXP integration; batchable under curmudgeon Step 8a.\n- `'deep-attack'` — fresh adversarial argumentation expected; singleton.\n- `'holistic'` — cross-cutting review (kill-shot, prediction batch); singleton.\n- absent/null — treated as `'deep-attack'` for backward-compat (legacy un-classed items pushed before PROP-025).\n\nDecider populates the field at every push site per the matrix in PROP-025. Curmudgeon Step 8a reads it as the primary batchability signal."
+      }
+    ],
+
+    "files_to_create": [],
+    "files_to_delete": []
+  },
+
+  "byte_budget_calibration_task_3": {
+    "directive_question": "Is gate (3)'s 10KB combined cap too tight for verification-class items?",
+    "empirical_evidence": "The four c4/c5 reviews on 2026-05-09 produced 14-25 KB review JSON OUTPUTS, but the ACTUAL diff-to-read (the patches[].replace prose curmudgeon attacks) was much smaller per item: typically 1-3 KB for EXP-integration pushes, 200-2000 bytes for patch-self-apply pushes. The directive's cited '4-9KB each' likely conflated review-output size with diff-to-read size; review outputs are inflated by the expanded review lenses (advocate_mode, cross_win_consistency, quantitative_verification fields populated even when shallow).",
+    "actual_blocker_was_carve_out": "The 10KB cap by itself probably wouldn't have blocked the four observed pushes (3-item batch of 1-3KB diffs each ≈ 3-9KB, fits 10KB). The harder mechanical blocker was the 'EXP integration NOT batchable, regardless of severity' carve-out, which short-circuits before the byte cap is even computed.",
+    "recommendation": {
+      "verification_class_cap": "20 KB combined",
+      "deep_attack_class_cap": "10 KB combined (unchanged)",
+      "holistic_class": "singleton (cap N/A)",
+      "rationale": "20 KB for verification covers realistic worst-case 3-item batches: three EXP integrations with ~5-7 KB rewritten prose each. One-step relaxation (10KB → 20KB), conservative enough that anti-drift sensitivity is mostly preserved. The directive suggested 30KB; we propose 20KB as a more conservative starting point and recommend revisiting after 30 days of empirical batching data — if observed batches consistently fail the 20KB cap, raise to 25-30 KB."
+    },
+    "carve_out_removal": "Drop the 'EXP integration NOT batchable, regardless of severity' clause. Class-based discrimination subsumes it."
+  },
+
+  "backward_compat": {
+    "in_flight_queue_items": "Items already pushed to priority-queue.json before PROP-025 lands have no `class` field. Curmudgeon's gate (1) treats absent class as 'deep-attack' → singleton. This is exactly the pre-PROP behavior. No items are mis-batched during the transition window.",
+    "transition_window": "Decider runs every 4h (BAU) or 1h (churn-and-burn). Once decider's prompt is updated, all NEW pushes carry the class field. Existing un-classed items drain in <24h at typical depths. After 24h the absent-field path is dead code in practice (but stays in the prompt for safety).",
+    "schema_version_field": "Bumping priority-queue.json schema_version from absent → 2 is documented but does NOT gate behavior — purely informational. Curmudgeon's gate logic doesn't read schema_version; it reads item.class directly. This avoids an additional all-or-nothing flip-day.",
+    "operator_pushes": "Operator-driven pushes (pushed_by containing 'operator') must also set the class field per the same matrix. PROP recommends adding a sentence to decider.md and CLAUDE.md operator-runbook noting this. If an operator push omits class, the gate defaults to 'deep-attack' (singleton — safe).",
+    "no_data_migration": "The live priority-queue.json file is NOT modified at land-time. The schema change is forward-only. Existing entries continue to work (singleton via default)."
+  },
+
+  "abort_on_severity_upgrade_unchanged": {
+    "current_rule": "If during batch processing curmudgeon discovers a finding that's actually major or critical, abort the batch (procedure d, write batch_aborted_due_to_severity_upgrade: true, STOP).",
+    "post_PROP_25": "Rule unchanged. The class field is decider's PRE-FIRE classification of expected work shallowness; the abort rule is curmudgeon's RUN-TIME safety net when classification was wrong. Both layers stay.",
+    "expected_abort_frequency": "Should not increase materially. Verification-class items by definition are post-deep-work; finding a new major/critical hole in them is unusual but possible. If abort frequency on verification-class spikes >10% in a month, that's a signal decider's classification is too lenient — tinker should flag in monthly Mode 3 audit."
+  },
+
+  "tradeoffs": {
+    "gain": [
+      "Verification-class items batch correctly. The four 2026-05-09 singletons that should have been a single batch (saving 2-3× Opus startup overhead) would batch under PROP-025.",
+      "Schema-conformant signal — decider explicitly declares 'this is shallow remaining work' rather than the gate inferring it from severity history. Easier to audit and evolve.",
+      "Removes the brittle 'EXP integration NOT batchable' carve-out — that rule was a blanket prohibition that didn't distinguish small expansions (1-3 KB prose addition) from large structural rewrites.",
+      "Class enum is open to extension — if we ever need 'no-op-confirmation' or 'minor-cleanup' subclasses, schema is ready."
+    ],
+    "loss": [
+      "Schema change to priority-queue.json (low-risk: additive optional field, no migration needed).",
+      "Decider prompt edits at every push site (mechanical, ~6 sites).",
+      "Curmudgeon prompt edit to Step 8a (one location, ~10 lines).",
+      "Two-layer classification: decider's pre-fire class label + curmudgeon's run-time abort. The directive author acknowledged this acceptable risk; abort-on-severity-upgrade is the safety net."
+    ],
+    "edge_cases_considered": [
+      "Decider misclassifies a deep-work push as 'verification'. Mitigation: curmudgeon's abort-on-severity-upgrade rule (procedure d) — fires on run-time discovery of major/critical hole, aborts batch. Same safety net as today.",
+      "Operator pushes a queue item without class field. Default is 'deep-attack' → singleton. Operator's note on the push (operator_bypass_reason) is unaffected. Worst case: an operator-pushed verification item runs as singleton when it could have batched. Acceptable; operator can re-push with the field if it matters.",
+      "An EXP integration that genuinely needs deep attack (e.g., the EXP introduces a new argument that hasn't been adversarially tested). Decider should classify these 'deep-attack' even though the queue mechanic is EXP integration. PROP recommends decider's prompt note: 'When an EXP introduces NEW substantive arguments rather than refining existing ones, push with class=deep-attack.' This is judgment, not mechanical.",
+      "Curmudgeon batches three verification items, finds nothing in items 1-2, then finds a major hole in item 3. The find counts (item 3 produces a normal review with the major hole). The batch was processed; no rollback needed. Items 1-2 already have their reviews written.",
+      "Backward-compat collision: decider's prompt is updated but curmudgeon's prompt is not yet (or vice versa). Mitigations: PROP lands as a single coherent commit touching both prompts; if prompts get partially deployed by FUSE staleness, the absent-field default (deep-attack/singleton) preserves correctness. Worst case: a verification item runs as singleton until both prompts are in sync — operationally identical to pre-PROP.",
+      "schema_version=2 set but curmudgeon doesn't read it. Intentional. The schema_version is informational/audit-only. Behavior is gated by item.class, which is forward-compat (absent → deep-attack)."
+    ]
+  },
+
+  "test_plan": {
+    "pre_land_test": "Manually craft a hypothetical priority-queue.json with three items class='verification' (each ~3KB diff). Walk through the revised gate (1) + gate (3) by hand. Confirm all three batch. Then change one item's class to 'deep-attack'; confirm the batch stops at the boundary item.",
+    "first_24h_validation": "After PROP lands, watch the next morning's queue burst (typically 2-4 items pushed by the 5:13Z decider run after EXP integrations land). Confirm:\n  (a) decider populates `class` on every push (grep for 'class:' in priority-queue.json after push).\n  (b) curmudgeon's first run after the burst batches items where class==='verification' AND combined diff fits 20KB.\n  (c) curmudgeon's review files for batched items carry batched:true and batch_position:N (1, 2, or 3).\n  (d) priority-queue-archive.jsonl shows multiple items popped at the same popped_at timestamp.",
+    "30_day_audit": "Tinker monthly Mode 3 audit checks:\n  (a) class distribution across pushes — verify decider isn't over-classing as 'verification'.\n  (b) batch_aborted_due_to_severity_upgrade frequency on verification-class items — if >10%, decider's classification is too lenient; tighten.\n  (c) gate-3 pass rate at the 20KB cap — if <50% of would-be batches fit, raise cap to 25KB.\n  (d) Comparison: pre-PROP-025 batching rate vs post — quantify Opus savings.",
+    "verification_pattern": "grep -q 'class:.*verification' monitor/prompts/decider.md && grep -q \"item.class === 'verification'\" monitor/prompts/curmudgeon.md && grep -q '20 KB' monitor/prompts/curmudgeon.md && echo FIXED || echo STILL_BROKEN",
+    "verification_pattern_explanation": "Returns FIXED when (a) decider's prompt populates class on at least one push site, (b) curmudgeon's gate (1) reads class==='verification', and (c) curmudgeon's gate (3) carries the 20KB verification-class cap. Conjunction is intentional — partial deployment is detectable.",
+    "expected_when_fixed": "All three conditions true on origin/main."
+  },
+
+  "estimated_impact": {
+    "opus_cost_savings": "Each batched curmudgeon run saves ~1-2 minutes of Opus startup overhead. At observed verification-item rate (~2-4/day under churn-and-burn cadence), batching 3 items vs running them as 3 singletons saves 2-4 min/day Opus time. Modest but compounds over the project lifetime.",
+    "queue_drain_speed": "Three-at-a-time batching halves the time to drain a 4-item burst (4 singleton runs → 2 batch runs). Improves freshness of curmudgeon's view on the WIN under review.",
+    "implementation_risk": "Low. Additive schema field; backward-compat is the safe default; abort-on-severity-upgrade is unchanged; tested patterns at every push site."
+  },
+
+  "requires_human_judgment": true,
+  "why_human_needed": "Operator must approve: (a) the class enum values and the population matrix (does 'EXP integration is always verification' match operator's intent, or are there cases where EXP introduces new substantive arguments and should be deep-attack?). (b) The 20KB cap for verification class — this PROP proposes 20KB as conservative; the directive suggested up to 30KB. (c) Whether schema_version field gets bumped at land-time or stays a documentation note. (d) Land sequencing — single coherent commit touching curmudgeon.md + decider.md + reference files vs phased rollout.",
+  "operator_questions": [
+    "Q1: Is the 'EXP integration → class=verification' rule correct in all cases, or should EXPs that introduce NEW arguments (vs refining existing ones) be class=deep-attack? If yes, what's the heuristic decider uses to distinguish — a field on the EXP itself (`introduces_new_argument: bool`)? PROP recommends adding such a field on EXP-NNN.json files going forward; analyst sets it.",
+    "Q2: 20KB or 30KB for verification class? PROP proposes 20KB as conservative single-step relaxation. 30KB matches directive's option C estimate.",
+    "Q3: Should priority-queue.json get schema_version=2 at land-time, or defer? PROP recommends YES at land-time, with `schema_version_set_at` and `schema_version_set_by` audit fields, but it's purely informational (no behavior gate).",
+    "Q4: Should this PROP also update CLAUDE.md (root-level project instructions) to mention the class field for operator pushes, or is the prompt-file documentation sufficient? PROP recommends a one-sentence addition to CLAUDE.md File Ownership / push-discipline section."
+  ],
+
+  "verification_pattern": "grep -q \"class:.*verification\" monitor/prompts/reference/decider-curmudgeon.md && grep -q \"item.class === 'verification'\" monitor/prompts/curmudgeon.md && grep -q '20 KB' monitor/prompts/curmudgeon.md && echo FIXED || echo STILL_BROKEN",
+  "verification_pattern_explanation": "Returns FIXED when decider's EXP-integration push site is updated to class='verification' AND curmudgeon's gate (1) explicitly reads item.class === 'verification' AND curmudgeon's gate (3) carries the 20KB verification-class cap. The three checks together confirm both halves of the contract (push side + gate side) plus the byte calibration.",
+  "expected_when_fixed": "All three grep conditions true on origin/main; next morning's queue burst batches at least one set of verification-class items.",
+
+  "cross_references": {
+    "directive": "monitor/tinker/operator-directives/DIRECTIVE-20260509-001-curmudgeon-batch-gate-content-based.json",
+    "current_gate_location": "monitor/prompts/curmudgeon.md Step 8a (gate (1) and gate (3))",
+    "observed_singleton_evidence": [
+      "monitor/curmudgeon/reviews/WIN-043.c4.json",
+      "monitor/curmudgeon/reviews/WIN-033.c4.json",
+      "monitor/curmudgeon/reviews/WIN-066.c4.json",
+      "monitor/curmudgeon/reviews/WIN-028.c5.json"
+    ],
+    "queue_archive_evidence": "monitor/curmudgeon/priority-queue-archive.jsonl entries 2026-05-09T13:20:52.299Z (queue_id 314-317)",
+    "underlying_iss_severity": "monitor/decisions/closed-issues.json — ISS-1899 critical, ISS-1900/1901/1902 major, ISS-1903-1907 moderate",
+    "current_decider_push_sites": [
+      "monitor/prompts/decider.md lines 469-481 (canonical example)",
+      "monitor/prompts/reference/decider-intake.md lines 152-162 (Step 1f win-new), 221-237 (Step 1h2 prediction-batch)",
+      "monitor/prompts/reference/decider-curmudgeon.md line 170 (Step 2a EXP integration)"
+    ]
+  }
+}
