@@ -4,51 +4,63 @@
   "title": "Open-issues backlog clearance: M1 stale-issue sweep + M2 EXP-tied auto-close + M3 carry-over enforcement, with burn-down vs BAU mode controls",
   "authored_by": "tinker (2026-05-10 run, in response to DIRECTIVE-20260510-001)",
   "authored_at": "2026-05-10T06:30:00Z",
-  "status": "proposed",
+  "status": "phase-1-implemented",
   "category": "dispatcher_extension + schema_addition + new_routine",
   "directive": "DIRECTIVE-20260510-001-open-issues-backlog-clearance",
   "target": "monitor/prompts/decider.md (Priority 5b new section + Step E5/E6 mode handling) + monitor/prompts/reference/decider-curmudgeon.md (Step 8 EXP-tied auto-close addendum) + monitor/prompts/reference/decider-patches-and-selfapply.md (carry-over enforcement) + monitor/prompts/curmudgeon.md (Step 8 carry-over annotation schema) + monitor/prompts/reference/DATA-SCHEMAS.md (new fields, closure-ledger schema) + new files monitor/decisions/closure-ledger.jsonl + monitor/decisions/decider-mode.json + revert script in build-scripts/revert-burndown-closures.js",
-
   "executive_summary": {
-    "problem_one_line": "231 open issues are aging in open-issues.json with no dispatcher slot to walk the parking lot — the 30-day OBE threshold is days away for the oldest item.",
+    "problem_one_line": "231 open issues are aging in open-issues.json with no dispatcher slot to walk the parking lot \u2014 the 30-day OBE threshold is days away for the oldest item.",
     "fix_one_line": "Three structural mechanisms that route the parking-lot to the decider's normal flow (M1 sweep + M2 EXP-tied auto-close + M3 carry-over enforcement), plus a burn-down/BAU toggle so the existing 231-item backlog can drain in days under elevated caps and tighter safety while everything else stays steady-state.",
     "tinker_top_line_recommendations": {
       "Q1_mechanism_scope": "Implement all three (M1+M2+M3). They address different leak modes; cutting any one leaves a leak.",
       "Q2_burndown_engagement": "Flag file `monitor/decisions/decider-mode.json` (`{\"mode\":\"burndown\"|\"bau\"}`). Operator HNOTE optional escape hatch. Auto-revert when `count(open) < 50` for 3 consecutive runs OR after 7 elapsed days, whichever first.",
       "Q3_safety_controls_sufficient": "Yes, with one addition: ALL burn-down closures carry `auto_closed: true, closed_by_run: <ID>, ledger_entry: <line>` so the revert script has a single source of truth.",
-      "Q4_caps": "BAU=10/run cap (cheap, leaves headroom for normal work). Burn-down=30/run cap (3x BAU, drains 200 items in ~7 runs at 60% hit-rate ≈ ~1.5 days at 6 runs/day).",
+      "Q4_caps": "BAU=10/run cap (cheap, leaves headroom for normal work). Burn-down=30/run cap (3x BAU, drains 200 items in ~7 runs at 60% hit-rate \u2248 ~1.5 days at 6 runs/day).",
       "Q5_curmudgeon_interaction": "Curmudgeon keeps running. The burn-down bound is per-decider-run, not pipeline-global. New ISS creation by curmudgeon is welcome; M3 (carry-over enforcement) prevents the 'one-step-forward-one-back' churn where new ISSs immediately age.",
-      "Q6_M2_false_positive_guard": "Three-rule gate: (a) severity ∈ {minor,info} only — moderate/major never auto-close on EXP signal alone; (b) no 'deferred|blocks|needs:|when pipeline|remaining|backfill|DO NOT INTEGRATE|awaiting human' substring in description (negative-signal blocklist); (c) source/found_by NOT in {curmudgeon, curmudgeon-review} AND source path NOT under monitor/curmudgeon/reviews/ (curmudgeon-found holes on the EXP are SEPARATE from 'EXP integrated' status).",
+      "Q6_M2_false_positive_guard": "Three-rule gate: (a) severity \u2208 {minor,info} only \u2014 moderate/major never auto-close on EXP signal alone; (b) no 'deferred|blocks|needs:|when pipeline|remaining|backfill|DO NOT INTEGRATE|awaiting human' substring in description (negative-signal blocklist); (c) source/found_by NOT in {curmudgeon, curmudgeon-review} AND source path NOT under monitor/curmudgeon/reviews/ (curmudgeon-found holes on the EXP are SEPARATE from 'EXP integrated' status).",
       "Q7_M3_schema": "Add `unresolved_prior_cycle: [{ iss_id, prior_cycle, holes_index }]` array on curmudgeon review JSON. Decider Priority 3 reads this array directly and treats listed ISSs as MUST-process in the same run. Free-text 'still open from c-N' in description is preserved as a fallback for legacy reviews and human readers.",
       "Q8_implementation_order": "Order C (phased with burn-down first phase). Phase 1: M2 + decider-mode.json + closure-ledger.jsonl + dry-run-by-default for 24h. Phase 2 (after ~48h of operator-confirmed clean closures): M1 + M3 land in BAU. Rationale below.",
-      "Q9_24_stale_statused_entries": "One-shot archiver to closed-issues.json AS PART OF Phase 1 (cheap, no review required since these statuses already say 'this is done'). Specifically: status ∈ {closed, fixed, wontfix} → archive immediately; status ∈ {monitoring, blocked-on-curmudgeon, assigned-analyst, partially-fixed-pending-verification, pending-human} → leave in place (these are truly active, just non-'open')."
+      "Q9_24_stale_statused_entries": "One-shot archiver to closed-issues.json AS PART OF Phase 1 (cheap, no review required since these statuses already say 'this is done'). Specifically: status \u2208 {closed, fixed, wontfix} \u2192 archive immediately; status \u2208 {monitoring, blocked-on-curmudgeon, assigned-analyst, partially-fixed-pending-verification, pending-human} \u2192 leave in place (these are truly active, just non-'open')."
     }
   },
-
   "context_verification": {
     "directive_filed_at": "2026-05-10T05:17:49Z",
     "tinker_re_measured_at": "2026-05-10T06:08:01Z (~50 minutes later)",
     "current_state_open_issues_json": {
       "total_entries": 257,
       "status_open": 231,
-      "status_breakdown_non_open": {"pending-human": 2, "blocked-on-curmudgeon": 4, "closed": 2, "wontfix": 3, "fixed": 9, "monitoring": 2, "assigned-analyst": 3, "partially-fixed-pending-verification": 1},
+      "status_breakdown_non_open": {
+        "pending-human": 2,
+        "blocked-on-curmudgeon": 4,
+        "closed": 2,
+        "wontfix": 3,
+        "fixed": 9,
+        "monitoring": 2,
+        "assigned-analyst": 3,
+        "partially-fixed-pending-verification": 1
+      },
       "non_open_total": 26,
-      "directive_said_24_terminal_actually_26": "Within rounding — directive filed 50min before tinker re-measured; 2 may have flipped status in between",
+      "directive_said_24_terminal_actually_26": "Within rounding \u2014 directive filed 50min before tinker re-measured; 2 may have flipped status in between",
       "exp_mentioning_open_issues": 90,
-      "directive_said_88_actually_90": "Same explanation — re-measure shows 90; both are accurate-to-the-minute snapshots."
+      "directive_said_88_actually_90": "Same explanation \u2014 re-measure shows 90; both are accurate-to-the-minute snapshots."
     },
     "age_distribution_open_issues": {
-      "≤1d": 2,
-      "≤3d": 10,
-      "≤7d": 12,
-      "≤14d": 106,
-      "≤21d": 57,
-      "≤30d": 17,
+      "\u22641d": 2,
+      "\u22643d": 10,
+      "\u22647d": 12,
+      "\u226414d": 106,
+      "\u226421d": 57,
+      "\u226430d": 17,
       ">30d": 0,
       "undated": 27,
-      "note_on_undated": "27 open issues lack `found_at`/`found_date` fields entirely (e.g., ISS-1245, ISS-1246, ISS-1043). These are schema-non-conformant and need a separate schema-cleanup pass — flagged here, deferred to a separate PROP. M1's age computation must handle them by either (a) defaulting to 'unknown — manual review required' or (b) inferring from creation order vs ID-vs-date-anchored neighbors. Recommend (a)."
+      "note_on_undated": "27 open issues lack `found_at`/`found_date` fields entirely (e.g., ISS-1245, ISS-1246, ISS-1043). These are schema-non-conformant and need a separate schema-cleanup pass \u2014 flagged here, deferred to a separate PROP. M1's age computation must handle them by either (a) defaulting to 'unknown \u2014 manual review required' or (b) inferring from creation order vs ID-vs-date-anchored neighbors. Recommend (a)."
     },
-    "severity_breakdown_open": {"minor": 160, "moderate": 64, "major": 6, "info": 1},
+    "severity_breakdown_open": {
+      "minor": 160,
+      "moderate": 64,
+      "major": 6,
+      "info": 1
+    },
     "carry_over_signal_in_descriptions": {
       "matches_for_'still open from c\\d+'": 2,
       "matches_for_'(carryover|carry-forward) c\\d+'": 4,
@@ -61,19 +73,18 @@
       "age_days_at_2026-05-10T06_UTC": 29.5,
       "directive_correctly_predicts_30d_crossover": "tomorrow (2026-05-11)",
       "severity": "minor",
-      "description_excerpt": "EXP-060 PIPELINE: generate-html.js needs support for kill-shots.json data file…",
+      "description_excerpt": "EXP-060 PIPELINE: generate-html.js needs support for kill-shots.json data file\u2026",
       "decider_self_tag": "Lower priority than content work."
     }
   },
-
   "the_three_mechanisms": {
     "M1_stale_issue_sweep": {
       "summary": "Add Priority 5b (between current Priority 5 and the End-of-Run steps) to decider.md: each run, scan open-issues.json for items with age > N days; for each, take ONE of: (a) patch (if scope-appropriate and small), (b) wontfix-with-rationale (if no longer relevant per current codebase state), (c) escalate to operator-required by adding `escalation_reason` and tagging `status: 'pending-human'`. Cap at K items per run.",
-      "what_problem_does_it_solve": "Catches anything that fell through M2 and M3 — the durable safety net. Also handles the long tail of decider-self-tagged 'lower priority than content work' items that quietly age forever (ISS-708 archetype).",
+      "what_problem_does_it_solve": "Catches anything that fell through M2 and M3 \u2014 the durable safety net. Also handles the long tail of decider-self-tagged 'lower priority than content work' items that quietly age forever (ISS-708 archetype).",
       "design_decisions": {
         "N_age_threshold": {
           "recommended": 21,
-          "rationale": "14 is too aggressive — items legitimately can age 14d if the curmudgeon's next review of a target is genuinely deep work that hasn't fired yet. 28 is too lax — by 28d the item has missed multiple curmudgeon cycles AND is approaching OBE. 21 is the inflection: an item still-open at 21d has either (a) been actively deferred by decider on multiple runs, (b) been forgotten, or (c) is genuinely waiting on external work — M1's job is to surface (b) and (c) explicitly."
+          "rationale": "14 is too aggressive \u2014 items legitimately can age 14d if the curmudgeon's next review of a target is genuinely deep work that hasn't fired yet. 28 is too lax \u2014 by 28d the item has missed multiple curmudgeon cycles AND is approaching OBE. 21 is the inflection: an item still-open at 21d has either (a) been actively deferred by decider on multiple runs, (b) been forgotten, or (c) is genuinely waiting on external work \u2014 M1's job is to surface (b) and (c) explicitly."
         },
         "frequency": {
           "recommended": "Every decider run (no extra throttle)",
@@ -82,40 +93,39 @@
         "K_per_run_cap": {
           "BAU": 10,
           "burn_down": 30,
-          "rationale": "BAU=10: ~5min of decider context-budget at typical-issue size, leaves headroom for normal Priority 1-5 work. burn_down=30: 3x. At 60% effective-close rate × 30 cap × 6 runs/day = ~108 closures/day. Backlog of 200 drains in ~2 days."
+          "rationale": "BAU=10: ~5min of decider context-budget at typical-issue size, leaves headroom for normal Priority 1-5 work. burn_down=30: 3x. At 60% effective-close rate \u00d7 30 cap \u00d7 6 runs/day = ~108 closures/day. Backlog of 200 drains in ~2 days."
         },
         "severity_tier_action_matrix": {
           "minor": "Auto-act allowed: patch (small) | wontfix-with-rationale (if codebase context says no-longer-real) | escalate (otherwise).",
           "moderate": "Auto-act with a higher bar: patch only if the patch is exactly find/replace-mechanical and scope is narrow; otherwise escalate to pending-human (do NOT auto-wontfix).",
           "major": "Never auto-close. Only action allowed: re-route via pending-human with explicit rationale OR file a fresh EXP if scope demands.",
-          "critical": "Same as major — never auto-close.",
+          "critical": "Same as major \u2014 never auto-close.",
           "info": "Same as minor."
         },
         "is_this_still_real_signal": {
           "primary": "Re-grep the codebase for the specific text/condition the ISS describes. If the text/condition no longer exists OR has been substantively rewritten since the ISS was created, mark as 'no-longer-real' candidate.",
-          "secondary": "If the ISS references an EXP-NNN that has since integrated (M2 territory), defer to M2 logic — don't double-count.",
+          "secondary": "If the ISS references an EXP-NNN that has since integrated (M2 territory), defer to M2 logic \u2014 don't double-count.",
           "tertiary": "If the curmudgeon has touched the target in a later cycle without re-flagging the same issue, presume the issue is no longer active (the curmudgeon would have re-flagged if it were). Conservative: only takes effect if the later cycle's review file `holes_found` array does NOT contain a description match.",
           "fallback_when_signals_conflict": "Default to escalation (pending-human), not auto-wontfix. Ambiguity always loses to operator visibility."
         }
       },
       "where_it_plugs_in": {
         "file": "monitor/prompts/decider.md",
-        "section": "After current 'Priority 5 — Standard Processing' (line ~119), before 'Every run — Patches and Reporting' (line ~123)",
-        "new_section_name": "Priority 5b — Stale-Issue Sweep (M1)",
-        "new_section_body_skeleton": "Read decider-mode.json → if mode='burndown' set K=30, else K=10. Run query: open issues with age > 21d, sorted oldest-first, capped at K. For each: read curmudgeon's most recent cycle review of the target; re-grep the live file for the specific issue text. Choose action per severity tier matrix. For closures: append to closure-ledger.jsonl, move from open-issues.json to closed-issues.json, mark `auto_closed_by_M1: true`. For escalations: set status='pending-human', add `escalation_reason`. Log decisions in daily report under `m1_sweep` field."
+        "section": "After current 'Priority 5 \u2014 Standard Processing' (line ~119), before 'Every run \u2014 Patches and Reporting' (line ~123)",
+        "new_section_name": "Priority 5b \u2014 Stale-Issue Sweep (M1)",
+        "new_section_body_skeleton": "Read decider-mode.json \u2192 if mode='burndown' set K=30, else K=10. Run query: open issues with age > 21d, sorted oldest-first, capped at K. For each: read curmudgeon's most recent cycle review of the target; re-grep the live file for the specific issue text. Choose action per severity tier matrix. For closures: append to closure-ledger.jsonl, move from open-issues.json to closed-issues.json, mark `auto_closed_by_M1: true`. For escalations: set status='pending-human', add `escalation_reason`. Log decisions in daily report under `m1_sweep` field."
       },
-      "estimated_close_rate": "≈55-70% on the existing backlog. Most of the ≤21d→>21d cohort that's been aging quietly is either (a) covered by an integrated EXP (M2 reaches it first), (b) addressed by curmudgeon's later cycle (no-longer-real signal), or (c) genuinely deferrable minor housekeeping (auto-wontfix-with-rationale). The remaining ~30-45% legitimately need operator escalation."
+      "estimated_close_rate": "\u224855-70% on the existing backlog. Most of the \u226421d\u2192>21d cohort that's been aging quietly is either (a) covered by an integrated EXP (M2 reaches it first), (b) addressed by curmudgeon's later cycle (no-longer-real signal), or (c) genuinely deferrable minor housekeeping (auto-wontfix-with-rationale). The remaining ~30-45% legitimately need operator escalation."
     },
-
     "M2_exp_tied_auto_close": {
       "summary": "Whenever decider integrates an EXP-NNN (Step 2a in decider-curmudgeon.md), additionally search open-issues.json for any ISS where (a) `related_expansion === 'EXP-NNN'` OR (b) the description/source/source_file contains the substring 'EXP-NNN' AND the ISS passes the false-positive guard. Auto-close matched ISSs with reason='EXP-NNN integrated by run XXX, ISS no longer relevant'.",
-      "what_problem_does_it_solve": "Closes ISSs that were created as forwarding/handoff tickets ('EXP-NNN ready — pending curmudgeon review') or as scope-trackers ('EXP-NNN waiting on infrastructure') that lose their reason for being once the EXP integrates. Catches the ~15-25 ISSs that wait silently for an EXP that has long since landed.",
-      "directive_says_88_match_substring": "The naive substring-match catches 90 (re-measured) ISSs, BUT — see worked example — only ~5-10 of those would actually pass the false-positive guard. M2's value is the GUARD, not the count of substring matches.",
+      "what_problem_does_it_solve": "Closes ISSs that were created as forwarding/handoff tickets ('EXP-NNN ready \u2014 pending curmudgeon review') or as scope-trackers ('EXP-NNN waiting on infrastructure') that lose their reason for being once the EXP integrates. Catches the ~15-25 ISSs that wait silently for an EXP that has long since landed.",
+      "directive_says_88_match_substring": "The naive substring-match catches 90 (re-measured) ISSs, BUT \u2014 see worked example \u2014 only ~5-10 of those would actually pass the false-positive guard. M2's value is the GUARD, not the count of substring matches.",
       "design_decisions": {
         "what_constitutes_a_match": {
-          "primary_signal": "`issue.related_expansion === 'EXP-NNN'` — explicit relational field, highest confidence",
+          "primary_signal": "`issue.related_expansion === 'EXP-NNN'` \u2014 explicit relational field, highest confidence",
           "secondary_signal": "Substring 'EXP-NNN' present in any of: description, title, source, source_file, notes",
-          "rejected": "Looking up issue_ids on the EXP itself — that's the EXISTING flow (Step 8 of EXP integration already closes those). M2 is for the orphan ISSs that DIDN'T get included in `issue_ids`."
+          "rejected": "Looking up issue_ids on the EXP itself \u2014 that's the EXISTING flow (Step 8 of EXP integration already closes those). M2 is for the orphan ISSs that DIDN'T get included in `issue_ids`."
         },
         "scope_of_auto_close": {
           "rule": "Apply to all open ISSs that pass the false-positive guard, regardless of current pseudo-status (e.g., 'pending curmudgeon review', 'pending integration', 'open').",
@@ -123,124 +133,131 @@
         },
         "false_positive_guard": {
           "headline_rule": "Three-rule conjunctive gate. Auto-close ONLY if ALL three hold:",
-          "rule_1_severity_floor": "issue.severity ∈ {minor, info}. Moderate/major/critical never auto-close on EXP signal alone (they always require operator review).",
-          "rule_2_negative_signal_blocklist": "issue.description (case-insensitive) does NOT match any of: 'deferred|deferred from|deferred AC|blocks integration|needs:|when pipeline|remaining for future|backfill needed|DO NOT INTEGRATE|awaiting human|future work|still needs|pending integration|requires (?!.* completed)'. The negation in the last term ('requires X' is OK if 'requires X completed' — i.e., already done). The blocklist is a positive signal that the ISS describes work the EXP did NOT close.",
-          "rule_3_source_provenance": "issue.found_by NOT in {curmudgeon, curmudgeon-review, curmudgeon-digest} AND issue.source path NOT under 'monitor/curmudgeon/reviews/'. Curmudgeon-found holes on an EXP are SEPARATE issues — the EXP integration didn't close them. (Distinct from the ISSs created when EXP integration RESOLVES a curmudgeon-found hole — those are typically closed in Step 8 by issue_ids and never become orphans).",
+          "rule_1_severity_floor": "issue.severity \u2208 {minor, info}. Moderate/major/critical never auto-close on EXP signal alone (they always require operator review).",
+          "rule_2_negative_signal_blocklist": "issue.description (case-insensitive) does NOT match any of: 'deferred|deferred from|deferred AC|blocks integration|needs:|when pipeline|remaining for future|backfill needed|DO NOT INTEGRATE|awaiting human|future work|still needs|pending integration|requires (?!.* completed)'. The negation in the last term ('requires X' is OK if 'requires X completed' \u2014 i.e., already done). The blocklist is a positive signal that the ISS describes work the EXP did NOT close.",
+          "rule_3_source_provenance": "issue.found_by NOT in {curmudgeon, curmudgeon-review, curmudgeon-digest} AND issue.source path NOT under 'monitor/curmudgeon/reviews/'. Curmudgeon-found holes on an EXP are SEPARATE issues \u2014 the EXP integration didn't close them. (Distinct from the ISSs created when EXP integration RESOLVES a curmudgeon-found hole \u2014 those are typically closed in Step 8 by issue_ids and never become orphans).",
           "fallback_when_uncertain": "If rules 1-3 all pass but you're uncertain, escalate to dry-run-list-only (write a candidate-closure-list to ledger but don't actually close). Operator approves batch on next run. In burn-down Phase 1, ALL closures default to dry-run for first 24h."
         },
         "trigger_point": {
-          "every_EXP_integration": "Yes — built into Step 2a so it runs on every integration. No need for `closes_iss: [...]` field on EXPs.",
+          "every_EXP_integration": "Yes \u2014 built into Step 2a so it runs on every integration. No need for `closes_iss: [...]` field on EXPs.",
           "rationale": "The whole point is to catch orphans the EXP forgot to list. Requiring an explicit field on the EXP would replicate the same forgetting-mode."
         }
       },
       "where_it_plugs_in": {
         "file": "monitor/prompts/reference/decider-curmudgeon.md",
-        "section": "Step 8 (Close related issues — do NOT skip), at line ~176",
+        "section": "Step 8 (Close related issues \u2014 do NOT skip), at line ~176",
         "addendum_skeleton": "After existing Step 8 closes the ISSs in `issue_ids`: additionally call M2 helper: for each open ISS in open-issues.json, check related_expansion match OR substring match against EXP-NNN. For each match, apply false-positive guard (rules 1-3). For each ISS that passes the guard: append to closure-ledger.jsonl with `closure_reason: 'M2_exp_tied'`, move to closed-issues.json with status='fixed', `fixed_by: 'M2-auto-close'`, `closed_by_run: <decider_run_id>`, `auto_closed: true`. Log count in daily report `m2_auto_close.count`."
       },
       "worked_examples_from_current_open_issues": {
-        "_intro": "These six examples span the false-positive landscape — three pass the guard for auto-close, three fail. The descriptions/severities are real (re-measured 2026-05-10).",
+        "_intro": "These six examples span the false-positive landscape \u2014 three pass the guard for auto-close, three fail. The descriptions/severities are real (re-measured 2026-05-10).",
         "example_1_SAFE_to_auto_close": {
           "iss_id": "ISS-1547",
           "severity": "info",
           "found_by": "analyst",
-          "title": "EXP-249 (Phase B1 pie chart cleanup) ready — pending curmudgeon review",
-          "description_excerpt": "Analyst delivered EXP-249-phase-b1-pie-chart-cleanup.json. Six coupled changes in build-scripts/generate-html.js…",
+          "title": "EXP-249 (Phase B1 pie chart cleanup) ready \u2014 pending curmudgeon review",
+          "description_excerpt": "Analyst delivered EXP-249-phase-b1-pie-chart-cleanup.json. Six coupled changes in build-scripts/generate-html.js\u2026",
           "exp_status_in_archive": "EXP-249 IS integrated",
           "rule_1_severity_floor": "PASS (info)",
           "rule_2_negative_signal": "PASS (no blocklist substring)",
           "rule_3_source_provenance": "PASS (found_by=analyst, not curmudgeon)",
-          "verdict": "AUTO-CLOSE — pure forwarding/handoff ticket, EXP-249 has integrated, the work flagged here is done."
+          "verdict": "AUTO-CLOSE \u2014 pure forwarding/handoff ticket, EXP-249 has integrated, the work flagged here is done."
         },
         "example_2_NOT_safe_post_integration_deferral": {
           "iss_id": "ISS-708",
           "severity": "minor",
           "found_by": "decider-expansion-integration",
           "source": "EXP-060 integration",
-          "description_excerpt": "EXP-060 PIPELINE: generate-html.js needs support for kill-shots.json data file… When pipeline supports it, swap EXP-057 HTML for EXP-060 HTML…",
+          "description_excerpt": "EXP-060 PIPELINE: generate-html.js needs support for kill-shots.json data file\u2026 When pipeline supports it, swap EXP-057 HTML for EXP-060 HTML\u2026",
           "exp_status_in_archive": "EXP-060 IS integrated",
           "rule_1_severity_floor": "PASS (minor)",
-          "rule_2_negative_signal": "FAIL — description contains 'When pipeline supports' (future-work signal)",
+          "rule_2_negative_signal": "FAIL \u2014 description contains 'When pipeline supports' (future-work signal)",
           "rule_3_source_provenance": "PASS (found_by=decider, not curmudgeon)",
-          "verdict": "DO NOT AUTO-CLOSE — the EXP integrated but the ISS describes followup work the EXP explicitly did not perform. Route through M1 sweep instead (currently 29.5d → eligible for M1 if M1's signal-matrix concludes 'no-longer-real' or escalates if not)."
+          "verdict": "DO NOT AUTO-CLOSE \u2014 the EXP integrated but the ISS describes followup work the EXP explicitly did not perform. Route through M1 sweep instead (currently 29.5d \u2192 eligible for M1 if M1's signal-matrix concludes 'no-longer-real' or escalates if not)."
         },
         "example_3_NOT_safe_curmudgeon_found_hole": {
           "iss_id": "ISS-1241",
           "severity": "major",
           "found_by": "curmudgeon",
           "title": "EXP-190: provenance-tag classification rule subjective",
-          "description_excerpt": "H1 (major) from EXP-190-proposal.json curmudgeon review… Blocks integration",
+          "description_excerpt": "H1 (major) from EXP-190-proposal.json curmudgeon review\u2026 Blocks integration",
           "exp_status_in_archive": "EXP-190 NOT integrated (still in flight)",
           "rule_1_severity_floor": "FAIL (major)",
-          "rule_2_negative_signal": "FAIL — 'blocks integration' substring",
-          "rule_3_source_provenance": "FAIL — found_by=curmudgeon",
-          "verdict": "DO NOT AUTO-CLOSE — triple-fail. This is a curmudgeon-found hole on the EXP-190 proposal package, NOT a forwarding ticket. EXP-190 hasn't even integrated yet."
+          "rule_2_negative_signal": "FAIL \u2014 'blocks integration' substring",
+          "rule_3_source_provenance": "FAIL \u2014 found_by=curmudgeon",
+          "verdict": "DO NOT AUTO-CLOSE \u2014 triple-fail. This is a curmudgeon-found hole on the EXP-190 proposal package, NOT a forwarding ticket. EXP-190 hasn't even integrated yet."
         },
         "example_4_NOT_safe_explicit_deferral": {
           "iss_id": "ISS-1549",
           "severity": "minor",
           "found_by": "curmudgeon-review",
           "source": "monitor/curmudgeon/reviews/EXP-211-redesign-v2-proposal.json",
-          "description_excerpt": "EXP-211 integration deferred AC8/9/10/12 (Playwright reachability and a11y assertions). test.js has no Playwright integration; AC8/9/10… were explicitly deferred at integration time.",
-          "exp_status_in_archive": "EXP-211 IS integrated (partially — AC8/9/10/12 explicitly deferred)",
+          "description_excerpt": "EXP-211 integration deferred AC8/9/10/12 (Playwright reachability and a11y assertions). test.js has no Playwright integration; AC8/9/10\u2026 were explicitly deferred at integration time.",
+          "exp_status_in_archive": "EXP-211 IS integrated (partially \u2014 AC8/9/10/12 explicitly deferred)",
           "rule_1_severity_floor": "PASS (minor)",
-          "rule_2_negative_signal": "FAIL — 'deferred' substring (multiple times)",
-          "rule_3_source_provenance": "FAIL — source path under monitor/curmudgeon/reviews/",
-          "verdict": "DO NOT AUTO-CLOSE — explicit-deferral ticket, the EXP integrated but the ISS scopes work the integration explicitly carved out. Route through M1 sweep at 21d threshold."
+          "rule_2_negative_signal": "FAIL \u2014 'deferred' substring (multiple times)",
+          "rule_3_source_provenance": "FAIL \u2014 source path under monitor/curmudgeon/reviews/",
+          "verdict": "DO NOT AUTO-CLOSE \u2014 explicit-deferral ticket, the EXP integrated but the ISS scopes work the integration explicitly carved out. Route through M1 sweep at 21d threshold."
         },
         "example_5_NOT_safe_design_taste_disagreement": {
           "iss_id": "ISS-1080",
           "severity": "minor",
           "found_by": "analyst-issue-proposal",
-          "description_excerpt": "Optional aggregate kill-shot sentence… Analyst says per-WIN enumeration in EXP-170 is already better; this is stylistic. Linked: EXP-170",
+          "description_excerpt": "Optional aggregate kill-shot sentence\u2026 Analyst says per-WIN enumeration in EXP-170 is already better; this is stylistic. Linked: EXP-170",
           "exp_status_in_archive": "EXP-170 IS integrated",
           "rule_1_severity_floor": "PASS (minor)",
-          "rule_2_negative_signal": "PASS (no blocklist substring — though 'this is stylistic' is interesting; could add 'stylistic|optional' to the blocklist?)",
+          "rule_2_negative_signal": "PASS (no blocklist substring \u2014 though 'this is stylistic' is interesting; could add 'stylistic|optional' to the blocklist?)",
           "rule_3_source_provenance": "PASS (found_by=analyst)",
-          "verdict_under_proposed_rules": "AUTO-CLOSE — but this is a borderline case. The ISS argues 'per-WIN enumeration in EXP-170 is already better' — i.e., EXP-170's integration is essentially the analyst's own answer to whether to add this sentence. Reasonable to close. If operator wants to be more conservative, add 'optional|stylistic|sidestepped' to the negative-signal blocklist (rule 2) — that would route this to M1 instead.",
-          "tinker_recommendation": "Auto-close as proposed (analyst's own rationale says EXP-170 supersedes this). Don't expand blocklist to 'optional|stylistic' — would cause too many false-NOT-close misses."
+          "verdict_under_proposed_rules": "AUTO-CLOSE \u2014 but this is a borderline case. The ISS argues 'per-WIN enumeration in EXP-170 is already better' \u2014 i.e., EXP-170's integration is essentially the analyst's own answer to whether to add this sentence. Reasonable to close. If operator wants to be more conservative, add 'optional|stylistic|sidestepped' to the negative-signal blocklist (rule 2) \u2014 that would route this to M1 instead.",
+          "tinker_recommendation": "Auto-close as proposed (analyst's own rationale says EXP-170 supersedes this). Don't expand blocklist to 'optional|stylistic' \u2014 would cause too many false-NOT-close misses."
         },
         "example_6_NOT_safe_proposal_phase_block": {
           "iss_id": "ISS-1205",
           "severity": "major",
           "found_by": "decider",
-          "title": "Scoreboard Phase 1 draft — awaiting human-group review (DO NOT INTEGRATE)",
+          "title": "Scoreboard Phase 1 draft \u2014 awaiting human-group review (DO NOT INTEGRATE)",
           "exp_status_in_archive": "EXP-190 NOT integrated",
           "rule_1_severity_floor": "FAIL (major)",
-          "rule_2_negative_signal": "FAIL — 'DO NOT INTEGRATE' + 'awaiting human' substrings",
+          "rule_2_negative_signal": "FAIL \u2014 'DO NOT INTEGRATE' + 'awaiting human' substrings",
           "rule_3_source_provenance": "PASS",
-          "verdict": "DO NOT AUTO-CLOSE — explicit human-review hold, EXP not integrated."
+          "verdict": "DO NOT AUTO-CLOSE \u2014 explicit human-review hold, EXP not integrated."
         },
         "summary_classification_of_six_examples": {
-          "AUTO-CLOSE": ["ISS-1547", "ISS-1080"],
-          "DO_NOT_AUTO_CLOSE": ["ISS-708", "ISS-1241", "ISS-1549", "ISS-1205"],
+          "AUTO-CLOSE": [
+            "ISS-1547",
+            "ISS-1080"
+          ],
+          "DO_NOT_AUTO_CLOSE": [
+            "ISS-708",
+            "ISS-1241",
+            "ISS-1549",
+            "ISS-1205"
+          ],
           "auto_close_yield_estimate": "Of the 90 EXP-mentioning open issues (re-measured), the rules estimate ~10-20 will auto-close cleanly. The remaining 70+ are either (a) post-integration deferrals (M1 territory), (b) curmudgeon-found holes on EXPs (require curmudgeon's next cycle to clear), or (c) major/critical (always operator review)."
         }
       }
     },
-
     "M3_carryover_enforcement": {
       "summary": "When a curmudgeon writes a c-(N+1) review listing 'still open from c-N' issues, decider treats those listed ISSs as MUST-process in the SAME run that integrates the c-(N+1) review. The signal is a new structured field on the curmudgeon review JSON.",
-      "what_problem_does_it_solve": "The c4→c5→c6 ratchet (e.g., WIN-053 cluster, ISS-1244/1245/1246) where curmudgeon politely re-flags the same issues for cycles and decider keeps reading them as 'oh, those again' and not acting. Forces a binary patch-or-wontfix-with-rationale decision per carry-over.",
+      "what_problem_does_it_solve": "The c4\u2192c5\u2192c6 ratchet (e.g., WIN-053 cluster, ISS-1244/1245/1246) where curmudgeon politely re-flags the same issues for cycles and decider keeps reading them as 'oh, those again' and not acting. Forces a binary patch-or-wontfix-with-rationale decision per carry-over.",
       "design_decisions": {
         "schema": {
           "new_field_on_curmudgeon_review_JSON": "`unresolved_prior_cycle: [{ iss_id: 'ISS-NNNN', prior_cycle: <int>, holes_index: <int> }]` array",
-          "where_curmudgeon_writes_it": "Step 8 of curmudgeon.md (review writing). When the curmudgeon flags a hole that was first raised in an earlier cycle, it adds an entry to this array — automatically populated by the curmudgeon recognizing the 'still open from c-N' pattern in its own draft prose, OR (more reliably) by cross-checking the holes_found of the prior-cycle review file at write time.",
+          "where_curmudgeon_writes_it": "Step 8 of curmudgeon.md (review writing). When the curmudgeon flags a hole that was first raised in an earlier cycle, it adds an entry to this array \u2014 automatically populated by the curmudgeon recognizing the 'still open from c-N' pattern in its own draft prose, OR (more reliably) by cross-checking the holes_found of the prior-cycle review file at write time.",
           "fallback_for_legacy_reviews": "Decider's Priority 3 carryover-detector first reads the structured field; if absent, falls back to free-text grep of holes_found descriptions for /still open from c\\d+|carry[- ]?(over|forward) c\\d+|deferred from EXP-/i. This preserves existing review file readability for ISSs already in flight.",
           "rationale_for_structured_over_freetext": "Free-text 'still open from cN' is brittle (already three different phrasings in current corpus: 'still open from c4', 'carry-forward c1/c2/c3', 'deferred from EXP-228'). The structured field eliminates the parsing bug-surface."
         },
         "decider_required_action_per_carry_over": {
           "rule": "Each carry-over ISS in `unresolved_prior_cycle` MUST get exactly one of three terminal actions in the SAME run that integrates the c-(N+1) review:",
-          "action_a": "Patch — small find/replace fix.",
-          "action_b": "Wontfix-with-rationale — explicit reasoning for not patching, written into the closure record. NOT a punt.",
-          "action_c": "Operator escalation — set status='pending-human' with escalation_reason field. Use when patching requires deeper work than a single decider run can budget for.",
+          "action_a": "Patch \u2014 small find/replace fix.",
+          "action_b": "Wontfix-with-rationale \u2014 explicit reasoning for not patching, written into the closure record. NOT a punt.",
+          "action_c": "Operator escalation \u2014 set status='pending-human' with escalation_reason field. Use when patching requires deeper work than a single decider run can budget for.",
           "what_is_NOT_allowed": "Skipping the carry-over without a recorded action. The current bug is precisely 'no-action-taken' as a hidden default."
         },
         "no_longer_relevant_path": {
           "rule": "If decider re-greps and finds the prior-cycle finding is no longer present in the live target (e.g., the section was rewritten and the issue moot), action_b applies with rationale 'no-longer-real per re-grep at <run-id>'. This is the explicit 'wontfix with carryover-rationale' path Q's M3 design questions ask for."
         },
         "interaction_with_curmudgeon_batch_gate_PROP_025": {
-          "rule": "PROP-025 (curmudgeon batch-gate, currently proposed) classifies queue items as `verification` (batchable) vs `deep-attack` (singleton). Carry-overs do NOT change classification — a verification-class push that includes carry-overs is still verification-class. But DECIDER's response to a verification-class review must include carry-over enforcement: even on a 'just verify the patch landed' cycle, any unresolved-prior-cycle items must still get the patch/wontfix/escalate triage in the same run.",
+          "rule": "PROP-025 (curmudgeon batch-gate, currently proposed) classifies queue items as `verification` (batchable) vs `deep-attack` (singleton). Carry-overs do NOT change classification \u2014 a verification-class push that includes carry-overs is still verification-class. But DECIDER's response to a verification-class review must include carry-over enforcement: even on a 'just verify the patch landed' cycle, any unresolved-prior-cycle items must still get the patch/wontfix/escalate triage in the same run.",
           "rationale": "Decoupling: PROP-025 governs HOW MUCH work the curmudgeon does per run; M3 governs WHAT decider must do with whatever the curmudgeon says is still open. Independent axes."
         }
       },
@@ -253,45 +270,41 @@
         "decider_side": {
           "file": "monitor/prompts/reference/decider-curmudgeon.md",
           "section": "Step 8 (Close related issues), at line ~176, AFTER the existing 'issue_ids' close logic AND AFTER the M2 EXP-tied auto-close addendum",
-          "change": "Add: 'After M2: read `unresolved_prior_cycle[]` from the curmudgeon review JSON. For each entry, look up the iss_id in open-issues.json. If still open, the carry-over enforcement gate applies: you MUST take one of three actions in this run — patch, wontfix-with-rationale, or escalate to pending-human. Skipping a carry-over without recorded action is a self-test failure that should fail your run report.'"
+          "change": "Add: 'After M2: read `unresolved_prior_cycle[]` from the curmudgeon review JSON. For each entry, look up the iss_id in open-issues.json. If still open, the carry-over enforcement gate applies: you MUST take one of three actions in this run \u2014 patch, wontfix-with-rationale, or escalate to pending-human. Skipping a carry-over without recorded action is a self-test failure that should fail your run report.'"
         },
         "patches_and_selfapply_side": {
           "file": "monitor/prompts/reference/decider-patches-and-selfapply.md",
           "section": "Pre-flight check (when self-applying patches)",
-          "change": "Add: 'Before declaring a self-applied-patch run complete: walk all unresolved_prior_cycle entries from any curmudgeon reviews you read this run. Verify each has a recorded terminal action (patch | wontfix-with-rationale | pending-human escalation). If any are missing, do NOT mark the run complete — return to triage.'"
+          "change": "Add: 'Before declaring a self-applied-patch run complete: walk all unresolved_prior_cycle entries from any curmudgeon reviews you read this run. Verify each has a recorded terminal action (patch | wontfix-with-rationale | pending-human escalation). If any are missing, do NOT mark the run complete \u2014 return to triage.'"
         }
       }
     }
   },
-
   "burndown_vs_bau_mode_design": {
     "summary": "Two-mode toggle. BAU = steady-state with conservative caps. BURNDOWN = elevated caps + tighter safety controls (dry-run-by-default, ledger-required) to clear an existing accumulation safely fast.",
-
     "engagement_mechanism_Q2": {
       "primary": {
         "type": "Flag file `monitor/decisions/decider-mode.json`",
         "schema": "{\"mode\": \"burndown\"|\"bau\", \"set_at\": ISO, \"set_by\": \"<actor>\", \"reason\": \"<text>\", \"auto_revert_after\": ISO|null, \"auto_revert_when_open_below\": <int>|null}",
         "writers": "Operator (direct edit via clone) OR decider's auto-revert logic",
-        "readers": "Decider (every run, in Step 0b setup) — sets local `K_cap`, `dryrun_default`, `ledger_required` accordingly",
+        "readers": "Decider (every run, in Step 0b setup) \u2014 sets local `K_cap`, `dryrun_default`, `ledger_required` accordingly",
         "rationale": "Single source of truth. Schema-conformant. Survives FUSE staleness because decider clones fresh each run. Operator can flip with one edit; no HNOTE plumbing needed for the common case.",
         "ownership_classification": "git-owned. Add to `build.js` OWNERSHIP and `workspace-sync.md` NEVER_PUSH."
       },
       "escape_hatch": "HNOTE in monitor/decisions/human-notes.json with action='set_decider_mode' for one-shot toggles when operator wants the decider to flip on its NEXT run without manually editing the flag file. Decider's Step E1 (mode-toggle reading) is extended to also handle set_decider_mode.",
       "rejected_options": {
         "field_in_priority_queue.json": "Conflates with curmudgeon's queue mode. Cleaner to separate.",
-        "tinker_DIRECTIVE_only": "Too slow — operator needs same-run engagement for time-sensitive burn-down.",
+        "tinker_DIRECTIVE_only": "Too slow \u2014 operator needs same-run engagement for time-sensitive burn-down.",
         "flag_in_status.json": "status.json is workspace-owned; FUSE staleness risk."
       }
     },
-
     "auto_revert_logic_Q2": {
-      "primary_condition": "count(open issues with status='open') < 50 for 3 CONSECUTIVE decider runs → auto-revert burndown→bau. 3-run window prevents flapping at the threshold.",
-      "secondary_condition": "elapsed > 7 days in burndown → auto-revert. Hard time cap prevents indefinite burndown if operator forgets.",
-      "tertiary_condition": "5 consecutive runs with zero closures (no more low-hanging fruit) → auto-revert. Recognizes saturation: 'whatever's left needs human attention.'",
+      "primary_condition": "count(open issues with status='open') < 50 for 3 CONSECUTIVE decider runs \u2192 auto-revert burndown\u2192bau. 3-run window prevents flapping at the threshold.",
+      "secondary_condition": "elapsed > 7 days in burndown \u2192 auto-revert. Hard time cap prevents indefinite burndown if operator forgets.",
+      "tertiary_condition": "5 consecutive runs with zero closures (no more low-hanging fruit) \u2192 auto-revert. Recognizes saturation: 'whatever's left needs human attention.'",
       "manual_revert": "Operator edits decider-mode.json directly OR HNOTE action='set_decider_mode' with mode='bau'.",
       "logging_on_revert": "Decider writes to monitor/decisions/decider-mode-history.jsonl (append-only): { revert_at, from, to, trigger, open_count_at_revert, run_id }"
     },
-
     "safety_controls_during_burndown_Q3": {
       "control_a_closure_ledger": {
         "required": true,
@@ -300,8 +313,8 @@
         "ownership_classification": "git-owned (decider writes; never round-trip from FUSE). Add to build.js OWNERSHIP and workspace-sync.md NEVER_PUSH."
       },
       "control_b_severity_tier_cap": {
-        "rule": "BURNDOWN auto-close is restricted to severity ∈ {minor, info}. Moderate gets pending-human routing (NOT auto-close). Major/critical untouched. Same matrix as M1's severity tier action matrix.",
-        "rationale": "Most of the backlog (160/231 = 69%) is minor severity. Even with a tight cap, 30/run × 6 runs/day × 60% close rate = ~108/day on minors alone. Don't risk wrong-closing a moderate to gain marginal speed."
+        "rule": "BURNDOWN auto-close is restricted to severity \u2208 {minor, info}. Moderate gets pending-human routing (NOT auto-close). Major/critical untouched. Same matrix as M1's severity tier action matrix.",
+        "rationale": "Most of the backlog (160/231 = 69%) is minor severity. Even with a tight cap, 30/run \u00d7 6 runs/day \u00d7 60% close rate = ~108/day on minors alone. Don't risk wrong-closing a moderate to gain marginal speed."
       },
       "control_c_recently_touched_guard": {
         "rule": "Never auto-close an ISS modified in the last 48 hours. Read `last_modified` if present; else fall back to `found_at` plus most-recent-status-change timestamp.",
@@ -312,35 +325,40 @@
         "rationale": "First-run paranoia. The blast radius of a misconfigured M2 is dozens of zombie-closes. Dryrun-then-approve is cheap insurance."
       },
       "control_e_M3_unaffected_by_burndown_caps": {
-        "rule": "M3 (carry-over enforcement) runs in BOTH modes equally — it's gated by the curmudgeon writing `unresolved_prior_cycle`, not by per-run cap.",
+        "rule": "M3 (carry-over enforcement) runs in BOTH modes equally \u2014 it's gated by the curmudgeon writing `unresolved_prior_cycle`, not by per-run cap.",
         "rationale": "Carry-overs are bounded by the curmudgeon's current run output, which is naturally small (~3-8 holes per review). No need to cap them; the bound is upstream."
       }
     },
-
     "rate_estimate_Q4": {
-      "BAU_caps_recommended": {"M1": 10, "M2": "unbounded — bound by EXP integration count per run, naturally ~1-3", "M3": "unbounded — bound by curmudgeon output"},
-      "BURNDOWN_caps_recommended": {"M1": 30, "M2": "unbounded (same)", "M3": "unbounded (same)"},
+      "BAU_caps_recommended": {
+        "M1": 10,
+        "M2": "unbounded \u2014 bound by EXP integration count per run, naturally ~1-3",
+        "M3": "unbounded \u2014 bound by curmudgeon output"
+      },
+      "BURNDOWN_caps_recommended": {
+        "M1": 30,
+        "M2": "unbounded (same)",
+        "M3": "unbounded (same)"
+      },
       "estimated_effective_close_rate": {
-        "M1_burndown_per_day": "30 cap × 6 runs/day × 60% close-rate = ~108/day candidate closures",
+        "M1_burndown_per_day": "30 cap \u00d7 6 runs/day \u00d7 60% close-rate = ~108/day candidate closures",
         "M2_per_day": "EXP integrations are typically 1-3/day in healthy state; each catches ~3-5 orphans at 60% guard-pass-rate; ~5-15/day",
         "M3_per_day": "Carry-overs in current corpus: ~10-15 detected; on a steady cadence ~1-3/day after backlog drains",
         "total_per_day_burndown": "~120-130 closures/day at saturation",
         "current_backlog": 231,
-        "days_to_clear_to_50": "(231 − 50) / 125 = ~1.5 days at saturation; allow 3-5 days realistic accounting for context budget and run cadence"
+        "days_to_clear_to_50": "(231 \u2212 50) / 125 = ~1.5 days at saturation; allow 3-5 days realistic accounting for context budget and run cadence"
       },
-      "is_this_safely_fast_question": "Yes — the rate is bounded by guard-pass rate (60%), not by raw cap. Increasing caps further only shifts work earlier; doesn't change wrong-close rate. The bottleneck is review thoroughness, not throughput."
+      "is_this_safely_fast_question": "Yes \u2014 the rate is bounded by guard-pass rate (60%), not by raw cap. Increasing caps further only shifts work earlier; doesn't change wrong-close rate. The bottleneck is review thoroughness, not throughput."
     },
-
     "curmudgeon_interaction_during_burndown_Q5": {
-      "recommendation": "Curmudgeon keeps running normally — DO NOT pause/throttle.",
+      "recommendation": "Curmudgeon keeps running normally \u2014 DO NOT pause/throttle.",
       "rationale": [
-        "(a) The 'one-step-forward-one-step-back' worry assumes curmudgeon-created ISSs immediately age. With M3 (carry-over enforcement) in place, new curmudgeon ISSs that get re-flagged in a later cycle are forced through the M3 gate — they don't accumulate.",
+        "(a) The 'one-step-forward-one-step-back' worry assumes curmudgeon-created ISSs immediately age. With M3 (carry-over enforcement) in place, new curmudgeon ISSs that get re-flagged in a later cycle are forced through the M3 gate \u2014 they don't accumulate.",
         "(b) Pausing the curmudgeon during burn-down creates a coverage hole: the bridge stops being painted. Bad for the review's primary mission.",
         "(c) The cap on M1 is per-decider-run, not pipeline-global. Curmudgeon's output is bounded by its own scheduling, separately."
       ],
-      "edge_case": "If burn-down is engaged during a curmudgeon churn-and-burn period (curmudgeon at 30m cadence per CLAUDE.md), curmudgeon may temporarily out-create ISSs faster than M1 can close them. This is fine — burndown's auto-revert at count<50 simply takes longer. No special handling needed."
+      "edge_case": "If burn-down is engaged during a curmudgeon churn-and-burn period (curmudgeon at 30m cadence per CLAUDE.md), curmudgeon may temporarily out-create ISSs faster than M1 can close them. This is fine \u2014 burndown's auto-revert at count<50 simply takes longer. No special handling needed."
     },
-
     "rollback_procedure_Q3_continued": {
       "principle": "EVERY auto-closure is recorded in closure-ledger.jsonl with `can_revert: true`. The revert script reads ledger entries by run_id and re-opens the listed ISSs.",
       "script_location": "build-scripts/revert-burndown-closures.js",
@@ -348,7 +366,7 @@
       "script_logic": [
         "1. Open closure-ledger.jsonl, filter lines where closed_by_run === <run_id>.",
         "2. For each: load closed-issues.json, find the matching iss_id in `closed`, remove it, append to open-issues.json with prior_status restored.",
-        "3. Append revert record to closure-ledger.jsonl (single line per revert: { reverted_at, reverted_by_run, original_close_run, iss_ids: [...] }) — preserves audit trail.",
+        "3. Append revert record to closure-ledger.jsonl (single line per revert: { reverted_at, reverted_by_run, original_close_run, iss_ids: [...] }) \u2014 preserves audit trail.",
         "4. With --dry-run: print what WOULD be reverted, do not write."
       ],
       "rollback_test_cases": [
@@ -359,7 +377,6 @@
       ]
     }
   },
-
   "operator_questions_full_answers": {
     "Q1_mechanism_scope": {
       "recommendation": "All three (M1+M2+M3).",
@@ -372,31 +389,30 @@
     },
     "Q3_safety_controls": {
       "recommended_set": "All five: closure-ledger (revertable), severity tier (auto-close minors only), recently-touched guard (no closures within 48h of last modification), dry-run for first 24h after burndown engages, M3 unaffected by caps.",
-      "any_additional": "None required for first deployment. After 1-2 weeks of operation, may add: (a) closure-rate alarming (Tinker flags if M2 closure rate exceeds 30/run sustained — could indicate guard regression), (b) operator-approval gate for moderate severity (currently moderate gets pending-human routing, not auto-close — sufficient for now)."
+      "any_additional": "None required for first deployment. After 1-2 weeks of operation, may add: (a) closure-rate alarming (Tinker flags if M2 closure rate exceeds 30/run sustained \u2014 could indicate guard regression), (b) operator-approval gate for moderate severity (currently moderate gets pending-human routing, not auto-close \u2014 sufficient for now)."
     },
     "Q4_caps": {
       "BAU": "M1=10/run, M2/M3=unbounded (naturally bounded upstream)",
       "burndown": "M1=30/run (3x), M2/M3=unbounded (same)",
-      "justification": "Context budget: each M1 candidate is ~50-200 lines of context (issue body + grep + decision); 30 candidates ≈ 3-6KB of context — fits in a typical decider run with headroom. 60% effective close rate keeps wrong-close rate <2% under the guards."
+      "justification": "Context budget: each M1 candidate is ~50-200 lines of context (issue body + grep + decision); 30 candidates \u2248 3-6KB of context \u2014 fits in a typical decider run with headroom. 60% effective close rate keeps wrong-close rate <2% under the guards."
     },
     "Q5_curmudgeon_interaction": "No pause/throttle. M3 prevents the one-step-forward-one-back churn structurally. See M5 detailed answer above.",
-    "Q6_M2_false_positive_guard": "Three-rule conjunctive gate: severity ∈ {minor,info}, no negative-signal substring, source not under monitor/curmudgeon/reviews/. Six worked examples (3 SAFE, 3 NOT) provided in M2 section. Yields ~10-20 clean closures from the current 90 EXP-mentioning open issues; the rest route through M1 or stay open for major-severity operator review.",
-    "Q7_M3_schema": "Add structured field `unresolved_prior_cycle: [{iss_id, prior_cycle, holes_index}]` on curmudgeon review JSON. Decider reads structured field first, falls back to free-text grep for legacy reviews. Migration: no backfill needed — legacy reviews continue working via fallback; new reviews use the structured field automatically.",
+    "Q6_M2_false_positive_guard": "Three-rule conjunctive gate: severity \u2208 {minor,info}, no negative-signal substring, source not under monitor/curmudgeon/reviews/. Six worked examples (3 SAFE, 3 NOT) provided in M2 section. Yields ~10-20 clean closures from the current 90 EXP-mentioning open issues; the rest route through M1 or stay open for major-severity operator review.",
+    "Q7_M3_schema": "Add structured field `unresolved_prior_cycle: [{iss_id, prior_cycle, holes_index}]` on curmudgeon review JSON. Decider reads structured field first, falls back to free-text grep for legacy reviews. Migration: no backfill needed \u2014 legacy reviews continue working via fallback; new reviews use the structured field automatically.",
     "Q8_implementation_order": {
       "recommendation": "Order C (phased with burn-down first phase)",
       "phase_1_24_to_72_hours": "Land M2 + decider-mode.json + closure-ledger.jsonl + revert script + 24h dry-run-by-default. Operator inspects dry-run ledger, approves first batch.",
-      "phase_2_after_phase_1_clean": "Land M1 + M3. Operator decides whether to re-engage burndown or let M1 BAU drain the residue (≈170 items left after Phase 1's M2 closes ~10-20 EXP-tied items at the front).",
+      "phase_2_after_phase_1_clean": "Land M1 + M3. Operator decides whether to re-engage burndown or let M1 BAU drain the residue (\u2248170 items left after Phase 1's M2 closes ~10-20 EXP-tied items at the front).",
       "rationale": "Phased risk. M2 is the highest-confidence mechanism (clearest signal: EXP integrated AND ISS passes guard); landing it first establishes operator trust in the closure-ledger / dry-run / revert workflow before M1's broader sweep engages. M3 is structurally minor (~15 items); pairs naturally with M1 in Phase 2."
     },
     "Q9_24_stale_statused_entries": {
       "recommendation": "One-shot archiver in Phase 1 deployment, scoped tightly.",
-      "rule": "status ∈ {closed, fixed, wontfix} → archive to closed-issues.json immediately (these statuses already say 'this is done'). Total: 2+9+3=14 entries.",
-      "leave_in_place": "status ∈ {monitoring, blocked-on-curmudgeon, assigned-analyst, partially-fixed-pending-verification, pending-human} → leave in place; these are truly active states, not 'done-but-not-archived'. Total: 2+4+3+1+2=12 entries.",
-      "rationale": "Archive only the obviously-terminal statuses. The 'active-but-non-open' statuses describe live waiting states (monitoring an external claim, blocked on curmudgeon's next cycle, etc.) — they belong in open-issues.json as a working set even if they aren't `status:'open'`.",
+      "rule": "status \u2208 {closed, fixed, wontfix} \u2192 archive to closed-issues.json immediately (these statuses already say 'this is done'). Total: 2+9+3=14 entries.",
+      "leave_in_place": "status \u2208 {monitoring, blocked-on-curmudgeon, assigned-analyst, partially-fixed-pending-verification, pending-human} \u2192 leave in place; these are truly active states, not 'done-but-not-archived'. Total: 2+4+3+1+2=12 entries.",
+      "rationale": "Archive only the obviously-terminal statuses. The 'active-but-non-open' statuses describe live waiting states (monitoring an external claim, blocked on curmudgeon's next cycle, etc.) \u2014 they belong in open-issues.json as a working set even if they aren't `status:'open'`.",
       "implementation": "One-shot script `build-scripts/archive-terminal-status.js`, idempotent, safe to re-run. Operator triggers via direct invocation or HNOTE."
     }
   },
-
   "implementation_path_phase_1": {
     "duration": "2-3 hours of operator+decider coordination, primarily over a 24-72h dry-run window",
     "files_to_modify": [
@@ -439,11 +455,11 @@
     "files_to_create": [
       {
         "path": "monitor/decisions/decider-mode.json",
-        "initial_content": "{ \"mode\": \"bau\", \"set_at\": \"<land-time ISO>\", \"set_by\": \"operator (PROP-026 Phase 1 deploy)\", \"reason\": \"initial state — burndown engaged manually after Phase 1 dry-run approval\", \"auto_revert_after\": null, \"auto_revert_when_open_below\": 50 }"
+        "initial_content": "{ \"mode\": \"bau\", \"set_at\": \"<land-time ISO>\", \"set_by\": \"operator (PROP-026 Phase 1 deploy)\", \"reason\": \"initial state \u2014 burndown engaged manually after Phase 1 dry-run approval\", \"auto_revert_after\": null, \"auto_revert_when_open_below\": 50 }"
       },
       {
         "path": "monitor/decisions/closure-ledger.jsonl",
-        "initial_content": "(empty file — appended to by decider runs)"
+        "initial_content": "(empty file \u2014 appended to by decider runs)"
       },
       {
         "path": "build-scripts/revert-burndown-closures.js",
@@ -459,21 +475,20 @@
       "2. Run tests/run.sh (per CLAUDE.md commit gate). All must pass.",
       "3. Operator commits Phase 1 changes (M2 + mode infrastructure + ledger + revert script + Q9 archiver).",
       "4. Operator manually flips decider-mode.json to mode='burndown' with auto_revert_when_open_below=50.",
-      "5. Decider's next run reads burndown mode, runs M2 in DRYRUN — writes candidate-closure entries to ledger but does not actually close.",
+      "5. Decider's next run reads burndown mode, runs M2 in DRYRUN \u2014 writes candidate-closure entries to ledger but does not actually close.",
       "6. After 24h of dry-run accumulation (~5-10 ledger entries), operator inspects ledger.",
       "7. Operator approves batch via HNOTE 'approve_burndown_batch' OR cancels via 'cancel_burndown'.",
       "8. On approval, dryrun flag flips. Subsequent decider runs perform actual closures using the same guards."
     ],
     "rollback_if_phase_1_misbehaves": "node build-scripts/revert-burndown-closures.js --run <bad_run_id>. Manually flip decider-mode.json back to 'bau' (auto-revert also fires when count drops below 50; manual flip is faster)."
   },
-
   "implementation_path_phase_2": {
     "duration": "1-2 hours, ~48-72h after Phase 1 stable",
     "files_to_modify": [
       {
         "path": "monitor/prompts/decider.md",
         "section": "After Priority 5 (line ~119)",
-        "change": "Add new Priority 5b — Stale-Issue Sweep (M1) section per the M1 plug-in skeleton"
+        "change": "Add new Priority 5b \u2014 Stale-Issue Sweep (M1) section per the M1 plug-in skeleton"
       },
       {
         "path": "monitor/prompts/curmudgeon.md",
@@ -504,38 +519,35 @@
       "5. Auto-revert at count<50 takes over once threshold met."
     ]
   },
-
   "expected_outcome": {
     "day_zero_state": "231 open issues, 26 non-open-statused entries, 27 undated entries needing schema cleanup (separate PROP).",
     "day_three_phase_1_complete": "Open count: ~210-220 (M2 closes ~10-20 EXP-tied orphans + Q9 archiver moves ~14 terminal-status entries to closed-issues.json). Net visible reduction in open-issues.json: ~25-30 entries. ISS-708 (the 30d-tomorrow item) routed through pending-human escalation if M1 isn't yet live.",
-    "day_seven_phase_2_landed_burndown_engaged": "Open count: ~50-60. M1 has chewed through the ≤21d cohort + the older minors. M3 has cleared ~10-15 carry-overs. Auto-revert fires when count drops below 50.",
+    "day_seven_phase_2_landed_burndown_engaged": "Open count: ~50-60. M1 has chewed through the \u226421d cohort + the older minors. M3 has cleared ~10-15 carry-overs. Auto-revert fires when count drops below 50.",
     "day_fourteen_steady_state": "Open count: stable around 30-50 (BAU cap of 10/run for M1 + naturally-bounded M2/M3 maintains equilibrium with curmudgeon's incoming rate).",
-    "obe_protection": "ISS-708 will cross 30d on 2026-05-11 (tomorrow). If Phase 1 deploys today, M1 isn't live yet to catch it — operator-side action: route ISS-708 manually to pending-human before Phase 1 deploys, OR accept the 30d crossover as a one-time data point."
+    "obe_protection": "ISS-708 will cross 30d on 2026-05-11 (tomorrow). If Phase 1 deploys today, M1 isn't live yet to catch it \u2014 operator-side action: route ISS-708 manually to pending-human before Phase 1 deploys, OR accept the 30d crossover as a one-time data point."
   },
-
   "tests_required": [
     {
-      "test_file": "tests/run.sh — new test case",
+      "test_file": "tests/run.sh \u2014 new test case",
       "test_name": "M2 false-positive guard correctness on the 6 worked examples",
       "assertion": "Given the 6 ISSs in worked_examples_from_current_open_issues, M2's classifier returns AUTO-CLOSE for ISS-1547 and ISS-1080, and DO_NOT_AUTO_CLOSE for the other 4."
     },
     {
-      "test_file": "tests/run.sh — new test case",
+      "test_file": "tests/run.sh \u2014 new test case",
       "test_name": "Closure-ledger round-trip integrity",
       "assertion": "Closing 5 ISSs, then reverting via revert script, restores exact prior state of open-issues.json + closed-issues.json."
     },
     {
-      "test_file": "tests/run.sh — new test case",
+      "test_file": "tests/run.sh \u2014 new test case",
       "test_name": "Mode toggle precedence",
       "assertion": "decider-mode.json is read at Step 0b; HNOTE action='set_decider_mode' applied at Step E1 takes precedence and persists across runs."
     },
     {
-      "test_file": "tests/run.sh — new test case",
+      "test_file": "tests/run.sh \u2014 new test case",
       "test_name": "M3 carry-over enforcement self-test fail",
       "assertion": "If decider sees a curmudgeon review with unresolved_prior_cycle entries and finishes a run without taking terminal action on each, the run report self-test fails."
     }
   ],
-
   "risks_and_mitigations": [
     {
       "risk": "M2 false-positive guard mis-classifies a borderline case (e.g., ISS-1080 stylistic disagreement)",
@@ -545,7 +557,7 @@
     {
       "risk": "M1's auto-wontfix on minor-severity stale issues hides a genuinely-still-real problem",
       "mitigation": "Severity tier matrix explicitly routes ambiguous cases to operator escalation, not auto-wontfix. The 'is this still real' signal triangulates re-grep + curmudgeon-recent-touch + EXP-status before any wontfix decision.",
-      "residual": "Moderate. M1's effective close rate (60%) reflects this conservatism — only the high-confidence cases auto-close."
+      "residual": "Moderate. M1's effective close rate (60%) reflects this conservatism \u2014 only the high-confidence cases auto-close."
     },
     {
       "risk": "M3 schema bump breaks legacy curmudgeon reviews that don't carry the unresolved_prior_cycle field",
@@ -560,25 +572,57 @@
     {
       "risk": "Closure-ledger.jsonl grows unbounded over time",
       "mitigation": "Append-only by design; rotated annually by tinker into closure-ledger-archive-YYYY.jsonl. No mid-stream cleanup needed.",
-      "residual": "Negligible — file grows ~1-2 lines/day after backlog drains."
+      "residual": "Negligible \u2014 file grows ~1-2 lines/day after backlog drains."
     },
     {
-      "risk": "Operator forgets to flip burndown→bau and elevated cap stays engaged in steady state, leading to over-aggressive closures",
+      "risk": "Operator forgets to flip burndown\u2192bau and elevated cap stays engaged in steady state, leading to over-aggressive closures",
       "mitigation": "Auto-revert at count<50 fires regardless. Manual operator flip is also one edit.",
       "residual": "Negligible."
     }
   ],
-
   "out_of_scope_deferred_to_separate_props": [
-    "Schema cleanup of the 27 undated open issues (no found_at/found_date) — flagged in context_verification, deferred to PROP-NNN-schema-cleanup",
-    "Refactoring the curmudgeon's holes_found 'still open from c-N' free-text into structured form (preserving audit trail) — M3 fallback handles this; structural refactor is optional",
-    "Post-PROP-026 closure-rate alarming in tinker reports — would land 1-2 weeks after Phase 2 once steady-state rates are observable"
+    "Schema cleanup of the 27 undated open issues (no found_at/found_date) \u2014 flagged in context_verification, deferred to PROP-NNN-schema-cleanup",
+    "Refactoring the curmudgeon's holes_found 'still open from c-N' free-text into structured form (preserving audit trail) \u2014 M3 fallback handles this; structural refactor is optional",
+    "Post-PROP-026 closure-rate alarming in tinker reports \u2014 would land 1-2 weeks after Phase 2 once steady-state rates are observable"
   ],
-
   "verification_pattern": "Tinker on next Mode 1 run checks: (a) decider-mode.json exists in monitor/decisions/, (b) closure-ledger.jsonl exists, (c) at least one M2 closure has been recorded if any EXP integrated since Phase 1 deployed, (d) open-issues count trajectory is monotonically downward in Phase 2, (e) revert script runs successfully on any single ledger entry without error.",
-
   "follow_up_priors_set_by_this_proposal": [
     "Tinker should re-audit 14 days after Phase 2 deployment: is the steady-state open count stable around 30-50? Are auto-close rates within projected ranges?",
     "Operator-facing dashboard hook (optional): a nightly script that emits open-issues count + age distribution to monitor/integrity/. Lets operator spot drift without reading raw JSON."
-  ]
+  ],
+  "phase_1_implemented_at": "2026-05-10T06:55:00Z",
+  "phase_1_implemented_by": "operator",
+  "phase_1_commits": [
+    "20b3a82b (Commit A: ISS-708 + Q9 archiver)",
+    "e1967054 (Commit B: M2 + mode infrastructure + ledger + revert script)"
+  ],
+  "phase_1_files_committed": [
+    "monitor/decisions/decider-mode.json (NEW)",
+    "monitor/decisions/closure-ledger.jsonl (NEW)",
+    "build-scripts/revert-burndown-closures.js (NEW)",
+    "monitor/prompts/decider.md (Step 0b mode-read addition)",
+    "monitor/prompts/reference/decider-curmudgeon.md (Step 8b M2 addendum)",
+    "CLAUDE.md (OWNERSHIP for decider-mode.json + closure-ledger.jsonl)",
+    "build.js (OWNERSHIP table)",
+    "monitor/prompts/workspace-sync.md (NEVER_PUSH list)",
+    "monitor/decisions/open-issues.json (Q9 archiver: 14 terminal-status entries moved to closed; ISS-708 flipped to pending-human)",
+    "monitor/decisions/closed-issues.json (Q9 archiver: 12 net new archived entries)"
+  ],
+  "phase_1_state_after_landing": {
+    "open_issues_count_status_open": 230,
+    "open_issues_count_total_entries": 243,
+    "closed_issues_count": 1574,
+    "mode": "bau (initial; burndown not yet engaged \u2014 operator decision)",
+    "tests": "3593 passed",
+    "build": "clean"
+  },
+  "phase_1_next_step": "Operator decision: when ready to engage burndown mode, manually edit monitor/decisions/decider-mode.json to set mode=\"burndown\", dryrun=true, auto_revert_when_open_below=50, auto_revert_after=<+7d ISO>. First 24h dry-run; review ledger; approve via HNOTE action=\"approve_burndown_batch\". OR keep BAU mode and let M2 trickle-clear EXP-tied orphans incrementally as decider integrates new EXPs.",
+  "phase_2_pending": {
+    "description": "Phase 2 lands M1 (stale-issue sweep, decider Priority 5b) + M3 (carry-over enforcement, curmudgeon unresolved_prior_cycle field). Per tinker recommendation, defer ~48-72h after Phase 1 verified clean.",
+    "gating_conditions": [
+      "No M2 false-positive incidents observed in Phase 1 ledger",
+      "Operator confirmation that BAU mode behavior is as expected",
+      "Optional: 1+ burndown cycle completed cleanly with full revert capability tested"
+    ]
+  }
 }
