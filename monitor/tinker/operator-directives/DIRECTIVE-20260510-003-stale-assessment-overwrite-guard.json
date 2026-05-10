@@ -1,0 +1,84 @@
+{
+  "directive_id": "DIRECTIVE-20260510-003",
+  "title": "Stale-analyst-assessment overwrite guard: structural fix for the commit-209fda5 failure mode",
+  "filed_by": "operator",
+  "filed_at": "2026-05-10T11:45:00Z",
+  "status": "pending",
+  "priority": "high",
+  "scope_authority": "Design proposal only (PROP-NNN). Tinker reviews the bug, the soft mitigation that's been in place, and proposes a structural fix. Operator reviews PROP before implementation. Output: one PROP that retires three ISSs (ISS-1199, ISS-1200, ISS-1201).",
+  "context": [
+    "Bug: stale analyst assessments can silently overwrite operator-approved verdict changes when re-integrated by decider. Concrete instance: commit 209fda5 (2026-04-20) re-integrated 2026-04-11 analyst assessments that had been explicitly overridden by 2026-04-14 operator approvals via ISS-951/952/953/954 — four predictions had their verdicts silently reverted, with no new operator approval, and verdict_history was not updated.",
+    "Three open ISSs document this from different angles, all currently pending-human (escalated by 2026-05-10 M1 sweep with severity=major age=20d, never auto-close per matrix invariant): ISS-1199 (decider-side fix proposal: cross-check closed-issues.json before integration), ISS-1200 (the documented failure mode and root-cause attribution), ISS-1201 (integrity-side: pre-push gate that our_verdict matches verdict_history[last].to). All three are angles of the same bug.",
+    "Soft mitigation that has been in place: the HNOTE dual-confirm protocol — operator-applied verdict changes are filed with operator-approved HNOTEs (e.g. HNOTE-OPERATOR-WIN-013-014-VERDICT-REFRAME-001, HNOTE-OPERATOR-APPROVE-EXP-301-INTEGRATION-001) that explicitly authorize verdict changes. This has been working since the 209fda5 incident — no further silent overwrites observed. But it is a soft mitigation that depends on operator and agents both following protocol; it is not a structural guard.",
+    "Recent verdict-change traffic that this directive's fix should protect prospectively: WIN-013 (Misleading → Refuted by Data, EXP-301 integrated 2026-05-10), WIN-014 (Self-Contradicted → Refuted by Data, same), WIN-055 (Misleading → Self-Contradicted, operator-applied 2026-05-10 closing ISS-1924). All three have HNOTE soft-mitigation tracks. None should be silently revertible by an older stale analyst assessment.",
+    "Operator framing 2026-05-10: 'queue a tinker for A' — prioritize structural fix over soft mitigation, retire the three ISSs in one PROP."
+  ],
+  "operator_intent": "Tinker designs a structural guard against stale-analyst-assessment overwrites. The guard must (a) prevent the 209fda5 failure mode without operator-side discipline, (b) retire ISS-1199/1200/1201 in one coherent PROP, and (c) interact cleanly with the WIN/PRED verdict-change paths we're using right now (HNOTE-driven for major changes, decider-applied for minor refinements). Open question for tinker: where the guard lives (decider integration / pre-push / both), what trips it (timestamp comparison / closed-issue lookup / verdict_history consistency check), and what happens when it trips (skip / warn / escalate-to-human).",
+  "tasks": [
+    {
+      "task_id": "task_1_diagnose_209fda5_in_full_detail",
+      "description": "Pull commit 209fda5 + the four reverted ISSs (951/952/953/954) and reconstruct the exact failure path. Goal is to show, in the PROP context section, the precise sequence of events that produced silent overwrites. This grounds the design in real failure rather than abstract worry.",
+      "investigation_steps": [
+        "git show --stat 209fda5 — confirm files touched (predictions.json or wins.json or both).",
+        "git diff 209fda5^..209fda5 -- data/predictions.json | head -200 — show the verdict reversals.",
+        "node -e \"const ci=require('./monitor/decisions/closed-issues.json'); ['ISS-951','ISS-952','ISS-953','ISS-954'].forEach(id=>{const i=ci.issues.find(x=>x.id===id);if(i)console.log(JSON.stringify(i,null,2));});\" — pull the closed-issue records for the four overwritten ISSs.",
+        "Identify whether the analyst assessment files (the source of the overwrite) still exist in monitor/analyst/* and at what timestamps."
+      ],
+      "deliverable": "Failure-mode reconstruction in the PROP context section, with file paths, commit hashes, timestamps."
+    },
+    {
+      "task_id": "task_2_design_the_guard",
+      "description": "Tinker proposes a structural guard. The matrix below frames the design space; tinker picks a path and justifies.",
+      "design_space_matrix": {
+        "where": ["decider-integration-pass (Mech A)", "pre-push integrity gate in test.js or decider Step E (Mech B)", "both, layered (Mech AB)"],
+        "what_signals": ["closed-issues lookup by win_id/prediction_id within last N days", "verdict_history-vs-current-verdict consistency", "analyst-assessment-file-created-at vs verdict_history[last].at timestamp comparison", "explicit HNOTE-confirmation lookup"],
+        "on_trip": ["skip integration (silent)", "skip integration + log to attention-inbox", "escalate-to-human (route to pending-human ISS)", "fail the pre-push gate (block commit)"]
+      },
+      "minimum_design_questions_tinker_must_answer": [
+        "Q1: Where does the guard live? Decider integration pass (Mech A) catches the bug at write time. Pre-push gate (Mech B) catches it at the very last moment. Both (Mech AB) is belt-and-suspenders. Recommend with rationale.",
+        "Q2: What's the trip signal? Operator's framing on ISS-1199 was 'if predictions.json[id].verdict_history last entry is newer than the analyst assessment file created_at, skip integration or warn.' That's a clean, mechanical, file-timestamp-based check. Is that sufficient, or do we also need explicit closed-issues.json lookup (looking for ISS with win_id/prediction_id and status:fixed/wontfix in the last N days)? Both? What N?",
+        "Q3: On trip, skip-silent vs skip-with-attention vs escalate? Given current backlog dynamics (we already have 230+ open issues; we don't want to flood attention-inbox), recommend the right action and rationale. Counter: silent-skip is what produced the 209fda5 bug in the first place — the analyst assessment was a no-op because the file already had the correct verdict, but no one was warned that the source assessment was stale. A guard that re-introduces silent-skip behavior just shifts the failure mode.",
+        "Q4: How does the guard interact with the HNOTE dual-confirm soft-mitigation? Tinker should design so the HNOTE channel and the structural guard are belt-and-suspenders, not redundant or contradictory. Specifically: when an HNOTE-driven verdict change fires (e.g. HNOTE-OPERATOR-WIN-013-014-VERDICT-REFRAME-001 → EXP-301 → decider integration), the guard should NOT trip on the resulting analyst assessment because that assessment is fresh (post-HNOTE). Verify the timestamp-based check naturally handles this.",
+        "Q5: Does the guard need to read closed-issues-archive.jsonl (PROP-022 phase 4 archive) in addition to the live closed-issues.json? If lookback is bounded at N=30d the live file is sufficient (closures younger than 30d don't archive yet). If lookback extends further, archive read is needed. Recommend N and resulting file-read scope.",
+        "Q6: What about the integrity-gate angle (ISS-1201)? Verdict_history-vs-current-verdict consistency is a related but distinct check — it catches the case where current verdict was changed but verdict_history was not appended. Should this be a separate test in test.js (as ISS-1201 suggests), or fold into the same Mech-AB guard? Recommend the right factoring."
+      ]
+    },
+    {
+      "task_id": "task_3_specify_implementation_scope",
+      "description": "Once design questions are answered, tinker specifies the exact implementation scope: files touched, code changes, test additions, and (per CLAUDE.md NEVER_PUSH discipline) which changes need operator-applied edits.",
+      "expected_implementation_files": [
+        "monitor/prompts/decider.md or monitor/prompts/reference/decider-patches-and-selfapply.md — if Mech A is the chosen guard location (writer-side prompt edit, agent-applied)",
+        "test.js — if Mech B is the chosen pre-push gate location (NEVER_PUSH — operator-applied)",
+        "build-scripts/validate-predictions.js or new build-scripts/check-stale-assessments.js — if a runnable script is part of the design (NEVER_PUSH — operator-applied)",
+        "monitor/prompts/reference/state-verification.md — if the design extends the verify-on-read discipline already established by DIRECTIVE-20260502-001"
+      ],
+      "iss_retirement_plan": "Specify which of ISS-1199 / ISS-1200 / ISS-1201 are retired by which deliverable. Most likely all three retire on PROP integration since they're three angles of one bug. Operator's preferred outcome: one PROP, three closures."
+    },
+    {
+      "task_id": "task_4_carve_out_what_NOT_to_do",
+      "description": "Counter-argument tinker should explicitly address: 'the soft mitigation has been working since 2026-04-20; do we actually need a structural fix, or is this over-engineering?' Tinker's answer should weigh: (a) operator-discipline failure modes that the soft mitigation doesn't catch (operator forgets to file HNOTE; agent integration logic changes upstream and the HNOTE pattern stops being checked); (b) the asymmetric cost of the failure mode (a silent verdict-revert defeats reviewer trust on the published page, a structural guard catches it before push); (c) the cost of the guard (one timestamp comparison per integration call — trivial). If after weighing tinker concludes the soft mitigation is sufficient and the structural fix is over-engineering, that's a valid recommendation — retire the three ISSs as wontfix-with-rationale instead. Operator wants the honest comparison, not a foregone conclusion.",
+      "deliverable": "Explicit do-not-build section in the PROP if any subset of the design space is rejected, with reasoning."
+    }
+  ],
+  "constraints": [
+    "PROP-NNN authoring authority only. Tinker does NOT implement; tinker proposes. Operator reviews PROP before any prompt or code edits.",
+    "Respect existing PROP-009r2 (queue_id strict matching), PROP-014 (state verification), PROP-016 (NEVER_PUSH guard), PROP-022 (state file archive), PROP-026 (M1/M2/M3 backlog), PROP-027 (5-action routing matrix). The new PROP should fit cleanly into this stack, not duplicate or contradict.",
+    "Output one PROP file under monitor/tinker/proposals/ following standard naming (PROP-NNN-stale-assessment-overwrite-guard.json or similar).",
+    "After PROP authored, tinker may set this DIRECTIVE's status='completed' with prop_id_authored='PROP-NNN' per PROP-014-amendment-001 Q6 lifecycle convention."
+  ],
+  "expected_output_files": [
+    "monitor/tinker/proposals/PROP-NNN-stale-assessment-overwrite-guard.json"
+  ],
+  "related_iss_to_retire_on_prop_landing": ["ISS-1199", "ISS-1200", "ISS-1201"],
+  "related_directives": [
+    "DIRECTIVE-20260502-001-agent-state-coupling-fix.json (parent: state-coupling generally)",
+    "DIRECTIVE-20260502-003-author-mech-scripts.json (sibling: state-verification scripts)",
+    "DIRECTIVE-20260510-001-open-issues-backlog-clearance.json (sibling: PROP-026 framework)",
+    "DIRECTIVE-20260510-002-m1-routing-matrix-with-prop025-integration.json (sibling: PROP-027 matrix this guard sits inside)"
+  ],
+  "operator_notes_to_tinker": [
+    "Take your time on Q1-Q6. The soft mitigation has held for ~3 weeks and we have current verdict-change traffic that benefits from a structural fix more than from a fast turnaround. A clean PROP > a quick PROP.",
+    "Don't be afraid to recommend wontfix on one or more of the three ISSs if your honest reading is that the soft mitigation suffices. Operator wants the right answer, not a vindication of the directive.",
+    "If Mech B (pre-push gate) is part of your recommendation, note explicitly that test.js is NEVER_PUSH — the implementation step requires operator-applied edits. The PROP can specify the exact diff so operator can apply mechanically."
+  ]
+}
