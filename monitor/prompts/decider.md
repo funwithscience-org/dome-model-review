@@ -139,9 +139,9 @@ Trigger: Completed expansions not yet integrated into sections.json/wins.json.
 Read all remaining upstream outputs, check human notes, pipeline health, integrity, social drafts, prediction failures.
 → Read `monitor/prompts/reference/decider-intake.md`, execute full procedure.
 
-**Priority 5b — Stale-Issue Sweep (M1, PROP-026 Phase 2, landed 2026-05-10)**
+**Priority 5b — Stale-Issue Sweep (M1, PROP-026 Phase 2 + PROP-027 routing-matrix extension, landed 2026-05-10)**
 
-After Priority 5, scan `open-issues.json` for items aged > **21 days**. Cap K at **10/run in BAU mode, 30/run in burndown mode** (read `monitor/decisions/decider-mode.json` mode field). Sort oldest-first; process up to K items. For each, classify and act per the severity-tier matrix below. All actions write a closure-ledger entry; closures move ISS from open → closed; escalations flip `status: 'pending-human'` with `escalation_reason`. Skipping a candidate is allowed but must be logged in the daily report `m1_sweep.skipped[]` array with rationale.
+After Priority 5, scan `open-issues.json` for items aged > **21 days**. Cap K at **10/run in BAU mode, 30/run in burndown mode** (read `monitor/decisions/decider-mode.json` mode field). Sort oldest-first; process up to K items. For each, classify and act per the **5-action decision tree** (PROP-027): PATCH | NARROW-PATCH | WONTFIX-WITH-RATIONALE | ROUTE-TO-ANALYST | ROUTE-TO-CURMUDGEON | ESCALATE-TO-HUMAN. All actions write a closure-ledger entry. See `monitor/prompts/reference/routing-matrix.md` for the canonical decision tree, narrowness gate, and class-hint propagation chain.
 
 ```bash
 node -e "
@@ -184,30 +184,25 @@ for(const {iss, age} of candidates){
   const sev = iss.severity || 'minor';
   let action = null, rationale = '';
 
-  // Severity tier matrix per PROP-026:
-  //   minor/info  → patch | wontfix-with-rationale | escalate
-  //   moderate    → patch ONLY if mechanical/narrow; else escalate (NEVER auto-wontfix)
-  //   major/critical → escalate ONLY (never auto-close)
+  // PROP-027 5-action decision tree — bash sets DEFAULT INTENT; LLM overrides per-issue.
+  //   minor/info  default → route-to-analyst (changed from escalate per PROP-027)
+  //   moderate    default → route-to-analyst (changed from escalate per PROP-027 — 100% over-escalation evidence 2026-05-10)
+  //   major/critical → escalate-to-human (unchanged invariant; never auto-close)
+  // The LLM walks each candidate after this bash helper and may override to:
+  //   PATCH | NARROW-PATCH | WONTFIX-WITH-RATIONALE | ROUTE-TO-CURMUDGEON | confirm ROUTE-TO-ANALYST | ESCALATE-TO-HUMAN
+  // See monitor/prompts/reference/routing-matrix.md for the full decision tree + narrowness gate + class-hint rules.
   if(sev === 'major' || sev === 'critical'){
     action = 'escalate';
-    rationale = 'M1 sweep: severity='+sev+' age='+Math.floor(age)+'d > '+N_DAYS+'d; never auto-close per PROP-026 severity tier matrix. Operator review required.';
-  } else if(sev === 'moderate'){
-    // Without a deeper read, default to escalate. Patching moderates requires the LLM (you) to
-    // assess scope-and-mechanical-only, which is per-issue judgment, not a general bash one-liner.
-    // The decider's actual implementation (you, the LLM) MAY override this in-context to attempt a
-    // patch when the issue is narrow find/replace; otherwise escalate.
-    action = 'escalate';
-    rationale = 'M1 sweep: severity=moderate age='+Math.floor(age)+'d > '+N_DAYS+'d; auto-wontfix forbidden, patch requires per-issue narrowness assessment. Default to escalation; decider LLM may override to patch in-context.';
+    rationale = 'M1 sweep: severity='+sev+' age='+Math.floor(age)+'d > '+N_DAYS+'d; never auto-close per matrix invariant. Operator review required.';
   } else {
-    // minor / info: default to escalate (operator visibility) UNLESS the LLM has determined in-context
-    // that the issue is no-longer-real per re-grep of the live target. The bash one-liner here cannot
-    // do that re-grep automatically — it requires the LLM to judge the action per-issue. So this code
-    // emits a CANDIDATE record; the decider LLM then walks the candidates and chooses action a/b/c.
-    action = 'escalate';
-    rationale = 'M1 sweep: severity='+sev+' age='+Math.floor(age)+'d > '+N_DAYS+'d. Default escalation pending decider LLM per-issue judgment (patch | wontfix-with-rationale | confirm-escalate).';
+    // PROP-027 default flip: moderate AND minor/info → route-to-analyst (was escalate).
+    // Empirical justification: 2026-05-10T07:58Z first M1 fire produced 9/9 over-escalations on moderates.
+    // Operator manually rerouted 9/9 to assigned-analyst; PROP-027 codifies as default.
+    action = 'route-to-analyst';
+    rationale = 'M1 sweep: severity='+sev+' age='+Math.floor(age)+'d > '+N_DAYS+'d. Default ROUTE-TO-ANALYST per PROP-027 matrix; decider LLM may override per-issue to PATCH/NARROW-PATCH/WONTFIX/ROUTE-TO-CURMUDGEON/ESCALATE based on narrowness gate, re-grep evidence, and source provenance.';
   }
 
-  // Write ledger entry (decision intent)
+  // Write ledger entry (decision intent — LLM may override per-issue with corrective ledger line)
   const now = new Date().toISOString();
   const ledgerLine = {
     closed_at: now,
@@ -216,7 +211,8 @@ for(const {iss, age} of candidates){
     iss_id: iss.id,
     prior_status: iss.status,
     closure_reason: 'M1 stale-issue sweep: age='+Math.floor(age)+'d, action='+action,
-    closure_evidence: { age_days: Math.floor(age), severity: sev, rationale, action_intent: action, description_excerpt: String(iss.description||iss.title||'').slice(0,120) },
+    action_taken: action,  // PROP-027: top-level enum: 'patch'|'narrow-patch'|'wontfix'|'route-to-analyst'|'route-to-curmudgeon'|'escalate'
+    closure_evidence: { age_days: Math.floor(age), severity: sev, rationale, action_intent: action, class_hint: null, description_excerpt: String(iss.description||iss.title||'').slice(0,120) },
     can_revert: true,
     dryrun: dryrun
   };
@@ -230,11 +226,19 @@ for(const {iss, age} of candidates){
       iss.escalated_at = now;
       escalated++;
       console.log('  ESCALATE '+iss.id+' [age='+Math.floor(age)+'d, sev='+sev+']');
+    } else if(action === 'route-to-analyst'){
+      iss.status = 'assigned-analyst';
+      iss.routing_reason = rationale;
+      iss.routed_by_run = RUN_ID;
+      iss.routed_at = now;
+      iss.class_hint = null;  // LLM may set per-issue when overriding; null = analyst decides per PROP-025
+      console.log('  ROUTE-TO-ANALYST '+iss.id+' [age='+Math.floor(age)+'d, sev='+sev+'] — class_hint=null (LLM may set on override)');
     }
-    // Note: actual patch / wontfix-with-rationale paths are LLM-judgment paths, not mechanical.
-    // The decider LLM walking the per-run output will see the ESCALATE intent in the ledger and
-    // may override to patch or wontfix-with-rationale for individual items based on re-grep evidence.
-    // When the LLM overrides, it writes a separate ledger line with the actual action taken.
+    // PATCH / NARROW-PATCH / WONTFIX / ROUTE-TO-CURMUDGEON paths are all LLM-override paths.
+    // The bash helper's default-intent ledger line records the route-to-analyst intent; the LLM walks
+    // the candidate list, evaluates the narrowness gate / re-grep / source-provenance per ISS, and
+    // writes a CORRECTIVE ledger line with the actual action_taken. The corrective line uses the same
+    // RUN_ID and iss_id; M3-style audit by RUN_ID returns the latest action. See routing-matrix.md.
   }
   acted++;
 }
@@ -246,15 +250,26 @@ console.log('M1 sweep: candidates='+candidates.length+', acted='+acted+', skippe
 "
 ```
 
-**Decider LLM in-context override paths for M1 (when you override the default-escalate intent):**
+**Decider LLM in-context override paths for M1 (PROP-027 5-action decision tree):**
 
-The bash helper above writes ESCALATE intent to the ledger by default. As the decider LLM, you should walk each candidate after the bash helper runs and decide whether to override:
+The bash helper above writes ROUTE-TO-ANALYST intent (or ESCALATE for major/critical) by default. As the decider LLM, you walk each candidate post-helper and decide whether to override per the decision tree (top-down, first match wins). Full tree + narrowness gate in `monitor/prompts/reference/routing-matrix.md`. Quick reference:
 
-- **Override to PATCH:** If the issue is narrow find/replace AND you have line-level evidence the bug still exists → write the patch via Step 5 self-apply, then write a corrective ledger line (`closed_by_mechanism: 'M1', action_taken: 'patch', patch_file: '...'`). Move ISS to closed-issues with `fixed_by: 'M1-patch'`. **When the patch results in a queue push for re-review (Step 5 self-apply pushes the patched target), set `class: 'verification'` per PROP-025 matrix — this is a verification cycle, not deep-attack.**
-- **Override to WONTFIX-WITH-RATIONALE:** If you re-grep the live target and the issue is no-longer-real (text rewritten, EXP integrated, section removed, condition met) → write a corrective ledger line (`closed_by_mechanism: 'M1', action_taken: 'wontfix', wontfix_rationale: '<text>'`). Move ISS to closed-issues with `fixed_by: 'M1-wontfix'`. **Required for moderate severity:** wontfix is forbidden for moderates per the matrix; if you reach this branch on a moderate, escalate instead.
-- **Confirm ESCALATE (no override):** Default path. ISS already flipped to `pending-human` by the bash helper. Add to daily report `m1_sweep.escalated[]`.
+1. **Severity major/critical** → ESCALATE-TO-HUMAN. (Already set by bash helper. No override.)
+2. **Re-grep negative AND severity ∈ {minor, info}** → WONTFIX-WITH-RATIONALE. Write corrective ledger line with `action_taken: 'wontfix'` + `wontfix_rationale: 'no-longer-real per re-grep at <run-id>: <evidence>'`. Move ISS to closed-issues with `fixed_by: 'M1-wontfix'`. **FORBIDDEN on moderate** — wontfix-on-moderate routes to ROUTE-TO-ANALYST instead.
+3. **Three-rule narrowness gate passes** (NARROWNESS + RE-GREP + NOT_NEVER_PUSH — see routing-matrix.md):
+   - severity ∈ {minor, info}: **PATCH** — apply via Step 5 self-apply, corrective ledger `action_taken: 'patch'`, fixed_by: 'M1-patch'.
+   - severity == moderate: **NARROW-PATCH** — same self-apply, corrective ledger `action_taken: 'narrow-patch'`, fixed_by: 'M1-narrow-patch' (distinct for audit).
+   - **For both: when Step 5 self-apply pushes the patched target for re-review, set `class: 'verification'` per PROP-025.**
+4. **NEVER_PUSH file modification, physical-world verification, legal/strategic/personal knowledge needed** → ESCALATE-TO-HUMAN. Override the bash default; flip status to pending-human, set escalation_reason. ISS-1089 (build-scripts/generate-html.js patches) and ISS-1924 (8,619 km figure verification) are canonical examples.
+5. **Issue is curmudgeon-raised AND next action is adversarial re-attack** (rare — most curmudgeon-raised ISSs need analyst defense, not curmudgeon re-attack) → ROUTE-TO-CURMUDGEON. Push to priority-queue with target_type appropriate to ISS, class set per PROP-025 (verification for verify-the-patch-landed; deep-attack for substantive concern). Set `iss.routed_to_curmudgeon_queue_id: <queue_id>` so M1 doesn't re-trigger next run. Corrective ledger `action_taken: 'route-to-curmudgeon'` + `route_queue_id: <queue_id>`.
+6. **Default: ROUTE-TO-ANALYST** (already set by bash helper). Confirm + optionally set `iss.class_hint`:
+   - `'verification'` if work is narrow-correction / value-fact-check / single-source-investigation (analyst's eventual EXP will be batchable)
+   - `'deep-attack'` if work is EXP revision / new argument / defender-pivot / curmudgeon-raised-concern-needing-defense
+   - `'holistic'` if multi-WIN or cross-section work
+   - `null` (default) if uncertain — analyst decides per PROP-025
+   The class_hint is **advisory only**; analyst's `review_class` on the EXP remains authoritative per PROP-025. Mirror to corrective ledger entry under `closure_evidence.class_hint`.
 
-**Daily report `m1_sweep` field shape:**
+**Daily report `m1_sweep` field shape (PROP-027 expanded):**
 ```json
 {
   "m1_sweep": {
@@ -264,8 +279,11 @@ The bash helper above writes ESCALATE intent to the ledger by default. As the de
     "candidates": 10,
     "acted": 10,
     "patched": 0,
+    "narrow_patched": 0,
     "wontfixed": 0,
-    "escalated": 10,
+    "routed_to_analyst": 0,
+    "routed_to_curmudgeon": 0,
+    "escalated": 0,
     "skipped_recently_touched": 0,
     "iss_ids": ["ISS-NNNN", ...]
   }

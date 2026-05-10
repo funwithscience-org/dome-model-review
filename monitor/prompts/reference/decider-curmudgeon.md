@@ -320,11 +320,24 @@ console.log('CARRYOVERS structured: '+JSON.stringify(carryovers));
 #     → flip ISS status='pending-human' with escalation_reason and escalated_by_run.
 #     → write ledger line: closed_by_mechanism='M3', action_taken='escalate', escalation_reason='...'.
 #
-# DO NOT skip an entry without recording one of these three. The hidden-default 'no-action-taken'
-# is the bug M3 was designed to catch.
+#   action_d (ROUTE-TO-CURMUDGEON, PROP-027): the carry-over describes a substantive concern
+#     where the next action is curmudgeon adversarial re-review (not analyst defense).
+#     → push to priority-queue with target_type matching the ISS, class set per derivation rule below.
+#     → set iss.routed_to_curmudgeon_queue_id: <queue_id> so the ISS doesn't re-trigger.
+#     → write ledger line: closed_by_mechanism='M3', action_taken='route-to-curmudgeon',
+#         route_queue_id=<queue_id>, closure_evidence.class_hint=<verification|deep-attack>.
+#     CLASS DERIVATION (PROP-027):
+#       - If carry-over is "verify the patch landed cleanly" (post-self-apply confirmation) →
+#         class='verification' (batchable in curmudgeon Step 8a).
+#       - If carry-over is "this hole is a substantive new concern requiring fresh adversarial
+#         attack" → class='deep-attack' (singleton).
+#       - Decider sets class on the queue push; analyst-side review_class is N/A here (no EXP).
+#
+# DO NOT skip an entry without recording one of these four actions. The hidden-default
+# 'no-action-taken' is the bug M3 was designed to catch.
 ```
 
-**Self-test before you finalize the run:** for each `unresolved_prior_cycle` entry, verify it has a corresponding ledger line with `closed_by_mechanism: 'M3'` from THIS run's RUN_ID. If any are missing, do NOT mark the run complete — return to triage.
+**Self-test before you finalize the run:** for each `unresolved_prior_cycle` entry, verify it has a corresponding ledger line with `closed_by_mechanism: 'M3'` from THIS run's RUN_ID and `action_taken ∈ {patch, wontfix, escalate, route-to-curmudgeon}`. If any are missing, do NOT mark the run complete — return to triage.
 
 **Interaction with PROP-025 batch-gate:** carry-over enforcement is ORTHOGONAL to the curmudgeon's batch class. A `verification`-class push that carries `unresolved_prior_cycle` entries still triggers full M3 triage on integration. PROP-025 governs how much work curmudgeon does per run; M3 governs what decider must do with whatever curmudgeon flags as carry-over.
 

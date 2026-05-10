@@ -78,6 +78,20 @@ Two files: `open-issues.json` (active) and `closed-issues.json` (archive). Decid
 
 Query counts: `node -e "const o=JSON.parse(require('fs').readFileSync('monitor/decisions/open-issues.json','utf8'));const c=JSON.parse(require('fs').readFileSync('monitor/decisions/closed-issues.json','utf8'));console.log('Open:',o.issues.length,'Closed:',c.issues.length)"`
 
+**M1 routing fields (PROP-027, landed 2026-05-10) — added by decider when M1 stale-issue sweep routes an ISS:**
+- `class_hint`: `'verification' | 'deep-attack' | 'holistic' | null` — advisory hint for analyst's eventual `review_class` declaration on the EXP. Analyst is authoritative per PROP-025; hint is non-binding upstream signal.
+- `routing_reason`: free-text explaining the analyst-class work expected.
+- `routed_at`, `routed_by_run`: ISO timestamp + decider run ID.
+- `routed_to_curmudgeon_queue_id`: integer set when M1 takes ROUTE-TO-CURMUDGEON action; prevents M1 re-trigger on the same ISS.
+- `escalation_reason`, `escalated_at`, `escalated_by_run`: set when M1 takes ESCALATE-TO-HUMAN action (status='pending-human').
+
+Full routing semantics: `monitor/prompts/reference/routing-matrix.md`.
+
+**closure-ledger.jsonl (M1/M2/M3 audit trail) schema extensions (PROP-027):**
+- `action_taken`: top-level enum — `'patch' | 'narrow-patch' | 'wontfix' | 'route-to-analyst' | 'route-to-curmudgeon' | 'escalate'`. Override pattern: when LLM overrides the bash helper's default-intent, write a NEW corrective ledger line (don't mutate). Audit consumers reading by `closed_by_run` take the LATEST line per iss_id as canonical.
+- `closure_evidence.class_hint`: same enum as `iss.class_hint`. Mirrors the routing decision for audit.
+- Per-action fields (set when applicable): `patch_file`, `wontfix_rationale`, `route_queue_id`.
+
 ## kill-shots.json Schema
 
 Array of six kill-shot test entries. Each entry has:

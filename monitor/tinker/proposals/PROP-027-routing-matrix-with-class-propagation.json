@@ -1,0 +1,637 @@
+{
+  "id": "PROP-027",
+  "prop_id": "PROP-027",
+  "title": "PROP-026 M1 routing-matrix extension: add route-to-analyst + route-to-curmudgeon actions, with PROP-025 class-field propagation through the routing chain",
+  "authored_by": "tinker (2026-05-10 run, in response to DIRECTIVE-20260510-002)",
+  "authored_at": "2026-05-10T08:36:00Z",
+  "status": "implemented",
+  "category": "matrix_extension + schema_addition + propagation_discipline",
+  "directive": "DIRECTIVE-20260510-002-m1-routing-matrix-with-prop025-integration",
+  "amends": "PROP-026 (matrix gap; this PROP adds two new actions to PROP-026's M1 severity-tier matrix and codifies the PROP-025 class-field propagation)",
+  "target": "monitor/prompts/decider.md (Priority 5b matrix extension + new bash helper conditional + LLM override path docs) + monitor/prompts/reference/decider-curmudgeon.md (Step 8c carry-over enforcement gets class_hint logic) + monitor/prompts/reference/analyst-mode1-expansions.md (intake reads class_hint) + monitor/prompts/reference/DATA-SCHEMAS.md (closure-ledger schema extension; ISS class_hint field) + new monitor/prompts/reference/routing-matrix.md (single-page reference for the routing chain)",
+  "executive_summary": {
+    "problem_one_line": "PROP-026 M1 matrix has only three actions (PATCH | WONTFIX | ESCALATE-TO-HUMAN); first burndown fire (2026-05-10T07:58Z) over-escalated 9 of 9 moderates because the matrix had no structured route-to-analyst path. Operator manually re-routed all 9 to assigned-analyst.",
+    "fix_one_line": "Add ROUTE-TO-ANALYST and ROUTE-TO-CURMUDGEON as first-class actions in M1's matrix; flip the moderate default from ESCALATE-TO-HUMAN to ROUTE-TO-ANALYST; allow auto-PATCH on moderates that pass a three-rule narrowness gate (single-line + re-grep present + NOT in NEVER_PUSH); carry an advisory class_hint along the M1 \u2192 ISS \u2192 analyst EXP \u2192 queue push \u2192 curmudgeon chain so analyst-driven outputs don't default to deep-attack singletons.",
+    "tinker_top_line_recommendations": {
+      "Q1_matrix_scope": "Implement BOTH route-to-analyst AND route-to-curmudgeon in a single coherent commit. Route-to-curmudgeon will be rarely-used (today's 9-ISS batch produced zero curmudgeon-routes), but skipping it would leave a hole that has to be filled later under the same class-propagation design \u2014 bundling avoids two prompt-churn cycles.",
+      "Q2_moderate_narrow_patch_test": "Three-rule conjunctive gate: (a) NARROWNESS \u2014 ISS body explicitly identifies a single-field, single-line, or 2-3-character correction; (b) RE-GREP \u2014 the offending text/condition is still present in the live target; (c) NOT_NEVER_PUSH \u2014 target path is not in workspace-sync NEVER_PUSH. All three must hold. If any fails: ROUTE-TO-ANALYST (not escalate-to-human; ROUTE-TO-ANALYST is the new default).",
+      "Q3_default_action_flip": "YES \u2014 flip moderate default from ESCALATE-TO-HUMAN to ROUTE-TO-ANALYST. Evidence: 9/9 = 100% over-escalation rate on first fire. Operator's manual re-route confirmed 8/9 were analyst-class work. The 1/9 that correctly stayed pending-human (ISS-1089) hit NEVER_PUSH and would route correctly under the new matrix anyway.",
+      "Q4_class_hint_placement": "On the ISS itself as a new optional field `class_hint: 'verification' | 'deep-attack' | 'holistic' | null`, mirrored on the closure-ledger entry under `closure_evidence.class_hint` for audit. Analyst reads ISS at intake; closure-ledger preserves the routing decision's hint as historical record.",
+      "Q5_reference_doc_scope": "Single new file `monitor/prompts/reference/routing-matrix.md` capturing the 5-action decision tree + class-hint propagation chain. Linked from decider.md Priority 5b, decider-curmudgeon.md Step 8c, and analyst-mode1-expansions.md intake section. Replaces inline duplication.",
+      "Q6_closure_ledger_schema": "YES \u2014 extend `action_taken` enum to include 'route-to-analyst' and 'route-to-curmudgeon' (alongside existing 'patch', 'wontfix', 'escalate'). Add 'narrow-patch' as a distinct action_taken value when the moderate-narrow path fires (vs vanilla 'patch' on minor). Distinct values let the revert script distinguish closure types.",
+      "Q7_curmudgeon_side_tagging_for_routed_work": "PROP-025's existing analyst-declares-review_class discipline is sufficient as the load-bearing tag. The class_hint added by PROP-027 is an advisory upstream signal; analyst overrides as authoritative when authoring the EXP. Decider's existing pass-through (read exp.review_class \u2192 push queue with class=exp.review_class) does not change. No additional helper signals required."
+    }
+  },
+  "context_verification": {
+    "directive_filed_at": "2026-05-10T08:30:00Z",
+    "tinker_re_measured_at": "2026-05-10T08:36:00Z",
+    "first_burndown_fire": {
+      "decider_run": "2026-05-10T07:58Z",
+      "candidates_processed": 17,
+      "outcomes": {
+        "patched": 4,
+        "wontfix_with_rationale": 4,
+        "escalated_to_pending_human": 9,
+        "over_escalation_rate": "100% \u2014 all 9 escalations were analyst-class work, not operator-only"
+      }
+    },
+    "operator_manual_reroute": {
+      "commit": "d44e2670",
+      "at": "2026-05-10T08:25Z",
+      "ISS_ids_rerouted": [
+        "ISS-1043",
+        "ISS-1087",
+        "ISS-1088",
+        "ISS-1130",
+        "ISS-1132",
+        "ISS-1147",
+        "ISS-1164",
+        "ISS-1165",
+        "ISS-1166"
+      ],
+      "ISS_ids_correctly_remaining_pending_human": [
+        "ISS-708 (OBE-deferred infra)",
+        "ISS-1089 (NEVER_PUSH file)",
+        "ISS-1924 (physical-world figure verification)"
+      ]
+    },
+    "current_pending_human_count_after_reroute": 3,
+    "current_assigned_analyst_count_after_reroute": "12 (3 pre-existing + 9 newly routed)"
+  },
+  "the_revised_matrix": {
+    "summary": "PROP-026's three-action M1 matrix becomes a five-action decision tree. The decision proceeds top-down per ISS \u2014 first match wins. Defaults are documented but the LLM may override per-issue with rationale.",
+    "action_set": {
+      "PATCH": "Decider directly applies a find/replace fix this run. Closes ISS with fixed_by='M1-patch'.",
+      "NARROW-PATCH": "Decider directly applies a single-line/single-field fix on a moderate-severity ISS that passed the three-rule narrowness gate. Closes ISS with fixed_by='M1-narrow-patch' (distinct from PATCH so audit can track the moderate-via-narrow path separately).",
+      "WONTFIX-WITH-RATIONALE": "Decider re-greps the live target, confirms the issue is no-longer-real (text rewritten, EXP integrated, condition met), closes ISS with fixed_by='M1-wontfix' and explicit rationale. FORBIDDEN on moderate severity.",
+      "ROUTE-TO-ANALYST": "Decider sets ISS status='assigned-analyst', adds routing_reason field explaining the analyst-class work expected, and (optional) class_hint field. Analyst picks up via Mode 2 (assigned-analyst) intake on next run.",
+      "ROUTE-TO-CURMUDGEON": "Decider pushes a queue item to monitor/curmudgeon/priority-queue.json with target_type appropriate to the ISS (verdict-review | win-detail-rewrite | section-rewrite | etc.) and class set per PROP-025 rules ('verification' for re-verifying patches; 'deep-attack' for re-attack on substantive concern; 'holistic' for cross-cutting). Closes the M1 candidate-loop entry; the queue push is the new state. ISS stays 'open' but flagged with `routed_to_curmudgeon_queue_id: <queue_id>` so it doesn't re-trigger M1 next run.",
+      "ESCALATE-TO-HUMAN": "Renamed from current 'escalate' to be explicit. Used ONLY when operator-only judgment is required (legal/strategic/personal knowledge, physical-world verification, NEVER_PUSH file modification, major/critical verdict commit). The default action is no longer ESCALATE-TO-HUMAN \u2014 it is ROUTE-TO-ANALYST."
+    },
+    "decision_tree_top_down": [
+      {
+        "step": 1,
+        "rule": "Severity is major/critical",
+        "action": "ESCALATE-TO-HUMAN",
+        "rationale": "PROP-026 invariant \u2014 never auto-close major/critical. Unchanged."
+      },
+      {
+        "step": 2,
+        "rule": "Re-grep confirms the issue is no-longer-real (text rewritten, EXP integrated, condition met) AND severity \u2208 {minor, info}",
+        "action": "WONTFIX-WITH-RATIONALE",
+        "rationale": "PROP-026 invariant \u2014 wontfix forbidden on moderate. Unchanged. Re-grep evidence required in the closure ledger."
+      },
+      {
+        "step": 3,
+        "rule": "Issue passes the three-rule narrowness gate (NARROWNESS + RE-GREP + NOT_NEVER_PUSH) \u2014 see narrowness_gate section",
+        "action": "PATCH (if minor/info) or NARROW-PATCH (if moderate)",
+        "rationale": "Mechanical fixes don't need analyst routing. Narrow-patch on moderate is the new path Q2 asks for; it required the three-rule gate to be safe."
+      },
+      {
+        "step": 4,
+        "rule": "Issue requires NEVER_PUSH file modification, physical-world verification, legal/strategic/personal knowledge, or operator-applied infra patch",
+        "action": "ESCALATE-TO-HUMAN",
+        "rationale": "Genuine operator-only territory. ISS-1089 (build-scripts/generate-html.js patches), ISS-1924 (physical figure verification) are the canonical examples."
+      },
+      {
+        "step": 5,
+        "rule": "Issue is a curmudgeon-raised carry-over re-attackable by curmudgeon (post-patch verification, holistic check that fell through queue, c-N finding curmudgeon wants to re-attack on c-(N+1) but never got bumped)",
+        "action": "ROUTE-TO-CURMUDGEON",
+        "rationale": "Curmudgeon is the right consumer when the next action is 'attack the target with the existing argument' rather than 'author new content'. Queue push class derived per PROP-025: 'verification' if confirming patch landed; 'deep-attack' if re-flagging substantive concern."
+      },
+      {
+        "step": 6,
+        "rule": "Default \u2014 issue requires design judgment, source investigation, framing decision, EXP revision, multi-issue cluster re-evaluation, or analyst-class defense of a curmudgeon-raised concern",
+        "action": "ROUTE-TO-ANALYST",
+        "rationale": "This is the NEW default for moderates and the unrefined-minor case. Replaces the previous 'escalate-to-human' default. The routing_reason field captures the per-issue rationale; class_hint provides the optional advisory tag for downstream PROP-025 propagation."
+      }
+    ],
+    "narrowness_gate": {
+      "intent": "Allow auto-PATCH on moderate when the LLM has explicit narrowness evidence. Without this gate, all moderates default to ROUTE-TO-ANALYST (better than today's ESCALATE-TO-HUMAN default but still slower than necessary for clearly-mechanical moderates).",
+      "three_rules_conjunctive": [
+        {
+          "rule": "NARROWNESS",
+          "definition": "The ISS body explicitly identifies a single-field correction, a single-line text replacement, a 2-3-character fix, or a one-token rename. The LLM has line-level evidence in the description (or via re-read of the source). Multi-paragraph rewrites, semantic-judgment changes, or any change requiring 'pick the right phrasing' do NOT pass.",
+          "pass_examples": [
+            "ISS-1043: WIN-044 code_analysis.monitoring tagged 'none' but should be 'hardcoded' \u2014 single field, value pinned by ISS body.",
+            "Hypothetical: 'docs/index.html line 1247 says \"68 WINs\" but should say \"71\" per current count.' \u2014 single literal, value pinned."
+          ],
+          "fail_examples": [
+            "Hypothetical: 'Section 4 framing should better acknowledge the methodology caveat.' \u2014 requires phrasing judgment.",
+            "Hypothetical: 'Add a paragraph explaining the OTS error.' \u2014 multi-sentence prose addition."
+          ]
+        },
+        {
+          "rule": "RE-GREP",
+          "definition": "Run grep against the live target file. The exact text or condition the ISS describes must still be present. If the text was already rewritten or removed: this is WONTFIX territory (step 2), not narrow-patch.",
+          "implementation_hint": "The decider LLM walking the M1 candidate list runs `grep -n 'exact_text' <target_file>` on the path the ISS references. If grep returns zero hits, route to WONTFIX-WITH-RATIONALE (or ROUTE-TO-ANALYST if the issue body is ambiguous about what 'no-longer-real' would look like)."
+        },
+        {
+          "rule": "NOT_NEVER_PUSH",
+          "definition": "The target file path is NOT in the workspace-sync NEVER_PUSH deny-list (currently: docs/*, build-scripts/*, build.js, CLAUDE.md, monitor/v6-restructure-map.json, test.js, monitor/integrity/workspace-sync-skips.jsonl, monitor/curmudgeon/pending-digest.json, monitor/decisions/prop-009-enforce.flag, decider-mode.json, closure-ledger.jsonl, monitor/prompts/*.md). NEVER_PUSH files cannot round-trip from FUSE \u2192 main; decider can still patch in its working clone, but the patch goes through PROP-016 stranded-patches workflow (operator applies in own-clone-with-direct-push). For M1 narrow-patch, that stranded-patches detour breaks the auto-close model \u2014 better to ESCALATE-TO-HUMAN explicitly so the operator handles the apply.",
+          "the_canonical_NEVER_PUSH_list": "Source of truth is monitor/prompts/workspace-sync.md NEVER_PUSH=(...) array. Decider should read it at run start (or inline-encode and re-verify against workspace-sync.md as a self-test).",
+          "exception": "data/* files in NEVER_PUSH-style paths but actually data \u2014 no, there are none currently. data/wins.json, data/sections.json, etc. are universal-pusher-eligible per CLAUDE.md File Ownership."
+        }
+      ],
+      "if_all_three_pass": "Action = NARROW-PATCH on moderate, PATCH on minor/info. Closure-ledger entry uses action_taken='narrow-patch' (distinct value for audit).",
+      "if_any_fails": "Default to ROUTE-TO-ANALYST (NOT escalate-to-human). The NEVER_PUSH failure case may also legitimately route to ESCALATE-TO-HUMAN if the operator-applied infra patch is the only path forward (per step 4 of decision tree). LLM judgment per-issue."
+    },
+    "routing_decision_judgment_analyst_vs_curmudgeon": {
+      "directive_question": "What signals trigger route-to-analyst vs route-to-curmudgeon?",
+      "tinker_recommendation": "LLM in-context judgment per ISS, with the following defaults to anchor the decision tree.",
+      "default_routing_by_source": [
+        {
+          "source": "analyst-issue-proposal | decider-self-tag | integrity-flag | poller-flag",
+          "default": "ROUTE-TO-ANALYST",
+          "reason": "Analyst owns design/source/framing work; these sources naturally produce analyst-class items."
+        },
+        {
+          "source": "curmudgeon-review (carry-over still open from prior cycle, same finding)",
+          "default": "ROUTE-TO-CURMUDGEON with class='verification'",
+          "reason": "Re-attack same target, decider has likely patched; verify the patch landed."
+        },
+        {
+          "source": "curmudgeon-review (substantive concern requiring DEFENSE or REVISION of the prose/argument)",
+          "default": "ROUTE-TO-ANALYST with class_hint='deep-attack'",
+          "reason": "Analyst authors the defense or the rewrite; re-routing to curmudgeon would just produce the same hole on next cycle. The c4\u2192c5\u2192c6 ratchet pattern PROP-026 M3 was designed to prevent."
+        },
+        {
+          "source": "curmudgeon-review (post-patch verification ONLY \u2014 patch already landed, ISS just unclosed)",
+          "default": "ROUTE-TO-CURMUDGEON with class='verification'",
+          "reason": "Mechanical confirmation, batchable."
+        }
+      ],
+      "rejected_alternative": "Hard rule 'source X always routes to Y' \u2014 too rigid. Many curmudgeon-raised ISSs blur the line (ISS-1164 is a worked example: curmudgeon raised it but the next action is analyst-class defense or revision, not curmudgeon re-attack).",
+      "operator_framing_resolution": "Per the directive Q1: 'Most of these check values aren't things i do, it's easy things for one of the agent.' The matrix recognizes that analyst-class work is the dominant case and makes it the default; curmudgeon-class is the exception path.",
+      "moderate_narrowness_dominates": "When the narrowness gate passes, the analyst/curmudgeon decision is moot \u2014 patch directly. The routing decision only fires when narrowness gate fails AND severity allows it (not major/critical) AND not NEVER_PUSH territory."
+    }
+  },
+  "class_hint_propagation_chain": {
+    "summary": "An optional advisory tag flows from M1 decision-time \u2192 ISS field \u2192 analyst EXP authoring \u2192 queue push \u2192 curmudgeon Step 8a batch gate. The tag is non-binding at the analyst layer (PROP-025 makes review_class authoritative there); it is informational, intended to save analyst per-issue cognitive load when the routing context already implies a class.",
+    "where_the_hint_lives": {
+      "primary_location": "On the ISS itself as a new optional field `class_hint: 'verification' | 'deep-attack' | 'holistic' | null`. Decider sets at M1 routing time.",
+      "audit_mirror": "On the closure-ledger entry (the M1 routing record) under `closure_evidence.class_hint`. Preserves the routing decision's hint as a historical record, useful when reverting or auditing the M1 decision.",
+      "rejected_locations": {
+        "in_routing_reason_freetext": "Brittle. The string format would have to be parsed; analyst would have to grep for it; PROP-025's structured class field is the precedent that says 'use a structured field, not freetext.'",
+        "on_the_closure_ledger_entry_only": "Analyst doesn't read the closure ledger at intake; the hint must be co-located with the ISS the analyst reads."
+      }
+    },
+    "the_chain_step_by_step": [
+      {
+        "step": "M1 sets the hint",
+        "actor": "decider (M1 sweep helper)",
+        "action": "When taking ROUTE-TO-ANALYST: write `class_hint` field on the ISS along with `status='assigned-analyst'`, `routing_reason`, `routed_at`, `routed_by_run`. Hint values: 'verification' if narrow-correction work / value-fact-check / single-source-investigation; 'deep-attack' if EXP revision / new argument / defender-pivot / curmudgeon-raised-concern-needing-defense; 'holistic' if multi-WIN or cross-section work; null if uncertain.",
+        "where": "monitor/prompts/decider.md Priority 5b LLM override path; monitor/prompts/reference/routing-matrix.md (canonical reference)",
+        "binding": "advisory; analyst overrides at EXP authoring"
+      },
+      {
+        "step": "Analyst reads the hint at intake",
+        "actor": "analyst (Mode 2 assigned-analyst intake)",
+        "action": "Read `iss.class_hint` along with `iss.routing_reason`. If present, factor into review_class decision when authoring the EXP. If absent, decide review_class from EXP scope per PROP-025 author guidance.",
+        "where": "monitor/prompts/reference/analyst-mode1-expansions.md intake addendum",
+        "binding": "advisory; analyst's review_class is authoritative on the EXP file"
+      },
+      {
+        "step": "Analyst authors the EXP",
+        "actor": "analyst",
+        "action": "Set `review_class` on EXP-NNN.json per PROP-025 author guidance. The hint is one input; scope of work is the dominant input. If hint='verification' but EXP introduces new arguments, override to 'deep-attack'; if hint='deep-attack' but EXP turns out to be pure refinement, override to 'verification'.",
+        "where": "PROP-025 author guidance unchanged",
+        "binding": "PROP-025 invariant \u2014 analyst's call is final on the EXP file"
+      },
+      {
+        "step": "Decider integrates the EXP and pushes the queue",
+        "actor": "decider (Step 7 EXP integration push)",
+        "action": "Read `exp.review_class`; push queue item with `class=exp.review_class`. PROP-025 unchanged. The class_hint round-trips informationally (decider may log it in the daily report under m1_followups for audit) but does NOT change the queue push class.",
+        "where": "monitor/prompts/reference/decider-curmudgeon.md Step 7 EXP integration push (PROP-025 already covers this)",
+        "binding": "decider does pure pass-through; class_hint is no longer load-bearing once exp.review_class is set"
+      },
+      {
+        "step": "Curmudgeon reads queue item.class at Step 8a",
+        "actor": "curmudgeon (Step 8a batch triage)",
+        "action": "PROP-025 unchanged \u2014 read `item.class`, batch verifications (\u226420 KB combined), singleton deep-attack and holistic.",
+        "where": "monitor/prompts/curmudgeon.md Step 8a (PROP-025 already covers this)",
+        "binding": "PROP-025 invariant"
+      }
+    ],
+    "M3_carryover_route_to_curmudgeon_class_derivation": {
+      "summary": "When M3 (PROP-026 carry-over enforcement) takes the ROUTE-TO-CURMUDGEON terminal action (a path PROP-026 enabled in concept but PROP-027 makes structured), the queue push class is derived from the carry-over's nature.",
+      "rules": [
+        {
+          "carry_over_nature": "Pure 'verify the c-N issue is closed' \u2014 patch landed in c-(N-1), c-N is mechanical confirmation",
+          "class": "verification",
+          "rationale": "Batchable; deep work happened in c-(N-1)."
+        },
+        {
+          "carry_over_nature": "Re-flag a substantive concern that decider hasn't acted on, AND the next action is curmudgeon re-attack (vs analyst defense)",
+          "class": "deep-attack",
+          "rationale": "New argument or sharpened attack expected."
+        },
+        {
+          "carry_over_nature": "Cross-WIN or cross-section concern (rare for carry-overs but possible)",
+          "class": "holistic",
+          "rationale": "Singleton."
+        }
+      ],
+      "fallback_default": "verification (the most common carry-over case is post-patch confirmation; biasing toward batchable saves Opus cycles)."
+    },
+    "M1_route_to_curmudgeon_class_derivation": {
+      "summary": "When M1 directly takes ROUTE-TO-CURMUDGEON (rare path; today's 9-ISS batch had zero), the same rules apply.",
+      "default": "verification when the routed work is post-patch confirmation; deep-attack if substantive re-attack."
+    }
+  },
+  "worked_examples_today_s_9_ISSs": {
+    "intro": "Each of the 9 ISSs operator manually re-routed on 2026-05-10T08:25Z is evaluated under the revised matrix. The decision tree's first matching action is the routing.",
+    "ISS_1043_WIN044_monitoring_tag": {
+      "current_status": "assigned-analyst (operator-rerouted)",
+      "severity": "moderate",
+      "matrix_walk": [
+        "Step 1 (major/critical) \u2014 fail (moderate)",
+        "Step 2 (re-grep negative AND minor/info) \u2014 N/A on moderate",
+        "Step 3 (narrowness gate): NARROWNESS pass (single-field 'none' \u2192 'hardcoded'), RE-GREP \u2014 pending re-grep against monitor.py + wins.json, NOT_NEVER_PUSH \u2014 wins.json eligible (universal-pusher) \u2192 all three rules likely pass",
+        "Action: NARROW-PATCH (decider direct, single-field code_analysis.monitoring update)"
+      ],
+      "revised_action": "NARROW-PATCH",
+      "delta_from_current": "Currently routed to analyst (manual operator re-route). Under new matrix: decider patches directly without analyst hop. Net throughput gain: 1 fewer agent cycle.",
+      "class_hint_at_routing": "N/A (NARROW-PATCH path, no analyst routing)"
+    },
+    "ISS_1087_TS_tab_methodology_caveat": {
+      "current_status": "assigned-analyst",
+      "severity": "moderate",
+      "matrix_walk": [
+        "Step 3 narrowness gate: NARROWNESS \u2014 adds a clause, multi-word phrasing decision (not single-field); FAIL",
+        "Step 4 (NEVER_PUSH / physical-world / legal): docs/index.html \u2014 IS in NEVER_PUSH BUT this is a content file decider can patch in working clone and push (PROP-016 stranded-patches if direct push fails). The NEVER_PUSH check here is more about 'can decider auto-close?' \u2014 for content patches, yes. So step 4 fails unless we tighten.",
+        "Step 6 default: ROUTE-TO-ANALYST"
+      ],
+      "design_clarification_needed": "docs/index.html is in NEVER_PUSH but is also the canonical content file. The narrowness rule's NOT_NEVER_PUSH condition needs sub-rule: 'docs/index.html for prose content goes through stranded-patches; M1 narrow-patch is allowed if operator has accepted the stranded-patches workflow.' Currently operator does accept it (PROP-016 Mech A). Recommendation: TREAT docs/index.html as patch-eligible for M1 narrow-patch ONLY when the patch is a single-line text replacement. If the patch is a clause-addition (this case), it requires phrasing judgment \u2192 ROUTE-TO-ANALYST regardless.",
+      "revised_action": "ROUTE-TO-ANALYST",
+      "class_hint_at_routing": "verification (analyst confirms exact wording, decider patches)",
+      "delta_from_current": "Same outcome (analyst routing). Class_hint='verification' new \u2014 saves analyst cognitive load deciding review_class on the eventual EXP."
+    },
+    "ISS_1088_TS_tab_rhetorical_replacement": {
+      "current_status": "assigned-analyst",
+      "severity": "moderate",
+      "matrix_walk": [
+        "Step 3 narrowness gate: NARROWNESS \u2014 replaces 'rhetorical' with a different framing, multi-word phrasing decision; FAIL",
+        "Step 6 default: ROUTE-TO-ANALYST"
+      ],
+      "revised_action": "ROUTE-TO-ANALYST",
+      "class_hint_at_routing": "verification",
+      "delta_from_current": "Same routing. Hint added."
+    },
+    "ISS_1089_EXP175_generate_html_patches": {
+      "current_status": "pending-human (correctly classified)",
+      "severity": "moderate",
+      "matrix_walk": [
+        "Step 3 narrowness gate: NOT_NEVER_PUSH \u2014 build-scripts/generate-html.js IS in NEVER_PUSH; FAIL",
+        "Step 4 (NEVER_PUSH operator-applied): TRUE \u2014 generate-html.js requires operator apply",
+        "Action: ESCALATE-TO-HUMAN"
+      ],
+      "revised_action": "ESCALATE-TO-HUMAN",
+      "class_hint_at_routing": "N/A (escalate path)",
+      "delta_from_current": "No change. New matrix correctly preserves the escalation."
+    },
+    "ISS_1130_EXP183_schema_extension": {
+      "current_status": "assigned-analyst",
+      "severity": "moderate",
+      "matrix_walk": [
+        "Step 3 narrowness gate: NARROWNESS \u2014 adds 6 author_* fields, multi-field schema design; FAIL",
+        "Step 5 (curmudgeon re-attack source) \u2014 N/A (decider-self-tagged source on EXP integration)",
+        "Step 6 default: ROUTE-TO-ANALYST"
+      ],
+      "revised_action": "ROUTE-TO-ANALYST",
+      "class_hint_at_routing": "deep-attack (introduces new schema fields with downstream display implications)",
+      "delta_from_current": "Same routing. Hint added; saves analyst cognitive load."
+    },
+    "ISS_1132_three_layer_count_triangulation": {
+      "current_status": "assigned-analyst",
+      "severity": "moderate",
+      "matrix_walk": [
+        "Step 3 narrowness gate: NARROWNESS \u2014 requires re-greping three sources (ai_manifest, visible grid, claim_index) to find canonical citation; multi-source investigation; FAIL",
+        "Step 6 default: ROUTE-TO-ANALYST"
+      ],
+      "revised_action": "ROUTE-TO-ANALYST",
+      "class_hint_at_routing": "verification (data fact-check, no new argument)",
+      "delta_from_current": "Same routing. Hint='verification' \u2014 once analyst returns the canonical citation, the fix is mechanical decider patch."
+    },
+    "ISS_1147_EXP183_E_PRIMARY_deferred": {
+      "current_status": "assigned-analyst",
+      "severity": "minor",
+      "matrix_walk": [
+        "Step 3 narrowness gate: NARROWNESS \u2014 schema fields added to E_PRIMARY; FAIL (multi-field)",
+        "Step 6 default: ROUTE-TO-ANALYST"
+      ],
+      "revised_action": "ROUTE-TO-ANALYST",
+      "class_hint_at_routing": "deep-attack (coupled with ISS-1130 cluster, schema-extension work)",
+      "delta_from_current": "Same routing. Hint added."
+    },
+    "ISS_1164_Part46_Registry_Framing_Audit": {
+      "current_status": "assigned-analyst",
+      "severity": "moderate",
+      "found_by": "curmudgeon",
+      "matrix_walk": [
+        "Step 5 (curmudgeon re-attack vs analyst defense): the next action is analyst defense/revision of the registry-framing claim \u2014 NOT curmudgeon re-attack. The curmudgeon raised the concern; the curmudgeon doesn't have new evidence to attack with. \u2192 ROUTE-TO-ANALYST, not ROUTE-TO-CURMUDGEON",
+        "Step 6 default: ROUTE-TO-ANALYST"
+      ],
+      "revised_action": "ROUTE-TO-ANALYST",
+      "class_hint_at_routing": "deep-attack (substantive concern requires new defense argument or rewrite)",
+      "delta_from_current": "Same routing. The curmudgeon-raised source could superficially have suggested ROUTE-TO-CURMUDGEON, but step 5's 'next action' criterion correctly classifies as analyst-class. Hint='deep-attack' alerts analyst that the eventual EXP is not just refinement.",
+      "edge_case_note": "This is the 'blurs the line' case the directive flagged. The decision rule that resolves it: focus on what the next action IS (defense / revision authoring \u2192 analyst), not who raised the concern (curmudgeon \u2192 not necessarily curmudgeon)."
+    },
+    "ISS_1165_Part46_count_consistency": {
+      "current_status": "assigned-analyst",
+      "severity": "minor",
+      "matrix_walk": [
+        "Step 3 narrowness gate: NARROWNESS \u2014 clarify which count is authoritative (6 vs 8-9), then decider patches; PARTIAL \u2014 single-source clarification but the analyst must triangulate first",
+        "Step 6 default: ROUTE-TO-ANALYST"
+      ],
+      "revised_action": "ROUTE-TO-ANALYST",
+      "class_hint_at_routing": "verification (count clarification, no new argument)",
+      "delta_from_current": "Same routing. Hint='verification' \u2014 analyst returns canonical count, decider patches."
+    },
+    "ISS_1166_Part46_load_bearing_headline": {
+      "current_status": "assigned-analyst",
+      "severity": "minor",
+      "matrix_walk": [
+        "Step 5 (curmudgeon re-attack): next action is analyst defense or revision \u2014 N/A",
+        "Step 6 default: ROUTE-TO-ANALYST"
+      ],
+      "revised_action": "ROUTE-TO-ANALYST",
+      "class_hint_at_routing": "deep-attack (defends or revises a load-bearing assertion)",
+      "delta_from_current": "Same routing. Hint added."
+    },
+    "summary_under_revised_matrix": {
+      "ROUTE-TO-ANALYST": [
+        "ISS-1087",
+        "ISS-1088",
+        "ISS-1130",
+        "ISS-1132",
+        "ISS-1147",
+        "ISS-1164",
+        "ISS-1165",
+        "ISS-1166"
+      ],
+      "NARROW-PATCH": [
+        "ISS-1043"
+      ],
+      "ESCALATE-TO-HUMAN": [
+        "ISS-1089"
+      ],
+      "ROUTE-TO-CURMUDGEON": [],
+      "delta_from_first_burndown_fire": "First fire (no PROP-027): 9/9 escalate-to-human, 0/9 routed correctly. Under PROP-027: 8/9 ROUTE-TO-ANALYST (correct), 1/9 NARROW-PATCH (saves an analyst hop), 1/9 ESCALATE-TO-HUMAN (correct retention \u2014 NEVER_PUSH file). Net: matrix correctly classifies all 10 (9 + ISS-1089 already correctly classified)."
+    }
+  },
+  "closure_ledger_schema_extension": {
+    "current_per_line_schema_PROP_026": "{ closed_at, closed_by_run, closed_by_mechanism: 'M1'|'M2'|'M3', iss_id, prior_status, closure_reason, closure_evidence: { ... }, can_revert, dryrun }",
+    "PROP_027_extensions": {
+      "action_taken_field_added_to_top_level": {
+        "field": "action_taken",
+        "enum_values": [
+          "patch",
+          "narrow-patch",
+          "wontfix",
+          "route-to-analyst",
+          "route-to-curmudgeon",
+          "escalate"
+        ],
+        "rationale": "Currently the closure_evidence.action_intent and the bash helper's `action` variable carry this; promoting to top-level is cleaner for revert script + monthly tinker audit. Distinct 'narrow-patch' value lets audit track the moderate-narrow path separately from minor patches (key risk: narrow-patch on moderate is the riskiest auto-action; want to know its frequency)."
+      },
+      "route_to_analyst_specific_fields": {
+        "fields": "Under top-level: route_target_status: 'assigned-analyst' (always for this action), class_hint: <enum>|null. Under closure_evidence: class_hint mirror (audit redundancy)",
+        "example": "{ \"closed_at\": \"...\", \"closed_by_mechanism\": \"M1\", \"action_taken\": \"route-to-analyst\", \"iss_id\": \"ISS-1130\", \"route_target_status\": \"assigned-analyst\", \"class_hint\": \"deep-attack\", \"closure_reason\": \"M1: design judgment / EXP-183 revision\", \"closure_evidence\": { \"age_days\": 21, \"severity\": \"moderate\", \"class_hint\": \"deep-attack\", \"matrix_step\": 6, \"description_excerpt\": \"...\" }, \"can_revert\": true, \"dryrun\": false }"
+      },
+      "route_to_curmudgeon_specific_fields": {
+        "fields": "Under top-level: route_queue_id: <int> (queue_id of pushed item), route_queue_class: 'verification'|'deep-attack'|'holistic'. Under closure_evidence: same mirror.",
+        "example": "{ \"closed_at\": \"...\", \"closed_by_mechanism\": \"M1\", \"action_taken\": \"route-to-curmudgeon\", \"iss_id\": \"ISS-NNNN\", \"route_queue_id\": 318, \"route_queue_class\": \"verification\", \"closure_reason\": \"M1: post-patch verification \u2014 push for c-N+1 confirmation\", \"closure_evidence\": { \"age_days\": 24, \"severity\": \"minor\", \"queue_class\": \"verification\", \"queue_target_type\": \"win-detail-rewrite\", \"matrix_step\": 5 }, \"can_revert\": true, \"dryrun\": false }"
+      },
+      "narrow_patch_specific_fields": {
+        "fields": "Under closure_evidence: narrowness_gate: { narrowness: bool, regrep: bool, not_never_push: bool, all_pass: bool }. Audit can verify the gate fired correctly.",
+        "rationale": "Risk surface \u2014 narrow-patch on moderate is the new automatic write path. Recording the gate result on every closure ledger entry lets a monthly tinker audit verify the gate pass-rate matches expectations."
+      }
+    },
+    "revert_script_compatibility": {
+      "existing": "build-scripts/revert-burndown-closures.js currently filters by run_id and re-opens listed ISSs.",
+      "PROP_027_addition": "Script must handle: (a) reverting a route-to-analyst closure restores ISS status to whatever prior_status was (typically 'open'); (b) reverting a route-to-curmudgeon closure ALSO removes the queue item with route_queue_id from priority-queue.json (or marks it superseded); (c) reverting a narrow-patch reverts the patch via git (out of scope for the revert script \u2014 patch revert is git's job).",
+      "implementation_note": "Add helper function `revert_route_to_curmudgeon(ledger_entry)` that calls `node -e` to splice queue.queue array. Idempotent."
+    }
+  },
+  "operator_question_full_answers": {
+    "Q1_matrix_scope_phased_or_combined": {
+      "recommendation": "BOTH route-to-analyst AND route-to-curmudgeon in a single coherent commit.",
+      "rationale_for_combined": [
+        "(a) Class-propagation discipline must span both paths from day one. Splitting them creates a deployment window where ROUTE-TO-ANALYST works but ROUTE-TO-CURMUDGEON falls back to ESCALATE-TO-HUMAN, which is the same over-escalation pattern PROP-027 exists to fix.",
+        "(b) The matrix's decision tree only makes sense as a whole. Five actions vs three is a single conceptual change; landing it in two phases doubles the prompt-churn cost.",
+        "(c) Route-to-curmudgeon is rarely-used (today's 9-ISS batch had zero), so the implementation cost is low. The matrix definition is the bulk of the work; adding the action vs withholding it is a few extra lines.",
+        "(d) Operator framing in the directive ('Operator framing says both, but tinker may recommend phased') invited the phased option \u2014 tinker considered it and recommends combined for the reasons above."
+      ],
+      "if_operator_overrides_to_phased": "Phase 1 = ROUTE-TO-ANALYST + class-hint propagation only. Phase 2 (later) = ROUTE-TO-CURMUDGEON. The matrix decision tree would have step 5 stubbed as 'fallthrough to step 6' until phase 2 lands. Acceptable but strictly worse than combined."
+    },
+    "Q2_moderate_narrow_patch_test_rules": {
+      "recommendation": "Three-rule conjunctive gate: NARROWNESS + RE-GREP + NOT_NEVER_PUSH (defined in narrowness_gate section).",
+      "rationale": "Mirrors PROP-026 M2's three-rule conjunctive guard pattern (severity floor + negative-signal blocklist + source provenance). Conjunctive is right for safety-critical gates: ANY rule failure routes to safe default (ROUTE-TO-ANALYST), not unsafe default (auto-patch).",
+      "operator_review_point": "Tinker is most uncertain about the NARROWNESS rule definition \u2014 'single-field, single-line, 2-3-character correction' is the conservative line. If operator wants to widen (e.g., allow 'single-paragraph rewrite' to qualify), the NARROW-PATCH yield rises but so does false-positive risk on moderate severity. Recommend starting conservative; widen later if tinker observes the gate over-rejecting clearly-mechanical moderates."
+    },
+    "Q3_default_action_flip": {
+      "recommendation": "YES \u2014 flip moderate default from ESCALATE-TO-HUMAN to ROUTE-TO-ANALYST.",
+      "evidence_for_flip": [
+        "First burndown fire: 9/9 = 100% over-escalation rate.",
+        "Operator manual re-route classified 8/9 as analyst-class work (not operator-only).",
+        "The 1/9 that correctly stayed pending-human (ISS-1089) hit NEVER_PUSH and would route correctly under the new matrix anyway via step 4.",
+        "Pattern is unlikely to flip on next batch given the historical mix of ISS types in the corpus (most moderates ARE analyst-class)."
+      ],
+      "evidence_against_flip_considered": [
+        "Single data point. Counter: the underlying cause (no structured route-to-analyst action in PROP-026 matrix) is observable from the matrix definition itself, not just the empirical fire. Even N=1 with this signal strength is sufficient.",
+        "Routing complexity may cause LLM errors. Counter: the LLM is already making per-issue judgment; the question is its option set. A 5-action matrix is structurally cleaner than 3-action with 'override to analyst' as an unstructured side channel."
+      ],
+      "verdict": "Flip is correct. ESCALATE-TO-HUMAN is now reserved for the genuinely-operator-only cases (NEVER_PUSH, physical-world, legal/strategic)."
+    },
+    "Q4_class_hint_placement": {
+      "recommendation": "On the ISS itself (`iss.class_hint`), mirrored on the closure-ledger entry (`ledger.class_hint` and `closure_evidence.class_hint` \u2014 top-level for revert-script use, evidence-mirror for audit).",
+      "rationale": "Analyst reads ISS at intake; the hint must be co-located. Closure-ledger mirror preserves the routing decision's hint as historical record, useful for revert and audit. Free-text routing_reason rejected (brittle parsing); ledger-only rejected (analyst doesn't read ledger at intake)."
+    },
+    "Q5_reference_doc_scope": {
+      "recommendation": "Single new file `monitor/prompts/reference/routing-matrix.md` capturing: (a) the 5-action decision tree; (b) the narrowness gate; (c) the class-hint propagation chain; (d) worked examples from today's 9-ISS batch.",
+      "consumers": [
+        "decider.md Priority 5b (links to it)",
+        "decider-curmudgeon.md Step 8c carry-over enforcement (links for class-hint logic)",
+        "analyst-mode1-expansions.md intake addendum (links for class_hint reading)"
+      ],
+      "NOT_in_scope_for_this_doc": "PROP-025 review_class authoring guidance (stays in analyst-mode1-expansions.md per existing PROP-025 architecture). The new doc cross-references PROP-025 but doesn't duplicate the author guidance."
+    },
+    "Q6_closure_ledger_schema_extension": {
+      "recommendation": "YES \u2014 add 'route-to-analyst', 'route-to-curmudgeon', 'narrow-patch' to action_taken enum; promote action_taken from closure_evidence to top-level. Add per-action fields per the closure_ledger_schema_extension section.",
+      "rationale": "Audit-trail consistency. The revert script needs to distinguish closure types to do the right thing per type (re-open ISS for route-to-analyst; also remove queue item for route-to-curmudgeon; etc.)."
+    },
+    "Q7_curmudgeon_side_tagging": {
+      "recommendation": "PROP-025's existing analyst-declares-review_class discipline is sufficient. No new helper signals required.",
+      "rationale": "The class_hint added by PROP-027 is upstream-advisory. Once analyst authors the EXP with review_class, the chain runs on PROP-025 rails: decider reads exp.review_class \u2192 push queue with class=exp.review_class \u2192 curmudgeon reads item.class. No new signal between analyst and curmudgeon. The hint's only effect is reducing analyst's per-issue cognitive load when the routing context already implies a class \u2014 and even then, analyst overrides if scope-of-work disagrees with the hint."
+    }
+  },
+  "implementation_path": {
+    "single_phase_combined_recommendation": "All changes land in one coherent commit; PROP is a unit. Operator approves PROP-027 \u2192 tinker (or operator) authors the prompt edits + new doc \u2192 commit.",
+    "files_to_modify": [
+      {
+        "path": "monitor/prompts/decider.md",
+        "section": "Priority 5b (PROP-026 stale-issue sweep), lines ~142-220",
+        "change": "Replace the severity-tier matrix logic with the 5-action decision tree. Bash helper: extend ledger entry to include action_taken at top level + class_hint + route_queue_id when applicable. Add LLM override paths for ROUTE-TO-ANALYST and ROUTE-TO-CURMUDGEON. Update Daily report `m1_sweep` field shape to include `routed_to_analyst`, `routed_to_curmudgeon`, `narrow_patched` counts.",
+        "size_estimate": "~80 lines added (decision tree + bash helper extensions + LLM override docs); ~30 lines removed (current 3-action default-escalate code path)"
+      },
+      {
+        "path": "monitor/prompts/reference/decider-curmudgeon.md",
+        "section": "Step 8c (M3 carry-over enforcement)",
+        "change": "Step 8c terminal-action set extends to include ROUTE-TO-CURMUDGEON (was implicit; PROP-027 makes structured). Add class derivation rule: 'if carry-over is post-patch verification, push class=verification; if substantive re-attack, push class=deep-attack'. Update self-test: each unresolved_prior_cycle entry must have a ledger line with one of {patch, wontfix, escalate, route-to-curmudgeon} from the same RUN_ID.",
+        "size_estimate": "~25 lines added"
+      },
+      {
+        "path": "monitor/prompts/reference/analyst-mode1-expansions.md",
+        "section": "Intake addendum (after assigned-analyst intake; before EXP authoring)",
+        "change": "Add: 'When picking up an `assigned-analyst` ISS, read iss.class_hint along with iss.routing_reason. The hint is advisory \u2014 factor into your review_class decision when authoring the EXP, but override per scope-of-work if the hint disagrees with what the EXP actually does.' Reference monitor/prompts/reference/routing-matrix.md.",
+        "size_estimate": "~10 lines added"
+      },
+      {
+        "path": "monitor/prompts/reference/DATA-SCHEMAS.md",
+        "section": "open-issues.json schema (add class_hint, routed_at, routed_by_run, routed_to_curmudgeon_queue_id fields) + closure-ledger.jsonl schema (add action_taken top-level enum + per-action fields)",
+        "change": "Document schema extensions per closure_ledger_schema_extension section.",
+        "size_estimate": "~30 lines added"
+      },
+      {
+        "path": "monitor/prompts/workspace-sync.md (NO CHANGE)",
+        "section": "NEVER_PUSH",
+        "change": "No additions \u2014 class_hint and routing fields live on existing files (open-issues.json, closure-ledger.jsonl) which are already correctly classified. Verified.",
+        "size_estimate": "0 lines"
+      }
+    ],
+    "files_to_create": [
+      {
+        "path": "monitor/prompts/reference/routing-matrix.md",
+        "initial_content_outline": "# M1 Routing Matrix and Class-Hint Propagation\\n\\n## The 5-action decision tree\\n[Decision tree from this PROP, formatted as prose + table]\\n\\n## The narrowness gate (NARROW-PATCH)\\n[Three rules]\\n\\n## Class-hint propagation chain\\n[Step-by-step from this PROP]\\n\\n## Worked examples from 2026-05-10 9-ISS batch\\n[Per-ISS walks, abbreviated from this PROP]\\n\\n## When to route analyst vs curmudgeon\\n[Source-based defaults table]\\n\\n## See also: PROP-026 (M1 sweep), PROP-025 (curmudgeon batch gate, review_class authority)",
+        "size_estimate": "~150 lines"
+      }
+    ],
+    "files_NOT_modified_explicitly": [
+      "monitor/prompts/curmudgeon.md \u2014 PROP-025 already covers Step 8a class reading; no PROP-027 changes needed",
+      "monitor/prompts/decider.md push sites for queue (Step 7 EXP integration) \u2014 PROP-025 already covers; M1 ROUTE-TO-CURMUDGEON path uses the same push pattern",
+      "build.js OWNERSHIP table \u2014 no new files classified (open-issues.json + closure-ledger.jsonl already there); routing-matrix.md is in monitor/prompts/, already in NEVER_PUSH via wildcard",
+      "build-scripts/revert-burndown-closures.js \u2014 extension recommended but defer to PROP-027 follow-up commit if revert script extension is needed at deploy time. The base revert (re-open ISS) works for route-to-analyst by default; route-to-curmudgeon revert needs additional logic but that path is rare at first deploy."
+    ],
+    "deployment_steps": [
+      "1. Operator approves PROP-027 (decisions on Q1-Q7).",
+      "2. Tinker (or operator) authors the prompt edits + new doc in clean clone.",
+      "3. Run tests/run.sh (commit gate).",
+      "4. Operator commits PROP-027 changes in a single coherent commit.",
+      "5. Mark DIRECTIVE-20260510-002 status=completed via DIRECTIVE-LIFECYCLE rule (tinker handles in same run as PROP authorship).",
+      "6. Watch next M1 fire (next decider run after commit) \u2014 verify revised matrix produces a non-100%-escalate distribution. Specifically: of the next 10 candidates, expect ~50-70% ROUTE-TO-ANALYST, ~10-20% ESCALATE-TO-HUMAN, ~10-20% NARROW-PATCH or PATCH or WONTFIX, ~0-5% ROUTE-TO-CURMUDGEON."
+    ]
+  },
+  "tests_required": [
+    {
+      "test_file": "tests/run.sh \u2014 new test case",
+      "test_name": "M1 matrix decision tree on the 9 ISS test batch",
+      "assertion": "Given the 9 ISSs from 2026-05-10's first burndown fire as input, the matrix produces: 8 ROUTE-TO-ANALYST, 1 NARROW-PATCH, 1 ESCALATE-TO-HUMAN (counting ISS-1043 as NARROW-PATCH and ISS-1089 separately as ESCALATE-TO-HUMAN; the 9 directive-listed ISSs route 8/9 to analyst with the operator's manual re-route).",
+      "rationale": "The 9-ISS batch is the canonical test set for the matrix. If it doesn't classify them correctly, the matrix definition is broken."
+    },
+    {
+      "test_file": "tests/run.sh \u2014 new test case",
+      "test_name": "Narrowness gate three-rule guard",
+      "assertion": "Given (a) a moderate ISS with NARROWNESS=true RE-GREP=true NOT_NEVER_PUSH=true \u2192 action=NARROW-PATCH; (b) any one rule failed \u2192 action\u2260NARROW-PATCH; (c) NEVER_PUSH=true on otherwise-narrow \u2192 ESCALATE-TO-HUMAN if other criteria match step 4; (d) all-pass on minor \u2192 action=PATCH (not NARROW-PATCH).",
+      "rationale": "Gate behavior must be deterministic and conjunctive. Catches gate inversions."
+    },
+    {
+      "test_file": "tests/run.sh \u2014 new test case",
+      "test_name": "Class-hint propagation chain",
+      "assertion": "Given an ISS with class_hint='verification', after ROUTE-TO-ANALYST and analyst EXP authoring with review_class='verification', decider's queue push carries class='verification'. Mirror chain for class_hint='deep-attack' and override case (hint='verification' but analyst sets review_class='deep-attack' \u2192 queue push class='deep-attack', i.e., review_class is authoritative).",
+      "rationale": "Verifies the chain is structured correctly and PROP-025 invariant holds."
+    },
+    {
+      "test_file": "tests/run.sh \u2014 new test case",
+      "test_name": "Closure-ledger schema validates action_taken enum",
+      "assertion": "Each line in closure-ledger.jsonl has top-level action_taken \u2208 {'patch','narrow-patch','wontfix','route-to-analyst','route-to-curmudgeon','escalate'}. Schema validation fails on any other value.",
+      "rationale": "Forward compatibility with revert script + monthly audit. Catches typos."
+    }
+  ],
+  "tradeoffs_and_risks": {
+    "gain": [
+      "Eliminates the 100% over-escalation rate on the first burndown fire (9/9 \u2192 ~10% under revised matrix). Operator no longer has to manually re-route analyst-class items.",
+      "Adds NARROW-PATCH path for clearly-mechanical moderates \u2014 saves 1 analyst hop per occurrence (today's batch: 1 ISS).",
+      "Class-hint propagation gives analyst-driven EXPs the right review_class default \u2192 throughput gain from PROP-025 batchability extends to the M1 \u2192 analyst \u2192 curmudgeon chain.",
+      "Closure-ledger action_taken enum extension provides clean audit trail for the new actions; revert script can distinguish closure types.",
+      "Single new reference doc (routing-matrix.md) consolidates the matrix logic in one place, eliminating duplication between decider.md, decider-curmudgeon.md, and analyst-mode1-expansions.md."
+    ],
+    "loss": [
+      "Matrix complexity goes from 3 actions to 5 actions. Decision tree has 6 steps instead of 3. LLM judgment surface area increases.",
+      "Closure-ledger schema extension is a forward-only change; old ledger entries don't have action_taken at top level (mitigated: revert script reads closure_evidence.action_intent as fallback).",
+      "Class-hint is advisory only \u2014 adds a field that's load-bearing only when present; analyst is free to ignore or override. Field nominally adds noise without always paying off.",
+      "ROUTE-TO-CURMUDGEON path may stay rarely used. Carrying the action through prompts and schemas adds maintenance surface area for a rare case."
+    ],
+    "risks": [
+      {
+        "risk": "Single data point (one burndown fire) \u2014 premature matrix change",
+        "mitigation": "The underlying cause (no structured route-to-analyst path) is observable from the matrix definition itself, not just the empirical fire. Even one fire with this signal strength is sufficient. Counter-counter: tinker monthly audit at 30 days verifies the revised matrix's actual distribution; if patterns deviate, propose adjustment.",
+        "residual": "Low. The fix addresses a definitional gap, not an empirical contingency."
+      },
+      {
+        "risk": "Narrowness gate false-positive \u2014 auto-patches a moderate that should have been routed",
+        "mitigation": "Three-rule conjunctive gate (all must hold). Closure-ledger logs gate result on every closure for audit. Worst case: revert script re-opens the ISS; patch revert via git.",
+        "residual": "Low-Moderate. The risk is bounded by gate conservatism (single-field/single-line definition); widening the definition would raise this risk."
+      },
+      {
+        "risk": "Class_hint ignored by analyst, becomes noise",
+        "mitigation": "PROP-025 keeps review_class authoritative on the EXP. The hint adds advisory information; if analyst always overrides, the hint is harmless noise. Tinker monthly audit checks class_hint vs review_class agreement rate; if persistently <50%, deprecate the hint (low cost).",
+        "residual": "Low. Worst case is reverting to a no-hint world; no degradation vs status quo."
+      },
+      {
+        "risk": "ROUTE-TO-CURMUDGEON path adds maintenance surface area for a rare case",
+        "mitigation": "The action is a thin wrapper over an existing queue push pattern. Maintenance cost is the matrix definition entry + decision-tree step 5 + closure-ledger schema extension. ~30 lines total.",
+        "residual": "Low."
+      },
+      {
+        "risk": "PROP-026 was just deployed today \u2014 adding PROP-027 immediately may be premature; let PROP-026 settle first",
+        "mitigation": "PROP-027 amends PROP-026 specifically to fix a gap that fired on day 1. Waiting risks more over-escalations and operator manual re-routes (which themselves have a cost). The fix is targeted; not landing it means continued operator burden.",
+        "residual": "Low."
+      },
+      {
+        "risk": "Step 5 (route-to-curmudgeon) judgment criterion is fuzzy \u2014 'curmudgeon re-attack vs analyst defense' is a subjective call",
+        "mitigation": "Source-based defaults table provides anchors. LLM judgment per-issue with the table as guidance. Worked example for ISS-1164 (curmudgeon-raised, analyst-defense) shows how the call is made.",
+        "residual": "Moderate. Tinker monthly audit verifies the call is being made consistently \u2014 measure rate of ROUTE-TO-CURMUDGEON closures and audit a sample for correctness."
+      }
+    ]
+  },
+  "honest_uncertainties": [
+    "Step 5 'next action is curmudgeon re-attack' criterion is subjective; LLM judgment may vary run-to-run. The audit signal (curmudgeon comes back with new findings on the routed target \u2192 re-attack was correct; comes back saying 'still open' carryover-style \u2192 should have been route-to-analyst) takes weeks to accumulate.",
+    "Narrowness gate's NARROWNESS rule \u2014 exact line-count threshold (single-line vs 2-3-line vs single-paragraph) is a judgment call. PROP-027 starts conservative (single-field/single-line); operator may want to widen later.",
+    "ROUTE-TO-CURMUDGEON path may go unused. If after 30 days it has zero closures, consider whether the action should be deprecated (code path exists but never fires).",
+    "Class_hint at step 6 (default ROUTE-TO-ANALYST) is null-by-default; LLM is asked to populate it 'when uncertain, leave null.' Distribution of populated-vs-null hints is an empirical question post-deploy.",
+    "The 'single coherent commit' recommendation assumes tests/run.sh has the new test cases passing pre-commit. If tests can't be added in the same commit (test infrastructure constraints), then either land tests separately first OR use a phased commit (matrix changes commit + test commit in lockstep).",
+    "Worked example for ISS-1087 / ISS-1088 (TS-tab framing) hinges on the docs/index.html-NEVER_PUSH sub-rule clarification. This sub-rule needs operator confirmation: are docs/index.html prose patches eligible for M1 narrow-patch via stranded-patches workflow, or are they always ROUTE-TO-ANALYST? PROP-027 currently says 'phrasing judgment fails NARROWNESS rule, so ROUTE-TO-ANALYST regardless' \u2014 this is the conservative call but may under-utilize the narrow-patch path."
+  ],
+  "verification_pattern": "grep -q 'ROUTE-TO-ANALYST' monitor/prompts/decider.md && grep -q 'narrowness_gate\\|NARROWNESS rule' monitor/prompts/decider.md && grep -q 'class_hint' monitor/prompts/reference/analyst-mode1-expansions.md && test -f monitor/prompts/reference/routing-matrix.md && grep -q 'route-to-analyst' monitor/prompts/reference/DATA-SCHEMAS.md && echo FIXED || echo STILL_BROKEN",
+  "verification_pattern_explanation": "Returns FIXED when all five components landed: (1) decider.md mentions ROUTE-TO-ANALYST as a matrix action; (2) decider.md describes the narrowness gate (NARROWNESS rule); (3) analyst-mode1-expansions.md reads class_hint at intake; (4) the new routing-matrix.md reference doc exists; (5) DATA-SCHEMAS.md documents the route-to-analyst action_taken value. Conjunction ensures no partial deployment.",
+  "expected_when_fixed": "All five greps + file existence true on origin/main; next M1 fire produces a non-100%-escalate distribution.",
+  "follow_up_priors_set_by_this_proposal": [
+    "Tinker monthly audit (30 days post-deploy) verifies: (a) M1 action distribution \u2014 expect <20% ESCALATE-TO-HUMAN, ~50-70% ROUTE-TO-ANALYST, balance NARROW-PATCH/PATCH/WONTFIX/ROUTE-TO-CURMUDGEON; (b) narrowness gate pass-rate on moderates \u2014 expect ~10-30% pass; lower means too conservative, much higher means risk-of-false-positive; (c) class_hint vs review_class agreement rate \u2014 if <50%, consider deprecating the hint; (d) ROUTE-TO-CURMUDGEON closures count \u2014 if zero, reconsider whether the action is needed.",
+    "Operator-facing weekly summary (already in latest-decider-summary.txt) should include `m1_sweep` action distribution so operator can spot drift early."
+  ],
+  "cross_references": {
+    "amends": "monitor/tinker/proposals/PROP-026-open-issues-backlog-clearance.json",
+    "integrates_with": "monitor/tinker/proposals/PROP-025-curmudgeon-batch-gate-content-based.json",
+    "directive": "monitor/tinker/operator-directives/DIRECTIVE-20260510-002-m1-routing-matrix-with-prop025-integration.json",
+    "first_burndown_fire_evidence": "monitor/decisions/closure-ledger.jsonl (entries closed_by_run='decider-2026-05-10T07-58')",
+    "operator_manual_reroute_commit": "d44e2670 (2026-05-10T08:25Z)",
+    "test_case_ISSs_with_routing_reason": [
+      "monitor/decisions/open-issues.json \u2014 search for routing_reason field on ISS-1043, ISS-1087, ISS-1088, ISS-1130, ISS-1132, ISS-1147, ISS-1164, ISS-1165, ISS-1166"
+    ],
+    "current_matrix_location": "monitor/prompts/decider.md Priority 5b (lines ~142-220)",
+    "current_M3_location": "monitor/prompts/reference/decider-curmudgeon.md Step 8c (lines ~283-331)",
+    "current_review_class_location": "monitor/prompts/reference/analyst-mode1-expansions.md (line ~99-108)"
+  },
+  "requires_human_judgment": true,
+  "why_human_needed": "Operator must approve: (a) the 5-action decision tree as the revised matrix; (b) the narrowness gate's three rules (especially the NARROWNESS rule's conservatism \u2014 single-field/single-line); (c) the default-action flip from ESCALATE-TO-HUMAN to ROUTE-TO-ANALYST; (d) class_hint placement on the ISS field (vs alternatives); (e) the bundled-vs-phased deployment choice; (f) routing-matrix.md as a new reference file vs inline duplication.",
+  "implemented_at": "2026-05-10T08:50:00Z",
+  "implemented_by": "operator",
+  "implementation_files": [
+    "monitor/prompts/decider.md (Priority 5b 5-action tree + bash helper update)",
+    "monitor/prompts/reference/decider-curmudgeon.md (Step 8c action_d ROUTE-TO-CURMUDGEON)",
+    "monitor/prompts/reference/analyst-mode1-expansions.md (class_hint intake)",
+    "monitor/prompts/reference/DATA-SCHEMAS.md (M1 routing fields + ledger schema extensions)",
+    "monitor/prompts/reference/routing-matrix.md (NEW canonical reference doc)"
+  ]
+}

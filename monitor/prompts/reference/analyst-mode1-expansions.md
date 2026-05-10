@@ -69,6 +69,14 @@ node -e "const o=JSON.parse(require('fs').readFileSync('monitor/decisions/open-i
 
 If orphaned: group related issues, create new EXP entries, work in priority order.
 
+**class_hint intake (PROP-027, landed 2026-05-10):** When picking up an `assigned-analyst` ISS, also read `iss.class_hint` and `iss.routing_reason` (set by decider M1 at routing time per `monitor/prompts/reference/routing-matrix.md`). The hint values are `'verification' | 'deep-attack' | 'holistic' | null`:
+- **`'verification'` hint** → routing context implies your eventual EXP will be narrow / value-fact-check / single-source-investigation. Strongly consider `review_class: 'verification'` on the EXP (batchable in curmudgeon Step 8a).
+- **`'deep-attack'` hint** → routing context implies EXP-revision / new-argument / defender-pivot / curmudgeon-raised-concern-needing-defense. Strongly consider `review_class: 'deep-attack'` (singleton).
+- **`'holistic'` hint** → multi-WIN or cross-section work. Strongly consider `review_class: 'holistic'`.
+- **`null` hint** → decider couldn't classify; you decide per PROP-025 author guidance.
+
+The hint is **advisory only** — your `review_class` declaration on the EXP file is authoritative per PROP-025. Override the hint when the EXP's actual scope-of-work disagrees with the routing context (e.g., hint='verification' but you discovered during investigation that the work needs new arguments → set `review_class: 'deep-attack'` and note the override in your `summary_for_decider`).
+
 ## Expansion Procedure
 
 Work **one item per run** (first pending item). After completing, continue to check for dome changes.
