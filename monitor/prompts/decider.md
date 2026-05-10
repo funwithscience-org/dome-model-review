@@ -141,7 +141,7 @@ Read all remaining upstream outputs, check human notes, pipeline health, integri
 
 **Priority 5b — Stale-Issue Sweep (M1, PROP-026 Phase 2 + PROP-027 routing-matrix extension, landed 2026-05-10)**
 
-After Priority 5, scan `open-issues.json` for items aged > **21 days**. Cap K at **10/run in BAU mode, 30/run in burndown mode** (read `monitor/decisions/decider-mode.json` mode field). Sort oldest-first; process up to K items. For each, classify and act per the **5-action decision tree** (PROP-027): PATCH | NARROW-PATCH | WONTFIX-WITH-RATIONALE | ROUTE-TO-ANALYST | ROUTE-TO-CURMUDGEON | ESCALATE-TO-HUMAN. All actions write a closure-ledger entry. See `monitor/prompts/reference/routing-matrix.md` for the canonical decision tree, narrowness gate, and class-hint propagation chain.
+After Priority 5, scan `open-issues.json` for items aged > **N_DAYS threshold** (mode-aware: 21d in BAU, 7d in burndown — operator amendment 2026-05-10 post-PROP-027 to drain the 7-21d cohort during burndown faster). Cap K at **10/run in BAU mode, 30/run in burndown mode** (read `monitor/decisions/decider-mode.json` mode field). Sort oldest-first; process up to K items. For each, classify and act per the **5-action decision tree** (PROP-027): PATCH | NARROW-PATCH | WONTFIX-WITH-RATIONALE | ROUTE-TO-ANALYST | ROUTE-TO-CURMUDGEON | ESCALATE-TO-HUMAN. All actions write a closure-ledger entry. See `monitor/prompts/reference/routing-matrix.md` for the canonical decision tree, narrowness gate, and class-hint propagation chain. The 48h recently-touched guard remains active; items in active curmudgeon-decider cycle are protected from auto-action regardless of threshold.
 
 ```bash
 node -e "
@@ -150,7 +150,10 @@ const RUN_ID=process.env.RUN_ID || 'decider-'+new Date().toISOString().slice(0,1
 const mode=JSON.parse(fs.readFileSync('monitor/decisions/decider-mode.json','utf8'));
 const K = (mode.mode==='burndown') ? 30 : 10;
 const dryrun = (mode.mode==='burndown' && mode.dryrun===true);
-const N_DAYS = 21;
+// Mode-aware age threshold (operator amendment 2026-05-10 post-PROP-027):
+// BAU=21d (steady-state, gives c4→c5 cycle time); burndown=7d (aggressive drain
+// of 7-21d cohort). Recently-touched guard (48h) protects active cycle items.
+const N_DAYS = (mode.mode==='burndown') ? 7 : 21;
 const NOW = new Date();
 
 const oi=JSON.parse(fs.readFileSync('monitor/decisions/open-issues.json','utf8'));

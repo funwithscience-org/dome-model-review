@@ -2,6 +2,11 @@
 
 Canonical reference for the M1 stale-issue sweep's decision tree. Replaces PROP-026's three-action matrix with a five-action tree. Landed 2026-05-10.
 
+**Mode-aware age threshold** (operator amendment 2026-05-10 post-PROP-027):
+- **BAU mode:** 21d threshold. Steady-state, gives c4→c5 cycle time.
+- **Burndown mode:** 7d threshold. Aggressive drain of the 7-21d cohort during backlog clearance.
+- The 48h recently-touched guard protects active curmudgeon-decider cycle items regardless of threshold.
+
 **See also:**
 - `monitor/prompts/decider.md` Priority 5b — where the matrix is invoked
 - `monitor/prompts/reference/decider-curmudgeon.md` Step 8c — M3 carry-over enforcement uses the same action set
