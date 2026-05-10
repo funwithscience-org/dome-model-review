@@ -250,7 +250,7 @@ console.log('M1 sweep: candidates='+candidates.length+', acted='+acted+', skippe
 
 The bash helper above writes ESCALATE intent to the ledger by default. As the decider LLM, you should walk each candidate after the bash helper runs and decide whether to override:
 
-- **Override to PATCH:** If the issue is narrow find/replace AND you have line-level evidence the bug still exists → write the patch via Step 5 self-apply, then write a corrective ledger line (`closed_by_mechanism: 'M1', action_taken: 'patch', patch_file: '...'`). Move ISS to closed-issues with `fixed_by: 'M1-patch'`.
+- **Override to PATCH:** If the issue is narrow find/replace AND you have line-level evidence the bug still exists → write the patch via Step 5 self-apply, then write a corrective ledger line (`closed_by_mechanism: 'M1', action_taken: 'patch', patch_file: '...'`). Move ISS to closed-issues with `fixed_by: 'M1-patch'`. **When the patch results in a queue push for re-review (Step 5 self-apply pushes the patched target), set `class: 'verification'` per PROP-025 matrix — this is a verification cycle, not deep-attack.**
 - **Override to WONTFIX-WITH-RATIONALE:** If you re-grep the live target and the issue is no-longer-real (text rewritten, EXP integrated, section removed, condition met) → write a corrective ledger line (`closed_by_mechanism: 'M1', action_taken: 'wontfix', wontfix_rationale: '<text>'`). Move ISS to closed-issues with `fixed_by: 'M1-wontfix'`. **Required for moderate severity:** wontfix is forbidden for moderates per the matrix; if you reach this branch on a moderate, escalate instead.
 - **Confirm ESCALATE (no override):** Default path. ISS already flipped to `pending-human` by the bash helper. Add to daily report `m1_sweep.escalated[]`.
 

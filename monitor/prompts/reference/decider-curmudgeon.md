@@ -308,6 +308,8 @@ console.log('CARRYOVERS structured: '+JSON.stringify(carryovers));
 #   action_a (PATCH): small find/replace fix possible in this run.
 #     → apply patch via Step 5 self-apply, then close the ISS with fixed_by='M3-patch'.
 #     → write ledger line: closed_by_mechanism='M3', action_taken='patch', patch_file='...'.
+#     → When Step 5 self-apply pushes the patched target for re-review, set
+#       class='verification' per PROP-025 matrix — verification cycle, not deep-attack.
 #
 #   action_b (WONTFIX-WITH-RATIONALE): re-grep the live target, finding is no-longer-real.
 #     → close the ISS with fixed_by='M3-wontfix', wontfix_rationale='no-longer-real per re-grep at <run-id>: <evidence>'.
