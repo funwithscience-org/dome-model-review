@@ -77,6 +77,10 @@ NEVER_PUSH=(
   'monitor/curmudgeon/pending-digest.json'
   # PROP-009r2 C-1: presence-vs-absence is the signal here, not content.
   'monitor/decisions/prop-009-enforce.flag'
+  # PROP-026 Phase 1: mode toggle and auto-closure ledger (decider M2). Both
+  # are git-owned — decider writes from clone, never round-trip from FUSE.
+  'monitor/decisions/decider-mode.json'
+  'monitor/decisions/closure-ledger.jsonl'
   # All .md files under monitor/prompts/ are operator-edited (dynamic rule
   # in is_never_push() below).
 )

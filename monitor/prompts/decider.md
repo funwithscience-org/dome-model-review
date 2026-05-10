@@ -63,6 +63,25 @@ fi
 
 **Read V6 map:** `monitor/v6-restructure-map.json`
 
+**Read decider mode (PROP-026, landed 2026-05-10):**
+```bash
+node -e "
+const fs=require('fs');
+const m=JSON.parse(fs.readFileSync('${CLEAN_CLONE}/monitor/decisions/decider-mode.json','utf8'));
+console.log('DECIDER_MODE='+m.mode+' DRYRUN='+(m.dryrun?'true':'false'));
+" >> /tmp/decider-mode-state
+```
+Read `monitor/decisions/decider-mode.json` to get the current mode and dryrun flag. The two values you need downstream:
+- `mode` ∈ {`'bau'`, `'burndown'`} — controls per-run caps and auto-revert eligibility (Phase 2 M1 will use this; Phase 1 M2 reads only `dryrun`).
+- `dryrun` ∈ {`true`, `false`} — when `mode==='burndown'` AND `dryrun===true`, M2 produces CANDIDATE-CLOSURE entries to closure-ledger.jsonl with `dryrun:true` but does NOT actually close ISSs. After the operator approves the dry-run batch via HNOTE `action:'approve_burndown_batch'`, flip `dryrun:false` on the next run; subsequent runs close live with full ledger entry.
+
+**Auto-revert check:** if `mode==='burndown'`, also evaluate auto-revert conditions:
+- If `auto_revert_when_open_below` is set AND `count(open-issues with status='open') < auto_revert_when_open_below` for **3 consecutive decider runs** → flip `mode:'bau'`, clear auto_revert fields. Track the consecutive-run count in `monitor/decisions/decider-mode.json` via field `auto_revert_consecutive_runs_below_threshold` (decider-owned, decider increments).
+- If `auto_revert_after` is set AND `now > auto_revert_after` (ISO comparison) → flip `mode:'bau'`, clear auto_revert fields. Hard time cap.
+- Other auto-revert triggers per `decider-mode.json.burndown_engagement_protocol.step_5_auto_revert`.
+
+**Auto-revert HNOTE action handling:** if `monitor/decisions/human-notes.json` contains a pending note with `action:'approve_burndown_batch'`, decider sets `dryrun:false`, `dryrun_approved_at:<now>`, `dryrun_approved_by:<note.author>`, marks the note consumed. If `action:'cancel_burndown'`, flip `mode:'bau'` and clear auto_revert fields; mark note consumed.
+
 **Generate fresh digest (must run from the clone, not the FUSE workspace):**
 ```bash
 (cd "${CLEAN_CLONE}" && node build-scripts/digest-reviews.js --workspace .)

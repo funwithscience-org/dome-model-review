@@ -80,6 +80,18 @@ const OWNERSHIP = {
   // it from clone to workspace. The file's presence = enforce; absence = shadow.
   // Created via `touch && git add && git commit`; removed via `git rm && commit`.
   'monitor/decisions/prop-009-enforce.flag': 'git',
+  // PROP-026 Phase 1 (2026-05-10): mode toggle for decider's burndown vs BAU
+  // operation against open-issues.json. Operator manually flips mode='burndown'
+  // (sets reason, auto_revert_when_open_below, auto_revert_after, dryrun=true);
+  // decider's auto-revert path flips back to mode='bau' when conditions fire.
+  // Git-owned so build.js publish ferries operator edits clone→workspace.
+  'monitor/decisions/decider-mode.json': 'git',
+  // PROP-026 Phase 1 (2026-05-10): append-only auto-closure ledger. Decider M2
+  // writes one JSON line per closure (or candidate-closure when dryrun=true).
+  // Same git-override pattern as workspace-sync-skips.jsonl (a .jsonl in
+  // monitor/decisions/ is NOT covered by the append_only walker which filters
+  // .json only). Read by build-scripts/revert-burndown-closures.js.
+  'monitor/decisions/closure-ledger.jsonl': 'git',
   'monitor/curmudgeon/priority-queue.json': 'git',
   // Direction-guard skip log (Phase 1 Change 1.8). Authoritatively written
   // by workspace-sync from its clone (fs.appendFileSync → git add -A → push),

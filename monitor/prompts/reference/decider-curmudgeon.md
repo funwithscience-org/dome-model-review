@@ -181,6 +181,105 @@ if(!existing){
 
 8. **Close related issues — do NOT skip.** For each issue ID in `issue_ids`, move from open-issues.json to closed-issues.json with `status: "fixed"`, `fixed_by: "expansion-integration"`. Verify removal. Unclosed issues become zombies.
 
+**8b. M2 EXP-tied auto-close (PROP-026 Phase 1, landed 2026-05-10).** After Step 8 closes the ISSs explicitly listed in `issue_ids`, M2 sweeps `open-issues.json` for orphan ISSs that reference EXP-NNN but were never linked to its `issue_ids`. This catches the ISS-1547-archetype: "EXP-249 ready — pending curmudgeon review" still sitting in open-issues 14 days after EXP-249 integrated. Roughly 5-10 of the open-issues backlog are this shape per re-measurement.
+
+```bash
+node -e "
+const fs=require('fs');
+const EXP_ID='EXP-NNN'; // the EXP that was just integrated
+const RUN_ID=process.env.RUN_ID || 'decider-'+new Date().toISOString().slice(0,16).replace(/[T:]/g,'-');
+const oi=JSON.parse(fs.readFileSync('monitor/decisions/open-issues.json','utf8'));
+const ci=JSON.parse(fs.readFileSync('monitor/decisions/closed-issues.json','utf8'));
+const mode=JSON.parse(fs.readFileSync('monitor/decisions/decider-mode.json','utf8'));
+const dryrun = (mode.mode==='burndown' && mode.dryrun===true);
+const ledgerPath='monitor/decisions/closure-ledger.jsonl';
+
+// False-positive guard (three rules — all must hold to auto-close).
+const NEGATIVE_BLOCKLIST=/deferred|deferred from|blocks integration|needs:|when pipeline|remaining for future|backfill needed|DO NOT INTEGRATE|awaiting human|future work|still needs|pending integration/i;
+function isCurmudgeonSourced(i){
+  const fb=String(i.found_by||'');
+  const src=String(i.source||'');
+  if(['curmudgeon','curmudgeon-review','curmudgeon-digest'].includes(fb)) return true;
+  if(src.startsWith('monitor/curmudgeon/reviews/')) return true;
+  return false;
+}
+function passesGuard(i){
+  // Rule 1: severity floor (minor/info only)
+  if(!['minor','info'].includes(i.severity)) return false;
+  // Rule 2: negative-signal blocklist on description
+  if(NEGATIVE_BLOCKLIST.test(String(i.description||'')+' '+String(i.title||''))) return false;
+  // Rule 3: source provenance — exclude curmudgeon-found holes (those are SEPARATE issues, not 'EXP integrated' status)
+  if(isCurmudgeonSourced(i)) return false;
+  // Rule 4 (recently-touched guard): never auto-close ISS modified in last 48h
+  const lastMod=i.last_modified||i.found_at||i.created_at||i.created;
+  if(lastMod){
+    const ageHours=(Date.now() - new Date(lastMod).getTime())/3600000;
+    if(ageHours < 48) return false;
+  }
+  return true;
+}
+
+const candidates=[];
+for(const i of oi.issues){
+  if(i.status!=='open') continue;
+  // Match: explicit related_expansion field (highest-confidence) OR substring in description/title/source/source_file/notes
+  let matched=false, signal='';
+  if(i.related_expansion===EXP_ID){ matched=true; signal='related_expansion'; }
+  if(!matched){
+    const haystack=[i.description,i.title,i.source,i.source_file,i.notes,i.assigned_exp,i.expansion_file].filter(Boolean).join(' ');
+    if(haystack.includes(EXP_ID)){ matched=true; signal='substring'; }
+  }
+  if(!matched) continue;
+  if(!passesGuard(i)) continue;
+  candidates.push({iss:i, signal});
+}
+
+if(candidates.length===0){ console.log('M2: 0 EXP-tied auto-close candidates for '+EXP_ID); process.exit(0); }
+
+console.log('M2: '+candidates.length+' candidate(s) for '+EXP_ID+' (dryrun='+dryrun+')');
+for(const {iss,signal} of candidates){
+  const now=new Date().toISOString();
+  const ledgerLine={
+    closed_at:now, closed_by_run:RUN_ID, closed_by_mechanism:'M2',
+    iss_id:iss.id, prior_status:iss.status,
+    closure_reason:'EXP-tied auto-close: '+EXP_ID+' integrated; ISS no longer relevant per FP guard (signal='+signal+')',
+    closure_evidence:{exp_id:EXP_ID, signal_match:signal, severity:iss.severity, description_excerpt:String(iss.description||'').slice(0,120)},
+    can_revert:true, dryrun:dryrun
+  };
+  fs.appendFileSync(ledgerPath, JSON.stringify(ledgerLine)+'\\n');
+  if(!dryrun){
+    iss.status='fixed';
+    iss.fixed_by='M2-auto-close';
+    iss.closed_by_run=RUN_ID;
+    iss.auto_closed=true;
+    iss.fixed_at=now;
+    ci.issues.push(iss);
+    oi.issues=oi.issues.filter(j=>j.id!==iss.id);
+  }
+  console.log('  '+(dryrun?'CANDIDATE':'CLOSED')+' '+iss.id+' ['+signal+'] '+String(iss.title||iss.description||'').slice(0,80));
+}
+if(!dryrun){
+  oi.last_updated=new Date().toISOString();
+  ci.last_updated=new Date().toISOString();
+  fs.writeFileSync('monitor/decisions/open-issues.json',JSON.stringify(oi,null,2));
+  fs.writeFileSync('monitor/decisions/closed-issues.json',JSON.stringify(ci,null,2));
+  console.log('M2 wrote '+candidates.length+' closures.');
+} else {
+  console.log('M2 dryrun: '+candidates.length+' ledger entries written, no closures applied. Operator: review ledger before approving.');
+}
+"
+```
+
+**M2 false-positive guard rules (all must hold for auto-close):**
+1. **Severity floor:** `severity ∈ {minor, info}`. Moderate/major/critical never auto-close — they always require operator review.
+2. **Negative-signal blocklist** (case-insensitive): description does NOT contain any of `deferred|blocks integration|needs:|when pipeline|remaining for future|backfill needed|DO NOT INTEGRATE|awaiting human|future work|still needs|pending integration`. These are positive signals that the ISS describes work the EXP did NOT close.
+3. **Source provenance:** `found_by NOT in {curmudgeon, curmudgeon-review, curmudgeon-digest}` AND `source NOT under monitor/curmudgeon/reviews/`. Curmudgeon-found holes on an EXP are separate issues — the integration didn't close them.
+4. **Recently-touched guard:** never auto-close ISS modified in last 48h. If someone (curmudgeon, decider, operator) just touched it, don't yank it out from under them.
+
+**Closure-ledger** (`monitor/decisions/closure-ledger.jsonl`, append-only): every M2 closure (candidate or actual) writes a JSON line. `dryrun:true` lines mean "candidate only, not actually closed." After operator approval (HNOTE action='approve_burndown_batch' → decider sets `decider-mode.dryrun:false`), subsequent runs close live. The revert script (`build-scripts/revert-burndown-closures.js`) reads ledger entries and restores ISSs by run_id, iss_id, or since-timestamp.
+
+**Daily report:** include `m2_auto_close: {count: N, dryrun: <bool>, exp_ids: [...]}` in the run summary.
+
 9. **Out-of-scope / deferred findings MUST be filed as new issues.** If you note in your report that something is "out of scope," "tracked for follow-up," "remaining for future EXP," or any similar phrasing, that finding MUST be filed as a new entry in `monitor/decisions/open-issues.json` BEFORE you finish the run. Narrative comments in daily reports do not survive — they scroll past with the next report and are forgotten. Either file an open issue (with the original review file as `related_review`) or push a new EXP item — never just leave the work as a sentence in your report. Auditing test: after writing your report, grep your own report text for "follow-up," "out of scope," "future," "tracked for," "remaining," "deferred." For each match, verify a corresponding open-issue or EXP exists.
 
 ## Step 2b: Yeet Scan (EVERY run)
