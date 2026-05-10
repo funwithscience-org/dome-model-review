@@ -359,6 +359,59 @@ fi
 ### Step 3: Check for changes; regenerate docs/index.html if data changed
 
 ```bash
+# JSON-validity gate (PROP-024, landed 2026-05-10): refuse to commit unparseable
+# JSON. We have a helper for the common 'unescaped " in HTML span' bug
+# (build-scripts/fix-json-quotes.js); if it can't repair within ≤32 inserted
+# bytes we ABORT the entire push and let the operator handle it. Without this
+# gate, a single bad edit in FUSE wins.json bricks test.js + build.js + every
+# downstream agent until manual intervention (witnessed 2026-05-08, commit
+# d09d978; ~2.5h pipeline downtime).
+#
+# Iterates working-tree changes (modified + untracked) under data/ and monitor/.
+# Runs BEFORE `git add` so an aborted file never enters the index. Repaired
+# files stay in the working tree and get staged by the subsequent git add.
+JSON_GATE_ABORTED=0
+JSON_FILES_TO_CHECK=$(
+  { git diff --name-only -- 'data/*.json' 'monitor/**/*.json' 2>/dev/null;
+    git ls-files --others --exclude-standard -- 'data/*.json' 'monitor/**/*.json' 2>/dev/null;
+  } | grep '\.json$' | sort -u
+)
+for f in $JSON_FILES_TO_CHECK; do
+  [ -f "$f" ] || continue
+  if ! node -e "JSON.parse(require('fs').readFileSync('$f','utf8'))" 2>/dev/null; then
+    BEFORE=$(stat -c %s "$f" 2>/dev/null || echo 0)
+    node build-scripts/fix-json-quotes.js "$f" 2>/dev/null
+    AFTER=$(stat -c %s "$f" 2>/dev/null || echo 0)
+    DELTA=$((AFTER - BEFORE))
+    if node -e "JSON.parse(require('fs').readFileSync('$f','utf8'))" 2>/dev/null && [ "$DELTA" -le 32 ] && [ "$DELTA" -ge 0 ]; then
+      echo "[json-gate] auto-repaired $f (+$DELTA bytes via fix-json-quotes.js)"
+      AGENT_NOTES="$AGENT_NOTES json-gate-auto-repaired:$f(+$DELTA);"
+    else
+      echo "[json-gate] CANNOT repair $f (delta=$DELTA bytes) — aborting push"
+      AGENT_NOTES="$AGENT_NOTES json-gate-abort:$f(delta=$DELTA);"
+      # Restore the file: tracked → checkout HEAD; untracked → remove from working tree.
+      # This guarantees the index/working tree match HEAD when we exit, so no partial state.
+      if git ls-files --error-unmatch -- "$f" >/dev/null 2>&1; then
+        git checkout -- "$f"
+      else
+        rm -f "$f"
+      fi
+      mkdir -p monitor/integrity
+      printf '{"type":"json-gate-abort","file":"%s","delta_bytes":%d,"at":"%s","agent":"workspace-sync"}\n' \
+        "$f" "$DELTA" "$(date -u +%FT%TZ)" >> monitor/integrity/workspace-sync-skips.jsonl
+      JSON_GATE_ABORTED=1
+    fi
+  fi
+done
+if [ "${JSON_GATE_ABORTED:-0}" -eq 1 ]; then
+  echo "[workspace-sync] ABORT: json-gate refused at least one file. No commit this cycle."
+  echo "                Operator: inspect monitor/integrity/workspace-sync-skips.jsonl tail."
+  echo "                FUSE-side files were NOT modified; the bad edit is still in the workspace."
+  # Graceful no-op exit. The hourly cron will retry; if the operator hand-fixes
+  # the FUSE file in the meantime, the next cycle will pick it up cleanly.
+  exit 0
+fi
+
 # Stage workspace-sync's contributions: monitor/ files + data/ files (the
 # universal-pusher rescue path). Without `data/` in this list, the smart_copy
 # iterations would write to the working tree but the changes would never
