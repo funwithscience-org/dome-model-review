@@ -204,6 +204,40 @@ The `do_not_treat_as_actionable` boolean is the contract for downstream scanners
 
 **Edge case — stranded duplicates.** If decider re-strands the same underlying patches under a fresh ID (e.g. EXP-294 P1-P3 are identical find/replace ops to EXP-290 P6-P8), tombstoning the originally-applied sentinel resolves the work but does NOT auto-tombstone the duplicates. Operator (or a future tinker run) MUST tombstone each duplicate sentinel individually after verifying its find-strings are also absent from HEAD. Reference the same `tombstone_audit_record` from each duplicate's tombstone for a clean cross-reference.
 
+# 3a-pre. M3 carry-over self-test (PROP-026 Phase 2, landed 2026-05-10).
+# Before committing, walk all unresolved_prior_cycle entries from curmudgeon
+# reviews integrated this run. Each MUST have a corresponding closure-ledger
+# entry with closed_by_mechanism='M3' and a recorded terminal action
+# (patch | wontfix | escalate). Missing entries fail the run.
+node -e "
+const fs=require('fs');
+const RUN_ID=process.env.RUN_ID || '';
+if(!RUN_ID){console.log('M3 self-test SKIPPED — RUN_ID not set'); process.exit(0);}
+const reviewedFiles = (process.env.REVIEWS_INTEGRATED_THIS_RUN || '').split(',').filter(Boolean);
+const carryovers = [];
+for(const f of reviewedFiles){
+  try {
+    const r = JSON.parse(fs.readFileSync('monitor/curmudgeon/reviews/'+f,'utf8'));
+    for(const c of (r.unresolved_prior_cycle||[])){ carryovers.push({...c, source_review: f}); }
+  } catch(e) { /* legacy review without field */ }
+}
+if(carryovers.length===0){ console.log('M3 self-test: no carry-overs this run, OK'); process.exit(0); }
+const ledgerLines = fs.existsSync('monitor/decisions/closure-ledger.jsonl') ?
+  fs.readFileSync('monitor/decisions/closure-ledger.jsonl','utf8').split('\\n').filter(Boolean) : [];
+const m3Entries = ledgerLines.map(l=>{try{return JSON.parse(l);}catch{return null;}}).filter(e=>
+  e && e.closed_by_run===RUN_ID && e.closed_by_mechanism==='M3'
+);
+const handledIds = new Set(m3Entries.map(e=>e.iss_id));
+const unhandled = carryovers.filter(c=>!handledIds.has(c.iss_id));
+if(unhandled.length>0){
+  console.error('M3 SELF-TEST FAILED: '+unhandled.length+' carry-over(s) without recorded terminal action this run.');
+  for(const u of unhandled){ console.error('  unhandled: '+u.iss_id+' (prior_cycle='+u.prior_cycle+', from '+u.source_review+')'); }
+  console.error('Required: triage each (patch|wontfix-with-rationale|escalate-pending-human) and write a closure-ledger M3 line. Do NOT proceed to commit until cleared.');
+  process.exit(1);
+}
+console.log('M3 self-test: '+carryovers.length+'/'+carryovers.length+' carry-overs handled this run. OK.');
+" || { echo 'M3 self-test failed — abort commit. Triage carry-overs and re-run.'; exit 1; }
+
 # 3a. If ALL tests pass AND PATCHES_STRANDED=0 → commit, run pre-push integrity gate, then push
 # (If PATCHES_STRANDED=1, skip the commit/push of step 3a — the stranded-file commit above is the only commit this run.)
 if [ "${PATCHES_STRANDED:-0}" = "0" ]; then

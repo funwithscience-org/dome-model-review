@@ -139,6 +139,139 @@ Trigger: Completed expansions not yet integrated into sections.json/wins.json.
 Read all remaining upstream outputs, check human notes, pipeline health, integrity, social drafts, prediction failures.
 → Read `monitor/prompts/reference/decider-intake.md`, execute full procedure.
 
+**Priority 5b — Stale-Issue Sweep (M1, PROP-026 Phase 2, landed 2026-05-10)**
+
+After Priority 5, scan `open-issues.json` for items aged > **21 days**. Cap K at **10/run in BAU mode, 30/run in burndown mode** (read `monitor/decisions/decider-mode.json` mode field). Sort oldest-first; process up to K items. For each, classify and act per the severity-tier matrix below. All actions write a closure-ledger entry; closures move ISS from open → closed; escalations flip `status: 'pending-human'` with `escalation_reason`. Skipping a candidate is allowed but must be logged in the daily report `m1_sweep.skipped[]` array with rationale.
+
+```bash
+node -e "
+const fs=require('fs');
+const RUN_ID=process.env.RUN_ID || 'decider-'+new Date().toISOString().slice(0,16).replace(/[T:]/g,'-');
+const mode=JSON.parse(fs.readFileSync('monitor/decisions/decider-mode.json','utf8'));
+const K = (mode.mode==='burndown') ? 30 : 10;
+const dryrun = (mode.mode==='burndown' && mode.dryrun===true);
+const N_DAYS = 21;
+const NOW = new Date();
+
+const oi=JSON.parse(fs.readFileSync('monitor/decisions/open-issues.json','utf8'));
+const ci=JSON.parse(fs.readFileSync('monitor/decisions/closed-issues.json','utf8'));
+
+function ageDays(i){
+  const t = i.created_at || i.created || i.found_at || i.found_date;
+  if(!t) return null;
+  try { return (NOW - new Date(t.includes('T')?t:t+'T00:00:00Z'))/86400000; } catch(e) { return null; }
+}
+
+// Sweep candidates: status='open', age > N, sorted oldest first.
+const candidates = oi.issues
+  .filter(i => i.status === 'open')
+  .map(i => ({iss:i, age:ageDays(i)}))
+  .filter(x => x.age !== null && x.age > N_DAYS)
+  .sort((a,b) => b.age - a.age)
+  .slice(0, K);
+
+console.log('M1 sweep: '+candidates.length+'/'+K+' candidates over '+N_DAYS+'d (mode='+mode.mode+', dryrun='+dryrun+')');
+
+let acted=0, skipped=0, escalated=0;
+for(const {iss, age} of candidates){
+  // Recently-touched guard (48h)
+  const lastMod = iss.last_modified || iss.found_at || iss.created_at || iss.created;
+  if(lastMod){
+    const hoursAgo = (Date.now() - new Date(lastMod.includes('T')?lastMod:lastMod+'T00:00:00Z').getTime())/3600000;
+    if(hoursAgo < 48){ skipped++; console.log('  SKIP '+iss.id+' (recently-touched, '+hoursAgo.toFixed(0)+'h ago)'); continue; }
+  }
+
+  const sev = iss.severity || 'minor';
+  let action = null, rationale = '';
+
+  // Severity tier matrix per PROP-026:
+  //   minor/info  → patch | wontfix-with-rationale | escalate
+  //   moderate    → patch ONLY if mechanical/narrow; else escalate (NEVER auto-wontfix)
+  //   major/critical → escalate ONLY (never auto-close)
+  if(sev === 'major' || sev === 'critical'){
+    action = 'escalate';
+    rationale = 'M1 sweep: severity='+sev+' age='+Math.floor(age)+'d > '+N_DAYS+'d; never auto-close per PROP-026 severity tier matrix. Operator review required.';
+  } else if(sev === 'moderate'){
+    // Without a deeper read, default to escalate. Patching moderates requires the LLM (you) to
+    // assess scope-and-mechanical-only, which is per-issue judgment, not a general bash one-liner.
+    // The decider's actual implementation (you, the LLM) MAY override this in-context to attempt a
+    // patch when the issue is narrow find/replace; otherwise escalate.
+    action = 'escalate';
+    rationale = 'M1 sweep: severity=moderate age='+Math.floor(age)+'d > '+N_DAYS+'d; auto-wontfix forbidden, patch requires per-issue narrowness assessment. Default to escalation; decider LLM may override to patch in-context.';
+  } else {
+    // minor / info: default to escalate (operator visibility) UNLESS the LLM has determined in-context
+    // that the issue is no-longer-real per re-grep of the live target. The bash one-liner here cannot
+    // do that re-grep automatically — it requires the LLM to judge the action per-issue. So this code
+    // emits a CANDIDATE record; the decider LLM then walks the candidates and chooses action a/b/c.
+    action = 'escalate';
+    rationale = 'M1 sweep: severity='+sev+' age='+Math.floor(age)+'d > '+N_DAYS+'d. Default escalation pending decider LLM per-issue judgment (patch | wontfix-with-rationale | confirm-escalate).';
+  }
+
+  // Write ledger entry (decision intent)
+  const now = new Date().toISOString();
+  const ledgerLine = {
+    closed_at: now,
+    closed_by_run: RUN_ID,
+    closed_by_mechanism: 'M1',
+    iss_id: iss.id,
+    prior_status: iss.status,
+    closure_reason: 'M1 stale-issue sweep: age='+Math.floor(age)+'d, action='+action,
+    closure_evidence: { age_days: Math.floor(age), severity: sev, rationale, action_intent: action, description_excerpt: String(iss.description||iss.title||'').slice(0,120) },
+    can_revert: true,
+    dryrun: dryrun
+  };
+  fs.appendFileSync('monitor/decisions/closure-ledger.jsonl', JSON.stringify(ledgerLine)+'\\n');
+
+  if(!dryrun){
+    if(action === 'escalate'){
+      iss.status = 'pending-human';
+      iss.escalation_reason = rationale;
+      iss.escalated_by_run = RUN_ID;
+      iss.escalated_at = now;
+      escalated++;
+      console.log('  ESCALATE '+iss.id+' [age='+Math.floor(age)+'d, sev='+sev+']');
+    }
+    // Note: actual patch / wontfix-with-rationale paths are LLM-judgment paths, not mechanical.
+    // The decider LLM walking the per-run output will see the ESCALATE intent in the ledger and
+    // may override to patch or wontfix-with-rationale for individual items based on re-grep evidence.
+    // When the LLM overrides, it writes a separate ledger line with the actual action taken.
+  }
+  acted++;
+}
+if(!dryrun){
+  oi.last_updated=new Date().toISOString();
+  fs.writeFileSync('monitor/decisions/open-issues.json',JSON.stringify(oi,null,2));
+}
+console.log('M1 sweep: candidates='+candidates.length+', acted='+acted+', skipped(recently-touched)='+skipped+', escalated='+escalated+(dryrun?' (DRYRUN — no writes)':''));
+"
+```
+
+**Decider LLM in-context override paths for M1 (when you override the default-escalate intent):**
+
+The bash helper above writes ESCALATE intent to the ledger by default. As the decider LLM, you should walk each candidate after the bash helper runs and decide whether to override:
+
+- **Override to PATCH:** If the issue is narrow find/replace AND you have line-level evidence the bug still exists → write the patch via Step 5 self-apply, then write a corrective ledger line (`closed_by_mechanism: 'M1', action_taken: 'patch', patch_file: '...'`). Move ISS to closed-issues with `fixed_by: 'M1-patch'`.
+- **Override to WONTFIX-WITH-RATIONALE:** If you re-grep the live target and the issue is no-longer-real (text rewritten, EXP integrated, section removed, condition met) → write a corrective ledger line (`closed_by_mechanism: 'M1', action_taken: 'wontfix', wontfix_rationale: '<text>'`). Move ISS to closed-issues with `fixed_by: 'M1-wontfix'`. **Required for moderate severity:** wontfix is forbidden for moderates per the matrix; if you reach this branch on a moderate, escalate instead.
+- **Confirm ESCALATE (no override):** Default path. ISS already flipped to `pending-human` by the bash helper. Add to daily report `m1_sweep.escalated[]`.
+
+**Daily report `m1_sweep` field shape:**
+```json
+{
+  "m1_sweep": {
+    "mode": "bau|burndown",
+    "dryrun": false,
+    "K_cap": 10,
+    "candidates": 10,
+    "acted": 10,
+    "patched": 0,
+    "wontfixed": 0,
+    "escalated": 10,
+    "skipped_recently_touched": 0,
+    "iss_ids": ["ISS-NNNN", ...]
+  }
+}
+```
+
 **Every run — Patches and Reporting**
 After processing, always:
 → Read `monitor/prompts/reference/decider-patches-and-selfapply.md` for patch format and self-apply procedure.

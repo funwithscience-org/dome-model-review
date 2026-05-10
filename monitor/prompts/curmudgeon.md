@@ -296,6 +296,13 @@ For every DOI, URL, or paper reference in our review text:
       "recommendation": "How to fix it"
     }
   ],
+  "unresolved_prior_cycle": [
+    {
+      "iss_id": "ISS-NNNN",
+      "prior_cycle": 4,
+      "holes_index": 0
+    }
+  ],
   "stronger_arguments": [
     {
       "description": "A better argument we should be making",
@@ -328,6 +335,24 @@ For every DOI, URL, or paper reference in our review text:
 ### 7a. Pre-write assertion — queue_id presence (PROP-009, mandatory for queue-sourced reviews)
 
 Before you finalize the review file, verify: "Is this review servicing a priority-queue item (Step 0b)? If yes, is `queue_id` set on the review JSON to the integer value from the queue entry I am reviewing? Is `queue_pushed_at` set to the queue entry's `pushed_at`?" If either answer is "no, but it should be", stop and re-read the queue entry. This is the load-bearing identifier — missing or wrong `queue_id` silently breaks the decider's pop filter.
+
+### 7c. Carry-over signaling (M3, PROP-026 Phase 2, landed 2026-05-10)
+
+When you flag a hole that was first raised in an earlier cycle on the same target — the "still open from c-N" pattern — append a structured entry to `unresolved_prior_cycle: [{ iss_id, prior_cycle, holes_index }]` at the top level of the review JSON. Decider's M3 carry-over enforcement reads this array directly and treats each listed ISS as MUST-process in the same run that integrates your review. The structured field replaces brittle free-text grep on `holes_found` descriptions.
+
+**Procedure when writing a review:**
+
+1. Cross-check the prior-cycle review file for the same target (e.g., for `WIN-053.c5`, read `WIN-053.c4.json`'s `holes_found` array).
+2. For each hole in your current `holes_found` that you recognize as restating a prior-cycle finding, look up the matching ISS in `monitor/decisions/open-issues.json` (search by source/found_by/description containing the prior cycle's review filename, e.g., source contains `WIN-053.c4`).
+3. If found, append `{iss_id: 'ISS-NNNN', prior_cycle: 4, holes_index: <0-based index of this hole in the current review's holes_found>}` to `unresolved_prior_cycle`.
+4. If not found in open-issues but the hole IS a prior-cycle restating — note in your `summary_for_decider`: "Carry-over hole detected but no matching open-issue found; decider should create one."
+5. If the field is empty (no carry-over holes flagged), include it as `[]` rather than omitting — decider's parser tolerates absent field but explicit empty makes intent clear.
+
+**What the field is NOT:** not a list of all open ISSs touching the target. Only those holes that are RESTATING a prior-cycle finding. Fresh holes you're flagging for the first time stay in `holes_found` with no carry-over entry.
+
+**Decider's required action per entry:** patch | wontfix-with-rationale | escalate to pending-human. Skipping a carry-over without a recorded action is a decider self-test failure.
+
+**Legacy compat:** if you encounter a prior-cycle review that doesn't have `unresolved_prior_cycle`, decider falls back to free-text grep on holes_found descriptions for `still open from c\d+`, `carry-forward c\d+`, `deferred from EXP-`. New reviews write structured; old reviews still work.
 
 ### 7b. Validate the JSON (mandatory)
 

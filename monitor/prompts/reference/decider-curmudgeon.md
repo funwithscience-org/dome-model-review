@@ -280,6 +280,54 @@ if(!dryrun){
 
 **Daily report:** include `m2_auto_close: {count: N, dryrun: <bool>, exp_ids: [...]}` in the run summary.
 
+**8c. M3 carry-over enforcement (PROP-026 Phase 2, landed 2026-05-10).** After Step 8b's M2, read `unresolved_prior_cycle[]` from the curmudgeon review JSON. For each entry, look up `iss_id` in open-issues.json. If still open, the carry-over enforcement gate applies: you MUST take exactly one of three terminal actions in this run — patch, wontfix-with-rationale, or escalate to pending-human. **Skipping a carry-over without a recorded action is a self-test failure that fails your run report.**
+
+**Procedure:**
+
+```bash
+# Step 1: Read unresolved_prior_cycle from the review JSON you just integrated.
+node -e "
+const fs=require('fs');
+const review=JSON.parse(fs.readFileSync('monitor/curmudgeon/reviews/<filename>.json','utf8'));
+const carryovers=review.unresolved_prior_cycle||[];
+// Legacy fallback: free-text grep on holes_found descriptions if structured field absent
+if(carryovers.length===0 && review.holes_found){
+  const re=/still open from c(\d+)|carry[- ]?(?:over|forward) c(\d+)|deferred from EXP-(\d+)/i;
+  for(const [idx,h] of review.holes_found.entries()){
+    if(re.test(String(h.description||''))){
+      console.log('LEGACY-CARRYOVER hole '+idx+': '+String(h.description||'').slice(0,100));
+    }
+  }
+}
+console.log('CARRYOVERS structured: '+JSON.stringify(carryovers));
+"
+
+# Step 2: For each carry-over entry, fetch the open-issues entry and triage.
+# This is the per-issue judgment loop the decider LLM walks. Three terminal actions:
+#
+#   action_a (PATCH): small find/replace fix possible in this run.
+#     → apply patch via Step 5 self-apply, then close the ISS with fixed_by='M3-patch'.
+#     → write ledger line: closed_by_mechanism='M3', action_taken='patch', patch_file='...'.
+#
+#   action_b (WONTFIX-WITH-RATIONALE): re-grep the live target, finding is no-longer-real.
+#     → close the ISS with fixed_by='M3-wontfix', wontfix_rationale='no-longer-real per re-grep at <run-id>: <evidence>'.
+#     → write ledger line: closed_by_mechanism='M3', action_taken='wontfix', wontfix_rationale='...'.
+#     → FORBIDDEN for moderate severity per PROP-026 severity matrix; on moderate, escalate instead.
+#
+#   action_c (ESCALATE): patch needed but exceeds this run's budget OR signals are ambiguous.
+#     → flip ISS status='pending-human' with escalation_reason and escalated_by_run.
+#     → write ledger line: closed_by_mechanism='M3', action_taken='escalate', escalation_reason='...'.
+#
+# DO NOT skip an entry without recording one of these three. The hidden-default 'no-action-taken'
+# is the bug M3 was designed to catch.
+```
+
+**Self-test before you finalize the run:** for each `unresolved_prior_cycle` entry, verify it has a corresponding ledger line with `closed_by_mechanism: 'M3'` from THIS run's RUN_ID. If any are missing, do NOT mark the run complete — return to triage.
+
+**Interaction with PROP-025 batch-gate:** carry-over enforcement is ORTHOGONAL to the curmudgeon's batch class. A `verification`-class push that carries `unresolved_prior_cycle` entries still triggers full M3 triage on integration. PROP-025 governs how much work curmudgeon does per run; M3 governs what decider must do with whatever curmudgeon flags as carry-over.
+
+**Daily report:** include `m3_carryover: {processed: N, patched: P, wontfixed: W, escalated: E, source_review: '<filename>.json'}` in the run summary.
+
 9. **Out-of-scope / deferred findings MUST be filed as new issues.** If you note in your report that something is "out of scope," "tracked for follow-up," "remaining for future EXP," or any similar phrasing, that finding MUST be filed as a new entry in `monitor/decisions/open-issues.json` BEFORE you finish the run. Narrative comments in daily reports do not survive — they scroll past with the next report and are forgotten. Either file an open issue (with the original review file as `related_review`) or push a new EXP item — never just leave the work as a sentence in your report. Auditing test: after writing your report, grep your own report text for "follow-up," "out of scope," "future," "tracked for," "remaining," "deferred." For each match, verify a corresponding open-issue or EXP exists.
 
 ## Step 2b: Yeet Scan (EVERY run)
