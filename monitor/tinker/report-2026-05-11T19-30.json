@@ -1,0 +1,95 @@
+{
+  "run_id": "tinker-2026-05-11T19-30",
+  "generated_at": "2026-05-11T19:30:00Z",
+  "mode_selected": "operator-directive (DIRECTIVE-20260511-001 dispatcher override)",
+  "mode_selection_rationale": "Operator-directive pre-flight returned PENDING DIRECTIVE: DIRECTIVE-20260511-001-decider-throughput-audit-and-tap-out-investigation (priority=high, target_mode=blank). Per tinker.md L52-63, this overrides Mode 1-4 selection. Routed to PROP authorship mode (Mode 4-equivalent) since the directive's expected_output is a PROP-NNN file under monitor/tinker/proposals/.",
+  "modes_checked": {
+    "operator_directive_preflight": "1 pending directive found; ran it.",
+    "mode_1_pipeline_health": "Skipped — overridden by directive.",
+    "mode_2_infrastructure": "Skipped — overridden by directive.",
+    "mode_3_cost_engineering": "Skipped — overridden by directive.",
+    "mode_4_proposals_and_fixes": "Effectively this mode — directive asked for a PROP."
+  },
+  "directive_processed": {
+    "directive_id": "DIRECTIVE-20260511-001",
+    "title": "Decider per-run throughput audit: is decider getting enough 'umpf'?",
+    "filed_at": "2026-05-11T14:30:00Z",
+    "priority": "high",
+    "tasks_completed": [
+      "task_1_measure_per_run_throughput",
+      "task_2_diagnose_the_tap_out",
+      "task_3_compare_BAU_vs_M1_disposition_rates",
+      "task_4_design_a_throughput_fix",
+      "task_5_counter_argument_required"
+    ],
+    "all_tasks_addressed": true,
+    "deliverable_produced": "monitor/tinker/proposals/PROP-031-decider-bau-open-bucket-sweep-anti-tap-out.json",
+    "directive_status_after_run": "completed (this run is the completed_by_run)",
+    "throughput_bug_verdict": "REAL — confirmed by empirical evidence (67% of M1 closures are 10-14d items BAU should have caught; 19/48 current status='open' items are >=24h old; the 'pick 10 WINs' cap in decider-curmudgeon.md L421-426 is the documented proximate cause)."
+  },
+  "findings": [
+    {
+      "id": "FIND-2026-05-11-19-30-A",
+      "severity": "major",
+      "category": "throughput_bug_root_cause",
+      "summary": "Decider's 'pick 10 WINs' Mode 1/2 cap (decider-curmudgeon.md L421-426) is causing minor/moderate curmudgeon-raised items to sit in status='open' for 5-14 days waiting for M1 to fire.",
+      "evidence": [
+        "decider-curmudgeon.md L421: 'Mode 1 — Severity triage: ... pick 10 WINs with highest-severity patchable issues.'",
+        "decider-curmudgeon.md L426: 'Mode 2 — WIN cleanup: Pick 10 WINs with fewest remaining issues (1-2 each).'",
+        "Of 39 M1 closures (real, non-dryrun) with parseable ages: 67% are 10-14d items (clearly stale, BAU-missable); 10% are 7-9d (just-over-threshold); 23% are >=15d (legitimately stale-edge-case)",
+        "Current status='open' bucket: 48 items; 19 (40%) are >=24h old; the oldest is ISS-1829 at 7.34d (status=open, severity=minor, source=curmudgeon WIN-014.c4) — independently confirms operator's claim that items 'wait forever'",
+        "Operator HNOTE precedent (HNOTE-OPERATOR-DRAIN-MODE-001 2026-04-25, HNOTE-OPERATOR-DRAIN-M1-ORPHAN-QUEUE-001 2026-05-10) shows the operator has had to manually intervene twice in 17 days to force decider to process work it wasn't prioritizing — same failure pattern, recurring"
+      ],
+      "recommended_action": "Land PROP-031 (authored this run). Specifically: add Priority 3b 'Open Bucket BAU Triage' (every status='open' item >=12h old gets triaged each run via the routing-matrix 5-action tree); remove the 'pick 10 WINs' cap in decider-curmudgeon.md Mode 1/2; add anti-tap-out clause to decider.md Critical Rules with self-test enforcement gate."
+    },
+    {
+      "id": "FIND-2026-05-11-19-30-B",
+      "severity": "moderate",
+      "category": "m1_sweep_anomaly",
+      "summary": "ISS-1829 (status='open', age=7.34d at run time) was ELIGIBLE for M1 sweep at 2026-05-11T17:24Z but was NOT swept. K_cap=30 was not reached (only 9 candidates). Possibly a found_at vs last_modified ordering bug, or the run captured a stale clone state.",
+      "evidence": [
+        "open-issues.json: ISS-1829 has found_at=2026-05-04T09:20:24Z, last_modified=None, status='open', severity='minor'",
+        "M1 sweep at run 2026-05-11T17:24Z swept 9 items (ISS-1807, 1808, 1809, 1810, 1811, 1814, 1818, 1820, 1821) — all severity=minor or moderate, all source=curmudgeon",
+        "ISS-1829 is older (>7d) than several of the swept items but was not in the candidate list — likely the M1 bash helper's age threshold computation used a slightly different reference time or last_modified path that filtered ISS-1829 out by ~1 hour"
+      ],
+      "recommended_action": "Under PROP-031, this becomes moot — Priority 3b would catch ISS-1829 (and similar 6-7d boundary items) long before M1's age threshold. Filing for awareness; no separate fix needed if PROP-031 lands."
+    },
+    {
+      "id": "FIND-2026-05-11-19-30-C",
+      "severity": "minor",
+      "category": "behavioral_summary_framing",
+      "summary": "Decider's latest-decider-summary.txt narrates patches applied + EXP integrations + M1 sweep counts — implicitly rewards visible-volume work over invisible-volume work like BAU triage of aged items.",
+      "evidence": [
+        "latest-decider-summary.txt 2026-05-11T17:24Z: 'PATCHES (9 applied, 0 failed): WIN-001, WIN-038, WIN-010, SEC-5.0, WIN-028 [5 fixes]; PROPOSALS (8); CURMUDGEON: WIN-028.c7 popped + 4 new holes all patched; M1 SWEEP: 9 candidates...' — celebratory framing of patch volume, no surfacing of 'X status=open items not yet triaged'",
+        "Triaging a minor citation issue with wontfix-no-longer-real (a legitimate BAU outcome under PROP-031) produces no visible summary line — looks identical to no-op",
+        "LLM-behavior effect even with Critical Rules saying otherwise"
+      ],
+      "recommended_action": "Out of scope for PROP-031 (which addresses mechanism, not framing). Flag for future follow-up: add a `bau_triage_summary` line to latest-decider-summary.txt template (e.g., '34 status=open items triaged: 5 patched, 12 wontfixed, 14 routed-to-analyst, 3 escalated'). Operator can file as a sibling directive if desired."
+    }
+  ],
+  "previous_followup": {
+    "note": "Did not walk PROP verification this run because the directive-override took precedence. The dispatcher rule (tinker.md L54: 'directives override') is explicit. Next Mode 3 run should pick up PROP lifecycle verification.",
+    "deferred_to_next_mode_3_run": [
+      "PROP-026 verification (M1 framework deployment outcomes)",
+      "PROP-027 verification (routing matrix usage)",
+      "PROP-028 verification (stale-assessment overwrite guard)",
+      "PROP-029 verification (M1 tracker-write completion)",
+      "PROP-030 verification (backlog-trend monitoring — if implemented, validate it's emitting the oldest_open_item_age_days metric used by PROP-031)"
+    ]
+  },
+  "claude_md_audit": {
+    "skipped_this_run": true,
+    "reason": "Directive-override mode. Next Mode 3 run resumes CLAUDE.md audit per the standing requirement in tinker.md L200-218."
+  },
+  "context_load": {
+    "skipped_this_run": true,
+    "reason": "Directive-override mode. Next Mode 3 run resumes the per-agent context load measurement per tinker-cost-engineering.md Step 4."
+  },
+  "outputs_written": [
+    "monitor/tinker/proposals/PROP-031-decider-bau-open-bucket-sweep-anti-tap-out.json",
+    "monitor/tinker/report-2026-05-11T19-30.json (this file)",
+    "monitor/tinker/latest-tinker-summary.txt (overwritten by this run)",
+    "monitor/tinker/operator-directives/DIRECTIVE-20260511-001-decider-throughput-audit-and-tap-out-investigation.json (status flipped pending → completed; additive edit per CLAUDE.md DIRECTIVE-LIFECYCLE exception)"
+  ],
+  "next_run_recommended_mode": "Mode 3 (cost engineering) — pipeline appears healthy except for the throughput bug being fixed by PROP-031; CLAUDE.md audit + PROP verification overdue from this skipped slot."
+}
