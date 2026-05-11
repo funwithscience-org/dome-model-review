@@ -1,0 +1,250 @@
+{
+  "id": "PROP-029",
+  "prop_id": "PROP-029",
+  "title": "M1 ROUTE-TO-ANALYST tracker-entry creation: decider writes a corresponding expansion-tracker.json entry whenever it routes an ISS to status='assigned-analyst', so analyst's dispatcher actually sees the work",
+  "authored_by": "tinker (2026-05-11 run, in response to DIRECTIVE-20260510-004)",
+  "authored_at": "2026-05-11T16:40:00Z",
+  "status": "implemented",
+  "category": "decider_routing_completion + single_source_of_truth + dispatcher_safety_net",
+  "directive": "DIRECTIVE-20260510-004-decider-m1-tracker-entry-creation",
+  "amends": "decider.md Priority 5b (bash helper + LLM-override path: emit expansion-tracker entry when action='route-to-analyst'); analyst.md Mode 1 dispatcher (OR the orphan-check at dispatcher level as belt-and-suspenders safety net); analyst-mode1-expansions.md (orphan-check semantics under PROP-029 \u2014 narrows from primary intake to safety-net); decider-curmudgeon.md (verify M3 routing-to-analyst paths consistent \u2014 present analysis: M3 carry-over has no route-to-analyst action; no edit needed)",
+  "retires_iss": [],
+  "target_files": [
+    "monitor/prompts/decider.md (Priority 5b bash helper extension \u2014 adds expansion-tracker write inside the action==='route-to-analyst' branch; agent-applied prompt edit)",
+    "monitor/prompts/decider.md (Priority 5b LLM-override docs \u2014 adds tracker-write requirement to the override path when LLM confirms or sets ROUTE-TO-ANALYST; agent-applied)",
+    "monitor/prompts/analyst.md (Mode 1 dispatcher: OR the orphan check with the tracker pending check; agent-applied)",
+    "monitor/prompts/reference/analyst-mode1-expansions.md (orphan-resolution semantics: under PROP-029 this becomes a safety net, not primary intake; agent-applied)",
+    "monitor/prompts/reference/routing-matrix.md (matrix step 6 ROUTE-TO-ANALYST description: add 'AND writes corresponding expansion-tracker entry'; agent-applied)",
+    "monitor/prompts/reference/DATA-SCHEMAS.md (document expansion-tracker entry-shape under decider-authored 'routed-from-m1' provenance and the source enum extension; agent-applied)"
+  ],
+  "executive_summary": {
+    "problem_one_line": "M1 routing has written 135 ROUTE-TO-ANALYST decisions to open-issues.json since the matrix landed 2026-05-10, but none of those decisions reached analyst's dispatcher \u2014 analyst.md line 91 reads expansion-tracker.json (currently 1 actionable item, a draft-awaiting-human EXP-190) and returns NEGATIVE, so Mode 1 never enters and the orphan-resolution check at analyst-mode1-expansions.md line 67 never fires.",
+    "fix_one_line": "Option A (chosen): decider writes a corresponding expansion-tracker entry every time it sets iss.status='assigned-analyst' in M1 Priority 5b, plus a belt-and-suspenders dispatcher-level orphan OR in analyst.md so a future tracker-write failure or new code path can't silently re-create the same orphan-accumulation hole.",
+    "tinker_top_line_recommendations": {
+      "Q1_design_choice": "Option A \u2014 decider writes the tracker entry. Source-of-truth ambiguity (option B) is the same class of bug as PROP-028's verdict_history-sat-in-data-and-nobody-read-it failure. The cost of option A is one node block in decider.md's M1 bash helper (~20 lines, same shape as the existing 'route-to-curmudgeon' priority-queue push). The cost of NOT adopting option A is what we observed today: 30+ ISSs/run routed silently into nothing, requiring operator HNOTE intervention (HNOTE-OPERATOR-DRAIN-M1-ORPHAN-QUEUE-001) to drain.",
+      "Q2_entry_shape": "Full entry, not lite \u2014 decider has all the information it needs at routing time. Required fields: id (allocated via t.next_id), target (derived from iss.description first sentence), source='decider-m1-route' (or '-m3-route' for the M3 path; new source enum value), curmudgeon_review (the iss's source review path if available, otherwise null), issue_ids ([iss.id]; one-ISS-per-EXP at routing time, analyst may consolidate into a multi-ISS EXP at intake), category=iss.category or 'minor-fix' fallback, priority derived from iss.severity, status='pending', class_hint=iss.class_hint (mirrored from the PROP-027 routing decision), routed_from_iss=iss.id (provenance pointer), routed_from_run=RUN_ID, created_at=now. Analyst can promote/consolidate these at Mode 1 intake.",
+      "Q3_dispatcher_safety_net": "YES \u2014 also promote the orphan-check to analyst.md Mode 1 dispatcher level (one-line OR with the existing tracker-pending check). Even with option A's tracker-write, a future code path or transient failure could decouple the ISS status flip from the tracker write (FUSE staleness, race during git rebase, a new agent variant). Belt-and-suspenders: dispatcher returns POSITIVE if EITHER condition fires. Same architectural pattern as PROP-028 Mech AB.",
+      "Q4_backfill": "Operator-side (path a). HNOTE-OPERATOR-DRAIN-M1-ORPHAN-QUEUE-001 is in flight and has already drained 41 of the 135 current orphans via EXP-302..307. Path b (one-time backfill script) would require non-trivial decider-mode design (the 135 ISSs span 7 distinct routing runs with different class_hints and different rationales; auto-grouping into EXPs would be a class of work decider does NOT currently do). The structural fix governs future routing decisions only; the HNOTE drains the legacy bolus. Cleaner.",
+      "Q5_sibling_PROP_coordination": "PROP-028 (authored ~12h earlier this run cycle) edits decider-intake.md Step 1h2 (prediction-assessment integration). PROP-029 edits decider.md Priority 5b (M1 routing). Different sections, different files \u2014 no conflict. PROP-028 should land first because (a) it was authored first, (b) its failure mode is silent verdict reversal of operator-approved data, which is higher-stakes than orphan accumulation. PROP-029 lands second. Verified by re-reading PROP-028's target_files list.",
+      "Q6_orphan_check_under_option_A": "The orphan-check at analyst-mode1-expansions.md line 67 should remain but become a safety net rather than primary intake. Under option A, decider's tracker write means the dispatcher fires and Mode 1 enters; the orphan-check then runs and finds zero orphans (steady state). If the orphan-check ever finds orphans under option A, that's a SIGNAL that decider's tracker-write failed somewhere \u2014 analyst should both handle the orphans (per current procedure) AND emit an attention-inbox notice so tinker/operator can investigate the decoupling."
+    },
+    "scope_clarification": "This PROP authorizes design only. All edits are agent-applied prompt edits \u2014 NONE are NEVER_PUSH (monitor/prompts/*.md is the canonical 'git-owned, agent-applied via decider self-apply or workspace-sync universal-push' path; see CLAUDE.md File Ownership). Operator reviews; on approval, decider self-applies the prompt edits in its next run, or tinker applies under PROP-014-amendment-001 Q6 lifecycle if operator routes via directive."
+  },
+  "context_verification": {
+    "directive_filed_at": "2026-05-10T16:55:00Z",
+    "tinker_investigated_at": "2026-05-11T16:30:00Z",
+    "investigation_method": "Read monitor/prompts/decider.md (Priority 5b bash helper, lines 142-253 \u2014 the action==='route-to-analyst' branch that writes iss.status but does NOT write to expansion-tracker.json); analyst.md line 91 dispatcher; analyst-mode1-expansions.md line 67 orphan-check; routing-matrix.md (PROP-027 5-action decision tree); decider-curmudgeon.md Step 8c (M3 carry-over \u2014 confirmed M3 has only four terminal actions: patch/wontfix/escalate/route-to-curmudgeon, no route-to-analyst, so M3 is NOT a source of M1-style orphans). Read PROP-027 and PROP-028 for format alignment.",
+    "directive_count_check": {
+      "directive_claim": "61 orphans from 3 decider runs today (2026-05-10)",
+      "measured_at_tinker_run": {
+        "total_assigned_analyst_iss": 143,
+        "orphans_no_tracker_entry": 135,
+        "in_tracker_completed_items": 8,
+        "tracker_pending_actionable": 0,
+        "tracker_blocked_items": 1
+      },
+      "delta_explanation": "Between directive filing (2026-05-10T16:55Z) and this tinker investigation (2026-05-11T16:30Z), four additional decider runs (2026-05-10T17-21, 2026-05-11T05-01, 2026-05-11T09-20, 2026-05-11T13-20Z) routed another ~123 ISSs to assigned-analyst. Analyst drained 41 via EXP-302..307 (HNOTE-driven Mode 1 entries \u2014 bridge working as designed). Net: orphan count grew from ~61 to 135 in 24h. The orphan-creation rate (~30/run \u00d7 4-5 runs/day) currently exceeds the orphan-drain rate (~7-11/run \u00d7 1-2 analyst Mode 1 entries/day). Structural fix is genuinely urgent.",
+      "operator_drain_hnote_effectiveness": "HNOTE bridge is working: 41 of the original 61 orphans drained via EXP-302..307 between 2026-05-10T17:06Z and 2026-05-11. But the HNOTE is a one-time drain \u2014 the structural problem is unsolved without PROP-029, so the orphan queue refills faster than analyst drains it without operator intervention."
+    },
+    "no_M3_orphan_source": "Verified M3 carry-over path (decider-curmudgeon.md Step 8c, lines 283-340): M3's four terminal actions are patch / wontfix / escalate / route-to-curmudgeon. No route-to-analyst action exists in M3 carry-over. Therefore M3 is NOT a source of M1-style orphans \u2014 the structural fix only needs to amend M1 Priority 5b. Confirmed by grep -n \"'assigned-analyst'\" on all monitor/prompts/: only one production write site (decider.md:233, the M1 bash helper)."
+  },
+  "failure_mode_reconstruction": {
+    "summary": "PROP-027 added ROUTE-TO-ANALYST as the M1 default action 2026-05-10. The implementation set iss.status='assigned-analyst' and wrote routing metadata (routing_reason, routed_by_run, routed_at, class_hint) onto the ISS, but did NOT add a corresponding expansion-tracker.json entry. Analyst's top-level dispatcher reads expansion-tracker.json \u2014 not open-issues.json \u2014 to decide whether Mode 1 enters. With no tracker entry, the dispatcher returns NEGATIVE and Mode 1 never runs.",
+    "timeline_utc": [
+      {
+        "at": "2026-05-10T07:58Z",
+        "agent": "decider",
+        "action": "First M1 burndown fire under PROP-026. 17 candidates \u2192 4 patched, 4 wontfix, 9 escalated-to-human (over-escalation rate 100% on moderates). Operator noticed; PROP-027 authored 2026-05-10T08:36Z to add ROUTE-TO-ANALYST as a structured action."
+      },
+      {
+        "at": "2026-05-10T08:25Z",
+        "agent": "operator (commit d44e2670)",
+        "action": "Manually rerouted 9 ISSs from pending-human to assigned-analyst \u2014 but this manual reroute also did not add expansion-tracker entries. So the orphan pattern was actually established BEFORE PROP-027 landed."
+      },
+      {
+        "at": "2026-05-10T10:54Z, 14:18Z, 17:21Z (decider runs)",
+        "agent": "decider",
+        "action": "Three M1 runs route a combined 38 ISSs to assigned-analyst per PROP-027 matrix. Each run writes iss.status, routing_reason, routed_by_run, routed_at, class_hint to open-issues.json. Each run does NOT write to expansion-tracker.json. analyst-tracker count remains 1 (EXP-190, draft-awaiting-human, blocked)."
+      },
+      {
+        "at": "2026-05-10T15:57Z",
+        "agent": "analyst",
+        "action": "Run focuses on Mode 2 (operator's EXP-295 wording HNOTE), ignores the 38 assigned-analyst ISSs. Mode 1 dispatcher returned NEGATIVE: 'NO ACTIONABLE EXPANSIONS' (1 item in tracker, draft-awaiting-human, blocked). Mode 1 procedure never entered, so the orphan check at line 67 never ran."
+      },
+      {
+        "at": "2026-05-10T16:55Z",
+        "agent": "operator",
+        "action": "Filed HNOTE-OPERATOR-DRAIN-M1-ORPHAN-QUEUE-001 + DIRECTIVE-20260510-004. HNOTE is the bridge (operational drain via Mode 2 \u2192 Mode 1 entry); DIRECTIVE is the structural-fix ask."
+      },
+      {
+        "at": "2026-05-10T17:06Z to 2026-05-11T",
+        "agent": "analyst",
+        "action": "Mode 2 picks up the HNOTE, routes through Mode 1 entry, creates verification-batch EXPs (EXP-302..307) consolidating multi-ISS orphan clusters. 41 of the original 61 orphans cleared. Bridge working as designed but transient."
+      },
+      {
+        "at": "2026-05-11T05:01Z, 09:20Z, 13:20Z (decider runs)",
+        "agent": "decider",
+        "action": "Three more M1 runs route a combined 93 NEW orphans. Bridge cannot keep up with structural orphan creation rate without operator HNOTE intervention each time."
+      }
+    ],
+    "structural_signal_that_was_ignored": {
+      "expansion-tracker_field": "items[].status='pending' (or any actionable status)",
+      "open-issues_field": "issues[].status='assigned-analyst'",
+      "current_consumer_of_signal_a": "analyst.md line 91 dispatcher reads expansion-tracker only",
+      "current_consumer_of_signal_b": "analyst-mode1-expansions.md line 67 orphan-check reads open-issues but only fires INSIDE Mode 1 procedure, never at dispatcher entry",
+      "result": "Signal A says NO. Signal B is not consulted. Mode 1 never enters. Orphans pile up."
+    },
+    "soft_mitigation_currently_in_place": {
+      "mechanism": "Operator-applied HNOTE-OPERATOR-DRAIN-M1-ORPHAN-QUEUE-001 \u2014 tells analyst to invoke Mode 1 orphan-resolution directly.",
+      "observed_effectiveness": "Works as a one-shot drain (41 ISSs cleared in 24h via EXP-302..307), but does NOT prevent re-accumulation. Without a structural fix, the operator must file a fresh drain HNOTE every 24-48h.",
+      "structural_limitation": "Requires operator vigilance and HNOTE-filing cadence. Pipeline-internal observability: tinker doesn't see HNOTE traffic on its standard Mode 1 health checks, so the recurring intervention is invisible to pipeline-health audits."
+    }
+  },
+  "design_decisions": {
+    "Q1_option_choice_A_vs_B_vs_C": {
+      "answer": "Option A \u2014 decider writes tracker entry on ROUTE-TO-ANALYST.",
+      "rationale": "Single source of truth for analyst's queue is expansion-tracker.json. open-issues.json[status='assigned-analyst'] becomes a derived predicate (every such ISS SHOULD have a tracker entry pointing back). The asymmetry between 'decider routes ISSs' (open-issues writer) and 'analyst tracks EXPs' (tracker writer) was the root cause of today's accumulation \u2014 option A fixes it by making decider author the EXP intent at routing time. This matches how decider already pushes priority-queue entries for ROUTE-TO-CURMUDGEON (queue is the source of truth; decider pushes; curmudgeon pops). Symmetric architecture.",
+      "option_B_rejected_rationale": "Option B (analyst dispatcher OR check) splits the source of truth for analyst's queue across two files. To answer 'what will analyst work on?' you must read BOTH expansion-tracker AND open-issues[status=assigned-analyst]. This is the same class of bug as PROP-028's verdict_history-sat-in-data-and-nobody-read-it failure \u2014 structural signals split across multiple files invite the same drift. Adopted as belt-and-suspenders safety net (Q3) but not as primary intake.",
+      "option_C_rejected_rationale": "Option C (hybrid lite-then-expand) adds a new status value ('routed-from-m1') and a two-stage write pattern. The complexity buys nothing over option A \u2014 decider has all the information it needs at routing time to write a full entry. Two-stage writes also stress the multi-writer race surface more than single-stage option A. Reject."
+    },
+    "Q2_full_vs_lite_entry": {
+      "answer": "Full entry, decider-authored.",
+      "rationale": "At routing time, decider knows: the ISS, its description, severity, class_hint (from PROP-027 matrix decision), source review (if applicable), the routing rationale. These map cleanly to a full expansion-tracker entry. Analyst can consolidate multiple decider-authored entries at Mode 1 intake if they cluster, but the default is one EXP per routed ISS.",
+      "concrete_entry_shape": {
+        "id": "EXP-<allocated from t.next_id>",
+        "target": "<derived from iss.description first sentence \u2014 same convention as defense EXP creation in decider-curmudgeon.md>",
+        "source": "decider-m1-route",
+        "curmudgeon_review": "<iss.source if it points to a review file, else null>",
+        "issue_ids": [
+          "<iss.id>"
+        ],
+        "category": "<iss.category if present, else 'minor-fix'>",
+        "priority": "<derived from iss.severity: critical\u2192high, major\u2192high, moderate\u2192medium, minor\u2192low, info\u2192low>",
+        "status": "pending",
+        "review_class": "<iss.class_hint mirrored \u2014 null is fine, analyst can declare/override at Mode 1 authoring per PROP-025>",
+        "routed_from_iss": "<iss.id>",
+        "routed_from_run": "<RUN_ID>",
+        "routing_reason": "<iss.routing_reason \u2014 same string written to open-issues>",
+        "notes": "M1 ROUTE-TO-ANALYST tracker entry \u2014 analyst picks up at Mode 1 intake, may consolidate with sibling routed-from-m1 entries.",
+        "created_at": "<ISO now>"
+      },
+      "consolidation_at_intake": "Analyst Mode 1 reads multiple routed-from-m1 entries, clusters them by section/WIN/topic, and may produce a single multi-ISS EXP (just like EXP-302..307 verification batches today). The decider-authored entries are PROVISIONAL \u2014 analyst can mark them 'consolidated-into-EXP-NNN' and write a single rolled-up EXP for the cluster. The orphan-resolution procedure at analyst-mode1-expansions.md line 67 already handles multi-ISS clustering; under PROP-029 it just operates on tracker entries rather than orphan ISSs."
+    },
+    "Q3_dispatcher_safety_net": {
+      "answer": "YES \u2014 promote orphan-check to analyst.md Mode 1 dispatcher level as a one-line OR.",
+      "rationale": "Defense in depth. The primary fix is option A (decider writes tracker entry); the safety net catches the case where: (a) decider's tracker write fails transiently (FUSE staleness, git race, file lock), (b) a future agent variant or code path is added that sets status='assigned-analyst' without writing to tracker (M3 route-to-analyst doesn't currently exist but might be added later), (c) a manual operator reroute (like commit d44e2670) sets status without tracker write. Each of these is a real failure mode we've observed or could realistically encounter. Safety-net cost: one extra `||` clause in the dispatcher snippet \u2014 trivial.",
+      "concrete_dispatcher_edit": "See implementation_specification below. Net change: dispatcher reads BOTH expansion-tracker pending AND open-issues orphan-count; returns POSITIVE if EITHER is non-zero.",
+      "secondary_signal_emission": "When the orphan-check fires (orphans > 0 detected at dispatcher level under option A's expected steady state), analyst should ALSO write an attention-inbox notice flagging the decoupling. Pattern: 'Found N orphan ISSs at dispatcher level. PROP-029 expects zero in steady state. Either decider's tracker-write failed for these ISSs, or they were routed by a path not covered by PROP-029. Investigating.' This makes the safety net observable to tinker on its Mode 1 health audit."
+    },
+    "Q4_orphan_check_role_redefinition": {
+      "answer": "Orphan-check at analyst-mode1-expansions.md line 67 narrows from primary-intake to safety-net.",
+      "rationale": "Pre-PROP-029, the orphan-check was the ONLY path that processed M1-routed ISSs \u2014 but it never fired because the dispatcher gated entry on tracker-emptiness. Post-PROP-029, the dispatcher sees decider-written tracker entries directly, so the normal path is: dispatcher POSITIVE \u2192 Mode 1 enters \u2192 analyst works the routed-from-m1 entries by ID. The orphan-check then becomes a redundant safety pass: if any ISSs still appear orphaned (tracker-write failed, manual operator action), the procedure handles them as before AND emits attention-inbox.",
+      "edit_to_orphan_check_doc": "Add a one-paragraph header to analyst-mode1-expansions.md section 'Check for Orphaned Issues' explaining the PROP-029 reclassification. Under steady-state PROP-029, orphan count should be zero. Non-zero orphans are a structural-signal-of-failure, not a normal-operations event.",
+      "no_removal_of_orphan_check": "The procedure stays in place. We DO NOT remove it \u2014 that would re-create a known footgun if a future decider variant skips the tracker write."
+    },
+    "Q5_M3_orphan_audit": {
+      "directive_question": "Does M3 carry-over (Step 8c) need the same fix?",
+      "answer": "No edit needed \u2014 M3 has no route-to-analyst action.",
+      "rationale": "M3 carry-over enforcement (decider-curmudgeon.md Step 8c) has four terminal actions: patch, wontfix-with-rationale, escalate-to-human, route-to-curmudgeon. None of these set status='assigned-analyst'. The directive's expectation that 8c needs the same fix is based on an outdated reading \u2014 the M1 routing matrix from PROP-027 added ROUTE-TO-ANALYST but did NOT propagate it to M3. M3's terminal-actions design predates PROP-027 and was intentionally narrower (carry-over enforcement is about catching skipped work, not introducing new routing destinations).",
+      "future_consideration": "If a future PROP extends M3 to include route-to-analyst (plausible \u2014 M3 currently can't say 'this carry-over needs analyst defense', which forces escalate-to-human as the catch-all), PROP-029's tracker-write requirement applies the same way: any code path that sets status='assigned-analyst' MUST write a corresponding tracker entry. The rule generalizes; the present-day edit set does not."
+    },
+    "Q6_sibling_PROP_coordination": {
+      "directive_question": "How does PROP-029 interact with PROP-028 (sibling structural fix)?",
+      "answer": "No conflict. PROP-028 lands first, PROP-029 lands second. Different sections, different files.",
+      "verified_overlap_check": [
+        "PROP-028 target_files: monitor/prompts/reference/decider-intake.md Step 1h2 (prediction integration) + test.js (operator-applied) + DATA-SCHEMAS.md (stale-skip semantics)",
+        "PROP-029 target_files: monitor/prompts/decider.md Priority 5b (M1 routing) + analyst.md (dispatcher) + analyst-mode1-expansions.md (orphan-check semantics) + routing-matrix.md (matrix step 6) + DATA-SCHEMAS.md (expansion-tracker entry shape)",
+        "DATA-SCHEMAS.md overlap: PROP-028 adds verdict_history-consistency invariant doc; PROP-029 adds expansion-tracker decider-authored-entry shape. Different sections of the same file \u2014 both can land independently (no diff conflict).",
+        "decider.md and decider-intake.md overlap: NONE. They are separate files."
+      ],
+      "sequencing_recommendation": "PROP-028 \u2192 PROP-029. Operator applies PROP-028 first (higher-stakes failure mode: silent verdict reversal of operator-approved data). PROP-029 applies any time after; the M1 orphan accumulation is operationally annoying but not data-integrity-corrupting (orphans just sit; nothing is corrupted; the operator drain HNOTE keeps the count bounded).",
+      "no_runtime_interaction": "PROP-028 fires at decider Step 1h2 (prediction integration); PROP-029 fires at decider Priority 5b (M1 sweep). These run sequentially within a single decider run, on different data files (predictions.json vs open-issues.json/expansion-tracker.json). They share no mutable state and cannot race."
+    }
+  },
+  "implementation_specification": {
+    "edit_1_decider_md_priority_5b_bash_helper": {
+      "file": "monitor/prompts/decider.md",
+      "anchor_line": "line 233 (iss.status = 'assigned-analyst'; line in the bash helper)",
+      "current_code_snippet": "} else if(action === 'route-to-analyst'){\n      iss.status = 'assigned-analyst';\n      iss.routing_reason = rationale;\n      iss.routed_by_run = RUN_ID;\n      iss.routed_at = now;\n      iss.class_hint = null;  // LLM may set per-issue when overriding; null = analyst decides per PROP-025\n      console.log('  ROUTE-TO-ANALYST '+iss.id+' [age='+Math.floor(age)+'d, sev='+sev+'] \u2014 class_hint=null (LLM may set on override)');\n    }",
+      "replacement_code_snippet": "} else if(action === 'route-to-analyst'){\n      iss.status = 'assigned-analyst';\n      iss.routing_reason = rationale;\n      iss.routed_by_run = RUN_ID;\n      iss.routed_at = now;\n      iss.class_hint = null;  // LLM may set per-issue when overriding; null = analyst decides per PROP-025\n      // PROP-029: also write a corresponding expansion-tracker.json entry so analyst's dispatcher sees the work.\n      // Without this, ISSs accumulate as orphans (135 observed 2026-05-11) and require operator HNOTE intervention to drain.\n      try {\n        const trackerPath = 'monitor/analyst/expansion-tracker.json';\n        const t = JSON.parse(fs.readFileSync(trackerPath, 'utf8'));\n        if(typeof t.next_id !== 'number'){\n          // Self-heal \u2014 same archive-aware pattern as decider-curmudgeon.md EXP allocator.\n          const archPath = 'monitor/analyst/expansion-tracker-archive.jsonl';\n          const liveMax = t.items.reduce((m,i)=>Math.max(m,parseInt((i.id||'EXP-0').replace('EXP-',''))||0),0);\n          const archMax = fs.existsSync(archPath)\n            ? fs.readFileSync(archPath,'utf8').split('\\n').filter(Boolean).reduce((m,l)=>{try{return Math.max(m,parseInt((JSON.parse(l).id||'EXP-0').replace('EXP-',''))||0)}catch(e){return m}},0)\n            : 0;\n          t.next_id = Math.max(liveMax, archMax) + 1;\n          console.error('PROP-029: tracker next_id self-heal engaged');\n        }\n        const expId = 'EXP-' + String(t.next_id).padStart(3,'0');\n        const priority = (sev==='critical'||sev==='major') ? 'high' : (sev==='moderate' ? 'medium' : 'low');\n        const targetText = (iss.description||'M1-routed ISS').split(/(?<=[.!?])\\s/)[0].slice(0,180);\n        t.items.push({\n          id: expId,\n          target: targetText,\n          source: 'decider-m1-route',\n          curmudgeon_review: (typeof iss.source==='string' && iss.source.startsWith('monitor/curmudgeon/reviews/')) ? iss.source : null,\n          issue_ids: [iss.id],\n          category: iss.category || 'minor-fix',\n          priority: priority,\n          status: 'pending',\n          review_class: iss.class_hint,\n          routed_from_iss: iss.id,\n          routed_from_run: RUN_ID,\n          routing_reason: rationale,\n          notes: 'M1 ROUTE-TO-ANALYST tracker entry (PROP-029). Analyst Mode 1 may consolidate with sibling routed-from-m1 entries.',\n          created_at: now\n        });\n        t.next_id++;\n        t.last_updated = now;\n        fs.writeFileSync(trackerPath, JSON.stringify(t, null, 2));\n        console.log('  ROUTE-TO-ANALYST '+iss.id+' [age='+Math.floor(age)+'d, sev='+sev+'] \u2192 tracker '+expId+' (class_hint=null, LLM may override)');\n      } catch(e) {\n        // Tracker write failed \u2014 log loudly. The ISS status flip already happened; the orphan-check safety net at analyst.md dispatcher will catch this on the analyst side.\n        console.error('  PROP-029 TRACKER WRITE FAILED for '+iss.id+': '+e.message+' (analyst orphan-check safety net will pick up)');\n      }\n    }",
+      "verification_pattern": "After applying, the next decider M1 run should produce N expansion-tracker entries for N route-to-analyst actions in the same run (1:1 ratio at minimum; analyst may consolidate later). Verify by node -e \"const oi=JSON.parse(require('fs').readFileSync('monitor/decisions/open-issues.json','utf8'));const t=JSON.parse(require('fs').readFileSync('monitor/analyst/expansion-tracker.json','utf8'));const tracked=new Set(t.items.flatMap(i=>i.issue_ids||[]));const newOrphans=oi.issues.filter(i=>i.status==='assigned-analyst'&&i.routed_by_run==='<RUN_ID>'&&!tracked.has(i.id));console.log('new orphans from this run:',newOrphans.length)\" \u2014 should print 0."
+    },
+    "edit_2_decider_md_LLM_override_docs": {
+      "file": "monitor/prompts/decider.md",
+      "anchor": "section 'Decider LLM in-context override paths for M1 (PROP-027 5-action decision tree)', step 6 'Default: ROUTE-TO-ANALYST'",
+      "addition": "After the existing step 6 description ('The class_hint is advisory only; analyst's review_class on the EXP remains authoritative per PROP-025. Mirror to corrective ledger entry under closure_evidence.class_hint.'), add the following paragraph:\n\n   **PROP-029 tracker-entry requirement:** every ROUTE-TO-ANALYST confirmation (whether from the bash helper's default or an LLM-promoted override from PATCH/NARROW-PATCH/WONTFIX after re-evaluation) MUST result in a corresponding expansion-tracker.json entry. The bash helper does this automatically inside its action==='route-to-analyst' branch. If you (the LLM) confirm or promote-to ROUTE-TO-ANALYST in your override pass, the tracker entry is already there from the bash default-intent \u2014 no extra write needed. If you DOWNGRADE from ROUTE-TO-ANALYST (e.g., to NARROW-PATCH or WONTFIX) in your override pass, you MUST remove the bash-written tracker entry (find by routed_from_run=RUN_ID AND routed_from_iss=iss.id) to keep the tracker clean. Same RUN_ID late-correction discipline as the closure-ledger override pattern."
+    },
+    "edit_3_analyst_md_dispatcher": {
+      "file": "monitor/prompts/analyst.md",
+      "anchor_line": "line ~91 (the Mode 1 dispatcher snippet)",
+      "current_snippet": "**Mode 1 \u2014 Section Expansion Queue**\n```bash\nnode -e \"const t=JSON.parse(require('fs').readFileSync('monitor/analyst/expansion-tracker.json','utf8'));const p=t.items.filter(i=>i.status==='pending'&&!i.blocked_on);console.log(p.length?'EXPANSION MODE: '+p.length+' actionable pending':'NO ACTIONABLE EXPANSIONS')\"\n```",
+      "replacement_snippet": "**Mode 1 \u2014 Section Expansion Queue**\n```bash\nnode -e \"\nconst fs=require('fs');\nconst t=JSON.parse(fs.readFileSync('monitor/analyst/expansion-tracker.json','utf8'));\nconst p=t.items.filter(i=>i.status==='pending'&&!i.blocked_on);\n// PROP-029 safety net: even if tracker is empty, check open-issues for orphaned assigned-analyst ISSs.\n// Under steady-state PROP-029, decider writes tracker entries on ROUTE-TO-ANALYST, so orphan count should be zero.\n// Non-zero orphans = structural-signal-of-failure (decider tracker-write failed, or manual operator reroute) \u2192 still actionable.\nconst oi=JSON.parse(fs.readFileSync('monitor/decisions/open-issues.json','utf8'));\nconst tracked=new Set(t.items.flatMap(i=>i.issue_ids||[]));\nconst orphans=oi.issues.filter(i=>i.status==='assigned-analyst'&&!tracked.has(i.id));\nif(p.length){console.log('EXPANSION MODE: '+p.length+' actionable pending');}\nelse if(orphans.length){console.log('EXPANSION MODE: '+orphans.length+' orphan ISSs (PROP-029 safety net fired \u2014 tracker write failed somewhere; investigate after handling)');}\nelse{console.log('NO ACTIONABLE EXPANSIONS');}\n\"\n```\nTrigger: Either (a) actionable pending expansions exist in tracker (excludes items with `blocked_on` field), OR (b) PROP-029 safety net detects orphan ISSs (status='assigned-analyst' with no tracker entry).\n\u2192 Read `monitor/prompts/reference/analyst-mode1-expansions.md`, execute that procedure. **If the safety net fires (path b), also emit an attention-inbox notice flagging the decoupling per Q3 of PROP-029.**"
+    },
+    "edit_4_analyst_mode1_expansions_md_orphan_check_role": {
+      "file": "monitor/prompts/reference/analyst-mode1-expansions.md",
+      "anchor": "section 'Check for Orphaned Issues' (line 67)",
+      "addition_at_top_of_section": "**Role under PROP-029 (2026-05-11):** This orphan-check is a SAFETY NET, not the primary intake path. Under PROP-029, decider writes an expansion-tracker entry every time it routes an ISS to status='assigned-analyst' in M1 Priority 5b. The dispatcher fires on the tracker pending count and Mode 1 enters normally \u2014 analyst works the decider-authored entries by ID. The orphan-check then runs and finds zero orphans in steady state.\n\n**When this check fires (orphan count > 0):** it's a structural-signal-of-failure. Possible causes: (a) decider's tracker-write failed transiently for these ISSs, (b) a manual operator reroute set status='assigned-analyst' without writing the tracker (last known instance: commit d44e2670 on 2026-05-10 \u2014 predates PROP-029), (c) a future agent variant introduced a new code path that sets status without tracker write. In all three cases, handle the orphans per the existing procedure (group, create EXP, work in priority order) AND emit an attention-inbox notice:\n\n```json\n{\n  \"id\": \"PROP029-ORPHAN-DETECTED-<YYYY-MM-DD>\",\n  \"detected_at\": \"<ISO now>\",\n  \"orphan_count\": <N>,\n  \"orphan_iss_ids\": [<list>],\n  \"orphan_routed_by_run\": [<unique routed_by_run values from the orphan set>],\n  \"action_recommended\": \"tinker investigates: did decider tracker-write fail, or was this a manual operator reroute? Either way, root-cause and patch the decoupling.\",\n  \"action_taken_this_run\": \"<N> orphans grouped into <M> EXP entries and worked normally; tracker decoupling root-cause TBD.\",\n  \"resolved\": false\n}\n```"
+    },
+    "edit_5_routing_matrix_md_step_6_addition": {
+      "file": "monitor/prompts/reference/routing-matrix.md",
+      "anchor": "decision tree step 6 ROUTE-TO-ANALYST row in the 5-action table",
+      "current_row": "| 6 | Default | **ROUTE-TO-ANALYST** | Status \u2192 `assigned-analyst`. Optional `class_hint` field. Analyst Mode 2 picks up. |",
+      "replacement_row": "| 6 | Default | **ROUTE-TO-ANALYST** | Status \u2192 `assigned-analyst`. Optional `class_hint` field. **PROP-029: ALSO write corresponding expansion-tracker.json entry** (source='decider-m1-route', issue_ids=[iss.id], review_class=class_hint, status='pending'). Analyst Mode 1 dispatcher fires on the tracker entry and Mode 1 procedure picks up. |",
+      "rationale_for_table_edit": "Matrix is the canonical reference; adding the tracker-write requirement here ensures any future re-implementation or new agent variant reads the requirement at the canonical location, not buried in the bash helper."
+    },
+    "edit_6_data_schemas_md_tracker_entry_shape": {
+      "file": "monitor/prompts/reference/DATA-SCHEMAS.md",
+      "anchor": "near the existing EXP file schema section (after the review_class paragraph)",
+      "addition": "**expansion-tracker.json entry, decider-authored (PROP-029, 2026-05-11):** When decider M1 Priority 5b routes an ISS to status='assigned-analyst', it ALSO writes a corresponding entry to `monitor/analyst/expansion-tracker.json` with the following shape:\n\n```json\n{\n  \"id\": \"EXP-NNN\",                       // allocated via t.next_id, bumped after push\n  \"target\": \"<derived from iss.description first sentence, \u2264180 chars>\",\n  \"source\": \"decider-m1-route\",          // new source enum value\n  \"curmudgeon_review\": \"<iss.source if it points to monitor/curmudgeon/reviews/...>\",\n  \"issue_ids\": [\"ISS-NNN\"],              // one ISS per entry at creation; analyst may consolidate\n  \"category\": \"<iss.category or 'minor-fix'>\",\n  \"priority\": \"high|medium|low\",         // derived from iss.severity\n  \"status\": \"pending\",\n  \"review_class\": \"<iss.class_hint mirrored \u2014 null is fine>\",\n  \"routed_from_iss\": \"ISS-NNN\",\n  \"routed_from_run\": \"decider-RUN_ID\",\n  \"routing_reason\": \"<same string as iss.routing_reason>\",\n  \"notes\": \"M1 ROUTE-TO-ANALYST tracker entry (PROP-029)...\",\n  \"created_at\": \"<ISO now>\"\n}\n```\n\nThese entries are PROVISIONAL \u2014 analyst may consolidate multiple `source='decider-m1-route'` entries into a single multi-ISS EXP at Mode 1 intake (e.g., the verification-batch pattern from EXP-302..307). When consolidating, analyst marks the original decider-authored entries as `status='consolidated-into-<NEW_EXP_ID>'` and writes a single rolled-up EXP for the cluster. The `routed_from_iss` and `routed_from_run` fields preserve provenance through consolidation."
+    }
+  },
+  "expected_outcomes": {
+    "after_edits_1_2_3_4_5_6_applied": [
+      "Next decider M1 run routes N ISSs and writes N corresponding expansion-tracker entries (1:1 at creation time).",
+      "Analyst's next run: dispatcher reads tracker, finds N pending entries (source='decider-m1-route'), Mode 1 enters. Analyst either works entries one-at-a-time per existing per-run cadence (one EXP per run) or consolidates into verification-batch EXPs per Mode 1 intake judgment.",
+      "Orphan-count under PROP-029 steady state: zero. Tinker's Mode 1 health check can add a new invariant: 'orphans should be zero post-PROP-029; non-zero is a structural-signal-of-failure'.",
+      "HNOTE-OPERATOR-DRAIN-M1-ORPHAN-QUEUE-001 (and any future drain HNOTEs) become unnecessary for normal pipeline operation. Operator can stop filing them.",
+      "Total work to drain current 135-orphan backlog: ~10-15 analyst Mode 1 runs at the current ~10/run consolidation rate (EXP-302..307 averaged ~7 ISSs cleared per EXP across 6 EXPs in 24h). If consolidation rate holds, the backlog clears in 5-10 days even WITHOUT structural fix; PROP-029 prevents re-accumulation thereafter."
+    ],
+    "monitoring_metrics": {
+      "tinker_should_add_to_Mode_1_audit": [
+        "orphan_iss_count (target: 0 post-PROP-029)",
+        "decider-m1-route tracker entry creation rate vs ROUTE-TO-ANALYST count (target: 1:1)",
+        "attention-inbox 'PROP029-ORPHAN-DETECTED-*' entries (target: zero; non-zero = root-cause and patch)"
+      ],
+      "alert_threshold": "If orphan_iss_count > 0 for 2 consecutive tinker runs, file HNOTE for operator review \u2014 PROP-029 invariant violated, decider tracker-write needs investigation."
+    }
+  },
+  "rejected_alternatives_summary": {
+    "option_B_analyst_OR_check_only": "Rejected as primary mechanism (source-of-truth ambiguity); adopted as belt-and-suspenders Q3 safety net.",
+    "option_C_two_stage_lite_then_full": "Rejected (adds new status value 'routed-from-m1' for no benefit over option A; two-stage writes stress multi-writer race more than single-stage).",
+    "one_time_backfill_script": "Rejected (the 135 ISS backlog is being drained operator-side via HNOTE-OPERATOR-DRAIN-M1-ORPHAN-QUEUE-001 plus analyst Mode 1 consolidation; structural fix governs FUTURE routing decisions only). Cleaner, less coordination cost.",
+    "remove_orphan_check_under_option_A": "Rejected (the orphan-check is the last-line safety net under option A; removing it would re-create the known footgun if a future decider variant skips the tracker write)."
+  },
+  "verification_pattern": {
+    "pre_landing": {
+      "step_1": "Read PROP-029 thoroughly. Confirm: edits target files listed in target_files; no NEVER_PUSH territory; sibling-PROP coordination (PROP-028) confirmed non-conflicting.",
+      "step_2": "Confirm directive_count_check section's 135-orphan measurement still holds (or grew). Re-run: node -e \"const fs=require('fs');const oi=JSON.parse(fs.readFileSync('monitor/decisions/open-issues.json','utf8'));const t=JSON.parse(fs.readFileSync('monitor/analyst/expansion-tracker.json','utf8'));const tracked=new Set(t.items.flatMap(i=>i.issue_ids||[]));const orphans=oi.issues.filter(i=>i.status==='assigned-analyst'&&!tracked.has(i.id));console.log('orphans:',orphans.length)\""
+    },
+    "post_landing_immediately": {
+      "step_1": "Verify edit_1 landed in monitor/prompts/decider.md: grep -A3 \"PROP-029\" monitor/prompts/decider.md | head -20 \u2014 should show the tracker-write block.",
+      "step_2": "Verify edit_3 landed in monitor/prompts/analyst.md: grep -A5 \"PROP-029 safety net\" monitor/prompts/analyst.md \u2014 should show the OR check.",
+      "step_3": "Verify edit_5 landed in routing-matrix.md: grep \"PROP-029: ALSO write\" monitor/prompts/reference/routing-matrix.md \u2014 should match the updated table row.",
+      "step_4": "Wait for next scheduled decider run. Confirm: new ROUTE-TO-ANALYST decisions produce 1:1 tracker entries with source='decider-m1-route'. Verify by node -e \"const t=JSON.parse(require('fs').readFileSync('monitor/analyst/expansion-tracker.json','utf8'));const m1=t.items.filter(i=>i.source==='decider-m1-route');console.log('decider-m1-route entries:',m1.length);m1.slice(0,3).forEach(i=>console.log(' ',i.id,i.routed_from_iss,i.status))\""
+    },
+    "post_landing_24h": {
+      "step_1": "Re-run orphan count. Expected: should NOT grow from baseline. New M1 routes from 24h post-landing decider runs should NOT produce new orphans.",
+      "step_2": "Verify analyst's Mode 1 fires on next run after decider produces tracker entries. Verify EXP-NNN entries with source='decider-m1-route' are picked up and marked completed (or consolidated)."
+    }
+  },
+  "operator_review_notes": {
+    "decider_self_apply_pathway": "All edits in this PROP are agent-applied prompt edits in monitor/prompts/ (NOT in NEVER_PUSH per workspace-sync.md NEVER_PUSH classification). On approval, decider can self-apply via its normal Step 5 self-apply mechanism \u2014 no operator-applied step required. The prompt-files are git-owned but agent-writable; workspace-sync handles the FUSE\u2192agent visibility on hourly cycle.",
+    "what_operator_decides": "(a) Approve option A over B/C \u2014 primary architectural choice. (b) Approve the belt-and-suspenders Q3 dispatcher-level safety net \u2014 alternative is 'option A alone, trust the tracker write', which is faster to ship but loses defense-in-depth. (c) Approve the M3-no-change decision (Q5) \u2014 operator may want to extend M3 to include route-to-analyst at some point, but that's out of PROP-029 scope. (d) Approve sequencing PROP-028 \u2192 PROP-029.",
+    "expected_review_time": "30-45 minutes (re-read DIRECTIVE-20260510-004; cross-check edit_1 against current decider.md Priority 5b; confirm edit_3 dispatcher syntax; spot-check edit_6 schema field names against actual expansion-tracker.json items).",
+    "no_NEVER_PUSH_files_touched": "Confirmed by reading monitor/prompts/workspace-sync.md NEVER_PUSH array: monitor/prompts/*.md is listed but agent-applied is the standard path (decider self-applies via working clone, pushes to git, workspace-sync.md doesn't need to round-trip these). monitor/analyst/expansion-tracker.json is Unclassified multi-writer (analyst + decider) per CLAUDE.md File Ownership; decider becoming a more-frequent writer stays within the existing protection (git pull --rebase + pre-push integrity gate + non-concurrent scheduling)."
+  },
+  "implemented_at": "2026-05-11T17:04:40.106390Z",
+  "implemented_by": "operator-applied-2026-05-11",
+  "implementation_commit": "c465fb27",
+  "implementation_notes": "Operator applied all 6 edits per implementation_specification. Effect on next decider M1 run (~21:13Z): tracker entries get written; analyst dispatcher sees them; orphan count becomes real-time defect signal."
+}
