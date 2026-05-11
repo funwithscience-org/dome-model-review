@@ -204,7 +204,52 @@ ls monitor/analyst/expansions/PRED-assessment-*.json 2>/dev/null | head -20
 
 For each assessment file found:
 1. Read the assessment — it has `prediction_id`, `our_verdict`, `reasoning`, and other fields
+1a. **Stale-Assessment Check (PROP-028 Mech A, 2026-05-11).** Before updating, check whether the prediction's `verdict_history` has been touched since the assessment was written. If the most recent `verdict_history` entry is newer than `assessment.assessed_at`, the assessment is stale — it would silently revert an operator-approved (or newer-analyst) verdict change. Skip integration and append a `STALE-ASSESS-*` notice to `monitor/analyst/attention-inbox.json`. The 2026-04-20 commit 209fda5 reverted four operator-approved verdicts (ISS-951/952/953/954) because this check did not exist; this is the structural fix that retires ISS-1199/1200/1201.
+
+   ```javascript
+   // Step 1a (NEW): Stale-assessment check
+   const entry = preds.entries.find(e => e.id === assessment.prediction_id);
+   if (entry?.verdict_history?.length) {
+     const lastChange = entry.verdict_history.at(-1);
+     const lastChangeAt = lastChange.at || lastChange.date; // predictions uses 'at', wins uses 'date'
+     if (lastChangeAt && lastChangeAt > assessment.assessed_at) {
+       // Stale: predictions.json was updated more recently than this assessment
+       console.log(`STALE-SKIP ${assessment.prediction_id}: verdict_history.at(-1)=${lastChangeAt} > assessed_at=${assessment.assessed_at}`);
+       appendAttentionInbox({
+         id: `STALE-ASSESS-${assessment.prediction_id}-${todayDate}`,
+         prediction_id: assessment.prediction_id,
+         skipped_assessment_file: assessmentFile,
+         skipped_assessment_assessed_at: assessment.assessed_at,
+         current_verdict_history_last_at: lastChangeAt,
+         current_verdict: entry.our_verdict,
+         assessment_proposed_verdict: assessment.our_verdict,
+         stale_delta_days: Math.round((Date.parse(lastChangeAt) - Date.parse(assessment.assessed_at)) / 86400000),
+         action_recommended: 'Re-run analyst if fresh assessment needed; otherwise leave as-is.',
+         created_by: 'decider-stale-skip',
+         created_at: new Date().toISOString(),
+         resolved: false
+       });
+       skippedAssessments.push(assessment.prediction_id);
+       continue; // skip step 2/3/4 for this assessment
+     }
+   }
+   ```
+
+   **HNOTE-driven verdict changes don't trip the check** — the analyst assessment file produced from a fresh HNOTE has `assessed_at` newer than any prior `verdict_history` entry, so the timestamp comparison correctly allows integration. The guard only trips when an OLDER assessment file arrives at a prediction that's been touched since.
+
 2. Update the matching entry in `data/predictions.json` (`d.entries.find(e=>e.id===prediction_id)`):
+   - **If `our_verdict` is changing, ALSO append a new `verdict_history` entry** (PROP-028 invariant — pre-push test.js gate enforces `entry.our_verdict === entry.verdict_history.at(-1).to`):
+     ```javascript
+     if (entry.our_verdict !== assessment.our_verdict) {
+       entry.verdict_history = entry.verdict_history || [];
+       entry.verdict_history.push({
+         from: entry.our_verdict,
+         to: assessment.our_verdict,
+         at: new Date().toISOString(),
+         reason: `Analyst assessment integration: ${assessmentFile}`
+       });
+     }
+     ```
    - Set `our_verdict` to the assessment's value
    - Set `detail_reasoning` to the assessment's `reasoning` field (this is rendered on the site as the prediction's analysis panel — mandatory, not optional)
    - Optionally also append a summary to the entry's `notes` field for quick reference
