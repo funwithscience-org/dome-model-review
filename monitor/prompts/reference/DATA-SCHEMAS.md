@@ -118,6 +118,22 @@ Array of six kill-shot test entries. Each entry has:
 
 Build computes from this file: {{KS_TOTAL}}, {{KS_DECISIVE}}, {{KS_MAJOR}}, {{KS_SUPPORTIVE}}, {{KS_STRAW_MAN_COUNT}}, {{KS_WAIT_AND_SEE_COUNT}}.
 
+## verdict_history consistency invariant (PROP-028, 2026-05-11)
+
+Both `data/predictions.json` entries and `data/wins.json` entries may carry a `verdict_history` array tracking every change to `our_verdict` / `verdict`. The invariant — enforced by belt-and-suspenders mechanisms — is:
+
+1. **Every change to `our_verdict` (predictions) or `verdict` (wins) MUST also append a new entry to `verdict_history`.** Entry shape: `{ from, to, at | date, reason }`. Predictions use `at` (ISO datetime); wins use `date` (YYYY-MM-DD). The append happens before the verdict-field update, not after.
+
+2. **The current verdict equals the most recent history entry's `to` field.** Formally: `entry.our_verdict === entry.verdict_history.at(-1).to` (predictions) / `win.verdict === win.verdict_history.at(-1).to` (wins). Entries with empty/missing `verdict_history` are exempt (legacy/never-touched).
+
+**Enforcement (two layers):**
+
+- **Mech A — decider intake check (`monitor/prompts/reference/decider-intake.md` Step 1h2 Step 1a):** before integrating an analyst `PRED-assessment-*.json`, decider compares `entry.verdict_history.at(-1).at` against `assessment.assessed_at`. If history is newer than assessment, the assessment is stale (would silently revert an operator/fresh-analyst change) — decider skips integration and appends a `STALE-ASSESS-*` notice to `monitor/analyst/attention-inbox.json`. HNOTE-driven verdict changes don't trip because their assessment files are fresh (`assessed_at` newer than any prior history entry).
+
+- **Mech B — pre-push test.js assertion (`test.js` Sections 5 + 7):** for every entry with non-empty `verdict_history`, asserts `current_verdict === verdict_history.at(-1).to`. Catches the consistency bug if Mech A is ever bypassed by a future prompt edit, new agent variant, or alternate code path.
+
+**Failure mode this protects against:** the 2026-04-20 commit 209fda5 silently reverted four operator-approved verdicts (ISS-951..954) by re-integrating 2026-04-11 analyst assessments. Both `verdict_history` was newer (operator wrote it at 2026-04-14) AND `our_verdict` matched the operator's value — the check that should have caught the stale assessment didn't exist. PROP-028 is that check.
+
 ## priority-queue.json Schema
 
 Live-state file at `monitor/curmudgeon/priority-queue.json` carrying ONLY the active queue + schema metadata + `next_id` field. Append-only archive at `monitor/curmudgeon/priority-queue-archive.jsonl` carries the full pop history (one JSON object per line). Decider is the primary writer of both; operator may push to the queue directly via a git clone. PROP-022 phase 3 (2026-05-06) split the file; PROP-009r2's 200-entry rolling cap was retired — audit consumers stream-filter the archive by `popped_at` window.

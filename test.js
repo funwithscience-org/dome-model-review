@@ -321,6 +321,14 @@ for (const win of wins) {
         `WIN-${win.id} detail_group references valid WIN-${gid}`);
     }
   }
+  // verdict_history consistency invariant (PROP-028 Mech B, 2026-05-11) —
+  // mirror of the predictions.json check (Section 7) but for wins.json,
+  // which uses `verdict` instead of `our_verdict` and `date` instead of `at`.
+  if (win.verdict_history?.length) {
+    const last = win.verdict_history[win.verdict_history.length - 1];
+    assert(win.verdict === last.to,
+      `WIN-${win.id} verdict ('${win.verdict}') matches verdict_history.at(-1).to ('${last.to}') — PROP-028 invariant`);
+  }
 }
 
 // sections.json validation (if it exists)
@@ -576,6 +584,21 @@ if (html) {
       if (entry.related_wins) {
         assert(Array.isArray(entry.related_wins),
           `${entry.id} related_wins is array`);
+      }
+    }
+
+    // ── verdict_history consistency invariant (PROP-028 Mech B, 2026-05-11) ──
+    // For every prediction with non-empty verdict_history, the current our_verdict
+    // MUST match the last verdict_history entry's `to` field. Catches the 209fda5-
+    // class bug where decider integration changed our_verdict without writing a
+    // verdict_history entry (or vice versa — stale assessment re-integrated, history
+    // not appended). PROP-028 Mech A prevents the bug at write time; Mech B is the
+    // safety net if Mech A is ever bypassed.
+    for (const entry of pred_data.entries) {
+      if (entry.verdict_history?.length) {
+        const last = entry.verdict_history[entry.verdict_history.length - 1];
+        assert(entry.our_verdict === last.to,
+          `${entry.id} our_verdict ('${entry.our_verdict}') matches verdict_history.at(-1).to ('${last.to}') — PROP-028 invariant`);
       }
     }
 
