@@ -362,82 +362,31 @@ if [ $? -ne 0 ]; then
   exit 1
 fi
 
-# Push with one transient-403 retry (added 2026-04-25). The PAT genuinely
-# has contents:write — verified via SHA256 match between operator clone PAT
-# and FUSE remote-URL PAT, and via successful API write tests. See
-# HNOTE-OPERATOR-PAT-DIAGNOSIS-CORRECTION-001 in
-# monitor/decisions/human-notes.json. A 403 here is most likely a transient
-# GitHub or per-session environmental hiccup rather than a scope problem.
-# Do NOT diagnose 403 as "PAT lacks contents:write" — that diagnosis was
-# wrong on 2026-04-25 and led to a wasted operator round-trip.
+# Push ONCE. Do NOT retry, sleep, or run split-push diagnostics on 403.
+#
+# History: 2026-04-25 added a 30s sleep + 1 retry; 2026-04-26 added a
+# diagnostic split-push that soft-resets the commit and re-pushes in two
+# phases (monitor/ then everything else). Both were added to investigate
+# the recurring "Permission denied to Devilwench" 403 on certain sessions.
+#
+# Removed 2026-05-11 per operator directive ("if the PAT doesn't work,
+# move on with your life and don't worry about it"). Real-world cost was
+# ~10 minutes per push-failure run burned on retry + split-push gymnastics,
+# even though the failure mode is well-understood: per-session/IP
+# environmental restriction, not a PAT scope problem (per
+# HNOTE-OPERATOR-PAT-DIAGNOSIS-CORRECTION-001). The Universal-Pusher
+# rescue path below already handles this cleanly: workspace-sync runs
+# hourly with its own session/IP and lands the commit within ~1h.
+#
+# Net change: one push attempt, then either success or rescue. No retry,
+# no sleep, no split-push, no further diagnostics. If push 403s, that is
+# a known transient and we fall through immediately to the rescue path.
 PUSH_OUT=$(git push origin main 2>&1)
 PUSH_RC=$?
-if [ $PUSH_RC -ne 0 ] && echo "$PUSH_OUT" | grep -qE "403|Resource not accessible"; then
-  echo "Push hit 403; waiting 30s and retrying ONCE before declaring failure."
-  sleep 30
-  PUSH_OUT=$(git push origin main 2>&1)
-  PUSH_RC=$?
-fi
-
-# DIAGNOSTIC SPLIT-PUSH (added 2026-04-26). If the unified push still 403'd
-# after the retry, attempt a split: roll back the commit (keep changes
-# staged), then push monitor/* in one commit and the rest in a second
-# commit. Logs both phases. Result tells us whether content-path is the
-# determinant: if both phases succeed, split-push becomes the permanent
-# pattern; if phase 1 succeeds and phase 2 fails, non-monitor content is
-# what's blocking; if both fail, content-path is NOT the determinant.
-# This diagnostic block runs ONCE per session, only on 403, only if there
-# is a real commit to split (HEAD != HEAD~1's parent of origin/main).
-SPLIT_PHASE_1_RC=""
-SPLIT_PHASE_2_RC=""
-SPLIT_PHASE_1_OUT=""
-SPLIT_PHASE_2_OUT=""
-if [ $PUSH_RC -ne 0 ] && echo "$PUSH_OUT" | grep -qE "403|Resource not accessible"; then
-  echo "PUSH still 403 after retry. Attempting DIAGNOSTIC SPLIT PUSH."
-  # Save the original commit message for the second phase
-  ORIGINAL_COMMIT_MSG=$(git log -1 --format=%B HEAD)
-  # Soft-reset to un-commit but keep all changes staged
-  git reset --soft HEAD~1 2>&1 | head -3
-  # Phase 1: stage and commit ONLY monitor/* changes
-  git reset HEAD 2>&1 | head -1  # unstage everything first
-  git add monitor/
-  if git diff --cached --quiet; then
-    echo "SPLIT PUSH: phase 1 has no monitor/* changes; skipping phase 1."
-    SPLIT_PHASE_1_RC="skipped"
-  else
-    git commit -m "[diagnostic split-push 1/2] monitor/ only — ${ORIGINAL_COMMIT_MSG%%$'\n'*}" 2>&1 | tail -2
-    SPLIT_PHASE_1_OUT=$(git push origin main 2>&1)
-    SPLIT_PHASE_1_RC=$?
-    echo "SPLIT PHASE 1 (monitor/) push rc=$SPLIT_PHASE_1_RC"
-    echo "$SPLIT_PHASE_1_OUT"
-  fi
-  # Phase 2: stage and commit everything else
-  git add -A
-  if git diff --cached --quiet; then
-    echo "SPLIT PUSH: phase 2 has no remaining changes; skipping phase 2."
-    SPLIT_PHASE_2_RC="skipped"
-  else
-    git commit -m "[diagnostic split-push 2/2] data + docs + build-scripts — ${ORIGINAL_COMMIT_MSG%%$'\n'*}" 2>&1 | tail -2
-    SPLIT_PHASE_2_OUT=$(git push origin main 2>&1)
-    SPLIT_PHASE_2_RC=$?
-    echo "SPLIT PHASE 2 (rest) push rc=$SPLIT_PHASE_2_RC"
-    echo "$SPLIT_PHASE_2_OUT"
-  fi
-  # If both phases succeeded, mark overall push as success
-  if [ "$SPLIT_PHASE_1_RC" = "0" ] && [ "$SPLIT_PHASE_2_RC" = "0" ]; then
-    echo "SPLIT PUSH SUCCEEDED (both phases). Diagnostic: content-path IS the determinant."
-    PUSH_RC=0
-  elif [ "$SPLIT_PHASE_1_RC" = "0" ] && [ "$SPLIT_PHASE_2_RC" != "0" ] && [ "$SPLIT_PHASE_2_RC" != "skipped" ]; then
-    echo "SPLIT PUSH PARTIAL: phase 1 (monitor/) succeeded, phase 2 (data+docs+build-scripts) failed. Diagnostic: non-monitor content is what's blocking."
-    # PUSH_RC stays non-zero — phase 2 failure means we still need rescue
-  elif [ "$SPLIT_PHASE_1_RC" != "0" ] && [ "$SPLIT_PHASE_1_RC" != "skipped" ]; then
-    echo "SPLIT PUSH FAILED: phase 1 (monitor/) also failed. Diagnostic: content-path is NOT the determinant; investigate elsewhere (size, timing, IP, abuse heuristics)."
-  fi
-fi
 
 echo "$PUSH_OUT"
 if [ $PUSH_RC -ne 0 ]; then
-  echo "Push failed (after retry if 403; after split-push diagnostic if applicable). Universal-pusher rescue: copying committed-but-unpushed files to FUSE for workspace-sync to pick up on its next cycle (hourly). Operator does NOT need to manually rescue-push."
+  echo "Push failed. Universal-pusher rescue: copying committed-but-unpushed files to FUSE for workspace-sync to pick up on its next cycle (hourly). Operator does NOT need to manually rescue-push."
 
   # UNIVERSAL-PUSHER RESCUE (added 2026-04-26 per operator directive — see
   # HNOTE-OPERATOR-UNIVERSAL-PUSHER-001). Copy every file that is committed
@@ -473,19 +422,12 @@ if [ $PUSH_RC -ne 0 ]; then
   "event": "push-failure",
   "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "error": $(printf '%s' "$PUSH_OUT" | jq -Rs .),
-  "diagnosis": "Push failed after one transient-403 retry. PAT is known to have contents:write (per HNOTE-OPERATOR-PAT-DIAGNOSIS-CORRECTION-001); cause is environmental, transient, or a non-PAT git issue. Universal-pusher rescue executed — workspace-sync will push within 1h.",
+  "diagnosis": "Push failed on first attempt (no retry — retry/split-push diagnostics removed 2026-05-11 per operator directive). PAT has contents:write (per HNOTE-OPERATOR-PAT-DIAGNOSIS-CORRECTION-001); cause is environmental, transient, or a non-PAT git issue. Universal-pusher rescue executed — workspace-sync will push within 1h.",
   "files_synced_to_fuse": true,
   "universal_pusher_rescue": {
     "rescued_count": ${RESCUED_COUNT},
     "rescued_files": $(printf '%b' "${RESCUED_LIST}" | jq -Rs 'split("\n") | map(select(length > 0))'),
     "next_workspace_sync_window": "within 1h of this timestamp (workspace-sync runs hourly at :03)"
-  },
-  "split_push_diagnostic": {
-    "phase_1_monitor_only_rc": "${SPLIT_PHASE_1_RC:-not_attempted}",
-    "phase_1_output": $(printf '%s' "${SPLIT_PHASE_1_OUT:-}" | jq -Rs .),
-    "phase_2_data_docs_buildscripts_rc": "${SPLIT_PHASE_2_RC:-not_attempted}",
-    "phase_2_output": $(printf '%s' "${SPLIT_PHASE_2_OUT:-}" | jq -Rs .),
-    "interpretation": "If phase_1_rc=0 AND phase_2_rc=0 -> split push WORKS, content-path IS determinant, fix permanently. If phase_1_rc=0 AND phase_2_rc!=0 -> non-monitor content is what GitHub objects to. If phase_1_rc!=0 -> not content-path; investigate timing/size/IP/heuristic."
   }
 }
 JSON
