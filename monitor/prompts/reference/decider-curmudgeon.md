@@ -421,9 +421,9 @@ console.log('(next_id field, NOT items.length+1 — that formula is buggy with g
 node -e "const o=JSON.parse(require('fs').readFileSync('monitor/decisions/open-issues.json','utf8'));const cm=o.issues.filter(i=>(i.severity==='critical'||i.severity==='major')&&i.status!=='assigned-analyst');const patchable=cm.filter(i=>i.win_id&&/^\d{3}$/.test(String(i.win_id).replace('WIN-','')));console.log(patchable.length?'MODE 1: '+patchable.length+' patchable critical/major':'MODE 2: cleanup ('+cm.length+' critical/major are prose-only or assigned)')"
 ```
 
-**Mode 1 — Severity triage:** Run yeet scan first. Then pick 10 WINs with highest-severity patchable issues. Prioritize unpatched WINs (check recent `suggested-patches-*.json`). For each: read issues, read full review, read current WIN text, craft patches.
+**Mode 1 — Severity triage:** Run yeet scan first. Then iterate ALL WINs that have status='open' issues, sorted by oldest-age-first within severity bands (critical → major → moderate → minor). For each WIN: read issues, read full review, read current WIN text, craft patches. The previous '10 WIN cap' (pre-PROP-031, removed 2026-05-11) was the proximate cause of the throughput-bug documented in DIRECTIVE-20260511-001 — items on WINs sorted into positions 11+ sat in status='open' for 7-14 days until M1 swept them (and indefinitely before PROP-026 existed). The new rule is: every status='open' item gets touched this run, either patched, wontfixed, or routed.
 
-**Mode 2 — WIN cleanup:** Pick 10 WINs with fewest remaining issues (1-2 each). Patch ALL issues per WIN so it's fully closed. Steadily shrinks the working set.
+**Mode 2 — WIN cleanup:** Same scope as Mode 1 but ordered by fewest-remaining-issues-per-WIN (still no cap). Used when the goal is to close WINs entirely; complements Mode 1's severity-first ordering. **Both modes share the same underlying invariant: no status='open' item is left untriaged at run end without an entry in `bau_triage_carry_over` justifying why.**
 
 **Reading open-issues efficiently** (file is large):
 ```bash

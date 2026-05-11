@@ -62,6 +62,52 @@ else{console.log('PENDING DIRECTIVE:',candidates[0].file);console.log('  priorit
 
 **Why this exists:** the operator-directives directory has been used since 2026-04-18 to record asks, but no dispatcher step ever read it — directives sat orphaned. This step bridges that gap. The 8 pre-existing directives remain `status: open` (legacy) and are filtered out by default. Operator can promote any of them to `status: pending` when ready to activate.
 
+### Pre-flight: Backlog-Trend Computation (PROP-030, every run, landed 2026-05-11)
+
+Compute queue-level metrics from open-issues.json + closed-issues.json + closure-ledger.jsonl at every tinker run, regardless of which Mode is selected. Append one row to `monitor/tinker/queue-history.jsonl`. If any threshold fires, emit a `backlog-trend` finding into the run report — even when running Mode 2/3/4, this finding lands.
+
+**Why this exists:** prior Mode 1 audits measured *liveness* (agents running, outputs fresh, no-op rate low) but never *throughput* (work-backlog growing or shrinking). Three consecutive Mode 1 runs (2026-05-07, -09, -10) returned 'pipeline GREEN' while open-issues.json had grown to 230+ items. PROP-030 closes that gap.
+
+**Compute these six metrics per run** (single read of open-issues.json):
+
+```javascript
+const oi = JSON.parse(fs.readFileSync('monitor/decisions/open-issues.json', 'utf8'));
+const now = Date.now();
+const ageDays = i => {
+  const t = i.found_at || i.created_at;
+  return t ? (now - Date.parse(t)) / 86400000 : null;
+};
+const metrics = {
+  ts: new Date().toISOString(),
+  tinker_run_id: RUN_ID,
+  open_issues_total: oi.issues.length,
+  open_status_count: oi.issues.filter(i => i.status === 'open').length,
+  assigned_analyst_count: oi.issues.filter(i => i.status === 'assigned-analyst').length,
+  age_ge_14d_count: oi.issues.filter(i => { const a = ageDays(i); return a !== null && a >= 14; }).length,
+  age_ge_30d_count: oi.issues.filter(i => { const a = ageDays(i); return a !== null && a >= 30; }).length,
+  oldest_open_age_days: Math.max(...oi.issues.filter(i => i.status === 'open').map(i => ageDays(i) || 0))
+};
+// Compute velocity from closure-ledger.jsonl tail-7d + open-issues.json created-in-7d
+// (single pass each; see PROP-030 metrics_specification for exact code)
+metrics.new_issues_velocity_7d = /* count of open-issues with created_at within 7d */;
+metrics.closed_issues_velocity_7d = /* count of closure-ledger entries within 7d */;
+metrics.net_velocity_7d = metrics.closed_issues_velocity_7d - metrics.new_issues_velocity_7d;
+fs.appendFileSync('monitor/tinker/queue-history.jsonl', JSON.stringify(metrics) + '\n');
+```
+
+**Thresholds (calibrated per PROP-030 retroactive simulation):**
+
+| Tier | Triggers (ANY of) |
+|---|---|
+| info | open_issues_total grew >5% WoW |
+| moderate | open_issues_total > 200 OR grew >10% WoW OR net_velocity_7d < 0 for 2 consecutive runs OR assigned-analyst > 50 |
+| major | open_issues_total > 300 OR grew >20% WoW OR net_velocity_7d < 0 for 4 consecutive runs OR assigned-analyst > 100 OR age_ge_30d > 50 |
+| operator_escalation | open_issues_total > 400 OR negative velocity for 7 consecutive runs OR assigned-analyst > 150 |
+
+If ANY threshold fires → add a finding object to the run's report.findings[] with `category='backlog-trend'` and `severity=highest-firing-tier`. The finding lands in every report, regardless of mode selection.
+
+If the operator_escalation tier fires, ALSO write a one-line note to `monitor/tinker/latest-tinker-summary.txt` so the operator sees it in the morning summary.
+
 ### Priority order:
 
 **Mode 1 — Pipeline Health** (run if any agent is stalled or handoff is broken)

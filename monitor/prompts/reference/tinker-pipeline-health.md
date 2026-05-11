@@ -59,6 +59,31 @@ Read `monitor/decisions/open-issues.json`:
 - **Fixed but recurring:** Issue marked fixed but same problem reappears = fix didn't stick.
 - **Issues without patches:** Every open issue with a clear fix should have find/replace text.
 
+### Queue-level trend audit (PROP-030, landed 2026-05-11)
+
+The four-pattern checks above are per-issue audits. Queue-level dynamics — total count over time, growth rate, age-distribution drift — are computed at dispatcher pre-flight (see `monitor/prompts/tinker.md` "Pre-flight: Backlog-Trend Computation"). This step reads the already-computed metrics and the threshold-tier finding (if any) from the run's findings[] array.
+
+**If running in Mode 1 specifically** (pipeline health is the primary mode this run): the backlog-trend finding is the **headline check**, appearing above the existing Major+/age/deferrals/recurring/no-patch checks in the narrative. If a moderate-or-higher tier fires, treat as a primary surfacing in the run summary.
+
+**If running in Mode 2/3/4**: the finding is already in `report.findings[]` from the dispatcher pre-flight. No separate Step 4 narrative needed — the metric is silently recorded and the alert lands in the findings array regardless.
+
+**Threshold table (canonical, mirrors tinker.md pre-flight):**
+
+| Tier | Triggers (ANY of) |
+|---|---|
+| info | open_issues_total grew >5% WoW |
+| moderate | total > 200 OR grew >10% WoW OR net_velocity_7d < 0 for 2 consecutive runs OR assigned-analyst > 50 |
+| major | total > 300 OR grew >20% WoW OR net_velocity_7d < 0 for 4 consecutive runs OR assigned-analyst > 100 OR age_ge_30d > 50 |
+| operator_escalation | total > 400 OR negative velocity for 7 consecutive runs OR assigned-analyst > 150 |
+
+If `operator_escalation` tier fires, append a one-line note to `monitor/tinker/latest-tinker-summary.txt`. The operator will see it in their morning summary read.
+
+**Data sources** (all read once at pre-flight, cached for Step 4 reference):
+- `monitor/decisions/open-issues.json` — current state
+- `monitor/decisions/closed-issues.json` — recent closures
+- `monitor/decisions/closure-ledger.jsonl` — PROP-026 closure audit trail
+- `monitor/tinker/queue-history.jsonl` — append-only per-run metric log (tinker sole writer)
+
 ## Step 5: Prompt-Config Consistency (spot check 2-3 per run)
 
 - **Stale references.** Prompts referencing files, URLs, or paths that don't exist.

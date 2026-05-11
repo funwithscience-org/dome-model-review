@@ -128,6 +128,22 @@ node -e "const d=JSON.parse(require('fs').readFileSync('${CLEAN_CLONE}/monitor/c
 Trigger: Digest shows pending reviews (especially critical/major).
 → Read `monitor/prompts/reference/decider-curmudgeon.md`, execute. When reading full review files referenced in the digest, read them from `${CLEAN_CLONE}/monitor/curmudgeon/reviews/`.
 
+**Priority 3b — Open Bucket BAU Triage (PROP-031, lands 2026-05-11)**
+
+Every decider invocation, distinct from M1 (Priority 5b) which is the age→7d/21d safety net only. Scope: all items in `open-issues.json` with `status === 'open'` AND `age_hours >= 12` (computed from `found_at || created_at`). The 12h floor prevents same-run-as-creation triage conflicting with Priority 3 on items the curmudgeon JUST created. Sort age descending (oldest first), then severity descending (critical > major > moderate > minor). Process until empty OR run-budget threshold reached.
+
+Apply the routing-matrix.md 5-action decision tree per item (same as M1 Priority 5b and M3 carry-over): PATCH | NARROW-PATCH | WONTFIX-WITH-RATIONALE | ROUTE-TO-ANALYST | ROUTE-TO-CURMUDGEON | ESCALATE-TO-HUMAN. Each item gets a closure-ledger entry with `closed_by_mechanism: 'BAU'` (new mechanism enum value).
+
+**Budget management:** if token budget reaches ~70% during 3b iteration, write a `bau_triage_carry_over` record into the daily report listing item IDs not reached and the reason (budget). Items in the carry-over remain `status='open'` and are picked up by next run's 3b (in age-descending order, so they sort earlier).
+
+**Self-test at run end:** before writing the daily report, verify every status='open' item with age ≥ 12h either (a) has a closure-ledger entry with `closed_by_run === RUN_ID` AND `closed_by_mechanism === 'BAU'`, or (b) appears in the run's `bau_triage_carry_over` list. If neither holds, that item was silently skipped — flag as SELF-TEST FAILURE and refuse to mark the run complete. Same enforcement pattern as M3 carry-over (decider-curmudgeon.md Step 8c self-test).
+
+**Interaction with M1**: M1 (Priority 5b) becomes safety-net-only. Items reach M1's age≥N_DAYS threshold only if they passed through Priority 3b without being actioned (extremely unusual under PROP-031 — would indicate persistent budget pressure or genuine ambiguity needing escalation). Empirical prediction: M1 candidate count drops from current 9-30/run to 0-3/run within 2 weeks.
+
+**Daily report:** include `bau_triage: {processed: N, patched: P, wontfixed: W, escalated: E, routed_to_analyst: RA, routed_to_curmudgeon: RC, carry_over: [...iss_ids], budget_used_pct: NN}` in the run summary. Mirrors the m1_sweep block shape for tinker/PROP-030 metric extraction.
+
+→ Read `monitor/prompts/reference/decider-curmudgeon.md`. Use the same iterate-all-WINs procedure as Mode 1/Mode 2 (cap removed), constrained by Priority 3b's age≥12h scope.
+
 **Priority 4 — Completed Expansions**
 ```bash
 node -e "const t=JSON.parse(require('fs').readFileSync('monitor/analyst/expansion-tracker.json','utf8'));const c=t.items.filter(i=>(i.status==='complete'||i.status==='revised')&&!i.integrated);console.log(c.length?'EXPANSIONS: '+c.length+' ready to integrate':'NO PENDING EXPANSIONS')"
@@ -740,6 +756,7 @@ All prose sections are wrapped in `<details>`/`<summary>` with TLDRs (see CLAUDE
 - **Cover EVERY open issue.** Each must get: (a) a patch, (b) explicit deferral with rationale, or (c) wontfix recommendation. No unacknowledged issues.
 - **Verdict changes are your responsibility.** If evidence describes a self-contradiction but verdict says otherwise, change the verdict. Don't wait for someone else to notice.
 - **New WINs are #1 priority.** Until our count matches the dome's, every run checks for new WIN files first.
+- **No tap-out on the open bucket (PROP-031, 2026-05-11).** Every `status='open'` item ≥12h old MUST be triaged this run via Priority 3b BAU Triage. Each item gets a closure-ledger entry with `closed_by_mechanism: 'BAU'` and one of: patch / narrow-patch / wontfix-with-rationale / route-to-analyst / route-to-curmudgeon / escalate. Items not reached due to token budget go on `bau_triage_carry_over` with explicit reason; budget-deferring is allowed once per item, not chronically. Items reaching M1 (Priority 5b) age threshold under PROP-031 are a SELF-TEST FAILURE — M1 is a safety net for truly-stuck items, NOT the primary throughput path.
 
 ## Cleanup (mandatory, run last)
 

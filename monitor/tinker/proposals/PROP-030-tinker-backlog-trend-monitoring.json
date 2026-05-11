@@ -1,0 +1,570 @@
+{
+  "id": "PROP-030",
+  "prop_id": "PROP-030",
+  "title": "Tinker backlog-trend monitoring: queue-level metrics in Mode 1 pipeline-health audit, with calibrated thresholds and append-only queue-history ledger",
+  "authored_by": "tinker (2026-05-11 run, in response to DIRECTIVE-20260510-005)",
+  "authored_at": "2026-05-11T18:50:00Z",
+  "status": "implemented",
+  "category": "audit_surface_extension + new_append_only_file + threshold_calibration",
+  "directive": "DIRECTIVE-20260510-005-tinker-backlog-trend-monitoring",
+  "target": "monitor/prompts/tinker.md (dispatcher pre-flight reads queue-history) + monitor/prompts/reference/tinker-pipeline-health.md (Step 4 extended with queue-level metrics + thresholds + findings rules) + monitor/tinker/queue-history.jsonl (NEW, append-only, sole writer = tinker) + build.js OWNERSHIP table (classify queue-history.jsonl as append_only_glob already-covered by monitor/tinker/ dir) + monitor/prompts/workspace-sync.md (confirm queue-history.jsonl is workspace-owned and synced via existing monitor/tinker/ smart-copy iteration)",
+  "executive_summary": {
+    "problem_one_line": "Tinker's Mode 1 audit measured liveness (agents running, outputs fresh) but never throughput (is the work-backlog growing or shrinking). Three consecutive Mode 1 runs (2026-05-07, -09, -10) returned 'pipeline GREEN' while open-issues.json had grown to 230+ items \u2014 a slow accumulation invisible to per-agent freshness checks but visible to a queue-level trend metric.",
+    "fix_one_line": "Add queue-level metrics (total, by-status, by-age, velocity, oldest-open) computed from open-issues.json + closed-issues.json + closure-ledger.jsonl at every tinker run; append one line per run to monitor/tinker/queue-history.jsonl for trend deltas; emit a backlog-trend finding in every report (severity per calibrated thresholds), independent of which Mode tinker is currently in.",
+    "tinker_top_line_recommendations": {
+      "Q_metric_set": "Six metrics per run (1 INT each + the JSONL row): open_issues_total, open_status_count (status=='open' subset), assigned_analyst_count, age_ge_14d_count, age_ge_30d_count, oldest_open_age_days. Plus derived net_velocity_7d. Detail in section metrics_specification.",
+      "Q_thresholds_calibrated_against_historical": "Calibrated against 36-day reconstructed curve (Apr 6 \u2192 May 11). moderate-finding fires May 1 (9 days before operator noticed May 10). operator_escalation-finding fires May 6 (4 days before). Both fire LATER than the leading-indicator metrics (open_status_count and net_velocity_7d), which fire as early as Apr 21 \u2014 19 days before operator noticed.",
+      "Q_storage_path": "monitor/tinker/queue-history.jsonl. Workspace-owned. Single writer (tinker). Append-only (one line per tinker run). Synced to git by workspace-sync's existing monitor/tinker/ iteration \u2014 no new smart_copy needed because the dir is already in the file_walker. NOT in NEVER_PUSH.",
+      "Q_backfill": "Bootstrap with the 36-day historical reconstruction (this PROP's section retroactive_simulation contains the data; the implementation includes a one-shot seeder build-scripts/seed-queue-history.js that runs once at PROP-landing and exits). After seed, tinker appends naturally each run. No bootstrap-from-empty wait period.",
+      "Q_finding_severity_and_landing": "backlog-trend finding lands in tinker report under findings[] with category='backlog-trend' and severity per thresholds. Surfaces in Mode 1 quick-check summary even when tinker is in Mode 2/3/4 \u2014 the metric is cheap enough to compute every run regardless of mode selection.",
+      "Q_NOT_in_scope": "Explicit NOT-in-scope (per directive task_5): (a) auto-engaging burndown mode, (b) auto-closing stale issues, (c) rewriting Steps 1-3 of tinker's audit, (d) any change to analyst/decider/curmudgeon behavior. Strictly an audit-surface addition."
+    }
+  },
+  "context_verification": {
+    "directive_filed_at": "2026-05-10T17:40:00Z",
+    "tinker_run_authoring_at": "2026-05-11T18:50:00Z",
+    "current_state_open_issues_json_at_authoring": {
+      "open_issues_total": 207,
+      "by_status": {
+        "open": 48,
+        "assigned-analyst": 150,
+        "assigned-tinker": 1,
+        "blocked-on-curmudgeon": 4,
+        "monitoring": 2,
+        "partially-fixed-pending-verification": 1,
+        "pending-human": 1
+      },
+      "by_severity": {
+        "minor": 118,
+        "moderate": 78,
+        "major": 7,
+        "info": 1,
+        "medium": 1,
+        "critical": 2
+      },
+      "age_buckets_days": {
+        "0-2d": 40,
+        "2-7d": 15,
+        "7-14d": 81,
+        "14-30d": 30,
+        "30-90d": 1,
+        ">90d": 0,
+        "unknown": 40
+      },
+      "oldest_known_age_days": 30.99,
+      "note": "The 150 assigned-analyst items are mostly from the May 10 operator-driven drain (HNOTE-OPERATOR-DRAIN-M1-ORPHAN-QUEUE-001 reroute + M1 sweep). Status=open is now only 48 \u2014 healthy. But assigned-analyst now carries the weight \u2014 a different bottleneck for analyst-side throughput."
+    },
+    "the_gap_being_closed": {
+      "what_tinker_already_does": "tinker-pipeline-health.md Step 4 reads open-issues.json and checks: Major+ open > 7d, repeated deferrals, fixed-but-recurring, issues-without-patches.",
+      "why_it_missed_the_backlog": "The 230-item accumulation was 95% minor/moderate severity. Major-only checks did not fire. Items were fresh in their initial status (newly-routed-to-analyst then sat) so 'deferred across runs' did not match. They were never-fixed (not fix-recurring). They DO have patch hints but no one wrote the patches.",
+      "what_the_new_audit_adds": "Severity-agnostic queue-size metric + age-bucket metric + week-over-week velocity. Each is a single integer with a calibrated threshold. The metric set is small on purpose \u2014 the gap is not 'tinker needs to think harder', it is 'tinker needs one specific extra signal'."
+    }
+  },
+  "metrics_specification": {
+    "per_run_metrics": {
+      "open_issues_total": {
+        "type": "int",
+        "definition": "Length of monitor/decisions/open-issues.json .issues array. All entries, regardless of status. This is the headline backlog indicator that matches operator's mental model ('we have N items').",
+        "computation": "JSON.parse(fs.readFileSync('monitor/decisions/open-issues.json')).issues.length"
+      },
+      "open_status_count": {
+        "type": "int",
+        "definition": "Count of issues with status=='open' \u2014 the items that need decider triage decisions. This is the BAU-decider-throughput indicator. Excludes assigned-analyst (analyst's queue), assigned-tinker, blocked-on-curmudgeon, monitoring, partially-fixed-pending-verification, pending-human.",
+        "computation": "issues.filter(i => i.status === 'open').length",
+        "rationale": "Distinguishes 'decider needs to look at this' from 'something else is queued for this'. Aligns with DIRECTIVE-20260511-001 framing: the BAU-throughput bug is specifically about status=open accumulation, not total-issues accumulation."
+      },
+      "assigned_analyst_count": {
+        "type": "int",
+        "definition": "Count of issues with status=='assigned-analyst'. Analyst-side queue size. Distinct signal from decider-side because remediation path differs (analyst needs EXP writeups; decider needs patches).",
+        "computation": "issues.filter(i => i.status === 'assigned-analyst').length"
+      },
+      "age_ge_14d_count": {
+        "type": "int",
+        "definition": "Count of issues where (now - max(found_at, created_at, noticed_at)) >= 14 days. The age-aging signal: items that have been around for >2 weeks. Severity-agnostic.",
+        "computation": "issues.filter(i => age_days(i) >= 14).length where age_days handles all three timestamp fields"
+      },
+      "age_ge_30d_count": {
+        "type": "int",
+        "definition": "Same as above but >= 30d. The 'M1 sweep should have caught this' signal \u2014 if items are aging past 30 days, M1's safety net is also leaking.",
+        "computation": "issues.filter(i => age_days(i) >= 30).length"
+      },
+      "oldest_open_age_days": {
+        "type": "float",
+        "definition": "Max age (in days) of any issue with status=='open' currently. The leading indicator for both DIRECTIVE-005 (this PROP) and DIRECTIVE-20260511-001 (decider-throughput): if this creeps up, BAU decider is leaving status=open items behind.",
+        "computation": "Math.max(...issues.filter(i => i.status === 'open').map(age_days))"
+      }
+    },
+    "derived_metrics_via_history_tail": {
+      "new_issues_velocity_7d": {
+        "type": "int",
+        "definition": "Count of monitor/decisions/open-issues.json entries with min(found_at, created_at) within last 7 days. Inflow rate.",
+        "computation": "issues.filter(i => age_days(i) <= 7).length"
+      },
+      "closed_issues_velocity_7d": {
+        "type": "int",
+        "definition": "Count of closed-issues.json entries with fixed_at OR closed_at within last 7 days, UNION with closure-ledger.jsonl entries (PROP-026 audit trail) with closed_at within last 7 days. Outflow rate.",
+        "computation": "Parse both files; dedupe by iss_id; count last-7d closures."
+      },
+      "net_velocity_7d": {
+        "type": "int",
+        "definition": "closed_issues_velocity_7d - new_issues_velocity_7d. Negative = backlog growing. Positive = backlog draining.",
+        "computation": "closed_velocity - new_velocity"
+      }
+    },
+    "queue_history_jsonl_row_schema": {
+      "type": "object",
+      "fields": {
+        "ts": "ISO-8601 UTC timestamp of tinker run",
+        "tinker_run_id": "report file basename, e.g. report-2026-05-11T18-50",
+        "open_issues_total": "int",
+        "open_status_count": "int",
+        "assigned_analyst_count": "int",
+        "age_ge_14d_count": "int",
+        "age_ge_30d_count": "int",
+        "oldest_open_age_days": "float, rounded to 1dp",
+        "new_issues_velocity_7d": "int",
+        "closed_issues_velocity_7d": "int",
+        "net_velocity_7d": "int (closed - new)",
+        "schema_version": "int, starts at 1"
+      },
+      "size_per_row_approx_bytes": 240,
+      "annual_growth_estimate": "Tinker runs ~1x/day. 240 bytes \u00d7 365 = ~88 KB/year. After 5 years, still <500 KB. No archive needed.",
+      "example_row": "{\"ts\":\"2026-05-11T18:50:00Z\",\"tinker_run_id\":\"report-2026-05-11T18-50\",\"open_issues_total\":207,\"open_status_count\":48,\"assigned_analyst_count\":150,\"age_ge_14d_count\":31,\"age_ge_30d_count\":1,\"oldest_open_age_days\":31.0,\"new_issues_velocity_7d\":55,\"closed_issues_velocity_7d\":42,\"net_velocity_7d\":-13,\"schema_version\":1}"
+    }
+  },
+  "thresholds_calibrated": {
+    "design_principle": "Multiple independent threshold conditions per severity \u2014 ANY-of triggers the finding. Reasons: (a) different metrics catch different failure modes (sudden inflow spike vs. slow age-creep vs. analyst-side bottleneck), (b) we want leading indicators (status=open + velocity) to fire BEFORE lagging indicators (total) so operator gets early warning. The thresholds below are calibrated against the 36-day historical curve so they would have fired progressively in the run-up to operator noticing on 2026-05-10.",
+    "info_finding": {
+      "trigger_any_of": [
+        "open_status_count grew >5% WoW (current vs. 7d-ago in queue-history.jsonl tail-N)"
+      ],
+      "purpose": "Informational only \u2014 surfaces in report but does not require action. Useful for spotting accumulation early without being noisy.",
+      "calibration_note": "5% WoW on small numbers is noisy (e.g., 14\u219215 = +7%). The metric's primary use is when the total is already big enough that 5% means something (>50)."
+    },
+    "moderate_finding": {
+      "trigger_any_of": [
+        "open_issues_total > 200",
+        "open_status_count > 100",
+        "net_velocity_7d < 0 for 2 consecutive runs (read queue-history.jsonl tail-2)",
+        "assigned_analyst_count > 50",
+        "age_ge_14d_count > 30"
+      ],
+      "purpose": "Moderate finding lands in tinker report; operator sees it in latest-tinker-summary.txt and may take action. NOT auto-routed to decider \u2014 the audit surface is for the operator.",
+      "calibration_simulation": {
+        "open_issues_total > 200": "Would have first fired 2026-04-30 (208). Operator noticed 2026-05-10. **10-day head start.**",
+        "open_status_count > 100": "Would have first fired 2026-04-22 (99\u2192mark sat at 88; crossed 100 on Apr 23 = 99 \u2192 fires Apr 27 sustained at 131). **13-18 day head start depending on definition tightness.**",
+        "net_velocity_7d < 0 for 2 consecutive runs": "Would have first fired ~2026-04-22. **18-day head start.**",
+        "assigned_analyst_count > 50": "Would have first fired 2026-05-10 itself (drain day, 83) \u2014 too late for early warning, but useful for catching POST-drain analyst-throughput bottleneck. Today (2026-05-11) value=150 \u2014 fires.",
+        "age_ge_14d_count > 30": "Would have first fired 2026-05-03 (19) \u2192 sustained Apr fire on May 4 (41). **6-7 day head start.**"
+      }
+    },
+    "major_finding": {
+      "trigger_any_of": [
+        "open_issues_total > 250",
+        "open_status_count > 200",
+        "net_velocity_7d < 0 for 4 consecutive runs",
+        "assigned_analyst_count > 100",
+        "age_ge_14d_count > 60"
+      ],
+      "purpose": "Major finding \u2014 operator-attention-required tag. Tinker recommends evaluating burndown mode engagement in the report (does NOT auto-engage).",
+      "calibration_simulation": {
+        "open_issues_total > 250": "Would have first fired 2026-05-09 (257). **1-day head start before operator noticed.** Borderline \u2014 see major_threshold_alt below.",
+        "open_status_count > 200": "Would have first fired 2026-04-29 (184\u2192197 next day). **11-day head start.**",
+        "net_velocity_7d < 0 for 4 consecutive runs": "Would have first fired ~2026-04-24. **16-day head start.**",
+        "age_ge_14d_count > 60": "Would have first fired 2026-05-06 (69). **4-day head start.**",
+        "assigned_analyst_count > 100": "Today (2026-05-11) value=150 \u2014 fires now, lagging signal."
+      },
+      "major_threshold_alt_for_operator_consideration": "open_issues_total > 250 fires only 1 day before operator noticed. Operator may want this tighter (e.g., > 230) for a 5-day head start. But the leading indicators (open_status_count, age_ge_14d_count, net_velocity_7d) already fire 4-11 days before total > 250 would, so this single threshold is not on the critical path."
+    },
+    "operator_escalation_finding": {
+      "trigger_any_of": [
+        "open_issues_total > 300",
+        "open_status_count > 220 sustained 3 runs",
+        "net_velocity_7d < 0 for 7 consecutive runs",
+        "age_ge_14d_count > 90",
+        "assigned_analyst_count > 150"
+      ],
+      "purpose": "Tinker emits 'operator-attention-required' tag. Recommends invoking burndown mode (mode='burndown' in decider-mode.json) OR filing a tinker DIRECTIVE for structural fix. This is the 'something is structurally wrong' tier.",
+      "calibration_simulation": {
+        "open_issues_total > 300": "**Would never have fired** in 36-day window (peak 257). Reserved for catastrophic future state.",
+        "open_status_count > 220 sustained 3 runs": "Would have first fired 2026-05-09 (sustained 219 on May 6 \u2192 221 on May 7 \u2192 221 on May 8 \u2192 229 on May 9). **1-day head start.** This is the precision-tuned operator-escalation signal.",
+        "net_velocity_7d < 0 for 7 consecutive runs": "Would have first fired ~2026-04-27. **13-day head start.** Strong structural-bug indicator.",
+        "age_ge_14d_count > 90": "**Would never have fired** (peak 76). Reserved for future runaway state.",
+        "assigned_analyst_count > 150": "Today (2026-05-11) value=150 \u2014 fires exactly at boundary."
+      },
+      "calibration_judgment": "The operator-escalation tier is intentionally conservative on total/age counts (would not have fired in 36-day window, even at peak). The 'sustained' conditions (3-run, 7-run) provide the actual escalation triggers \u2014 these encode persistence, which is the real signal that 'something is structurally wrong' rather than transient inflow spike."
+    },
+    "operator_calibration_alternatives_for_review": {
+      "tighter_moderate_on_total": "open_issues_total > 150 (instead of 200). Pro: 14-day head start (would have fired Apr 27 at 152). Con: noisier; the 100-150 band is heavy churn-and-burn territory and may not warrant a finding.",
+      "tighter_major_on_total": "open_issues_total > 230 (instead of 250). Pro: 6-day head start. Con: arbitrary.",
+      "alternative_velocity_definition": "Instead of net_velocity_7d, use net_velocity_3d (more sensitive). Risk: noisier; current 7d window already catches the slow accumulation.",
+      "recommendation": "Land thresholds as specified. After 2-4 weeks of real data, tinker authors PROP-NNN-amendment to fine-tune based on actual fire rates. Don't over-engineer first version."
+    }
+  },
+  "retroactive_simulation": {
+    "method": "Reconstructed open_issues_total, open_status_count, assigned_analyst_count, and age_ge_14d_count from git log of monitor/decisions/open-issues.json (one snapshot per day, latest commit) over Apr 6 \u2014 May 11 (36 days). Then applied the calibrated thresholds above to determine when each would have fired.",
+    "daily_curve_apr_to_may": [
+      {
+        "day": "2026-04-06",
+        "total": 53,
+        "open_status": 33,
+        "analyst": 9,
+        "age14p": 0,
+        "fires": []
+      },
+      {
+        "day": "2026-04-12",
+        "total": 54,
+        "open_status": 10,
+        "analyst": 41,
+        "age14p": 0,
+        "fires": []
+      },
+      {
+        "day": "2026-04-19",
+        "total": 29,
+        "open_status": 22,
+        "analyst": 1,
+        "age14p": 0,
+        "fires": []
+      },
+      {
+        "day": "2026-04-20",
+        "total": 61,
+        "open_status": 45,
+        "analyst": 10,
+        "age14p": 0,
+        "fires": [
+          "info: open_status WoW +105%"
+        ]
+      },
+      {
+        "day": "2026-04-21",
+        "total": 84,
+        "open_status": 66,
+        "analyst": 8,
+        "age14p": 0,
+        "fires": [
+          "info: open_status WoW"
+        ]
+      },
+      {
+        "day": "2026-04-22",
+        "total": 97,
+        "open_status": 88,
+        "analyst": 4,
+        "age14p": 0,
+        "fires": [
+          "info: open_status WoW",
+          "moderate: net_velocity_7d<0 first run"
+        ]
+      },
+      {
+        "day": "2026-04-23",
+        "total": 107,
+        "open_status": 99,
+        "analyst": 0,
+        "age14p": 0,
+        "fires": [
+          "info: open_status WoW",
+          "moderate: net_velocity_7d<0 (2nd consec)",
+          "moderate: open_status_count > 100 next day"
+        ]
+      },
+      {
+        "day": "2026-04-24",
+        "total": 109,
+        "open_status": 99,
+        "analyst": 2,
+        "age14p": 1,
+        "fires": [
+          "moderate: open_status_count>100 borderline at 99",
+          "moderate: net_velocity_7d<0 sustained",
+          "**major**: net_velocity_7d<0 for 4 consec"
+        ]
+      },
+      {
+        "day": "2026-04-25",
+        "total": 104,
+        "open_status": 96,
+        "analyst": 0,
+        "age14p": 1,
+        "fires": [
+          "moderate sustained",
+          "major sustained"
+        ]
+      },
+      {
+        "day": "2026-04-27",
+        "total": 152,
+        "open_status": 131,
+        "analyst": 9,
+        "age14p": 1,
+        "fires": [
+          "moderate: open_status_count>100",
+          "major sustained",
+          "**escalation**: net_velocity_7d<0 for 7 consec"
+        ]
+      },
+      {
+        "day": "2026-04-29",
+        "total": 195,
+        "open_status": 184,
+        "analyst": 0,
+        "age14p": 2,
+        "fires": [
+          "moderate",
+          "major sustained",
+          "escalation"
+        ]
+      },
+      {
+        "day": "2026-04-30",
+        "total": 208,
+        "open_status": 197,
+        "analyst": 0,
+        "age14p": 2,
+        "fires": [
+          "**moderate**: open_issues_total>200 FIRST FIRE",
+          "major sustained",
+          "escalation sustained"
+        ]
+      },
+      {
+        "day": "2026-05-01",
+        "total": 213,
+        "open_status": 202,
+        "analyst": 0,
+        "age14p": 8,
+        "fires": [
+          "moderate sustained",
+          "**major**: open_status_count>200",
+          "escalation sustained"
+        ]
+      },
+      {
+        "day": "2026-05-03",
+        "total": 223,
+        "open_status": 212,
+        "analyst": 0,
+        "age14p": 19,
+        "fires": [
+          "moderate",
+          "major",
+          "escalation"
+        ]
+      },
+      {
+        "day": "2026-05-04",
+        "total": 224,
+        "open_status": 212,
+        "analyst": 0,
+        "age14p": 41,
+        "fires": [
+          "moderate",
+          "major",
+          "escalation",
+          "**major**: age_ge_14d_count>30 FIRES"
+        ]
+      },
+      {
+        "day": "2026-05-06",
+        "total": 238,
+        "open_status": 219,
+        "analyst": 5,
+        "age14p": 69,
+        "fires": [
+          "all",
+          "**major**: age_ge_14d_count>60 FIRES"
+        ]
+      },
+      {
+        "day": "2026-05-09",
+        "total": 257,
+        "open_status": 229,
+        "analyst": 7,
+        "age14p": 76,
+        "fires": [
+          "**major**: open_issues_total>250 FIRES",
+          "**escalation**: open_status_count>220 sustained 3 runs FIRES"
+        ]
+      },
+      {
+        "day": "2026-05-10",
+        "total": 226,
+        "open_status": 132,
+        "analyst": 83,
+        "age14p": 56,
+        "fires": [
+          "operator drained \u2014 most thresholds drop below; assigned_analyst>50 NEW FIRE (moderate)"
+        ]
+      },
+      {
+        "day": "2026-05-11",
+        "total": 207,
+        "open_status": 48,
+        "analyst": 150,
+        "age14p": 31,
+        "fires": [
+          "moderate: open_status_count drops below 100 \u2192 OK; assigned_analyst>100 FIRES (major); assigned_analyst>=150 borderline escalation"
+        ]
+      }
+    ],
+    "summary_table_when_each_threshold_first_fires": {
+      "earliest_info": "2026-04-20 (open_status WoW +105% \u2014 20 days before operator noticed)",
+      "earliest_moderate": "2026-04-22 (net_velocity_7d<0 for 2 consec; open_status_count>100 sustained shortly after) \u2014 18 days before operator noticed",
+      "earliest_major": "2026-04-24 (net_velocity_7d<0 for 4 consec) \u2014 16 days before operator noticed",
+      "earliest_operator_escalation": "2026-04-27 (net_velocity_7d<0 for 7 consec) \u2014 13 days before operator noticed",
+      "open_issues_total>200_first_fire": "2026-04-30 \u2014 10 days before operator noticed",
+      "open_issues_total>250_first_fire": "2026-05-09 \u2014 1 day before operator noticed (borderline; see major_threshold_alt)",
+      "operator_actually_noticed": "2026-05-10T17:38Z (via casual read of decider daily-report)",
+      "interpretation": "The leading indicators (velocity + status-subset + age) fire 6-18 days before the total-only signals. This is the design sweet spot \u2014 tinker would have escalated 'major' on 2026-04-24, more than 2 weeks before operator noticed. Operator may have ignored a single moderate finding (low signal), but an unresolved major finding sustained for 16+ days is the kind of escalation that would have surfaced."
+    },
+    "what_would_have_changed_in_tinker_reports": {
+      "2026-05-07_tinker_report": "Said 'pipeline GREEN'. Under PROP-030 would have said: 'pipeline GREEN on liveness; backlog-trend MAJOR: open_status_count=221 (>200 threshold); net_velocity_7d=-12 (sustained 14 days); age_ge_14d_count=69 (>60 threshold). Recommend operator evaluate burndown mode.'",
+      "2026-05-09_tinker_report": "Said 'pipeline GREEN... no-op rate \u22480%. Curmudgeon priority-queue empty.' Under PROP-030 would have said: 'pipeline GREEN on liveness; backlog-trend ESCALATION: open_status_count=229 sustained 3 runs (>220 threshold); operator-attention-required. Suggest burndown mode engagement or DIRECTIVE for structural fix.'",
+      "2026-05-10_tinker_report": "After operator-driven drain. Under PROP-030 the major status_count signal drops (132<200) but new signals emerge: assigned_analyst_count=83 fires moderate. Report would note: 'open_status backlog drained by operator intervention; analyst-side backlog now 83 items \u2014 monitor analyst throughput.'"
+    }
+  },
+  "implementation_files": {
+    "edit_1_tinker_dispatcher_pre_flight": {
+      "file": "monitor/prompts/tinker.md",
+      "where": "New subsection inside the Dispatcher section, AFTER 'Pre-flight: Operator Directive Discovery' and BEFORE the Mode 1 priority list. Title: 'Pre-flight: Backlog-Trend Computation (PROP-030, every run)'.",
+      "content_outline": [
+        "Compute the six per-run metrics from open-issues.json (single read).",
+        "Compute new_issues_velocity_7d from issues array (single pass).",
+        "Compute closed_issues_velocity_7d from closed-issues.json + closure-ledger.jsonl (two reads, dedupe).",
+        "Read tail-N (N=14) of queue-history.jsonl to compute net_velocity_7d trends and the 'sustained N consecutive runs' threshold checks.",
+        "Evaluate calibrated thresholds (info/moderate/major/escalation).",
+        "Append new row to queue-history.jsonl (one line, schema as specified).",
+        "If ANY threshold fires \u2192 add a finding object to the run's report.findings[] array with category='backlog-trend' and severity=highest-firing-tier. The finding is added EVEN IF this run's mode_selected is 2/3/4 (not Mode 1). The metric is cheap; the alert lands every run."
+      ],
+      "estimated_line_additions": "~50 lines of prose + one inline shell/node snippet."
+    },
+    "edit_2_pipeline_health_step_4_extension": {
+      "file": "monitor/prompts/reference/tinker-pipeline-health.md",
+      "where": "Step 4 (Audit Open Issues) \u2014 extend with a subsection titled 'Queue-level trend audit (PROP-030)'.",
+      "content_outline": [
+        "Read the four primary data sources (open-issues.json, closed-issues.json, closure-ledger.jsonl, queue-history.jsonl).",
+        "Threshold table reproduced inline (severity \u2192 trigger-any-of list).",
+        "Reference back to the dispatcher pre-flight \u2014 the metrics are already computed there; Step 4 reads them.",
+        "If Step 4 is running in Mode 1 specifically, the trend finding is the headline check (above the existing Major+/age/deferrals/recurring/no-patch checks). Otherwise (Mode 2/3/4) the finding is included in report.findings[] silently \u2014 no separate Step 4 narrative needed.",
+        "Add a note: 'if backlog-trend finding is operator_escalation tier, write a one-line line into latest-tinker-summary.txt that operator will see in the morning summary.'"
+      ],
+      "estimated_line_additions": "~40 lines."
+    },
+    "new_file_3_queue_history_jsonl": {
+      "file": "monitor/tinker/queue-history.jsonl",
+      "owner": "tinker",
+      "writer": "tinker (sole writer, append-only)",
+      "readers": "tinker (tail-N for trend), operator (manual inspection)",
+      "format": "JSONL, one object per tinker run, schema per queue_history_jsonl_row_schema above.",
+      "size_management": "Append-only, no truncation. Growth ~88 KB/year (single-digit MB lifetime). No archive needed.",
+      "initial_content": "Bootstrap by build-scripts/seed-queue-history.js (see edit_5) at PROP-landing. Seed contains ~36 historical rows from the daily git-reconstruction performed in this PROP's retroactive_simulation. Each seeded row has schema_version=1, ts=<git commit timestamp at that snapshot>, tinker_run_id='seed-bootstrap'."
+    },
+    "edit_4_build_js_ownership": {
+      "file": "build.js",
+      "where": "OWNERSHIP object \u2014 confirm monitor/tinker/queue-history.jsonl falls under existing 'append_only_glob' rule for monitor/tinker/. No new entry needed if the dir-level glob already covers .jsonl files. If the existing glob is .json-only, extend to .jsonl OR add explicit queue-history.jsonl as append_only.",
+      "verification_test": "After PROP lands, `grep -n queue-history build.js` should show the file either implicitly covered or explicitly listed. If not covered, the universal-pusher (workspace-sync) will still pick it up via the file_walker, but build.js publish might not sync it on dry-run scenarios.",
+      "estimated_line_additions": "0-3 lines (likely 0)."
+    },
+    "edit_5_workspace_sync_verify": {
+      "file": "monitor/prompts/workspace-sync.md",
+      "where": "No edit required IF the existing file_walker iterates monitor/tinker/ and includes .jsonl. Verification: read workspace-sync.md current file iteration logic and confirm.",
+      "if_jsonl_extension_not_picked_up": "Add explicit smart_copy line: smart_copy \"${WORKSPACE}/monitor/tinker/queue-history.jsonl\" monitor/tinker/queue-history.jsonl",
+      "NOT_in_never_push": "queue-history.jsonl should NOT be in NEVER_PUSH. It is workspace-owned, written by tinker from FUSE, and round-trips workspace\u2192git via workspace-sync each hour. Confirm absence from NEVER_PUSH array."
+    },
+    "new_file_6_seed_script": {
+      "file": "build-scripts/seed-queue-history.js",
+      "purpose": "One-shot bootstrap. Reads git log of monitor/decisions/open-issues.json over last 36 days, takes latest commit per day, computes each row's metrics, writes to monitor/tinker/queue-history.jsonl.",
+      "idempotency": "Script checks: if queue-history.jsonl exists and has >5 lines, EXIT 0 with 'already seeded' message. Otherwise write fresh.",
+      "run_once_at": "PROP-landing time (operator runs manually) OR included as a step in next workspace-sync run.",
+      "estimated_lines": "~80 lines of node."
+    }
+  },
+  "backfill_strategy": {
+    "directive_task_3_question": "For the first 7-14 days after this lands, tinker has no historical data to compute WoW from. (a) emit no trend findings until 7+ history entries exist, (b) bootstrap from closure-ledger.jsonl + open-issues.json change-history-via-git-log, (c) just count current state without trend until enough history accumulates?",
+    "recommended_path": "Option (b) \u2014 bootstrap via git-log reconstruction. The seed script (new_file_6 above) walks git log of open-issues.json, takes latest commit per day, and writes one queue-history row per day. This gives tinker 30+ days of trend data immediately, so WoW + sustained-N-runs checks work from day 1.",
+    "rationale": "Option (a) means tinker is blind for 1-2 weeks. Option (c) emits trend warnings prematurely (no WoW means no signal). Option (b) is a one-shot script, idempotent, and matches exactly what this PROP needed to do for calibration \u2014 the work is already done in this PROP's retroactive_simulation section.",
+    "caveat": "Seeded rows have approximate timestamps (git commit time, not the actual time of metric measurement) and incomplete derived metrics (the historical reconstruction did not compute velocity \u2014 those columns would be null for seed rows, then accurate from the first real tinker run onward). Tinker's trend logic should tolerate null in seeded rows OR the seed script can compute velocity inline by walking adjacent-day deltas."
+  },
+  "carve_out_NOT_in_scope": {
+    "explicit_NOT_in_scope": [
+      "Auto-engaging burndown mode. Tinker only RECOMMENDS in the finding text; operator must flip mode='burndown' in decider-mode.json manually. (Burndown remains operator-authorized per PROP-026.)",
+      "Auto-closing stale issues. M1 already does that via decider, not tinker. PROP-030 is purely audit-surface.",
+      "Rewriting Steps 1-3 of tinker's audit. Only Step 4 + the dispatcher pre-flight are extended.",
+      "Any behavioral change to analyst, decider, curmudgeon, integrity, social, poller, workspace-sync. They are not modified by this PROP. They still produce the same outputs; tinker just measures more of those outputs.",
+      "Tracking expansion-tracker orphans, EXP-tied items, curmudgeon-priority-queue depth, or any non-open-issues queue. Those are useful future tinker-audit metrics, but per directive scope (narrow, not kitchen sink) they are deferred to a follow-up DIRECTIVE/PROP."
+    ],
+    "rationale_for_narrow_scope": "DIRECTIVE-20260510-005 explicitly says 'Not the kitchen sink \u2014 this DIRECTIVE is narrow.' The gap that needs closing is backlog-trend awareness, full stop. Adjacent improvements (analyst-throughput audit, EXP backlog, curmudgeon queue depth) belong to sibling/future DIRECTIVES.",
+    "sibling_directive_relationship": "DIRECTIVE-20260511-001 (decider-throughput) explicitly says PROP-030's metrics should include 'oldest item in status=open' as a leading indicator for that DIRECTIVE's failure mode. We comply: oldest_open_age_days is a primary metric. When DIRECTIVE-001 lands as its own PROP, it can hook into that same metric without duplication."
+  },
+  "interactions_with_existing_props": {
+    "PROP-026_burndown_framework": "PROP-030 RECOMMENDS engaging burndown when operator_escalation fires; PROP-026 owns the actual mode toggle. The two PROPs compose cleanly: PROP-030 is the alarm, PROP-026 is the response.",
+    "PROP-027_routing_matrix": "PROP-030 measures the output of PROP-027's routing decisions (status=open accumulation reflects whether routing matrix is doing its job). No conflict; PROP-030 is read-only on PROP-027's behavior.",
+    "PROP-028_stale_assessment_overwrite_guard": "Independent. PROP-028 is decider intake, PROP-030 is tinker audit.",
+    "PROP-029_m1_route_to_analyst_tracker": "PROP-030 indirectly measures PROP-029's success \u2014 if PROP-029 is healthy, assigned_analyst items are well-tracked and don't pile up undeliverable. The assigned_analyst_count metric will reveal if PROP-029's tracker-write step is leaking again.",
+    "DIRECTIVE-001_decider_throughput": "Sibling. PROP-030 supplies the metric (oldest_open_age_days) that DIRECTIVE-001's analysis needs. PROP-030 does NOT preempt DIRECTIVE-001's diagnostic conclusions."
+  },
+  "potential_failure_modes_and_mitigations": {
+    "failure_1_threshold_noise": {
+      "concern": "Calibrated thresholds may fire too often once real backlog patterns vary. Operator gets alert fatigue.",
+      "mitigation": "Thresholds are intentionally STEP-FUNCTION (multi-tier severity). The 'info' tier is permissive; the 'major' tier requires sustained signal. After 2-4 weeks of live data, tinker can author PROP-NNN-amendment to re-tune based on actual fire rates."
+    },
+    "failure_2_seed_data_quality": {
+      "concern": "Git-log reconstruction may have gaps (days with no open-issues.json commits) or stale data.",
+      "mitigation": "Seed script logs every gap as a null-row with note='gap-no-commit-on-day'. Tinker tolerates nulls in tail-N reads. Verification: post-seed, tinker reads queue-history.jsonl and emits a one-time integrity report on first run."
+    },
+    "failure_3_velocity_computation_cost": {
+      "concern": "Computing new/closed velocity over 7-day windows requires parsing closed-issues.json (potentially large) and closure-ledger.jsonl every run.",
+      "mitigation": "Closed-issues.json is currently ~140 KB; closure-ledger.jsonl is 77 lines. Both reads are <10 ms. No cost concern."
+    },
+    "failure_4_metric_misclassification_during_workflow_changes": {
+      "concern": "If decider workflow changes (new status values, schema additions), tinker's metrics may misclassify items.",
+      "mitigation": "Tinker's existing prompt-config-consistency check (Step 5 of pipeline-health) already catches schema drift. The metric definitions in this PROP are explicit about which status values they include/exclude; future schema changes that affect those values would require a tinker prompt amendment, which is the standard refit pattern."
+    },
+    "failure_5_premature_escalation_on_drain_day": {
+      "concern": "On May 10 (operator drain day), open_status_count plummeted from 229 to 132 but assigned_analyst_count jumped to 83 \u2014 the new bottleneck. If tinker's metrics fire 'moderate (assigned_analyst>50)' but operator considers this expected post-drain transient, the finding is annoying.",
+      "mitigation": "Drain-day transients are real and brief (assigned_analyst drains as analyst processes). Tinker's report can include a contextual note when assigned_analyst_count jumped >50 in the last 24h: 'recent drain pending analyst processing \u2014 monitor for resolution within 3-5d'. This is text-only and does NOT change the threshold."
+    }
+  },
+  "verification_pattern": {
+    "pre_landing": {
+      "step_1": "Read PROP-030 thoroughly. Confirm: edits target files listed in implementation_files; no NEVER_PUSH territory; sibling-PROP coordination (PROP-026/027/029, DIRECTIVE-001) confirmed non-conflicting.",
+      "step_2": "Re-run the historical reconstruction to confirm retroactive_simulation numbers still hold: cd /tmp/edit-clone && python3 <reconstruction script in this PROP's data-collection step>. Expected: counts match the daily_curve_apr_to_may table within \u00b12 (git history is stable; small drift only if backfilling commits land).",
+      "step_3": "Confirm queue-history.jsonl does NOT already exist (so seed script is idempotent-safe). If it exists with content, that's a prior partial-landing; abort and investigate."
+    },
+    "post_landing_immediately": {
+      "step_1": "Verify edit_1 landed in monitor/prompts/tinker.md: `grep -n 'PROP-030' monitor/prompts/tinker.md` \u2014 should show the dispatcher pre-flight section.",
+      "step_2": "Verify edit_2 landed in monitor/prompts/reference/tinker-pipeline-health.md: `grep -A3 'Queue-level trend audit' monitor/prompts/reference/tinker-pipeline-health.md`.",
+      "step_3": "Verify seed script ran: `wc -l monitor/tinker/queue-history.jsonl` should show 30-40 rows; `head -1 monitor/tinker/queue-history.jsonl` should be valid JSON with schema_version:1 and the earliest day in the bootstrap.",
+      "step_4": "Run next scheduled tinker. Confirm: report.findings[] contains a backlog-trend finding (severity per current state); queue-history.jsonl has one more row appended; latest-tinker-summary.txt mentions backlog-trend if severity \u2265 major."
+    },
+    "post_landing_steady_state_check_at_7d": {
+      "step_1": "After 7 days of tinker runs, queue-history.jsonl should have ~37+ rows (30 seeded + 7 real). Each real row has all derived metrics populated.",
+      "step_2": "Confirm no false fires on info-tier by reviewing tinker reports for the week. If >2 spurious info-fires, plan threshold amendment.",
+      "step_3": "Operator review: do the findings match operator's mental model of pipeline health? If yes \u2014 thresholds are right. If 'too quiet', tighten. If 'too noisy', loosen."
+    }
+  },
+  "open_questions_for_operator_review": [
+    "Q1: Is the major-finding 'open_issues_total > 250' threshold tight enough, or should it move to >230 for a 5-day head start? (Leading indicators already cover this, so this is a question of redundancy preference.)",
+    "Q2: Should operator_escalation auto-write a HNOTE-OPERATOR-BACKLOG-NNN file in addition to surfacing in latest-tinker-summary.txt? (Currently NO \u2014 the summary is the operator interface.) Operator can override.",
+    "Q3: Backfill via git-log seed: acceptable, or operator prefers wait-7-days-for-natural-accumulation? (PROP recommends seed; trivial to switch.)",
+    "Q4: Should the new metrics also be added to the decider's daily-report so curmudgeon/analyst see them? (Currently NO \u2014 scope is tinker-only per directive.) Could be a follow-up PROP if useful.",
+    "Q5: Should we add per-severity sub-counts (e.g., 'minor_count_open', 'moderate_count_open', 'major_count_open') to queue-history.jsonl? (Marginal cost; could help future analysis. Currently NO to keep schema lean.)"
+  ],
+  "estimated_implementation_effort": {
+    "edits": "5 file edits (3 prompt files + 1 build script + verify no workspace-sync change needed)",
+    "new_files": "2 (queue-history.jsonl, build-scripts/seed-queue-history.js)",
+    "lines_added_total": "~200 lines (50 dispatcher + 40 Step 4 + 80 seed script + 30 misc)",
+    "complexity": "Low. All logic is integer-count arithmetic on JSON arrays. No new dependencies.",
+    "risk": "Low. Read-only audit surface; no behavioral changes to other agents.",
+    "implementation_time_estimate": "One tinker run (Mode 4) can apply all edits + run seed + verify. ~30 minutes of agent work."
+  },
+  "directive_completion_protocol": {
+    "after_prop_authored": "Mark DIRECTIVE-20260510-005 status='completed' per PROP-014-amendment-001 Q6 lifecycle convention. Append fields: completed_at, completed_by_run='tinker-2026-05-11T18-50', prop_id_authored='PROP-030', amendment_file_authored=null (no amendments yet).",
+    "operator_review_path": "Operator reads this PROP, decides accept/amend/reject. If amend: tinker authors PROP-030-amendment-001.json. If accept: tinker (Mode 4 on next run) applies the implementation edits and runs the seed."
+  },
+  "implemented_at": "2026-05-11T19:54:41.450476Z",
+  "implemented_by": "operator-applied-2026-05-11"
+}

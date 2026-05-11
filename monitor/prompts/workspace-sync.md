@@ -301,6 +301,7 @@ smart_copy "${WORKSPACE}/monitor/integrity/alerts.txt" monitor/integrity/alerts.
 smart_copy "${WORKSPACE}/monitor/integrity/latest-integrity-summary.txt" monitor/integrity/latest-integrity-summary.txt
 smart_copy "${WORKSPACE}/monitor/integrity/prop-009-shadow.jsonl" monitor/integrity/prop-009-shadow.jsonl
 sync_glob monitor/tinker '*.json'
+sync_glob monitor/tinker '*.jsonl'   # PROP-030: queue-history.jsonl per-run metrics append log
 sync_glob monitor/tinker/proposals '*.json'
 # Operator directives — tinker writes lifecycle status updates (status:
 # completed/superseded plus completed_at/completed_by_run/prop_id_authored)
