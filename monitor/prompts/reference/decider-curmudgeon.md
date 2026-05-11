@@ -280,7 +280,7 @@ if(!dryrun){
 
 **Daily report:** include `m2_auto_close: {count: N, dryrun: <bool>, exp_ids: [...]}` in the run summary.
 
-**8c. M3 carry-over enforcement (PROP-026 Phase 2, landed 2026-05-10).** After Step 8b's M2, read `unresolved_prior_cycle[]` from the curmudgeon review JSON. For each entry, look up `iss_id` in open-issues.json. If still open, the carry-over enforcement gate applies: you MUST take exactly one of three terminal actions in this run — patch, wontfix-with-rationale, or escalate to pending-human. **Skipping a carry-over without a recorded action is a self-test failure that fails your run report.**
+**8c. M3 carry-over enforcement (PROP-026 Phase 2, landed 2026-05-10; route-to-analyst action added 2026-05-11 per PROP-029 follow-up).** After Step 8b's M2, read `unresolved_prior_cycle[]` from the curmudgeon review JSON. For each entry, look up `iss_id` in open-issues.json. If still open, the carry-over enforcement gate applies: you MUST take exactly one of **five** terminal actions in this run — patch, wontfix-with-rationale, escalate-to-pending-human, route-to-curmudgeon (PROP-027 addition), or route-to-analyst (PROP-029 follow-up — same tracker-write requirement as M1). **Skipping a carry-over without a recorded action is a self-test failure that fails your run report.**
 
 **Procedure:**
 
@@ -333,15 +333,32 @@ console.log('CARRYOVERS structured: '+JSON.stringify(carryovers));
 #         attack" → class='deep-attack' (singleton).
 #       - Decider sets class on the queue push; analyst-side review_class is N/A here (no EXP).
 #
-# DO NOT skip an entry without recording one of these four actions. The hidden-default
+#   action_e (ROUTE-TO-ANALYST, PROP-029 follow-up 2026-05-11): the carry-over describes a
+#     concern where the next action is analyst defense / EXP-revision / new-prose work
+#     (not adversarial curmudgeon re-attack and not narrowly-patchable in this run).
+#     → flip iss.status='assigned-analyst' with iss.routing_reason, iss.routed_by_run=RUN_ID,
+#       iss.routed_at=now, iss.class_hint per derivation (verification for narrow refinement,
+#       deep-attack for substantive new argument, holistic for cross-section, null=analyst-decides).
+#     → **MUST ALSO write a corresponding expansion-tracker.json entry** (PROP-029 — same
+#       requirement as M1 Priority 5b route-to-analyst). Shape per DATA-SCHEMAS.md
+#       "expansion-tracker.json entry, decider-authored" section: id=EXP-NNN via t.next_id,
+#       source='decider-m3-carry-over' (distinct from 'decider-m1-route' for audit clarity),
+#       issue_ids=[iss.id], routed_from_iss=iss.id, routed_from_run=RUN_ID, review_class=class_hint,
+#       category=iss.category, priority derived from sev, status='pending'. The same
+#       try/catch pattern from decider.md Priority 5b applies: tracker-write failure logs
+#       loudly; the analyst orphan-OR safety net catches.
+#     → write ledger line: closed_by_mechanism='M3', action_taken='route-to-analyst',
+#         closure_evidence.class_hint=<...>, tracker_entry_id='EXP-NNN'.
+#
+# DO NOT skip an entry without recording one of these five actions. The hidden-default
 # 'no-action-taken' is the bug M3 was designed to catch.
 ```
 
-**Self-test before you finalize the run:** for each `unresolved_prior_cycle` entry, verify it has a corresponding ledger line with `closed_by_mechanism: 'M3'` from THIS run's RUN_ID and `action_taken ∈ {patch, wontfix, escalate, route-to-curmudgeon}`. If any are missing, do NOT mark the run complete — return to triage.
+**Self-test before you finalize the run:** for each `unresolved_prior_cycle` entry, verify it has a corresponding ledger line with `closed_by_mechanism: 'M3'` from THIS run's RUN_ID and `action_taken ∈ {patch, wontfix, escalate, route-to-curmudgeon, route-to-analyst}`. If any are missing, do NOT mark the run complete — return to triage. **For every `route-to-analyst` ledger line, also verify the corresponding expansion-tracker.json entry was written (find by `routed_from_iss=iss.id` AND `routed_from_run=RUN_ID`). PROP-029 invariant: every M3 route-to-analyst MUST have a tracker entry; an orphan here is the same defect class as M1 orphaning.**
 
 **Interaction with PROP-025 batch-gate:** carry-over enforcement is ORTHOGONAL to the curmudgeon's batch class. A `verification`-class push that carries `unresolved_prior_cycle` entries still triggers full M3 triage on integration. PROP-025 governs how much work curmudgeon does per run; M3 governs what decider must do with whatever curmudgeon flags as carry-over.
 
-**Daily report:** include `m3_carryover: {processed: N, patched: P, wontfixed: W, escalated: E, source_review: '<filename>.json'}` in the run summary.
+**Daily report:** include `m3_carryover: {processed: N, patched: P, wontfixed: W, escalated: E, routed_to_curmudgeon: RC, routed_to_analyst: RA, tracker_entries_written: T, source_review: '<filename>.json'}` in the run summary. The `tracker_entries_written` count should equal `RA` (every M3 route-to-analyst writes a tracker entry per PROP-029 follow-up).
 
 9. **Out-of-scope / deferred findings MUST be filed as new issues.** If you note in your report that something is "out of scope," "tracked for follow-up," "remaining for future EXP," or any similar phrasing, that finding MUST be filed as a new entry in `monitor/decisions/open-issues.json` BEFORE you finish the run. Narrative comments in daily reports do not survive — they scroll past with the next report and are forgotten. Either file an open issue (with the original review file as `related_review`) or push a new EXP item — never just leave the work as a sentence in your report. Auditing test: after writing your report, grep your own report text for "follow-up," "out of scope," "future," "tracked for," "remaining," "deferred." For each match, verify a corresponding open-issue or EXP exists.
 
