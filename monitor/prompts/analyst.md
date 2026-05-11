@@ -88,10 +88,23 @@ Trigger: Dome has more WINs than our wins.json.
 
 **Mode 1 — Section Expansion Queue**
 ```bash
-node -e "const t=JSON.parse(require('fs').readFileSync('monitor/analyst/expansion-tracker.json','utf8'));const p=t.items.filter(i=>i.status==='pending'&&!i.blocked_on);console.log(p.length?'EXPANSION MODE: '+p.length+' actionable pending':'NO ACTIONABLE EXPANSIONS')"
+node -e "
+const fs=require('fs');
+const t=JSON.parse(fs.readFileSync('monitor/analyst/expansion-tracker.json','utf8'));
+const p=t.items.filter(i=>i.status==='pending'&&!i.blocked_on);
+// PROP-029 safety net: even if tracker is empty, check open-issues for orphaned assigned-analyst ISSs.
+// Under steady-state PROP-029, decider writes tracker entries on ROUTE-TO-ANALYST, so orphan count should be zero.
+// Non-zero orphans = structural-signal-of-failure (decider tracker-write failed, or manual operator reroute) → still actionable.
+const oi=JSON.parse(fs.readFileSync('monitor/decisions/open-issues.json','utf8'));
+const tracked=new Set(t.items.flatMap(i=>i.issue_ids||[]));
+const orphans=oi.issues.filter(i=>i.status==='assigned-analyst'&&!tracked.has(i.id));
+if(p.length){console.log('EXPANSION MODE: '+p.length+' actionable pending');}
+else if(orphans.length){console.log('EXPANSION MODE: '+orphans.length+' orphan ISSs (PROP-029 safety net fired — tracker write failed somewhere; investigate after handling)');}
+else{console.log('NO ACTIONABLE EXPANSIONS');}
+"
 ```
-Trigger: Actionable pending expansions exist (excludes items with `blocked_on` field).
-→ Read `monitor/prompts/reference/analyst-mode1-expansions.md`, execute that procedure.
+Trigger: Either (a) actionable pending expansions exist in tracker (excludes items with `blocked_on` field), OR (b) PROP-029 safety net detects orphan ISSs (status='assigned-analyst' with no tracker entry).
+→ Read `monitor/prompts/reference/analyst-mode1-expansions.md`, execute that procedure. **If the safety net fires (path b), also emit an attention-inbox notice** so tinker investigates the tracker-write decoupling (see analyst-mode1-expansions.md "Check for Orphaned Issues" section for the exact format).
 
 **Mode 1b — Prediction Writeups** (HIGH PRIORITY)
 ```bash

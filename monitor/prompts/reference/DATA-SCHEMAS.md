@@ -137,6 +137,29 @@ Live-state file at `monitor/curmudgeon/priority-queue.json` carrying ONLY the ac
 
 **EXP file schema (PROP-025 addition):** analyst's expansion files at `monitor/analyst/expansions/EXP-NNN.json` may carry a `review_class` field with values `'verification' | 'deep-attack' | 'holistic'`. Analyst declares this when authoring. Default if absent: decider treats as `'deep-attack'`. Author guidance: `'verification'` for refinements (wordsmithing, citation fixes, small additions to existing arguments), `'deep-attack'` for new arguments / new sub-sections / defender-pivots that add new cross-references / verdict-changing rewrites, `'holistic'` for cross-WIN or cross-section work. Analyst should consider the cost: a `'verification'` review can batch (cheap), a `'deep-attack'` review will singleton (expensive Opus startup) — declaring honestly preserves curmudgeon's anti-drift attention budget.
 
+**expansion-tracker.json entry, decider-authored (PROP-029, 2026-05-11):** When decider M1 Priority 5b routes an ISS to status='assigned-analyst', it ALSO writes a corresponding entry to `monitor/analyst/expansion-tracker.json` with the following shape:
+
+```json
+{
+  "id": "EXP-NNN",                       // allocated via t.next_id, bumped after push
+  "target": "<derived from iss.description first sentence, ≤180 chars>",
+  "source": "decider-m1-route",          // new source enum value
+  "curmudgeon_review": "<iss.source if it points to monitor/curmudgeon/reviews/...>",
+  "issue_ids": ["ISS-NNN"],              // one ISS per entry at creation; analyst may consolidate
+  "category": "<iss.category or 'minor-fix'>",
+  "priority": "high|medium|low",         // derived from iss.severity
+  "status": "pending",
+  "review_class": "<iss.class_hint mirrored — null is fine>",
+  "routed_from_iss": "ISS-NNN",
+  "routed_from_run": "decider-RUN_ID",
+  "routing_reason": "<same string as iss.routing_reason>",
+  "notes": "M1 ROUTE-TO-ANALYST tracker entry (PROP-029)...",
+  "created_at": "<ISO now>"
+}
+```
+
+These entries are PROVISIONAL — analyst may consolidate multiple `source='decider-m1-route'` entries into a single multi-ISS EXP at Mode 1 intake (e.g., the verification-batch pattern from EXP-302..307). When consolidating, analyst marks the original decider-authored entries as `status='consolidated-into-<NEW_EXP_ID>'` and writes a single rolled-up EXP for the cluster. The `routed_from_iss` and `routed_from_run` fields preserve provenance through consolidation.
+
 **Archive file shape (`priority-queue-archive.jsonl`):** one JSON object per line, append-only, no slice cap. Each line is a pop record. Required fields:
 - `queue_id`, `target_id`, `target_type`, `popped_at`, `popped_by`.
 - `pop_reason` (string): one of `strict_queue_id`, `soft_reviewed_at_after_pushed_at`, `operator_bypass`, `shadow_legacy_substring`. Identifies how the decider's Step E2 filter matched this entry.

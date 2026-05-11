@@ -26,7 +26,7 @@ For each M1 candidate (or M3 carry-over), apply the decision tree top-down. **Fi
 | 3 | Three-rule narrowness gate passes (see below) | **PATCH** (minor/info) or **NARROW-PATCH** (moderate) | Mechanical fix. Step 5 self-apply pushes class='verification' per PROP-025. |
 | 4 | NEVER_PUSH file modification, physical-world verification, legal/strategic/personal knowledge required | **ESCALATE-TO-HUMAN** | Genuine operator-only territory. ISS-1089, ISS-1924 are canonical examples. |
 | 5 | Issue is curmudgeon-raised AND next action is curmudgeon adversarial re-attack (rare — most need analyst defense) | **ROUTE-TO-CURMUDGEON** | Push to priority-queue with class derived per PROP-025. Set `iss.routed_to_curmudgeon_queue_id` to prevent re-trigger. |
-| 6 | Default | **ROUTE-TO-ANALYST** | Status → `assigned-analyst`. Optional `class_hint` field. Analyst Mode 2 picks up. |
+| 6 | Default | **ROUTE-TO-ANALYST** | Status → `assigned-analyst`. Optional `class_hint` field. **PROP-029: ALSO write corresponding expansion-tracker.json entry** (source='decider-m1-route', issue_ids=[iss.id], review_class=class_hint, status='pending'). Analyst Mode 1 dispatcher fires on the tracker entry and Mode 1 procedure picks up. |
 
 ---
 

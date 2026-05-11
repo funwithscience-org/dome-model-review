@@ -61,6 +61,23 @@ For HNOTEs that genuinely don't imply an artifact (e.g., a cross-cutting note yo
 
 ## Check for Orphaned Issues
 
+**Role under PROP-029 (2026-05-11):** This orphan-check is a SAFETY NET, not the primary intake path. Under PROP-029, decider writes an expansion-tracker entry every time it routes an ISS to status='assigned-analyst' in M1 Priority 5b. The dispatcher fires on the tracker pending count and Mode 1 enters normally — analyst works the decider-authored entries by ID. The orphan-check then runs and finds zero orphans in steady state.
+
+**When this check fires (orphan count > 0):** it's a structural-signal-of-failure. Possible causes: (a) decider's tracker-write failed transiently for these ISSs, (b) a manual operator reroute set status='assigned-analyst' without writing the tracker (last known instance: commit d44e2670 on 2026-05-10 — predates PROP-029), (c) a future agent variant introduced a new code path that sets status without tracker write. In all three cases, handle the orphans per the existing procedure (group, create EXP, work in priority order) AND emit an attention-inbox notice:
+
+```json
+{
+  "id": "PROP029-ORPHAN-DETECTED-<YYYY-MM-DD>",
+  "detected_at": "<ISO now>",
+  "orphan_count": <N>,
+  "orphan_iss_ids": [<list>],
+  "orphan_routed_by_run": [<unique routed_by_run values from the orphan set>],
+  "action_recommended": "tinker investigates: did decider tracker-write fail, or was this a manual operator reroute? Either way, root-cause and patch the decoupling.",
+  "action_taken_this_run": "<N> orphans grouped into <M> EXP entries and worked normally; tracker decoupling root-cause TBD.",
+  "resolved": false
+}
+```
+
 The decider may assign issues to you without creating a matching expansion entry:
 
 ```bash

@@ -235,7 +235,48 @@ for(const {iss, age} of candidates){
       iss.routed_by_run = RUN_ID;
       iss.routed_at = now;
       iss.class_hint = null;  // LLM may set per-issue when overriding; null = analyst decides per PROP-025
-      console.log('  ROUTE-TO-ANALYST '+iss.id+' [age='+Math.floor(age)+'d, sev='+sev+'] — class_hint=null (LLM may set on override)');
+      // PROP-029: also write a corresponding expansion-tracker.json entry so analyst's dispatcher sees the work.
+      // Without this, ISSs accumulate as orphans (135 observed 2026-05-11) and require operator HNOTE intervention to drain.
+      try {
+        const trackerPath = 'monitor/analyst/expansion-tracker.json';
+        const t = JSON.parse(fs.readFileSync(trackerPath, 'utf8'));
+        if(typeof t.next_id !== 'number'){
+          // Self-heal — same archive-aware pattern as decider-curmudgeon.md EXP allocator.
+          const archPath = 'monitor/analyst/expansion-tracker-archive.jsonl';
+          const liveMax = t.items.reduce((m,i)=>Math.max(m,parseInt((i.id||'EXP-0').replace('EXP-',''))||0),0);
+          const archMax = fs.existsSync(archPath)
+            ? fs.readFileSync(archPath,'utf8').split('\n').filter(Boolean).reduce((m,l)=>{try{return Math.max(m,parseInt((JSON.parse(l).id||'EXP-0').replace('EXP-',''))||0)}catch(e){return m}},0)
+            : 0;
+          t.next_id = Math.max(liveMax, archMax) + 1;
+          console.error('PROP-029: tracker next_id self-heal engaged');
+        }
+        const expId = 'EXP-' + String(t.next_id).padStart(3,'0');
+        const priority = (sev==='critical'||sev==='major') ? 'high' : (sev==='moderate' ? 'medium' : 'low');
+        const targetText = (iss.description||'M1-routed ISS').split(/(?<=[.!?])\s/)[0].slice(0,180);
+        t.items.push({
+          id: expId,
+          target: targetText,
+          source: 'decider-m1-route',
+          curmudgeon_review: (typeof iss.source==='string' && iss.source.startsWith('monitor/curmudgeon/reviews/')) ? iss.source : null,
+          issue_ids: [iss.id],
+          category: iss.category || 'minor-fix',
+          priority: priority,
+          status: 'pending',
+          review_class: iss.class_hint,
+          routed_from_iss: iss.id,
+          routed_from_run: RUN_ID,
+          routing_reason: rationale,
+          notes: 'M1 ROUTE-TO-ANALYST tracker entry (PROP-029). Analyst Mode 1 may consolidate with sibling routed-from-m1 entries.',
+          created_at: now
+        });
+        t.next_id++;
+        t.last_updated = now;
+        fs.writeFileSync(trackerPath, JSON.stringify(t, null, 2));
+        console.log('  ROUTE-TO-ANALYST '+iss.id+' [age='+Math.floor(age)+'d, sev='+sev+'] → tracker '+expId+' (class_hint=null, LLM may override)');
+      } catch(e) {
+        // Tracker write failed — log loudly. The ISS status flip already happened; the orphan-check safety net at analyst.md dispatcher will catch this on the analyst side.
+        console.error('  PROP-029 TRACKER WRITE FAILED for '+iss.id+': '+e.message+' (analyst orphan-check safety net will pick up)');
+      }
     }
     // PATCH / NARROW-PATCH / WONTFIX / ROUTE-TO-CURMUDGEON paths are all LLM-override paths.
     // The bash helper's default-intent ledger line records the route-to-analyst intent; the LLM walks
@@ -271,6 +312,8 @@ The bash helper above writes ROUTE-TO-ANALYST intent (or ESCALATE for major/crit
    - `'holistic'` if multi-WIN or cross-section work
    - `null` (default) if uncertain — analyst decides per PROP-025
    The class_hint is **advisory only**; analyst's `review_class` on the EXP remains authoritative per PROP-025. Mirror to corrective ledger entry under `closure_evidence.class_hint`.
+
+   **PROP-029 tracker-entry requirement:** every ROUTE-TO-ANALYST confirmation (whether from the bash helper's default or an LLM-promoted override from PATCH/NARROW-PATCH/WONTFIX after re-evaluation) MUST result in a corresponding expansion-tracker.json entry. The bash helper does this automatically inside its `action==='route-to-analyst'` branch. If you (the LLM) confirm or promote-to ROUTE-TO-ANALYST in your override pass, the tracker entry is already there from the bash default-intent — no extra write needed. If you DOWNGRADE from ROUTE-TO-ANALYST (e.g., to NARROW-PATCH or WONTFIX) in your override pass, you MUST remove the bash-written tracker entry (find by `routed_from_run=RUN_ID` AND `routed_from_iss=iss.id`) to keep the tracker clean. Same RUN_ID late-correction discipline as the closure-ledger override pattern.
 
 **Daily report `m1_sweep` field shape (PROP-027 expanded):**
 ```json
