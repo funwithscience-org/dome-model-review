@@ -1,0 +1,286 @@
+{
+  "id": "PROP-028",
+  "prop_id": "PROP-028",
+  "title": "Stale-analyst-assessment overwrite guard: structural protection for operator-approved verdicts against re-integration of pre-existing analyst assessment files",
+  "authored_by": "tinker (2026-05-11 run, in response to DIRECTIVE-20260510-003)",
+  "authored_at": "2026-05-11T05:04:00Z",
+  "status": "pending-operator-review",
+  "category": "structural_guard + decider_integration_check + integrity_consistency_check",
+  "directive": "DIRECTIVE-20260510-003-stale-assessment-overwrite-guard",
+  "retires_iss": ["ISS-1199", "ISS-1200", "ISS-1201"],
+  "amends": "decider Step 1h2 (Prediction Assessment Integration) — adds a timestamp-based stale-skip; test.js — adds a verdict_history-vs-current-verdict consistency check (NEVER_PUSH; operator-applied)",
+  "target_files": [
+    "monitor/prompts/reference/decider-intake.md (Step 1h2 — adds stale-check before each assessment is integrated; agent-applied)",
+    "test.js (new assertion: every entry with verdict_history must have entry.our_verdict === verdict_history[last].to; NEVER_PUSH — operator-applied)",
+    "monitor/prompts/reference/DATA-SCHEMAS.md (document the stale-skip semantics and the verdict_history-consistency invariant)"
+  ],
+  "executive_summary": {
+    "problem_one_line": "On 2026-04-18 commit 209fda52, the decider integrated four PRED-assessment-*.json files dated 2026-04-11 that silently reverted four operator-applied verdict changes from 2026-04-14 (commit a05ebcad / ISS-951/952/953/954); the structural signal needed to catch this — `predictions.json[id].verdict_history[last].at` was newer than the assessment file's `assessed_at` — was already in the data and nobody read it.",
+    "fix_one_line": "Belt-and-suspenders Mech AB: (A) decider Step 1h2 reads `verdict_history[last].at` for each prediction and skips integration with attention-inbox notice if the recorded history is newer than the assessment's `assessed_at`; (B) test.js adds a pre-push invariant that `our_verdict === verdict_history[last].to` for every entry that has a verdict_history — catching the corruption at the very last moment if Mech A is ever bypassed.",
+    "tinker_top_line_recommendations": {
+      "Q1_where_guard_lives": "Mech AB (both layered). Mech A is the live save — it stops the bad write at the source and routes the operator a one-line attention-inbox notice. Mech B is the catastrophic safety net — if Mech A is bypassed (decider prompt edited away, new agent variant introduced, integration moved to a different code path) the pre-push gate still catches the inconsistency before it ships. The cost of Mech B is one node block in test.js — trivial. Layering matches PROP-014 / PROP-022 / PROP-026 architecture.",
+      "Q2_trip_signal": "Timestamp comparison only — `verdict_history[last].at` (predictions.json side) vs `assessed_at` (assessment-file side). If `verdict_history[last].at > assessed_at`, the assessment is stale; skip integration. No closed-issues.json lookup required — verdict_history is the authoritative trace and operator already writes to it whenever a verdict changes (verified: commit a05ebcad's data/predictions.json after-state has the verdict_history entry sitting right there). Closed-issues lookup would be redundant and would require N-day-lookback heuristics. Timestamp comparison is mechanical and self-documenting.",
+      "Q3_on_trip_action": "Skip-with-attention (NOT silent-skip; NOT escalate-to-pending-human). Silent-skip is what produced 209fda5 in the first place — the integration was effectively a no-op on the operator's behalf but no one was warned. Escalate-to-human floods the inbox during normal prediction churn. The right middle path is: skip the write, push a single line to monitor/decisions/attention-inbox.json with the prediction_id, the stale assessment file, both timestamps, and the action 'analyst should re-run if a fresh assessment is needed.' One attention-inbox line per skip; not an ISS.",
+      "Q4_HNOTE_interaction": "The timestamp-based check naturally handles HNOTE-driven verdict changes. When an HNOTE (e.g. HNOTE-OPERATOR-WIN-013-014-VERDICT-REFRAME-001) fires, the analyst writes a fresh EXP-*.json (e.g. EXP-301, `written_at: 2026-05-10T08:14:02.050Z`). The decider integrates that EXP and the verdict_history entry it writes is dated 2026-05-10. On the NEXT decider run, the freshly-written verdict_history entry is older than any subsequent analyst output, so subsequent assessments don't trip the guard. The HNOTE channel and structural guard are genuinely belt-and-suspenders: HNOTE creates the fresh assessment, structural guard prevents stale ones from undoing it.",
+      "Q5_archive_lookback_scope": "Live `predictions.json` only — no archive read needed. The `verdict_history` array travels INSIDE the prediction entry; it is not in closed-issues.json or its archive. PROP-022 phase 4 archive split affects closed-issues only; predictions.json is unaffected by archive and stays a single live file. The check reads exactly one field per integrated assessment: `entry.verdict_history?.at(-1)?.at`. No archive plumbing required.",
+      "Q6_integrity_gate_factoring": "Fold ISS-1201 into PROP-028 as Mech B (the test.js consistency assertion). ISS-1201 asks for a pre-push gate on `our_verdict === verdict_history[last].to`; that's exactly the Mech B check Q1 recommends. Two separate test additions would be confusing — one assertion captures both Mech B and ISS-1201's request. The assertion runs for every entry with a verdict_history (currently 4 entries in predictions.json, 3 in wins.json — extend to both files)."
+    },
+    "scope_clarification": "This PROP authorizes design only. Mech A is agent-applied (decider prompt edit, NOT NEVER_PUSH). Mech B is operator-applied (test.js IS NEVER_PUSH). Operator reviews and applies."
+  },
+  "context_verification": {
+    "directive_filed_at": "2026-05-10T11:45:00Z",
+    "tinker_investigated_at": "2026-05-11T05:00:00Z",
+    "investigation_method": "Cloned repo fresh into /tmp/edit-clone-tinker; ran git show 209fda52, git show 209fda52^:data/predictions.json, git show a05ebcad, and pulled the four ISSs from closed-issues.json; read assessment files from monitor/analyst/expansions/.",
+    "directive_date_note": "DIRECTIVE-003 cites '209fda5 (2026-04-20)' — the actual commit is dated 2026-04-18T18:28:53. Operator's recollection was approximate; the failure mode is exactly as described. Noting the date correction for the record.",
+    "directive_iss_attribution_note": "DIRECTIVE-003 says the analyst assessments that produced 209fda5 had dates of 2026-04-11. Confirmed: all four PRED-assessment-*.json files have `assessed_at` between 2026-04-11T05:24Z and 2026-04-11T08:11Z (sync timestamps match too)."
+  },
+  "failure_mode_reconstruction": {
+    "summary": "Four operator-approved verdict changes were silently reverted in a single decider self-apply run, four days after the operator applied them. The structural signal needed to detect the staleness was already in the data — it just wasn't being read.",
+    "timeline_utc": [
+      {
+        "at": "2026-04-11T05:24:31.130Z",
+        "agent": "analyst",
+        "action": "Wrote monitor/analyst/expansions/PRED-assessment-W019.json with our_verdict='standard_physics', reasoning about NOAA NMP drift being standard geophysics."
+      },
+      {
+        "at": "2026-04-11T07:24:54.000Z",
+        "agent": "analyst",
+        "action": "Wrote PRED-assessment-PRED-NEW-002.json with our_verdict='unfalsifiable'."
+      },
+      {
+        "at": "2026-04-11T11:21:00.000Z",
+        "agent": "analyst",
+        "action": "Wrote PRED-assessment-PRED-TOROID-003.json with our_verdict='unfalsifiable' and PRED-assessment-W020.json with our_verdict='unfalsifiable'.",
+        "note": "These four assessment files all stamped 2026-04-11; sync to git happened 2026-04-11T14:42-15:09Z (workspace-sync sequence)."
+      },
+      {
+        "at": "2026-04-13T~late",
+        "agent": "curmudgeon",
+        "action": "Reviewed PRED-batch-2026-04-13. Recommended verdict reversals: W019 should be 'falsified' (poleward drift was DOMINATE, observed lateral 5.5x larger); W020 should be 'falsified' (≥3% threshold specified, criterion failed); PRED-NEW-002 should be 'standard_physics' (9.2 km/s within PREM P-wave 8-13 km/s range)."
+      },
+      {
+        "at": "2026-04-14T04:41:35.725Z",
+        "agent": "decider",
+        "action": "Created ISS-951/952/953 from curmudgeon review; tagged 'Verdict change requires human approval'. Status='open', severity='major'/'moderate', category='verdict'."
+      },
+      {
+        "at": "2026-04-14T05:13:24.921Z",
+        "agent": "analyst-EXP-136",
+        "action": "Created ISS-954 for PRED-TOROID-003 after finding two fatal derivation errors in the dome's Schumann splitting math; recommended unfalsifiable → standard_physics."
+      },
+      {
+        "at": "2026-04-14T05:31:57.174Z",
+        "agent": "human-decision",
+        "action": "Operator approved all four verdict changes."
+      },
+      {
+        "at": "2026-04-14T06:32:19+0100 (commit a05ebcad)",
+        "agent": "operator (steve <russelst@melrosecastle.com>)",
+        "action": "Pushed commit a05ebcad 'Apply 5 verdict change approvals (human decisions)' — wrote our_verdict, our_verdict_prev, AND verdict_history[] entries for all four predictions. Each verdict_history entry has at='2026-04-14T05:31:57.174Z' and reason='Human approval (ISS-95N): <reasoning>'.",
+        "key_observation": "The verdict_history field was correctly populated by the operator's commit. The structural signal needed to detect future stale-overwrites was sitting in the data from 2026-04-14 onward."
+      },
+      {
+        "at": "2026-04-18T18:28:53+0100 (commit 209fda52)",
+        "agent": "decider (Sonnet 4.6 self-apply run)",
+        "action": "Self-apply pass walked monitor/analyst/expansions/PRED-assessment-*.json (the same files written 7 days earlier on 2026-04-11), did NOT check predictions.json[id].verdict_history[last].at vs assessment.assessed_at, and integrated each assessment's our_verdict into predictions.json — silently reverting all four operator changes.",
+        "diff_effect": "W019: falsified → standard_physics (reverted); W020: falsified → unfalsifiable (reverted); PRED-NEW-002: standard_physics → unfalsifiable (reverted); PRED-TOROID-003: standard_physics → unfalsifiable (reverted).",
+        "verdict_history_corruption": "Because the integration didn't append a new verdict_history entry, the post-209fda5 state has `our_verdict !== verdict_history[last].to` for all four entries — the consistency invariant ISS-1201 calls for is violated and would be detected by a pre-push test."
+      }
+    ],
+    "structural_signal_that_was_ignored": {
+      "for_each_of_four_predictions": "predictions.json[id].verdict_history[last].at = '2026-04-14T05:31:57.174Z'",
+      "vs_assessment_file_field": "monitor/analyst/expansions/PRED-assessment-<id>.json:assessed_at = '2026-04-11T05:24Z to 2026-04-11T11:21Z'",
+      "delta": "verdict_history entry is 3-4 days NEWER than the assessment file in every case",
+      "decision_rule": "if verdict_history.at(-1).at > assessment.assessed_at → assessment is stale → skip integration with attention-inbox notice",
+      "post_check_consistency": "after Mech A skip, our_verdict and verdict_history[last].to remain equal (operator's last write is preserved); Mech B's pre-push assertion holds"
+    },
+    "soft_mitigation_currently_in_place_since_2026-04-20": {
+      "mechanism": "HNOTE dual-confirm protocol — operator-applied verdict changes file an explicit HNOTE that authorizes the change and prompts agents to write fresh EXP/assessment files in response.",
+      "observed_effectiveness": "No silent overwrites observed in the 3 weeks since 2026-04-20. Recent verdict changes (WIN-013/014 → Refuted by Data, WIN-055 → Self-Contradicted) all went through the HNOTE channel and have fresh EXP files dated 2026-05-09/10.",
+      "structural_limitation": "Depends on operator discipline (file the HNOTE) and agent integration discipline (read the HNOTE when authoring EXPs). Not a code-level invariant. If either side slips, the failure mode returns."
+    }
+  },
+  "design_decisions": {
+    "Q1_where_guard_lives": {
+      "answer": "Mech AB (both)",
+      "rationale": "Mech A (decider integration check) prevents the bug at write time — the right place for a live save. Mech B (pre-push gate in test.js) catches the bug if Mech A is ever bypassed by a future prompt edit, new agent variant, or alternate code path. The cost of Mech B is ~10 lines in test.js; the cost of NOT having it is another 209fda5-style silent revert that ships to the public site.",
+      "alternative_considered": "Mech A alone (cheaper, no operator-applied step). Rejected because the 209fda5 failure mode demonstrates that single-mechanism guards on critical data invariants get bypassed when integration code paths evolve. Belt-and-suspenders is the established pipeline pattern (PROP-014 state verification, PROP-022 archive integrity, PROP-026 dual-mode decider).",
+      "alternative_considered_2": "Mech B alone (no decider-side check). Rejected because Mech B catches the bug AFTER the commit is staged — the decider has already written the bad data, the run report misrepresents what happened, and the pre-push fails with no graceful recovery path. Mech A catches it at write time and routes a clean attention-inbox notice; Mech B is the safety net."
+    },
+    "Q2_trip_signal": {
+      "answer": "Timestamp comparison only: verdict_history[last].at vs assessed_at",
+      "rationale": "The verdict_history field is the authoritative trace of every verdict change. Operator writes to it (verified in commit a05ebcad); decider should write to it on integration (current behavior: NOT writing — that's the consistency bug ISS-1201 flags). Comparing two timestamps is mechanical, self-documenting in the data, and trip-or-not-trip with no ambiguous heuristics.",
+      "alternatives_considered": [
+        "Closed-issues.json lookup by prediction_id within last N days. Rejected: requires choosing N (operator's intuition was 'within last 30d'), creates a coupling between predictions.json and closed-issues.json maintenance, and is redundant — every closed verdict-change ISS already has a corresponding verdict_history entry on predictions.json since 2026-04-14. The verdict_history field is the cleaner single source.",
+        "Explicit HNOTE-confirmation lookup. Rejected: HNOTE channel is a process discipline, not a data invariant. If HNOTEs are missed or named differently, the check fails silently. The verdict_history field is set unconditionally by operator on every verdict change.",
+        "assessment-file-created-at as the time signal. Rejected: file mtime on FUSE is unreliable; `assessed_at` is the agent's own self-stamped time and is durable across syncs."
+      ],
+      "edge_case_no_verdict_history": "If an entry has no verdict_history (legacy entries; new entries written by analyst before operator has ever touched them), the check is a no-op — there's nothing to override and the assessment is allowed to integrate. Predictable: a NEW prediction's first assessment integrates normally."
+    },
+    "Q3_on_trip_action": {
+      "answer": "Skip with attention-inbox notice",
+      "rationale": "Silent-skip is what produced 209fda5 — no warning, no audit trail, the operator only notices when they happen to re-read the page. Escalate-to-pending-human floods the queue during normal prediction churn (which spawns 3-5 assessments per analyst run). Attention-inbox is the middle ground: one line per skip, machine-readable, the operator sees it on their next decider summary read.",
+      "attention_inbox_record_shape": {
+        "_comment": "Append one entry per skip; analyst marks resolved on re-run",
+        "id": "STALE-ASSESS-<prediction_id>-<YYYY-MM-DD>",
+        "prediction_id": "W019",
+        "skipped_assessment_file": "monitor/analyst/expansions/PRED-assessment-W019.json",
+        "skipped_assessment_assessed_at": "2026-04-11T05:24:31.130Z",
+        "current_verdict_history_last_at": "2026-04-14T05:31:57.174Z",
+        "current_verdict": "falsified",
+        "assessment_proposed_verdict": "standard_physics",
+        "stale_delta_days": 3,
+        "action_recommended": "If a fresh assessment is needed, re-run analyst on this prediction; otherwise leave as-is (current verdict was operator-approved at the recorded verdict_history time).",
+        "created_by": "decider-stale-skip",
+        "created_at": "<integration-time>",
+        "resolved": false
+      },
+      "alternative_considered": "Escalate-to-pending-human via new ISS. Rejected for the routine-churn case but PROP-027's routing matrix would natively support 'ROUTE-TO-ANALYST' as the cleaner classification — if any specific skip warrants follow-up beyond the attention-inbox line, the operator can promote it manually. The default should be cheap."
+    },
+    "Q4_HNOTE_interaction": {
+      "answer": "Natural compatibility — the timestamp check does not trip on HNOTE-driven assessments because they're fresh",
+      "verification_against_current_traffic": [
+        {
+          "trace": "HNOTE-OPERATOR-WIN-013-014-VERDICT-REFRAME-001 (2026-05-09)",
+          "fresh_artifact": "monitor/analyst/expansions/EXP-301-kappa-cluster-section-and-WIN-013-014-reframe.json, written_at 2026-05-10T08:14:02.050Z",
+          "integration": "Decider integrates 2026-05-10; will write verdict_history with at=2026-05-10T... — later than any prior assessment file",
+          "guard_behavior": "Mech A skip never trips because EXP-301 is newer than the historical verdict_history entry; correct integration proceeds."
+        },
+        {
+          "trace": "WIN-055 operator-applied (2026-05-10 closing ISS-1924)",
+          "fresh_artifact": "Operator writes verdict_history entry with at=2026-05-10T...",
+          "guard_behavior": "If a NEW analyst assessment of WIN-055 is written 2026-05-11 or later → integrates normally (assessment newer than verdict_history). If an OLD analyst assessment from before 2026-05-10 surfaces → Mech A skips and posts attention-inbox notice. Exactly the desired behavior."
+        }
+      ],
+      "no_circular_dependency": "Mech A reads predictions.json (or wins.json — see below); Mech B reads predictions.json and wins.json. Neither writes data; both observe data. No risk of guard-self-referencing-guard."
+    },
+    "Q5_archive_lookback_scope": {
+      "answer": "No archive lookback needed",
+      "rationale": "verdict_history is INSIDE the prediction entry, not external. PROP-022 phase 4 archive split affects closed-issues.json only (separate file). The check reads exactly one field on the live prediction/win: entry.verdict_history.at(-1).at. Live file is the complete record.",
+      "N_days_recommendation": "N/A — the check is not N-day-bounded. It compares two specific timestamps. If verdict_history has an entry from a year ago, that's still the most recent verdict change; if an assessment file is from before that change, it's stale regardless of absolute age."
+    },
+    "Q6_integrity_gate_factoring": {
+      "answer": "Fold ISS-1201 into Mech B (one combined test.js assertion)",
+      "test_js_assertion_one_line_summary": "For every predictions.json/wins.json entry with a non-empty verdict_history, assert entry.our_verdict === entry.verdict_history.at(-1).to.",
+      "captures_two_things": [
+        "ISS-1201's direct ask: our_verdict-vs-verdict_history consistency",
+        "Mech B safety net for Mech A bypass: if anyone integrates an assessment without writing the verdict_history entry, our_verdict diverges from verdict_history.at(-1).to and the assertion fails at pre-push"
+      ],
+      "extends_to_both_files": "predictions.json (4 current entries with verdict_history) AND wins.json (3 current entries with verdict_history). Same invariant, same assertion shape — duplicate the for-loop or factor a helper.",
+      "wins_format_note": "wins.json verdict_history entries use 'date' field (YYYY-MM-DD) where predictions.json uses 'at' field (ISO datetime). Mech A timestamp comparison should accept either — read whichever is present, compare lexically (YYYY-MM-DD < YYYY-MM-DDTHH:MM:SSZ works since the 11th-char position is either end-of-string or a T which is > digit). Mech B consistency check doesn't care about timestamps at all — it only checks `to` equals `verdict`/`our_verdict`."
+    }
+  },
+  "implementation_scope": {
+    "mech_a_decider_intake_step_1h2_edit": {
+      "file": "monitor/prompts/reference/decider-intake.md",
+      "ownership": "git-owned, agent-applied (decider can self-apply on next run by following the standard prompt-edit-then-commit pattern via clean clone)",
+      "current_location": "Step 1h2: Prediction Assessment Integration (line 197-242 in current file)",
+      "proposed_edit": "Insert between current step 1 (read assessment) and step 2 (update predictions.json) a new sub-step '1a: Stale-Assessment Check' with this logic:",
+      "proposed_pseudocode": "```javascript\n// Step 1a (NEW): Stale-assessment check\nconst entry = preds.entries.find(e => e.id === assessment.prediction_id);\nif (entry?.verdict_history?.length) {\n  const lastChange = entry.verdict_history.at(-1);\n  const lastChangeAt = lastChange.at || lastChange.date; // predictions uses 'at', wins uses 'date'\n  if (lastChangeAt && lastChangeAt > assessment.assessed_at) {\n    // Stale: predictions.json was updated more recently than this assessment\n    console.log(`STALE-SKIP ${assessment.prediction_id}: verdict_history.at(-1)=${lastChangeAt} > assessed_at=${assessment.assessed_at}`);\n    appendAttentionInbox({\n      id: `STALE-ASSESS-${assessment.prediction_id}-${todayDate}`,\n      prediction_id: assessment.prediction_id,\n      skipped_assessment_file: assessmentFile,\n      skipped_assessment_assessed_at: assessment.assessed_at,\n      current_verdict_history_last_at: lastChangeAt,\n      current_verdict: entry.our_verdict,\n      assessment_proposed_verdict: assessment.our_verdict,\n      stale_delta_days: Math.round((Date.parse(lastChangeAt) - Date.parse(assessment.assessed_at)) / 86400000),\n      action_recommended: 'Re-run analyst if fresh assessment needed; otherwise leave as-is.',\n      created_by: 'decider-stale-skip',\n      created_at: new Date().toISOString(),\n      resolved: false\n    });\n    skippedAssessments.push(assessment.prediction_id);\n    continue; // skip step 2/3/4 for this assessment\n  }\n}\n// Step 2 (EXISTING): proceeds only if not skipped\n// After updating, ALSO append verdict_history entry if our_verdict changed:\nif (entry.our_verdict !== assessment.our_verdict) {\n  entry.verdict_history = entry.verdict_history || [];\n  entry.verdict_history.push({\n    from: entry.our_verdict,\n    to: assessment.our_verdict,\n    at: new Date().toISOString(),\n    reason: `Analyst assessment integration: ${assessmentFile}`\n  });\n}\nentry.our_verdict = assessment.our_verdict;\nentry.detail_reasoning = assessment.reasoning;\n```",
+      "prose_addition_for_prompt": "Add to Step 1h2 a `Stale-Skip Protocol` subsection explaining: (a) the check compares verdict_history[last].at with assessment.assessed_at; (b) on stale, skip + attention-inbox; (c) on integrate, ALWAYS append a verdict_history entry so the invariant `our_verdict === verdict_history.at(-1).to` always holds after this step.",
+      "verification_pattern": "After implementation, run `grep -n 'Stale-Skip\\|STALE-SKIP\\|verdict_history' monitor/prompts/reference/decider-intake.md` and confirm the section exists. Also run test.js (Mech B) which becomes the structural check.",
+      "ROLLBACK_path": "If Mech A causes false positives (assessments correctly skipped because verdict_history advanced under HNOTE flow but operator intended re-assessment), the skip is observable via attention-inbox lines. Operator can re-stamp the assessment file's assessed_at (or have analyst re-write it) to bypass — no code change needed."
+    },
+    "mech_b_test_js_consistency_assertion": {
+      "file": "test.js",
+      "ownership": "git-owned, NEVER_PUSH (operator-applied per CLAUDE.md File Ownership table)",
+      "insertion_point": "After existing prediction-entry validation loop (around line 580 in current file, between the prediction loop closing brace and the HTML placeholder check)",
+      "proposed_diff": "```javascript\n// After existing for-of entry loop around line 580 in current test.js:\n\n// ── New: verdict_history consistency invariant (PROP-028 Mech B) ──\nfor (const entry of pred_data.entries) {\n  if (entry.verdict_history?.length) {\n    const last = entry.verdict_history.at(-1);\n    assert(entry.our_verdict === last.to,\n      `${entry.id} our_verdict ('${entry.our_verdict}') matches verdict_history.at(-1).to ('${last.to}') — PROP-028 invariant`);\n  }\n}\n\n// Same invariant for wins.json (read wins data above; insert in the wins section similarly):\nfor (const win of wins) {\n  if (win.verdict_history?.length) {\n    const last = win.verdict_history.at(-1);\n    assert(win.verdict === last.to,\n      `WIN-${win.id} verdict ('${win.verdict}') matches verdict_history.at(-1).to ('${last.to}') — PROP-028 invariant`);\n  }\n}\n```",
+      "current_test_count_baseline": "Run `node test.js 2>&1 | grep -oP '\\d+ passed' | head -1` BEFORE applying; record the count. After application, count should increase by exactly the number of entries with non-empty verdict_history (currently 4 predictions + 3 wins = 7 new assertions).",
+      "verification_pattern": "(1) After applying, `node test.js` should pass with +7 (current data is consistent). (2) Inject a deliberate inconsistency in a TEST entry (do NOT commit) and confirm the assertion fires with the entry-id-tagged message. (3) Revert the deliberate inconsistency.",
+      "NEVER_PUSH_implication": "Per CLAUDE.md File Ownership, test.js is in NEVER_PUSH (workspace-sync deny-list); only the operator can apply this edit by editing test.js in the clean clone and pushing. The exact diff is specified above so the application is mechanical."
+    },
+    "data_schemas_md_documentation": {
+      "file": "monitor/prompts/reference/DATA-SCHEMAS.md",
+      "ownership": "git-owned, agent-applied",
+      "addition": "Add a 'verdict_history consistency invariant' subsection under the predictions.json and wins.json schema sections documenting: (a) verdict_history entries are append-only; (b) every change to our_verdict/verdict MUST also append a new verdict_history entry; (c) the invariant our_verdict === verdict_history.at(-1).to is enforced by test.js (PROP-028 Mech B); (d) the assessed_at-vs-verdict_history.at(-1).at stale-skip is enforced by decider Step 1h2 (PROP-028 Mech A).",
+      "purpose": "Single-page reference for any future agent or human reviewer to understand the invariant without spelunking through prompts."
+    }
+  },
+  "iss_retirement_plan": {
+    "ISS-1199": {
+      "title_summary": "decider-side fix proposal: cross-check closed-issues.json before integration",
+      "retired_by": "Mech A (timestamp comparison is a structurally stronger version of closed-issues-lookup — it reads the verdict_history field that lives ON the prediction entry, not an external file)",
+      "close_rationale": "PROP-028 Mech A implements a cleaner check than the original ISS-1199 design proposed. Closed-issues.json lookup was a fallback when verdict_history wasn't being written reliably; verdict_history IS being written reliably (verified from a05ebcad), so the cleaner check supersedes the fallback."
+    },
+    "ISS-1200": {
+      "title_summary": "documented failure mode and root-cause attribution",
+      "retired_by": "PROP-028 context section (failure_mode_reconstruction) is the authoritative root-cause writeup with timeline, file paths, hash references",
+      "close_rationale": "PROP-028 incorporates the failure-mode documentation as living context for the structural fix."
+    },
+    "ISS-1201": {
+      "title_summary": "integrity-side: pre-push gate that our_verdict matches verdict_history[last].to",
+      "retired_by": "Mech B (the test.js assertion is exactly the pre-push gate ISS-1201 requested)",
+      "close_rationale": "PROP-028 Mech B IS the implementation of ISS-1201's design. Closes on operator-applied test.js edit."
+    },
+    "ordering": "All three close in the same decider run that lands PROP-028 implementation — likely two-phase: Mech A self-applies first (closes ISS-1199, ISS-1200), then operator applies Mech B test.js diff and closes ISS-1201 with reference to commit hash."
+  },
+  "do_not_build": {
+    "considered_and_rejected": [
+      {
+        "design": "Closed-issues.json lookup by prediction_id within last N days",
+        "rationale": "Already-implemented verdict_history field is cleaner. Adding the closed-issues lookup would duplicate signal and require N-day-window tuning. If verdict_history is ever NOT written on a verdict change, the right fix is to make sure it gets written (Mech A's step 2 enforces this), not to add a parallel check.",
+        "what_we_would_do_instead_if_verdict_history_were_unreliable": "Then closed-issues lookup would be necessary. Current verification shows verdict_history is reliably written by both operator (a05ebcad) and decider (when implementing Mech A's step 2)."
+      },
+      {
+        "design": "Escalate-to-pending-human on every stale-skip",
+        "rationale": "Q3 analysis: routine prediction churn produces 3-5 assessments per analyst run. Escalating each stale-skip would flood the pending-human queue (which PROP-026 backlog-clearance is actively trying to reduce). Attention-inbox notice is sufficient — the operator sees one line per skip and decides if anything needs follow-up."
+      },
+      {
+        "design": "Silent skip with no audit trail",
+        "rationale": "Silent-skip recreates the 209fda5 failure mode in mirror — the operator wouldn't see that their work was being silently no-op'd by stale assessments. Attention-inbox is the structurally correct outcome — every skip is visible and replayable."
+      },
+      {
+        "design": "Wontfix all three ISSs; rely on HNOTE soft-mitigation indefinitely",
+        "rationale": "Considered per task_4 of directive. Rejected because: (a) the soft mitigation depends on operator discipline (file HNOTE on every change) and agent discipline (read HNOTE on every assessment authoring) — both have failure modes that won't be visible until the next 209fda5; (b) the cost of Mech AB is ~30 lines of code total + one operator-applied test.js diff — trivial relative to the cost of one silent verdict revert shipping to the public page; (c) the structural guard makes the soft mitigation belt-and-suspenders rather than load-bearing — both layers protect, neither is sole-of-failure."
+      },
+      {
+        "design": "Mech A only (no Mech B test.js gate)",
+        "rationale": "Considered. Rejected because Mech A lives in a prompt that can be edited; future agents or prompt refactors could remove it without anyone noticing. Mech B is a code-level invariant that survives prompt churn. Cost of Mech B is one block in test.js; benefit is permanent."
+      },
+      {
+        "design": "Mech B only (no decider-side stale-skip)",
+        "rationale": "Considered. Rejected because Mech B catches the bug AFTER the decider has already written the bad data into the working tree — the run report misrepresents what happened, the pre-push fails with an opaque message, and the decider has to retry. Mech A catches at write time with a clean attention-inbox notice and the run proceeds normally."
+      }
+    ]
+  },
+  "interaction_with_existing_props": {
+    "PROP-009r2_queue_id_strict_matching": "No interaction — PROP-028 operates on predictions.json/wins.json integration; PROP-009r2 governs queue_id matching for curmudgeon review files.",
+    "PROP-014_state_verification": "Aligned — PROP-014 established verify-on-read for state coupling; PROP-028 extends the same principle to predictions.json verdict consistency. Mech A is a verify-before-write; Mech B is a verify-on-state. Both fit the PROP-014 architecture.",
+    "PROP-016_NEVER_PUSH_guard": "Aligned — Mech B's test.js edit is correctly identified as NEVER_PUSH (operator-applied). PROP-016 stranded-patch convention applies if Mech A self-apply includes test.js edits by accident; PROP-028 specifies the boundary clearly.",
+    "PROP-022_state_file_archive": "No interaction — predictions.json is unaffected by closed-issues archive split; Mech A/B both read live predictions.json only.",
+    "PROP-026_burndown_mode": "Aligned — Mech A's attention-inbox notice is the right cheap routing for stale-skips; PROP-026's M1 matrix could optionally promote a STALE-ASSESS attention-inbox line to an ISS if it persists unresolved for >7d, but that's a follow-up if observed.",
+    "PROP-027_5_action_routing_matrix": "Aligned — STALE-ASSESS attention-inbox lines route to analyst when unresolved (analyst re-runs the assessment with the operator's recent state). PROP-027's ROUTE-TO-ANALYST is the natural action class if escalation is ever needed.",
+    "DIRECTIVE-20260502-001_agent_state_coupling": "Aligned — PROP-028 is a direct child of the state-coupling thesis: assessments and verdicts must be coupled by timestamp, not just by file existence."
+  },
+  "operator_review_questions": [
+    {
+      "q": "Mech A self-apply: are you comfortable with the decider self-applying a prompt-file edit to decider-intake.md (it's git-owned, normal workflow)?",
+      "tinker_recommendation": "Yes — this is the standard pattern. Decider can do this in its next run after PROP-028 lands, with a normal commit message."
+    },
+    {
+      "q": "Mech B test.js: do you want the exact diff above committed as a single operator-applied commit, or would you prefer to author it yourself with the design above as reference?",
+      "tinker_recommendation": "Apply mechanically — the diff is specified precisely and follows existing test.js style. Should pass on current data without any edits."
+    },
+    {
+      "q": "Attention-inbox routing: PROP-026/PROP-027 are actively reducing the pending-human queue. Is the attention-inbox the right cheap signal, or do you want stale-skips to surface as a normal ISS (would route through PROP-027's matrix as ROUTE-TO-ANALYST)?",
+      "tinker_recommendation": "Attention-inbox for the routine case. If a STALE-ASSESS line sits unresolved for >7d (analyst hasn't re-run), promote to ISS at that point. Avoids early ISS creation during routine churn."
+    },
+    {
+      "q": "Backfill ISS-1201 violations: post-209fda5, the four predictions had our_verdict != verdict_history.at(-1).to until commit 026ce27a restored them. If the operator later restored them, does the post-restore predictions.json now satisfy the Mech B invariant?",
+      "tinker_recommendation": "Verified: current data/predictions.json on main HEAD has all four entries with consistent our_verdict and verdict_history.at(-1).to (operator's 026ce27a restoration appended a new verdict_history entry per prediction). Mech B will pass on current data with no backfill needed."
+    }
+  ],
+  "verification_pattern_for_post_landing_tinker_check": {
+    "mech_a_landed_check": "grep -q 'STALE-SKIP\\|Stale-Skip Protocol' monitor/prompts/reference/decider-intake.md && echo 'Mech A landed'",
+    "mech_b_landed_check": "node test.js 2>&1 | grep -q 'PROP-028 invariant' && echo 'Mech B landed'",
+    "iss_retirement_check": "node -e \"const c=JSON.parse(require('fs').readFileSync('monitor/decisions/closed-issues.json','utf8')); ['ISS-1199','ISS-1200','ISS-1201'].forEach(id=>{const i=c.issues.find(x=>x.id===id); console.log(id, i?.status||'NOT FOUND')});\"",
+    "next_tinker_followup": "On next Mode 2 / Mode 3 run, verify the three patterns above all pass; if any fail, the implementation is incomplete and PROP-028 stays in pending-operator-review until resolved."
+  },
+  "estimated_implementation_effort": {
+    "mech_a_prompt_edit": "~15 lines added to decider-intake.md + ~20 lines of bash/JS pseudocode in the integration block. Decider self-applies in normal run. ~30 minutes of agent time.",
+    "mech_b_test_js_edit": "~12 lines added to test.js (one loop for predictions, one for wins). Operator-applied. ~10 minutes of operator time including verification.",
+    "data_schemas_md_edit": "~10 lines added to DATA-SCHEMAS.md. Agent-applied. ~5 minutes.",
+    "total": "<1 hour of pipeline time, of which ~10 minutes is operator-applied (test.js)."
+  }
+}
