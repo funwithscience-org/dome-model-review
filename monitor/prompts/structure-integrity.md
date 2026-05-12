@@ -158,7 +158,33 @@ Check `monitor/analyst/expansion-tracker.json` for signs of write collisions (co
   console.log('total_ids:',ids.length,'min:',ids[0],'max:',ids[ids.length-1],'gaps:',gaps.slice(0,10));
   "
   ```
-- **Orphaned output files**: List all files in `monitor/analyst/expansions/`. For each EXP-NNN.json file, verify a matching tracker entry exists in EITHER live items[] OR archive lines. Flag orphans — these are completed work the decider will never integrate.
+- **Orphaned output files**: List all files in `monitor/analyst/expansions/`. For each EXP-NNN.json file, verify a matching tracker entry exists in EITHER live items[] OR archive lines. Flag orphans — these are completed work the decider will never integrate. **Use the explicit archive-aware code below** — natural-language "OR archive lines" has been misread as live-only in past runs, producing false-positive flags on cleanly-completed-and-archived entries (e.g., 2026-05-12 integrity run flagged EXP-317/318 as orphans when they were properly archived with `integrated:true`):
+
+  ```bash
+  node -e "
+  const fs=require('fs');
+  // Build the union of all tracked IDs across live + archive
+  const t=JSON.parse(fs.readFileSync('monitor/analyst/expansion-tracker.json','utf8'));
+  const liveIds=new Set(t.items.map(i=>i.id));
+  const archPath='monitor/analyst/expansion-tracker-archive.jsonl';
+  const archIds=new Set();
+  if(fs.existsSync(archPath)){
+    for(const line of fs.readFileSync(archPath,'utf8').split('\n').filter(Boolean)){
+      try{ archIds.add(JSON.parse(line).id); }catch(e){}
+    }
+  }
+  const tracked=new Set([...liveIds,...archIds]);
+  // List EXP files; consider only the canonical 'EXP-NNN.json' form (no suffix).
+  // Suffixed variants like 'EXP-NNN-<descriptor>.json' are analyst working-name
+  // files — sibling artifacts of the same EXP, not separate IDs; skip them.
+  const files=fs.readdirSync('monitor/analyst/expansions').filter(f=>/^EXP-\d+\.json$/.test(f));
+  const orphans=files.filter(f=>!tracked.has(f.replace('.json','')));
+  if(orphans.length) console.log('ORPHANED OUTPUT FILES (untracked, no live OR archive entry):', orphans.join(', '));
+  else console.log('OK: all EXP-NNN.json files have tracker entries (live or archive)');
+  "
+  ```
+
+  The suffixed-variant carve-out (`EXP-NNN-<descriptor>.json`) handles the legacy naming pattern where analyst sometimes wrote multiple files per EXP ID (e.g., `EXP-295.json`, `EXP-295-mond-grouping-verdict-review.json`, `EXP-295-WIN-063-defense.json`). These are NOT separate tracker IDs — they're analyst working-name artifacts. Only the canonical `EXP-NNN.json` form is the tracked artifact.
 - **Phantom tracker entries**: For each tracker entry (live or archive) with `status: complete` and an `output_file`, verify the file exists on disk. Flag entries pointing to missing files. **Skip entries that have a `no_output_file_reason` field** — these were completed via direct integration (e.g., decider field updates, template applications, batch outputs) and legitimately have no single EXP-NNN.json file.
 - **Stale pending items** (live only — by definition not archived): Flag any live tracker entry with `status: pending` that was `created_at` more than 48 hours ago — the analyst may have lost track of it.
 - **`next_id` correctness** (Phase 0 invariant, archive-aware post phase 5): Check that `tracker.next_id > max(live_max_id, archive_max_id)`. Post-phase-5 the live array can be mostly empty after a wave of integrations — comparing against live alone would mask a real allocator bug. If `next_id <= computed_max`, a writer used `items.length + 1` or computed against live only — **the next allocation will collide**. **Classify as major and block the next decider run.** Command:
