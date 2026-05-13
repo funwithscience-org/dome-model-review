@@ -1,0 +1,68 @@
+{
+  "directive_id": "DIRECTIVE-20260513-001",
+  "title": "Integrity's docs/index.html staleness check reads FUSE mtime but git is the actual published surface — FUSE never gets HTML updates from workspace-sync, so integrity false-positives any time data files change without an operator-driven build.js publish.",
+  "filed_by": "operator",
+  "filed_at": "2026-05-13T05:30:00Z",
+  "status": "pending",
+  "priority": "medium",
+  "scope_authority": "Design proposal only (PROP-NNN). Operator reviews PROP before implementation. Output: one PROP recommending either (a) integrity reads git for docs/, or (b) workspace-sync syncs docs/index.html back to FUSE after rebuild, or (c) some hybrid.",
+  "context": [
+    "Integrity report 2026-05-13T01:16Z flagged docs/index.html as STALE with severity=critical: 'sections.json updated 2026-05-12 17:22Z; HTML last built 2026-05-12 13:22Z. Live site has WRONG DOI in 2 locations: 10.1016/j.asr.2018.01.024 (should be .01.022). Live site has WRONG author: Bernard et al. 2022 (should be Hinderer et al. 2022).'",
+    "Operator-Claude investigation 2026-05-13T05:18Z found the finding was false: git's docs/index.html had the corrected cite since 2026-05-12T18:05:34Z (commit ccf87ec9, workspace-sync's rebuild after the citation-correction patch landed in data files). 'Live site' (GitHub Pages serves from git docs/) was actually correct. The git tree was fresh, integrity flagged a real problem with the wrong location.",
+    "Root cause: integrity reads FUSE's docs/index.html mtime, but FUSE never receives docs/index.html updates from workspace-sync. workspace-sync rebuilds HTML in its OWN clone (per build.js logic during the universal-pusher follow-up), commits to git, pushes — but does NOT copy back to FUSE. Only `build.js publish` (operator-run) copies docs/index.html from clone → FUSE. So FUSE's docs/index.html mtime reflects the last operator publish, not the actual git state.",
+    "Symptoms over time: integrity has likely been false-flagging docs/index.html stale for weeks. Every time sections.json or wins.json updates without an immediate operator-driven publish, integrity sees FUSE's old mtime and flags critical. The 2026-05-13T01:16Z run is one specific instance; the pattern is recurring.",
+    "Secondary observation: the integrity report's 'Live site has WRONG DOI' wording suggests integrity is comparing FUSE's HTML against current FUSE data, not actually fetching the live site. The 'wrong DOI' claim was based on FUSE HTML state, not on what GitHub Pages actually serves. Both the staleness check AND the content claim are operating on the wrong source.",
+    "Operator framing 2026-05-13T05:32Z: 'yes' on filing this DIRECTIVE; declined the parallel HNOTE on analyst's wrong-fix because the verification cycle correctly caught it (system self-corrected). The remaining bug is integrity's check itself."
+  ],
+  "operator_intent": "Tinker designs one of three approaches (or hybrid) so integrity's docs/ staleness check reflects ground truth (git state and/or published site state), not FUSE-side mtime which is stale by design.",
+  "tasks": [
+    {
+      "task_id": "task_1_decide_the_authoritative_source",
+      "description": "What's the right source-of-truth for integrity's 'is docs/index.html current' check?",
+      "candidate_sources": {
+        "option_A_git_HEAD": "Integrity does a fresh `git clone` (or pull) and checks git docs/index.html against staged data files. Pro: matches what GitHub Pages serves. Con: integrity must do its own clone, slightly more network/disk per run.",
+        "option_B_FUSE_with_sync_back": "Workspace-sync extends its post-rebuild step to ALSO copy docs/index.html back to FUSE. Then integrity's existing FUSE-mtime check works correctly. Pro: minimal integrity change. Con: adds a write to FUSE for a file workspace-sync currently treats as git-only; needs careful ownership-rule update in CLAUDE.md.",
+        "option_C_live_site_fetch": "Integrity actually web_fetches the published GitHub Pages URL and parses for current citations. Pro: tests the actual user-facing surface. Con: external dependency, possible rate limits, content depends on GH Pages deployment lag (~minutes after git push)."
+      },
+      "operator_lean": "Probably option A (git HEAD) — cleanest semantics. Option B is a close second if the workspace-sync edit is small. Option C is the most thorough but introduces external-network dependency on a per-run health check that should be self-contained.",
+      "deliverable": "PROP recommends one option with rationale. Comparison must weigh: integrity's run-cost increase, accuracy of the check, alignment with the rest of the file-ownership architecture."
+    },
+    {
+      "task_id": "task_2_specify_the_implementation",
+      "description": "Concrete prompt edit + (if option B) workspace-sync.md edit. Avoid prose-only direction; specify the exact bash/node snippet integrity should run.",
+      "expected_implementation_files": {
+        "if_option_A": ["monitor/prompts/structure-integrity.md (build drift check section — change FUSE mtime comparison to git-clone-and-compare)"],
+        "if_option_B": ["monitor/prompts/workspace-sync.md (add copy-to-FUSE step after the docs/index.html rebuild)", "no integrity prompt change needed"],
+        "if_option_C": ["monitor/prompts/structure-integrity.md (add web_fetch step + cite-presence assertion); coordinate with allowlist for github.io/predictions sibling fetch pattern"]
+      }
+    },
+    {
+      "task_id": "task_3_audit_other_FUSE_vs_git_asymmetries",
+      "description": "While we're here: is docs/index.html the ONLY file where FUSE and git can drift apart in this asymmetric way? Spot-check other generated artifacts (docs/llms.txt, docs/sitemap.xml, docs/robots.txt). If they share the same pattern, the fix should cover them too — not a separate DIRECTIVE per file.",
+      "deliverable": "A short table in PROP context: file × FUSE-update-mechanism × git-update-mechanism × integrity-checks-which. Identify any other false-positive risks."
+    },
+    {
+      "task_id": "task_4_carve_out_what_NOT_to_do",
+      "description": "Don't redesign the file-ownership model. docs/* being git-owned + workspace-sync rebuilding it on universal-pusher follow-up is the right architecture. The fix is a small adjustment so integrity's check ALIGNS with that architecture, not a rework.",
+      "deliverable": "Explicit 'do not touch' section in PROP: file ownership model preserved; workspace-sync's rebuild-from-data logic preserved; build.js publish flow preserved. Only the integrity check (and possibly one small workspace-sync extension if option B) changes."
+    }
+  ],
+  "constraints": [
+    "PROP-NNN authoring authority only. Operator reviews PROP before implementation.",
+    "Output one PROP under monitor/tinker/proposals/PROP-NNN-integrity-docs-html-source-of-truth.json or similar.",
+    "Respect PROP-016 (NEVER_PUSH guard), PROP-017 (workspace-sync smart_copy), PROP-022 (state file archive). The new PROP should fit cleanly."
+  ],
+  "expected_output_files": [
+    "monitor/tinker/proposals/PROP-NNN-integrity-docs-html-source-of-truth.json"
+  ],
+  "related_iss_to_retire_on_prop_landing": [],
+  "related_directives": [
+    "DIRECTIVE-20260505-001-workspace-sync-smart-copy-gap.json (PROP-017 — workspace-sync flow context)",
+    "DIRECTIVE-20260506-001-state-file-archive-architecture.json (PROP-022 — ownership model context)"
+  ],
+  "operator_notes_to_tinker": [
+    "Integrity's 'critical: stale HTML + wrong cite' finding from 2026-05-13T01:16Z is the canonical false-positive test case. The proposed fix must correctly recognize this case as NOT-stale once applied retroactively.",
+    "Lean toward option A unless the workspace-sync edit (option B) turns out to be a one-liner — operator preference is for the simplest semantic alignment, not the smallest diff.",
+    "If task_3 surfaces additional FUSE-vs-git asymmetries (sitemap.xml, llms.txt, etc.), include all of them in the fix scope. Don't ship a one-file fix that leaves siblings broken."
+  ]
+}
