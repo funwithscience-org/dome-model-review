@@ -159,7 +159,7 @@ Live-state file at `monitor/curmudgeon/priority-queue.json` carrying ONLY the ac
 {
   "id": "EXP-NNN",                       // allocated via t.next_id, bumped after push
   "target": "<derived from iss.description first sentence, ≤180 chars>",
-  "source": "decider-m1-route",          // new source enum value
+  "source": "decider-m1-route" | "decider-m3-carry-over" | "decider-bau-route",  // source enum: which decider routing path created this entry
   "curmudgeon_review": "<iss.source if it points to monitor/curmudgeon/reviews/...>",
   "issue_ids": ["ISS-NNN"],              // one ISS per entry at creation; analyst may consolidate
   "category": "<iss.category or 'minor-fix'>",
@@ -169,12 +169,21 @@ Live-state file at `monitor/curmudgeon/priority-queue.json` carrying ONLY the ac
   "routed_from_iss": "ISS-NNN",
   "routed_from_run": "decider-RUN_ID",
   "routing_reason": "<same string as iss.routing_reason>",
-  "notes": "M1 ROUTE-TO-ANALYST tracker entry (PROP-029)...",
+  "notes": "ROUTE-TO-ANALYST tracker entry (PROP-029 / PROP-031)...",
   "created_at": "<ISO now>"
 }
 ```
 
-These entries are PROVISIONAL — analyst may consolidate multiple `source='decider-m1-route'` entries into a single multi-ISS EXP at Mode 1 intake (e.g., the verification-batch pattern from EXP-302..307). When consolidating, analyst marks the original decider-authored entries as `status='consolidated-into-<NEW_EXP_ID>'` and writes a single rolled-up EXP for the cluster. The `routed_from_iss` and `routed_from_run` fields preserve provenance through consolidation.
+**Source enum values** (all three routing paths write tracker entries per the same schema):
+- `'decider-m1-route'` — M1 stale-issue sweep (Priority 5b, age-based safety net, PROP-029).
+- `'decider-m3-carry-over'` — M3 carry-over enforcement from curmudgeon reviews (Step 8c, PROP-029 follow-up 2026-05-11).
+- `'decider-bau-route'` — BAU 3b triage of the open bucket (Priority 3b, primary throughput path, PROP-031).
+
+**Consolidation pattern (PROP-029 + PROP-031, applies to ALL THREE sources):** these entries are PROVISIONAL — analyst may (and should, when the shape allows) consolidate multiple decider-authored entries into a single multi-ISS EXP at Mode 1 intake (e.g., the verification-batch pattern from EXP-302..307 and EXP-323). When consolidating, analyst marks the original decider-authored entries as `status='consolidated-into-<NEW_EXP_ID>'` and writes a single rolled-up EXP for the cluster. The `routed_from_iss` and `routed_from_run` fields preserve provenance through consolidation.
+
+**Consolidation explicitly extends to `source='decider-bau-route'`** (PROP-031 follow-up clarification, 2026-05-13). The consolidation pattern was originally documented for `'decider-m1-route'` only; that scoping was a documentation gap, not a design intent. BAU-route items have the same shape as M1-route items (single-ISS tracker entries created at routing time, with `routed_from_iss`/`routed_from_run` provenance) and benefit from the same batching. The verification-batch precedent (EXP-302..307: 4-11 ISSs from unrelated WINs combined into one verification EXP because they all share "narrow string-replace correction" character) applies identically to BAU-route entries. Empirical 2026-05-13: 32 BAU-route entries sat as 32 single-ISS EXPs across multiple analyst cycles because analyst read the original PROP-029 language as M1-only. With this clarification, analyst should consolidate them on next Mode 1 intake.
+
+**When NOT to consolidate**: an entry has `review_class='deep-attack'` or `'holistic'`. Those are singletons by design (PROP-025 batchability gate). Consolidation only fits `review_class='verification'` (or null-defaulting-to-verification) clusters where the work shares narrow-correction character.
 
 **Archive file shape (`priority-queue-archive.jsonl`):** one JSON object per line, append-only, no slice cap. Each line is a pop record. Required fields:
 - `queue_id`, `target_id`, `target_type`, `popped_at`, `popped_by`.
