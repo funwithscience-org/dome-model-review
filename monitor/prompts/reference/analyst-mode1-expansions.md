@@ -94,6 +94,16 @@ If orphaned: group related issues, create new EXP entries, work in priority orde
 
 The hint is **advisory only** — your `review_class` declaration on the EXP file is authoritative per PROP-025. Override the hint when the EXP's actual scope-of-work disagrees with the routing context (e.g., hint='verification' but you discovered during investigation that the work needs new arguments → set `review_class: 'deep-attack'` and note the override in your `summary_for_decider`).
 
+**PROP-034 Phase 1 — baby ownership boundary.** When an item arrives at you (Opus analyst) but matches the baby-owned rule, escalate-or-skip rather than producing a deep-attack EXP for a BAU-drain item. Baby-owned rule:
+
+- `review_class === 'verification'` (declared) → baby owns it.
+- `review_class == null` AND `source` IN {`decider-bau-route`, `decider-m1-route`, `decider-m3-carry-over`} → baby owns it.
+- Orphan ISSs of severity `minor` or `moderate` (no tracker entry, `status==='assigned-analyst'`) → baby owns them.
+
+If you encounter a baby-owned item in your tracker pending list (e.g., baby's last run was budget-pre-empted and didn't claim everything), DO NOT process it. Instead: set `assigned_to: 'analyst-baby'` on the tracker entry if not already present, leave `claimed_by` clear, and move on. Baby will pick it up on its next 2h cycle.
+
+Conversely: if you're DECLARING `review_class: 'deep-attack'` on an EXP you authored for an item that originally arrived via a baby-owned source — note the override in your `summary_for_decider` field and explain WHY it needed deep-attack scope rather than verification (this is the same override discipline as the class_hint override above; the audit signal is the same).
+
 ## Expansion Procedure
 
 Work **one item per run** (first pending item). After completing, continue to check for dome changes.

@@ -87,24 +87,47 @@ Trigger: Dome has more WINs than our wins.json.
 → Read `monitor/prompts/reference/analyst-mode0-onboarding.md`, execute that procedure.
 
 **Mode 1 — Section Expansion Queue**
+
+**PROP-034 Phase 1 — Mode 1 BAU drain is delegated to `dome-analyst-baby` (Sonnet, 2h cadence).** You (Opus analyst) handle ONLY Mode 1 **deep-attack singletons** and **holistic items**. Filter the tracker pending list to exclude baby-owned entries — those are: `review_class === 'verification'`, OR (`review_class` is null AND `source` IN {`decider-bau-route`, `decider-m1-route`, `decider-m3-carry-over`}). Orphan ISSs of severity `minor`/`moderate` also belong to baby. See `monitor/prompts/analyst-baby.md` for the full hybrid rule.
+
 ```bash
 node -e "
 const fs=require('fs');
 const t=JSON.parse(fs.readFileSync('monitor/analyst/expansion-tracker.json','utf8'));
-const p=t.items.filter(i=>i.status==='pending'&&!i.blocked_on);
-// PROP-029 safety net: even if tracker is empty, check open-issues for orphaned assigned-analyst ISSs.
-// Under steady-state PROP-029, decider writes tracker entries on ROUTE-TO-ANALYST, so orphan count should be zero.
-// Non-zero orphans = structural-signal-of-failure (decider tracker-write failed, or manual operator reroute) → still actionable.
+
+// PROP-034 hybrid rule: items baby owns are NOT yours.
+const babyOwnedSources = new Set(['decider-bau-route','decider-m1-route','decider-m3-carry-over']);
+function babyOwns(item){
+  if(item.review_class === 'deep-attack' || item.review_class === 'holistic') return false;
+  if(item.review_class === 'verification') return true;
+  if((item.review_class == null || item.review_class === '') && babyOwnedSources.has(item.source)) return true;
+  return false;
+}
+
+// Items YOU own: pending, not blocked, not claimed by baby, not baby-owned by rule.
+const p=t.items.filter(i =>
+  i.status==='pending' && !i.blocked_on &&
+  i.claimed_by !== 'analyst-baby' &&
+  !babyOwns(i)
+);
+
+// PROP-029 safety net: orphan check. Under PROP-034, baby owns minor/moderate orphans; you own major/critical and null-severity.
 const oi=JSON.parse(fs.readFileSync('monitor/decisions/open-issues.json','utf8'));
 const tracked=new Set(t.items.flatMap(i=>i.issue_ids||[]));
-const orphans=oi.issues.filter(i=>i.status==='assigned-analyst'&&!tracked.has(i.id));
-if(p.length){console.log('EXPANSION MODE: '+p.length+' actionable pending');}
-else if(orphans.length){console.log('EXPANSION MODE: '+orphans.length+' orphan ISSs (PROP-029 safety net fired — tracker write failed somewhere; investigate after handling)');}
-else{console.log('NO ACTIONABLE EXPANSIONS');}
+const orphans=oi.issues.filter(i =>
+  i.status==='assigned-analyst' && !tracked.has(i.id) &&
+  (i.severity === 'major' || i.severity === 'critical' || i.severity == null || i.severity === '')
+);
+
+if(p.length){console.log('EXPANSION MODE: '+p.length+' actionable pending (Opus-owned: deep-attack/holistic/null-judgment-required)');}
+else if(orphans.length){console.log('EXPANSION MODE: '+orphans.length+' orphan ISSs (major/critical/null-severity — Opus-owned subset; PROP-029 safety net fired)');}
+else{console.log('NO ACTIONABLE EXPANSIONS (baby may have BAU work)');}
 "
 ```
-Trigger: Either (a) actionable pending expansions exist in tracker (excludes items with `blocked_on` field), OR (b) PROP-029 safety net detects orphan ISSs (status='assigned-analyst' with no tracker entry).
+Trigger: Either (a) actionable pending expansions you own (excludes baby-claimed and baby-owned-by-rule items, and items with `blocked_on` field), OR (b) PROP-029 safety net detects Opus-owned orphan ISSs (status='assigned-analyst', severity in {major, critical, null}, no tracker entry).
 → Read `monitor/prompts/reference/analyst-mode1-expansions.md`, execute that procedure. **If the safety net fires (path b), also emit an attention-inbox notice** so tinker investigates the tracker-write decoupling (see analyst-mode1-expansions.md "Check for Orphaned Issues" section for the exact format).
+
+**If you find yourself reading a tracker item that matches the baby-owned rule** (e.g., decider routed a verification-class item that wasn't claimed by baby this cycle), DO NOT process it. Instead: leave `claimed_by` clear so baby picks it up on the next 2h cycle. Set `assigned_to: 'analyst-baby'` on the tracker entry if not already present, and move on. Do not produce a deep-attack EXP for a BAU-drain item.
 
 **Mode 1b — Prediction Writeups** (HIGH PRIORITY)
 ```bash

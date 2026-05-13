@@ -213,6 +213,14 @@ smart_copy "${WORKSPACE}/monitor/analyst/attention-inbox-archive.jsonl" monitor/
 smart_copy "${WORKSPACE}/monitor/analyst/processed-proposals.json" monitor/analyst/processed-proposals.json
 smart_copy "${WORKSPACE}/monitor/analyst/latest-analysis-summary.txt" monitor/analyst/latest-analysis-summary.txt
 
+# Analyst-baby outputs (PROP-034 Phase 1, 2026-05-13). Baby writes the latest-baby-summary
+# to monitor/analyst-baby/ (workspace-canonical). Its EXPs and issue-proposals reuse the
+# shared analyst paths (monitor/analyst/expansions/, monitor/analyst/issue-proposals/) so
+# the decider's existing intake reads them — those are already covered by the analyst
+# sync_glob calls above; no per-file copy needed here. Only the summary file is unique
+# to baby.
+smart_copy "${WORKSPACE}/monitor/analyst-baby/latest-baby-summary.txt" monitor/analyst-baby/latest-baby-summary.txt
+
 # Curmudgeon outputs
 sync_glob monitor/curmudgeon/reviews '*.json'
 smart_copy "${WORKSPACE}/monitor/curmudgeon/tracker.json" monitor/curmudgeon/tracker.json

@@ -92,6 +92,10 @@ const metrics = {
 metrics.new_issues_velocity_7d = /* count of open-issues with created_at within 7d */;
 metrics.closed_issues_velocity_7d = /* count of closure-ledger entries within 7d */;
 metrics.net_velocity_7d = metrics.closed_issues_velocity_7d - metrics.new_issues_velocity_7d;
+// PROP-034 Phase 1 (2026-05-13): baby-drain throughput. Count tracker entries where
+// status='consolidated-into-*' OR 'complete' AND completed_at within 7d AND authored_by/claimed_by='analyst-baby'.
+// Source-of-truth: expansion-tracker.json (read once at pre-flight; same single-pass as other metrics).
+metrics.baby_drain_count_7d = /* count of baby-completed tracker items in last 7d, per expansion-tracker.json */;
 fs.appendFileSync('monitor/tinker/queue-history.jsonl', JSON.stringify(metrics) + '\n');
 ```
 

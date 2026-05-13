@@ -115,6 +115,7 @@ Every file that crosses the workspace↔git boundary has exactly one authoritati
 
 - `monitor/status.json`, `monitor/review-state.json` — live pipeline state.
 - `monitor/decisions/latest-decider-summary.txt` — decider's human-facing latest-run summary (overwritten every decider run; ~6×/day post-2026-04-27 cadence change). Renamed from morning-briefing.txt on 2026-05-09 — the morning framing dated from when decider ran daily.
+- `monitor/analyst-baby/latest-baby-summary.txt` — baby's human-facing latest-run summary (PROP-034 Phase 1, 2026-05-13). Overwritten every 2h cycle. Workspace-owned; workspace-sync rescues to git on hourly cycle.
 
 **append-only** — directories of immutable, per-ID or per-timestamp files. Either direction can write a NEW file, but NEVER overwrite an existing one.
 
@@ -131,12 +132,13 @@ Every file that crosses the workspace↔git boundary has exactly one authoritati
 
 ## Monitoring Pipeline
 
-Eight scheduled agents run continuously. All prompts live in `monitor/prompts/*.md` — edit the markdown to change agent behavior.
+Nine scheduled agents run continuously. All prompts live in `monitor/prompts/*.md` — edit the markdown to change agent behavior.
 
 | Agent | Schedule | Model | Prompt File | Purpose |
 |-------|----------|-------|-------------|--------|
 | dome-poller | Every 12h | Sonnet | `poller.md` | Detect changes on dome site, track prediction test windows |
-| dome-analyst | Variable (30m churn-and-burn / 8h quiet) | Opus | `analyst.md` | New WIN onboarding, expansions, defense neutralization, fingerprints |
+| dome-analyst | Variable (30m churn-and-burn / 8h quiet) | Opus | `analyst.md` | New WIN onboarding, deep-attack/holistic expansions, defense neutralization, fingerprints |
+| dome-analyst-baby | Every 2h (`20 */2 * * *`) | Sonnet | `analyst-baby.md` | Mode 1 BAU tracker drain — verification-class consolidations (PROP-034 Phase 1) |
 | dome-curmudgeon | Variable (30m churn-and-burn / 4h quiet) | Opus | `curmudgeon.md` | Adversarial self-review; change-driven + holistic reviews |
 | dome-decider | Variable (1h churn-and-burn / 4h quiet) | Opus | `decider.md` | Triage, patches, new WIN commits, expansion integration |
 | dome-integrity | Daily 9 AM | Haiku | `structure-integrity.md` | Site health: links, tabs, build drift, data-prose consistency |

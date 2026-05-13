@@ -115,6 +115,12 @@ const OWNERSHIP = {
   'monitor/status.json': 'workspace',
   'monitor/review-state.json': 'workspace',
   'monitor/decisions/latest-decider-summary.txt': 'workspace',
+  // PROP-034 Phase 1 (2026-05-13): analyst-baby's run summary. Baby writes to
+  // FUSE every 2h; workspace-sync rescues to git hourly. Baby's EXPs and
+  // issue-proposals reuse the shared monitor/analyst/expansions/ and
+  // monitor/analyst/issue-proposals/ paths (already classified append_only
+  // below); the summary file is the only baby-specific path.
+  'monitor/analyst-baby/latest-baby-summary.txt': 'workspace',
   // NOTE: monitor/curmudgeon/tracker.json is DELIBERATELY NOT listed here.
   // It is a multi-writer file (decider + curmudgeon) and belongs in a future
   // Phase 2 shard split. Until then it is protected only by scheduling

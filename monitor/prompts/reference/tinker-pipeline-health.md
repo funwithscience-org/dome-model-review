@@ -9,6 +9,8 @@ For each agent, check:
 - **Output well-formed?** Spot-check latest output against expected schema. Malformed output means downstream consumers silently ignore it.
 - **Output substantive?** An agent that runs but always writes "no changes" may have a broken data source.
 
+**PROP-034 Phase 1 — baby pipeline health (added 2026-05-13):** check `monitor/analyst-baby/latest-baby-summary.txt` mtime against the 2h cadence. If mtime is older than 4h (2× interval) AND baby's expected work is non-empty (run the babyOwns filter from `monitor/prompts/analyst-baby.md` dispatcher to confirm there were items to drain), flag as stalled. Empty work → silent baby is correct behavior; non-empty work + silent baby → check the scheduled task's recent run history and surface in `latest-tinker-summary.txt`.
+
 ## Step 2: Audit Data Flow — Handoff Chains
 
 Trace these chains and verify each link:

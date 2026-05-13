@@ -185,6 +185,19 @@ Live-state file at `monitor/curmudgeon/priority-queue.json` carrying ONLY the ac
 
 **When NOT to consolidate**: an entry has `review_class='deep-attack'` or `'holistic'`. Those are singletons by design (PROP-025 batchability gate). Consolidation only fits `review_class='verification'` (or null-defaulting-to-verification) clusters where the work shares narrow-correction character.
 
+**Multi-writer note (PROP-034 Phase 1, 2026-05-13):** `expansion-tracker.json` is now read+written by THREE agents:
+- **decider** — writer at M1/M3/BAU route-time (PROP-029, PROP-031); writer at integration time (status='complete' / 'integrated').
+- **dome-analyst** (Opus) — reader+writer for Mode 1 deep-attack singletons / Mode 1 holistic items / Mode 3 defense neutralization. Filters tracker to exclude baby-owned entries on entry.
+- **dome-analyst-baby** (Sonnet, PROP-034) — reader+writer for Mode 1 BAU drain only (Phase 1). Filters tracker to baby-owned entries (review_class=verification, or null-class with baby-owned-source enum).
+
+Multi-writer protection is the same as decider+analyst pre-PROP-034: (a) `git pull --rebase` at run start, (b) pre-push integrity gate, (c) git merge-conflict detection on push, (d) non-concurrent scheduling (decider runs at variable cadence; analyst at `:50` every 4h; baby at `:20` every 2h — offsets ≥30 min). No new lock-file mechanism — the existing PROP-029 contention design extends to baby without modification.
+
+**Optional `claimed_by` / `claimed_at` fields (PROP-034 Phase 1):** tracker items may carry two new optional fields:
+- `claimed_by`: `'analyst'` | `'analyst-baby'` | `null` — the agent currently working this item.
+- `claimed_at`: ISO timestamp at which `claimed_by` was set; cleared when status transitions away from `pending`.
+
+Writers set `claimed_by`/`claimed_at` BEFORE doing the analytic work (separate commit from the resulting EXP write) so the concurrent agent reads the claim on its next dispatch. On status transition to `consolidated-into-*`, `complete`, or `integrated`, the claim fields are cleared (set to null) — the status field is then authoritative. Reader discipline: if `claimed_by === '<the-other-agent>'`, treat the item as not-yours-this-cycle and skip it regardless of class. The hybrid ownership rule (PROP-034 §design_space_evaluation.the_hybrid_rule_recommended) is the steady-state assignment; `claimed_by` is the cycle-level coordination signal.
+
 **Archive file shape (`priority-queue-archive.jsonl`):** one JSON object per line, append-only, no slice cap. Each line is a pop record. Required fields:
 - `queue_id`, `target_id`, `target_type`, `popped_at`, `popped_by`.
 - `pop_reason` (string): one of `strict_queue_id`, `soft_reviewed_at_after_pushed_at`, `operator_bypass`, `shadow_legacy_substring`. Identifies how the decider's Step E2 filter matched this entry.
