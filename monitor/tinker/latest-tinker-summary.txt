@@ -1,53 +1,99 @@
-TINKER RUN 2026-05-10T06:17 — DIRECTIVE override (PROP-026 authored)
+=== Tinker run 2026-05-13T21:54Z — DIRECTIVE primary ===
 
-MODE: Operator-directive (DIRECTIVE-20260510-001 picked up by pre-flight discovery; overrides Mode 1–4 selection).
+Mode selected: operator-directive (DIRECTIVE-20260513-002, filed 17:35Z today)
+Outcome: PROP-034-split-analyst-baby-vs-deep.json authored (412 lines).
+Directive status flipped pending → completed.
 
-OUTCOME: PROP-026 authored — open-issues backlog clearance covering all three mechanisms (M1 stale-issue sweep + M2 EXP-tied auto-close + M3 carry-over enforcement) plus burn-down vs BAU mode controls.
+--- OPERATOR ESCALATION (backlog-trend, PROP-030) ---
+assigned_analyst_count = 151 (> 150 threshold).
+The structural bottleneck the directive addresses is empirically confirmed.
+Tiers firing: operator_escalation, major, moderate, info.
+Open queue trend 36h: 207 → 175 → 161 → 160 (closing) BUT
+  assigned-analyst flat at ~151 and age_ge_14d_count rising 31 → 78.
+System is net-closing (closure 7d=151, new 7d=16, net=+135) but the
+  analyst queue is stuck — dispatcher gravity, not closure capacity.
 
-DIRECTIVE COMPLETED:
-  monitor/tinker/operator-directives/DIRECTIVE-20260510-001-open-issues-backlog-clearance.json
-  status: pending → completed
-  prop_id_authored: PROP-026
-  proposal_file: monitor/tinker/proposals/PROP-026-open-issues-backlog-clearance.json (47 KB)
+--- PROP-034 HEADLINE RECOMMENDATION ---
+APPROVE phased deployment, NOT directive-as-stated.
 
-PROP-026 TINKER RECOMMENDATIONS (top of every operator question):
-  Q1 (mechanism scope): Implement all three (M1+M2+M3). Each addresses a distinct leak mode.
-  Q2 (engagement+revert): Flag file monitor/decisions/decider-mode.json. Auto-revert at count<50 for 3 consecutive runs OR elapsed>7d OR 5 consecutive zero-closure runs.
-  Q3 (safety): All five controls (closure-ledger, severity tier, recently-touched guard, dry-run-for-24h, M3 unaffected by caps).
-  Q4 (caps): BAU M1=10/run, burndown M1=30/run. M2/M3 naturally bounded upstream.
-  Q5 (curmudgeon during burndown): No pause/throttle. M3 prevents the one-step-forward-one-back churn.
-  Q6 (M2 false-positive guard): Three-rule conjunctive gate — severity ∈ {minor,info}, no negative-signal substring blocklist, source not under monitor/curmudgeon/reviews/.
-  Q7 (M3 schema): Structured field unresolved_prior_cycle:[{iss_id,prior_cycle,holes_index}] on curmudgeon review JSON. Free-text fallback for legacy.
-  Q8 (order): Order C — phased with burn-down first phase. Phase 1 = M2+infrastructure+24h dry-run. Phase 2 = M1+M3 ~48h later.
-  Q9 (24 stale-statused entries): One-shot archiver in Phase 1 for status ∈ {closed,fixed,wontfix} (14 entries). Leave {monitoring,blocked-on-curmudgeon,assigned-analyst,partially-fixed-pending-verification,pending-human} (12 entries) in place — they're truly active waiting states.
+Phase 1 (recommended scope):
+  - dome-analyst-baby, Sonnet, cron `20 */2 * * *` (2h, NOT hourly)
+  - Mode 1 BAU drain ONLY (not Mode 2b yet, not Mode 1b)
+  - Routing rule: HYBRID — review_class primary, source fallback.
+    baby owns: review_class='verification' OR (null class AND
+    source IN {decider-bau-route, decider-m1-route, decider-m3-carry-over})
+    OR orphan assigned-analyst ISSs of severity minor/moderate.
+  - Estimated cost: +$0.60-2.40/day on top of current ~$14-35/day pipeline.
 
-WORKED EXAMPLE FOR M2 FALSE-POSITIVE GUARD (6 ISSs, real data from current open-issues.json):
-  ISS-1547 (info, EXP-249 ready): AUTO-CLOSE — pure forwarding ticket, EXP-249 integrated.
-  ISS-1080 (minor, EXP-170 stylistic): AUTO-CLOSE — analyst's own rationale supersedes.
-  ISS-708 (minor, EXP-060 follow-up infrastructure): NOT — 'When pipeline supports' future-work signal.
-  ISS-1241 (major, curmudgeon-found hole on EXP-190 proposal): NOT — triple-fail (severity + 'blocks integration' + curmudgeon source).
-  ISS-1549 (minor, EXP-211 deferred AC8/9/10/12): NOT — 'deferred' signal + curmudgeon-source path.
-  ISS-1205 (major, scoreboard awaiting human-group review): NOT — explicit DO NOT INTEGRATE.
+Phase 2 (conditional on Phase 1 success after 5-7 days):
+  - Add Mode 2b attention-inbox Phase 1+2 (OBE + batch) to baby.
 
-CONTEXT VERIFICATION:
-  - Re-measured open-issues.json at 2026-05-10T06:08Z (50min after directive filing): 257 total, 231 open, 90 EXP-mentioning (directive said 88 — within rounding/recent-flux), 26 non-open-statused (directive said 24 — same).
-  - Age distribution: ≤1d=2, ≤3d=10, ≤7d=12, ≤14d=106, ≤21d=57, ≤30d=17, >30d=0, undated=27.
-  - Severity (open): minor=160, moderate=64, major=6, info=1.
+Phase 3 (speculative; needs prediction_class schema first):
+  - Mode 1b verification-class predictions.
 
-FLAGGED FOR OPERATOR ATTENTION (NOT in PROP-026):
-  - ISS-708 OBE risk: crosses 30d on 2026-05-11. PROP-026 Phase 1 (M2) cannot auto-close it (fails false-positive guard). Recommend manual route to pending-human OR accept one-time crossover until M1 (Phase 2) catches it.
-  - 27 undated open issues (no found_at/found_date) need separate schema-cleanup PROP. Affects M1's age-based eligibility — these must escalate as 'unknown — manual review' until backfilled.
+--- KEY COUNTER-ARGUMENT (operator decision point) ---
+Strongest counter to immediate Phase 1 deploy:
+  Try bumping existing analyst to 2h Opus cadence FIRST as a 3-day experiment.
+  - Cheaper to deploy (one cron edit, no new agent)
+  - If that alone drains the backlog, defer this whole PROP.
+  - If 3 days of 2h Opus doesn't drain it (most likely — Opus's dispatcher
+    gravity is the issue, not just cadence), proceed to Phase 1 split.
 
-PREVIOUS FOLLOWUP:
-  - PROP-024 (workspace-sync JSON validity gate): still pending operator review (~12+ days).
-  - PROP-025 (curmudgeon batch-gate content-based): authored 2026-05-10T08:00, awaiting operator review.
-  - No still_broken findings from previous tinker runs.
+Other counters evaluated (all addressable via phased plan):
+  - Sample size 1 day might be noise (counter: queue-trend is the real
+    evidence, independent of single-day dispatch counts)
+  - PROP-031 needs steady-state time (counter: that's why we phase)
+  - Sonnet quality risk on BAU drain (counter: BAU drain isn't 'kernel
+    of truth' work; it's mechanical close-out where Sonnet's literal
+    compliance is a strength; curmudgeon c4 catches regressions)
+  - 3-writer tracker collision risk (counter: scales symmetrically with
+    existing 2-writer protection; claim-stamp adds belt-and-suspenders)
+  - Should also split curmudgeon (counter: operator's lean is analyst
+    first, agreed — no curmudgeon bottleneck observed)
 
-MODE 2/3 DEFERRED:
-  - CLAUDE.md accuracy + per-agent context-load audits deferred to next non-directive run.
-  - Disk audit / /tmp cleanup not triggered this run.
+--- OPEN QUESTIONS FOR OPERATOR ---
+  Q1: Try 2h Opus first (counter-recommendation), or direct to Phase 1?
+  Q2: Phase 1 scope as designed (BAU drain only), or wider (+ Mode 2b)?
+  Q3: Cadence 2h (recommended) or hourly (directive-proposed)?
+  Q4: Auto-rollback on Phase 1 quality regression, or operator-confirmed?
+  Q5: Tinker self-apply authority on prompt edits, or per-file operator review?
 
-NEXT-RUN PRIORS:
-  - If PROP-026 Phase 1 lands before next tinker: verify decider-mode.json + closure-ledger.jsonl exist; verify M2 dry-run output appears.
-  - If still pending: fall to Mode 3 cost-engineering (CLAUDE.md audit deferred this run).
-  - Otherwise check for new pending directives (only one currently filed — DIRECTIVE-20260510-001 just completed).
+--- EMPIRICAL VALIDATION OF DIRECTIVE PREMISE ---
+Today's analyst runs (5, not 4 — directive filed before 20:05Z run):
+  04:06Z EXP-364 c3 batch (curmudgeon-driven, NOT BAU drain)
+  08:11Z EXP-365 c5 batch (curmudgeon-driven, NOT BAU drain)
+  12:04Z EXP-323  c4 singleton (curmudgeon-driven, NOT BAU drain)
+  16:07Z EXP-366  STALE-TRACKER-DRAIN-BATCH (12 ISSs — the BAU drain)
+  20:05Z EXP-326  c4 verification singleton (curmudgeon-driven, NOT BAU drain)
+BAU drain wins dispatcher slot 1-in-5 today (20%). Directive's 1-in-4 claim
+verified within sample noise.
+
+Queue breakdown for routing design:
+  151 assigned-analyst ISSs total
+  137 are orphans (no tracker entry — pre-PROP-029 bolus)
+  14 are tracker-tracked pending
+  138/151 (91%) have NO class_hint (pre-PROP-027 routing)
+  100/151 (66%) are severity=minor; 48 moderate; 2 major; 1 info
+  102/151 (68%) are 7+ days old
+Near-perfect Sonnet BAU drain target: high volume, low severity, aged-out.
+
+--- MODE 1 / MODE 2 PIPELINE HEALTH ---
+GREEN.
+  No stranded patches >24h old.
+  Disk: project footprint 564MB (warning ≥500MB; CRITICAL ≥1000MB) —
+        composition is mostly the FUSE workspace itself, not clone leak.
+        No /tmp/*-clone present. Non-project /tmp content (work, kev-repo)
+        unrelated to dome pipeline.
+  All agents producing fresh outputs at expected cadence.
+  Auth working.
+
+--- DEFERRED TO NEXT NON-DIRECTIVE RUN ---
+- Mode 3 (cost engineering audit, CLAUDE.md accuracy + context load)
+- previous_followup PROP-verification walk (PROP-026 through PROP-033)
+
+--- OUTPUTS ---
+- monitor/tinker/proposals/PROP-034-split-analyst-baby-vs-deep.json (NEW, 412 lines)
+- monitor/tinker/operator-directives/DIRECTIVE-20260513-002-...json (additive: pending→completed)
+- monitor/tinker/queue-history.jsonl (PROP-030 metrics appended)
+- monitor/tinker/report-2026-05-13T21-54.json
+- monitor/tinker/latest-tinker-summary.txt (this file)
