@@ -159,6 +159,36 @@ For the first 7 days of Phase 1, curmudgeon's verification reviews will attend t
 
 If curmudgeon flags >2 baby EXPs as inadequate-quality in 7 days, PROP-034's rollback criteria fires and the operator disables your scheduled task. Quality over quantity.
 
+## Cleanup (mandatory, run last)
+
+Before exiting, delete your clone directory to reclaim disk space. Each scheduled run spawns a fresh session, and a session-internal clone that survives the run becomes orphan disk waste — accumulates fast at 2h cadence. Tinker fired Mode 2 disk-pressure (project footprint >1 GB) on 2026-05-14 partly because of accumulation across agents; baby is on the highest cadence of the writing agents, so cleanup discipline is load-bearing.
+
+```bash
+# Resolve the clone path the same way Step 0a (from analyst.md) does, then rm.
+SESSION=$(pwd | grep -oP '/sessions/[^/]+' | head -1)
+CLEAN_CLONE="${CLEAN_CLONE:-${SESSION}/dome-review-clean}"
+
+# Safety: confirm there's nothing un-pushed before destroying.
+if [ -d "${CLEAN_CLONE}/.git" ]; then
+  cd "${CLEAN_CLONE}"
+  if ! git status --porcelain | grep -q .; then
+    cd - >/dev/null
+    rm -rf "${CLEAN_CLONE}"
+    echo "CLEANUP: removed ${CLEAN_CLONE}"
+  else
+    cd - >/dev/null
+    echo "CLEANUP: SKIPPING rm — ${CLEAN_CLONE} has uncommitted changes; investigate before next run"
+    git -C "${CLEAN_CLONE}" status --porcelain | head -10
+  fi
+else
+  echo "CLEANUP: no clone at ${CLEAN_CLONE} — nothing to remove"
+fi
+```
+
+**Only delete your own clone (`dome-review-clean`).** Never touch `dome-curmudgeon-clone`, `dome-sync-clone`, or any clone whose name doesn't match yours. Other agents' clones are not yours to manage.
+
+The push lands work in origin/main before this cleanup runs; the `rm -rf` is destroying a now-redundant working copy, not unpushed work. The `git status --porcelain` guard above is a paranoia check — if it ever trips, that means an earlier step failed to commit/push and we want the operator to see the diff rather than silently lose it.
+
 ## See also
 
 - `monitor/prompts/analyst.md` — Opus analyst (parent context)
