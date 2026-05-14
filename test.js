@@ -898,6 +898,19 @@ console.log('\n── 8. Prediction Panels ──');
   }
 }
 
+// EXP-383: WIN-034 reclassification Unfalsifiable → Self-Contradicted (SC pattern 2)
+// Three sentinel tests: verdict field, finding language, sub_rationale existence.
+{
+  const win034 = wins.find(w => w.id === '034');
+  assert(win034, 'EXP-383: WIN-034 exists in wins.json');
+  assert(win034 && win034.verdict === 'Self-Contradicted',
+    'EXP-383: WIN-034 verdict must be Self-Contradicted (reclassified from Unfalsifiable per EXP-383)');
+  assert(win034 && (win034.finding.includes('pattern 2') || win034.finding.includes('Self-contradiction')),
+    'EXP-383: WIN-034 finding must contain SC pattern (2) language');
+  assert(win034 && typeof win034.sub_rationale === 'string' && win034.sub_rationale.includes('structural-coherence pattern (2)'),
+    'EXP-383: WIN-034 sub_rationale must exist and contain structural-coherence pattern (2)');
+}
+
 // ════════════════════════════════════════════
 // Results
 // ════════════════════════════════════════════
