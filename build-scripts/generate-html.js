@@ -1520,7 +1520,7 @@ ${generateVerdictBarChart(tally, wins.length)}
 <li class="ds-fm-row">
 <div class="ds-fm-condition">Genuine prospective prediction</div>
 <div class="ds-fm-desc">Specific, quantitative, station-named, timestamped before the data &mdash; with the prediction document anchored independently from any observation file.</div>
-<div class="ds-fm-status ds-fm-status-partial" role="status" aria-label="Status: 1 partial; eclipse August 12, 2026 approaches the standard with methodological issues"><span class="ds-fm-status-num">1 partial</span><span class="ds-fm-status-sub">eclipse Aug 12, 2026</span></div>
+<div class="ds-fm-status ds-fm-status-pending" role="status" aria-label="Status: 1 pending; eclipse August 12, 2026 live test approaching"><span class="ds-fm-status-num">1 pending</span><span class="ds-fm-status-sub">eclipse Aug 12, 2026</span></div>
 </li>
 <li class="ds-fm-row">
 <div class="ds-fm-condition">Derive 7.83 Hz from dome geometry</div>
