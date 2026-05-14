@@ -727,7 +727,7 @@ console.log('\n── 8. Prediction Panels ──');
   // ISS-1632 + ISS-1637: consistent "0 / N met" framing across the three unmet conditions
   // (no separate "pending" word for condition 4; sub-status carries the OPEN-001 nuance)
   const zeroNumCount = (htmlContent.match(/class="ds-fm-status-num">0 \/ \d+ met/g) || []).length;
-  assertEq(zeroNumCount, 3, 'EXP-271: exactly 3 "0 / N met" status-num spans (conditions 1, 3, 4); condition 2 is "1 partial"');
+  assertEq(zeroNumCount, 2, 'EXP-271 updated ISS-1656: exactly 2 "0 / N met" spans (conditions 3, 4); condition 1 now shows "0 / N" per ISS-1656 framing fix');
   assert(htmlContent.includes('2 attempted'), 'EXP-271: condition 1 sub-status "2 attempted" present');
   assert(htmlContent.includes('imports globe radius'), 'EXP-271: condition 3 sub-status "imports globe radius" present');
   assert(htmlContent.includes('OPEN-001'), 'EXP-271: condition 4 sub-status "OPEN-001" present (replaces standalone "pending")');
@@ -909,6 +909,27 @@ console.log('\n── 8. Prediction Panels ──');
     'EXP-383: WIN-034 finding must contain SC pattern (2) language');
   assert(win034 && typeof win034.sub_rationale === 'string' && win034.sub_rationale.includes('structural-coherence pattern (2)'),
     'EXP-383: WIN-034 sub_rationale must exist and contain structural-coherence pattern (2)');
+}
+
+
+// ════════════════════════════════════════════
+// EXP-387/388 — aria, contrast, test, collapsed-details fixes
+// ════════════════════════════════════════════
+{
+  const htmlContent = fs.readFileSync(path.join(__dirname, 'docs/index.html'), 'utf8');
+
+  // EXP-387 (ISS-1648/1721): ds-thesis-hero structure present post-build
+  assert(htmlContent.includes('class="ds-thesis-hero"'), 'EXP-387 ISS-1648/1721: ds-thesis-hero section present in built HTML');
+  assert(htmlContent.includes('id="ds-thesis-statement"'), 'EXP-387 ISS-1648/1721: ds-thesis-statement id present in built HTML');
+
+  // EXP-387 (ISS-1647/1708/1720): aria-labelledby target has role=heading
+  assert(htmlContent.includes('id="ds-thesis-statement" class="ds-thesis-statement" role="heading" aria-level="1"'), 'EXP-387 ISS-1647/1708/1720: ds-thesis-statement must have role=heading aria-level=1');
+
+  // EXP-387 (ISS-1646/1707): dark-mode badge hover contrast override present
+  assert(htmlContent.includes('prefers-color-scheme:dark') && htmlContent.includes('ds-thesis-badge:hover'), 'EXP-387 ISS-1646/1707: dark-mode badge hover CSS override must be present');
+
+  // EXP-388 (ISS-1612/1642/1711): Read the long form link auto-expands eg-evaluate
+  assert(htmlContent.includes("getElementById('eg-evaluate');if(el)el.open=true"), 'EXP-388 ISS-1612/1642/1711: eg-evaluate auto-expand onclick must be present');
 }
 
 // ════════════════════════════════════════════
