@@ -37,7 +37,8 @@ const TARGETS = [
   { dir: 'monitor/decisions', globs: [/^daily-report-.*\.json$/, /^suggested-patches-.*\.json$/] },
   { dir: 'monitor/decisions/applied-patches', globs: [/^suggested-patches-.*\.json$/] },
   { dir: 'monitor/tinker', globs: [/^report-.*\.json$/] },
-  { dir: 'monitor/integrity', globs: [/^report-.*\.json$/] },
+  { dir: 'monitor/integrity', globs: [/^report-.*\.json$/, /^narrative-cite-audit-.*\.json$/, /^verify-pending-run-.*\.json$/] },
+  { dir: 'monitor/integrity/workspace-sync-runs', globs: [/^run-.*\.json$/] },
 ];
 
 // Extract timestamp from filename; returns Date or null.
