@@ -1476,7 +1476,7 @@ ${CSS}
 </div>
 
 <section class="ds-thesis-hero" aria-labelledby="ds-thesis-statement">
-<p id="ds-thesis-statement" class="ds-thesis-statement">None of the ${counts.total} predictions produces a dome-specific result that standard physics cannot already explain.</p>
+<p id="ds-thesis-statement" class="ds-thesis-statement" role="heading" aria-level="1">None of the ${counts.total} predictions produces a dome-specific result that standard physics cannot already explain.</p>
 <div class="ds-thesis-meta">
 <a class="ds-thesis-badge" href="#p4-426" onclick="showTab('pages');return false" aria-label="Live test pending: August 12, 2026 eclipse — see section 4.2.6 What would change our verdict">
 <span class="ds-thesis-badge-dot" aria-hidden="true"></span>
@@ -1515,7 +1515,7 @@ ${generateVerdictBarChart(tally, wins.length)}
 <li class="ds-fm-row">
 <div class="ds-fm-condition">Discriminating prediction from dome geometry</div>
 <div class="ds-fm-desc">Derive a quantitative result from dome parameters that differs from standard physics for the same observable, then confirm it with measurement.</div>
-<div class="ds-fm-status ds-fm-status-zero" role="status" aria-label="Status: 0 of ${counts.total} claims met; 2 attempted (WIN-044, WIN-057), 0 succeed"><span class="ds-fm-status-num">0 / ${counts.total} met</span><span class="ds-fm-status-sub">2 attempted &middot; 0 succeed</span></div>
+<div class="ds-fm-status ds-fm-status-zero" role="status" aria-label="Status: 0 of ${counts.total} claims; 2 attempted (WIN-044, WIN-057), 0 succeed"><span class="ds-fm-status-num">0 / ${counts.total}</span><span class="ds-fm-status-sub">2 attempted &middot; 0 succeed</span></div>
 </li>
 <li class="ds-fm-row">
 <div class="ds-fm-condition">Genuine prospective prediction</div>
@@ -1538,7 +1538,7 @@ ${generateVerdictBarChart(tally, wins.length)}
 
 <section class="ds-evaluate-preface" aria-labelledby="ep-heading">
 <h2 id="ep-heading" class="ds-ep-heading">Five questions to ask of any scientific claim</h2>
-<p class="ds-ep-caption">From this review or any other &mdash; each question links to where this review tests it. <a class="ds-ep-jump" href="#eg-evaluate" onclick="showTab('evaluate');return false">Read the long form &rarr;</a></p>
+<p class="ds-ep-caption">From this review or any other &mdash; each question links to where this review tests it. <a class="ds-ep-jump" href="#eg-evaluate" onclick="showTab('evaluate');var el=document.getElementById('eg-evaluate');if(el)el.open=true;return false">Read the long form &rarr;</a></p>
 <ol class="ds-ep-rows">
 <li class="ds-ep-row">
 <span class="ds-ep-num" aria-hidden="true">1</span>
