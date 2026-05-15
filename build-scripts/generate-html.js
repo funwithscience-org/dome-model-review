@@ -553,7 +553,7 @@ a:hover{text-decoration:none}
 .ds-thesis-hero .ds-thesis-statement{font-family:var(--serif);font-size:clamp(1.85rem,3.6vw,2.65rem);line-height:1.18;font-weight:600;letter-spacing:-0.012em;color:var(--heading);margin:0 0 0.85rem;text-wrap:balance;max-width:32ch}
 .ds-thesis-hero .ds-thesis-meta{margin:0 0 1rem}
 .ds-thesis-hero .ds-thesis-badge{display:inline-flex;align-items:center;gap:.5rem;padding:.32rem .72rem;border:1px solid var(--accent);border-radius:999px;background:transparent;color:var(--accent);text-decoration:none;font-family:var(--sans);font-size:.82rem;font-weight:600;letter-spacing:0.02em;transition:background .15s,color .15s}
-.ds-thesis-hero .ds-thesis-badge:hover{background:var(--accent);color:#fff;text-decoration:none}@media(prefers-color-scheme:dark){.ds-thesis-hero .ds-thesis-badge:hover{color:var(--bg)}}
+.ds-thesis-hero .ds-thesis-badge:hover{background:var(--accent);color:#fff;text-decoration:none}
 .ds-thesis-hero .ds-thesis-badge:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .ds-thesis-hero .ds-thesis-badge-dot{display:inline-block;width:.55rem;height:.55rem;border-radius:50%;background:var(--accent);box-shadow:0 0 0 0 rgba(74,111,165,.55);animation:ds-thesis-badge-pulse 2.4s ease-out infinite}
 .ds-thesis-hero .ds-thesis-badge:hover .ds-thesis-badge-dot{background:#fff;box-shadow:0 0 0 0 rgba(255,255,255,.6)}
@@ -1476,7 +1476,7 @@ ${CSS}
 </div>
 
 <section class="ds-thesis-hero" aria-labelledby="ds-thesis-statement">
-<p id="ds-thesis-statement" class="ds-thesis-statement" role="heading" aria-level="1">None of the ${counts.total} predictions produces a dome-specific result that standard physics cannot already explain.</p>
+<p id="ds-thesis-statement" class="ds-thesis-statement">None of the ${counts.total} predictions produces a dome-specific result that standard physics cannot already explain.</p>
 <div class="ds-thesis-meta">
 <a class="ds-thesis-badge" href="#p4-426" onclick="showTab('pages');return false" aria-label="Live test pending: August 12, 2026 eclipse — see section 4.2.6 What would change our verdict">
 <span class="ds-thesis-badge-dot" aria-hidden="true"></span>
@@ -1510,17 +1510,17 @@ ${generateVerdictBarChart(tally, wins.length)}
 
 <section class="ds-falsifiability-module" aria-labelledby="ds-fm-heading">
 <h2 id="ds-fm-heading" class="ds-fm-heading">What would change our verdict</h2>
-<p class="ds-fm-caption">Four conditions assessed against the dome's ${counts.total} claimed wins — any one is sufficient to upgrade a verdict. <a class="ds-fm-jump" href="#eg-falsifiability" onclick="showTab('evaluate');return false">Full criteria &rarr;</a>${wins.length > counts.total ? '<span style="font-size:0.75rem;color:var(--ink-3)"> (Verdict bars show ' + wins.length + ' total entries; ' + (wins.length - counts.total) + ' review-authored supplements excluded from this count.)</span>' : ''}</p>
+<p class="ds-fm-caption">Four conditions assessed against the dome's ${counts.total} claimed wins — any one is sufficient to upgrade a verdict. <a class="ds-fm-jump" href="#eg-falsifiability" onclick="showTab('evaluate');return false">Full criteria &rarr;</a></p>
 <ol class="ds-fm-rows">
 <li class="ds-fm-row">
 <div class="ds-fm-condition">Discriminating prediction from dome geometry</div>
 <div class="ds-fm-desc">Derive a quantitative result from dome parameters that differs from standard physics for the same observable, then confirm it with measurement.</div>
-<div class="ds-fm-status ds-fm-status-zero" role="status" aria-label="Status: 0 of ${counts.total} claims produce a dome-only result; 2 attempted (WIN-044, WIN-057), both fail"><span class="ds-fm-status-num">0 / ${counts.total}</span><span class="ds-fm-status-sub">2 attempted &middot; 0 succeed</span></div>
+<div class="ds-fm-status ds-fm-status-zero" role="status" aria-label="Status: 0 of ${counts.total} claims met; 2 attempted (WIN-044, WIN-057), 0 succeed"><span class="ds-fm-status-num">0 / ${counts.total} met</span><span class="ds-fm-status-sub">2 attempted &middot; 0 succeed</span></div>
 </li>
 <li class="ds-fm-row">
 <div class="ds-fm-condition">Genuine prospective prediction</div>
 <div class="ds-fm-desc">Specific, quantitative, station-named, timestamped before the data &mdash; with the prediction document anchored independently from any observation file.</div>
-<div class="ds-fm-status ds-fm-status-pending" role="status" aria-label="Status: 1 pending; eclipse August 12, 2026 live test approaching"><span class="ds-fm-status-num">1 pending</span><span class="ds-fm-status-sub">eclipse Aug 12, 2026</span></div>
+<div class="ds-fm-status ds-fm-status-partial" role="status" aria-label="Status: 1 partial; eclipse August 12, 2026 approaches the standard with methodological issues"><span class="ds-fm-status-num">1 partial</span><span class="ds-fm-status-sub">eclipse Aug 12, 2026</span></div>
 </li>
 <li class="ds-fm-row">
 <div class="ds-fm-condition">Derive 7.83 Hz from dome geometry</div>
@@ -1538,7 +1538,7 @@ ${generateVerdictBarChart(tally, wins.length)}
 
 <section class="ds-evaluate-preface" aria-labelledby="ep-heading">
 <h2 id="ep-heading" class="ds-ep-heading">Five questions to ask of any scientific claim</h2>
-<p class="ds-ep-caption">From this review or any other &mdash; each question links to where this review tests it. <a class="ds-ep-jump" href="#eg-evaluate" onclick="showTab('evaluate');var el=document.getElementById('eg-evaluate');if(el)el.open=true;return false">Read the long form &rarr;</a></p>
+<p class="ds-ep-caption">From this review or any other &mdash; each question links to where this review tests it. <a class="ds-ep-jump" href="#eg-evaluate" onclick="showTab('evaluate');return false">Read the long form &rarr;</a></p>
 <ol class="ds-ep-rows">
 <li class="ds-ep-row">
 <span class="ds-ep-num" aria-hidden="true">1</span>
