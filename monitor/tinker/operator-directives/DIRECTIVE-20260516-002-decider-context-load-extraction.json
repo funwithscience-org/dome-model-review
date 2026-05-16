@@ -1,0 +1,99 @@
+{
+  "directive_id": "DIRECTIVE-20260516-002",
+  "title": "Author and apply decider context-load extraction per tinker's 06:10Z Mode 3 finding (FIND-2026-05-16-07, MAJOR). Decider total context grew +25.8% over 7 days (2359L → 2967L) from operator-approved PROPs. Tinker's recommendation: extract conditional sections from decider-curmudgeon.md (490L) into a sub-reference loaded only when priority-queue is non-empty (~70% of runs have empty queue → save 150-200L per run). Optionally extend to analyst/curmudgeon/tinker MODERATE growth (+11-17%) if cleanly extractable.",
+  "filed_by": "operator",
+  "filed_at": "2026-05-16T07:30:00Z",
+  "status": "pending",
+  "priority": "medium",
+  "scope_authority": "Design + apply. Tinker authors PROP-NNN as design-pending-operator-review with verbatim file splits and conditional-load instructions; operator reviews; operator + tinker apply. The extraction is mechanical (text relocation + reference insertion); no behavior change intended.",
+  "context_from_tinker_finding": {
+    "source": "monitor/tinker/report-2026-05-16T06-10.json — FIND-2026-05-16-07 (MAJOR)",
+    "summary_quote": "Decider total context load is +25.8% vs 2026-05-09 baseline (2359L → 2967L). Driver is PROP-037 application (decider.md 520→769L, decider-curmudgeon.md 306→490L). Each individual addition was operator-approved and closes a real bug; the cumulative effect crosses the MAJOR threshold (>25%).",
+    "recommended_action_quote": "DO NOT rollback PROP-037. Schedule a Mode 4 follow-up to extract conditional sections from decider-curmudgeon.md (490L) into a sub-reference loaded only when priority-queue is non-empty. Estimated savings: 150-200L on most runs (queue is empty in ~70% of runs).",
+    "cost_signal": "At Opus pricing, +608L is roughly +$0.0091/run input cost. At 6 decider runs/day = ~$0.05/day = ~$20/year of pure context-load cost per agent. Material but not crisis-level. Compounds across 10 agents and continued PROP adoption."
+  },
+  "operator_intent": "Tinker confirmed cumulative context-load growth is real but not warranted-for-rollback. Operator commissions the extraction work tinker already scoped: split decider-curmudgeon.md so the priority-queue-mechanics content (~150-200L) only loads when the queue is non-empty. Reduces decider's per-run input by ~30% on ~70% of runs. Optional second pass: scan analyst/curmudgeon/tinker for similar conditional-extract opportunities.",
+  "tasks": [
+    {
+      "task_id": "task_1_decider_curmudgeon_split_design",
+      "description": "Read monitor/prompts/reference/decider-curmudgeon.md. Identify which sections are priority-queue-conditional (only relevant when curmudgeon/priority-queue.json has items at decider read-time) versus always-needed (definitions, schemas, general invariants). Propose a split:",
+      "deliverable_specifications": [
+        "Identify the conditional section(s) — likely Step E (queue pop logic), Step F (post-integration push), and any worked examples that only apply when queue has items.",
+        "Identify the always-needed sections that stay in decider-curmudgeon.md — likely the queue schema, the PROP-009 invariants, the integration intake step (always reads even on empty queue).",
+        "Propose new file: monitor/prompts/reference/decider-curmudgeon-pq-mechanics.md (containing the conditional sections).",
+        "Specify the conditional-load instruction in decider.md or decider-intake.md: 'If priority-queue.json has non-zero items, ALSO read monitor/prompts/reference/decider-curmudgeon-pq-mechanics.md before processing.'",
+        "Estimate the LOC savings (target 150-200L per non-empty-queue-run avoided context, per tinker's projection)."
+      ],
+      "design_questions_for_tinker": [
+        "Q1: How does decider detect 'priority-queue non-empty' at read-time? It must read the file to count items. Suggests: read priority-queue.json first, branch on items.length>0, conditionally read decider-curmudgeon-pq-mechanics.md. Confirm this is the pattern.",
+        "Q2: What's the boundary between 'always-needed' and 'conditional'? The risk is misclassifying a section: if decider needs queue-mechanics for an integration-time decision (not just queue-pop), the conditional load could miss it. Be conservative — when in doubt, leave the section in the always-loaded file.",
+        "Q3: Should this also apply to the analyst-baby split (PROP-034), the curmudgeon-verify split (PROP-038), or any other model-class-split agent? The same conditional-load pattern could apply elsewhere; tinker should propose only for decider in this PROP but note candidate extensions."
+      ]
+    },
+    {
+      "task_id": "task_2_optional_other_agents_scan",
+      "description": "Per tinker finding 08 (MODERATE, analyst/curmudgeon/tinker context-load +11-17%): scan each agent's prompt chain for similarly-conditional sections. If clean extraction opportunities exist (no behavior change, mechanical split), surface them in the PROP as Phase 2 candidates. Do NOT apply in Phase 1 — Phase 1 is decider-only.",
+      "deliverable_specifications": [
+        "Per-agent assessment: what's the largest extractable conditional section?",
+        "Quantify potential LOC savings.",
+        "Identify any anti-patterns (sections that look conditional but actually need always-loaded context to avoid bugs)."
+      ]
+    },
+    {
+      "task_id": "task_3_phased_deployment_design",
+      "description": "Mirror PROP-034/PROP-038 phasing shape:",
+      "phase_design_template": {
+        "phase_1": "Decider-curmudgeon.md split only. Verify on 3 consecutive decider runs (no missed queue items, no missed PROP-009 invariants, behavior identical to pre-split). Measure actual LOC savings on a queue-empty run vs queue-non-empty run.",
+        "phase_1_exit_criteria": "After 7 days / ~50 decider runs: (a) no behavior regression detected (queue items still popping correctly, ISS creation rate unchanged), (b) measured LOC savings match projection within ±25%, (c) curmudgeon's adversarial review of any decider-self-applied patches landed under the new split shows no quality regression.",
+        "phase_1_rollback_criteria": "Decider misses a queue item that the un-split version would have caught (regression). Decider creates an ISS for the wrong invariant because the conditional section didn't load when needed. Operator-judged quality regression.",
+        "phase_2_conditional": "If Phase 1 holds, extend to analyst (Mode 1 BAU drain steps could be conditional on tracker non-empty), curmudgeon (worked examples in change-driven review could be conditional on change-pending), tinker (Mode 2 disk-pressure conditional on disk-near-threshold). Phase 2 is per-agent assessment; not all extractions are worth it."
+      ]
+    },
+    {
+      "task_id": "task_4_counter_argument",
+      "description": "Steve prefers honest evaluation. Steelman the case against extraction:",
+      "counter_args_to_address": [
+        "'Conditional loading is fragile — agent must remember to read the conditional file. Forgotten reads create silent regressions.' Rebuttal expected: the conditional-load instruction can be made explicit ('IF queue.length>0, BEFORE doing X, read decider-curmudgeon-pq-mechanics.md'). The risk is real but bounded; first 7 days are the validation window.",
+        "'$20/year/agent is rounding error vs the operator-time spent designing and applying the split.' Rebuttal expected: cost not the only consideration. Context-load also affects model attention; large contexts dilute focus. The cost number is downstream evidence, not the primary justification.",
+        "'PROP-034/038/039 will add more context elsewhere as Phase 2 of those rolls out. Net change may be neutral.' Rebuttal expected: that's exactly the point — without proactive extraction discipline, every PROP that adds capability compounds context-load. The extraction discipline should be paired with capability adds.",
+        "'Why not just rollback PROP-037?' (Tinker's already-stated rebuttal: PROP-037 closes a real bug — the integrity→decider intake gap. Rollback recreates the failure that took 24h+ of operator labor to fix manually two days ago. Extraction is the better trade.)"
+      ]
+    },
+    {
+      "task_id": "task_5_propose_then_apply",
+      "description": "Author PROP-NNN as design-pending-operator-review. Include verbatim file splits (exact line ranges to move, new filename, conditional-load instruction wording). Operator reviews; if approved, operator OR tinker applies. Mirrors PROP-036/038 application pattern."
+    }
+  ],
+  "operator_specified_design_constraints": [
+    "NO rollback of PROP-036/PROP-037/PROP-038. All three closed real bugs; preserving the fixes is non-negotiable.",
+    "Phase 1 is decider-curmudgeon.md split ONLY. No analyst/curmudgeon/tinker edits in Phase 1.",
+    "Conditional load instruction must be explicit and easy to forget-proof (visible at the top of the related step, not buried in a reference).",
+    "Behavior must be identical between split and pre-split. Any behavior change = scope creep, abort and re-author."
+  ],
+  "in_scope_for_tinker": [
+    "Read monitor/prompts/reference/decider-curmudgeon.md (490L) and identify the conditional section boundaries.",
+    "Read monitor/prompts/decider.md to find where the conditional-load instruction lands.",
+    "Read CLAUDE.md File Ownership rules to confirm new file classification.",
+    "Author one PROP-NNN with verbatim splits + conditional-load instruction + acceptance criteria + counter-arguments.",
+    "After operator approval, apply the split."
+  ],
+  "out_of_scope_for_tinker": [
+    "Do NOT modify decider's actual decision-making logic. The split is text-relocation only.",
+    "Do NOT touch analyst/curmudgeon/tinker prompts in Phase 1. Phase 2 conditional, separate amendment.",
+    "Do NOT remove PROP-037's integrity intake severity-agnostic logic. That's the load-bearing fix.",
+    "Do NOT batch with DIRECTIVE-20260516-001 (sloppytoppy). Different concerns."
+  ],
+  "operator_preferences_for_proposal": [
+    "Counter-argument section mandatory (per operator preference 'Think about the other side of the argument too')",
+    "Include the verbatim line ranges from decider-curmudgeon.md that are moving; operator can sanity-check the boundary before applying.",
+    "Authorization to self-apply after operator review (mirrors PROP-036 application pattern).",
+    "Quantify projected savings AND projected re-validation cost (operator-time to verify behavior unchanged)."
+  ],
+  "expected_artifacts": [
+    "monitor/tinker/proposals/PROP-NNN-decider-context-load-extraction.json (status: design-pending-operator-review)",
+    "On approval: monitor/prompts/reference/decider-curmudgeon-pq-mechanics.md (NEW)",
+    "On approval: monitor/prompts/reference/decider-curmudgeon.md (REDUCED, with conditional-load reference)",
+    "On approval: CLAUDE.md File Ownership update for the new file",
+    "On approval: build.js OWNERSHIP entry"
+  ]
+}
