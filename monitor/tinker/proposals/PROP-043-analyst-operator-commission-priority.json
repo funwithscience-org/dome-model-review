@@ -1,0 +1,347 @@
+{
+  "id": "PROP-043",
+  "prop_id": "PROP-043",
+  "title": "Analyst dispatcher: insert 'Mode 0.5 — Operator Commission' priority tier above Mode 1 so operator-explicit HNOTEs don't sit behind multi-day Mode-1 backlogs",
+  "authored_by": "tinker",
+  "authored_at": "2026-05-16T19:35:00.000Z",
+  "status": "design-pending-operator-review",
+  "category": "dispatcher-priority-fix",
+  "directive": "DIRECTIVE-20260516-006-analyst-hnote-priority-bump",
+  "supersedes_prop": null,
+  "amends": null,
+  "depends_on": [],
+  "related_directives": [
+    "DIRECTIVE-20260516-006 (this PROP's directive)",
+    "DIRECTIVE-20260516-008 (PROP-042 analyst-compression-mode — cross-references this PROP's Q1 outcome)"
+  ],
+  "headline_recommendation": {
+    "selected_option": "Option A — Insert 'Mode 0.5 — Operator Commission' between Mode 0 (WIN onboarding) and Mode 1 (Section Expansion Queue). Trigger: HNOTE has explicit `commission: true` flag in monitor/analyst/human-notes.json. One commission per run, then drop back to normal mode order.",
+    "rationale_one_paragraph": "Mode 5 already establishes the 'operator-explicit, never-on-cadence' pattern; Mode 0.5 follows that pattern but as a priority tier above BAU work. Option A (new mode) is cleaner than Option C (generalize Mode 5 in place) because (a) frozen-prediction work has a very specific deliverable shape — OTS-anchored falsifiable JSON — and bundling other commission types under that named contract dilutes its meaning, (b) keeping Mode 5 in its current position preserves backward-compat for any pending frozen-pred HNOTEs without prompt-level migration, and (c) Mode 0.5 with a generic `commission: true` flag is forward-compatible with PROP-042 (compression-mode) and any future commission types without overloading Mode 5's name. Option B (top-level priority check before modes) is functionally similar but less elegant in the prompt because it requires both a top-of-dispatcher check AND keeping Mode 2 in place — Option A simply names the dispatch tier. Option D (full inversion) is rejected as too aggressive — operator commissions should jump Mode 1, not block it.",
+    "scoped_to": "analyst.md only (Q5 cross-agent check: curmudgeon and decider do not have the equivalent backlog problem; see Q5 analysis below)."
+  },
+  "executive_summary": {
+    "problem_one_line": "Operator-explicit HNOTEs in monitor/analyst/human-notes.json sit at Mode 2, behind Mode 1's deep-attack/holistic queue. With Mode 1's tracker queue currently ~20+ items deep and a routine drain rate of ~1 deep-attack per run, commission HNOTEs can wait ~21 hours before pickup — too slow for time-sensitive operator commissions.",
+    "evidence_one_line": "Observed 2026-05-16 ~12:00-13:00 UTC: HNOTE-OPERATOR-WIN-012-COMPRESSION-EXPERIMENT-001 filed at 10:09Z. Analyst's 11:06 UTC run executed Mode 1 (deep-attack singleton on EXP-398) and did NOT consume the HNOTE. Operator gave up on the dispatcher path at ~14:34Z (~4.5h later) and ran the compression in-session via cowork-claude. The work was successful (EXP-401, integrated commit 66c9a74), but the dispatcher problem remains — next time the operator may not be available to bypass.",
+    "fix_one_line": "Add 'Mode 0.5 — Operator Commission' between Mode 0 and Mode 1, triggered by `commission: true` flag on a pending HNOTE in monitor/analyst/human-notes.json. Dispatcher checks for commission HNOTEs before falling through to Mode 1. Backward-compat: HNOTEs without the flag continue to fall through to Mode 2 (current behavior).",
+    "shape_one_line": "~25-line dispatcher block in analyst.md + ~5-line CLAUDE.md discipline note + telemetry hook in tinker queue-history.jsonl. No analyst procedure changes; the per-HNOTE work proceeds via the existing Mode-2/Mode-2b consumption pattern, just at a higher priority slot."
+  },
+  "tinker_top_line_answers_to_directive_questions": {
+    "Q1_which_option": {
+      "answer": "Option A (new Mode 0.5).",
+      "rationale": "Option A is the cleanest fit for the operator's stated preferences (explicit mechanism + minimal-change-to-prompt + consistent with existing Mode 5 pattern). Mode 5 ALREADY establishes the 'operator-explicit-only, never on cadence' pattern — Mode 0.5 follows that pattern but as a dispatcher-priority tier above BAU work. Option A is structurally distinct from Mode 5: Mode 0.5 is a priority-routing decision (does the HNOTE jump Mode 1?), while Mode 5 is a deliverable-shape decision (is this a frozen-pred EXP?). A future generalization (a single 'commission router' that delegates to specific sub-procedures by `commission_type`) becomes a natural Phase-2 follow-up if telemetry shows operators want commission types beyond compression and frozen-pred.",
+      "options_considered_with_pros_cons": {
+        "option_A_new_mode_0_5": {
+          "pros": [
+            "Cleanest separation: priority routing decoupled from procedure choice (Mode 5's body-detection regex doesn't expand)",
+            "Forward-compatible: PROP-042 (compression-mode) plugs in as commission_type='compression' without touching Mode 5",
+            "Backward-compat trivial: legacy HNOTEs without `commission:true` fall through unchanged",
+            "Minimal prompt-change surface: ~25 lines of new dispatcher block, no edits to existing modes' procedures"
+          ],
+          "cons": [
+            "Adds a new mode to the dispatcher count (small cognitive load increase)",
+            "If commission-type sub-procedures grow, dispatcher gets a sub-routing table inside Mode 0.5 (mitigable: extract to reference file if it grows past ~50L)"
+          ]
+        },
+        "option_B_top_of_dispatcher_check": {
+          "pros": [
+            "No new mode in the numbered list (preserves the 0/1/1b/2/2b/3/4/5 ordering)",
+            "Implementation is a 5-10 line check at top of dispatcher"
+          ],
+          "cons": [
+            "Less elegant in the prompt: a pre-mode check + Mode 2 (still in place) creates an implicit two-stage dispatch that's harder to reason about",
+            "Doesn't separate priority routing from procedure choice — the pre-check has to know what to do with the HNOTE, which couples it to Mode 2's consumption logic",
+            "If commission types grow, the top-of-dispatcher check has to handle the routing or punt back to Mode 2 with a flag — extra coupling"
+          ]
+        },
+        "option_C_generalize_mode_5": {
+          "pros": [
+            "Reuses an existing mode (operator's stated preference for consistency)",
+            "Single 'operator commissions' surface in the prompt"
+          ],
+          "cons": [
+            "Overloads Mode 5's named contract: 'Frozen Prediction Drafts' is a SPECIFIC deliverable (OTS-anchored immutable JSON). Bundling compression and other commission shapes dilutes the meaning",
+            "Requires moving Mode 5's priority position in the dispatcher (from #8 to just-below-#0), which touches existing cross-references in CLAUDE.md and curmudgeon.md HNOTE-rubric ('Mode 5 HNOTE consumption')",
+            "Body-detection regex has to widen to recognize compression/custom-WIN-rewrite/etc., AND those new commission types need new procedure sections — more prompt change, not less",
+            "Backward-compat needed: existing frozen-pred HNOTEs continue using `mode: 5` while new commission types use `commission: true` — two flag conventions for the same dispatcher",
+            "Mode 5's existing PROP-014 Mech 1b WRITE-VERIFY discipline is frozen-pred-specific and would need conditional handling per commission type"
+          ]
+        },
+        "option_D_dispatcher_inversion": {
+          "pros": [
+            "Maximally responsive to operator commissions (zero wait)"
+          ],
+          "cons": [
+            "Aggressive: any HNOTE blocks all Mode 1 work, including pending HNOTEs that aren't time-sensitive",
+            "Mode 1 (deep-attack) drain rate could fall by ~10-30% if commission HNOTEs sustain at ~daily cadence",
+            "Operator stated preference is 'minimal-change' — Option D is the opposite",
+            "Operator-side fix: operator can already get this behavior by using `commission: true` (Option A); Option D removes the operator's ability to file a non-time-sensitive HNOTE without jumping the queue"
+          ]
+        }
+      }
+    },
+    "Q2_exact_flag_field": {
+      "answer": "New boolean field `commission: true` on the HNOTE JSON object.",
+      "rationale": "Three candidates considered. `priority: 'commission'` overloads the existing `priority` field (currently used for `'high'` | `'medium'` | `'low'` | `'blocker'`) and confuses operator-facing meaning — 'commission' isn't a priority *level*, it's a *routing* signal. `priority: 'high'` AND `target_agents` exact-match `analyst` is implicit and fragile (operator must remember the exact handshake; analyst dispatcher must hardcode the conjunction). `commission: true` is explicit, self-documenting, easy to grep, and easy to audit via tinker telemetry. Optionally pair with `commission_type: 'frozen-prediction' | 'compression' | 'custom-rewrite' | ...` to route to specific sub-procedures when needed; absent → generic-commission handling.",
+      "schema_definition": {
+        "field_name": "commission",
+        "field_type": "boolean",
+        "default_when_absent": false,
+        "semantic": "When true, this HNOTE bypasses Mode 1/1b/2/2b/3/4 priority and is consumed in Mode 0.5 before any BAU work. Reserved for operator-explicit time-sensitive work; routine guidance HNOTEs should leave this field absent or false.",
+        "optional_companion_field": {
+          "name": "commission_type",
+          "type": "string",
+          "allowed_values": ["frozen-prediction", "compression", "custom-rewrite", "other"],
+          "default_when_absent": "other",
+          "purpose": "Routes to specific commission sub-procedures when defined. Future expansion."
+        }
+      },
+      "example_HNOTE_with_commission_flag": {
+        "id": "HNOTE-OPERATOR-EXAMPLE-001",
+        "priority": "medium",
+        "commission": true,
+        "commission_type": "compression",
+        "status": "pending",
+        "target_agents": ["analyst"],
+        "subject": "...",
+        "body": "..."
+      }
+    },
+    "Q3_discipline_against_abuse": {
+      "answer": "Three-layer discipline: (1) operator self-policing per CLAUDE.md note, (2) tinker telemetry monitoring commission HNOTE pending-count, (3) operator-side cleanup if telemetry shows pattern abuse.",
+      "layer_1_operator_self_policing": {
+        "location": "CLAUDE.md operator-facing section (existing 'Author Contact Status' / nearby — to be sited by operator)",
+        "text": "**Commission HNOTE discipline (PROP-043):** The `commission: true` flag is reserved for operator-explicit time-sensitive commissions where waiting for the normal Mode-2 queue is genuinely too slow. Routine guidance HNOTEs ('consider this when you have time', 'while you're in there, also look at X', 'next time you're working on WIN-NNN, fold in Y') should NOT use the commission flag — they belong at Mode 2 with normal priority levels. If `commission: true` becomes the default operator-tag, the dispatcher fix becomes meaningless (every HNOTE jumps Mode 1). Cadence rule of thumb: commission HNOTEs should be rare — historically ~1/week. If you're filing more than 2-3/week, that's a signal that either routine work isn't draining (file a tinker directive instead) or the commission flag is being overused (recalibrate)."
+      },
+      "layer_2_tinker_telemetry": {
+        "location": "tinker pre-flight backlog-trend computation (extend the existing metrics in queue-history.jsonl)",
+        "new_metric_name": "pending_commission_hnotes_count",
+        "computation": "node -e \"const fs=require('fs'); try{const h=JSON.parse(fs.readFileSync('monitor/analyst/human-notes.json','utf8')); const arr=h.notes||(Array.isArray(h)?h:Object.values(h)); console.log(arr.filter(n=>n.status==='pending'&&n.commission===true).length)}catch(e){console.log(0)}\"",
+        "thresholds": {
+          "info": "pending_commission_hnotes_count >= 3",
+          "moderate": "pending_commission_hnotes_count >= 5 OR week-over-week commission-filing rate >= 5/week",
+          "major": "pending_commission_hnotes_count >= 10 OR sustained commission-filing rate >= 10/week"
+        },
+        "finding_category": "commission-flag-abuse",
+        "operator_action": "If `moderate` fires, surface in tinker latest-summary.txt for operator review."
+      },
+      "layer_3_pushback": {
+        "trigger": "If tinker's `moderate` or `major` finding fires for 2 consecutive runs, tinker authors HNOTE-OPERATOR-COMMISSION-FLAG-OVERUSE-NNN in monitor/decisions/human-notes.json (decider-side) asking operator to recalibrate. Self-correcting loop: operator either tightens their own filing discipline or files a directive expanding the legitimate-commission criteria."
+      }
+    },
+    "Q4_backward_compat": {
+      "answer": "Trivial. Existing HNOTEs in monitor/analyst/human-notes.json (~2 records — HNOTE-OPERATOR-WIN-013-014-VERDICT-REFRAME-001 consumed; HNOTE-OPERATOR-WIN-012-COMPRESSION-EXPERIMENT-001 consumed) don't have the `commission` field. The Mode 0.5 trigger checks `n.commission === true` which returns false for absent fields, so legacy HNOTEs fall through to Mode 2 (current behavior, no change).",
+      "verification": "Tinker has cross-checked monitor/analyst/human-notes.json contents (run timestamp 2026-05-16T19:32Z): both pending → consumed records have status=consumed-pending-verification or status=consumed. No pending records exist. No backward-compat risk.",
+      "what_changes_for_existing_consumers": "Nothing. Mode 2 and Mode 2b consumption procedures are unchanged. The only added consumer is Mode 0.5, which has its own dispatcher block."
+    },
+    "Q5_cross_agent_check": {
+      "scope_decision": "ANALYST ONLY. Do NOT propose symmetric fixes for curmudgeon or decider — they don't have the equivalent backlog problem.",
+      "curmudgeon_analysis": {
+        "hnote_file": "monitor/curmudgeon/human-notes.json",
+        "dispatch_priority": "Position 2 in curmudgeon's priority order (after priority-queue, before change-driven/holistic/spot-check)",
+        "queue_depth_typical": "1-3 items at most (queue drains 1/run, occasionally 3/run under batch gate)",
+        "wait_time_typical": "<1 cycle (4h) — HNOTE waits behind at most 1-2 queue items",
+        "problem_exists": false,
+        "rationale": "Curmudgeon's priority queue is shallow by design (decider populates 1-3 items per push; curmudgeon drains them at 1-3/run via Step 8a batch gate). HNOTEs at position 2 typically wait <4h. Not a multi-day backlog problem. If curmudgeon's queue depth grows to 10+ items in future, file a separate PROP scoped to curmudgeon."
+      },
+      "decider_analysis": {
+        "hnote_file": "monitor/decisions/human-notes.json",
+        "dispatch_pattern": "Inline checks at multiple points (Step E1 'Honor pending mode toggles', burndown auto-revert HNOTE handling, etc.)",
+        "typical_HNOTE_content": "Admin/toggles (burndown approve/cancel, set_curmudgeon_mode, operator-routed queue pushes via universal-pusher pattern)",
+        "wait_time_typical": "Sub-cycle — decider checks human-notes.json each run and processes inline",
+        "problem_exists": false,
+        "rationale": "Decider's HNOTEs are admin/configuration toggles, not deep-work commissions. They're processed inline alongside other end-of-run housekeeping. Decider runs every 1-4h, so HNOTE wait time is at most one cycle. Not a backlog problem."
+      },
+      "future_check_recommendation": "Tinker should add to the pre-flight queue-history.jsonl: a per-agent 'pending HNOTE oldest age in hours' metric. If curmudgeon or decider HNOTE oldest age exceeds 12h sustained, flag for a follow-up PROP. Cheap to compute, catches the equivalent backlog problem if it emerges elsewhere. (Defer this telemetry to PROP-043-amendment-001 if the operator wants it; not in PROP-043 scope.)"
+    }
+  },
+  "phase_1_design": {
+    "scope": "analyst.md dispatcher only. Add Mode 0.5 block. No procedure changes to existing modes. No new reference files. No changes to curmudgeon.md or decider.md. CLAUDE.md gets a small operator-discipline note. Tinker pre-flight metric is added in a separate small commit (or rolled into this one — operator's call).",
+    "files_to_change": [
+      {
+        "path": "monitor/prompts/analyst.md",
+        "change_type": "INSERT new dispatcher block",
+        "insertion_point_anchor": "Between 'Mode 0 — New WIN Onboarding' block (ends with the trigger arrow → reference file pointer) and 'Mode 1 — Section Expansion Queue' block (starts with the PROP-034 Phase 1 note)",
+        "approximate_line_number": "Insert after line 87 (after the `→ Read .../analyst-mode0-onboarding.md` line) and before line 89 (the `**Mode 1 — Section Expansion Queue**` header)",
+        "lines_added": 28,
+        "verbatim_block_to_insert": "**Mode 0.5 — Operator Commission** (PROP-043, between Mode 0 and Mode 1)\n\nOperator-explicit time-sensitive commission. Trigger: pending HNOTE in `monitor/analyst/human-notes.json` with `commission: true`. One commission per run, then drop to normal mode order.\n\n```bash\nnode -e \"const fs=require('fs');const W=process.env.WORKSPACE||'.';try{const h=JSON.parse(fs.readFileSync(W+'/monitor/analyst/human-notes.json','utf8'));const arr=h.notes||(Array.isArray(h)?h:Object.values(h));const c=arr.filter(n=>n.status==='pending'&&n.commission===true);console.log(c.length?'COMMISSION MODE: '+c.length+' pending — '+c.map(n=>n.id).join(', '):'NO COMMISSION HNOTES')}catch(e){console.log('NO COMMISSION HNOTES')}\"\n```\n\nTrigger: At least one HNOTE with `status: 'pending'` AND `commission: true`. **Strict precedence over Mode 1.**\n\nProcedure: Read the HNOTE body. If `commission_type` is `'frozen-prediction'`, delegate to Mode 5 procedure (the existing frozen-pred section below). If `commission_type` is `'compression'`, see PROP-042 procedure (TBD — landing in a separate amendment). Otherwise (absent or `'other'`/`'custom-rewrite'`), execute the commission per the HNOTE body using the most appropriate existing analyst tooling (Mode 2-style expansion in `monitor/analyst/expansions/EXP-NNN-<slug>.json`). Process **one** commission per run, then STOP commission work (drop into the normal Mode 1 dispatch if you want to do additional non-commission work, or end the run).\n\nMark the HNOTE consumed via the standard PROP-014 Mech 1b WRITE-VERIFY pattern: `verification_artifact_path` set to the EXP file path, `test -f` it, write `consumed` only if it passes. Same archive-on-resolve flow as Mode 2.\n\n**Discipline:** `commission: true` is reserved for operator-explicit time-sensitive work. Routine guidance HNOTEs use plain `priority: 'high'|'medium'|'low'` WITHOUT the commission flag and land at Mode 2. See CLAUDE.md 'Commission HNOTE discipline (PROP-043)' for the operator-side rule.\n\n→ Mode 0.5 is self-contained in this dispatcher block; no separate reference file needed for the generic-commission case. Frozen-pred commissions follow Mode 5 procedure (see below); compression commissions follow PROP-042 procedure (when authored).\n\n"
+      },
+      {
+        "path": "monitor/prompts/analyst.md",
+        "change_type": "EDIT Mode 5 cross-reference (one-line addition for clarity)",
+        "edit_location": "The Mode 5 trigger note at line 230 — `Trigger: Explicit operator HNOTE in monitor/analyst/human-notes.json with status: pending and either mode: 5 or 'frozen prediction' in title/body. Never self-trigger; never run on a routine cadence.`",
+        "edit_to_make": "Append after the existing trigger sentence: '**Mode 0.5 precedence:** If an HNOTE has BOTH `commission: true` AND `commission_type: 'frozen-prediction'` (or matches the body-detection for frozen-pred AND has `commission: true`), it is consumed by Mode 0.5, which delegates to this Mode 5 procedure. Mode 5 still triggers directly for frozen-pred HNOTEs WITHOUT `commission: true` (legacy backward-compat) — no behavior change for those.'",
+        "lines_added_net": 2
+      },
+      {
+        "path": "CLAUDE.md",
+        "change_type": "INSERT operator-discipline note",
+        "insertion_point_anchor": "Operator-facing section — somewhere near 'Author Contact Status' or in a new 'Operator Discipline' subsection. Tinker recommends adding under the existing 'File Ownership Rules' section or as a sibling to 'Human Notes Rule'. Operator's editorial call on exact siting.",
+        "lines_added": 6,
+        "verbatim_text_to_insert": "**Commission HNOTE discipline (PROP-043, 2026-05-16):** The `commission: true` flag on analyst HNOTEs (`monitor/analyst/human-notes.json`) bypasses Mode 1's deep-attack queue (Mode 0.5 priority tier). Reserved for operator-explicit time-sensitive commissions. Routine guidance HNOTEs ('consider this', 'while you're in there', 'next time you're working on X') should NOT use the commission flag — they belong at Mode 2 with normal priority levels. Cadence rule of thumb: commission HNOTEs should be rare (historically ~1/week). Tinker telemetry monitors `pending_commission_hnotes_count` and surfaces `moderate` findings if abuse pattern emerges."
+      },
+      {
+        "path": "monitor/prompts/tinker.md (Pre-flight: Backlog-Trend Computation section)",
+        "change_type": "EDIT — add commission HNOTE metric to the existing pre-flight computation",
+        "edit_location": "The metrics computation block (lines 73-103 in current tinker.md). After the existing `verify_drain_count_7d` metric, add `pending_commission_hnotes_count`.",
+        "verbatim_block_to_append_inside_metrics_block": "// PROP-043 (2026-05-16): commission HNOTE telemetry. Read monitor/analyst/human-notes.json,\n// count pending notes with commission===true. Surface as info/moderate/major finding per thresholds.\nlet commissionCount = 0;\ntry{\n  const h = JSON.parse(fs.readFileSync('monitor/analyst/human-notes.json','utf8'));\n  const arr = h.notes || (Array.isArray(h) ? h : Object.values(h));\n  commissionCount = arr.filter(n => n.status === 'pending' && n.commission === true).length;\n}catch(_){}\nmetrics.pending_commission_hnotes_count = commissionCount;",
+        "verbatim_threshold_addition_to_threshold_table": "| info | pending_commission_hnotes_count >= 3 |\n| moderate | pending_commission_hnotes_count >= 5 (existing thresholds also apply) |\n| major | pending_commission_hnotes_count >= 10 |",
+        "lines_added_net": 12
+      }
+    ],
+    "files_NOT_changed": [
+      "monitor/prompts/curmudgeon.md (Q5 analysis — no equivalent backlog problem)",
+      "monitor/prompts/decider.md (Q5 analysis — no equivalent backlog problem)",
+      "monitor/prompts/reference/*.md (no reference file changes; Mode 0.5 is self-contained in analyst.md)",
+      "build.js OWNERSHIP (no new files introduced)",
+      "monitor/prompts/workspace-sync.md NEVER_PUSH (no new files; existing dynamic rules cover)",
+      "data/* (no data file changes)",
+      "tests/* (no new test machinery; existing dispatcher tests will pass because Mode 0.5 is purely additive)"
+    ],
+    "behavior_change_summary": "When analyst.md is loaded with this PROP applied: Mode 0 runs first as before. Before Mode 1, dispatcher checks for `commission: true` pending HNOTEs. If any → Mode 0.5 procedure (consume one, drop). If none → continue to Mode 1 as before. All other modes unchanged. Existing HNOTEs without the flag (~0 currently pending, all historical records consumed) continue to be consumed by Mode 2/2b.",
+    "verification_pattern_for_post_apply": {
+      "test_1_legacy_HNOTE_no_regression": "File a test HNOTE WITHOUT commission flag. Verify analyst's next run consumes it via Mode 2 (not Mode 0.5).",
+      "test_2_commission_HNOTE_jumps_mode_1": "File a test HNOTE WITH `commission: true`. Verify analyst's next run consumes it via Mode 0.5 (not Mode 2) even when Mode 1 tracker has pending items.",
+      "test_3_one_commission_per_run": "File two test HNOTEs with `commission: true`. Verify analyst's next run consumes ONE (FIFO by created_at). Verify analyst's run after that consumes the second.",
+      "test_4_telemetry_metric": "Run tinker. Verify queue-history.jsonl contains `pending_commission_hnotes_count` field.",
+      "test_5_thresholds": "Stage 3 pending commission HNOTEs (5 if testing moderate). Run tinker. Verify backlog-trend finding fires with category='commission-flag-abuse'."
+    }
+  },
+  "counter_arguments_addressed": [
+    {
+      "counter": "Operator should just wait. The Mode 1 queue is real work; the operator's commission is one of many priorities competing for analyst-Opus tokens.",
+      "rebuttal": "Mode 1 work is OPEN-ENDED (analyst can take days/weeks to drain depending on tracker depth). Operator commissions are DISCRETE ONE-OFF work that doesn't compete continuously — they spike, get done, and don't recur. The current dispatcher conflates these by putting them at the same tier. Mode 0.5 is a priority-routing decision that respects the operator's editorial intent: 'this specific thing should not wait behind continuous BAU.' The Mode 1 queue is also self-balancing under PROP-026 burndown + analyst-baby drain — adding 1-2 commission slots per week doesn't measurably slow it.",
+      "weight": "Strong rebuttal — the work-shape asymmetry is real."
+    },
+    {
+      "counter": "If commission priority exists, every routine HNOTE will be flagged commission and routine work never drains.",
+      "rebuttal": "This is the most serious counter and the reason for the three-layer discipline rule (Q3): operator self-policing + tinker telemetry + escalation pushback. If `commission: true` becomes the default flag, the fix becomes meaningless — but tinker telemetry catches that immediately (pending count >= 3 fires info; >= 5 fires moderate). The fix is also operator-side, not agent-side: the operator can self-discipline because they're the only filer. If the operator agrees to be disciplined and signals tinker findings as 'noted, recalibrating,' the system works. If the operator can't self-discipline despite feedback, the fix is to remove the flag (revert PROP-043) — but that's a hypothetical, not a current observation.",
+      "weight": "Strong counter — discipline rule is essential and called out in Q3."
+    },
+    {
+      "counter": "The right fix is increasing analyst cadence, not changing priority. Hourly analyst runs already process a lot — bump to every 30 minutes and the queue drains faster.",
+      "rebuttal": "Cost. Analyst is Opus. Doubling cadence from hourly → 30min doubles input-token cost without proportional benefit (Mode 1 work has fixed per-item context, so per-item cost stays the same; you just pay for it twice as often). Priority reordering is free — it costs zero additional tokens because it just changes which work runs first within the existing cadence. PROP-043 is cost-neutral.",
+      "weight": "Strong rebuttal — cost asymmetry decisively favors priority reordering."
+    },
+    {
+      "counter": "The compression experiment (EXP-401) worked because cowork-claude did it in-session. Operator already has an escape hatch — why automate?",
+      "rebuttal": "Scales poorly. Cowork-claude is operator-attended. If commission frequency stays at ~1/week, operator-direct is workable. If it grows to 2-3/week (e.g., the compression-mode rollout per PROP-042 generates more demand), operator-direct doesn't scale. Pipeline analyst doesn't require operator presence. PROP-043 is the infrastructure that lets the operator commission work and walk away. The operator-direct escape hatch remains available for genuinely-can't-wait cases.",
+      "weight": "Moderate rebuttal — applies to mid-volume commission patterns; less salient at very low volume."
+    },
+    {
+      "counter": "Mode 5 already exists for 'operator-explicit-only' work. Just file frozen-pred-style HNOTEs for everything.",
+      "rebuttal": "Mode 5's body-detection regex is frozen-pred-specific (`/frozen[- ]prediction/i.test(...)` and `mode: 5`). Extending it to recognize compression/custom-rewrite/etc. requires the same prompt change Option C proposes — which is the option REJECTED in favor of Option A precisely because it overloads Mode 5's named contract. Mode 5's procedure body (OTS anchor, dual-pass review, three prediction buckets) is frozen-pred-specific; bundling other commission types under it dilutes the deliverable shape. Option A (new Mode 0.5 with delegation) preserves Mode 5's narrow contract while adding a clean dispatcher tier for generic commissions.",
+      "weight": "Strong rebuttal — directly answers the Option-C alternative."
+    },
+    {
+      "counter": "Adding a new mode increases analyst dispatcher complexity. Cognitive load grows with each PROP that adds a mode.",
+      "rebuttal": "Real but bounded. Mode 0.5 is ~28 lines (small fraction of analyst.md's 370 lines). It's self-contained (no new reference file). The numbering convention `0.5` signals 'tier between 0 and 1' to readers without renumbering existing modes. If dispatcher complexity becomes a real problem (>10 modes, >100L per mode block), PROP-043 doesn't worsen it appreciably — the underlying cause would be mode proliferation, not THIS specific mode. Future cleanup could extract Mode 0.5 to a reference file if it grows past ~50L.",
+      "weight": "Moderate counter — acknowledged with mitigation."
+    },
+    {
+      "counter": "The flag-based mechanism is operator-attentive; what if the operator forgets to set `commission: true` for a truly urgent commission?",
+      "rebuttal": "Failure mode is 'commission falls through to Mode 2, waits N hours.' That's the current behavior — PROP-043 doesn't make it worse. If the operator notices they forgot, they can edit the HNOTE to add `commission: true` (single-file additive edit on monitor/analyst/human-notes.json, picked up on next analyst run). If the operator doesn't notice, the HNOTE eventually gets consumed via Mode 2 at the historical pace. No data loss, no permanent stuck state.",
+      "weight": "Weak counter — failure mode is graceful and recoverable."
+    }
+  ],
+  "operator_other_side_considerations": {
+    "_note_per_operator_preference": "Operator's stated preference: 'Think about the other side of the argument too.' This section steelmans the case for NOT building PROP-043 at all, beyond the per-counter rebuttals above. Tinker's net recommendation is to ship PROP-043 (per the headline_recommendation), but the operator should weigh these meta-considerations before approving.",
+    "case_against_PROP_043": [
+      {
+        "argument": "Wait-and-see baseline.",
+        "elaboration": "PROP-043 is motivated by ONE observation (the 2026-05-16 compression-experiment HNOTE that sat ~4h before operator gave up and ran it in-session). N=1 is thin evidence for adding dispatcher complexity. The baseline rate of commission HNOTEs in the project history is approximately 2 across ~6 weeks (the WIN-013/14 reframe HNOTE and the compression HNOTE). At ~1/three-weeks, even Mode 2's typical wait time of ~1 day per run is tolerable for most commissions. Counter-counter: but the compression HNOTE specifically demonstrated the failure mode, and PROP-042 (compression-mode) implies this rate will increase. Net: weak-to-moderate support for shipping now vs deferring."
+      },
+      {
+        "argument": "Discipline failure mode is real.",
+        "elaboration": "Layer-1 discipline (operator self-policing) is the load-bearing constraint. Tinker telemetry catches abuse but only RETROSPECTIVELY (the day after, in the next tinker run). If the operator over-flags for two weeks before tinker's first `moderate` finding, that's 14 days of degraded Mode-1 drain. The mitigation is operator-side and depends on the operator caring about the discipline rule enough to follow it. There is no agent-side enforcement — and there can't be one without complicating the dispatcher (e.g., 'only X commission HNOTEs per week' rate limits invite their own pathologies). Net: structural risk that depends entirely on operator discipline."
+      },
+      {
+        "argument": "PROP-042 (compression-mode) is the better fix.",
+        "elaboration": "If the only motivating commission pattern is compression work (per the immediate trigger), then PROP-042's `mode='compression'` EXP shape might be sufficient — it implies HOLD-for-operator-review at decider, which decouples the analyst dispatcher from the urgency. Argument: maybe the operator doesn't need analyst to consume compression HNOTEs fast; the operator needs decider to route compression EXPs straight to operator-review (which PROP-042 specifies). Counter: but PROP-042 still requires the analyst to AUTHOR the compression EXP before decider can route it. If analyst's Mode 1 backlog blocks the AUTHORING, decider routing speed doesn't help. Mode 0.5 specifically addresses the AUTHORING-side delay. Net: PROP-042 and PROP-043 are complementary, not substitutes."
+      },
+      {
+        "argument": "Operator-direct escape hatch is sufficient.",
+        "elaboration": "The compression experiment that motivated PROP-043 was successfully resolved by the operator running cowork-claude in-session (EXP-401, integrated commit 66c9a74). That escape hatch is always available. Argument: if every commission can be done operator-direct in ~30min, why automate? Counter: scales poorly (per counter-argument 4 above). Also: operator-direct requires operator availability AT the moment the commission is filed; PROP-043 lets operator file-and-walk-away. Net: depends on operator's availability pattern and commission volume — PROP-043 hedges against operator-unavailable cases."
+      },
+      {
+        "argument": "Future commission types may want different dispatcher placement.",
+        "elaboration": "Mode 0.5 puts ALL commissions above Mode 1. But what if PROP-NNN (future) introduces a commission type that's LESS urgent than Mode 1 deep-attack? Mode 0.5 would over-prioritize it. Counter: the `commission_type` field allows future refinement (e.g., Mode 0.5 could check commission_type-specific priority). For now, the design assumes all commissions are urgent enough to jump Mode 1 — which matches the two observed commission types (frozen-pred is operator-explicit-time-sensitive; compression is operator-explicit-time-sensitive). Future deviations get amendments. Net: design choice with defensible default and amendable refinement path."
+      }
+    ],
+    "tinker_net_judgment": "PROP-043 should ship. The motivating evidence is thin (N=1 acute observation) but the work pattern is recurring (compression-mode is on the immediate roadmap per DIRECTIVE-008), the cost is low (~40 lines of prompt change, no new infrastructure), the failure modes are graceful (legacy HNOTEs fall through unchanged), and the alternative (operator-direct) doesn't scale. The Q3 discipline rule is the load-bearing constraint and depends on operator self-policing; the operator's explicit preference for the discipline rule (per directive's operator_preferences_for_proposal[2]) signals they accept this trade-off."
+  },
+  "phase_2_followups_not_in_scope": [
+    "PROP-042 (analyst-compression-mode) lands as a separate PROP per DIRECTIVE-20260516-008. PROP-043 references it as 'compression commission_type → see PROP-042 procedure' but does not author PROP-042.",
+    "Per-agent HNOTE oldest-age telemetry for curmudgeon and decider (Q5 future check). Defer to PROP-043-amendment-001 if operator wants it.",
+    "Generic 'commission router' generalization where Mode 0.5 delegates to commission_type-specific procedures defined in a per-type reference file (analyst-mode05-frozen-pred-commission.md, analyst-mode05-compression-commission.md, etc.). Only useful if 3+ commission types emerge.",
+    "Mode 5 ↔ Mode 0.5 reconciliation. Currently Mode 5 triggers directly on `mode: 5` OR frozen-pred body-detect, AND Mode 0.5 delegates to Mode 5 procedure when `commission: true` AND `commission_type: 'frozen-prediction'`. Two trigger paths to the same procedure is acceptable for backward-compat; a future amendment could consolidate.",
+    "Cross-agent symmetric fix for curmudgeon and decider HNOTE-consumption ordering. Defer until/unless those agents develop the equivalent backlog problem (per Q5)."
+  ],
+  "regression_check": {
+    "items_checked": [
+      "RC-1: Legacy HNOTEs (no commission field) still consume via Mode 2 — PASS (Mode 0.5 trigger checks `n.commission === true`, returns false for absent field).",
+      "RC-2: Mode 5 frozen-pred HNOTEs without `commission: true` still trigger Mode 5 directly — PASS (Mode 5 trigger is independent of Mode 0.5).",
+      "RC-3: Mode 5 frozen-pred HNOTEs WITH `commission: true` AND `commission_type: 'frozen-prediction'` route through Mode 0.5 → Mode 5 procedure — PASS by design (Mode 0.5 delegates to Mode 5 procedure for this commission_type).",
+      "RC-4: Existing analyst pre-mode order (Mode 0 → Mode 1 → Mode 1b → ...) preserved when no commission HNOTEs pending — PASS (Mode 0.5 is no-op when commission count is 0).",
+      "RC-5: One-commission-per-run rule prevents commission flood from blocking all other work — PASS (Mode 0.5 procedure says 'Process one commission per run, then STOP commission work').",
+      "RC-6: Tinker telemetry hook is additive (one new metric, doesn't alter existing metrics) — PASS (`pending_commission_hnotes_count` is a new field on the existing queue-history.jsonl entry).",
+      "RC-7: PROP-042 (compression-mode) integration path is preserved — PASS (Mode 0.5 delegates to PROP-042 procedure for `commission_type: 'compression'`; PROP-042 lands separately).",
+      "RC-8: CLAUDE.md operator-discipline note is additive (no edits to existing CLAUDE.md sections) — PASS."
+    ],
+    "regression_status": "all PASS",
+    "high_risk_areas": "None identified. PROP-043 is purely additive (new dispatcher mode + new optional flag + new optional telemetry metric). No existing behavior modified."
+  },
+  "implementation_amendment_required": {
+    "decision": "Operator + cowork-claude apply the analyst.md edits + CLAUDE.md note + tinker.md telemetry hook in a coordinated session matching the amendment-001 pattern. Tinker does NOT self-apply per directive out_of_scope_for_tinker[0].",
+    "operator_review_checklist": [
+      "[ ] Confirm Option A (Mode 0.5) is the chosen approach (vs B/C/D)",
+      "[ ] Confirm `commission: true` is the flag name (vs alternatives in Q2)",
+      "[ ] Confirm CLAUDE.md operator-discipline note text and siting",
+      "[ ] Confirm tinker telemetry thresholds (3/5/10 — adjust if too sensitive or too loose)",
+      "[ ] Confirm Mode 5 cross-reference edit (the 2-line addition noting Mode 0.5 precedence)",
+      "[ ] Confirm phasing: ship Mode 0.5 + CLAUDE.md note together; ship tinker telemetry hook either in same patch or separately (operator's call)",
+      "[ ] Confirm PROP-042 (compression-mode) is sequenced after PROP-043 (so Mode 0.5's compression_type delegation has a procedure to delegate to)"
+    ],
+    "open_questions_for_operator": [
+      {
+        "id": "Q-OP-A043-1",
+        "question": "Phasing: ship Mode 0.5 + CLAUDE.md note together (single patch), or ship Mode 0.5 first and add CLAUDE.md note in a follow-up?",
+        "tinker_recommendation": "Together. The discipline rule is essential to the design and shouldn't lag the prompt change."
+      },
+      {
+        "id": "Q-OP-A043-2",
+        "question": "Tinker telemetry hook: same patch as Mode 0.5, or separate?",
+        "tinker_recommendation": "Separate is fine. The telemetry is observability, not functional. Mode 0.5 works without telemetry; telemetry can land in the next tinker-amendment cycle."
+      },
+      {
+        "id": "Q-OP-A043-3",
+        "question": "Backward-compat for the two consumed HNOTEs (WIN-013-014-VERDICT-REFRAME-001 and WIN-012-COMPRESSION-EXPERIMENT-001): retroactively tag them with `commission: true` for audit-trail consistency, or leave them as historical records?",
+        "tinker_recommendation": "Leave them as historical records. Both are status=consumed already; retroactively editing consumed records is not load-bearing for any future dispatcher behavior. If the operator wants audit-trail consistency, the alternative is a one-line note in CLAUDE.md saying 'pre-PROP-043 commission HNOTEs are flagged retroactively where useful'."
+      },
+      {
+        "id": "Q-OP-A043-4",
+        "question": "Sequencing with PROP-042: should PROP-043 (Mode 0.5) ship BEFORE or AFTER PROP-042 (compression-mode procedure)?",
+        "tinker_recommendation": "PROP-043 first, then PROP-042. Mode 0.5 is the priority-routing layer; PROP-042 is the procedure for one specific commission_type. Mode 0.5 can ship with `commission_type='compression' → see PROP-042 (TBA)` as a forward reference. When PROP-042 lands, the forward reference resolves. The opposite sequencing leaves PROP-042 with a procedure that can't be triggered via the right dispatcher path."
+      },
+      {
+        "id": "Q-OP-A043-5",
+        "question": "Should the commission flag be MUTUALLY-EXCLUSIVE with high-priority routine work (i.e., `commission: true` implies `priority` is ignored), or independent (commission and priority both exist on the HNOTE)?",
+        "tinker_recommendation": "Independent. `commission: true` controls dispatcher routing (which mode picks up the HNOTE). `priority: 'high'|'medium'|'low'` controls within-mode ordering if multiple HNOTEs are pending in the same mode. They're orthogonal. Mode 0.5's FIFO selector is by created_at; if multiple commission HNOTEs are pending and they differ in `priority`, tinker recommends preserving FIFO (created_at) as the primary sort with `priority` as tie-break — but this is rarely going to matter in practice (typical pending commission count <2)."
+      }
+    ]
+  },
+  "estimated_impact": {
+    "operator_facing": "Commission HNOTEs consumed within 1 analyst-run wait time (typical: <1h). Down from ~21h worst-case at current Mode 1 queue depth.",
+    "agent_facing": {
+      "analyst": "+28 lines analyst.md, +2 lines on Mode 5 trigger note. Total prompt growth ~+30L (+8% on 370L file).",
+      "tinker": "+12 lines tinker.md pre-flight metric block. Telemetry overhead negligible (one extra file read per run).",
+      "curmudgeon_decider": "No change."
+    },
+    "token_cost": "Negligible. Mode 0.5 block adds ~30L to analyst's per-run input; the bash check at Mode 0.5 trigger is ~3 lines of node code that runs once per run. Estimated $0.01-0.05/year/agent in input-token cost. Free fix.",
+    "throughput_cost": "Mode 1 effectively loses 0-2 slots per week to Mode 0.5 (at observed commission rate ~1/week). Mode 1 BAU drain rate unchanged when no commissions pending."
+  },
+  "rollback_plan": {
+    "if_PROP_043_misfires": "Revert the analyst.md insertion (delete the Mode 0.5 block). Revert the Mode 5 trigger note edit (delete the 2-line addition). Revert CLAUDE.md discipline note. Tinker telemetry metric can stay (additive, no behavior impact). HNOTEs with `commission: true` flag will fall through to Mode 2 (no commission pickup), which is the pre-PROP-043 behavior.",
+    "irreversible_changes": "None. PROP-043 is fully additive and reversible.",
+    "rollback_complexity": "Single-commit revert. ~5 minutes of operator time."
+  }
+}
