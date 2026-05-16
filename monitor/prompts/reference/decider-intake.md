@@ -308,6 +308,88 @@ fs.writeFileSync('monitor/curmudgeon/priority-queue.json', JSON.stringify(pq, nu
 
 This is a high-throughput step during prediction churn — analyst produces 3-5 assessments per run.
 
+## Step 1m: Rewrite Proposal Intake (PROP-041, lands 2026-05-XX) <!-- PROP-041 -->
+
+Check `monitor/sloppytoppy/rewrites/` for RW-NNN.json files. The intake has two distinct phases per run: (A) intake new pending RWs into the curmudgeon priority queue, (B) drain curmudgeon-approved RWs by integrating into source files.
+
+```bash
+ls ${CLEAN_CLONE}/monitor/sloppytoppy/rewrites/ 2>/dev/null | head -20
+```
+
+### Step 1m.A — Intake pending RWs
+
+For each RW with status='pending':
+
+1. **Read and validate schema.** Required fields per DATA-SCHEMAS.md RW-NNN schema. If schema-invalid → set `RW.status='rejected'`, `rejection_reason='schema-invalid: <field>'`, commit and skip.
+
+2. **Content-hash freshness.** Re-hash current surface text from `data/wins.json` or `data/sections.json`. If hash != `RW.original_content_hash` → `RW.status='superseded'`, `superseded_reason='surface-edited-since-draft'`, commit and skip.
+
+3. **Acceptable-floor escape.** Re-read scores.json for this surface_id. If latest composite >= `acceptable_floor` (7.5) → `RW.status='superseded'`, `superseded_reason='composite-now-acceptable'`, commit and skip.
+
+4. **Audit-script pre-check (PROP-041 Q-OP-1 Option C, mechanical half of belt-and-suspenders).** Run `node monitor/scripts/audit-rewrite.js <RW-file>`. Exit code 0 = pass; exit code 1 = fail. On fail → `RW.status='rejected'`, `rejection_reason='audit-script-fail: ' + <stdout JSON>`, commit and skip. (Note: `rewrite-attempts.json[surface_id].attempts` was already incremented at rewriter draft time per `sloppytoppy-rewrite.md` Step 4i — decider does NOT re-increment here.)
+
+5. **Push to curmudgeon priority queue with class='rewrite-verify'**:
+   ```javascript
+   const pq = JSON.parse(fs.readFileSync(CLONE + '/monitor/curmudgeon/priority-queue.json','utf8'));
+   const queueId = pq.next_id++;
+   pq.queue.push({
+     queue_id: queueId,
+     target_type: 'rewrite-proposal',
+     target_id: rw.rw_id,  // e.g., 'RW-001'
+     class: 'rewrite-verify',  // PROP-041 — recognized by main curmudgeon's dispatcher
+     reason: `Sloppytoppy rewrite proposal for ${rw.surface_id} (composite ${rw.scored_composite_before} → predicted ${rw.predicted_delta_breakdown.predicted_composite_after}). Audit-script pre-check passed; need Opus curmudgeon structural review per sloppytoppy-rewrite-rubric (PROP-041).`,
+     pushed_by: 'decider',
+     pushed_at: new Date().toISOString(),
+     context_hints: {
+       rw_file: `monitor/sloppytoppy/rewrites/${rw.rw_id}.json`,
+       surface_id: rw.surface_id,
+       rewrite_category_tags: rw.rewrite_category_tags,
+       predicted_composite_after: rw.predicted_delta_breakdown.predicted_composite_after
+     }
+   });
+   fs.writeFileSync(CLONE + '/monitor/curmudgeon/priority-queue.json', JSON.stringify(pq, null, 2));
+   ```
+   Then update RW.status='in-curmudgeon-review', RW.popped_by_queue_id=queueId, RW.popped_by_queue_id_at=now. Commit.
+
+### Step 1m.B — Drain approved RWs
+
+For each RW with status='approved' (set by curmudgeon-rewrite-verify):
+
+1. **Read the surface from source file.** WIN field: `data/wins.json[id=<win-id>][field]`. Section block: `data/sections.json[<part-id>].html` looking for `<details id="<block-id>">...</details>`.
+
+2. **Verify original_text still present.** Refuse to integrate if `RW.original_text` is not found verbatim in the source — that means content drifted between curmudgeon-approve time and now. Mark `RW.status='superseded'`, `superseded_reason='original-text-not-found-at-integration'`. Commit and skip.
+
+3. **Find/replace.** Replace exact `RW.original_text` with `RW.rewritten_text` in the source file.
+
+4. **Run test.js.** `node test.js` must pass. If it fails (schema violation, broken HTML, JSON encoding issue): revert the find/replace, mark `RW.status='rejected'`, `rejection_reason='test-js-fail: <test output>'`. Commit (reverting work + status update) and skip.
+
+5. **Commit with convention message:** `git commit -m "rewrite integration: <surface_id> composite <before> -> ~<predicted_after> (RW-NNN)"`.
+
+6. **Update RW.** Set `status='integrated'`, `integrated_at=<ISO now>`, `integration_commit=<sha>`. Commit.
+
+7. **Reset rewrite-attempts.json.** Set `rewrite-attempts.json[surface_id].attempts=0`, clear `history`, set `last_attempt_at=now`, `flagged_for_operator_attention=false`. Commit.
+
+8. **Append to applied-patches/<date>.json** per existing convention (so curmudgeon-verify and integrity audits see the integration).
+
+### Step 1m.C — Drain rejected/superseded RWs
+
+No further decider action — the RW file's status field is the audit trail. The next sloppytoppy-rewrite run reads rewrite-attempts.json and either drafts again (cooldown passed, attempts < 3) or skips (attempts >= 3 / cooldown active).
+
+### Step 1m.D — Stall escalation
+
+If any RW has been status='in-curmudgeon-review' for >5 curmudgeon cycles (>20h) without curmudgeon writing a review file, append a human-note via the dual-write rule (HNOTE-OPERATOR-RW-STALL-NNN) noting the stuck RW for operator attention. Decider does NOT force-integrate or auto-reject.
+
+### Step 1m.E — Recalibration audit context
+
+This step does not perform the Q-OP-7 recalibration audit (drift >1.0 on ≥3 of last 5 integrated rewrites) — tinker's Mode 3 owns that. But it does record the data point for tinker: when integrating an RW (Step 1m.B step 6), the integration_commit field is set, which tinker reads in conjunction with the subsequent sloppytoppy-score rescore (after content_hash changes, sloppytoppy-score picks up the surface on its next daily run). Tinker's Mode 3 audit compares `RW.predicted_delta_breakdown.predicted_composite_after` against the post-integration `score_record.composite` and writes the result to `monitor/sloppytoppy/calibration-audits.jsonl`.
+
+### Interaction with existing pipelines
+
+- **PROP-037 integrity intake (Step 1d):** No conflict. Integrity findings are a different category; both run every decider invocation.
+- **PROP-040 decider context-load extraction:** Step 1m adds ~80 lines to decider-intake.md. This is within the post-extraction budget per PROP-040 metrics.
+- **PROP-038 curmudgeon-verify:** Curmudgeon-verify handles `class='verification'` items only. `class='rewrite-verify'` items go to MAIN curmudgeon (Opus). Curmudgeon-verify's dispatcher (exact-match filter) will not pick up rewrite-verify items.
+- **PROP-026 burndown mode:** RW intake is orthogonal to the BAU/burndown toggle (the toggle affects open-issues.json bucketing, not RW handling).
+
 ## Step 1i: Poll Summary Triage (every run)
 
 The poller writes `monitor/changes/latest-poll-summary.txt` with detailed findings. Many include `analyst_priority:` flags (HIGH, MEDIUM, LOW) for items requiring follow-up. **These can fall through the cracks** if they aren't converted to issues — the main dispatch only checks WIN count and `changes_pending_analysis`, not the detailed secondary findings.

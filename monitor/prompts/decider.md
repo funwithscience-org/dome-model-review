@@ -729,6 +729,7 @@ fs.writeFileSync(CLONE+'/monitor/curmudgeon/priority-queue.json',JSON.stringify(
 | Step 1h2 prediction batch (verdict assignments integrated) | `'verification'` | Curmudgeon spot-checks for too-aggressive verdicts but doesn't re-derive. |
 | Killshot rewrite with substantive new content (not EXP-driven) | `'deep-attack'` | Singleton. |
 | Holistic-check push (rare — usually Priority 4 not queue) | `'holistic'` | Singleton. |
+| Sloppytoppy rewrite proposal intake (Step 1m.A, PROP-041) | `'rewrite-verify'` | Singleton. Main curmudgeon (Opus) applies the RWR-1..9 checklist; curmudgeon-verify does NOT pick these up. |
 
 **Why "read `exp.review_class` from the EXP" rather than always defaulting:** the analyst, when authoring the EXP, knows whether the work is a refinement (`'verification'`) or introduces new arguments (`'deep-attack'`). Letting the analyst declare keeps the call at the source. The decider does not need to inspect EXP content to classify — it just propagates. If the EXP omits `review_class`, treat as `'deep-attack'` (the safe default — same singleton behavior we had pre-PROP-025).
 
