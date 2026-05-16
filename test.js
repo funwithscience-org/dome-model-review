@@ -933,6 +933,58 @@ console.log('\n── 8. Prediction Panels ──');
 }
 
 // ════════════════════════════════════════════
+// 12. PROP-041 Phase 2: audit-rewrite.js + RW schema smoke tests
+// ════════════════════════════════════════════
+
+console.log('\n── 12. PROP-041 Phase 2 sloppytoppy-rewrite smoke ──');
+
+const AUDIT_SCRIPT = path.join(ROOT, 'monitor', 'scripts', 'audit-rewrite.js');
+assert(fs.existsSync(AUDIT_SCRIPT), 'monitor/scripts/audit-rewrite.js exists');
+
+if (fs.existsSync(AUDIT_SCRIPT)) {
+  // Parse-only check (Node script syntax).
+  try {
+    require('child_process').execSync(`node -c ${AUDIT_SCRIPT}`, { stdio: 'pipe' });
+    assert(true, 'audit-rewrite.js parses (node -c)');
+  } catch (e) {
+    assert(false, `audit-rewrite.js parses (node -c): ${e.message}`);
+  }
+}
+
+// rewrite-attempts.json schema sanity
+const REWRITE_ATTEMPTS_PATH = path.join(ROOT, 'monitor', 'sloppytoppy', 'rewrite-attempts.json');
+if (fs.existsSync(REWRITE_ATTEMPTS_PATH)) {
+  try {
+    const ra = JSON.parse(fs.readFileSync(REWRITE_ATTEMPTS_PATH, 'utf8'));
+    const meta = ra._meta || ra;
+    assert(typeof meta.max_attempts === 'number', 'rewrite-attempts.json has numeric max_attempts');
+    assert(typeof ra.surfaces === 'object' && ra.surfaces !== null, 'rewrite-attempts.json has surfaces object');
+  } catch (e) {
+    assert(false, `rewrite-attempts.json parses: ${e.message}`);
+  }
+}
+
+// Existing RW files (if any) must conform to schema
+const REWRITES_DIR = path.join(ROOT, 'monitor', 'sloppytoppy', 'rewrites');
+if (fs.existsSync(REWRITES_DIR)) {
+  const rwFiles = fs.readdirSync(REWRITES_DIR).filter(f => f.match(/^RW-\d+\.json$/));
+  const RW_REQUIRED_FIELDS = ['rw_id', 'surface_id', 'surface_type', 'original_content_hash', 'original_text', 'rewritten_text', 'rewrite_category_tags', 'CONTENT_PRESERVATION_AUDIT', 'predicted_delta_breakdown', 'authored_by_run', 'authored_at', 'status'];
+  const RW_VALID_STATUSES = ['pending', 'in-curmudgeon-review', 'approved', 'rejected', 'superseded', 'integrated'];
+  rwFiles.forEach(f => {
+    try {
+      const rw = JSON.parse(fs.readFileSync(path.join(REWRITES_DIR, f), 'utf8'));
+      RW_REQUIRED_FIELDS.forEach(field => {
+        assert(rw[field] !== undefined && rw[field] !== null, `${f} has required field: ${field}`);
+      });
+      assert(RW_VALID_STATUSES.includes(rw.status), `${f} status is valid enum: ${rw.status}`);
+      assert(Array.isArray(rw.rewrite_category_tags) && rw.rewrite_category_tags.length > 0, `${f} has non-empty rewrite_category_tags (Q-OP-6)`);
+    } catch (e) {
+      assert(false, `${f} parses + validates: ${e.message}`);
+    }
+  });
+}
+
+// ════════════════════════════════════════════
 // Results
 // ════════════════════════════════════════════
 
