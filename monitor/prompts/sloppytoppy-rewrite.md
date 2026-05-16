@@ -78,7 +78,7 @@ Eligible queue is what remains. Sort by `rewrite_priority` bracket first (high b
 
 ## Step 3: Select batch
 
-Conservative cap: **5 surfaces per run**. Adaptive ceiling: if batch budget allows after 5 cleanly-completed surfaces (none failed audit-script, none required re-drafting), optionally process 2 more (cap 7). Record `next_run_carryover` count in summary.
+**Onboarding cap (operator-set 2026-05-16): 3 surfaces per run.** Reduced from 5 during the curmudgeon-on-rewrite calibration period. Revisit after: (a) 3 consecutive Phase 2 runs where curmudgeon approves the majority of RWs without major flags, AND (b) operator confirms — at that point bump back to conservative cap 5 with adaptive ceiling 7. Record `next_run_carryover` count in summary.
 
 If the queue has >5 eligible surfaces, defer the rest to next Phase 2 run (2 days from now). Worst-case backlog drain: 21 high-priority surfaces / batch 5 = ~5 runs = ~10 days. This is acceptable per the operator's onboarding-window cost estimate.
 
