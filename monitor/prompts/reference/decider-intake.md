@@ -5,7 +5,7 @@
 - `monitor/status.json` — current pipeline state
 - `monitor/review-state.json` — review version, canary traps, known discrepancies
 - `monitor/changes/latest-poll-summary.txt` — latest poller findings
-- `monitor/analysis/latest-analysis-summary.txt` — latest analyst findings
+- `monitor/analyst/latest-analysis-summary.txt` — latest analyst findings (sentinel; substantive analyst output is in monitor/analyst/expansions/ and monitor/analyst/issue-proposals/)
 - `monitor/curmudgeon/latest-review-summary.txt` — latest curmudgeon findings
 - `monitor/curmudgeon/alerts.txt` — critical/major issues
 - `monitor/curmudgeon/tracker.json` — curmudgeon progress

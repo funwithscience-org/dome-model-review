@@ -11,6 +11,22 @@ For each agent, check:
 
 **PROP-034 Phase 1 — baby pipeline health (added 2026-05-13):** check `monitor/analyst-baby/latest-baby-summary.txt` mtime against the 2h cadence. If mtime is older than 4h (2× interval) AND baby's expected work is non-empty (run the babyOwns filter from `monitor/prompts/analyst-baby.md` dispatcher to confirm there were items to drain), flag as stalled. Empty work → silent baby is correct behavior; non-empty work + silent baby → check the scheduled task's recent run history and surface in `latest-tinker-summary.txt`.
 
+**PROP-036 — Analyst sentinel + substantive-output cross-check (added 2026-05-16):** The analyst sentinel `monitor/analyst/latest-analysis-summary.txt` is now postlude-written unconditionally every run (PROP-036 edit_1). Probe its mtime against analyst's BAU cadence: if older than 16h (2× current BAU 8h interval) AND substantive-output mtimes (newest of monitor/analyst/expansions/*.json, monitor/analyst/issue-proposals/proposal-*.json) are ALSO older than 16h, flag as fully stalled. If sentinel is stale BUT substantive output is fresh, flag as `sentinel-broken-agent-healthy` (the failure mode PROP-036 was built to detect — broken postlude). If sentinel is fresh BUT substantive output is older than 2× cadence, flag as `sentinel-only-fresh` (the symmetric failure mode — postlude works but real work pipeline is broken). Apply the same cross-check to baby: sentinel is `monitor/analyst-baby/latest-baby-summary.txt` (PROP-034 Phase 1), substantive outputs are monitor/analyst/expansions/EXP-*-baby-batch-*.json + issue-proposals authored_by='analyst-baby'.
+
+Command template:
+```bash
+NOW_TS=$(date -u +%s)
+# Analyst sentinel
+A_SENT=$(stat -c %Y monitor/analyst/latest-analysis-summary.txt 2>/dev/null || echo 0)
+A_SENT_AGE_H=$(( (NOW_TS - A_SENT) / 3600 ))
+# Analyst substantive newest
+A_SUB=$(ls -t monitor/analyst/expansions/*.json monitor/analyst/issue-proposals/proposal-*.json 2>/dev/null | head -1 | xargs -I{} stat -c %Y {} 2>/dev/null || echo 0)
+A_SUB_AGE_H=$(( (NOW_TS - A_SUB) / 3600 ))
+if [ $A_SENT_AGE_H -ge 16 ] && [ $A_SUB_AGE_H -ge 16 ]; then echo "ANALYST FULLY STALLED ($A_SENT_AGE_H h sentinel, $A_SUB_AGE_H h substantive)"; fi
+if [ $A_SENT_AGE_H -ge 16 ] && [ $A_SUB_AGE_H -lt 16 ]; then echo "ANALYST sentinel-broken-agent-healthy ($A_SENT_AGE_H h sentinel, $A_SUB_AGE_H h substantive) — PROP-036 postlude write may be broken"; fi
+if [ $A_SENT_AGE_H -lt 16 ] && [ $A_SUB_AGE_H -ge 16 ]; then echo "ANALYST sentinel-only-fresh ($A_SENT_AGE_H h sentinel, $A_SUB_AGE_H h substantive) — work pipeline may be broken behind a still-firing postlude"; fi
+```
+
 ## Step 2: Audit Data Flow — Handoff Chains
 
 Trace these chains and verify each link:

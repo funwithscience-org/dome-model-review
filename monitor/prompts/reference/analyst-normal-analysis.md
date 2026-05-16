@@ -4,7 +4,7 @@ This module handles external problem reports, dome site change analysis, output 
 
 ## Step 1: Check for Pending Work
 
-Read `monitor/status.json`. If `changes_pending_analysis` is 0 AND no new external reports exist (step 1b), write "No pending changes" to `monitor/analysis/latest-analysis-summary.txt` and stop.
+Read `monitor/status.json`. If `changes_pending_analysis` is 0 AND no new external reports exist (step 1b), the dispatcher falls through to the analyst.md postlude which writes the run summary with a no-op marker. Stop here for this mode.
 
 ## Step 1b: Check for External Problem Reports
 
@@ -68,7 +68,7 @@ Read `data/wins.json` and relevant sections of `build-scripts/generate-html.js`.
 
 ## Step 6: Write Analysis Records
 
-Create JSON in `monitor/analysis/` with ISO timestamp. Include: kernel_of_truth, forensic_timeline, review_state_crossref, current_review_text_affected, recommended_actions, overall_threat_level, gotchas.
+Create JSON in `monitor/analyst/analysis-records/` with ISO timestamp. Include: kernel_of_truth, forensic_timeline, review_state_crossref, current_review_text_affected, recommended_actions, overall_threat_level, gotchas. (The analysis-records subdirectory keeps the per-change records out of the top-level monitor/analyst/ namespace where the operator's eye-scan happens; substantively the same as the prior monitor/analysis/ path but under the canonical analyst dir.)
 
 ## Step 6b: Create Actionable Items for the Decider
 
@@ -148,6 +148,6 @@ console.log('allocated EXP-'+String(nextNum).padStart(3,'0')+' (next_id now '+t.
 
 Schema: `id` (FAIL-NNN), `dome_ref`, `dome_label`, `what_actually_happened`, `date_failed`, `evidence`, `notes`.
 
-## Step 7: Write Summary
+## Step 7: (Removed — superseded by analyst.md postlude)
 
-Write to `monitor/analysis/latest-analysis-summary.txt`. Update `status.json`.
+Normal mode used to write its own summary here. As of PROP-036, the analyst.md postlude writes the summary unconditionally for every mode at end-of-run. No per-mode summary write is needed.

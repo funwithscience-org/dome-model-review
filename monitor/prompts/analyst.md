@@ -281,7 +281,59 @@ Name the file: `proposal-ISS-NNN-resolution.json`
 The decider cannot see your expansion files until workspace-sync runs. The issue-proposal is the signal — without it, your investigation sits invisible and the issue stays assigned to you indefinitely.
 
 ### After mode work completes:
-If Mode 0 completed, also check for Modes 1-4 and normal analysis — Mode 0 doesn't consume the entire run. All other modes: write summary and stop.
+If Mode 0 completed, also check for Modes 1-4 and normal analysis — Mode 0 doesn't consume the entire run. All other modes: fall through to the unconditional postlude below.
+
+### Postlude (unconditional, every run, every mode — added per PROP-036)
+
+This runs at the END of every analyst run regardless of which mode(s) fired, including no-op runs where no mode triggered. Mirrors curmudgeon.md Step 9 and analyst-baby.md Step 10 patterns. The summary is the operator's primary 'is the analyst alive?' signal and tinker's pipeline-health staleness probe.
+
+**Step P1 — Write run summary to `monitor/analyst/latest-analysis-summary.txt`** (overwrite, not append). Required fields:
+- Run timestamp (ISO-8601 UTC at end-of-run; use `new Date().toISOString()` at this step, NOT a value cached from dispatch time)
+- Mode(s) fired this run (e.g., `Mode 0 → Mode 1`, or `Mode 2b`, or `no-op`)
+- Items processed: EXPs authored (count + IDs), issue-proposals written (count + IDs), tracker entries flipped to status=complete this run (count + IDs), attention-inbox items resolved (count + IDs)
+- No-op marker if no work fired this run
+- Carry-over for next run: items deferred due to budget or blocked_on dependencies
+- End-of-run queue state: pending-tracker, pending-inbox, assigned-analyst open-issues count of severity major/critical/null
+
+Minimal schema template (extend per-mode as needed):
+```
+=== Analyst run <ISO-TS> ===
+Mode(s) fired: <Mode-list-or-'no-op'>
+
+Items processed:
+  EXPs authored: <count> (<comma-separated IDs>)
+  Issue-proposals: <count> (<IDs>)
+  Tracker→complete: <count> (<EXP-IDs>)
+  Attention-inbox→resolved: <count> (<inbox-IDs>)
+
+Carry-over: <list-or-'none'>
+
+Queue state: pending-tracker=<N> pending-inbox=<N> assigned-analyst-major+=<N>
+```
+
+Write via node so you can compute the counts in one place. Example:
+```bash
+node -e "
+const fs=require('fs');
+const now=new Date().toISOString();
+// ... compute counts from this run's tracker/inbox/expansion deltas ...
+const summary = \`=== Analyst run \${now} ===\n\` +
+  \`Mode(s) fired: \${MODES_FIRED}\n\n\` +
+  \`Items processed:\n\` +
+  \`  EXPs authored: \${exps.length} (\${exps.join(', ')})\n\` +
+  \`  Issue-proposals: \${proposals.length} (\${proposals.join(', ')})\n\` +
+  \`  Tracker→complete: \${trackerComplete.length} (\${trackerComplete.join(', ')})\n\` +
+  \`  Attention-inbox→resolved: \${inboxResolved.length} (\${inboxResolved.join(', ')})\n\n\` +
+  \`Carry-over: \${carryOver.length ? carryOver.join(', ') : 'none'}\n\n\` +
+  \`Queue state: pending-tracker=\${pT} pending-inbox=\${pI} assigned-analyst-major+=\${aA}\n\`;
+fs.writeFileSync('monitor/analyst/latest-analysis-summary.txt', summary);
+console.log('postlude: wrote latest-analysis-summary.txt');
+"
+```
+
+**This postlude SUPERSEDES the Step 1 short-circuit write and Step 7 unconditional write in analyst-normal-analysis.md** — those two writes are now redundant with the postlude and should be removed (see PROP-036 edit_2).
+
+**Step P2 — Update `monitor/status.json`** with `last_analyst_run: <ISO-TS>` and `last_analyst_mode: <mode-list>`. Use `${WORKSPACE}/monitor/status.json` (FUSE-canonical) to match the rest of the pipeline.
 
 ## Progressive Disclosure & TLDRs
 
