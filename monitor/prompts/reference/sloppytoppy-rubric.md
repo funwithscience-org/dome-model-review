@@ -71,6 +71,9 @@ The flat surface-type targets are **defaults**, not hard caps. Per operator: *"l
 
 - `target_max × 1.5` length ceiling
 - jargon-density penalty disabled (technical terms are *expected*, not penalized)
+- concept-stacking penalty disabled (nested concepts are load-bearing in math prose, not a readability defect)
+
+**Per-surface `disable_sentence_complexity` field (v1.1, added 2026-05-16):** Individual math-dense entries may set `disable_sentence_complexity: true` to additionally exempt the surface from the sentence-complexity penalty. This is for surfaces whose math requires long compound inference-chain sentences (e.g., "for TM₀₁ mode, the cavity eigenvalue is k=j₀,₁/R, which gives f=c·j₀,₁/(2πR)=5.73 Hz, well below the observed 7.83 Hz Schumann frequency, implying..."). Defaults false — most math-dense surfaces still take the sentence-complexity check. Promote a surface to `disable_sentence_complexity: true` only when scoring shows a structural calibration miss (composite ≥1.5 below expected, sentence-complexity is the dominant subtraction, and shortening would break the inference chain rather than improve clarity).
 
 Math-dense AND content-dense flags can both apply — multiplicative effect (1.5 × 2.0 = 3.0× target_max for a math-dense, content-dense surface).
 
