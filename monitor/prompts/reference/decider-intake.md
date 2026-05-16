@@ -63,44 +63,66 @@ Comment on the GitHub issue: `gh issue comment {number} --body "..."`
 
 ## Step 1d: Integrity Report
 
-Check `monitor/integrity/` for most recent `report-*.json`:
-- `overall_status: "fail"` → treat critical issues as priority 1
-- Broken anchors/nav → flag for immediate rebuild
-- Build drift → flag for immediate `node build.js`
-- Broken external links → add as citation issues
-- Data-prose mismatches → flag for investigation
+**PROP-037 generalization (landed 2026-05-16):** This step iterates EVERY integrity finding regardless of severity (CRITICAL, MAJOR, MODERATE, MINOR) and creates an ISS for any finding where `tracked_under` is null/missing. The trigger is integrity's already-emitted `tracked_under` field — NOT severity. Integrity does the dedup work; decider respects its signal. This replaces the moderate-only behavior that was masking the next_id collision finding (2026-05-15), build-drift findings, and orphan-EXP findings — all of which slipped through the previous severity='moderate' filter.
 
-**Moderate findings (`severity: "moderate"`)** — must be triaged on EVERY decider run. Background: integrity historically raised moderates that decider read but never actioned, because the only explicit guidance was for `overall_status: "fail"` (critical). Result: moderates recurred across integrity runs indefinitely with no tracking ISS, no action, and no audit trail of dismissal. Integrity itself flagged this gap (2026-05-06: "if no one ever picks them up the warn rating becomes meaningless"). New procedure:
+### A. Read the latest integrity report
 
-For each `severity: "moderate"` finding in the integrity report:
+1. Glob `monitor/integrity/report-*.json`; pick the newest by filename-embedded timestamp (`report-YYYY-MM-DDTHH-MM.json` lexicographic sort works).
+2. Parse as JSON; let `R` = the parsed object.
+3. Read `R.overall_status` and emit one summary line at the top of `recommended_actions`: `"Integrity report {timestamp} overall_status={fail|warn|pass}"`. This is the single dashboard sentinel — do NOT echo individual finding descriptions here (they live on the ISSs).
 
-1. **Dedupe against existing tracking.** Search `monitor/decisions/open-issues.json` and recently-closed (last 7 days) issues for an ISS that matches the finding by `category` + `location` (or close textual match if those fields aren't present). If found:
-   - If matched ISS is **open** → no action this run (already tracked; will route normally on its own ISS lifecycle).
-   - If matched ISS is **recently closed** → no action this run (recently resolved; if integrity is re-flagging the same thing, that's a moderate-becomes-major signal; surface in `recommended_actions` as "integrity re-flagged ISS-NNN within 7d of closure — verify fix took effect").
+### B. Process every finding
 
-2. **If not matched, create an open ISS** with:
+For each finding `F` in `R.issues_found` (or whichever field contains the findings array — same field in current integrity schema):
+
+1. **If `F.tracked_under` is a non-empty string** (e.g., `"ISS-1218"`):
+   - Integrity already deduped this finding against the existing ISS.
+   - **No action.** Skip. This is the steady-state "already tracked" path.
+
+2. **If `F.tracked_under` is null, missing, or empty string**:
+   a. **Defensive same-day dedup**: search `monitor/decisions/open-issues.json` for an open ISS where `title === 'Integrity ' + F.severity + ': ' + F.description.slice(0,80)` AND `created_at` is within the last 24h. If found → no action (same-day re-creation guard).
+   b. Else create `ISS-{next_id}` with:
    ```json
    {
      "id": "ISS-{next_id}",
-     "title": "Integrity moderate: {finding.description first 80 chars}",
-     "description": "{full finding.description}",
-     "location": "{finding.location}",
+     "title": "Integrity {F.severity}: {F.description.slice(0,80)}",
+     "description": "{F.description verbatim}",
+     "location": "{F.location verbatim}",
      "category": "integrity_finding",
-     "severity": "moderate",
+     "severity": "{F.severity verbatim — CRITICAL/MAJOR/MODERATE/MINOR carried through}",
      "status": "open",
-     "source": "integrity-{report_date}",
-     "suggested_fix": "{finding.suggested_fix}",
-     "created_at": "{ISO now}",
-     "created_by": "decider-step1d-moderate-triage"
+     "source": "integrity-{report_filename_date}",
+     "suggested_fix": "{F.suggested_fix verbatim}",
+     "created_at": "{now-ISO}",
+     "created_by": "decider-step1d-untracked-finding"
    }
    ```
-   Increment `next_id` per Step 5 conventions. The ISS routes normally on subsequent decider runs (analyst self-apply, fixer assignment, or pending-human escalation per the ISS's own routing rules).
+   Increment `next_id` per Step 5 conventions.
 
-3. **Never silently drop** an unactioned moderate. The two acceptable paths are: (a) it's already tracked, no-op; (b) it's not tracked, create an ISS. If you believe a moderate is wontfix, create the ISS with `status: "wontfix"` and a one-line `wontfix_reason` so future readers know the finding was considered and dismissed deliberately. The pattern integrity recommends (and was used for EXP-052): explicit ISS classification beats silent drop.
+3. **URGENT FAST PATH — CRITICAL/MAJOR same-run self-apply**:
+   - **Trigger**: `F.severity === 'critical' OR F.severity === 'major'` AND `F.suggested_fix` is structurally applicable (allocator-bump, tracker-backfill, build-run, file-delete) AND decider has self-apply authority for the target file.
+   - **Behavior**: attempt the fix in the same decider run. On success, close `ISS-{just-created}` with `closure_reason: "same-run-self-apply"` and `fixed_at: "{now-ISO}"`.
+   - **Mechanical fixes only**. Judgment-required fixes (e.g., "investigate why X happened", "restructure argument", "fetch external source") stay open and route normally through subsequent decider/analyst cycles.
+   - **Rationale**: integrity findings like "next_id collision imminent" or "build drift" have same-day urgency. Filing-and-waiting until tomorrow's run is too slow for these classes. The 2026-05-15 EXP-384 silent overwrite risk would have been a same-run self-apply under this contract.
 
-4. **Surface in daily report.** In `recommended_actions` of the daily report, emit a single concise line summarizing this run's moderate triage outcome — e.g., "Integrity report 2026-05-06T01:17 had 2 moderates: 1 already tracked (ISS-1218), 1 created (ISS-1859)." Don't echo individual finding text; the ISSs themselves carry it. This satisfies the existing "don't keep echoing" rule (decider-reporting.md L94-100) — once a finding has an ISS, it stops appearing in `recommended_actions` directly.
+### C. Surface results in daily report
 
-**Why this matters more than it sounds**: integrity's "moderate" severity signal becomes meaningful only when there's a deterministic action attached. Without action, every recurrence is operator-attention-noise. With action (ISS creation + routing), the moderate becomes work that flows through the normal pipeline like any other ISS.
+Emit ONE concise line in `recommended_actions`:
+
+> `"Integrity report YYYY-MM-DDTHH-MM had N findings: X already-tracked (skipped), Y created (ISS-A, ISS-B, ...), Z same-run-resolved."`
+
+Do **not** echo individual finding descriptions — they live on the created ISSs. This honors the "don't keep echoing" rule (decider-reporting.md L94-100): once a finding has an ISS, it stops appearing in `recommended_actions` directly.
+
+### D. Never silently drop
+
+Every finding must end in exactly one state:
+- **already-tracked** (skipped, no-op): integrity emitted a non-null `tracked_under`, or our defensive 24h dedup matched.
+- **created** (open ISS exists): finding had `tracked_under: null` and no 24h-dedup match; new ISS exists.
+- **same-run-resolved** (created + closed): CRITICAL/MAJOR mechanical fix succeeded in this run.
+
+"Wontfix" is allowed but must be a *created+closed-with-wontfix-reason* ISS — never silent skip. The pattern integrity recommends (and was used for EXP-052): explicit ISS classification beats silent drop.
+
+**Why this matters more than it sounds**: integrity's severity signal becomes meaningful only when there's a deterministic action attached at every level. Without action on critical/major (the 2026-05-13 → 2026-05-16 pattern: 8 consecutive decider runs with 0 integrity-derived ISSs despite findings on every report), recurrence is operator-attention-noise. With action (ISS creation + routing), every finding becomes work that flows through the normal pipeline. The PROP-037 generalization extends this property from moderate-only to all-severities.
 
 ## Step 1e: Prediction Failures
 
