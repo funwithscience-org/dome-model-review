@@ -116,6 +116,11 @@ Every file that crosses the workspace↔git boundary has exactly one authoritati
 - `monitor/status.json`, `monitor/review-state.json` — live pipeline state.
 - `monitor/decisions/latest-decider-summary.txt` — decider's human-facing latest-run summary (overwritten every decider run; ~6×/day post-2026-04-27 cadence change). Renamed from morning-briefing.txt on 2026-05-09 — the morning framing dated from when decider ran daily.
 - `monitor/analyst-baby/latest-baby-summary.txt` — baby's human-facing latest-run summary (PROP-034 Phase 1, 2026-05-13). Overwritten every 2h cycle. Workspace-owned; workspace-sync rescues to git on hourly cycle.
+- `monitor/sloppytoppy/latest-score-summary.txt` — sloppytoppy-score's per-run summary (PROP-039 Phase 1, 2026-05-16). Daily cadence. Workspace-owned.
+- `monitor/sloppytoppy/scores.json` — single-writer (sloppytoppy-score). Phase 1 sole-writer; Phase 2 sloppytoppy-rewrite reads but does not write. Classified git so build.js publish copies git→workspace if anyone edits from a clone; sloppytoppy-score writes from its clone and pushes, so workspace gets updated via the git path. Effectively git-owned-with-clone-writer.
+- `monitor/sloppytoppy/rubric-config.json` — operator-curated thresholds (acceptable-floor, min-delta, cooldown, weights). Git-owned, operator-only edits.
+- `monitor/sloppytoppy/math-dense-surfaces.json` — operator + tinker curated flag list (elevated length thresholds, jargon penalty disabled). Git-owned.
+- `monitor/sloppytoppy/content-dense-surfaces.json` — operator + tinker curated flag list (elevated length thresholds for multi-sub-claim/citation-heavy surfaces). Git-owned.
 
 **append-only** — directories of immutable, per-ID or per-timestamp files. Either direction can write a NEW file, but NEVER overwrite an existing one.
 
@@ -132,7 +137,7 @@ Every file that crosses the workspace↔git boundary has exactly one authoritati
 
 ## Monitoring Pipeline
 
-Ten scheduled agents run continuously. All prompts live in `monitor/prompts/*.md` — edit the markdown to change agent behavior.
+Eleven scheduled agents run continuously. All prompts live in `monitor/prompts/*.md` — edit the markdown to change agent behavior.
 
 | Agent | Schedule | Model | Prompt File | Purpose |
 |-------|----------|-------|-------------|--------|
@@ -141,6 +146,7 @@ Ten scheduled agents run continuously. All prompts live in `monitor/prompts/*.md
 | dome-analyst-baby | Every 2h (`20 */2 * * *`) | Sonnet | `analyst-baby.md` | Mode 1 BAU tracker drain — verification-class consolidations (PROP-034 Phase 1) |
 | dome-curmudgeon | Variable (30m churn-and-burn / 4h quiet) | Opus | `curmudgeon.md` | Adversarial self-review; change-driven + holistic reviews; discovery-mode (PROP-038) |
 | dome-curmudgeon-verify | Every 4h (`30 4,8,12,16,20,0 * * *`) | Sonnet | `curmudgeon-verify.md` | Narrow verification of patched reviews (PROP-038 Phase 1) — class='verification' items with ≤2 minor prior holes |
+| dome-sloppytoppy-score | Daily 03:30 UTC | Sonnet | `sloppytoppy-score.md` | Readability scoring (PROP-039 Phase 1) — two-axis rubric (length + understandability) for flat-earth-level reader. Phase 2 rewrite agent is a separate task. |
 | dome-decider | Variable (1h churn-and-burn / 4h quiet) | Opus | `decider.md` | Triage, patches, new WIN commits, expansion integration |
 | dome-integrity | Daily 9 AM | Haiku | `structure-integrity.md` | Site health: links, tabs, build drift, data-prose consistency |
 | dome-tinker | Daily 10:30 AM | Opus | `tinker.md` | Pipeline ops: audit, trace handoffs, cost engineering |

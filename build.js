@@ -111,6 +111,15 @@ const OWNERSHIP = {
   // the deny-list never fires on the authoritative writer.
   'monitor/integrity/workspace-sync-skips.jsonl': 'git',
 
+  // PROP-039 Phase 1 (2026-05-16): sloppytoppy state files. scores.json
+  // is single-writer (sloppytoppy-score from clone); rubric-config and
+  // flag lists are operator/tinker curated. All git-owned, build.js
+  // publish copies git→workspace.
+  'monitor/sloppytoppy/scores.json': 'git',
+  'monitor/sloppytoppy/rubric-config.json': 'git',
+  'monitor/sloppytoppy/math-dense-surfaces.json': 'git',
+  'monitor/sloppytoppy/content-dense-surfaces.json': 'git',
+
   // workspace-owned: workspace-sync owns direction; build.js does NOT sync these
   'monitor/status.json': 'workspace',
   'monitor/review-state.json': 'workspace',
@@ -121,6 +130,9 @@ const OWNERSHIP = {
   // monitor/analyst/issue-proposals/ paths (already classified append_only
   // below); the summary file is the only baby-specific path.
   'monitor/analyst-baby/latest-baby-summary.txt': 'workspace',
+  // PROP-039 Phase 1 (2026-05-16): sloppytoppy-score's per-run summary.
+  // Daily cadence at 03:30 UTC. Workspace-owned, workspace-sync rescues.
+  'monitor/sloppytoppy/latest-score-summary.txt': 'workspace',
   // NOTE: monitor/curmudgeon/tracker.json is DELIBERATELY NOT listed here.
   // It is a multi-writer file (decider + curmudgeon) and belongs in a future
   // Phase 2 shard split. Until then it is protected only by scheduling
