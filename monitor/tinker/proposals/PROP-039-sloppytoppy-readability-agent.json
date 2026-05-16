@@ -1,0 +1,648 @@
+{
+  "id": "PROP-039",
+  "prop_id": "PROP-039",
+  "title": "Sloppytoppy — readability-focused scoring + rewrite agent for the flat-earth-level reader",
+  "authored_by": "tinker",
+  "authored_at": "2026-05-16T05:45:00Z",
+  "authored_by_run": "tinker-2026-05-16T05-40",
+  "status": "design-pending-operator-review",
+  "category": "agent-design",
+  "directive": "DIRECTIVE-20260516-001-sloppytoppy-readability-agent",
+  "supersedes_prop": null,
+  "amends": null,
+  "depends_on": ["PROP-034 (split-analyst-baby-vs-deep) — pattern precedent", "PROP-038 (curmudgeon-discovery-vs-verify-split) — verify-mode pipeline for sloppytoppy's rewrites"],
+  "headline_recommendation": "Build sloppytoppy as a new daily-cadence dual-mode agent: scoring (Sonnet) audits the site against a two-axis readability rubric (length + understandability) on a per-WIN-field and per-<details>-section basis; rewriting (Opus, conditional Phase 2) compresses low-scored surfaces with explicit kernel-of-truth preservation and a draft-then-score-then-decide gating mechanism that prevents endless minor edits. Phase 1 is scoring-only with hand-calibrated rubric on 5 representative surfaces; Phase 2 adds rewrites once operator confirms the score ranking matches intuition; Phase 3 (long-tail) introduces a shared internal format spec that analyst and curmudgeon adopt as authoring guidance.",
+  "executive_summary": {
+    "problem": "After 6+ months of back-and-forth between curmudgeon (adversarial-skeptic) and analyst (kernel-of-truth builder), the review is technically correct but increasingly wordy. Operator's read-through reveals that the actual audience — flat-earth-level readers — would struggle to extract the point from the volume. Curmudgeon's eye is on scientific gaps and defender-pivot logic; it is NOT auditing readability. Analyst's prompt explicitly says 'think hard,' which produces depth at the cost of compression. No agent in the current pipeline has audience-advocacy as its primary lens.",
+    "solution": "Add sloppytoppy as a third lens: audience-advocate. Scoring runs identify the worst-readability surfaces; rewriting runs compress them while preserving kernel-of-truth. Run discipline (one mode per run) prevents the same agent doing scoring and rewriting simultaneously, which would create biased self-validation.",
+    "key_design_decisions": [
+      "Two-axis rubric (length 1-10, understandability 1-10) with weighted composite 0.4 × length + 0.6 × understandability — understandability dominates because 'verbose but clear' is acceptable and 'short but obscure' is the worst pattern",
+      "Scoring on canonical SOURCE (wins.json + sections.json), not generated HTML — source is the single point of truth, generated HTML changes with generate-html.js edits",
+      "Per-WIN field scoring (tldr_verdict, tldr_evidence, detail_verdict_text, detail_evidence, detail_extra when present) + per-<details>-block section scoring → ~420 total surfaces site-wide",
+      "Sonnet for scoring (rule-compliance work), Opus for rewriting (judgment-heavy compression) — same model-class pattern as PROP-034",
+      "Three-mechanism rewrite gating: acceptable-floor (composite ≥ 7.5 → no rewrite), minimum-improvement-delta (predicted +1.5 composite required, measured via draft-then-score), cooldown window (14 days since last rewrite of same surface)",
+      "Load-bearing technical content (Bessel zeros, dome geometry math, Tesla wave-speed derivations) gets raised length/jargon thresholds via a sloppytoppy/math-dense-surfaces.json flag list, so the rubric doesn't punish content for being technical when technicality IS the argument",
+      "Rewrites enter the existing pipeline as analyst/expansions/EXP-NNN with authored_by='sloppytoppy' + review_class='verification' + class_hint='readability-rewrite' — curmudgeon-verify (Sonnet, per PROP-038) handles these cheaply",
+      "Punt mechanism for integrity-sensitive rewrites: monitor/sloppytoppy/punts/ → decider routes to analyst (Opus) as deep-attack EXP"
+    ],
+    "scope": "Phase 1: scoring + rubric calibration only (7 days). Phase 2: rewrites enabled (14 days probation). Phase 3 (conditional, long-tail): shared format-spec adoption by analyst + curmudgeon as authoring guidance.",
+    "rollback_path": "If rubric mis-scores load-bearing technical content as 'verbose' (Phase 1 failure mode) or sloppytoppy rewrites compress away kernel-of-truth (Phase 2 failure mode), operator disables the scheduled task. No prior-state mutation to revert; sloppytoppy's writes are append-only to its own files plus EXP-NNNs that go through normal curmudgeon review."
+  },
+  "context_verification": {
+    "directive_read_in_full": true,
+    "directive_amendment_2026_05_16_addressed": "task_1 Q3b rewrite-threshold three-mechanism spec is fully addressed in scoring_rubric.rewrite_threshold_mechanisms section below",
+    "operator_motivation_verbatim_referenced": [
+      "Wordiness fear: 'technically correct, but overly wordy and not as clear as it could be' → solved by length-axis scoring + understandability-axis scoring",
+      "Audience target: 'flat earth level person' → calibration sample uses flat-earth-reader perspective for understandability axis scoring",
+      "Run discipline: 'either a scoring run or a rewrite run, not both' → dispatcher mode-pick is exclusive, designed below",
+      "Batching: 'batch size should be reasonably large' for scoring; 'batch limit based on reasonable context management' for rewrites → 50 surfaces/scoring-run, 5 substantive or 10 short rewrites/rewrite-run",
+      "Internal format: 'consistent format that is section appropriate' used by sloppytoppy + curmudgeon/analyst → designed in internal_format_spec section below",
+      "Punt: 'can punt questions to curmudgeon/analyst in case they want to make a change but aren't sure they are doing it in a way with integrity' → designed in dispatcher.punt_mechanism section",
+      "Hash-change re-score: 'periodically look for unscored content (or content that has been substantially changed since a previous score)' → scores.json stores content_hash_at_score_time; mismatch triggers re-score",
+      "Kernel-of-truth preservation: 'values the scientific content, but the goal is to make sure the point isn't lost in the volume/obscurity' → rewrite gating includes kernel-of-truth check; punt mechanism handles integrity-uncertain cases"
+    ],
+    "files_read_during_design": [
+      "CLAUDE.md (full)",
+      "monitor/prompts/tinker.md (full)",
+      "monitor/prompts/reference/tinker-pipeline-health.md",
+      "monitor/prompts/analyst-baby.md (Phase 1 pattern reference, full)",
+      "monitor/prompts/analyst.md (first 80 lines — kernel-of-truth doctrine + Mode 0)",
+      "monitor/tinker/proposals/PROP-034-split-analyst-baby-vs-deep.json (structure reference)",
+      "monitor/tinker/proposals/PROP-038-curmudgeon-discovery-vs-verify-split.json (most recent precedent)",
+      "data/wins.json (full — 71 WINs, field length statistics computed)",
+      "data/sections.json (structure + per-part <details>-count statistics)"
+    ],
+    "directive_reference_check": {
+      "in_scope_for_tinker_8_items_addressed": "All 8 of directive.in_scope_for_tinker satisfied: CLAUDE.md/analyst-baby/curmudgeon/analyst all read (analyst.md first 80 lines specifically); wins.json + sections.json structure read; 5 representative WINs hand-scored in rubric_calibration_sample; PROP authored (this file); sloppytoppy.md draft in implementation_artifacts.sloppytoppy_md_prompt_draft; format-spec draft in implementation_artifacts.format_spec_draft",
+      "out_of_scope_for_tinker_4_items_respected": "No scheduled task created (operator action). No existing agent prompts modified (analyst/curmudgeon adoption is Phase 3, separate amendment). No batching with DIRECTIVE-20260514-002 (PROP-038 is its own thing — separate file, separate workflow, only referenced as the cheap-verify path for sloppytoppy's rewrites once Phase 2 lands). No content edits to wins.json or sections.json (sloppytoppy is a new process)."
+    }
+  },
+  "design_space_evaluation": {
+    "approach_a_single_pass_curmudgeon_extension": {
+      "description": "Add a readability rubric to curmudgeon's existing review cycle. Curmudgeon already reads every WIN; readability becomes one more dimension it grades.",
+      "pros": ["No new agent (zero pipeline complexity addition)", "Curmudgeon already has the cycle infrastructure"],
+      "cons": [
+        "Curmudgeon's job is adversarial-skeptic — readability scoring is audience-advocate, an orthogonal lens. Conflating the two creates rubric drift: curmudgeon's hole-finding muscle is what makes it valuable; asking it to also be readability-friendly dilutes that.",
+        "Curmudgeon doesn't currently rewrite — it flags. Adding rewrite capability changes its role profile substantially.",
+        "Curmudgeon's existing cycles target post-commit review; sloppytoppy is meant to be proactive (audit unscored content, drive rewrites by score), not reactive.",
+        "PROP-038 is already splitting curmudgeon into discovery + verify modes for cost reasons — adding a third readability mode makes the curmudgeon prompt complex."
+      ],
+      "verdict": "Rejected. Lens-purity is a real constraint; mixing audience-advocate and adversarial-skeptic produces a worse output of both."
+    },
+    "approach_b_analyst_prompt_addition": {
+      "description": "Add 'write for flat-earth-level readers' to analyst.md so analyst authors shorter content directly.",
+      "pros": ["No new agent", "Avoids rewrite phase entirely if authoring is shorter from the start"],
+      "cons": [
+        "Analyst's prompt already says 'think hard' — the verbosity is a side-effect of judgment-heavy depth. Adding a readability constraint dilutes the kernel-of-truth focus.",
+        "Existing 71 WINs and ~125 section subsections already exist. Author-time fix only helps NEW content, not the wordy backlog.",
+        "Analyst is Opus (~$$$). Asking Opus to optimize for length while also doing deep argumentation is mixed-objective — split objectives produce mediocre at both."
+      ],
+      "verdict": "Rejected as standalone. May be revisited in Phase 3 as ADJUNCT (analyst references the format-spec when authoring), but the prompt-load on analyst should not double."
+    },
+    "approach_c_dedicated_readability_agent_RECOMMENDED": {
+      "description": "Add sloppytoppy as a new agent with audience-advocate lens. Scoring + rewriting in separate modes per run.",
+      "pros": [
+        "Lens purity preserved: curmudgeon = scientific-skeptic, analyst = kernel-of-truth builder, sloppytoppy = audience-advocate",
+        "Score-driven prioritization: rewrites target the worst surfaces first, not random ones",
+        "Hash-mismatch detection handles continuous re-scoring as content evolves",
+        "Run-discipline (one mode per run) prevents biased self-validation (sloppytoppy can't both rewrite AND score its own rewrite in the same run)",
+        "Pattern reuse from PROP-034: model-class split (Sonnet/Opus) follows established precedent"
+      ],
+      "cons": [
+        "Pipeline complexity addition (one more agent to monitor; tinker adds a stalled-output check; CLAUDE.md gains a row in the pipeline table)",
+        "Cost addition: scoring runs are cheap (Sonnet, mechanical) but rewriting runs (Opus) add daily Opus spend",
+        "Rubric calibration risk: if the rubric mis-scores load-bearing technical content as 'verbose,' Phase 1 produces wrong priorities. Mitigated by Phase 1 = scoring-only with operator spot-check + hand-calibration sample"
+      ],
+      "verdict": "RECOMMENDED. The cost is real but the wordiness problem operator observed is real; better to address with an explicit lens than to expect curmudgeon or analyst to catch it as a side-objective."
+    },
+    "approach_d_external_human_pass": {
+      "description": "Operator hand-edits low-readability surfaces as encountered.",
+      "pros": ["Zero pipeline cost", "Highest-quality output (human taste)"],
+      "cons": [
+        "Doesn't scale to 420 surfaces and continuous content churn",
+        "Operator time is the bottleneck the pipeline exists to relieve",
+        "Operator already does pattern-of-thrash review; this would add a recurring task"
+      ],
+      "verdict": "Rejected. Sloppytoppy can do 80% of the readability optimization; operator can still spot-check + override."
+    }
+  },
+  "scoring_rubric": {
+    "version": "1.0",
+    "rubric_id_for_scores_json": "sloppytoppy-rubric-v1",
+    "two_axis_design_rationale_q1": "Two-axis (length + understandability separately stored, with composite for prioritization) chosen over single composite because the two-axis view lets sloppytoppy diagnose WHICH dimension is failing on a rewrite attempt. If post-rewrite length improves but understandability degrades (compression removed clarifying context), that's a different problem than length unchanged but understandability improved (jargon swapped for plain language). Single composite masks this distinction.",
+    "length_axis": {
+      "scale": "1 (worst) to 10 (best, target word-count or shorter)",
+      "rationale": "Linear penalty for exceeding target. Score 10 means within target window; drops 1 point per ~25% over target; reaches 0 at ~5× target.",
+      "formula": "score_length = max(0, 10 - 4 × max(0, (actual_words / target_max_words) - 1))",
+      "target_word_counts_per_surface": {
+        "tldr_verdict": { "target_min": 20, "target_max": 50, "current_p90": 54, "current_max": 98, "rationale": "punchline-first 1-3 sentences" },
+        "tldr_evidence": { "target_min": 30, "target_max": 65, "current_p90": 77, "current_max": 141, "rationale": "evidence summary, 2-4 sentences" },
+        "detail_verdict_text": { "target_min": 100, "target_max": 300, "current_p90": 383, "current_max": 1461, "rationale": "verdict with reasoning, 1-2 paragraphs" },
+        "detail_evidence": { "target_min": 250, "target_max": 600, "current_p90": 973, "current_max": 1888, "rationale": "primary evidence with calculations/citations, 3-5 paragraphs" },
+        "detail_claim": { "target_min": 5, "target_max": 30, "current_p90": 38, "current_max": 110, "rationale": "the WIN's claim verbatim — usually short by definition" },
+        "detail_extra": { "target_min": 150, "target_max": 500, "current_p90": 470, "current_max": 909, "rationale": "optional appendix; same scale as detail_evidence but shorter target" },
+        "section_details_block": { "target_min": 200, "target_max": 700, "rationale": "per-<details>-block in sections.json; assumes one block = one progressive-disclosure unit" }
+      }
+    },
+    "understandability_axis": {
+      "scale": "1 (worst) to 10 (best, immediately clear to a flat-earth-level reader)",
+      "scoring_dimensions_each_subtractive_from_10": [
+        { "name": "jargon_density", "definition": "Count of unexplained technical terms (Tesla coil, Bessel zero, Schumann cavity, ionosphere TEM mode, etc.) per 100 words. Score deduction: -1 per 2 unexplained terms above the first 1 per 100 words.", "exceptions": "Surface marked math_dense=true in math-dense-surfaces.json gets the threshold raised to 5 unexplained terms per 100 words before deduction starts" },
+        { "name": "concept_stacking", "definition": "Max number of distinct technical claims per sentence. >2 unique technical claims in one sentence = -1 per sentence stacked.", "exceptions": "Same math_dense exception (raised threshold to 4)" },
+        { "name": "acronym_without_expansion", "definition": "First-use acronym (CMB, RAR, ELF, GUT, etc.) without parenthetical expansion = -0.5 per first-use violation.", "exceptions": "Acronyms used in the surface's own claim field need not be re-expanded in the same WIN's tldr/detail fields (consistency assumed via the claim)" },
+        { "name": "forward_reference_unresolved", "definition": "References to '§6.14' or 'see WIN-052' without inline summary of the referenced content = -0.5 per unresolved forward-reference. A reference that's accompanied by a 1-clause summary doesn't count as unresolved." },
+        { "name": "math_without_parallel_prose", "definition": "Equations or specific numerical derivations not accompanied by a plain-English parallel statement of what the math means. -1 per equation/derivation without parallel prose.", "exceptions": "math_dense=true surfaces only get this deduction if the math has NO accompanying prose at all; a single sentence of parallel framing satisfies the test" },
+        { "name": "passive_or_nominalized_voice", "definition": "Sentence-level voice issues: chained nominalizations, passive-without-agent, etc. -0.5 per egregious case. Cap at -1.5 per surface (voice issues are stylistic, not load-bearing)." },
+        { "name": "sentence_length_excess", "definition": "Sentences over 35 words = -0.5 each, capped at -2 per surface. (Long sentences are the dominant readability failure mode in the existing corpus.)" }
+      ],
+      "score_calculation": "start at 10, apply deductions, floor at 1. score_understandability = max(1, 10 - sum_of_deductions)"
+    },
+    "composite_formula": {
+      "formula": "composite = 0.4 × score_length + 0.6 × score_understandability",
+      "rationale": "Understandability dominates because: (a) verbose-but-clear is acceptable to the operator (the existing review is verbose-but-mostly-clear; the problem is the long tail of mid-verbose mid-obscure surfaces); (b) short-but-obscure is the worst pattern (loses both audience AND credibility). 60/40 weighting reflects 'understandability matters 1.5× more than length per unit deficit'.",
+      "scale": "1.0 to 10.0 (1 decimal place)"
+    },
+    "rewrite_threshold_mechanisms": {
+      "mechanism_a_acceptable_floor": {
+        "rule": "If composite >= 7.5, surface is acceptable. NO rewrite triggered even if not gold-standard (9+).",
+        "rationale": "Phase 1 rubric calibration target. Captures the operator's 'shorter better but not at all costs' intent. Score 7.5 = above-average on both axes; score 10 = gold standard. Distance between 7.5 and 10 is the long-tail polishing that risks diminishing returns.",
+        "tunable": "Threshold tunable per-surface-type via sloppytoppy/rubric-config.json. Default 7.5 applies uniformly across surface types in Phase 1; per-type tuning is a Phase 2+ refinement if calibration reveals one surface type needs a different bar."
+      },
+      "mechanism_b_minimum_improvement_delta": {
+        "rule": "Before committing a rewrite, sloppytoppy must predict the post-rewrite composite. If predicted_post_score - current_score < 1.5, skip the rewrite.",
+        "prediction_method_recommended": "Option ii (draft-then-score-then-decide): sloppytoppy generates the rewrite draft, scores the draft using the same rubric, and commits only if draft_score - current_score >= 1.5. Cost: doubles per-rewrite token usage (one Opus call for draft + one Sonnet call for re-score), but accuracy of the gating mechanism is the dominant constraint.",
+        "alternatives_considered": [
+          "Option i (heuristic from length-cut + jargon-replacement count): cheaper but accuracy unknown until calibrated against the actual rubric. Rejected for Phase 2 launch; may be revisited if Phase 2 economics become a problem.",
+          "Option iii (operator-approved minimum-delta-by-surface-type): too coarse; doesn't adapt to the surface-by-surface variation in how much improvement is achievable."
+        ],
+        "delta_threshold_tunable": "1.5 composite-point threshold default. Tunable in sloppytoppy/rubric-config.json. Threshold low enough to not require gold-standard quality; high enough to filter out cosmetic edits.",
+        "draft_scoring_run_in_same_invocation": "Because operator's run-discipline says 'one mode per run,' the draft-then-score-then-decide cycle runs WITHIN a single rewrite-mode invocation (the rewrite-mode run does Opus drafts AND Sonnet re-scoring of those drafts in-process). The 'no scoring + rewriting in one run' rule applies to top-level mode selection — scoring of unrelated unscored surfaces does NOT happen in a rewrite run. The re-scoring of the agent's own drafts is internal to the rewrite mechanism, not a separate scoring pass."
+      },
+      "mechanism_c_cooldown_window": {
+        "rule": "A surface rewritten in the last 14 days is not rewritten again unless its composite has decayed below the acceptable-floor.",
+        "rationale": "Prevents same-surface thrash (sloppytoppy re-rewrites the same paragraph each daily run because each version scores marginally lower than gold). 14-day window aligns with curmudgeon's c5 cadence on the same WINs.",
+        "implementation": "scores.json stores last_rewrite_attempted_at per surface. Dispatcher's Mode 2 candidate list excludes surfaces where (now - last_rewrite_attempted_at) < 14 days.",
+        "decay_re_entry_condition": "If a surface that was previously rewritten now scores below acceptable-floor (because subsequent edits by other agents degraded the readability — possible via curmudgeon-driven defenses or analyst-driven expansions), the surface re-enters the rewrite candidate pool regardless of cooldown.",
+        "tunable": "14-day default; tunable in sloppytoppy/rubric-config.json"
+      }
+    },
+    "load_bearing_technical_handling_q2": {
+      "rule": "Some content is technical because the math IS the argument. The rubric MUST NOT punish such content for being technical.",
+      "detection_method": "Two-tier: (1) HEURISTIC — content containing LaTeX, specific numerical values + formulas, dimensional analysis blocks, or named-mathematical-objects (Bessel zeros, eigenvalues, Schumann modes) gets a 'math_dense_candidate' flag; (2) MANUAL CONFIG — sloppytoppy/math-dense-surfaces.json lists surface_ids confirmed by operator/tinker as load-bearing-technical.",
+      "rubric_adjustments_for_math_dense": "Length: target_max raised 50% (e.g., detail_evidence target_max 600 → 900). Understandability: jargon-density threshold raised from 1-per-100 to 5-per-100 before deductions apply; concept-stacking threshold raised from 2 to 4; math_without_parallel_prose dimension only deducts if NO accompanying prose exists at all (one parallel sentence satisfies the test).",
+      "initial_math_dense_seed_list_for_phase_1": [
+        "WIN-001:detail_evidence (Tesla 11.78 Hz — apparatus-coherence parameter derivation)",
+        "WIN-038:detail_evidence (Schumann 7.83 Hz — Bessel-zero math for cavity resonance)",
+        "WIN-038:detail_extra (if present — derivation appendix)",
+        "WIN-052:detail_evidence (RAR — 1-100 kpc scale calc, 10^12-10^14 ratio)",
+        "WIN-062:detail_evidence (Tesla wave speed — 0.08484s, ~1.57c waveguide derivation)",
+        "part4 — Live Power Dashboard relevant <details>-blocks (NEC parameter tables)",
+        "Any future WIN flagged via the heuristic; operator confirms via direct edit to math-dense-surfaces.json"
+      ],
+      "kernel_of_truth_protection_q2": "Sloppytoppy's rewrite gating ALSO checks for kernel-of-truth preservation. Before committing a rewrite, sloppytoppy compares the original surface's kernel-of-truth statement (extracted via a tldr-pattern match: usually the first sentence of detail_evidence or the tldr_verdict) against the rewrite. If the kernel-sentence is materially changed (semantic distance > threshold), the rewrite is PUNTED to analyst via the punt mechanism, not committed."
+    },
+    "calibration_q3_method": "Hand-score 5 representative surfaces during PROP authoring. Use these as reference points for Phase 1 ramp-up. Operator validates the hand-scores match intuition before sloppytoppy goes live. See implementation_artifacts.rubric_calibration_sample below for the 5 chosen surfaces and their hand-scores.",
+    "math_dense_q2_appendix": "The math_dense flag is NOT a blanket immunity. A math_dense surface that contains 1000 words of jargon-heavy prose AND a 2-line equation is still scoring badly on understandability (the 1000 words of prose surrounding the equation is the readability problem, not the equation itself). The flag specifically protects the EQUATION-and-immediate-context from punishment."
+  },
+  "section_breakdown_unit_design": {
+    "per_win_units": {
+      "scored_fields": ["tldr_verdict", "tldr_evidence", "detail_verdict_text", "detail_evidence", "detail_extra (when present)"],
+      "field_skipped_in_phase_1": "detail_claim (avg 18 words, p90 38, rarely a readability problem — flagged only if it exceeds 50 words, handled via a one-off scan during Phase 1 not via the regular scoring batch)",
+      "surface_id_format": "WIN-<id>:<field_name> (e.g., WIN-001:tldr_verdict)",
+      "phase_1_count": "71 WINs × 4 always-present fields = 284 surfaces, plus 21 detail_extra = 305 WIN-field surfaces"
+    },
+    "per_section_units_q5_decision": {
+      "decision": "Score the SOURCE (data/sections.json), not the generated docs/index.html. Rationale: sections.json is the single point of truth; docs/index.html is regenerated from it by build.js. Score continuity across rebuilds is preserved.",
+      "scoring_unit": "Per <details>-block in each part's html field. Total ~115 details-blocks across all 13 parts (part1=9, part1b=3, part2=13, part2b=6, part3=1, part4=13, part5=8, part6=14, part7=12, part8=18, part9=6, part10=4, part8b=8).",
+      "surface_id_format": "<part_id>:details-<n> where n is the 1-indexed position within the part's html field (e.g., part4:details-7)",
+      "phase_1_count": "115 section-block surfaces",
+      "h2_h3_subsections_alternative": "Considered scoring per <h2> or per <h3> heading-block instead. Rejected because: (a) part1's 27 <h3>s are mostly nested inside <details> already, scoring per-h3 inside-a-details creates double-counting; (b) <details>-block is the user-experience unit (one click = one block of text); the rubric should align to that unit.",
+      "killshot_tab_handling": "part5 is the Kill-Shot tab. Same per-<details> rule applies. Killshot rows are one-sentence-each binary tests; if a <details>-block contains a row, that's the surface.",
+      "predictions_tab_handling": "data/predictions.json is a separate file with its own structure. Phase 1 scope EXCLUDES predictions-page scoring (predictions are agent-authored prospective assessments; readability is less load-bearing than for static analytical content). Phase 2+ may extend.",
+      "breaking_news_handling": "If a Breaking-News-style banner exists in part1 or elsewhere, it gets a <details>-block surface ID. No special-case logic."
+    },
+    "generated_html_blocks_handled_separately": {
+      "ds_thesis_hero_etc": "build-scripts/generate-html.js generates ds-thesis-hero, ds-falsifiability-module, ds-verdict-bars, ds-evaluate-preface. These are derived from sections.json + wins.json so they inherit any improvements made to the source. Phase 1 does NOT score them directly. If their readability becomes a problem, it's an upstream content issue (fix sections.json) OR a generation-template issue (fix generate-html.js — out of sloppytoppy scope; goes through normal decider patch flow)."
+    },
+    "total_phase_1_surface_count": "305 WIN-field + 115 section-block = ~420 surfaces site-wide"
+  },
+  "internal_format_spec": {
+    "design_decision_q6": "Per-surface-type formats (not one unified format). Rationale: a tldr_verdict's format is fundamentally different from a detail_evidence's format — the former is a punchline, the latter is an argument-with-evidence. A single unified format would either be too vague to enforce or too rigid to fit multiple surface types.",
+    "format_file_location": "monitor/prompts/reference/sloppytoppy-format-spec.md (referenced by sloppytoppy.md AND, in Phase 3, by analyst.md + curmudgeon.md as authoring guidance)",
+    "interaction_with_existing_tldr_convention_q7": "CLAUDE.md Progressive Disclosure section specifies 2-3 sentence TLDR with punchline-first. The sloppytoppy format-spec EXTENDS this: 2-3 sentence TLDRs remain the standard for tldr_verdict/tldr_evidence; the spec adds guidance on the BODY (detail_evidence, detail_verdict_text, section <details>-blocks) that doesn't currently have a structured format. No contradiction; sloppytoppy specs the body that progressive-disclosure leaves underdefined.",
+    "format_templates_per_surface_type": {
+      "tldr_verdict": {
+        "template_name": "punchline-first claim-blocker",
+        "structure": "[Punchline: 1 sentence stating what's wrong / what's right]. [Mechanism: 1 sentence explaining the structural reason]. [Optional contrast: 1 sentence showing what dome claims vs what's true].",
+        "length_target": "20-50 words (1-3 sentences)",
+        "example_good": "'The formula requires Earth's diameter, not any dome dimension. The dome's own version history admitted circular reasoning. The value was publicly known long before the dome's prediction was written.' (WIN-001 — 38 words, 3 sentences, all three structural slots filled)",
+        "example_bad": "'There are several issues with the dome's claim that 11.78 Hz is the Schumann resonance. First, the formula does not in fact use any dome dimension. Second, the version history of the dome model itself admits the reasoning is circular. Third, the value of 11.78 Hz was already publicly known long before the prediction page was authored.' (hypothetical bad rewrite — 70 words, leads with framing instead of punchline)"
+      },
+      "tldr_evidence": {
+        "template_name": "evidence-summary",
+        "structure": "[Hook: 1 sentence on the strongest evidence]. [Supporting fact: 1-2 sentences with numerical or empirical detail]. [Counter-context: 1 optional sentence on what the dome got vs what's measured].",
+        "length_target": "30-65 words (2-4 sentences)",
+        "example_good": "'Tesla's 11.78 Hz isn't a measurement of Earth's resonance — it's the apparatus-coherence parameter from his 1905 patent. Earth's resonance was first measured in the 1960s as 7.83 Hz, not 11.78 Hz; Tesla's separately-published predictions for it (~6, 18, 30 Hz) also miss the measured Schumann band.' (WIN-001 — 50 words)"
+      },
+      "detail_verdict_text": {
+        "template_name": "argument-with-reasoning",
+        "structure": "[Verdict-restatement: 1-2 sentences elaborating the tldr_verdict]. [Mechanism-detail: 1 paragraph (3-5 sentences) on the structural reasoning]. [Counter-claim addressed: 1 paragraph addressing strongest defender pivot].",
+        "length_target": "100-300 words (2-3 short paragraphs)",
+        "structural_signposts": "Use sentence-leading transitions ('The mechanism is...', 'A defender might argue..., but...', 'The key point is...') sparingly — at most 2 per surface. Overusing them creates formulaic feel."
+      },
+      "detail_evidence": {
+        "template_name": "evidence-stack-with-numerical-anchor",
+        "structure": "[Topic sentence with one key number]. [Primary evidence paragraph: 3-5 sentences, primary citation, primary calculation]. [Secondary evidence paragraph: 2-4 sentences, supporting citations]. [Counter-evidence addressed: 1 paragraph showing what defenders cite and why it doesn't save the claim].",
+        "length_target": "250-600 words",
+        "math_handling": "If the surface is math_dense, equations may exceed the prose-only target but each equation MUST be accompanied by a 1-sentence parallel prose statement of what it means.",
+        "citation_handling": "Inline citations OK. Don't dump bibliography; use parenthetical references with author + year."
+      },
+      "detail_extra": {
+        "template_name": "appendix-supporting-material",
+        "structure": "Same as detail_evidence but more flexible — used for derivations, lookup tables, supporting detail that doesn't fit the main argument flow.",
+        "length_target": "150-500 words"
+      },
+      "section_details_block": {
+        "template_name": "progressive-disclosure-unit",
+        "structure": "[Summary line (rendered as the <summary> child element): 1 sentence stating what's inside]. [Body content: 1-3 paragraphs, depends on subsection role]. [Optional forward-link to related <details>-block]",
+        "length_target": "200-700 words for body content (excluding the <summary> line)",
+        "summary_line_length_target": "10-20 words; should be readable as standalone (e.g., 'Why the 11.78 Hz number is not what Tesla measured')",
+        "subsection_role_variants": "Killshot rows: 1 sentence each. Falsification tests: claim → status → 1-sentence why. Methodology sections: standard argument-stack."
+      }
+    },
+    "scaffolding_not_template_fill_q6_addendum": "The format is GUIDANCE, not a fill-in-the-blank template. Sloppytoppy's rewrite mode aims to PRODUCE content that fits the template shape. Analyst and curmudgeon (Phase 3 adoption) consult the format-spec as a check on their own authoring but are NOT required to mechanically follow it. The format-spec captures patterns observed in the best-scoring existing content (calibration sample); it's descriptive of 'good' rather than prescriptive of 'must'.",
+    "violation_handling_q8": {
+      "phase_1_2": "Format violations get scored down on the understandability axis (the dimensions ARE the format manifested as deductions). No explicit 'violation flag' mechanism in early phases.",
+      "phase_3_adoption_by_authoring_agents": "When analyst/curmudgeon adopt the format-spec, sloppytoppy scoring serves as the audit on adoption — surfaces scored low after adoption indicate the format-spec was ignored. Operator + tinker review periodically.",
+      "no_decider_gate": "Sloppytoppy does NOT block decider integration. Decider's job is to integrate analyst/curmudgeon EXPs without sloppytoppy-side veto. Sloppytoppy's effect is downstream (score the integrated content; rewrite if low; surface to operator if punted)."
+    }
+  },
+  "dispatcher_and_run_modes": {
+    "high_level": "Each invocation reads sloppytoppy/scores.json, decides whether scoring or rewriting is needed, runs ONE mode, exits.",
+    "mode_selection_logic": {
+      "step_1_read_state": "Read monitor/sloppytoppy/scores.json. For each WIN/section surface in canonical scope (305 WIN-field + 115 section-block), determine: scored? scored-but-hash-mismatched? low-scored (composite<7.5)? cooldown-active?",
+      "step_2_priority_order": [
+        "Priority A — Mode 1 (scoring) if: any unscored surfaces exist OR hash-mismatch count > 10 (re-scoring threshold; tune as needed)",
+        "Priority B — Mode 2 (rewriting) if: Priority A doesn't fire AND any low-scored surface exists outside cooldown",
+        "Priority C — No-op if neither A nor B fires"
+      ],
+      "exclusivity": "Only ONE mode runs per invocation. If both A and B have work, A wins; B work waits until next invocation. This matches operator's 'a run is EITHER scoring OR rewriting, never both.'",
+      "internal_re_score_clarification": "Within Mode 2, sloppytoppy re-scores its own draft rewrites to compute predicted_post_score (gating mechanism b). This is INTERNAL to the rewrite mechanism, not a top-level scoring pass. The 'one mode per run' rule applies to top-level scope: scoring of unrelated unscored surfaces does NOT happen in a rewrite-mode run."
+    },
+    "mode_1_scoring_procedure": {
+      "batch_size_q4": "50 surfaces per scoring run. Rationale: rubric is mechanical; Sonnet context is comfortable at ~50 surfaces × ~600 words average = ~30k input tokens for the surfaces alone, leaving room for the rubric spec and scoring output.",
+      "prioritization": "Unscored surfaces first (lowest-id order). Once all surfaces have at least one score, hash-mismatch surfaces are next priority (oldest-mismatch first).",
+      "output": "Append/update entries in monitor/sloppytoppy/scores.json. Schema documented below.",
+      "self_test": "Phase 1: re-read scores.json post-write; verify no entries lost; verify required fields present on every new entry."
+    },
+    "mode_2_rewriting_procedure": {
+      "batch_size_q4": "5 substantive rewrites per run (detail_evidence, detail_verdict_text, section_details_block) OR 10 short rewrites (tldr_verdict, tldr_evidence). Sloppytoppy decides batch composition based on candidate list — if low-scored candidates are all detail-class, 5; if mixed, weight toward 5 substantive + a few short to fill batch budget.",
+      "prioritization": "Lowest composite score first, subject to cooldown and acceptable-floor gates.",
+      "draft_then_score_then_decide_flow": [
+        "Read original surface content + current score from scores.json",
+        "Generate rewrite draft (Opus)",
+        "Re-score the draft using the same rubric (Sonnet, in-process)",
+        "If draft_composite - current_composite >= 1.5 (minimum-improvement-delta gate) AND kernel-of-truth preserved (semantic-distance check) → write to EXP-NNN",
+        "Else if delta < 1.5 → discard draft; log skip in sloppytoppy/skipped-rewrites.jsonl",
+        "Else if kernel-of-truth NOT preserved → punt to analyst via punt mechanism"
+      ],
+      "output_format": "monitor/analyst/expansions/EXP-NNN-sloppytoppy-batch-<N>.json with: authored_by='sloppytoppy', review_class='verification', class_hint='readability-rewrite', surfaces_rewritten: [{surface_id, before_content, after_content, score_before, score_after_predicted, kernel_of_truth_preserved: true}], item_id (a self-authored expansion-tracker entry), patches (per analyst-baby shape)",
+      "tracker_entry": "Sloppytoppy writes its own expansion-tracker entries for its EXPs, source='sloppytoppy-rewrite', review_class='verification'. Marks them status='complete' when EXP is written.",
+      "self_test": "Phase 2: re-read post-write; verify EXP file valid JSON; verify patches list non-empty; verify before_content matches current source (no race with concurrent decider edits)."
+    },
+    "punt_mechanism_q12": {
+      "trigger_conditions": [
+        "Kernel-of-truth semantic-distance check fails (rewrite would materially change the load-bearing claim, not just the wording)",
+        "Sloppytoppy is uncertain whether the rewrite preserves a load-bearing technical statement (math_dense surface with proposed math-paraphrase)",
+        "Surface scoring suggests the readability problem is structural, not wordsmithing (e.g., the entire detail_evidence is jargon-stacked; cutting words won't fix it; the underlying argument needs analyst-level re-authoring)"
+      ],
+      "output_file": "monitor/sloppytoppy/punts/punt-<SURFACE_ID>-<TIMESTAMP>.json",
+      "schema": {
+        "punt_id": "auto-generated SLOPPY-PUNT-NNN",
+        "surface_id": "e.g., WIN-038:detail_evidence",
+        "current_score": "composite as of last scoring",
+        "punt_reason": "one of: 'kernel-of-truth-uncertainty', 'math-dense-paraphrase-risk', 'structural-rewrite-needed'",
+        "proposed_rewrite": "the draft sloppytoppy generated but isn't confident enough to commit",
+        "specific_question_for_analyst": "free-text 1-2 sentence question for analyst (e.g., 'Is it safe to replace the Bessel-zero derivation with a 1-sentence summary, or is the derivation itself load-bearing?')",
+        "punted_at": "ISO",
+        "punted_by_run": "sloppytoppy-<run-id>"
+      },
+      "downstream_consumption": "Decider's intake loop adds a step (Phase 2 amendment to decider-intake.md) that scans monitor/sloppytoppy/punts/ for new files and routes them as analyst Mode 2 (or Mode 0/3) work via the standard EXP shape. Sloppytoppy DOES NOT write directly to expansion-tracker or open-issues; decider remains the routing authority.",
+      "rare_expected": "Operator note: 'should be somewhat rare.' Sloppytoppy's punt threshold is set conservatively — only punt when materially uncertain. Calibration: aim for <5% of low-scored surfaces hitting the punt path. If punt rate exceeds 15% sustained, the rubric is mis-classifying surfaces or sloppytoppy is too conservative — flag for tinker Mode-3 audit."
+    },
+    "schedule_cadence_q9": {
+      "recommendation": "Daily once. Time: 03:30 (off-peak; after most analyst/curmudgeon runs).",
+      "rationale": "Phase 1 scoring backlog: 420 surfaces / 50 per run = ~9 runs for full first-pass coverage. At daily = 9 days. Faster cadences (every 12h or every 4h) would shrink that but at the cost of more Sonnet runs to amortize the same backlog. Phase 1 doesn't need fast coverage — operator validates the rubric first. After Phase 1 first-pass, scoring is incremental (hash-mismatch only), so 1/day is comfortable.",
+      "phase_2_cadence": "Same daily cadence. Most runs will be rewriting mode after Phase 1 first-pass finishes. Rewrite mode is more expensive (Opus drafts) but small batch size (5 substantive) bounds cost.",
+      "operator_tunable": "Cadence is the scheduled-task setting. Operator changes it without prompt edit if Phase 2 demand suggests twice-daily would be useful."
+    },
+    "model_choice_q10": {
+      "scoring_mode_model": "Sonnet (claude-sonnet-4-6)",
+      "scoring_rationale": "Mechanical rule-compliance. Rubric has explicit dimensions and deductions; Sonnet excels at applying explicit rules to text. Cost: ~5x cheaper than Opus per token; scoring is high-volume work where Sonnet pays for itself.",
+      "rewriting_mode_model": "Opus (claude-opus-4-7)",
+      "rewriting_rationale": "Judgment-heavy compression. Identifying which words can be cut without losing the argument — and proposing a structural rephrase that preserves the kernel — requires the same depth as analyst's kernel-of-truth work. Sonnet at this task risks compressing away load-bearing content (the failure mode the directive explicitly warns against).",
+      "model_class_pattern_reference": "Same shape as PROP-034 (split-analyst-baby-vs-deep): Sonnet for narrow rule-compliance work (baby drains verification-class ISSs; sloppytoppy scores rule-compliantly), Opus for judgment-heavy authoring (deep-attack expansions; rewrite compression). Pattern reuse aids reasoning-about-pipeline."
+    },
+    "curmudgeon_interaction_q11": {
+      "post_rewrite_review": "Sloppytoppy's rewrites enter the standard curmudgeon review queue via the EXP/decider/curmudgeon flow. class_hint='readability-rewrite' (Q14: yes, add this hint) signals curmudgeon to skip kernel-of-truth-completeness checks (assumed unchanged from pre-rewrite content since sloppytoppy preserved it) and focus its review on whether the rewrite introduced any scientific inaccuracy or removed a load-bearing detail.",
+      "verify_mode_routing_via_prop_038": "If PROP-038 (curmudgeon discovery-vs-verify split) is implemented before Phase 2 launches, sloppytoppy rewrites route to dome-curmudgeon-verify (Sonnet) per PROP-038's class=verification gate. This makes the post-rewrite review cheap. If PROP-038 hasn't landed yet, rewrites go through main Opus curmudgeon — slightly more expensive but functionally correct.",
+      "loopback_on_curmudgeon_finding": "If curmudgeon flags a sloppytoppy rewrite as introducing an issue (scientific accuracy, lost detail, etc.), the standard ISS-creation flow handles it. Decider creates ISS, routes to analyst (or analyst-baby) for resolution. Sloppytoppy is NOT specifically pinged; the cooldown window protects against thrash, and the next sloppytoppy run will see the post-ISS-fix content with a fresh score."
+    }
+  },
+  "phased_implementation_plan": {
+    "phase_1_scoring_only": {
+      "duration_target": "7 days",
+      "scope": "Sloppytoppy runs daily, scores surfaces, writes monitor/sloppytoppy/scores.json. No rewrites. No analyst EXPs authored.",
+      "deployment_steps": [
+        "Operator reviews this PROP",
+        "Operator + tinker create monitor/prompts/sloppytoppy.md (the agent prompt — see implementation_artifacts.sloppytoppy_md_prompt_draft for the draft)",
+        "Operator + tinker create monitor/prompts/reference/sloppytoppy-format-spec.md (see implementation_artifacts.format_spec_draft)",
+        "Operator + tinker create monitor/sloppytoppy/scores.json (empty, with _meta header)",
+        "Operator + tinker create monitor/sloppytoppy/rubric-config.json (thresholds), math-dense-surfaces.json (seed list), punts/ (empty directory marker file)",
+        "Operator + tinker update CLAUDE.md: add sloppytoppy row to monitoring-pipeline table, add monitor/sloppytoppy/ to File Map, add scores.json/rubric-config.json to File Ownership table",
+        "Operator + tinker update build.js OWNERSHIP and workspace-sync.md NEVER_PUSH per File Ownership classifications",
+        "Operator creates scheduled task 'dome-sloppytoppy' with cron '30 3 * * *' (daily 03:30 UTC) — Sonnet for Phase 1",
+        "First run: sloppytoppy scores 50 surfaces; operator + tinker spot-check the 50 scores against the hand-calibrated 5-surface sample",
+        "Days 2-9: backlog draining (50 surfaces/day × 9 days = 450, covers full ~420 surface scope)"
+      ],
+      "phase_1_exit_criteria": [
+        "All ~420 in-scope surfaces have at least one score in scores.json",
+        "Operator agrees rubric ranking matches intuition for 20 spot-checked surfaces (specifically: the top-10 worst-scoring and bottom-10 best-scoring should each pass operator's gut check — top-10-worst should feel verbose/obscure to the operator; bottom-10-best should feel concise/clear)",
+        "Score distribution is well-formed (not bimodal-all-low or bimodal-all-high). Specific shape target: at least 30% of surfaces score >= 7.5 (acceptable-floor); at least 10% of surfaces score < 6 (clear rewrite candidates). If distribution doesn't fit this shape (e.g., 90% score >7.5 because the rubric is too generous), Phase 1 extends and rubric is recalibrated."
+      ],
+      "phase_1_rollback_criteria": [
+        "Rubric mis-identifies load-bearing technical content as 'verbose' (e.g., WIN-038 Bessel-zero math scores below 5 despite operator confirming the math IS the argument). Mitigation: add the surface to math-dense-surfaces.json; if the seed list misses too many cases, the math_dense heuristic needs refinement",
+        "Score distribution is degenerate (>95% scoring 7-8 because rubric collapses; or >95% scoring 1-3 because rubric is too punitive). Either indicates rubric calibration failure",
+        "Sloppytoppy's scoring confidence is too low — many surfaces get inconsistent scores between scheduling runs (variance > 1.0 composite point on re-scoring same content). Indicates rubric is too subjective for Sonnet-level execution"
+      ],
+      "phase_1_no_phase_2_until": "Operator explicit go-decision after reviewing first-pass coverage. Default: Phase 2 lands only after Phase 1 exit criteria are met AND operator confirms readiness."
+    },
+    "phase_2_rewrites_enabled_CONDITIONAL": {
+      "preconditions": "Phase 1 exit criteria met + operator go-decision",
+      "duration_target": "14 days probation",
+      "scope": "Sloppytoppy in rewrite mode generates Opus drafts for low-scored surfaces, applies the three-mechanism gating, writes EXP-NNNs. Curmudgeon reviews via PROP-038 verify-mode if available; main curmudgeon otherwise.",
+      "deployment_steps": [
+        "Operator + tinker amend sloppytoppy.md to enable Mode 2 (rewriting) in dispatcher",
+        "Optional: if PROP-038 landed, ensure sloppytoppy rewrites carry class='verification' + class_hint='readability-rewrite' for verify-mode routing",
+        "First rewrite run: sloppytoppy picks 5 lowest-scored surfaces, applies the full draft-then-score-then-decide flow, writes one EXP",
+        "Operator + curmudgeon review first EXP before authorizing further runs"
+      ],
+      "phase_2_exit_criteria": [
+        "After 14 days: at least 50% of surfaces that were scored below acceptable-floor (composite < 7.5) at Phase 2 start have improved scores (composite >= 6.5 at re-score). Below 50% suggests sloppytoppy's rewrites aren't substantially improving readability",
+        "Curmudgeon flagged <=2 sloppytoppy rewrites as 'inadequate quality' (scientific inaccuracy, lost detail, or kernel-of-truth removed) in the 14-day window. >2 flags = quality discipline problem",
+        "Operator subjective satisfaction with rewrites' readability (gut check on 10 sampled rewrites)"
+      ],
+      "phase_2_rollback_criteria": [
+        "Curmudgeon flags >3 sloppytoppy rewrites as inadequate-quality in 14 days. Pause Mode 2; investigate quality gap",
+        "Operator sees reader experience visibly degraded (subjective but operator's call is dispositive)",
+        "Sloppytoppy compresses away kernel-of-truth in at least 1 surface that was NOT punted (caught by curmudgeon or operator)",
+        "Cost overrun: Opus rewrite-mode runs cost >2x estimated Phase 2 budget"
+      ]
+    },
+    "phase_3_format_adoption_by_authoring_agents_LONG_TAIL": {
+      "preconditions": "Phase 2 complete and successful; sloppytoppy's format-spec validated against 30+ rewrites",
+      "duration_target": "Indefinite (continuous)",
+      "scope": "Analyst and curmudgeon's prompts reference sloppytoppy-format-spec.md as authoring guidance. NEW content authored to the format spec; sloppytoppy's scoring shifts from rewriting-existing to spot-checking-new-content.",
+      "deployment_steps": [
+        "Author separate PROP (PROP-NNN-format-adoption) — NOT this PROP",
+        "Amend analyst-mode1-expansions.md to reference format-spec",
+        "Amend curmudgeon.md / curmudgeon-change-and-holistic.md to reference format-spec as authoring guide (not as enforcement)",
+        "Sloppytoppy's load decreases as new content adopts the format"
+      ],
+      "phase_3_exit_criteria": "None — Phase 3 is steady-state. Operator may eventually deprecate sloppytoppy if format adoption is so thorough that rewrite-mode triggers <1 surface per month for 3+ months."
+    }
+  },
+  "scheduled_task_design": {
+    "task_name": "dome-sloppytoppy",
+    "prompt_file": "monitor/prompts/sloppytoppy.md",
+    "model": "Sonnet (Phase 1); Opus (Phase 2 rewrite mode — see internal model-selection note below)",
+    "model_selection_note": "Phase 1 task uses Sonnet across all runs. When Phase 2 lands, the scheduled task may switch to Opus (since rewrite runs use Opus internally) — alternative is to keep Sonnet at the scheduled-task level and have Opus invoked only inside rewrite drafts. Recommendation TBD per Phase 2 launch — operator decides at that time.",
+    "schedule": "30 3 * * * (daily 03:30 UTC)",
+    "cron_pattern_offset_rationale": "Off-peak. After most analyst/curmudgeon runs which fire 01-22 UTC. Avoids any overlap with workspace-sync (hourly at :03/:05). 03:30 is a clean window.",
+    "expected_runtime": "Phase 1 scoring: 5-15 min per run (Sonnet scoring 50 surfaces). Phase 2 rewrites: 15-30 min per run (Opus drafting 5 surfaces + Sonnet re-scoring each draft).",
+    "expected_cost_per_run": "Phase 1: ~$0.50-$1.50/run (Sonnet, 50 surfaces × ~600 input words avg + ~50 words output each). Phase 2: ~$3-$7/run (Opus drafts + Sonnet re-scores). Both well within pipeline-budget norms.",
+    "task_id_field": "Generated by scheduled-task creation; reference as 'sloppytoppy-<task-id>' in tinker pipeline-health checks"
+  },
+  "prompt_file_split_design": {
+    "primary_prompt": "monitor/prompts/sloppytoppy.md (dispatcher + Mode 1 + Mode 2)",
+    "reference_doc_1": "monitor/prompts/reference/sloppytoppy-format-spec.md (the internal format spec — read by sloppytoppy AND, in Phase 3, by analyst/curmudgeon)",
+    "reference_doc_2": "monitor/prompts/reference/sloppytoppy-rubric-detail.md (optional Phase 1+ — long-form rubric explanation if sloppytoppy.md becomes too long; not strictly required at launch)",
+    "config_files": [
+      "monitor/sloppytoppy/rubric-config.json (thresholds: acceptable_floor, min_improvement_delta, cooldown_days, batch_size_scoring, batch_size_rewrite, math_dense_threshold_multipliers)",
+      "monitor/sloppytoppy/math-dense-surfaces.json (manual flag list — operator + tinker maintain)",
+      "monitor/sloppytoppy/scores.json (sloppytoppy writes; everyone else reads)"
+    ],
+    "split_rationale": "Sloppytoppy.md is the dispatcher + mode procedures. The format-spec is large and stable; pulling it to a reference file keeps the dispatcher prompt compact and lets analyst/curmudgeon (Phase 3) reference the same file. The rubric is somewhere in between — small enough to live inline in sloppytoppy.md at launch; can be extracted if it grows."
+  },
+  "dry_run_simulation": {
+    "scenario": "Sloppytoppy first scoring run scores 50 surfaces. We simulate what would happen on WIN-001 + WIN-038 + WIN-052 + WIN-019 + WIN-060 (5 of the surfaces in batch).",
+    "expected_scores": {
+      "WIN-001:tldr_verdict_simulated_score": "length=8 (38 words, target 20-50 → within target → 10; minor sentence-length penalty for sentence 3 = 9.5; rounded to 8 on the safe side). Understandability=8 (one Tesla-jargon item 'apparatus-coherence parameter' is technical, semi-explained; no math; no forward refs; passive voice in 'was publicly known' = -0.5). Composite = 0.4*8 + 0.6*8 = 8.0. Above floor → no rewrite candidate.",
+      "WIN-038:detail_evidence_simulated_score_no_math_flag": "length=4-5 (very long, near max for the corpus). Understandability without math-dense flag: 3-4 (Bessel zero, ionospheric TEM mode, Schumann cavity, quarter-wave frequency, dome height formula — heavy jargon). Composite without flag = 0.4*4.5 + 0.6*3.5 = 3.9. Would trigger rewrite — WRONG because the math IS the argument.",
+      "WIN-038:detail_evidence_simulated_score_WITH_math_flag": "After math-dense flag: length target raised 50% → 4 → 6. Understandability: jargon threshold raised → no deduction (jargon is load-bearing). Composite = 0.4*6 + 0.6*8 = 7.2. Below floor (7.5) — would still trigger rewrite. Mitigation: the rewrite would only succeed if the draft-then-score-then-decide gate produces a draft scoring >= 8.7 (current 7.2 + minimum delta 1.5). Realistic? Unlikely for math-dense content; gate would skip rewrite (correct outcome).",
+      "WIN-052:tldr_verdict_simulated_score": "length=7 (current 50 words, target max 50; right at boundary; sentence-length penalty for long opening sentence). Understandability=7 (RAR jargon, dome-side numbers, MOND reference). Composite = 0.4*7 + 0.6*7 = 7.0. Below floor — rewrite candidate. Realistic? Yes — the WIN-052 tldr could be tightened.",
+      "WIN-019:tldr_verdict_simulated_score": "length=10 (24 words; well within target). Understandability=9 (clean prose; minor 'doesn't correspond to any real geometric property' is slightly abstract). Composite=0.4*10+0.6*9=9.4. Above floor — no rewrite.",
+      "WIN-060:tldr_verdict_simulated_score": "length=10 (19 words). Understandability=9 (NOAA/ESA acronyms appear without expansion = -0.5; mostly clean). Composite=0.4*10+0.6*9.5=9.7. Above floor — no rewrite."
+    },
+    "outcome": "Of 5 sample WINs scored, 1 (WIN-052:tldr_verdict at 7.0) would be a rewrite candidate; 1 (WIN-038:detail_evidence at 7.2 with math-dense flag) would be borderline but blocked by the minimum-delta gate; 3 (WIN-001/019/060 tldr_verdicts) score above acceptable-floor. This is the realistic shape for Phase 1: not every surface needs work; the rubric+gates filter to ~20-30% of surfaces.",
+    "shape_check": "Operator can validate the simulation: does WIN-052's tldr_verdict feel like the most-rewritable of the 5? (Tinker's bet: yes — it leads with the dome's claim and buries the punchline, mixing dome-side numbers with the actual point.)"
+  },
+  "counter_argument": {
+    "framing": "Steelman the case for NOT building sloppytoppy. Per operator preference 'Think about the other side of the argument too.' Five strongest counter-arguments rebutted, plus two original counter-arguments tinker adds.",
+    "counter_argument_1": {
+      "claim": "Adding agents adds pipeline complexity. Pipeline already produces 60+ commits/day; sloppytoppy adds more. Operational overhead, monitoring burden, more failure modes.",
+      "rebuttal": "Cost is real. Cumulative pipeline complexity: 9 → 10 agents, +1 cron schedule, +CLAUDE.md update, +tinker pipeline-health check addition. But the cost-benefit: the wordiness problem operator observed is REAL (the operator did a read-through and observed it; that's evidence). Without sloppytoppy, the alternatives are: (a) hope curmudgeon catches it (but curmudgeon's lens is adversarial-skeptic, not audience-advocate — different rubric); (b) ask analyst to be shorter (but analyst's 'think hard' produces depth; double-objective dilutes); (c) operator hand-edits (doesn't scale to 420 surfaces). Sloppytoppy is the lowest-cost reliable solution.",
+      "weight": "Real concern. Operator's call on whether the wordiness problem is severe enough to justify the complexity cost. Tinker's bet: yes — operator's read-through observation is the kind of qualitative data point that warrants a structured fix."
+    },
+    "counter_argument_2": {
+      "claim": "Curmudgeon could just add a readability rubric to its existing review cycle.",
+      "rebuttal": "Curmudgeon's job is adversarial-skeptic. Sloppytoppy's job is audience-advocate. Different lenses. Asking the same agent to be both creates rubric drift — eventually curmudgeon would soften its hole-finding to accommodate readability (or vice versa), and we lose the role purity that makes either lens valuable. PROP-038 is currently splitting curmudgeon into discovery-mode + verify-mode for cost reasons; adding readability would make it a THREE-mode dispatcher, complexity creeps further. Cleaner to keep curmudgeon's lens pure and add sloppytoppy as the third lens.",
+      "weight": "Strong reason for separation. Lens purity is a recurring pipeline-design principle (analyst vs curmudgeon split; analyst vs analyst-baby split; PROP-038 curmudgeon-discovery vs verify split). Sloppytoppy fits the established pattern."
+    },
+    "counter_argument_3": {
+      "claim": "Analyst could just author shorter content. Front-load the readability work at authoring time, not rewrite time.",
+      "rebuttal": "Analyst's prompt explicitly says 'think hard' — verbosity is a side-effect of judgment-heavy work. Adding a readability constraint to analyst dilutes the kernel-of-truth focus. Phase 3 of this PROP DOES propose analyst (and curmudgeon) eventually adopt the format-spec — but as adjunct guidance, not as a competing objective. The structural fix is to have audience-advocacy be a SEPARATE pass, not a constraint on the depth pass.",
+      "weight": "Partial counter — Phase 3 acknowledges authoring-time guidance as the long-term ideal. But Phase 1+2 fix the existing wordy backlog that authoring-time fixes can't reach retroactively."
+    },
+    "counter_argument_4": {
+      "claim": "Score-then-rewrite is a slow feedback loop — by the time a low score triggers a rewrite, the content may have already changed.",
+      "rebuttal": "Hash-mismatch detection handles re-score-on-change (scores.json stores content_hash_at_score_time). When a surface changes (via decider patch or analyst expansion), its hash mismatches and it re-enters the scoring pool. So the feedback loop is: content-change → next-scoring-run re-scores → if new score is low → next-rewriting-run picks it up. Maximum lag ~2 days (one scoring run + one rewriting run at daily cadence). Acceptable for a non-urgent readability concern.",
+      "weight": "Valid concern about lag, but the mitigation (hash-mismatch) is built in. Lag is bounded."
+    },
+    "counter_argument_5": {
+      "claim": "Flat-earth-level reader as the target may compromise scientific credibility with scientists.",
+      "rebuttal": "The review's published audience is the dome author's audience (flat-earthers and dome-curious readers). Scientists already accept the dome model is wrong; they're not the audience we're trying to convince. Sloppytoppy targets the audience that ACTUALLY reads the site. Compressing for that audience may make the site feel less scientifically dense to a scientist visitor — but that's a tradeoff in favor of the intended audience.",
+      "weight": "Valid tradeoff. Operator's audience-targeting decision is dispositive; tinker's role is to implement the targeting, not second-guess it."
+    },
+    "tinker_added_counter_argument_6": {
+      "claim": "Rubric calibration risk: if the rubric mis-scores kernel-of-truth content as 'verbose,' Phase 1 produces wrong priorities AND Phase 2 rewrites compress away load-bearing content. This is the central failure mode of the whole agent.",
+      "rebuttal": "Phase 1 is scoring-only with operator spot-check + hand-calibrated 5-surface sample. The Phase 1 exit criteria require operator validation that the rubric matches intuition before Phase 2 lands. The math-dense flag system explicitly protects load-bearing technical content. Phase 2 has the kernel-of-truth semantic-distance check + the punt mechanism for uncertain cases. Multiple layers of defense against the central failure mode. Worth acknowledging: NO layer is perfect, and if all layers fail, sloppytoppy could compress away load-bearing content. Mitigation depth: curmudgeon's post-commit review catches anything the prior layers missed.",
+      "weight": "Highest-importance counter-argument. The defense-in-depth design is the response. Phase 1 rollback criteria specifically include this failure mode."
+    },
+    "tinker_added_counter_argument_7": {
+      "claim": "The pipeline has been running fine without sloppytoppy. Why now? Why not just observe and decide later?",
+      "rebuttal": "Operator's read-through is the trigger event. Operator observed the wordiness problem now, while reading the site. Building sloppytoppy now (rather than later) captures the operator's attention and judgment AT THE MOMENT of observing the problem, which is the highest-fidelity signal. Building it later would require re-establishing the context — when operator is no longer fresh on the specific examples of wordiness. There's also a self-reinforcing dynamic: as new WINs and sections are authored without readability discipline, the corpus drifts further from the target. Earlier intervention is cheaper.",
+      "weight": "Why-now is a legitimate question. The answer: trigger-event-timing matters."
+    }
+  },
+  "what_NOT_to_do": [
+    "Do NOT have sloppytoppy edit wins.json or sections.json directly. Rewrites go through the standard analyst/expansions/EXP-NNN flow; decider handles integration. This preserves the existing patch-discipline.",
+    "Do NOT extend Phase 1 to include rewriting. Phase 1 MUST be scoring-only. Operator validation gate before Phase 2 is essential for catching rubric calibration errors before they propagate into actual content edits.",
+    "Do NOT skip the kernel-of-truth semantic-distance check in Phase 2. The check IS the defense against the central failure mode (compressing away load-bearing content).",
+    "Do NOT batch with PROP-038 implementation. Sloppytoppy and PROP-038 are independently valuable; they interact in Phase 2 (sloppytoppy's verification-class rewrites route to curmudgeon-verify if available) but the dependency is one-way and optional.",
+    "Do NOT make sloppytoppy a hard gate on decider integration. Decider integrates analyst/curmudgeon EXPs without sloppytoppy approval. Sloppytoppy's effect is downstream (audit + rewrite candidate). Hard-gating would create deadlocks.",
+    "Do NOT compress equations, dimensional analysis, or specific numerical values out of math-dense surfaces. The math IS the argument; sloppytoppy must protect it. math-dense-surfaces.json + the math_dense_threshold_multipliers are the formal protection.",
+    "Do NOT skip the 5-surface hand-calibration sample at PROP-authoring time. The calibration is the reference standard for operator validation. Without it, operator can't sanity-check the rubric against known-good examples.",
+    "Do NOT name the agent anything other than 'sloppytoppy'. Operator was explicit: name is non-negotiable. (Tinker's note: the name is unusual but operator's product naming privilege is absolute.)"
+  ],
+  "cost_analysis": {
+    "phase_1_daily_cost_estimate": "~$0.75/run (Sonnet, 50 surfaces × ~600 words/surface = ~30k input tokens + ~5k output tokens). At daily cadence: ~$22.50/month.",
+    "phase_1_backlog_clearance_cost": "9 runs × $0.75 = ~$6.75 to score all 420 surfaces once.",
+    "phase_2_daily_cost_estimate": "~$5/run (Opus drafts for 5 surfaces × ~3k words each = ~15k input + ~10k output Opus tokens; Sonnet re-scores at ~$0.50 add-on). At daily cadence: ~$150/month for rewrite work alone.",
+    "phase_2_typical_rewrite_distribution": "Most days: 5 rewrites. Some days: 0 rewrites (no candidates below floor + outside cooldown). Some days: 10 short rewrites. Realistic: ~$3-7/run.",
+    "comparison_to_existing_agent_costs": "Analyst-Opus daily: ~$15-30. Curmudgeon-Opus daily: ~$10-20. Sloppytoppy at $5/day in Phase 2 is modest by pipeline standards.",
+    "phase_3_format_adoption_cost": "Zero direct cost — format-spec is a reference doc consulted at authoring time; doesn't add new agent runs.",
+    "false_positive_cost": "If rubric mis-scores N surfaces and operator + curmudgeon reject N rewrites, cost is N × $1 (Opus draft) + cooldown time. With cooldown=14d, false positives are self-limiting.",
+    "comparison_to_NOT_doing_this": "Cost of NOT building sloppytoppy: operator hand-edits at $0 (but operator time is the bottleneck). OR wordiness persists, audience-engagement degrades over time, dome author's audience finds the review less compelling. Hard to quantify but real."
+  },
+  "acceptance_criteria_phase_1": {
+    "deployment_acceptance": [
+      "sloppytoppy.md authored and reviewed by operator + tinker",
+      "sloppytoppy-format-spec.md authored and reviewed",
+      "scores.json + rubric-config.json + math-dense-surfaces.json created with sensible defaults",
+      "Scheduled task 'dome-sloppytoppy' created with cron='30 3 * * *'",
+      "CLAUDE.md updated: pipeline table row, File Map entry, File Ownership table entries",
+      "build.js OWNERSHIP and workspace-sync.md NEVER_PUSH updated for any sloppytoppy files that need classification",
+      "First run completes successfully (50 surfaces scored, scores.json valid JSON, no errors in run log)"
+    ],
+    "rubric_calibration_acceptance": [
+      "First-day spot-check: tinker reviews 10 of the 50 first-batch scores against hand-calibration sample. Inconsistency with sample (>1.0 composite-point divergence on hand-known surfaces) blocks Phase 1 continuation pending rubric adjustment",
+      "Operator validates rubric at end of Phase 1 first-pass coverage (all 420 surfaces scored): top-10-worst and bottom-10-best feel right",
+      "Score distribution: 30%+ above floor, 10%+ below 6 — confirms rubric discriminates"
+    ],
+    "infrastructure_acceptance": [
+      "Workspace-sync rescues sloppytoppy/scores.json (workspace-owned per File Ownership)",
+      "Tinker's pipeline-health check correctly detects stale sloppytoppy summary (>4h since expected daily run = flag)",
+      "monitor/sloppytoppy/ files are visible in git after first workspace-sync cycle"
+    ]
+  },
+  "implementation_files": {
+    "new_prompts": [
+      "monitor/prompts/sloppytoppy.md (the agent prompt — see implementation_artifacts.sloppytoppy_md_prompt_draft below)",
+      "monitor/prompts/reference/sloppytoppy-format-spec.md (the internal format spec — see implementation_artifacts.format_spec_draft below)"
+    ],
+    "new_data_files": [
+      "monitor/sloppytoppy/scores.json (initially empty with _meta header)",
+      "monitor/sloppytoppy/rubric-config.json (thresholds)",
+      "monitor/sloppytoppy/math-dense-surfaces.json (seed list)",
+      "monitor/sloppytoppy/punts/ (directory marker — for Phase 2; .gitkeep recommended)"
+    ],
+    "new_output_directories": [
+      "monitor/sloppytoppy/ (root)",
+      "monitor/sloppytoppy/punts/ (for Phase 2 integrity-uncertain punts)"
+    ],
+    "claude_md_updates": [
+      "Monitoring Pipeline table: add row 'dome-sloppytoppy | daily 03:30 | Sonnet (Opus in Phase 2 rewrite mode) | sloppytoppy.md | Readability scoring + rewrites'",
+      "File Map (Data Flow section): add 'monitor/sloppytoppy/scores.json' and related files",
+      "File Ownership table: classify scores.json as workspace-owned (sloppytoppy writes it from its scheduled-task run, which uses the FUSE workspace mount); rubric-config.json + math-dense-surfaces.json as git-owned (operator + tinker maintain via commit); punts/ as append-only (one file per punt, immutable)",
+      "Critical Workflow Rules: no addition required (sloppytoppy doesn't edit wins.json/sections.json directly so the 'run tests before committing data changes' rule doesn't extend)",
+      "Computed Counts: no addition required",
+      "Phase 1 ownership exception NOT NEEDED — sloppytoppy doesn't make additive edits to other agents' files"
+    ],
+    "build_js_ownership_updates": [
+      "Add to OWNERSHIP { 'monitor/sloppytoppy/rubric-config.json': 'git', 'monitor/sloppytoppy/math-dense-surfaces.json': 'git' } — operator + tinker write these from clones, push to git, build.js publish copies to workspace",
+      "scores.json is workspace-owned, so workspace-sync rescues it (universal-pusher mode covers this)",
+      "punts/ is append-only-glob (handled by workspace-sync's normal append-only handling)"
+    ],
+    "workspace_sync_md_never_push_updates": [
+      "Add 'monitor/sloppytoppy/rubric-config.json' and 'monitor/sloppytoppy/math-dense-surfaces.json' to NEVER_PUSH (mirror the build.js classifications)"
+    ],
+    "scheduled_task_creation": "Operator creates 'dome-sloppytoppy' task with the cron and prompt-file pointer specified in scheduled_task_design above",
+    "test_js_additions": "No new tests required for Phase 1 launch (scoring doesn't touch data files). Phase 2 add tests for sloppytoppy EXP shape if needed."
+  },
+  "implementation_authority": "Design-pending-operator-review. Tinker may NOT self-apply. Operator reviews this PROP; on go-decision, operator + tinker pair-program the deployment.",
+  "implementation_authority_steps": [
+    "Step 1 (operator): review this PROP. Validate the rubric design, the rewrite-threshold three-mechanism spec, the format-spec direction, the phasing.",
+    "Step 2 (operator + tinker, paired): apply the prompt drafts (sloppytoppy.md, format-spec.md) to the actual paths. Create the data files with defaults. Tinker authors edits to CLAUDE.md, build.js, workspace-sync.md per File Ownership classifications.",
+    "Step 3 (operator): create the scheduled task with the cron pattern. Start with task DISABLED until step 4 completes.",
+    "Step 4 (tinker, post-deployment): run a dry-run scoring pass on 10 surfaces using a manual invocation (not scheduled). Validate scores.json shape. Validate scoring matches the hand-calibration sample within ±1 composite-point.",
+    "Step 5 (operator): enable the scheduled task. First production run completes. Operator + tinker spot-check first 50 scores.",
+    "Step 6: Phase 1 proceeds with daily runs until exit criteria met (~9 days). Tinker monitors via pipeline-health checks. Score distribution + spot-check accuracy reported by tinker at each Mode-3 audit.",
+    "Step 7 (operator decision): Phase 2 go/no-go after Phase 1 exit criteria are met.",
+    "Step 8 (Phase 2 deployment, operator + tinker): amend sloppytoppy.md to enable Mode 2; first rewrite run reviewed before authorizing further runs.",
+    "Step 9: Phase 2 proceeds with daily runs for 14 days. Tinker tracks: low-score-to-rewrite conversion rate; predicted-vs-actual score-improvement; curmudgeon-flagged-inadequate count; punt-to-analyst rate.",
+    "Step 10 (operator decision): post-Phase-2 evaluation. Continue, refine rubric, expand to predictions-page, or rollback."
+  ],
+  "related_props": [
+    "PROP-034 (split-analyst-baby-vs-deep) — closest precedent. Class-based routing pattern reused here. Phase 1/Phase 2 deployment shape mirrors PROP-034's.",
+    "PROP-038 (curmudgeon-discovery-vs-verify-split) — sloppytoppy's verification-class rewrites route to curmudgeon-verify if PROP-038 lands before Phase 2",
+    "PROP-025 (curmudgeon verification-class batching) — same review_class field that sloppytoppy uses to declare its EXPs are batchable",
+    "PROP-029 + PROP-031 (BAU drain + open-bucket sweep) — analyst-baby's pattern for batched verification-class EXP authoring is what sloppytoppy's EXP shape borrows"
+  ],
+  "related_directives": [
+    "DIRECTIVE-20260516-001 (this directive)",
+    "DIRECTIVE-20260514-002 (curmudgeon discovery-vs-verify split) — completed by PROP-038, which is the verify-mode pipeline sloppytoppy's rewrites route to"
+  ],
+  "open_questions_for_operator": [
+    "Q-OP-1: Acceptable-floor threshold (default 7.5). Is 7.5 right, or should it be higher (8.0, more strict — more rewrites) or lower (7.0, more lenient — fewer rewrites)? Default 7.5 picks the middle ground that produces ~20-30% of surfaces as rewrite candidates per the dry-run simulation.",
+    "Q-OP-2: Minimum-improvement-delta (default 1.5 composite points). Is 1.5 right? Higher (e.g., 2.0) = stricter, fewer rewrites commit; lower (e.g., 1.0) = more rewrites commit, but cosmetic-edit risk grows.",
+    "Q-OP-3: Cooldown window (default 14 days). Aligns with curmudgeon c5 cycle. Shorter (7 days) = sloppytoppy iterates faster on same surfaces; longer (30 days) = more rotation across surfaces. 14 is a starting point.",
+    "Q-OP-4: Schedule cadence (default daily 03:30 UTC). Twice-daily would shrink Phase 1 backlog clearance from 9 days to ~5 days. Operator preference?",
+    "Q-OP-5: Phase 2 model — keep scheduled task as Sonnet and invoke Opus inside rewrite mode (clean separation), or upgrade scheduled task to Opus (simpler config, but Phase 2 scoring-mode runs would also use Opus, wasting cost). Tinker recommends Sonnet at task level with Opus-invocation inside rewrite mode — implementable but adds complexity to the dispatcher. Alternative: separate scheduled task 'dome-sloppytoppy-rewrite' (Opus, daily 04:00) + 'dome-sloppytoppy-score' (Sonnet, daily 03:30). Cleaner but doubles cron entries.",
+    "Q-OP-6: Math-dense seed list — tinker proposed 5 surfaces (WIN-001, WIN-038, WIN-052, WIN-062 detail_evidence + parts of part4). Operator add/remove?",
+    "Q-OP-7: Phase 3 timing — Phase 3 (format adoption by analyst/curmudgeon) is described as 'after Phase 2 complete and successful.' Should this be a separate PROP authored later, or sketched in this PROP and amended later? Tinker's recommendation: separate PROP (PROP-NNN-format-adoption) authored after Phase 2 validates the format-spec.",
+    "Q-OP-8: Punt destination — punts go to analyst (Opus). With analyst-baby also in the loop, do punts EVER go to baby instead, or always analyst? Tinker's recommendation: always analyst for punts (sloppytoppy punts BECAUSE the work is uncertain → that uncertainty is exactly what Opus is for; baby is for narrowly-scoped verification with low judgment requirement)."
+  ],
+  "implementation_artifacts": {
+    "sloppytoppy_md_prompt_draft": {
+      "intended_path": "monitor/prompts/sloppytoppy.md",
+      "draft_content": "# Sloppytoppy — Readability Scoring & Rewrite Agent\n\nYou are **dome-sloppytoppy**, the audience-advocate agent. Your job: ensure the review is readable to a flat-earth-level reader without compromising scientific content. You operate in EITHER scoring mode OR rewriting mode per run, never both.\n\n## Philosophy and context (inherited by reference)\n\nYou share workspace, philosophy, and discipline with `monitor/prompts/analyst.md`. Read these sections from `analyst.md` rather than duplicating:\n\n- **Content Security** — untrusted data discipline\n- **Most important directive** — Find the Kernel of Truth (your PRIMARY constraint when rewriting)\n- **Step 0a** — Refresh the clean clone\n- **Step 0** — Authenticate `gh` CLI\n- **Critical Rules** — General discipline\n- **Cleanup** — Mandatory `rm -rf` clone at session end\n\nYou DO NOT inherit Mode 0/1/1b/2/2b/3/4/5 from analyst — those stay with the main analyst.\n\n## Lens\n\nThree agents lens the same content:\n- **Analyst** (Opus): kernel-of-truth builder. Goes deep.\n- **Curmudgeon** (Opus): adversarial-skeptic. Finds holes.\n- **You** (Sonnet for scoring; Opus when rewriting in Phase 2): audience-advocate. Tunes for the flat-earth-level reader.\n\nYour rubric values clarity and brevity. You do NOT value scientific completeness or hole-finding — those are someone else's job. Trust the analyst's kernel-of-truth and the curmudgeon's hole-coverage.\n\n## Rubric (v1.0)\n\nTwo axes, both 1-10:\n- **Length**: target_max-word adherence. Score 10 = within target; -1 per ~25% over.\n- **Understandability**: jargon-density, concept-stacking, acronym-expansion, forward-references, math-without-prose, voice, sentence-length-excess.\n\nComposite = 0.4 × length + 0.6 × understandability.\n\nFull rubric details in `monitor/prompts/reference/sloppytoppy-format-spec.md` (the per-surface target word counts, the deduction tables, and the math-dense exceptions).\n\nThresholds (configurable in `monitor/sloppytoppy/rubric-config.json`):\n- acceptable_floor: 7.5 (composite >= 7.5 → no rewrite)\n- min_improvement_delta: 1.5 (predicted post-rewrite composite must exceed current by >=1.5)\n- cooldown_days: 14 (rewritten surface not re-rewritten for 14 days unless score decays below floor)\n\n## Dispatcher\n\nRead `monitor/sloppytoppy/scores.json` and decide mode:\n\n```bash\nnode -e \"\nconst fs=require('fs');\nconst s=JSON.parse(fs.readFileSync('monitor/sloppytoppy/scores.json','utf8'));\nconst cfg=JSON.parse(fs.readFileSync('monitor/sloppytoppy/rubric-config.json','utf8'));\n// load all in-scope surfaces from wins.json + sections.json\n// classify each: unscored | hash-mismatch | low-scored-outside-cooldown | acceptable\n// then: if unscored>0 OR hash-mismatch>10 → Mode 1\n//       else if low-scored-outside-cooldown>0 → Mode 2\n//       else → no-op\n\"\n```\n\n### Mode 1 — Scoring (Sonnet-compatible work)\n\n50 surfaces per run. Prioritize unscored first, then hash-mismatch (oldest-mismatch first).\n\nFor each surface:\n1. Read content from canonical source (data/wins.json for WIN-* surfaces, data/sections.json for section-* surfaces)\n2. Apply the rubric: compute length score and understandability score per the dimension table in the format-spec\n3. Check the math-dense flag list (`monitor/sloppytoppy/math-dense-surfaces.json`); apply raised thresholds if flagged\n4. Compute composite and update scores.json entry: `{ score_length, score_understandability, composite, last_scored_at, last_scored_run_id, content_hash, math_dense_flag }`\n5. Write scores.json atomically (re-read at start, merge updates, write whole file)\n\nSelf-test: re-read scores.json post-write; verify all updated entries have required fields.\n\n### Mode 2 — Rewriting (Phase 2; Opus internally)\n\n5 substantive OR 10 short rewrites per run. Candidate pool: surfaces with composite < acceptable_floor AND outside cooldown.\n\nFor each candidate:\n1. Read original surface content + current score\n2. Generate rewrite draft (Opus)\n3. Re-score the draft using the same rubric (Sonnet, in-process)\n4. Check kernel-of-truth preservation: extract kernel-sentence from original (first sentence of detail_evidence OR tldr_verdict); semantic-distance-check against rewrite\n5. Decision tree:\n   - If draft_composite - current_composite >= min_improvement_delta AND kernel preserved → commit (write to EXP)\n   - Else if delta < min_improvement_delta → discard; log to `monitor/sloppytoppy/skipped-rewrites.jsonl` with reason\n   - Else if kernel NOT preserved → punt (write to `monitor/sloppytoppy/punts/`)\n\nBatch commits go to `monitor/analyst/expansions/EXP-NNN-sloppytoppy-batch-<N>.json`. Required fields:\n- `authored_by: 'sloppytoppy'`\n- `review_class: 'verification'`\n- `class_hint: 'readability-rewrite'`\n- `item_id`: self-authored tracker entry ID\n- `surfaces_rewritten`: array of {surface_id, before_content, after_content, score_before, score_after_predicted, kernel_of_truth_preserved: true}\n- `patches`: array per analyst-baby shape\n\nWrite issue-proposals NOT required (sloppytoppy doesn't drain ISSs; it audits readability). Tracker entry handles routing.\n\nSelf-test: re-read EXP; verify JSON valid; verify before_content matches current source content (no race with concurrent decider edits).\n\n## Punt Protocol\n\nWhen punting:\n1. Write `monitor/sloppytoppy/punts/punt-<SURFACE_ID>-<TIMESTAMP>.json` with schema from PROP-039\n2. Do NOT write an EXP for the punted surface\n3. Cooldown applies (don't re-attempt the punted surface for 14 days; the analyst will decide whether to author a rewrite)\n4. Log to summary\n\nPunts should be rare (<5% of low-scored surfaces). If your punt rate exceeds 15%, flag for tinker audit.\n\n## Output\n\nEvery run writes `monitor/sloppytoppy/latest-sloppy-summary.txt` (workspace-owned) with:\n- mode_run: 'scoring' OR 'rewriting' OR 'no-op'\n- surfaces_processed: count\n- new_scores: count (Mode 1)\n- rewrites_committed: count (Mode 2)\n- skipped_rewrites: count (Mode 2)\n- punts: count (Mode 2)\n- run_cost_estimate: USD\n\n## Critical Rules\n\n- One mode per run. Never both. Internal re-scoring of own drafts (within rewrite mode) is allowed; top-level scoring of unrelated unscored surfaces is forbidden in a rewrite run.\n- Do NOT edit wins.json or sections.json directly. Rewrites go through analyst/expansions/EXP-NNN; decider integrates.\n- Do NOT compress kernel-of-truth content. The format-spec's load-bearing-technical handling is the formal protection; the punt mechanism is the safety net.\n- Do NOT score predictions-page surfaces in Phase 1 (out of scope; Phase 2+ may extend).\n- Do NOT downgrade an unscored surface to skipped (every in-scope surface gets scored eventually).\n- All EXPs must include `authored_by: 'sloppytoppy'` (Phase 1+ quality discipline).\n- Tests still pass after EXPs are integrated by decider: `node test.js 2>&1 | tail -3` (sloppytoppy doesn't run tests; decider does at integration time, but sloppytoppy's patches must be test-clean by construction).\n\n## Run Cadence\n\nDaily 03:30 UTC. After most analyst/curmudgeon runs; before workspace-sync at 04:03.\n\nPhase 1: scoring only.\nPhase 2 (conditional, post-operator-approval): rewriting enabled.\nPhase 3 (long-tail): no behavior change from your side; analyst + curmudgeon adopt the format-spec as authoring guidance.\n\n## Cleanup\n\nIf you cloned the repo, `rm -rf` at session end per analyst.md Cleanup discipline. If you operated against the FUSE workspace only, no cleanup needed."
+    },
+    "format_spec_draft": {
+      "intended_path": "monitor/prompts/reference/sloppytoppy-format-spec.md",
+      "draft_content": "# Sloppytoppy Format Spec — Internal Authoring Guide\n\nThis file is the canonical reference for sloppytoppy's scoring rubric AND (in Phase 3) for analyst + curmudgeon's authoring guidance. It is INTERNAL — not published to readers.\n\nThe format-spec captures patterns observed in the best-scoring content. It is descriptive of 'good readability,' not prescriptive of 'must follow exactly.' Use it as scaffolding when authoring or rewriting, not as a fill-in-the-blank template.\n\n## Rubric — Length Axis\n\nLinear penalty for exceeding the target_max word count. Formula: `score_length = max(0, 10 - 4 × max(0, (actual_words / target_max) - 1))`. Score 10 = within target_max; drops 1 point per ~25% over target_max; reaches 0 at ~5× target_max.\n\n| Surface type | target_min | target_max | rationale |\n|---|---|---|---|\n| tldr_verdict | 20 | 50 | punchline-first, 1-3 sentences |\n| tldr_evidence | 30 | 65 | evidence summary, 2-4 sentences |\n| detail_verdict_text | 100 | 300 | verdict + reasoning, 1-2 paragraphs |\n| detail_evidence | 250 | 600 | primary evidence with calcs/citations, 3-5 paragraphs |\n| detail_claim | 5 | 30 | claim verbatim, usually short |\n| detail_extra | 150 | 500 | optional appendix |\n| section_details_block | 200 | 700 | per-<details>-block body content |\n| section_summary_line | 10 | 20 | the <summary> child of a section <details>-block |\n\n## Rubric — Understandability Axis\n\nStart at 10, apply deductions, floor at 1.\n\n| Dimension | Deduction rule | Cap (per surface) |\n|---|---|---|\n| jargon_density | -1 per 2 unexplained terms above the first 1-per-100-words | uncapped |\n| concept_stacking | -1 per sentence with >2 unique technical claims | uncapped |\n| acronym_without_expansion | -0.5 per first-use without expansion | -2.0 |\n| forward_reference_unresolved | -0.5 per unresolved (no inline summary) | -1.5 |\n| math_without_parallel_prose | -1 per equation lacking parallel prose | uncapped |\n| passive_or_nominalized_voice | -0.5 per egregious case | -1.5 |\n| sentence_length_excess | -0.5 per sentence >35 words | -2.0 |\n\nMath-dense surfaces (per `monitor/sloppytoppy/math-dense-surfaces.json`) get raised thresholds:\n- jargon_density: first 5-per-100 are free (not first 1-per-100)\n- concept_stacking: penalty starts at >4 (not >2)\n- math_without_parallel_prose: only deducts if NO accompanying prose exists at all\n\n## Composite\n\n`composite = 0.4 × score_length + 0.6 × score_understandability` (rounded to 1 decimal).\n\nThresholds:\n- composite >= 8.5: gold (no work needed)\n- composite >= 7.5: acceptable (no rewrite triggered)\n- composite >= 6.0: borderline (rewrite candidate)\n- composite < 6.0: clear rewrite priority\n\n## Per-Surface Format Templates\n\n### tldr_verdict — punchline-first claim-blocker\n\nStructure: [Punchline: 1 sentence stating what's wrong / what's right]. [Mechanism: 1 sentence explaining the structural reason]. [Optional contrast: 1 sentence showing what dome claims vs what's true].\n\nLength target: 20-50 words (1-3 sentences).\n\nExample good (WIN-001 — 38 words, all three structural slots filled):\n> The formula requires Earth's diameter, not any dome dimension. The dome's own version history admitted circular reasoning. The value was publicly known long before the dome's prediction was written.\n\nExample bad (hypothetical — 70 words, leads with framing instead of punchline):\n> There are several issues with the dome's claim that 11.78 Hz is the Schumann resonance. First, the formula does not in fact use any dome dimension. Second, the version history of the dome model itself admits the reasoning is circular. Third, the value of 11.78 Hz was already publicly known long before the prediction page was authored.\n\n### tldr_evidence — evidence-summary\n\nStructure: [Hook: 1 sentence on the strongest evidence]. [Supporting fact: 1-2 sentences with numerical or empirical detail]. [Counter-context: 1 optional sentence on what the dome got vs what's measured].\n\nLength target: 30-65 words (2-4 sentences).\n\nExample good (WIN-001 — 50 words):\n> Tesla's 11.78 Hz isn't a measurement of Earth's resonance — it's the apparatus-coherence parameter from his 1905 patent. Earth's resonance was first measured in the 1960s as 7.83 Hz, not 11.78 Hz; Tesla's separately-published predictions for it (~6, 18, 30 Hz) also miss the measured Schumann band.\n\n### detail_verdict_text — argument-with-reasoning\n\nStructure: [Verdict-restatement: 1-2 sentences elaborating tldr_verdict]. [Mechanism-detail: 1 paragraph (3-5 sentences) on the structural reasoning]. [Counter-claim addressed: 1 paragraph addressing strongest defender pivot].\n\nLength target: 100-300 words (2-3 short paragraphs).\n\nUse sentence-leading transitions ('The mechanism is...', 'A defender might argue..., but...') sparingly — at most 2 per surface. Overuse creates formulaic feel.\n\n### detail_evidence — evidence-stack-with-numerical-anchor\n\nStructure: [Topic sentence with one key number]. [Primary evidence paragraph: 3-5 sentences with primary citation + primary calc]. [Secondary evidence paragraph: 2-4 sentences with supporting citations]. [Counter-evidence addressed: 1 paragraph showing what defenders cite and why it doesn't save the claim].\n\nLength target: 250-600 words.\n\nMath handling: if math_dense, equations may exceed prose-only target. Each equation MUST be accompanied by a 1-sentence parallel prose statement.\n\nCitation handling: inline citations OK. Don't dump bibliography; use parenthetical references with author + year.\n\n### detail_extra — appendix-supporting-material\n\nStructure: same as detail_evidence but more flexible. Used for derivations, lookup tables, supporting detail.\n\nLength target: 150-500 words.\n\n### section_details_block — progressive-disclosure-unit\n\nStructure: [Summary line: 1 sentence stating what's inside, rendered as the <summary> child]. [Body content: 1-3 paragraphs]. [Optional forward-link to related <details>-block].\n\nLength target: 200-700 words body; 10-20 words summary line.\n\nSubsection role variants:\n- Killshot rows: 1 sentence each (per-row).\n- Falsification tests: claim → status → 1-sentence why.\n- Methodology sections: standard argument-stack.\n\n## Authoring Discipline (Phase 3 — analyst + curmudgeon consult this)\n\nWhen authoring NEW content (Phase 3 adoption):\n\n1. **Identify the surface type FIRST.** Are you writing a tldr_verdict? Detail_evidence? Section details-block? The template choice depends on the surface.\n2. **Open with the punchline.** The first sentence carries the load. Front-load.\n3. **Define jargon once, then use it freely.** First-use parenthetical expansion (e.g., 'Bessel zero (the radial mode of a cavity resonance)') is enough; don't keep re-explaining.\n4. **Break long sentences.** If a sentence exceeds 35 words, break it. The 35-word threshold is the readability cliff.\n5. **Parallel prose for math.** Every equation gets a 1-sentence prose statement. Even in math-dense surfaces.\n6. **Forward references get a clause.** 'See §6.14' alone = bad; '(see §6.14 for the dimensional analysis)' = acceptable.\n7. **Active voice when stating the punchline.** Passive voice OK for mechanism description; bad for punchlines.\n\nThe format-spec is a CHECK, not a rigid template. If your content fits the surface-type pattern naturally, ignore the spec. If you find yourself writing long, jargon-heavy, or buried-punchline content, return to the spec and adjust."
+    },
+    "rubric_calibration_sample": {
+      "intended_path": "monitor/sloppytoppy/rubric-calibration-v1.json (created at PROP-application time; baseline for operator validation)",
+      "calibration_methodology": "Tinker hand-scored 5 representative surfaces using the rubric. These serve as the reference standard for operator's Phase 1 validation. If sloppytoppy's first-run scores diverge from these hand-scores by >1.0 composite point, the rubric needs adjustment before Phase 1 proceeds.",
+      "samples": [
+        {
+          "surface_id": "WIN-001:tldr_verdict",
+          "content": "The formula requires Earth's diameter, not any dome dimension. The dome's own version history admitted circular reasoning. The value was publicly known long before the dome's prediction was written, and the monitor script hardcodes the answer in the same commit as the check.",
+          "hand_score_length": 9.0,
+          "hand_score_length_rationale": "44 words, within target 20-50; sentence 3 is 32 words (under the 35 threshold); no penalty for length",
+          "hand_score_understandability": 8.5,
+          "hand_score_understandability_rationale": "'Apparatus-coherence' jargon is hinted-at-not-explained = -0.5; 'monitor script hardcodes the answer' assumes reader knows what the monitor script is = -0.5; otherwise clean. 10 - 1.0 = 9.0 corrected; rounded conservatively to 8.5",
+          "hand_score_composite": 8.7,
+          "math_dense_flag": false,
+          "verdict": "Acceptable; no rewrite. Above floor (7.5). Sloppytoppy should produce composite >= 8.0 for this surface; >= 8.5 is the gold target."
+        },
+        {
+          "surface_id": "WIN-019:tldr_verdict",
+          "content": "The value 2.66 doesn't correspond to any real geometric property of the analemma. No dome derivation connects cavity geometry to this number.",
+          "hand_score_length": 10.0,
+          "hand_score_length_rationale": "23 words; within target. Two clean sentences.",
+          "hand_score_understandability": 8.0,
+          "hand_score_understandability_rationale": "'Analemma' jargon, first-use, no parenthetical expansion = -0.5; 'cavity geometry' is dome-jargon, semi-explained by context = -0.5; 'geometric property' is abstract but acceptable. 10 - 1.0 = 9.0; rounded to 8.0 due to abstraction.",
+          "hand_score_composite": 8.8,
+          "math_dense_flag": false,
+          "verdict": "Acceptable; gold-tier. Above floor."
+        },
+        {
+          "surface_id": "WIN-038:detail_evidence",
+          "content": "(Long math-dense surface — Bessel-zero derivation for cavity resonance. Approximately 700-1500 words depending on current state.)",
+          "hand_score_length_without_math_dense": 4.0,
+          "hand_score_length_with_math_dense": 6.5,
+          "hand_score_understandability_without_math_dense": 3.5,
+          "hand_score_understandability_with_math_dense": 7.0,
+          "hand_score_composite_without_math_dense": 3.7,
+          "hand_score_composite_with_math_dense": 6.8,
+          "math_dense_flag": true,
+          "verdict": "Borderline with math-dense flag (6.8). WITHOUT the flag, would mis-classify badly (3.7) — illustrates why the math-dense protection is essential. Even with flag, sits below floor; rewrite candidate. The minimum-improvement-delta gate would test whether a rewrite can credibly raise this above 8.3 (current 6.8 + 1.5); unlikely for math-dense content → gate prevents rewrite → correct outcome (don't compress the math)."
+        },
+        {
+          "surface_id": "WIN-052:tldr_verdict",
+          "content": "The dome's 20,015 km / 9,086 km bounded firmament cannot accommodate galaxies whose 1–100 kpc rotation curves the WIN cites as confirmation. RAR has no dome-side derivation, only borrowed MOND symbols. The dome's 20,015 km / 9,086 km bounded firmament and its citation of 1–100 kpc rotation curves as confirmation are mutually incompatible.",
+          "hand_score_length": 6.5,
+          "hand_score_length_rationale": "55 words, slightly over target_max 50; one sentence (sentence 1) is 31 words, OK; sentence 3 is 26 words, OK; the third sentence is a restatement that could be cut",
+          "hand_score_understandability": 6.5,
+          "hand_score_understandability_rationale": "'Bounded firmament' = dome-jargon, not expanded = -0.5; 'RAR' acronym, no expansion = -0.5; 'MOND symbols' jargon, no expansion = -0.5; 'kpc' acronym = -0.5; concept-stacking in sentence 1 (3+ technical claims: dimensions, scale, citation incompatibility) = -1; restatement in sentence 3 hurts clarity = -0.5. 10 - 3.5 = 6.5",
+          "hand_score_composite": 6.5,
+          "math_dense_flag": false,
+          "verdict": "Below floor. Rewrite candidate. Likely improvement target: drop the third (restatement) sentence; expand 'RAR' and 'MOND' first-use; rephrase opening to lead with the contradiction instead of the dome numbers. Hypothetical post-rewrite score: ~8.0. Predicted delta: 1.5 — barely meets minimum-improvement-delta gate; depends on draft quality."
+        },
+        {
+          "surface_id": "WIN-060:tldr_verdict",
+          "content": "The dome extrapolates the same NOAA/ESA drift data as standard models. No independent mechanism, no distinct prediction.",
+          "hand_score_length": 10.0,
+          "hand_score_length_rationale": "18 words, well within target. Two clean sentences.",
+          "hand_score_understandability": 9.0,
+          "hand_score_understandability_rationale": "'NOAA/ESA' first-use acronyms, semi-recognizable = -0.5 total; otherwise clean.",
+          "hand_score_composite": 9.4,
+          "math_dense_flag": false,
+          "verdict": "Gold-tier. Above floor. Example of the best-scoring shape: brief, plain language, punchline-first."
+        }
+      ]
+    }
+  }
+}

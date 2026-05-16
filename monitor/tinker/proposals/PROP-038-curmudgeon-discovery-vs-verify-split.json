@@ -1,0 +1,399 @@
+{
+  "id": "PROP-038",
+  "prop_id": "PROP-038",
+  "title": "Split curmudgeon into discovery (Opus) + verify (Sonnet) — class-based model-split mirroring PROP-034",
+  "authored_by": "tinker",
+  "authored_at": "2026-05-16T05:38:09.662Z",
+  "status": "design-pending-operator-review",
+  "category": "agent-architecture",
+  "directive": "DIRECTIVE-20260514-002-curmudgeon-discovery-vs-verify-split",
+  "supersedes_prop": null,
+  "amends": null,
+  "depends_on": [
+    "PROP-025",
+    "PROP-034"
+  ],
+  "headline_recommendation": {
+    "selected": "Option C (hybrid: verify-mode Sonnet split + bounded cycle-gate). Phase 1 deploys ONLY the Sonnet verify-mode split — no gate. Phase 2 conditionally adds the gate after Phase 1 has 7 green days. This mirrors PROP-034's shape exactly: narrow Phase 1, expand only on green metrics.",
+    "rationale": "Empirical analysis (task_1) shows the dominant 'wasted Opus' pattern on high-cycle WINs is carry-forwards (~27% of all holes are explicit re-flags of prior-cycle unpatched holes), not new patch artifacts (~2% explicit). Both are real and worth catching — the carry-forward audit signal is the only mechanism that surfaces decider close-but-not-fix bugs (ISS-1382 example on WIN-067). The cheapest preservation of that signal is Sonnet-on-verify-class: still reads prior holes, still re-flags unpatched ones, but at ~1/4 Opus cost. PROP-034 proved the analog works for the analyst's BAU drain. Same routing axis (PROP-025 review_class), same exit/rollback shape, same anti-coupling discipline.",
+    "in_one_line": "Add dome-curmudgeon-verify (Sonnet, narrow dispatcher: class='verification' items only) as a parallel agent to dome-curmudgeon (Opus, unchanged). Phase 2: add cycle-gate when decider has unpatched prior-cycle holes >24h old."
+  },
+  "executive_summary": {
+    "problem_one_line": "Curmudgeon Opus is billed full discovery cost for verification cycles. Across 34 high-cycle WINs and 954 holes, ~27% of findings are explicit carry-forwards (re-flags of unpatched prior-cycle holes) and ~2% are explicit patch-introduced artifacts. Operator's manual top-5 count was 13-35% combined wasted (the directive's 'patch artifact' framing groups artifacts + carry-forwards). Either way: a third of an Opus cycle's effort is verification-class work that should not need an Opus call.",
+    "fix_one_line": "Add dome-curmudgeon-verify (Sonnet, 4h cadence offset 1h from main curmudgeon, narrow dispatcher: ONLY processes priority-queue items with class='verification'). Main curmudgeon (Opus) sheds the verification slice and processes only class='deep-attack' and class='holistic' items plus all non-queue work (change-driven, holistic, spot-check). Read-only against decider state (no new coupling). Phase 2 conditionally adds a cycle-gate.",
+    "tinker_top_line_recommendations": {
+      "Q1_carry_forward_audit_signal_preservation": "Option A (verify-mode Sonnet) preserves it. Verify-mode reads the prior cycle's holes and re-flags any not patched. Option B (gate) drops it (skips the cycle entirely). Option C (hybrid) preserves it AND adds a guarded gate as a Phase-2 amplifier. Recommend C with Phase 1 = A-only.",
+      "Q2_verify_class_boundary": "Use PROP-025's queue_item.class field. class='verification' → verify-mode (Sonnet). class='deep-attack' | 'holistic' → discovery-mode (Opus). class null/absent (legacy) → discovery-mode (Opus) per PROP-025 backward-compat. This is the same routing axis PROP-034 uses for analyst-baby.",
+      "Q3_sonnet_rigor_for_verification": "Yes, with Phase 1 metrics. Curmudgeon-verify's task is narrower than curmudgeon-discovery: read the specific patches applied since last cycle (decider's applied-patches/*.json), check (a) patches landed without sed-replace artifacts (duplicated sentences, double periods, orphan punctuation), (b) terminology consistency, (c) no prior-cycle holes silently dropped, (d) carry-forward audit. This is mechanical pattern matching, not adversarial argumentation. PROP-034 baby-analyst uses Sonnet successfully on similar narrow scope; the empirical baseline shows curmudgeon's verification holes are overwhelmingly hygiene-grade (minor severity dominates in the tail cycles), exactly Sonnet's strength.",
+      "Q4_gate_risk_for_novel_finding": "Real but manageable. The risk: dome makes a new claim that affects a queued WIN, gate fires because decider hasn't patched prior cycle, new claim sits unaddressed. Mitigation: the cycle gate fires ONLY on class='verification' items AND only on the verify-mode agent. The main curmudgeon (Opus) runs on dome-change-driven reviews unconditionally — change-driven entries are NEW class='deep-attack' or 'holistic' items, not 'verification' items. Gate cannot eat them.",
+      "Q5_interaction_with_prop_021_and_prop_025": "PROP-021 (proposed, dispatcher token slim) is an Opus-side optimization on the main curmudgeon. It STILL applies to curmudgeon-discovery. Verify-mode has its own (lighter) prompt that doesn't need PROP-021's dispatcher precompute — verify-mode's dispatcher is single-class single-mode. PROP-025 IS the routing axis this PROP rides on; we're extending its 'class' field semantics from batchability to model-routing — exactly the same pattern PROP-034 used to route Sonnet-vs-Opus by review_class."
+    }
+  },
+  "context_verification": {
+    "files_read": [
+      "monitor/curmudgeon/reviews/WIN-{010,014,048,053,067,068}.c*.json (in detail)",
+      "monitor/curmudgeon/reviews/*.json (aggregate analysis across 34 high-cycle WINs)",
+      "monitor/prompts/curmudgeon.md (first 260 lines)",
+      "monitor/tinker/proposals/PROP-021-curmudgeon-dispatcher-optimization.json (curmudgeon prompt slim — Opus-side, still applies to discovery agent)",
+      "monitor/tinker/proposals/PROP-025-curmudgeon-batch-gate-content-based.json (implemented — class field is the routing axis)",
+      "monitor/tinker/proposals/PROP-034-split-analyst-baby-vs-deep.json (the analog pattern on analyst side)",
+      "monitor/decisions/open-issues.json (issue routing state)",
+      "data/wins.json (verified per-WIN cycle counts)",
+      "data/sections.json (read-only, no edits proposed)"
+    ],
+    "directive_reference_check": {
+      "directive_says_prop_019_curmudgeon_dispatch": "Directive task_3 Q5 references PROP-019. Verified: PROP-019 is curmudgeon-fingerprint-compare-fix, not dispatch optimization. The directive intended PROP-021 (curmudgeon-dispatcher-optimization). Treated PROP-021 as the relevant prior-art reference. No design conflict — PROP-021 is Opus-prompt-side, this PROP is agent-split, layers cleanly.",
+      "directive_top5_cycle_counts_check": "Directive says WIN-068 15c, WIN-067 11c, WIN-053 10c, WIN-014 10c, WIN-010 10c. As of 2026-05-16: WIN-068 c15 (matches), WIN-014 c11 (one ahead), WIN-053 c11 (one ahead), WIN-067 c11 (matches), WIN-010 c10 (matches). Minor drift — directive filed 2026-05-14, two days of activity since. Empirical baseline updated to current state."
+    }
+  },
+  "empirical_baseline": {
+    "source": "monitor/tinker/analysis/curmudgeon-cycle-economics.json",
+    "scope": "All 34 WINs with curmudgeon cycle >=5",
+    "methodology_note": "Regex-classified holes vs explicit unresolved_prior_cycle field. My detector under-counts patch artifacts vs the operator's manual count (the directive labeled 17-35% on top-5 as 'patch artifacts'; my detector splits that into ~4% explicit-artifact + ~30% carry-forward). Both metrics tell the same story: ~30% of Opus discovery cycles is verification work.",
+    "aggregate_metrics": {
+      "n_wins_high_cycle": 34,
+      "total_holes": 954,
+      "total_explicit_patch_artifacts": 22,
+      "artifact_ratio_pct": 2.3,
+      "total_carry_forwards": 260,
+      "carry_ratio_pct": 27.3,
+      "combined_wasted_pct": 29.6
+    },
+    "top_5_table": [
+      {
+        "win": "WIN-068",
+        "cycles": 14,
+        "holes": 82,
+        "carry_pct": 18,
+        "artifact_pct": 1,
+        "combined_pct": 20,
+        "note": "highest cycle count, steady-state tail"
+      },
+      {
+        "win": "WIN-067",
+        "cycles": 10,
+        "holes": 60,
+        "carry_pct": 25,
+        "artifact_pct": 13,
+        "combined_pct": 38,
+        "note": "matches directive's 'structural worst case' framing; 8 explicit patch-introduced defects"
+      },
+      {
+        "win": "WIN-053",
+        "cycles": 10,
+        "holes": 61,
+        "carry_pct": 52,
+        "artifact_pct": 2,
+        "combined_pct": 54,
+        "note": "highest combined wasted ratio of any top-5 WIN"
+      },
+      {
+        "win": "WIN-014",
+        "cycles": 10,
+        "holes": 50,
+        "carry_pct": 30,
+        "artifact_pct": 2,
+        "combined_pct": 32,
+        "note": "deep technical material on SG/kappa/eclipse"
+      },
+      {
+        "win": "WIN-010",
+        "cycles": 9,
+        "holes": 53,
+        "carry_pct": 23,
+        "artifact_pct": 2,
+        "combined_pct": 25,
+        "note": "moderate-density verification tail"
+      }
+    ],
+    "top_5_means": {
+      "artifact_pct": 4,
+      "carry_pct": 29.7,
+      "combined_pct": 33.7
+    },
+    "worked_example_win_048_cycle_race": {
+      "summary": "Category (e) cadence-race — directive's primary example. c6 ran 02:42Z flagging H2 (SC pattern (2) reasoning). c7 ran 10:40Z (8h gap, no patch landed) raising a sed-replace seam (double-period). c8 ran 14:41Z re-flagging H2 as H0 (same hole, same target, same severity). Decider created ISS-2010 at 21:22Z (19h after c6). Three Opus reviews fired in a window where decider was producing zero patches against the relevant hole.",
+      "cost_evidence": "Per-cycle Opus cost is fixed. c7 and c8 each cost a full Opus discovery call to surface 1 minor hole, one of which is a literal re-flag of c6 H2. Under PROP-038 verify-mode: c6 would run Opus (deep-attack class on the rewrite). c7 and c8 would run Sonnet (verification class on the patches). The carry-forward audit signal is preserved (Sonnet sees H2 still present → re-flags). Cost: ~1.0 Opus + ~0.5 Sonnet vs current 3.0 Opus. Order-of-magnitude saving on this single example."
+    },
+    "category_attribution_top5": {
+      "e_cadence_race": "Dominant ~25-30% of top-5 holes",
+      "a_deferred_no_track": "Smaller; observed in WIN-067 (ISS-1382 closed-but-not-fixed) and a few WIN-053 cases",
+      "b_failed_verification": "Rare; most patches land cleanly",
+      "c_artifact_introduced": "~2-13% per WIN, top-5 mean 4%",
+      "d_no_change_reflagged": "Rare (<2%)"
+    }
+  },
+  "design_space_evaluation": {
+    "option_A_verify_mode_sonnet_split": {
+      "description": "Split curmudgeon into curmudgeon (Opus, discovery-mode, unchanged scope MINUS queue items with class='verification') + curmudgeon-verify (Sonnet, verify-mode, narrow scope: ONLY queue items with class='verification'). Mirrors PROP-034 exactly.",
+      "preserves_audit_signal": true,
+      "cost_saving_estimate": "On top-5 WINs, ~30% of holes are verification-class. At ~4x Opus/Sonnet price ratio, that's ~22% Opus-equivalent saving for top-5; project-wide closer to ~20% (high-cycle WINs are a minority of all reviews).",
+      "implementation_cost": "moderate — new agent, new prompt (~80 lines, narrow), 1 cron entry, 1 tracker field, no decider changes",
+      "risk": "Sonnet misses subtle artifacts an Opus pass would catch. Phase 1 exit criteria measure this directly.",
+      "pattern_analog": "PROP-034 baby-analyst — same routing axis (PROP-025 class), same model-split, same Phase 1 narrow scope",
+      "recommended_phase": "PHASE 1"
+    },
+    "option_B_cycle_gate": {
+      "description": "Don't split agents. Add a gate to curmudgeon: before reviewing a class='verification' item, check if prior cycle's recommended-fix patches have landed in origin/main. If not all landed AND no new dome change → SKIP this cycle (write a 'gated, waiting on decider' summary, exit cleanly). Forces curmudgeon to wait for decider rather than racing.",
+      "preserves_audit_signal": false,
+      "cost_saving_estimate": "On top-5 WINs the cadence-race is ~25-30% of holes. Gate eliminates those cycles entirely (zero LLM call). Largest absolute saving — but drops audit visibility on category-(a) decider-deferred-no-track cases.",
+      "implementation_cost": "low — pre-flight gate in curmudgeon.md, no new agent",
+      "risk": "Loses the carry-forward audit signal. Directive's hard constraint: 'Do NOT propose changes that would lose the carry-forward audit signal.' Option B alone violates the constraint.",
+      "pattern_analog": "no direct analog",
+      "recommended_phase": "PHASE 2 (conditional, on TOP of Option A)"
+    },
+    "option_C_hybrid_A_plus_B": {
+      "description": "Apply both: verify-mode Sonnet split for class='verification' items (Option A) PLUS bounded cycle-gate inside verify-mode (Option B). Gate fires ONLY when ALL of: (i) item is class='verification', (ii) prior cycle's holes are all 'pending decider patch' AND no new patch landed in last 24h, (iii) no new dome-change reviewed since prior cycle. Gate skips the verify-mode Sonnet call but writes a 'gated, waiting on decider 24h+' note that surfaces in the next decider run as a stuck-patch signal.",
+      "preserves_audit_signal": true,
+      "cost_saving_estimate": "Combines A's ~20% Opus-saving with B's ~5-10% Sonnet-call elimination. The carry-forward audit signal is preserved through verify-mode Sonnet runs (Option A); the gate only fires when decider is the demonstrated bottleneck — and writes a stuck-patch note that itself surfaces decider's skipped work.",
+      "implementation_cost": "moderate-high — split agent (Option A) + gate logic in verify-mode (Option B)",
+      "risk": "Gate-decision logic adds complexity. Mitigation: gate fires only when decider IS the bottleneck (>24h unpatched). False-positive cost is one extra-cheap 'gated' file per cycle.",
+      "pattern_analog": "PROP-034 (Phase 1 was Option-A-only; Phase 2 expanded scope incrementally)",
+      "recommended_phase": "PHASE 1 = A only; PHASE 2 conditional = add B"
+    },
+    "option_D_cadence_only": {
+      "description": "Don't split. Slow curmudgeon cadence to match decider (4h → 12h) for queue items where prior cycle had ≤2 minor holes. Cheapest change.",
+      "preserves_audit_signal": "partially — still re-flags eventually, just less often",
+      "cost_saving_estimate": "~33% Opus saving on slowed cycles. But assumes patches always land within 12h — empirically WIN-048 had a 19h gap. Slower cadence + slow decider = stale work piling.",
+      "implementation_cost": "trivial — cron edit only",
+      "risk": "Reduces feedback loop tightness. The directive notes 'cadence is downstream of the discovery vs verification mode question' — cadence-only doesn't address the model-cost-vs-task-cost imbalance.",
+      "pattern_analog": "no — orthogonal axis",
+      "recommended_phase": "NOT RECOMMENDED — Option A delivers similar saving with better signal-preservation"
+    },
+    "the_hybrid_rule_recommended": {
+      "phase_1": "Option A (verify-mode Sonnet split) only. Narrow scope: class='verification' items with prior cycle having ≤2 minor holes AND ALL those holes were patched (not deferred) since the prior cycle.",
+      "phase_2_conditional": "Expand scope to all class='verification' items (drop the ≤2 minor precondition), add Option B cycle-gate inside verify-mode when decider has >24h unpatched prior holes.",
+      "phase_3_conditional": "Consider applying the same pattern to decider's verification cycle (PROP-014 Mech 1a self-verify) if curmudgeon split proves the pattern — explicitly out-of-scope for this PROP, mentioned for continuity with PROP-034 phase_3."
+    }
+  },
+  "phased_implementation_plan": {
+    "rationale": "Mirror PROP-034 exactly. Narrow Phase 1 with measurable exit/rollback criteria, expand only on green data. The carry-forward audit signal is the hard constraint — Phase 1 deploys verify-mode parallel to the existing curmudgeon, both writing reviews, so any signal loss in verify-mode is caught by the still-running Opus parent.",
+    "phase_1": {
+      "name": "Phase 1: curmudgeon-verify Sonnet, narrow verification-class scope",
+      "duration": "7 days",
+      "scope": [
+        "New scheduled task: dome-curmudgeon-verify, cron `30 4,8,12,16,20,0 * * *` (offset 1h from main curmudgeon's `30 3,7,11,15,19,23 * * *`), model claude-sonnet-4-6 (or successor available at deployment time).",
+        "New prompt file: monitor/prompts/curmudgeon-verify.md (~80-120 lines, narrow dispatcher).",
+        "Verify-mode's dispatcher: priority-queue items only, FIFO, ONE item per run (no batching in Phase 1 — Phase 2 may add it), with ALL of:",
+        "  (a) item.class === 'verification' (PROP-025 routing axis; null/absent = NOT processed, escalate to main curmudgeon)",
+        "  (b) prior cycle's holes_found.length <= 2 (Phase 1 narrow precondition; Phase 2 relaxes)",
+        "  (c) prior cycle's holes are ALL of severity 'minor' (Phase 1 narrow precondition; Phase 2 relaxes to allow 1 moderate)",
+        "  (d) decider has produced at least one applied-patches/*.json file since the prior cycle's reviewed_at timestamp (proxy: 'patches actually landed')",
+        "Items failing ANY gate fall back to main curmudgeon (Opus) on its next cycle. Main curmudgeon's dispatcher gets a small amendment: skip items where class='verification' AND all four gates pass (those are owned by verify).",
+        "Verify-mode prompt scope (narrow rubric, ~5 checks): (i) terminology consistency vs prior cycle, (ii) sed-replace seam artifacts (duplicated sentence, double-period, orphan close, broken cross-ref), (iii) patches_verified check (did the listed patches actually land and close the hole?), (iv) carry-forward audit (any prior cycle holes silently dropped?), (v) one paragraph adversarial scan for the patched paragraphs only (NOT a full WIN re-read).",
+        "Verify-mode WRITES the standard reviews/WIN-{id}.c{cycle}.json format with `agent_subtype: 'curmudgeon-verify'` field. queue_id and queue_pushed_at carried per PROP-009. Cycle number increments as usual.",
+        "Main curmudgeon's prompt gets a 4-line cross-reference note: 'verify-mode handles queue items meeting Phase 1 gate (class=verification + ≤2 minor + patches landed). All other queue items, change-driven, holistic, spot-check still owned by you.'",
+        "Tinker's pipeline-health check (tinker-pipeline-health.md) extended to monitor verify-mode freshness — latest-verify-summary.txt staleness check.",
+        "PROP-030 backlog-trend metrics gain a `verify_drain_count_7d` field (count of reviews authored by curmudgeon-verify in last 7d) so Phase 1 effectiveness is measured the same way PROP-034's baby_drain_count_7d is.",
+        "No changes to decider, analyst, integrity, social, workspace-sync, poller in Phase 1.",
+        "No changes to existing reviews/ files. No changes to priority-queue.json schema (class field already exists per PROP-025).",
+        "FUSE-friendly: verify-mode CLONES the repo fresh (same pattern as main curmudgeon Step 0), reads queue/data from clone, writes reviews to workspace mount."
+      ],
+      "exit_criteria_phase_to_2": [
+        "(a) verify-mode flagged >=1 real carry-forward or artifact that main curmudgeon would otherwise have caught (proves the audit signal is preserved). Measured by: any verify-mode review with holes_found.length > 0 OR unresolved_prior_cycle.length > 0.",
+        "(b) operator-judged quality of >=3 verify-mode reviews >= Opus on the same items (operator spot-check; PROP-034 used same criterion).",
+        "(c) no rollback fires across 7 days.",
+        "(d) verify-mode drain count >= 5 items in 7 days (proves the gate isn't too tight to fire)."
+      ],
+      "rollback_criteria": [
+        "(a) verify-mode misses >=2 patch artifacts that next cycle catches (the metric this design exists to fix). Measured by: any review where the next cycle's holes include a carry-forward from a verify-mode review whose patches_verified asserted clean.",
+        "(b) verify-mode false-flags >2 non-issues as artifacts in 7 days (signal-to-noise problem; measured by decider closing the resulting ISSs as wontfix).",
+        "(c) review-file write conflicts with main curmudgeon >1/day for 3 consecutive days (concurrency problem — both agents wrote to same WIN-NNN.cN.json).",
+        "(d) queue_id collision detected per PROP-009r2 enforcement (verify-mode tagged a review with a queue_id that didn't actually belong to it).",
+        "Rollback action: disable the dome-curmudgeon-verify scheduled task; main curmudgeon's amendment auto-falls-through (skipped items now picked up by main since the verify-mode-owns-them gate no longer applies)."
+      ]
+    },
+    "phase_2": {
+      "name": "Phase 2: Expand verify-mode scope + add bounded cycle-gate",
+      "duration": "7 days, gated on Phase 1 exit_criteria",
+      "scope": [
+        "Expand verify-mode gate: drop 'all-minor' precondition (allow up to 1 moderate hole in prior cycle). Drop 'patches landed' precondition (allow gate condition: cycle-gate handles it instead).",
+        "Add cycle-gate (Option B inside verify-mode only). When verify-mode pops a queue item AND prior cycle's holes are NOT all patched AND no patch landed in last 24h: SKIP the review, write a 'gated-waiting-on-decider-24h' file in monitor/curmudgeon/gated/ with the queue_id, target_id, prior cycle holes summary, and last decider activity timestamp. Pop queue_id per PROP-009 (gated file counts as 'work done'). Exit cleanly.",
+        "Decider's daily-report gets a new section: 'stuck-patches surfaced by curmudgeon-verify gate' that reads monitor/curmudgeon/gated/*.json from last 24h and surfaces them as candidate operator-attention items.",
+        "Verify-mode batching: if 2-3 consecutive queue items all pass the gate, allow batching up to 3 (mirror PROP-025 batchability — class='verification' already qualifies).",
+        "PROP-030 metrics gain `verify_gate_count_7d` field."
+      ],
+      "exit_criteria_phase_to_3": [
+        "verify-mode drain rate steady-state (>= Phase 1 rate, no degradation).",
+        "gate fires at least 3 times in 7 days (proves the cadence-race is real).",
+        "gate-surfaced stuck-patches reach decider attention (decider's stuck-patch section in daily-report has non-zero entries that get addressed)."
+      ],
+      "rollback_criteria": [
+        "(a) gate eats a substantive change-driven finding (false positive). Measured by: any gated-waiting file whose target_id has a NEW dome-change classification in monitor/changes/ within the gate window — should not gate change-driven content; if it does, the gate logic is wrong.",
+        "(b) decider stuck-patch backlog grows >5 entries — gate is surfacing problems faster than decider can address them.",
+        "Rollback to Phase 1 (drop the gate, restore Phase 1 narrow gate preconditions)."
+      ]
+    },
+    "phase_3_conditional": {
+      "name": "Phase 3 (conditional, out-of-scope for this PROP): apply pattern elsewhere",
+      "note": "If Phase 1+2 succeed, consider applying the same pattern to decider's verification cycle (PROP-014 Mech 1a self-verify) or analyst's expansion-verification cycle. Out-of-scope for PROP-038 itself; mentioned for continuity with PROP-034's phase_3."
+    },
+    "estimated_phase_1_implementation_cost": {
+      "operator_apply": "~30-45 min (one new prompt file, one new scheduled-task config, one amendment to curmudgeon.md, one amendment to PROP-030 metrics)",
+      "ongoing_per_run": "verify-mode at ~6 runs/day × Sonnet × ~5K tokens = ~$0.05/day (vs displacing ~$0.50/day of Opus on the same items)",
+      "net_monthly_estimate": "~$13/month saving on the verification slice IF top-5 high-cycle-WIN drain rate is representative"
+    }
+  },
+  "scheduled_task_design": {
+    "task_name": "dome-curmudgeon-verify",
+    "cron": "30 4,8,12,16,20,0 * * *",
+    "cron_rationale": "Offset 1h from main curmudgeon (`30 3,7,11,15,19,23`). Same 6-runs/day cadence, but staggered. Verify-mode runs AFTER main curmudgeon so any class='verification' items main curmudgeon's amendment skips (Phase 1 gate) get processed within 1h by verify.",
+    "model": "claude-sonnet-4-6 (or successor)",
+    "timeout_min": 30,
+    "memory_isolation": "fresh clone per run, same as main curmudgeon",
+    "prompt_file": "monitor/prompts/curmudgeon-verify.md (NEW — to be authored at Phase 1 deploy time)",
+    "PAT_handling": "same as main curmudgeon — PAT lives in scheduled task prompt, NOT in repo. Verify-mode only reads from queue/clone and writes review files; same auth pattern."
+  },
+  "prompt_file_split_design": {
+    "curmudgeon_md_amendment": {
+      "change_type": "additive only — no scope removal",
+      "location": "Step 0b (priority queue procedure), after the existing class-based dispatch logic",
+      "proposed_text_template": [
+        "**Phase 1 verify-mode handoff (PROP-038 amendment):** Before popping a queue item, check if it qualifies for the verify-mode agent. If ALL of the following hold, SKIP this item — verify-mode owns it:",
+        "  (a) item.class === 'verification'",
+        "  (b) most recent review on this target_id has holes_found.length <= 2",
+        "  (c) all those holes have severity === 'minor'",
+        "  (d) decider has produced at least one applied-patches/*.json file since the most recent review's reviewed_at",
+        "If any gate (a)-(d) fails, this item stays in your scope — process it normally. If ALL gates pass, fall through to the next un-reviewed item in the queue. This handoff applies ONLY to priority-queue work; change-driven, holistic, and spot-check work are unchanged.",
+        "(Phase 2 may relax gates (b)-(d); see PROP-038 phased plan.)"
+      ],
+      "no_other_changes": "All other steps (Step 0a, 0c, 0c2, 0d, 0e, 0f) unchanged. Change-driven, holistic, spot-check work unchanged — those don't have queue_id and don't carry a class field."
+    },
+    "curmudgeon_verify_md_design": {
+      "sections": [
+        "Header + V6 restructure cross-ref + content security (boilerplate, copy from curmudgeon.md)",
+        "Per-run procedure Step 0 (fresh clone, FUSE-write-out — same shape as main curmudgeon Step 0)",
+        "Dispatcher: priority-queue items only, FIFO; gate as Phase 1 preconditions (a)-(d) above; one item per run (Phase 1)",
+        "Review rubric (5 narrow checks): terminology consistency, sed-replace seam artifacts, patches_verified check, carry-forward audit, single-paragraph adversarial scan on patched paragraphs only",
+        "Output schema: standard reviews/WIN-{id}.c{cycle}.json + new agent_subtype: 'curmudgeon-verify' field + queue_id + queue_pushed_at",
+        "Escalation: if review uncovers a major/critical hole during the narrow rubric, mark review batch_aborted_due_to_severity_upgrade: true (mirror PROP-025 procedure d), write a small escalation marker monitor/curmudgeon/escalations/<TARGET-ID>-to-discovery.json, do NOT process further items, STOP. Next main curmudgeon run picks the target up as a class='deep-attack' fresh review.",
+        "Anti-coupling: read-only access to monitor/decisions/applied-patches/*.json and open-issues.json. No write to decider state files. PROP-009 queue_id discipline same as main curmudgeon."
+      ],
+      "target_length": "~80-120 lines (PROP-034 target was 50-80 for baby-analyst; curmudgeon-verify needs more for the seam/artifact rubric)",
+      "cost_engineering": "narrow prompt = small dispatcher = small input tokens; Sonnet model = ~1/4 Opus price-per-token. Combined: ~6-8x cheaper than running main curmudgeon on the same item."
+    }
+  },
+  "dry_run_simulation": {
+    "scope": "Apply Phase 1 gate retroactively to the last 30 days of queue-driven curmudgeon reviews on the top-5 high-cycle WINs",
+    "estimated_verify_drainable_items": "~8-12 items across top-5 in last 30 days (matches the WIN-048 cycle-race example × ~2 incidents per WIN per month for steady-state high-cycle WINs)",
+    "estimated_audit_signal_preserved": "100% — every carry-forward I sampled in the analysis would be re-flaggable by verify-mode's narrow rubric (carry-forward audit check is literally one of the 5 checks)",
+    "estimated_false_positive_risk": "low — narrow rubric is mechanical; the only signal-loss risk is if verify-mode misses a NEW subtle finding in the patched paragraphs (the 'single-paragraph adversarial scan' check). Phase 1 exit criteria measure exactly this."
+  },
+  "counter_argument": {
+    "note": "Operator preference: think about the other side. Each counter, then my rebuttal.",
+    "counter_1_carry_forward_visibility_IS_the_signal": {
+      "steelman": "WIN-048 c6 H2 → c8 H0 was visible only because c8 re-flagged. If you split or gate, you may lose that. The cost is the point — Opus paying full price to repeatedly surface a hole is the loudest possible audit signal to the operator that decider is dropping the ball.",
+      "rebuttal": "Verify-mode preserves the check. Sonnet reads prior cycle's holes, confirms each patched; if not patched, it re-flags AND can mark the unresolved_prior_cycle entry with `escalation: 'decider-stuck'`. The audit signal is preserved at the data-content level — what changes is which model writes the marker. Phase 2's gate ADDS a more aggressive surface (stuck-patches in decider daily-report) that's actually MORE visible than current carry-forwards (which sit buried in a cycle JSON). The signal isn't lost; it gets a louder home."
+    },
+    "counter_2_independence_from_patch_flow": {
+      "steelman": "Curmudgeon's independence from the patch flow is a feature. Splitting introduces coupling — verify-mode reads decider state (applied-patches/*.json).",
+      "rebuttal": "The coupling is read-only and semantic, not workflow-level. Verify-mode reads patches_verified the same way main curmudgeon's Step 0b already does ('check if priority queue items were pushed by decider'). The independence that matters — verify-mode doesn't TRUST decider's claim that patches landed cleanly — is preserved by the seam-artifact and patches_verified rubrics. Sonnet is checking decider's work, not relying on it. Same epistemic stance as main curmudgeon, lower model cost."
+    },
+    "counter_3_sonnet_subtlety_regression": {
+      "steelman": "Sonnet may miss subtle artifacts an Opus cycle catches. The 35% combined-wasted ratio on top-5 means Opus is finding real things — using Sonnet may regress.",
+      "rebuttal": "That's exactly what Phase 1 exit criteria measure. If verify-mode misses >=2 artifacts that next cycle catches in 7 days, rollback. PROP-034 baby-analyst uses Sonnet successfully on narrow scopes; the curmudgeon-verify rubric is even narrower (5 mechanical checks vs baby's full Mode-1 BAU dispatcher). Phase 1 runs in PARALLEL with main curmudgeon (which stays Opus for everything not gate-passing), so any miss is caught by the next discovery-class cycle — defense in depth."
+    },
+    "counter_4_high_cycle_wins_are_just_hard": {
+      "steelman": "WIN-014, WIN-067, WIN-068 have high cycle counts because they're deep technical material. Those WINs would have taken 10+ cycles regardless of split; the cost was unavoidable.",
+      "rebuttal": "Separate discovery cycles (legitimate) from verification cycles (mostly avoidable). On WIN-067, my analysis shows 8 explicit-artifact + 15 carry-forward holes across 10 cycles = ~38% combined wasted. The discovery cycles (c2-c5) average 5-6 holes mixed severity; the tail (c6-c11) averages 4-5 holes mostly minor with high carry-forward density. The deep material justifies the discovery cycles; the tail is where verify-mode lives. Discovery is sacred, verification can be cheap. We're not proposing to skip the deep cycles."
+    },
+    "counter_5_research_project_cost_vs_quality": {
+      "steelman": "You're solving for cost in a research project. Quality matters more than cost.",
+      "rebuttal": "Cost saved here funds more discovery elsewhere. The verification cycles aren't catching new science; they're catching patch hygiene (double-periods, duplicated sentences, dangling references). Trading some Opus verify for more Opus discovery on under-reviewed WINs is a net quality win. Empirically: the verification slice is ~30% of high-cycle WIN Opus calls — that's $/month of Opus budget that could fund deep-attack reviews of currently-under-reviewed WINs. The exit criteria explicitly measure 'quality of verify-mode reviews >= Opus on the same items' — if quality drops, we rollback."
+    },
+    "counter_6_operational_complexity": {
+      "steelman": "Two curmudgeon agents writing to the same reviews/ directory introduces concurrency complexity that didn't exist before. Race conditions, queue_id confusion, FUSE staleness across two clones — this adds operational debt.",
+      "rebuttal": "Real concern, addressed by design: (a) verify-mode and main curmudgeon CRON are offset 1h — they never run concurrently in Phase 1. (b) The Phase 1 gate is strict enough that main curmudgeon and verify-mode own disjoint subsets of the queue at any given moment. (c) PROP-009r2 queue_id discipline applies identically; both agents tag reviews with the queue_id they're servicing. (d) reviews/ is append-only (PROP-022); FUSE concurrency was solved for that directory via per-file-by-unique-name. The rollback criterion explicitly measures write-conflicts >1/day — if it fires, we revert."
+    }
+  },
+  "what_NOT_to_do": {
+    "do_not_change_main_curmudgeon_cadence": "Per directive out-of-scope clause: 'Do NOT touch curmudgeon's existing cadence (30 3,7,11,15,19,23). That's a phase-2-conditional question.' Phase 2 of THIS PROP doesn't touch it either. Phase 2 only adds the cycle-gate inside verify-mode.",
+    "do_not_eliminate_carry_forward_audit_signal": "Per directive hard constraint. Option B alone would do this; PROP-038 explicitly avoids it.",
+    "do_not_batch_with_DIRECTIVE_20260514_001": "Per directive out-of-scope clause. analyst summary-write gap is unrelated.",
+    "do_not_remove_class_field_semantics": "PROP-025 defines class as a content-based queue field. PROP-038 extends its semantics from 'batchability gate' to 'model routing' — but does NOT change the field's content, who writes it, or its existing batchability use. PROP-025's downstream consumers are unaffected.",
+    "do_not_self_apply_this_prop": "Directive task_6 explicit: 'Author the PROP-NNN as DESIGN-PENDING-OPERATOR-REVIEW. Do NOT self-apply.' Status set to design-pending-operator-review. No scheduled task created, no prompt file written, no cron changed by this PROP run."
+  },
+  "cost_analysis": {
+    "current_state": {
+      "curmudgeon_runs_per_day": 6,
+      "curmudgeon_avg_input_tokens_per_run": "~40-60K (data files + queue + reviews history + prompts)",
+      "curmudgeon_avg_output_tokens_per_run": "~5-8K",
+      "monthly_opus_cost_estimate": "(based on 6 runs/day × 30 days × ~50K avg total = ~9M tokens/month; at Opus pricing ~$15/Mtok input, ~$75/Mtok output, blended ~$30/Mtok = $270/month)"
+    },
+    "post_PROP_038_phase_1": {
+      "curmudgeon_opus_runs_per_day": 6,
+      "curmudgeon_opus_load_reduction": "~20-25% of queue items shed to verify-mode (only verification-class with prior ≤2 minor pass the Phase 1 gate; most queue items remain on Opus)",
+      "curmudgeon_verify_sonnet_runs_per_day": 6,
+      "curmudgeon_verify_avg_input_tokens_per_run": "~15-25K (narrower prompt, fewer reviews to scan)",
+      "sonnet_pricing_ratio": "~1/4 of Opus blended per token",
+      "monthly_cost_delta_estimate": "Opus side: ~5-7% reduction in monthly burn (~-$15/month). Sonnet side: ~$10/month added. NET: ~$5/month saving in Phase 1. The big saving comes from Phase 2 expansion."
+    },
+    "post_PROP_038_phase_2": {
+      "curmudgeon_opus_load_reduction": "~25-30% of queue items shed (Phase 2 expanded gate)",
+      "verify_gate_skip_rate": "~5-10% of verify-mode pops gate-skipped (Sonnet call not made)",
+      "monthly_cost_delta_estimate": "Opus side: ~10-15% reduction (~$30-40/month). Sonnet side: ~$10/month. NET: ~$20-30/month saving. Plus Sonnet-call saving from gate ~$2/month. Total Phase 2 saving: ~$25-30/month."
+    },
+    "note": "Cost numbers are illustrative — actual savings depend on queue mix. The directive's framing was efficiency, not absolute dollars. The clearer benefit is freeing Opus capacity for under-reviewed WINs (currently the discovery budget is spent in part on verification of already-reviewed targets)."
+  },
+  "acceptance_criteria_phase_1": [
+    "Phase 1 deploys parallel to main curmudgeon (zero scope removal from main)",
+    "Phase 1 gate is conservative (class='verification' AND prior ≤2 minor holes AND patches landed)",
+    "Exit criteria measurable: verify drain count, audit-signal preservation, operator-judged quality",
+    "Rollback criteria measurable: artifact-miss count, false-positive count, write-conflict count, queue_id collisions",
+    "No changes to decider, analyst, integrity, social, workspace-sync, poller in Phase 1",
+    "No changes to existing reviews/, priority-queue.json schema, or PROP-025 semantics",
+    "Verify-mode is FUSE-friendly (clone-fresh, write-to-workspace) same as main curmudgeon",
+    "Verify-mode PROP-009 queue_id discipline identical to main curmudgeon",
+    "Audit-trail: every verify-mode review tagged agent_subtype: 'curmudgeon-verify' for trivial filter/grep"
+  ],
+  "implementation_files": {
+    "new_files": [
+      "monitor/prompts/curmudgeon-verify.md — new ~80-120 line agent prompt (authored at Phase 1 deploy time, not by this PROP)",
+      "monitor/curmudgeon/gated/ — new directory for Phase 2 cycle-gate output (Phase 1 doesn't need it; Phase 2 amendment creates it)"
+    ],
+    "modified_files": [
+      "monitor/prompts/curmudgeon.md — Step 0b amendment (verify-mode handoff gate, ~6 lines, additive only)",
+      "monitor/prompts/reference/tinker-cost-engineering.md — add verify-mode to per-agent context-load table",
+      "monitor/prompts/tinker.md — Pre-flight: Backlog-Trend Computation — add verify_drain_count_7d metric",
+      "monitor/tinker/operator-directives/DIRECTIVE-20260514-002-curmudgeon-discovery-vs-verify-split.json — operator marks status:completed when PROP applied",
+      "CLAUDE.md — Monitoring Pipeline table gains dome-curmudgeon-verify row (only if Phase 1 approved)"
+    ],
+    "untouched_files": [
+      "data/wins.json, data/sections.json, data/predictions.json, data/uncounted-failures.json — no data changes",
+      "monitor/decisions/* — no decider behavior change",
+      "monitor/analyst/* — no analyst behavior change",
+      "monitor/integrity/*, monitor/social/* — no behavior change",
+      "build.js, build-scripts/* — no build pipeline change",
+      "tests/* — no test plumbing change",
+      "PROP-025 — unchanged; this PROP extends its semantics but doesn't modify the field or its existing consumers"
+    ]
+  },
+  "implementation_authority": "design-pending-operator-review. Operator reviews this PROP, decides Phase 1 deployment timing, authors the curmudgeon-verify.md prompt file using the design in §prompt_file_split_design.curmudgeon_verify_md_design, adds the scheduled task, applies the curmudgeon.md amendment, runs the dispatcher-shape-audit (see DIRECTIVE-20260426-001) on the new agent, and monitors Phase 1 metrics for 7 days before deciding Phase 2.",
+  "implementation_authority_steps": [
+    "1. Operator reads PROP-038 (this file).",
+    "2. Operator authors monitor/prompts/curmudgeon-verify.md per §prompt_file_split_design.curmudgeon_verify_md_design.",
+    "3. Operator adds dome-curmudgeon-verify scheduled task per §scheduled_task_design (cron, model, prompt file, PAT pattern).",
+    "4. Operator applies curmudgeon.md amendment per §prompt_file_split_design.curmudgeon_md_amendment.",
+    "5. Operator amends monitor/prompts/tinker.md to add verify_drain_count_7d metric to Backlog-Trend Computation.",
+    "6. Operator amends CLAUDE.md Monitoring Pipeline table to include dome-curmudgeon-verify row.",
+    "7. Operator marks DIRECTIVE-20260514-002 status:completed.",
+    "8. Phase 1 runs 7 days. Tinker monitors metrics each run.",
+    "9. After Day 7, operator + tinker review exit criteria. If green, author Phase 2 amendment PROP. If rollback fires, disable verify-mode task and document lessons."
+  ],
+  "related_props": [
+    "PROP-025 (routing axis we ride on)",
+    "PROP-034 (pattern analog)",
+    "PROP-021 (Opus-side prompt slim, layered onto main curmudgeon, complementary)"
+  ],
+  "related_directives": [
+    "DIRECTIVE-20260514-002 (this PROP's source)",
+    "DIRECTIVE-20260426-001 (dispatcher-shape-audit applies to new verify-mode prompt)"
+  ],
+  "open_questions_for_operator": [
+    "Q-OP-1: Phase 1 cron offset — proposed 30 4,8,12,16,20,0 (1h after main curmudgeon). Acceptable, or prefer same-time-different-day pattern?",
+    "Q-OP-2: Phase 1 gate strictness — currently 'all minor AND <=2 holes AND patches landed'. Operator may prefer 'allow 1 moderate' from day 1 if confident in Sonnet. Trade-off: tighter gate = fewer items processed = harder to hit drain-count exit criterion.",
+    "Q-OP-3: Phase 2 gate stuck-patch threshold — proposed >24h unpatched. Could be 12h or 48h. Operator's call based on decider cadence patterns.",
+    "Q-OP-4: Anti-coupling — should verify-mode escalations write to monitor/curmudgeon/escalations/ or directly push back to priority-queue with class='deep-attack'? Push-back is more direct but bumps verify-mode against the PROP-025 'decider is primary writer' rule. Escalation file is the safer Phase 1 pattern.",
+    "Q-OP-5: Should the operator-mode 'pushed_by contains operator' escape hatch also bypass the verify-mode gate (force everything operator-pushed onto main curmudgeon)? Recommend YES — operator pushes are typically urgent, treat them as deep-attack class by default unless operator explicitly tags class='verification'."
+  ]
+}
