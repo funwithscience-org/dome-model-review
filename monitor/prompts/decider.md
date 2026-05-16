@@ -136,7 +136,7 @@ Apply the routing-matrix.md 5-action decision tree per item (same as M1 Priority
 
 **Budget management:** if token budget reaches ~70% during 3b iteration, write a `bau_triage_carry_over` record into the daily report listing item IDs not reached and the reason (budget). Items in the carry-over remain `status='open'` and are picked up by next run's 3b (in age-descending order, so they sort earlier).
 
-**Self-test at run end:** before writing the daily report, verify every status='open' item with age ≥ 12h either (a) has a closure-ledger entry with `closed_by_run === RUN_ID` AND `closed_by_mechanism === 'BAU'`, or (b) appears in the run's `bau_triage_carry_over` list. If neither holds, that item was silently skipped — flag as SELF-TEST FAILURE and refuse to mark the run complete. Same enforcement pattern as M3 carry-over (decider-curmudgeon.md Step 8c self-test).
+**Self-test at run end:** before writing the daily report, verify every status='open' item with age ≥ 12h either (a) has a closure-ledger entry with `closed_by_run === RUN_ID` AND `closed_by_mechanism === 'BAU'`, or (b) appears in the run's `bau_triage_carry_over` list. If neither holds, that item was silently skipped — flag as SELF-TEST FAILURE and refuse to mark the run complete. Same enforcement pattern as M3 carry-over (decider-curmudgeon-pq-mechanics.md Step 8c self-test, loaded conditionally at Priority 4).
 
 **Interaction with M1**: M1 (Priority 5b) becomes safety-net-only. Items reach M1's age≥N_DAYS threshold only if they passed through Priority 3b without being actioned (extremely unusual under PROP-031 — would indicate persistent budget pressure or genuine ambiguity needing escalation). Empirical prediction: M1 candidate count drops from current 9-30/run to 0-3/run within 2 weeks.
 
@@ -149,7 +149,7 @@ Apply the routing-matrix.md 5-action decision tree per item (same as M1 Priority
 node -e "const t=JSON.parse(require('fs').readFileSync('monitor/analyst/expansion-tracker.json','utf8'));const c=t.items.filter(i=>(i.status==='complete'||i.status==='revised')&&!i.integrated);console.log(c.length?'EXPANSIONS: '+c.length+' ready to integrate':'NO PENDING EXPANSIONS')"
 ```
 Trigger: Completed expansions not yet integrated into sections.json/wins.json.
-→ Read `monitor/prompts/reference/decider-curmudgeon.md`, execute Step 2a.
+→ **IF this priority fires** (the bash check above prints `EXPANSIONS: N ready to integrate`), read `monitor/prompts/reference/decider-curmudgeon-pq-mechanics.md` for Step 2a integration mechanics (no-op handling, category-proposal-writeup routing, progressive-disclosure validation, integration mechanics, queue push at Step 7, issue closure at Step 8, M2 EXP-tied auto-close at Step 8b, M3 carry-over enforcement at Step 8c, out-of-scope-issue-filing rule at Step 9). Then execute Step 2a from that file. **DO NOT load this file when Priority 4 does NOT fire** — it is 265L of integration mechanics not needed for Priority 3 (digest processing) or Priority 3b (BAU triage), both of which continue to use `decider-curmudgeon.md` alone.
 
 **Priority 5 — Standard Processing**
 Read all remaining upstream outputs, check human notes, pipeline health, integrity, social drafts, prediction failures.
@@ -257,7 +257,7 @@ for(const {iss, age} of candidates){
         const trackerPath = 'monitor/analyst/expansion-tracker.json';
         const t = JSON.parse(fs.readFileSync(trackerPath, 'utf8'));
         if(typeof t.next_id !== 'number'){
-          // Self-heal — same archive-aware pattern as decider-curmudgeon.md EXP allocator.
+          // Self-heal — same archive-aware pattern as decider-curmudgeon-pq-mechanics.md EXP allocator.
           const archPath = 'monitor/analyst/expansion-tracker-archive.jsonl';
           const liveMax = t.items.reduce((m,i)=>Math.max(m,parseInt((i.id||'EXP-0').replace('EXP-',''))||0),0);
           const archMax = fs.existsSync(archPath)

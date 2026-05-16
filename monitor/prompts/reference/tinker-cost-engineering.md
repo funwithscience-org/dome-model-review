@@ -232,7 +232,7 @@ CURM_COND=$(wc -l < monitor/prompts/reference/curmudgeon-change-and-holistic.md)
 echo "Curmudgeon dispatcher+refs (excl CLAUDE.md): ${CURM_DISP}L, conditional: ${CURM_COND}L, max total: $((CURM_DISP+CURM_COND+CLAUDE))L"
 
 # Decider: dispatcher + SCIENTIFIC-CONTEXT + DATA-SCHEMAS + all decider-*.md + BUILD-AND-CHANGE
-DECIDER=$(cat monitor/prompts/decider.md monitor/prompts/reference/SCIENTIFIC-CONTEXT.md monitor/prompts/reference/DATA-SCHEMAS.md monitor/prompts/reference/decider-intake.md monitor/prompts/reference/decider-curmudgeon.md monitor/prompts/reference/decider-patches-and-selfapply.md monitor/prompts/reference/decider-reporting.md monitor/prompts/reference/BUILD-AND-CHANGE.md | wc -l)
+DECIDER=$(cat monitor/prompts/decider.md monitor/prompts/reference/SCIENTIFIC-CONTEXT.md monitor/prompts/reference/DATA-SCHEMAS.md monitor/prompts/reference/decider-intake.md monitor/prompts/reference/decider-curmudgeon.md monitor/prompts/reference/decider-curmudgeon-pq-mechanics.md monitor/prompts/reference/decider-patches-and-selfapply.md monitor/prompts/reference/decider-reporting.md monitor/prompts/reference/BUILD-AND-CHANGE.md | wc -l)
 echo "Decider total (excl CLAUDE.md): ${DECIDER}L, with CLAUDE.md: $((DECIDER+CLAUDE))L"
 
 # Tinker: dispatcher + all tinker-*.md + all reference files (reads everything)

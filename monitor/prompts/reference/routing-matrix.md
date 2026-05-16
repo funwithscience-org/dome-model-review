@@ -5,7 +5,7 @@ Canonical reference for the decider's 5-action decision tree. Replaces PROP-026'
 **The 5-action tree is invoked from THREE places** (PROP-031, 2026-05-11):
 1. **BAU triage** — `monitor/prompts/decider.md` Priority 3b, every run, scope = all `status='open'` items ≥12h old. Ledger `closed_by_mechanism: 'BAU'`. **This is the primary throughput path.**
 2. **M1 stale-sweep** — `monitor/prompts/decider.md` Priority 5b, every run, scope = items aged ≥ N_DAYS threshold (BAU 21d / burndown 7d). Ledger `closed_by_mechanism: 'M1'`. **This is a safety net for items that survived Priority 3b without being actioned (rare).**
-3. **M3 carry-over** — `monitor/prompts/reference/decider-curmudgeon.md` Step 8c, per-curmudgeon-review, scope = `unresolved_prior_cycle[]` entries. Ledger `closed_by_mechanism: 'M3'`.
+3. **M3 carry-over** — `monitor/prompts/reference/decider-curmudgeon-pq-mechanics.md` Step 8c, per-curmudgeon-review, scope = `unresolved_prior_cycle[]` entries. Ledger `closed_by_mechanism: 'M3'`.
 
 The tree is **identical in all three contexts**; only the trigger and ledger `closed_by_mechanism` value differ. Narrowness gate and class-hint derivation rules apply uniformly.
 
@@ -18,7 +18,7 @@ The tree is **identical in all three contexts**; only the trigger and ledger `cl
 **See also:**
 - `monitor/prompts/decider.md` Priority 3b — BAU triage (PROP-031, primary)
 - `monitor/prompts/decider.md` Priority 5b — M1 safety-net invocation
-- `monitor/prompts/reference/decider-curmudgeon.md` Step 8c — M3 carry-over enforcement
+- `monitor/prompts/reference/decider-curmudgeon-pq-mechanics.md` Step 8c — M3 carry-over enforcement
 - `monitor/prompts/reference/analyst-mode1-expansions.md` — analyst class_hint intake at EXP authoring time
 - `monitor/tinker/proposals/PROP-027-routing-matrix-with-class-propagation.json` — original 5-action tree proposal
 - `monitor/tinker/proposals/PROP-031-decider-bau-open-bucket-sweep-anti-tap-out.json` — BAU triage extension proposal
