@@ -118,6 +118,28 @@ If predicted delta is implausible (rewriter claims sentence_complexity went -5 t
 
 **Fail mode:** Minor. Predicted-delta drift is a calibration signal, not a content failure — the rewrite may still be a good rewrite. The recalibration audit (Q-OP-7) catches systematic drift; this check catches per-RW drift.
 
+### RWR-12: G preview is paraphrase, not new framing (PROP-041 amendment-002)
+
+**Applies to:** G rewrites only.
+
+**Test:** For each G-substituted preview in rewritten_text, locate the source via `preview_source_refs`. Read the source's claim_tldr/summary. Confirm the preview's load-bearing nouns appear in the source.
+
+**Fail modes:** Major if the preview introduces a noun (or directional claim) that doesn't appear in the source. Moderate if the preview is technically a paraphrase but uses noticeably heavier/lighter hedging than the source. Minor on awkward phrasing.
+
+**Common false positives:** Don't penalize tonal smoothing that preserves load-bearing nouns. 'closes the refraction-fix escape' vs 'rules out the refraction reinterpretation' — both preserve the load-bearing 'refraction' noun and the same directional claim; both pass.
+
+**Common true positives:** New framings to flag — preview adds a generalization the source didn't claim ('Section 1.8 establishes that ALL escape attempts fail' when 1.8 only addresses refraction); preview drops a hedge the source carried ('refraction cannot reinterpret' becoming 'refraction does not reinterpret'); preview re-attributes a claim ('Smith showed' when the source attributed it to Jones).
+
+### RWR-13: H preview grounded in anchor or context (PROP-041 amendment-002)
+
+**Applies to:** H rewrites only.
+
+**Test:** For each H-preview, confirm the preview's content is grounded in the link's anchor text OR the 1-2 sentences of context surrounding the link in original_text. The rewriter MUST NOT introduce new claims about the external target's content (e.g., claiming a linked paper 'definitively proves X' when neither the anchor nor the surface's own context says so).
+
+**Fail modes:** Major if the preview makes a claim about external content not supported by anchor/context. Moderate if grounded but with heavier/lighter hedging than the context suggests. Minor on tonal mismatches.
+
+**Interaction with RWR-5:** RWR-5 (no new claims) and RWR-13 (grounded preview) are companion checks. RWR-13 narrows RWR-5 for H: the source-of-paraphrase is the surface's own anchor + adjacent context (which is auto-readable), NOT the external target (which is not readable). H is the only category where the rewriter is restricted to a smaller authoritative-source scope than the full surface.
+
 ## Optional free-text field
 
 Add `curmudgeon_open_concerns: "<one paragraph>"` to the review if something feels off but doesn't fit the checklist (e.g., "tonal shift makes the closing sentence read more hedged than the original"). This field is operator-attention signal; it does NOT count toward the approve/reject decision (only RWR-1..9 do).
@@ -146,7 +168,9 @@ Add `curmudgeon_open_concerns: "<one paragraph>"` to the review if something fee
     "RWR-6": {"applies": true, "passed": true, "finding": null},
     "RWR-7": {"applies": true, "passed": true, "finding": null},
     "RWR-8": {"applies": true, "passed": true, "finding": null},
-    "RWR-9": {"applies": true, "passed": true, "finding": "predicted sentence_complexity -5→-1 is plausible — rewritten text has 0 sentences >35 words"}
+    "RWR-9": {"applies": true, "passed": true, "finding": "predicted sentence_complexity -5→-1 is plausible — rewritten text has 0 sentences >35 words"},
+    "RWR-12": {"applies": false, "reason": "no-Category-G-applied"},
+    "RWR-13": {"applies": false, "reason": "no-Category-H-applied"}
   },
   "holes_found": [],  // populated only on rejection; each entry {check_id, severity, description, evidence}
   "curmudgeon_open_concerns": null,

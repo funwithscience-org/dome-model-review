@@ -100,6 +100,8 @@ Identify which of A/B/C/D/E apply to this surface's defect pattern. Multiple tag
 - **C (em-dash citation cluster split)**: Bundled citation paragraphs ("Van Camp 2014 — Mansinha 1986 — see also Berger 2019"). Fix: integrate each citation with its specific claim in separate sentences.
 - **D (buried-lead restructure)**: Punchline-equivalent claim in paragraph 3+ when paragraph 1 is setup. Fix: move punchline first; supporting math/setup follows.
 - **E (table/formatting moves)**: Dense prose comparing multiple parameters across multiple actors. Fix: insert a comparison table; remove the now-redundant prose.
+- **G (internal forward-reference preview)**: forward_references subtraction is firing AND referenced targets are resolvable in the clone (sections, WINs, ISSs, predictions). Fix: replace bare 'See Section X.Y' / 'see WIN-NNN' with a 1-sentence paraphrase of the target's claim_tldr/<summary>/heading. Populate preview_source_refs[]. Paraphrase only — new framing rejected by RWR-12.
+- **H (outbound link-out preview, narrowed scope per amendment-002)**: surface contains bare outbound references (external URLs, intra-site links outside clone scope, 'see <doc.pdf>') AND adding a 1-sentence preview would help reader navigation. Fix: insert preview adjacent to the link in rewritten_text, grounded ONLY in anchor text + surrounding context. Does NOT modify link href. Does NOT replace whole paragraphs. Populate link_preview_refs[]. Real content compression (3-5x reduction with editorial judgment) is analyst-commissioned mode, NOT H.
 
 If NO category applies, write a PUNT record per Step 4h instead of an RW. Q-OP-6 requires non-empty `rewrite_category_tags`.
 
@@ -111,6 +113,28 @@ Specific patterns to avoid:
 - **Don't drop hedges.** "approximately", "on the order of", "~2%" all stay as written.
 - **Don't add citations.** RWR-5 rejects new claims. Only restructure what's there.
 - **Don't move conclusions before premises** if the premise is uniquely needed first (RWR-4).
+- **G/H discipline (PROP-041 amendment-002):** previews paraphrase EXISTING content. For G, the source is the resolved target's claim_tldr/summary/title — the load-bearing nouns must match. For H, the source is the link's anchor + 1-2 surrounding sentences — do not synthesize claims about external content. New framing fails RWR-12 (G) and RWR-13 (H).
+
+**Category G drafting (when chosen):**
+1. Enumerate bare forward-references in original_text matching: 'See Section <X.Y>', 'see Section <X.Y>', 'See Part <N>', 'See WIN-<NNN>', 'See ISS-<NNN>', 'See PRED-<NNN>' (case-insensitive on 'see').
+2. For each, resolve target in clone:
+   - Section X.Y → sections.json → `<details id="...">` → read `<summary>` text
+   - Part N → sections.json file part<N>.html → read page-title/first `<h2>`
+   - WIN-NNN → wins.json[id=WIN-NNN] → read claim_tldr (preferred) or detail_claim
+   - ISS-NNN → open-issues.json / closed-issues.json → read title
+   - PRED-NNN → predictions.json → read claim_tldr
+3. Preference order when multiple sources exist: claim_tldr > `<summary>` > heading > title.
+4. Synthesize 1-sentence preview using load-bearing nouns from the resolved source. Replace bare reference with: '<target-name> <preview>.'
+5. Populate `preview_source_refs[]` entry per schema.
+6. On resolution failure: skip THAT reference (leave bare), log to per-tag rationale, file analyst-attention HNOTE for the broken reference.
+
+**Category H drafting (when chosen):**
+1. Enumerate outbound references in original_text: `<a href="http://...">` / `<a href="https://...">` / `<a href="/research/...">` / inline 'see <doc.pdf>' / inline 'see <external-author><year>'.
+2. For each, extract anchor text + 1-2 sentences of surrounding context.
+3. Synthesize 1-sentence preview grounded ONLY in anchor + context. Do NOT claim things about the external target the surface doesn't already say.
+4. Insert preview adjacent to the link in rewritten_text (before or after, whichever reads more naturally).
+5. Populate `link_preview_refs[]` entry per schema.
+6. On thin anchor + context: skip THAT reference (cannot ground preview), log to per-tag rationale.
 
 ### 4e. Heuristic predict-delta (Option Z, Q-OP-2)
 Estimate `predicted_length_after` and `predicted_understandability_after` from the category fixes. Examples:
@@ -120,6 +144,10 @@ Estimate `predicted_length_after` and `predicted_understandability_after` from t
 Show the math explicitly in `predicted_delta_breakdown.subtraction_fixes[]` (one entry per understandability subtraction the rewrite addresses).
 
 Compute `predicted_composite_after = 0.4 * predicted_length_after + 0.6 * predicted_understandability_after`.
+
+**Category G predict-delta (PROP-041 amendment-002):** For each G substitution, forward_references subtraction recovers by +1 (per reference fixed, up to subtraction-floor recovery). Length increases by ~16 words per substitution. Subtract length-axis impact: word_count_after = word_count_before + 16 * G_substitution_count; re-compute length axis per rubric §3 length curve. Net composite delta = +0.6 * forward_references_recovery − 0.4 * length_decay.
+
+**Category H predict-delta (PROP-041 amendment-002):** H typically does NOT recover a specific named subtraction (no forward_references-equivalent for outbound links in rubric v1). H's understandability lift is via the buried_lead / clarity dimensions — adding the preview makes the link's purpose explicit, recovering ~0.5-1.0 understandability per substitution depending on rubric judgment. Length increases ~16 words per substitution (same as G). Net composite delta is typically smaller than G's; if predicted delta < minimum_improvement_delta (1.5), H alone usually does not clear the gate. H is most useful in combination with A/B/C/D (multi-tag RW)|.
 
 ### 4f. Gate
 If `predicted_composite_delta < minimum_improvement_delta` (1.5), this draft doesn't clear the gate. Try a different category fix or restructure. If after 3 distinct draft attempts you cannot clear 1.5, write a PUNT record per Step 4h.

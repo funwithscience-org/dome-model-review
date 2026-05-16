@@ -208,6 +208,29 @@ Writers set `claimed_by`/`claimed_at` BEFORE doing the analytic work (separate c
 
 **PROP-041 class extension (2026-05-16):** the `class` enum is extended to include `'rewrite-verify'` for items pushed by decider's Step 1m (Rewrite Proposal Intake). Behavior: curmudgeon's dispatcher (Step 0b → curmudgeon-change-and-holistic dispatch branch) recognizes `class='rewrite-verify'`, reads `monitor/prompts/reference/sloppytoppy-rewrite-rubric.md`, applies the RWR-1..9 checklist against the RW file's original_text vs rewritten_text, and writes a review file with `agent_subtype: 'curmudgeon-rewrite-verify'`. Curmudgeon-verify (Sonnet, narrow) does NOT pick up `'rewrite-verify'` items — its dispatcher filters `class === 'verification'` only. Rewrite verification needs Opus structural judgment per Q-OP-1 Option C. Batchability: `'rewrite-verify'` items are SINGLETON (per-item content-preservation audit is too high-stakes for batch contamination). Adding `'rewrite-verify'` to the enum does NOT widen batching — gate 1 in Step 8a checks for `class === 'verification'` only.
 
+## audit-rewrite.js checks reference (PROP-041 Phase 2 + amendment-002, 2026-05-16)
+
+| Check | Severity | Trigger |
+|---|---|---|
+| C1 | major | numbers_preserved not found in rewritten_text |
+| C2 | major | citations_preserved not found in rewritten_text |
+| C3 | moderate | numbers_in_rewritten_text declared but not found |
+| C4 | moderate | citations_in_rewritten_text declared but not found |
+| C5 | major | unbalanced HTML tags |
+| C6 | moderate | odd quote count in rewritten_text |
+| C7 | major | rewrite_category_tags empty or invalid |
+| C8 | major | required field missing |
+| C9 (amendment-002, Phase 2.1) | major | F tag with surface_type != section_details_block |
+| C10 (amendment-002, Phase 2.1) | major | F tag with empty/oversize proposed_block_boundaries |
+| C11 (amendment-002, Phase 2.1) | major | F-only tag with non-null rewritten_text |
+| C12 (amendment-002, Phase 2.1) | major | F tag with starts_at_excerpt not in original_text |
+| C13 (amendment-002, Phase 2) | major | G tag with empty/missing preview_source_refs |
+| C14 (amendment-002, Phase 2) | major | G preview_source_refs entry with invalid surface_kind/target_id |
+| C15 (amendment-002, Phase 2) | major | G bare_reference not found in original_text |
+| C16 (amendment-002, Phase 2) | major | H tag with empty/missing link_preview_refs |
+| C17 (amendment-002, Phase 2) | major | H outbound_link not found in original_text |
+| C18 (amendment-002, Phase 2) | moderate | H preview_text exceeds 2-sentence cap |
+
 ## RW-NNN.json Schema (PROP-041 Phase 2, 2026-05-16)
 
 Location: `monitor/sloppytoppy/rewrites/RW-NNN.json` (zero-padded, allocated from monitor/sloppytoppy/rewrites/_next-id or scanned at run start by the rewriter). Append-only directory with the RW-LIFECYCLE additive-edit exception (see CLAUDE.md File Ownership Rules).
@@ -249,6 +272,10 @@ Required fields at author time:
 - `verdict_unchanged` (boolean | null)
 - `claim_unchanged` (boolean | null)
 - `argument_structure_summary` (string, one line)
+
+Category-G/H optional fields (PROP-041 amendment-002, 2026-05-16):
+- `preview_source_refs` (array, REQUIRED iff rewrite_category_tags includes 'G') — one entry per G substitution. Schema per entry: `{bare_reference_in_original: '<verbatim string>', surface_kind: 'section'|'win'|'iss'|'pred', target_id: '<X.Y>'|'WIN-NNN'|'ISS-NNN'|'PRED-NNN', source_field_used: 'claim_tldr'|'summary'|'heading'|'title', preview_text: '<synthesized preview replacing the bare reference>'}`.
+- `link_preview_refs` (array, REQUIRED iff rewrite_category_tags includes 'H') — one entry per H substitution. Schema per entry: `{outbound_link_in_original: '<verbatim substring of original_text>', anchor_text: '<extracted anchor text or reference label>', preview_text: '<synthesized 1-sentence preview added before/after the link>', preview_source: 'anchor'|'context'|'both'}`.
 
 Lifecycle fields (set during state transitions):
 - `popped_by_queue_id` (integer, set by decider when pushing to priority-queue with class='rewrite-verify') and `popped_by_queue_id_at` (ISO).

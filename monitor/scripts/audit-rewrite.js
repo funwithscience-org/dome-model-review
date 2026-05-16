@@ -58,7 +58,11 @@ const PRESERVATION_AUDIT_FIELDS = [
   'argument_structure_summary'
 ];
 
-const VALID_CATEGORIES = ['A', 'B', 'C', 'D', 'E'];
+// PROP-041 amendment-002 (2026-05-16): F, G, H added per categories-FGH spec.
+// F = editorial section-split (propose-only, Phase 2.1)
+// G = internal forward-reference preview (Phase 2)
+// H = outbound link-out preview, narrowed scope (Phase 2)
+const VALID_CATEGORIES = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
 
 function normalizeNumber(s) {
   // Strip whitespace; keep units intact. '11.79 Hz' stays '11.79 Hz'.
@@ -120,6 +124,61 @@ function main() {
   const audit = rw.CONTENT_PRESERVATION_AUDIT;
   const original = String(rw.original_text);
   const rewritten = String(rw.rewritten_text);
+  const tags = Array.isArray(rw.rewrite_category_tags) ? rw.rewrite_category_tags : [];
+
+  // PROP-041 amendment-002 checks for G/H category tags
+  if (tags.includes('G')) {
+    // C13: preview_source_refs non-empty
+    const psrefs = rw.preview_source_refs;
+    if (!Array.isArray(psrefs) || psrefs.length === 0) {
+      failures.push({ check: 'C13', detail: 'rewrite_category_tags includes G but preview_source_refs is empty/missing', severity: 'major' });
+    } else {
+      // C14: each entry has valid surface_kind + target_id format
+      const VALID_KINDS = ['section', 'win', 'iss', 'pred'];
+      const FORMAT = {
+        section: /^[0-9]+(\.[0-9]+){1,2}$/,
+        win: /^WIN-[0-9]+$/,
+        iss: /^ISS-[0-9]+$/,
+        pred: /^PRED-[0-9]+$/
+      };
+      psrefs.forEach((e, i) => {
+        if (!VALID_KINDS.includes(e.surface_kind)) {
+          failures.push({ check: 'C14', detail: `preview_source_refs[${i}] invalid surface_kind: ${e.surface_kind}`, severity: 'major' });
+        } else if (FORMAT[e.surface_kind] && !FORMAT[e.surface_kind].test(e.target_id || '')) {
+          failures.push({ check: 'C14', detail: `preview_source_refs[${i}] target_id ${e.target_id} does not match ${e.surface_kind} format`, severity: 'major' });
+        }
+        // C15: bare_reference verbatim in original_text
+        if (e.bare_reference_in_original && !findInText(e.bare_reference_in_original, original)) {
+          failures.push({ check: 'C15', detail: `preview_source_refs[${i}] bare_reference "${e.bare_reference_in_original}" not found in original_text`, severity: 'major' });
+        }
+      });
+    }
+  }
+
+  if (tags.includes('H')) {
+    // C16: link_preview_refs non-empty
+    const lprefs = rw.link_preview_refs;
+    if (!Array.isArray(lprefs) || lprefs.length === 0) {
+      failures.push({ check: 'C16', detail: 'rewrite_category_tags includes H but link_preview_refs is empty/missing', severity: 'major' });
+    } else {
+      const VALID_SOURCES = ['anchor', 'context', 'both'];
+      lprefs.forEach((e, i) => {
+        // C17: outbound_link verbatim in original_text
+        if (e.outbound_link_in_original && !findInText(e.outbound_link_in_original, original)) {
+          failures.push({ check: 'C17', detail: `link_preview_refs[${i}] outbound_link "${e.outbound_link_in_original.slice(0,60)}..." not found in original_text`, severity: 'major' });
+        }
+        // C18: preview_text is 1-2 sentences max (period count)
+        const periods = (e.preview_text || '').split(/[.!?]+(?:\s|$)/).filter(s => s.trim()).length;
+        if (periods > 2) {
+          failures.push({ check: 'C18', detail: `link_preview_refs[${i}] preview_text exceeds 2-sentence cap (${periods} sentences); H discipline is one sentence per link`, severity: 'moderate' });
+        }
+        // preview_source enum check
+        if (e.preview_source && !VALID_SOURCES.includes(e.preview_source)) {
+          failures.push({ check: 'C16', detail: `link_preview_refs[${i}] preview_source ${e.preview_source} not in [anchor,context,both]`, severity: 'moderate' });
+        }
+      });
+    }
+  }
 
   // C7: rewrite_category_tags non-empty
   if (!Array.isArray(rw.rewrite_category_tags) || rw.rewrite_category_tags.length === 0) {
