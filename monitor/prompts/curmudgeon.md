@@ -61,6 +61,14 @@ In short: read data from the clone (guaranteed fresh), write outputs to the work
 
 **Step 0b: Check the priority queue** (`${CLONE}/monitor/curmudgeon/priority-queue.json` — read from the CLONE, not the workspace mount, because the mount can be stale). This is the urgent re-review queue. Items here are freshly onboarded WINs, rewritten sections, new proposal packages, or anything else the decider flagged as needing immediate attention. **They jump ALL other work — change-driven reviews, holistic checks, and spot-checks.**
 
+**Phase 1 verify-mode handoff (PROP-038, landed 2026-05-16):** Before popping a queue item, check if it qualifies for the verify-mode agent (`dome-curmudgeon-verify`). If ALL of the following hold, SKIP this item — verify-mode owns it:
+  (a) `item.class === 'verification'`
+  (b) most recent review on this `target_id` has `holes_found.length <= 2`
+  (c) all those holes have `severity === 'minor'`
+  (d) decider has produced at least one `monitor/decisions/applied-patches/*.json` file since the most recent review's `reviewed_at`
+
+If any gate (a)-(d) fails, this item stays in your scope — process it normally. If ALL gates pass, fall through to the next un-reviewed item in the queue. This handoff applies ONLY to priority-queue work; change-driven, holistic, and spot-check work are unchanged. (Phase 2 may relax gates (b)-(d); see PROP-038 phased plan.)
+
 **Default rule: review ONE queue item per run, then STOP all priority work.** Do not drain the queue in a single invocation. One item, full focus, fresh context next run. The scheduler (not you) decides throughput via the decider's churn-and-burn mode.
 
 **Batching exception (added 2026-04-25):** When the items at the head of the queue are clearly *minor re-reviews* — the decider just self-applied small patches and pushed the target back to verify the patch closed the hole cleanly — you MAY process up to **3 items in a single run** if every batched item passes the gate in **Step 8a (Batch triage)** below. Each batched item still gets its own review file (one queue_id per file; PROP-009 applies per-item). Batching saves only the per-run startup overhead, not the per-item review effort. Items that fail the gate fall back to singleton: process the head item normally, STOP after, defer the rest to the next run.

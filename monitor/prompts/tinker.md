@@ -96,6 +96,9 @@ metrics.net_velocity_7d = metrics.closed_issues_velocity_7d - metrics.new_issues
 // status='consolidated-into-*' OR 'complete' AND completed_at within 7d AND authored_by/claimed_by='analyst-baby'.
 // Source-of-truth: expansion-tracker.json (read once at pre-flight; same single-pass as other metrics).
 metrics.baby_drain_count_7d = /* count of baby-completed tracker items in last 7d, per expansion-tracker.json */;
+// PROP-038 Phase 1 (2026-05-16): verify-mode curmudgeon throughput. Count curmudgeon/reviews/*.json files
+// where agent_subtype='curmudgeon-verify' AND reviewed_at within last 7d. Same single-pass shape as baby_drain_count_7d.
+metrics.verify_drain_count_7d = /* count of curmudgeon-verify reviews in last 7d, per agent_subtype field */;
 fs.appendFileSync('monitor/tinker/queue-history.jsonl', JSON.stringify(metrics) + '\n');
 ```
 
