@@ -205,3 +205,135 @@ Writers set `claimed_by`/`claimed_at` BEFORE doing the analytic work (separate c
 - `operator_bypass_reason` (string|null): non-empty reason string when pop_reason is `operator_bypass`; null otherwise.
 
 **Audit consumer pattern (PROP-009r2 3-day rolling check):** stream-read the archive line-by-line, parse each JSON object, filter by `popped_at >= cutoff` (cutoff = now - 3 days), count by `pop_reason`. The strict-majority invariant continues to apply over that window.
+
+**PROP-041 class extension (2026-05-16):** the `class` enum is extended to include `'rewrite-verify'` for items pushed by decider's Step 1m (Rewrite Proposal Intake). Behavior: curmudgeon's dispatcher (Step 0b → curmudgeon-change-and-holistic dispatch branch) recognizes `class='rewrite-verify'`, reads `monitor/prompts/reference/sloppytoppy-rewrite-rubric.md`, applies the RWR-1..9 checklist against the RW file's original_text vs rewritten_text, and writes a review file with `agent_subtype: 'curmudgeon-rewrite-verify'`. Curmudgeon-verify (Sonnet, narrow) does NOT pick up `'rewrite-verify'` items — its dispatcher filters `class === 'verification'` only. Rewrite verification needs Opus structural judgment per Q-OP-1 Option C. Batchability: `'rewrite-verify'` items are SINGLETON (per-item content-preservation audit is too high-stakes for batch contamination). Adding `'rewrite-verify'` to the enum does NOT widen batching — gate 1 in Step 8a checks for `class === 'verification'` only.
+
+## RW-NNN.json Schema (PROP-041 Phase 2, 2026-05-16)
+
+Location: `monitor/sloppytoppy/rewrites/RW-NNN.json` (zero-padded, allocated from monitor/sloppytoppy/rewrites/_next-id or scanned at run start by the rewriter). Append-only directory with the RW-LIFECYCLE additive-edit exception (see CLAUDE.md File Ownership Rules).
+
+Writers by lifecycle phase:
+- **Rewriter (sloppytoppy-rewrite)** authors the RW with status='pending' and all content fields.
+- **Decider (Step 1m)** may set status to 'in-curmudgeon-review', 'rejected', 'superseded', or 'integrated' (plus rejection_reason, superseded_reason, integrated_at, integration_commit per the transition).
+- **Curmudgeon (rewrite-verify branch)** may set status to 'approved' or 'rejected' and add curmudgeon_review_ref.
+
+Required fields at author time:
+- `rw_id` (string, e.g., 'RW-001')
+- `surface_id` (string, matches scores.json surface_id — e.g., 'WIN-067.detail_evidence' or 'part4.html#section-4-3')
+- `surface_type` (enum: 'tldr_verdict' | 'tldr_evidence' | 'detail_claim' | 'detail_verdict_text' | 'detail_evidence' | 'detail_extra' | 'section_details_block')
+- `original_content_hash` (sha256 string — must match scores.json record at draft time; decider intake re-checks and supersedes on mismatch)
+- `scored_composite_before`, `scored_length_before`, `scored_understandability_before` (floats, copied from scores.json record)
+- `original_text` (string — verbatim surface text at draft time)
+- `rewritten_text` (string — proposed replacement)
+- `rewrite_category_tags` (array, non-empty, subset of `['A','B','C','D','E']` per PROP-041 categorization; empty → PUNT instead of RW per Q-OP-6)
+- `rewrite_category_rationale` (object: per-tag 1-sentence explanation)
+- `predicted_delta_breakdown` (object — see below)
+- `rationale` (string, 1-3 sentences)
+- `CONTENT_PRESERVATION_AUDIT` (object — see below)
+- `authored_by_run` (string, e.g., 'sloppytoppy-rewrite-2026-05-18-1')
+- `authored_at` (ISO timestamp)
+- `status` (initial value: 'pending')
+
+`predicted_delta_breakdown` sub-fields:
+- `predicted_length_after`, `predicted_understandability_after`, `predicted_composite_after` (floats; composite = 0.4*length + 0.6*understandability)
+- `predicted_composite_delta` (float)
+- `subtraction_fixes` (array of `{dimension, before_delta, after_delta, evidence_for_after}` per rubric subtraction the rewrite addresses)
+- `length_change_words` (integer)
+- `method` (enum: 'heuristic' (Option Z, default) | 'double_score' (Option X, not implemented in Phase 2 launch))
+
+`CONTENT_PRESERVATION_AUDIT` sub-fields (per Q-OP-1 first-class audit requirement):
+- `numbers_preserved` (array of strings — every numeric value from original_text that MUST appear in rewritten_text)
+- `numbers_in_rewritten_text` (array — what the rewriter found in its own draft; audit-rewrite.js verifies superset)
+- `citations_preserved` (array of citation strings)
+- `citations_in_rewritten_text` (array)
+- `verdict_unchanged` (boolean | null)
+- `claim_unchanged` (boolean | null)
+- `argument_structure_summary` (string, one line)
+
+Lifecycle fields (set during state transitions):
+- `popped_by_queue_id` (integer, set by decider when pushing to priority-queue with class='rewrite-verify') and `popped_by_queue_id_at` (ISO).
+- `curmudgeon_review_ref` (string, set by curmudgeon — path to its review file).
+- `rejection_reason` (string, set when status=rejected by decider or curmudgeon).
+- `superseded_reason` (string, set when status=superseded — typically 'surface-edited-since-draft' or 'composite-now-acceptable' or 'original-text-not-found-at-integration').
+- `integrated_at` (ISO, set by decider when status=integrated).
+- `integration_commit` (string, sha of the commit that applied the rewrite).
+
+State machine (only these transitions are valid):
+```
+pending → in-curmudgeon-review (decider after audit-script pass + queue push)
+pending → rejected (decider audit-script fail; or invalid schema)
+pending → superseded (decider intake: content_hash drift or composite-now-acceptable)
+in-curmudgeon-review → approved (curmudgeon RWR-1..9 checklist pass)
+in-curmudgeon-review → rejected (curmudgeon RWR-1..9 checklist fail)
+approved → integrated (decider drain step: find/replace + test.js + commit)
+approved → superseded (decider drain: original_text-not-found at integration time)
+```
+Any other transition is a discipline violation. Decider self-test should assert. The curmudgeon-rewrite-verify branch in curmudgeon.md writes only the `status` + `curmudgeon_review_ref` field set; if the rubric check finds a major hole, the same `status='rejected'` plus `curmudgeon_review_ref` are written and the review file itself carries holes_found[]/rationale.
+
+## PUNT-NNN.json Schema (PROP-041 Phase 2, 2026-05-16)
+
+Location: `monitor/sloppytoppy/punts/PUNT-NNN.json`. Pure append-only — no in-place edits. Recorded when the rewriter drafts but cannot land a rewrite meeting `predicted_composite_delta >= minimum_improvement_delta` (1.5), OR when `rewrite_category_tags` would be empty (Q-OP-6 no-category-fit punt).
+
+Required fields:
+- `punt_id` (string, e.g., 'PUNT-001')
+- `surface_id` (matches scores.json surface_id)
+- `scored_composite_remains` (float — the surface stays at this composite, eligible to enter rewrite queue again after cooldown_days)
+- `punt_reason` (free-form string — typically 'min-delta-not-met' or 'no-category-fit' or domain-specific text)
+- `drafts_considered` (integer — how many drafts the rewriter tried before punting)
+- `best_predicted_composite_after` (float — the best draft's predicted score, even though delta didn't meet threshold)
+- `best_predicted_delta` (float)
+- `recommendation_to_operator` (string — what kind of structural/rubric change might unblock this surface)
+- `authored_by_run`, `authored_at` (same shape as RW)
+
+Reader: operator (review for taxonomy gaps + flag-list expansion). Tinker may roll up PUNT statistics in Mode 3 audits to spot patterns.
+
+## rewrite-attempts.json Schema (PROP-041 Phase 2, Q-OP-5 sidecar)
+
+Location: `monitor/sloppytoppy/rewrite-attempts.json`. Single object with per-surface rejection counters. Schema:
+```json
+{
+  "_meta": {
+    "purpose": "Tracks how many times each surface has been rejected by curmudgeon-rewrite-verify. After max_attempts (3, per Q-OP-5), surface is permanently flagged 'cannot-be-auto-rewritten, operator-attention' and removed from rewriter's eligible queue.",
+    "writers": ["sloppytoppy-rewrite", "decider"],
+    "readers": ["sloppytoppy-rewrite", "operator"],
+    "last_updated": null
+  },
+  "max_attempts": 3,
+  "surfaces": {
+    "<surface_id>": {
+      "attempts": <integer>,
+      "last_attempt_at": "<ISO>",
+      "last_attempt_rw_id": "<RW-NNN>",
+      "flagged_for_operator_attention": <boolean>,
+      "history": [
+        {"rw_id": "<RW-NNN>", "outcome": "rejected", "at": "<ISO>", "rejection_reason": "..."}
+      ]
+    }
+  }
+}
+```
+Writer discipline (multi-writer protected by `git pull --rebase` + non-concurrent scheduling, same as expansion-tracker.json):
+- **Rewriter** increments `attempts` and appends `history[]` whenever it drafts an RW for a surface (NOT when curmudgeon rejects — the increment is conservative: if the draft never reaches curmudgeon because it failed audit-script, it still counts).
+- **Decider** resets `attempts=0`, clears `history`, and updates `last_attempt_at` when an RW for the surface reaches status='integrated'. (Successful rewrite means the surface should re-enter the eligible pool naturally if it ever drifts back below floor.)
+- `flagged_for_operator_attention` flips true when `attempts >= max_attempts`; rewriter checks this flag in its Step 2 cooldown filter.
+
+## calibration-audits.jsonl Schema (PROP-041 Phase 2, Q-OP-7 recalibration log)
+
+Location: `monitor/sloppytoppy/calibration-audits.jsonl`. Append-only JSONL. Tinker appends one entry per Mode 3 recalibration audit (or whenever predicted vs actual data is sufficient to evaluate). Schema per line:
+```json
+{
+  "audit_at": "<ISO>",
+  "audited_by_run": "<tinker-run-id>",
+  "window": "last_N_integrated_rewrites",
+  "window_size": 5,
+  "pairs": [
+    {"rw_id": "<RW-NNN>", "surface_id": "...", "predicted_composite_after": <float>, "actual_composite_after": <float>, "abs_drift": <float>, "score_record_ref": "scores.json record at <content_hash>"}
+  ],
+  "mean_abs_drift": <float>,
+  "max_abs_drift": <float>,
+  "drifts_gt_1": <integer>,
+  "trigger_fired": <boolean — true when drifts_gt_1 >= 3>,
+  "recommendation": "<one-sentence operator-attention message if trigger fired, else null>"
+}
+```
+Reader: tinker (next Mode 3 run reads tail to detect persistent drift), operator (manual inspection).

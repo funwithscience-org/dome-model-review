@@ -120,6 +120,29 @@ const OWNERSHIP = {
   'monitor/sloppytoppy/math-dense-surfaces.json': 'git',
   'monitor/sloppytoppy/content-dense-surfaces.json': 'git',
 
+  // PROP-041 Phase 2 (2026-05-16): sloppytoppy-rewrite state files.
+  // - rewrite-attempts.json is a sidecar counter (rewriter increments,
+  //   decider clears on integration success). Git-owned because writers
+  //   (rewriter + decider) edit from their clones and push.
+  // - calibration-audits.jsonl is append-only post-hoc audit of predicted
+  //   vs actual composite per Q-OP-7. Tinker appends from clone during
+  //   Mode 3 recalibration audit. Git-owned for the same reason as
+  //   workspace-sync-skips.jsonl (jsonl in non-jsonl-walked dir).
+  'monitor/sloppytoppy/rewrite-attempts.json': 'git',
+  'monitor/sloppytoppy/calibration-audits.jsonl': 'git',
+
+  // PROP-041 Phase 2: rewriter's per-run sentinel summary. Workspace-owned,
+  // workspace-sync rescues hourly. Same shape as sloppytoppy-score's
+  // latest-score-summary.txt above (line ~135).
+  'monitor/sloppytoppy/latest-rewrite-summary.txt': 'workspace',
+
+  // PROP-041 Phase 2: append-only directories for rewrite proposals and
+  // punts. Each RW-NNN.json / PUNT-NNN.json is immutable once written.
+  // Decider may additively edit RW status/integration fields per the
+  // PROP-041 additive-edit exception (see CLAUDE.md File Ownership).
+  'monitor/sloppytoppy/rewrites/': 'append_only',
+  'monitor/sloppytoppy/punts/': 'append_only',
+
   // workspace-owned: workspace-sync owns direction; build.js does NOT sync these
   'monitor/status.json': 'workspace',
   'monitor/review-state.json': 'workspace',

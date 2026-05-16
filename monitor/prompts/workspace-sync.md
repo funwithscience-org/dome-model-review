@@ -81,8 +81,13 @@ NEVER_PUSH=(
   # are git-owned — decider writes from clone, never round-trip from FUSE.
   'monitor/decisions/decider-mode.json'
   'monitor/decisions/closure-ledger.jsonl'
+  # PROP-041 Phase 2 (2026-05-16): audit-rewrite.js is a runtime audit script
+  # (source code), edited only via git. Not in monitor/prompts/ so the dynamic
+  # rule does not cover it — must be listed explicitly here.
+  'monitor/scripts/audit-rewrite.js'
   # All .md files under monitor/prompts/ are operator-edited (dynamic rule
-  # in is_never_push() below).
+  # in is_never_push() below). Covers monitor/prompts/sloppytoppy-rewrite.md
+  # and monitor/prompts/reference/sloppytoppy-rewrite-rubric.md automatically.
 )
 
 is_never_push() {
@@ -220,6 +225,15 @@ smart_copy "${WORKSPACE}/monitor/analyst/latest-analysis-summary.txt" monitor/an
 # sync_glob calls above; no per-file copy needed here. Only the summary file is unique
 # to baby.
 smart_copy "${WORKSPACE}/monitor/analyst-baby/latest-baby-summary.txt" monitor/analyst-baby/latest-baby-summary.txt
+
+# Sloppytoppy-rewrite outputs (PROP-041 Phase 2, 2026-05-16). Rewriter writes RWs/PUNTs
+# from its own clone and pushes (preferred path); workspace-sync rescues anything that
+# ends up on FUSE via universal-pusher.
+sync_glob monitor/sloppytoppy/rewrites '*.json'
+sync_glob monitor/sloppytoppy/punts '*.json'
+smart_copy "${WORKSPACE}/monitor/sloppytoppy/latest-rewrite-summary.txt" monitor/sloppytoppy/latest-rewrite-summary.txt
+smart_copy "${WORKSPACE}/monitor/sloppytoppy/rewrite-attempts.json" monitor/sloppytoppy/rewrite-attempts.json
+smart_copy "${WORKSPACE}/monitor/sloppytoppy/calibration-audits.jsonl" monitor/sloppytoppy/calibration-audits.jsonl
 
 # Curmudgeon outputs
 sync_glob monitor/curmudgeon/reviews '*.json'
