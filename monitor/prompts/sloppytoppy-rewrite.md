@@ -119,7 +119,7 @@ Specific patterns to avoid:
 1. Enumerate bare forward-references in original_text matching: 'See Section <X.Y>', 'see Section <X.Y>', 'See Part <N>', 'See WIN-<NNN>', 'See ISS-<NNN>', 'See PRED-<NNN>' (case-insensitive on 'see').
 2. For each, resolve target in clone:
    - Section X.Y → sections.json → `<details id="...">` → read `<summary>` text
-   - Part N → sections.json file part<N>.html → read page-title/first `<h2>`
+   - Part N (or part1b/part2b variant suffix) → `data/sections.json[part<N>].title` (preferred — clean title like "Part 5: Kill-Shot Binary Tests"). target_id format: numeric + optional lowercase letter suffix, e.g. "5", "1b". Sub-test refs like "Part 5, Test 1" are NOT supported by Cat G — leave bare. (Added 2026-05-16 per RW-002 run summary recommendation.)
    - WIN-NNN → wins.json[id=WIN-NNN] → read claim_tldr (preferred) or detail_claim
    - ISS-NNN → open-issues.json / closed-issues.json → read title
    - PRED-NNN → predictions.json → read claim_tldr

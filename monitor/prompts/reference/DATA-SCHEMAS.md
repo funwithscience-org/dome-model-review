@@ -274,7 +274,7 @@ Required fields at author time:
 - `argument_structure_summary` (string, one line)
 
 Category-G/H optional fields (PROP-041 amendment-002, 2026-05-16):
-- `preview_source_refs` (array, REQUIRED iff rewrite_category_tags includes 'G') — one entry per G substitution. Schema per entry: `{bare_reference_in_original: '<verbatim string>', surface_kind: 'section'|'win'|'iss'|'pred', target_id: '<X.Y>'|'WIN-NNN'|'ISS-NNN'|'PRED-NNN', source_field_used: 'claim_tldr'|'summary'|'heading'|'title', preview_text: '<synthesized preview replacing the bare reference>'}`.
+- `preview_source_refs` (array, REQUIRED iff rewrite_category_tags includes 'G') — one entry per G substitution. Schema per entry: `{bare_reference_in_original: '<verbatim string>', surface_kind: 'section'|'win'|'iss'|'pred'|'part', target_id: '<X.Y>'|'WIN-NNN'|'ISS-NNN'|'PRED-NNN'|'<N>[a-z]?', source_field_used: 'claim_tldr'|'summary'|'heading'|'title', preview_text: '<synthesized preview replacing the bare reference>'}`. (2026-05-16: 'part' surface_kind added per RW-002 run summary recommendation. Part-N target_id is numeric + optional lowercase letter suffix, e.g. '5' or '1b'. Preview source: `data/sections.json[part<N>].title`. Sub-test refs like 'Part 5, Test 1' are NOT supported — leave bare.)
 - `link_preview_refs` (array, REQUIRED iff rewrite_category_tags includes 'H') — one entry per H substitution. Schema per entry: `{outbound_link_in_original: '<verbatim substring of original_text>', anchor_text: '<extracted anchor text or reference label>', preview_text: '<synthesized 1-sentence preview added before/after the link>', preview_source: 'anchor'|'context'|'both'}`.
 
 Lifecycle fields (set during state transitions):

@@ -134,12 +134,18 @@ function main() {
       failures.push({ check: 'C13', detail: 'rewrite_category_tags includes G but preview_source_refs is empty/missing', severity: 'major' });
     } else {
       // C14: each entry has valid surface_kind + target_id format
-      const VALID_KINDS = ['section', 'win', 'iss', 'pred'];
+      // 'part' added 2026-05-16 per RW-002 run summary recommendation:
+      // Part-N references (e.g., "Part 5", "Part 1b") resolve to
+      // data/sections.json[part<N>].title. Sub-test refs (e.g.,
+      // "Part 5, Test 1") are NOT supported — rewriter leaves bare
+      // and they continue to count as forward_references.
+      const VALID_KINDS = ['section', 'win', 'iss', 'pred', 'part'];
       const FORMAT = {
         section: /^[0-9]+(\.[0-9]+){1,2}$/,
         win: /^WIN-[0-9]+$/,
         iss: /^ISS-[0-9]+$/,
-        pred: /^PRED-[0-9]+$/
+        pred: /^PRED-[0-9]+$/,
+        part: /^[0-9]+[a-z]?$/
       };
       psrefs.forEach((e, i) => {
         if (!VALID_KINDS.includes(e.surface_kind)) {
