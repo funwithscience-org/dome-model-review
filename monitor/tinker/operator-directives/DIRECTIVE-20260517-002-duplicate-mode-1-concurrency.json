@@ -1,0 +1,104 @@
+{
+  "directive_id": "DIRECTIVE-20260517-002",
+  "title": "Investigate analyst cross-run claim mechanism: the duplicate-Mode-1-concurrency bug. Author PROP-NNN-analyst-claim-discipline as design-pending-operator-review. Three candidate mitigations are pre-enumerated in the source inbox item — tinker chooses one (with counter-arguments) and proposes implementation patches. Operator + cowork-claude then apply.",
+  "filed_by": "operator-via-cowork-claude",
+  "filed_at": "2026-05-17T07:25:00Z",
+  "status": "pending",
+  "priority": "high",
+  "scope_authority": "Design proposal only. Tinker authors PROP-NNN with selected mitigation + counter-arguments + implementation patches. Operator reviews, then operator + cowork-claude apply prompt edits to analyst.md. Tinker does NOT self-apply.",
+  "source_inbox_item": {
+    "file": "monitor/analyst/attention-inbox.json",
+    "id": "ATT-2026-05-17T03:13-DUPLICATE-MODE-1-CONCURRENCY",
+    "status_at_filing": "pending",
+    "routing_note": "The inbox item was authored 2026-05-17T05:10:20Z with recommended_recipient='tinker', but tinker.md does NOT read monitor/analyst/attention-inbox.json. The item has been sitting orphaned. This directive bridges that gap explicitly. (Separate question for future tinker: should tinker.md dispatcher be wired to read 'recommended_recipient: tinker' inbox items the way it now reads operator-directives? Defer that as a Phase 2 follow-up — not blocking this PROP.)"
+  },
+  "bug_summary": {
+    "observed_event": "Two Opus analyst runs ~58 minutes apart (2026-05-17T02:13:00Z and 2026-05-17T03:11:00Z) performed 100% duplicate Mode 1 deep-attack work on the same 12 baby-orphan-ISS-* tracker items. Both runs drafted EXP-411 cluster audit + 7 issue-proposals + 10 tracker flips covering ISS-1735/1736/1737/1738/1739/1740/1753 (and ISS-1743 in the first run). The second (03:11Z) run discovered the collision at FUSE-write time and discarded its clone-side drafts. No data corruption.",
+    "cost_of_observed_event": "~1 Opus analyst run wasted on 100%-replayed work. No scientific or pipeline-state damage (the no-op discard at FUSE-write time worked correctly).",
+    "root_cause": "No cross-run claim mechanism on Mode 1 deep-attack items beyond the post-work tracker status flip. The Step 0a clean-clone refresh shrinks but does NOT eliminate the stale-clone window — the first run completed its tracker flips AFTER the second run's prelude clone but BEFORE the second run's FUSE-write step, so the second run saw a stale snapshot and re-claimed already-in-flight items.",
+    "why_this_matters_now": "Operator wants to bump dome-analyst from hourly (cron '50 * * * *') to 30-minute (cron '*/30 * * * *') for free-Claude-weekend backlog burn-down. At 30m cadence, the collision window roughly doubles in probability if run duration sometimes exceeds the cadence interval. The current hourly cadence has produced one observable collision in 24h; 30m would likely produce 1-2/day. The bug is non-data-corrupting but produces visible waste and bogus EXP files that decider has to disambiguate."
+  },
+  "candidate_mitigations_from_inbox_item": [
+    {
+      "id": "option_a_min_spacing_suppression",
+      "description": "Longer minimum spacing between analyst runs when no new dispatcher-fire signal arrived since the prior run (e.g., suppress run if last_run_finished_at < 15 minutes ago AND no new tracker/inbox/hnote signals).",
+      "pros_from_inbox": "Cheapest implementation (~10-line guard at top of analyst.md). Doesn't touch claim semantics.",
+      "cons_from_inbox": "At 30m cadence with min-spacing=15min, the guard would not fire — runs are 30min apart, not 15. So this mitigation is correctly-sized for the historical bug (hourly cadence) but does NOT help if cadence is bumped. Operator should consider whether the bumped cadence is in scope when picking this option."
+    },
+    {
+      "id": "option_b_active_claim_file",
+      "description": "Cross-run claim file in workspace-mounted state, checked at end of prelude (after clone refresh): 'monitor/analyst/active-claim.json' written by run-N at workstart with run-id + claimed_items[], cleared at run-end; run-N+1's prelude reads it and skips claimed items.",
+      "pros_from_inbox": "Most robust against the FUSE-stale-snapshot window — the active-claim.json lives on FUSE and is written immediately at workstart, so even concurrent reads (separate clones) see the same active-claim signal. Handles 30m cadence cleanly.",
+      "cons_from_inbox": "New file in monitor/analyst/. Needs OWNERSHIP entry in build.js + workspace-sync.md NEVER_PUSH or sync-iteration treatment. Needs analyst.md prelude + epilogue edits (write at workstart, clear at workend, handle abnormal exit). More moving parts than option-a; cleaner semantics than option-c."
+    },
+    {
+      "id": "option_c_per_tracker_entry_claim_at_workstart",
+      "description": "Per-tracker-entry claimed_by + claimed_at fields written at WORKSTART (not workend) in the clone AND immediately copied to FUSE so concurrent runs see a real claim; the current claimed_by is set post-work as part of the status flip.",
+      "pros_from_inbox": "Uses existing tracker schema (no new file). Symmetric with how analyst-baby already claims items. Per-item granularity (not per-run).",
+      "cons_from_inbox": "Requires analyst to push the claim immediately at workstart (extra git roundtrip per run) AND/OR copy to FUSE side-channel (workspace-sync coupling). Race window narrows but doesn't fully close without the immediate-copy-to-FUSE step (which is operationally equivalent to option-b's active-claim.json from a write perspective)."
+    }
+  ],
+  "operator_decisions_already_made": {
+    "in_scope": [
+      "Pick one of the three options above (or propose a fourth if you have a better idea, with full counter-argument).",
+      "Author PROP-NNN-analyst-claim-discipline (next available PROP number per monitor/tinker/proposals/) as status='design-pending-operator-review'.",
+      "Include implementation amendment as part of PROP (concrete patches for analyst.md, any new files, OWNERSHIP entries, workspace-sync.md treatment, CLAUDE.md ownership rule additions).",
+      "Counter-arguments section mandatory (operator preference).",
+      "Other-side-of-the-argument section mandatory (operator preference — steelman the case for NOT shipping this fix at all, e.g., 'duplicate work is non-corrupting waste; just accept it on free weekends')."
+    ],
+    "out_of_scope": [
+      "Do NOT self-apply any analyst.md edit. Tinker is design-only here.",
+      "Do NOT wire tinker.md to read attention-inbox.json items routed to tinker. That's a Phase 2 follow-up (defer to a separate PROP if you want to file it).",
+      "Do NOT bundle into PROP-043 (analyst-operator-commission-priority). PROP-043 is dispatcher-priority work; this is claim-discipline. Different concerns, different review surfaces."
+    ]
+  },
+  "operator_preferences_for_proposal": [
+    "Minimal prompt-change surface. Operator weights analyst.md change-risk highly because it's the most-changed prompt and a bad edit can cascade across the WIN authoring pipeline.",
+    "Capability-preserving. Whichever option lands, analyst's existing Mode 1 / Mode 2 / Mode 2b / Mode 5 procedures should continue working unchanged. The fix is a guard-step, not a behavior change.",
+    "Forward-compatible with cadence bump to 30m. The fix should hold at 30-minute cadence as well as hourly. If option-a is selected, the operator needs to understand its limitation at 30m and explicitly accept the trade-off.",
+    "Backward-compatible. Existing in-flight analyst runs should not be disrupted. If state files change shape, include a migration step."
+  ],
+  "tasks_for_tinker": [
+    {
+      "task_id": "task_1_review_evidence",
+      "description": "Re-read ATT-2026-05-17T03:13-DUPLICATE-MODE-1-CONCURRENCY in monitor/analyst/attention-inbox.json. Confirm the three candidate mitigations and the root-cause analysis. If your read disagrees with the inbox item's framing, note that in the PROP and explain.",
+      "deliverable": "Confirmation (or amendment) of root cause in PROP's executive_summary section."
+    },
+    {
+      "task_id": "task_2_choose_mitigation",
+      "description": "Select one of option_a / option_b / option_c (or propose option_d with full counter-argument). Provide pros/cons table covering: implementation complexity (LOC, new files, schema changes), runtime cost (extra git roundtrips, FUSE writes), correctness under 30m cadence, backward-compat risk, and operator-preference fit.",
+      "deliverable": "headline_recommendation section with selected option + one-paragraph rationale."
+    },
+    {
+      "task_id": "task_3_design_amendment",
+      "description": "Author the implementation amendment as part of PROP-NNN. For each file to be created or modified, provide either (a) full file content for new files or (b) old_string + new_string diffs for existing files. Use the patch shape that PROP-014-amendment-001 and PROP-041-amendment-001-implementation used (single comprehensive amendment, phased patch groupings if helpful). Include regression check section.",
+      "deliverable": "phase_1_design section with implementation_amendment subsection containing concrete patches."
+    },
+    {
+      "task_id": "task_4_counter_argument_section",
+      "description": "Counter-argument and other-side-of-the-argument sections. The operator's stated preference (per CLAUDE.md / past directives) is 'Think about the other side of the argument too.' Steelman: (a) the case for NOT shipping any fix (just accept the waste), (b) the case for picking the option you did NOT select, (c) the case for an entirely different approach you're rejecting. Rebut each.",
+      "deliverable": "counter_arguments_addressed + operator_other_side_considerations sections."
+    },
+    {
+      "task_id": "task_5_regression_check",
+      "description": "Before completing, walk the amendment for: (a) does it disrupt the analyst-baby cross-run claim discipline (baby uses claimed_by='analyst-baby' filter, analyst-Opus uses claimed_by!='analyst-baby' filter)? (b) does it disrupt PROP-029 safety-net for orphan-ISS pickup (analyst handles orphans differently from tracker items)? (c) does it disrupt Mode 5 frozen-prediction WRITE-VERIFY discipline (PROP-014 Mech 1b)? (d) does it create new failure modes if analyst crashes mid-run (claim left set, never cleared)?",
+      "deliverable": "regression_check section with each item explicitly checked off."
+    }
+  ],
+  "expected_artifacts": [
+    "monitor/tinker/proposals/PROP-NNN-analyst-claim-discipline.json (status: design-pending-operator-review)"
+  ],
+  "related_props": [
+    "PROP-029 (safety net for orphan-ISS pickup — DON'T break this)",
+    "PROP-034 (analyst-baby — claim semantics already established for cross-agent claim, this PROP extends to intra-analyst-Opus runs)",
+    "PROP-036 (analyst summary-write canonical fix — separate concern)",
+    "PROP-043 (analyst-operator-commission-priority — orthogonal, do not bundle)"
+  ],
+  "related_directives": [
+    "DIRECTIVE-20260517-001 (decider Step 1m hotfix — completed earlier today; sibling response to a structural pipeline gap)"
+  ],
+  "blocks": [
+    "Operator's stated intent to bump dome-analyst cadence from hourly to 30m. The 30m bump is gated on this fix landing."
+  ],
+  "deadline_target": "Next tinker scheduled run (2026-05-18T02:39Z) or earlier via operator manual trigger. No hard deadline; operator can ride at hourly cadence indefinitely if this slips."
+}
