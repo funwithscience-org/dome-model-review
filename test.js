@@ -744,6 +744,11 @@ console.log('\n── 8. Prediction Panels ──');
     const modPos = overviewSlice.indexOf('class="ds-falsifiability-module"');
     assert(thesisPos > -1 && barPos > -1 && modPos > -1, 'EXP-271: ds-thesis-hero, ds-verdict-bars, ds-falsifiability-module all present on Overview');
     assert(thesisPos < barPos, 'EXP-271: ds-thesis-hero must appear BEFORE ds-verdict-bars (claim → result)');
+  // ISS-1648: thesis-hero internal structure test
+  assert(htmlContent.includes('class="ds-thesis-statement"'), 'ISS-1648: ds-thesis-statement element must exist inside ds-thesis-hero');
+  assert(htmlContent.includes('class="ds-thesis-badge"'), 'ISS-1648: ds-thesis-badge (live-test indicator) must exist inside ds-thesis-hero');
+  assert(htmlContent.includes('class="ds-thesis-figures"'), 'ISS-1648: ds-thesis-figures list must exist inside ds-thesis-hero');
+  assert(htmlContent.includes('id="ds-thesis-statement"'), 'ISS-1648: aria labelledby target id="ds-thesis-statement" must be present');
     assert(barPos < modPos, 'EXP-271: ds-verdict-bars must appear BEFORE ds-falsifiability-module (result → standard)');
   }
   // ISS-1636: factual fix in eg-falsifiability — sub-meter → sub-0.01%
