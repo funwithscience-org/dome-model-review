@@ -83,15 +83,27 @@ async function isVerifyOwned(item){
   // (c) all holes have severity === 'minor'
   if(!(rev.holes_found||[]).every(h=>h.severity==='minor')) return false;
 
-  // (d) decider has produced at least one applied-patches/*.json since rev.reviewed_at
-  // Same JSON-field rule: compare generated_at, not filesystem mtime.
+  // (d) decider has produced at least one suggested-patches-*.json since rev.reviewed_at.
+  // PATH FIX 2026-05-17: decider writes fresh patch files to the TOP-LEVEL
+  // monitor/decisions/ as suggested-patches-<TS>.json (e.g.,
+  // suggested-patches-2026-05-17T12-19.json). The applied-patches/ subdir
+  // contains an ARCHIVE of older copies. Earlier code only checked the
+  // subdir and missed fresh top-level patches — verify run 2026-05-17T13:52Z
+  // documented this miss for qid=374 SEC-6.14 verification. Fix: check
+  // BOTH locations and treat either as a valid "newer patch" signal.
+  // Same JSON-field rule as bug 1: compare generated_at, not filesystem mtime.
   const reviewedAt=Date.parse(rev.reviewed_at||0);
-  const applied=fs.readdirSync(path+'/monitor/decisions/applied-patches');
-  const hasNewer=applied.some(f=>{
-    try { const p=JSON.parse(fs.readFileSync(path+'/monitor/decisions/applied-patches/'+f,'utf8'));
-          return (Date.parse(p.generated_at||0) || 0) > reviewedAt; }
-    catch(e) { return false; }
-  });
+  function newerInDir(dir){
+    try{
+      return fs.readdirSync(dir).some(f=>{
+        if(!f.startsWith('suggested-patches-')||!f.endsWith('.json'))return false;
+        try { const p=JSON.parse(fs.readFileSync(dir+'/'+f,'utf8'));
+              return (Date.parse(p.generated_at||0) || 0) > reviewedAt; }
+        catch(e) { return false; }
+      });
+    }catch(e){return false;}
+  }
+  const hasNewer = newerInDir(path+'/monitor/decisions') || newerInDir(path+'/monitor/decisions/applied-patches');
   if(!hasNewer) return false;
 
   return true;
