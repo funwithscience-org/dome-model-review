@@ -1,0 +1,95 @@
+{
+  "directive_id": "DIRECTIVE-20260517-001",
+  "title": "Investigate why decider Step 1m (Rewrite Proposal Intake, PROP-041 amendment-001 Phase 2c) is silently not firing. RW-001 has been pending for ~24h and RW-002 for ~12h; decider's 17:21Z (2026-05-16) and 01:23Z (2026-05-17) runs both did substantive work but neither pushed any RW to the priority queue with class='rewrite-verify'. Priority queue still has zero rewrite-verify items. The entire Phase 2 review pipeline is stuck pending diagnosis.",
+  "filed_by": "operator",
+  "filed_at": "2026-05-17T08:30:00Z",
+  "status": "pending",
+  "priority": "high",
+  "scope_authority": "Diagnostic + propose fix as PROP-NNN if needed. If fix is trivial (typo, marker mismatch, ordering issue), tinker may also recommend the operator apply the hotfix in-session without authoring a full PROP — same pattern as the Part-N audit-script hotfix yesterday (commit 90486ed). For non-trivial fixes, propose-only as PROP-NNN.",
+  "related_props": ["PROP-041", "PROP-041-amendment-001-implementation", "PROP-041-amendment-002-categories-FGH", "PROP-040"],
+  "context": [
+    "PROP-041 Phase 2 sloppytoppy-rewrite is live. Two RWs have been authored by the rewriter:",
+    "  - RW-001 (WIN-010.detail_verdict_text): authored 2026-05-16T09:32:21Z, status=pending. Cooldown active per rewrite-attempts.json.",
+    "  - RW-002 (part6.html#p6-610-9): authored 2026-05-16T20:00:00Z, status=pending. First G-tagged RW; rewriter run summary documented end-to-end success.",
+    "Both RW files exist at monitor/sloppytoppy/rewrites/RW-NNN.json. Content-hashes are still valid (verified 2026-05-17 ~08:00Z: RW-001 hash matches current data/wins.json[id=010].detail_verdict_text; RW-002 hash matches current data/sections.json[part6] p6-610-9 details block).",
+    "PROP-041 amendment-001 Phase 2c (commit d46375b, 2026-05-16 ~12:00Z) added Step 1m to monitor/prompts/reference/decider-intake.md. Sub-steps:",
+    "  Step 1m.A — Intake pending RWs (schema validate, content-hash freshness, acceptable-floor escape, audit-script pre-check, push to priority-queue class='rewrite-verify').",
+    "  Step 1m.B — Drain approved RWs (post-curmudgeon-approval integration into wins.json/sections.json + test.js gate + commit + reset attempts).",
+    "  Step 1m.C — Drain rejected/superseded RWs (no further action).",
+    "  Step 1m.D — Stall escalation.",
+    "  Step 1m.E — Recalibration audit context.",
+    "Decider has run TWICE since Step 1m landed:",
+    "  decider-2026-05-16T17-21Z: 5 patches (EXP-407/409, SEC-6.14 c5 H1-H5), BAU triage 2 items, 11 closures, build PASS. Summary makes ZERO mention of Step 1m, sloppytoppy, RW-NNN, or rewrites.",
+    "  decider-2026-05-17T01-23Z: 5 patches (SEC-4.2.7a penumbra/cross-convention, SEC-6.14 c5 H1-H5 reframed), BAU triage 2 items, build PASS (3647 tests). Summary makes ZERO mention of Step 1m, sloppytoppy, RW-NNN, or rewrites.",
+    "Priority queue check 2026-05-17T08:00Z: monitor/curmudgeon/priority-queue.json has 0 items with class='rewrite-verify'. The queue is healthy for other classes — depth 3 (WIN-052 deep-attack, SEC-4.2.7a deep-attack, SEC-6.14 verification per decider 01:23Z summary). So priority-queue.json itself is functional; the missing items are specifically rewrite-verify pushes that Step 1m.A is supposed to make.",
+    "Hypothesis space (not yet narrowed by tinker investigation):",
+    "  H1 — Prompt-load order issue: PROP-040 split decider context across multiple files (decider-curmudgeon-pq-mechanics.md conditionally loaded). Maybe Step 1m landed in decider-intake.md but isn't being loaded into the decider's working context per the conditional-load rules. Test: read decider-intake.md and confirm Step 1m is present + look at decider.md's load-order references.",
+    "  H2 — Step 1m runs but finds nothing: the `ls monitor/sloppytoppy/rewrites/` glob might be returning empty (workspace vs clone path confusion?), or schema validation is rejecting both RWs silently, or content-hash freshness is mis-computing. Test: simulate Step 1m.A logic against RW-001/002 in isolation; check what path the decider's bash steps actually read from.",
+    "  H3 — Decider prioritization: Step 1m sits between Step 1h2 and Step 1i in the canonical order. Decider may be hitting context-budget limits during the heavy patch work above Step 1m and never reaching 1m. Test: count steps decider's summary mentions executing vs total step count in decider-intake.md; if decider is consistently stopping at some step before 1m, budget pressure is the cause.",
+    "  H4 — File-discovery issue: PROP-014 amendment-001 noted that decider runs from a clean clone path. Decider-intake.md Step 1m's first command is `ls ${CLEAN_CLONE}/monitor/sloppytoppy/rewrites/`. If CLEAN_CLONE env var is unset or wrong, ls returns nothing. Test: check decider.md Step 0 to confirm CLEAN_CLONE is properly initialized; check whether monitor/sloppytoppy/rewrites/ existed in the clone at decider's run-time (it should — RWs were pushed before decider ran).",
+    "Severity is high because the entire Phase 2 review pipeline is blocked. Cooldown_days=14 on RW-001's surface means we can't 'just rerun the rewriter' to bypass — RW-001 sits in cooldown until curmudgeon reviews + decider integrates OR rejects."
+  ],
+  "operator_intent": "Tinker diagnoses why Step 1m is silently not firing in decider runs. Determines which hypothesis (H1-H4 or other) is correct. Proposes the canonical fix. If fix is trivial (path correction, marker mismatch, conditional-load fix), tinker recommends operator-side hotfix shape so the next decider run actually picks up RW-001/002. If non-trivial, file as PROP-NNN with full design and counter-args.",
+  "tasks_for_tinker": [
+    {
+      "task_id": "task_1_verify_step_1m_present_in_decider_intake",
+      "description": "Read monitor/prompts/reference/decider-intake.md and confirm Step 1m is present in the canonical file (not in a conditionally-loaded reference file). Quote the Step 1m heading line and surrounding 5-line context. If absent — that's the immediate cause and the fix is to restore the missing section.",
+      "deliverable": "Confirmation + quote, or absence report."
+    },
+    {
+      "task_id": "task_2_check_decider_md_load_order",
+      "description": "Read monitor/prompts/decider.md and trace which intake reference files it loads at run-start. Identify whether decider-intake.md is loaded unconditionally OR conditionally (per PROP-040 extraction pattern). If conditional, identify the trigger and whether Step 1m falls inside or outside the conditional block.",
+      "deliverable": "Load-order trace + assessment of whether Step 1m is reachable."
+    },
+    {
+      "task_id": "task_3_simulate_step_1m_a_logic",
+      "description": "Walk through Step 1m.A as if executing it manually against RW-001 and RW-002. Specifically: (a) does `ls monitor/sloppytoppy/rewrites/` return the RWs from the decider's clean clone path?, (b) does the schema validation pass?, (c) does content-hash freshness compute correctly?, (d) does the audit-script call work? Identify any step where the logic would silently skip both RWs.",
+      "deliverable": "Step-by-step simulation result with pass/fail per sub-check."
+    },
+    {
+      "task_id": "task_4_check_decider_run_log_for_step_1m_markers",
+      "description": "Grep the daily-report-*.json files for 2026-05-16T17-21 and 2026-05-17T01-23 runs for any mention of Step 1m, rewrites/, RW-NNN, or sloppytoppy/. Even silent execution should leave SOME trace in the run output if decider read the directory. Absence-of-evidence is informative: if zero traces, decider isn't reaching Step 1m at all.",
+      "deliverable": "Grep results + interpretation."
+    },
+    {
+      "task_id": "task_5_recommend_fix",
+      "description": "Based on H1-H4 investigation, recommend the canonical fix:",
+      "options": {
+        "option_trivial_hotfix": "If the cause is a path/marker mismatch or load-order issue that's a 1-3 line fix, recommend operator applies in-session (same pattern as Part-N hotfix commit 90486ed). Provide exact old_string/new_string.",
+        "option_PROP_NNN": "If the cause is structural (e.g., budget pressure requiring a Step-1m extraction, or context-load discipline that needs a separate reference file), file as PROP-NNN with full design including counter-arg section.",
+        "option_unblock_now_only": "If the cause requires deeper investigation that won't complete this run, recommend an immediate unblock-RW-001/002 operator action (e.g., manually push to priority-queue via cowork-claude) so the curmudgeon path can start exercising even while the broader Step 1m fix is in flight."
+      },
+      "deliverable": "Recommendation with exact patches (for trivial) or PROP-NNN scope (for structural) or unblock procedure (for now-only)."
+    },
+    {
+      "task_id": "task_6_counter_argument_short",
+      "description": "Short counter-arg section (per operator preference): could this NOT be a bug? E.g., is decider intentionally batching Step 1m intake across multiple runs and just hasn't gotten to it yet? Rebuttal expected: 24h is too long; PROP-041 amendment-001 cost analysis estimated 'Step 1m adds ~50 LOC reference, ~5 RWs/run intake' as the expected cadence, so two runs with zero intake fits the bug-not-feature pattern.",
+      "deliverable": "1-2 paragraph counter-arg with rebuttal."
+    }
+  ],
+  "in_scope_for_tinker": [
+    "Read decider-intake.md, decider.md, and any conditionally-loaded reference files (decider-curmudgeon-pq-mechanics.md per PROP-040)",
+    "Grep the two decider run reports for Step 1m markers",
+    "Read RW-001 and RW-002 to confirm freshness",
+    "Simulate Step 1m.A logic against RW-001/002 (read-only — do NOT actually push to priority-queue from tinker; that's decider's job)",
+    "Recommend a fix (trivial / PROP-NNN / unblock-now)"
+  ],
+  "out_of_scope_for_tinker": [
+    "Do NOT push RW-001 or RW-002 to priority-queue.json directly. The fix should restore decider's ability to do this, not bypass it.",
+    "Do NOT modify decider-intake.md or any prompt directly — recommend, don't self-apply.",
+    "Do NOT modify RW-001 or RW-002 status fields. They stay pending until decider properly processes them.",
+    "DIRECTIVE-008 (PROP-042 compression-mode authoring) is still pending. This new directive is higher priority (blocking issue) — tinker should pick this first if both fit in one run, defer DIRECTIVE-008 to the run after."
+  ],
+  "operator_preferences_for_diagnosis": [
+    "Bias toward 'just figure out the cause' rather than 'design a system to prevent this class of bug'. Single-cause diagnosis preferred to broad-strokes architectural recommendations.",
+    "If the cause is trivial (hotfix candidate), prefer that path. Yesterday's Part-N audit-script hotfix took 3-file 10-line changes and worked cleanly.",
+    "Counter-arg section keep to 1-2 paragraphs — this is a bug investigation, not a new design.",
+    "The high-priority urgency (RW-001 stuck 24h) trumps the usual propose-only discipline if a trivial hotfix can unblock the pipeline today."
+  ],
+  "expected_artifacts": [
+    "Tinker run summary documenting H1-H4 investigation + recommended fix.",
+    "If trivial fix: exact patches operator can apply in-session.",
+    "If structural: monitor/tinker/proposals/PROP-NNN-decider-step-1m-fix.json (status: design-pending-operator-review).",
+    "If unblock-only-now: procedure for cowork-claude to manually push RW-001/002 to priority-queue (audit-rewrite.js call + queue-id allocation + RW.status update to 'in-curmudgeon-review')."
+  ]
+}
