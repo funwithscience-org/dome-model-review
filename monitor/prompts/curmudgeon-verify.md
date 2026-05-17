@@ -61,11 +61,20 @@ async function isVerifyOwned(item){
   if(item.class !== 'verification') return false;
 
   // Find most recent review for this target_id
+  // NOTE: Sort by reviewed_at JSON field, NOT filesystem mtime. In fresh-clone
+  // environments (which every curmudgeon-verify run uses) all files share the
+  // checkout mtime, making mtime-sort meaningless. Verify run 2026-05-17T08:30Z
+  // documented this bug: mtime-sort picked WIN-013-014-SEC-6.14-EXP358-verification.json
+  // (May 12) over SEC-6.14-kappa-cluster.c5.json (May 16). Fixed 2026-05-17.
   const reviewDir=path+'/monitor/curmudgeon/reviews';
   const candidates=fs.readdirSync(reviewDir).filter(f=>f.includes(item.target_id));
   if(candidates.length===0) return false; // no prior review → main curmudgeon's job (fresh)
 
-  const newest=candidates.map(f=>({f,m:fs.statSync(reviewDir+'/'+f).mtime})).sort((a,b)=>b.m-a.m)[0];
+  const newest=candidates.map(f=>{
+    try { const rev=JSON.parse(fs.readFileSync(reviewDir+'/'+f,'utf8'));
+          return {f, t: Date.parse(rev.reviewed_at||0) || 0}; }
+    catch(e) { return {f, t: 0}; }  // defensive: unreadable → treat as oldest
+  }).sort((a,b)=>b.t-a.t)[0];
   const rev=JSON.parse(fs.readFileSync(reviewDir+'/'+newest.f,'utf8'));
 
   // (b) prior review has holes_found.length <= 2
@@ -75,9 +84,14 @@ async function isVerifyOwned(item){
   if(!(rev.holes_found||[]).every(h=>h.severity==='minor')) return false;
 
   // (d) decider has produced at least one applied-patches/*.json since rev.reviewed_at
+  // Same JSON-field rule: compare generated_at, not filesystem mtime.
   const reviewedAt=Date.parse(rev.reviewed_at||0);
   const applied=fs.readdirSync(path+'/monitor/decisions/applied-patches');
-  const hasNewer=applied.some(f=>fs.statSync(path+'/monitor/decisions/applied-patches/'+f).mtime>reviewedAt);
+  const hasNewer=applied.some(f=>{
+    try { const p=JSON.parse(fs.readFileSync(path+'/monitor/decisions/applied-patches/'+f,'utf8'));
+          return (Date.parse(p.generated_at||0) || 0) > reviewedAt; }
+    catch(e) { return false; }
+  });
   if(!hasNewer) return false;
 
   return true;
