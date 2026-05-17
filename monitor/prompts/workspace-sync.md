@@ -174,11 +174,34 @@ smart_copy() {
   local ws_mtime git_time
   ws_mtime=$(stat -c %Y "$src" 2>/dev/null || echo 0)
   git_time=$(git log -1 --format=%at -- "$dst" 2>/dev/null || echo 0)
-  if [ "$ws_mtime" -gt "$git_time" ]; then
-    cp "$src" "$dst"
-  else
+  if [ "$ws_mtime" -le "$git_time" ]; then
     echo "SKIP (mtime-guard; git newer): $dst (git $(date -u -d @$git_time +%FT%TZ 2>/dev/null || echo $git_time), ws $(date -u -d @$ws_mtime +%FT%TZ 2>/dev/null || echo $ws_mtime))" >> "$SKIP_LOG"
+    return 0
   fi
+  # Anti-reversion check (PROP-045, enforce mode 2026-05-17). FUSE mtime says
+  # FUSE is newer, but does FUSE content match any of the last 20 historic
+  # commits' versions on this path? If so, FUSE has stale content that some
+  # agent wrote back after a fresh commit by another writer — skip the copy
+  # to prevent reverting git. Fixes the 2026-05-17T13:00Z incident where
+  # workspace-sync overwrote analyst-baby's EXP-415..420 orphan-batch commit
+  # with a pre-commit stale FUSE copy. Rescue path preserved: decider's
+  # committed-but-unpushed content is a never-pushed state, so it won't
+  # match any historic git commit and proceeds normally.
+  local fuse_hash hist_hash match_sha
+  fuse_hash=$(sha1sum "$src" | cut -d' ' -f1)
+  match_sha=""
+  for sha in $(git log --format=%H -n 20 -- "$dst" 2>/dev/null); do
+    hist_hash=$(git show "$sha:$dst" 2>/dev/null | sha1sum | cut -d' ' -f1)
+    if [ "$hist_hash" = "$fuse_hash" ]; then
+      match_sha="$sha"
+      break
+    fi
+  done
+  if [ -n "$match_sha" ]; then
+    echo "SKIP (anti-reversion; FUSE matches historic commit ${match_sha:0:8}): $dst" >> "$SKIP_LOG"
+    return 0
+  fi
+  cp "$src" "$dst"
 }
 
 # Iterate over each file the workspace might author and smart_copy it
@@ -849,6 +872,7 @@ Output a one-line summary: how many files were new, how many modified, or "Nothi
 - **Do NOT run `node build.js publish`, `node build.js pdf`, or `node test.js`.** Those are reserved for the decider. You MAY run `node build.js html` when source data has been staged (see Step 3) — that target only regenerates `docs/index.html` from the data files, no git ops, no PDF, no tests, no commits.
 - **Never revert git.** Always use `smart_copy` instead of raw `cp`. The helper refuses to overwrite a clone file whose last git commit is newer than the workspace file's mtime — this protects direct-to-git commits from being silently undone. If you find yourself wanting to force-overwrite a skipped file, stop and escalate to tinker or a human instead.
 - **Universal-pusher mode (2026-04-26):** runtime data files (data/, decision state, applied-patches) ARE eligible to push when FUSE has newer content. This is the rescue path for decider 403 push failures. Generated/source files (docs/, build-scripts/, build.js, prompts) remain in the NEVER_PUSH deny-list — those must never round-trip from FUSE. The one exception: when source data is being pushed, this agent regenerates `docs/index.html` itself in the clone (Step 3) so the live site doesn't drift.
+- **Anti-reversion guard (PROP-045, enforce 2026-05-17):** `smart_copy` adds a content-hash check after the mtime guard. Even when FUSE mtime > git commit time, if the FUSE content sha1 matches any of the last 20 historic commits' versions on that path, the copy is SKIPPED with reason `anti-reversion; FUSE matches historic commit <sha>`. This catches the 2026-05-17T13:00Z failure mode where workspace-sync reverted analyst-baby's EXP-415..420 orphan-batch commit by pushing a pre-commit stale FUSE copy that had been updated mtime-wise but contained pre-baby content. Affects multi-writer files (`expansion-tracker.json`, `attention-inbox.json`, `curmudgeon/tracker.json`) where read-modify-write races between agents are common. Rescue path preserved: decider's committed-but-unpushed content is a never-pushed state with a content hash that won't match any historic commit, so it proceeds normally. Tinker's soft-complaints grep should flag any run where `anti_reversion` count > 0 (sustained >0 indicates a writer-side bug worth fixing at source).
 - If git pull --rebase fails with merge conflicts, do NOT attempt to resolve. Output the error and stop. A human or the tinker agent will fix it.
 - Use your own clone directory (`dome-sync-clone`), never touch `dome-review-clean`.
 
