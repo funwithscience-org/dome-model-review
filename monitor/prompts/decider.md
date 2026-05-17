@@ -121,6 +121,20 @@ ls monitor/external-reports/report-*.json 2>/dev/null | while read f; do NUM=$(b
 Trigger: Untracked external reports exist. Someone took the time to file a report.
 → Read `monitor/prompts/reference/decider-intake.md`, execute Step 1c.
 
+**Priority 2b — Integrity Findings Intake** (Step 1d, PROP-037 — check every run)
+```bash
+ls ${CLEAN_CLONE}/monitor/integrity/report-*.json 2>/dev/null | sort | tail -1
+```
+Trigger: Latest integrity report exists. EVERY finding with `tracked_under: null` must be promoted to an ISS, regardless of severity. Build drift, next_id collisions, orphan EXPs — all live here. This step is structurally mandatory per PROP-037 (replaces moderate-only filter that masked findings 2026-05-13 → 2026-05-16).
+→ Read `monitor/prompts/reference/decider-intake.md`, execute Step 1d (sections A-D).
+
+**Priority 2c — Rewrite Proposal Intake** (Step 1m, PROP-041 — check every run)
+```bash
+ls ${CLEAN_CLONE}/monitor/sloppytoppy/rewrites/RW-*.json 2>/dev/null | wc -l
+```
+Trigger: Any RW-NNN.json files exist. Two phases per run: (A) intake pending RWs into the curmudgeon priority queue with class='rewrite-verify'; (B) drain curmudgeon-approved RWs by integrating into wins.json / sections.json, then reset rewrite-attempts.json. Step 1m.D escalates RWs stuck in-curmudgeon-review > 20h via HNOTE.
+→ Read `monitor/prompts/reference/decider-intake.md`, execute Step 1m (sub-steps A–E).
+
 **Priority 3 — Pending Curmudgeon Reviews**
 ```bash
 node -e "const d=JSON.parse(require('fs').readFileSync('${CLEAN_CLONE}/monitor/curmudgeon/pending-digest.json','utf8'));console.log('Pending:',d.pending_count,'Critical:',d.severity_breakdown.critical,'Major:',d.severity_breakdown.major)"
