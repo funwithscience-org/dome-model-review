@@ -1,0 +1,358 @@
+{
+  "id": "PROP-044",
+  "prop_id": "PROP-044",
+  "title": "Analyst cross-run claim discipline: FUSE-canonical active-claim.json to eliminate duplicate Mode-1 work between concurrent Opus analyst runs (option B from inbox ATT-2026-05-17T03:13)",
+  "authored_by": "tinker",
+  "authored_at": "2026-05-17T07:00:00.000Z",
+  "status": "design-pending-operator-review",
+  "category": "concurrency-discipline-fix",
+  "directive": "DIRECTIVE-20260517-002-duplicate-mode-1-concurrency",
+  "supersedes_prop": null,
+  "amends": null,
+  "depends_on": [],
+  "related_directives": [
+    "DIRECTIVE-20260517-002 (this PROP's authoring directive)",
+    "DIRECTIVE-20260517-001 (decider Step 1m hotfix — sibling response to a structural pipeline gap, completed earlier same day)"
+  ],
+  "related_props": [
+    "PROP-029 (safety net for orphan-ISS pickup — must remain intact)",
+    "PROP-034 (analyst-baby — cross-agent claim discipline; this PROP extends the same semantic to intra-Opus runs)",
+    "PROP-036 (analyst summary-write canonical fix — separate concern; this PROP does NOT change postlude shape, only adds an epilogue release step)",
+    "PROP-043 (analyst-operator-commission-priority — orthogonal; explicitly NOT bundled per operator directive)"
+  ],
+  "headline_recommendation": {
+    "selected_option": "Option B — workspace-canonical active-claim.json at monitor/analyst/active-claim.json. Opus analyst writes the file at Mode-1 workstart (after trigger check confirms Mode 1 fires), reads it at prelude (after the existing Step 0a clone refresh) to filter out items currently held by another active Opus run, and clears it at run-end. TTL of 90 minutes bounds crash-orphan duration.",
+    "rationale_one_paragraph": "Option B closes the race that the existing Step 0a clone-refresh cannot close. The observed bug (2026-05-17T02:13Z and T03:11Z runs both processing the same 12 baby-orphan-ISS-* items) happened because each Opus run reads its tracker view from its own git clone (origin/main), while the in-flight competitor's tracker mutations live on FUSE until workspace-sync's hourly rescue. Option A (min-spacing suppression) does not survive the operator's stated 30-minute cadence bump and is wrong-sized — the bug already occurred at hourly cadence. Option C (per-tracker-entry claimed_by at workstart) is operationally equivalent to Option B at the write-direction layer (per the inbox author's own analysis), but it forces an additional writer onto expansion-tracker.json — a multi-writer file already documented in CLAUDE.md as 'protected only by scheduling discipline, pre-push integrity gate, and merge-conflict detection.' Adding a third writer (Opus prelude) that needs to land on FUSE within milliseconds is a clear regression risk. A dedicated single-writer FUSE file with a documented TTL is the cleanest surface: one new file, one new ownership entry, one new NEVER_PUSH entry, ~25 lines of dispatcher hooks. It is symmetric in spirit with analyst-baby's claim-at-workstart pattern (PROP-034) but uses a separate file so the multi-writer dance on expansion-tracker.json is undisturbed.",
+    "scoped_to": "Mode 1 (Section Expansion Queue, including deep-attack singletons, holistic items, AND PROP-029 orphan-ISS pickup) only. Mode 0/1b/2/2b/3/4/5 are out of scope — none have shown the cross-run collision pattern, and the operator explicitly required 'Mode 1/2/2b/5 procedures continue working unchanged.' Extension to other modes is a Phase-2 follow-up if telemetry shows the pattern recurs there."
+  },
+  "executive_summary": {
+    "problem_one_line": "Two Opus analyst runs ~58 minutes apart (2026-05-17T02:13Z and T03:11Z) performed 100% duplicate Mode-1 deep-attack work on the same 12 baby-orphan ISS items because the Step 0a clone refresh narrows but does not close the race window: the second run's prelude clone preceded the first run's tracker writes, so the second run saw a stale snapshot and re-claimed in-flight items.",
+    "evidence_one_line": "Inbox item ATT-2026-05-17T03:13-DUPLICATE-MODE-1-CONCURRENCY documents both runs drafting EXP-411 cluster audit + 7 issue-proposals + 10 tracker flips covering ISS-1735/1736/1737/1738/1739/1740/1753 (and ISS-1743 in the first run); the second run discarded its clone-side drafts at FUSE-write time, confirming no data corruption but visible Opus waste of ~1 full analyst run.",
+    "fix_one_line": "Add a FUSE-only single-file claim mechanism (monitor/analyst/active-claim.json) consulted at Mode-1 prelude (post-Step-0a) and written at Mode-1 workstart. TTL=90min bounds crash-orphan stale claims. Released at run-end as part of the existing postlude.",
+    "shape_one_line": "~25 lines of dispatcher hooks in analyst.md (Step 0c + Mode-1 filter modification + Mode-1 workstart write + postlude release) + ~70 lines in a new monitor/prompts/reference/analyst-cross-run-claim.md procedure module + 1 line each in workspace-sync.md NEVER_PUSH, build.js OWNERSHIP, and CLAUDE.md File Ownership Rules table. No edits to analyst-mode1-expansions.md, analyst-baby.md, expansion-tracker.json schema, or any decider/curmudgeon prompts."
+  },
+  "tinker_top_line_answers_to_directive_questions": {
+    "Q1_root_cause_confirmation": {
+      "answer": "Confirmed. The inbox item's root cause analysis (Step 0a clone refresh narrows but does not eliminate the stale-clone window; first run's tracker flips landed AFTER the second run's clone but BEFORE the second run's FUSE-write step) is mechanically accurate. I add one nuance: the race window is structurally a function of the worktime-vs-cadence ratio. At hourly cadence with ~58-minute work runs, the collision probability is roughly P(run2 starts while run1 is still writing) ≈ 58/60 ≈ 0.97 per back-to-back pair — explaining why the operator observed it on the very first pair where both runs took deep-attack paths. At 30-minute cadence with similar work duration, the probability approaches 1.0 per back-to-back pair. Min-spacing (option A) does not fix this because Opus run duration ≠ cadence interval; the bug is duration-vs-cadence, not gap-since-last-run.",
+      "amendment_to_inbox_framing": "None substantive. The inbox author's three options are well-framed."
+    },
+    "Q2_which_option": {
+      "answer": "Option B (active-claim.json). I considered an Option D (per-run files under monitor/analyst/active-claims/<run_id>.json directory) for true race-zero semantics, but rejected it as over-engineering for the scale at hand (≤2 concurrent Opus runs ever; single-file with TTL handles the actual failure mode at <1 second of theoretical race window vs ~30-60-minute work window).",
+      "options_considered_with_pros_cons": {
+        "option_A_min_spacing_suppression": {
+          "description": "Suppress run if last_run_finished_at < 15 minutes ago AND no new dispatcher-fire signals.",
+          "pros": [
+            "Tiny patch (~10 lines, single dispatcher guard)",
+            "No new files, no ownership changes",
+            "Zero schema churn"
+          ],
+          "cons": [
+            "Wrong-sized for the actual bug: the 2026-05-17 collision was 58 minutes apart, well outside any reasonable min-spacing window",
+            "Does NOT survive the operator's stated 30m-cadence target (the directive explicitly flags this — 'min-spacing=15min, runs 30m apart, guard never fires')",
+            "Heuristic rather than mechanical — relies on cadence assumptions that drift",
+            "No protection against the operator's own manual-trigger pattern, which is how the original 02:13Z/03:11Z pair appears to have happened (cron is 50 * * * *, neither timestamp matches)"
+          ],
+          "fit_score": "1/5 — solves a problem that isn't the actual bug"
+        },
+        "option_B_active_claim_file": {
+          "description": "Single-file FUSE-canonical claim at monitor/analyst/active-claim.json. Written at Mode-1 workstart, consulted at Mode-1 prelude, cleared at run-end. TTL=90min for crash-orphan recovery.",
+          "pros": [
+            "Mechanical: prelude reads the file; if claim is active and unexpired, filter overlap from candidate set",
+            "Single-writer file (Opus analyst only) — no multi-writer dance",
+            "FUSE-only — never round-trips through git, no sync coupling",
+            "Forward-compatible with 30m cadence (the race window for the claim file itself is sub-second, vs work window of 20-60min)",
+            "Symmetric with analyst-baby's existing PROP-034 claim discipline (which uses claimed_by on tracker entries via git-push, not applicable to Opus); preserves the spirit of 'claim before work'",
+            "TTL gives clean crash recovery: stale claims age out automatically"
+          ],
+          "cons": [
+            "New file in monitor/analyst/ requires OWNERSHIP entry + NEVER_PUSH entry + CLAUDE.md table entry (three small administrative writes)",
+            "TTL choice is heuristic (90min): too short → false-clear during long cluster audits, too long → blocks recovery when a run truly crashed. 90min is generous (typical Opus run is 5-30min, the longest observed cluster audit was ~58min)",
+            "Read-write race exists in theory: two preludes could both see 'no claim' within microseconds and both write. In practice the work window dwarfs this microsecond window by 6-9 orders of magnitude — non-issue at observed scale (≤2 concurrent Opus runs ever)"
+          ],
+          "fit_score": "5/5"
+        },
+        "option_C_per_tracker_entry_claim_at_workstart": {
+          "description": "Write claimed_by='analyst' + claimed_at=now to each item's expansion-tracker.json entry at WORKSTART (mirrors baby). Requires immediate FUSE-write to make the claim visible to concurrent runs (since Opus is forbidden from git-pushing).",
+          "pros": [
+            "Reuses existing tracker schema (claimed_by/claimed_at) — no new file",
+            "Per-item granularity (could in principle release some items mid-run)",
+            "Symmetric with baby's git-push-based claim",
+            "If extended to all modes later, the same field works"
+          ],
+          "cons": [
+            "Forces a THIRD writer onto expansion-tracker.json (currently decider + baby; the analyst.md prohibition on git-push means Opus must write to FUSE). expansion-tracker.json is documented in CLAUDE.md as 'protected only by scheduling discipline, pre-push integrity gate, and merge-conflict detection' — adding a third concurrent writer to a file already documented as fragile is a regression risk",
+            "Race window for filter-then-write on a shared multi-writer file is larger than for a dedicated single-writer file (any of 100+ tracker items can be touched, vs the entire active-claim.json being one tiny single-purpose file)",
+            "If a crashed Opus run leaves claimed_by='analyst' set, the next run's filter excludes those items; recovery requires an ad-hoc 'stale claim cleanup' step somewhere (TTL-equivalent), which means we end up needing the same TTL machinery as Option B but bolted onto a shared file's schema",
+            "Workspace-sync coupling: if FUSE expansion-tracker.json is updated by Opus and then workspace-sync pushes it to git, the claimed_by='analyst' state leaks into git history, which is noise nobody downstream wants",
+            "Per-item granularity isn't actually used in the observed failure mode — Mode 1 cluster audits batch 7-12 items in one go and release them all together; granularity is theoretical, not operational"
+          ],
+          "fit_score": "2.5/5 — operationally equivalent to B's write path but adds multi-writer risk to a fragile shared file"
+        },
+        "option_D_per_run_file_directory": {
+          "description": "monitor/analyst/active-claims/<run_id>.json (one file per Opus run, append-only directory). Prelude scans directory, ignores expired claims via TTL. Run-end deletes (or marks released_at) its own file.",
+          "pros": [
+            "True race-zero semantics: each run is single-writer for its own file; the directory listing is the union",
+            "Crashed runs leave orphan files that TTL out without conflict"
+          ],
+          "cons": [
+            "Over-engineered for the actual concurrency scale (≤2 concurrent Opus runs ever observed; single-file race window is sub-second, not a real failure mode)",
+            "Append-only directory needs OWNERSHIP classification + workspace-sync handling, vs Option B's single file with a single classification",
+            "Directory listing on FUSE has its own staleness characteristics — possibly NOT atomic across the readdir-then-open sequence",
+            "FUSE cannot unlink, so 'released' state has to be a status field anyway — same TTL machinery as Option B but multiplied across files"
+          ],
+          "fit_score": "2/5 — solves a theoretical race that the observed scale doesn't reach"
+        }
+      }
+    },
+    "Q3_design": {
+      "answer": "See phase_1_design.implementation_amendment section below for concrete patches."
+    },
+    "Q4_counter_arguments": {
+      "answer": "See counter_arguments_addressed + operator_other_side_considerations sections below."
+    },
+    "Q5_regression_check": {
+      "answer": "See regression_check section below. Each of (a) baby vs Opus claim filter, (b) PROP-029 orphan-ISS safety net, (c) Mode 5 WRITE-VERIFY discipline, (d) crash-mid-run leak, has an explicit checkmark."
+    }
+  },
+  "phase_1_design": {
+    "goal": "Eliminate duplicate Mode-1 work between concurrent Opus analyst runs. Add a single FUSE-canonical claim file consulted at prelude and written at Mode-1 workstart. TTL-bounded for crash recovery.",
+    "scope": "Mode 1 of dome-analyst (Opus) only. Includes both tracker-pending items and PROP-029 orphan-ISS pickups. Out of scope: Mode 0/1b/2/2b/3/4/5, dome-analyst-baby (already claim-disciplined), all other agents.",
+    "file_schema": {
+      "path": "monitor/analyst/active-claim.json",
+      "ownership": "workspace (FUSE-canonical, single-writer = dome-analyst)",
+      "sync_rule": "NEVER_PUSH in workspace-sync.md AND classified 'workspace' in build.js OWNERSHIP (so build.js publish does NOT copy git→workspace either — the file simply does not live in git in steady state)",
+      "states": {
+        "claimed": {
+          "schema_version": "v1",
+          "run_id": "analyst-<ISO-TS-of-workstart>",
+          "agent": "analyst",
+          "claimed_at": "<ISO-TS-of-workstart>",
+          "expires_at": "<claimed_at + 90 minutes ISO>",
+          "mode": "Mode 1",
+          "claimed_tracker_ids": [
+            "EXP-NNN",
+            "..."
+          ],
+          "claimed_orphan_iss_ids": [
+            "ISS-NNNN",
+            "..."
+          ],
+          "claim_source": "tracker | orphan-safety-net | both",
+          "process_marker": "<optional diagnostic: session_id or PID>"
+        },
+        "released": {
+          "schema_version": "v1",
+          "run_id": null,
+          "agent": null,
+          "claimed_at": null,
+          "expires_at": null,
+          "released_at": "<ISO-TS>",
+          "released_by_run_id": "<run_id of last holder>",
+          "last_claim_mode": "Mode 1"
+        }
+      },
+      "ttl_seconds": 5400,
+      "ttl_rationale": "90 minutes is ~1.5x the longest observed Mode-1 cluster audit (~58min from the bug evidence). Generous enough that a healthy run never trips it; tight enough that a crashed run unblocks the queue within one operator-visible cadence."
+    },
+    "implementation_amendment": {
+      "shape": "Seven patches across four files. All patches are minimal-surface (no behavioral changes to existing modes' procedures). Patch P1-P4 land in analyst.md; P5 in workspace-sync.md; P6 in build.js; P7 in CLAUDE.md. P8 is a new reference module at monitor/prompts/reference/analyst-cross-run-claim.md.",
+      "patches": [
+        {
+          "patch_id": "P1",
+          "target_file": "monitor/prompts/analyst.md",
+          "where": "Insert AFTER Step 0 (gh authentication, ends at the line ```\\n``` following the gh auth block, currently around line 69) and BEFORE the '## Dispatcher — Mode Selection' heading.",
+          "old_string": "## Dispatcher — Mode Selection\n\n**Modes are checked in strict priority order. Run the FIRST mode that has work.**",
+          "new_string": "## Step 0c: Cross-Run Claim Check (PROP-044)\n\nBefore dispatch, read the FUSE-canonical active-claim file. If another Opus run is currently holding a Mode-1 claim, this run will filter out the claimed items from its Mode-1 candidate set. Full procedure is in `monitor/prompts/reference/analyst-cross-run-claim.md`. The minimum needed inline here is to load the claim into a variable that Mode 1's trigger check reads.\n\n```bash\nWORKSPACE=$(find /sessions/*/mnt/dome-model-review -maxdepth 0 2>/dev/null | head -1)\nCLAIM_FILE=\"${WORKSPACE}/monitor/analyst/active-claim.json\"\n# This is a READ-ONLY check at prelude time. The Mode-1 trigger block consumes\n# the exported variables. The Mode-1 workstart step will WRITE the file if it\n# decides to do work. The postlude will RELEASE the file at run-end.\nif [ -f \"$CLAIM_FILE\" ]; then\n  CLAIM_JSON=$(cat \"$CLAIM_FILE\")\nelse\n  CLAIM_JSON='{}'\nfi\nexport CLAIM_JSON\necho \"PRELUDE: active-claim state loaded ($(echo \"$CLAIM_JSON\" | node -e \"let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const o=JSON.parse(d);if(o.run_id&&Date.parse(o.expires_at||0)>Date.now())console.log('ACTIVE: '+o.run_id+' expires '+o.expires_at);else console.log('NO ACTIVE CLAIM');}catch(e){console.log('NO ACTIVE CLAIM');}})\"))\"\n```\n\nSee `monitor/prompts/reference/analyst-cross-run-claim.md` for the full schema, TTL handling, and workstart/release procedure.\n\n## Dispatcher — Mode Selection\n\n**Modes are checked in strict priority order. Run the FIRST mode that has work.**"
+        },
+        {
+          "patch_id": "P2",
+          "target_file": "monitor/prompts/analyst.md",
+          "where": "Mode 1 trigger filter — modify the `node -e` block that computes `p` (Opus-owned pending tracker items) and `orphans`. Insert a claim-exclusion step inside the same node script BEFORE the count-check.",
+          "old_string": "// Items YOU own: pending, not blocked, not claimed by baby, not baby-owned by rule.\nconst p=t.items.filter(i =>\n  i.status==='pending' && !i.blocked_on &&\n  i.claimed_by !== 'analyst-baby' &&\n  !babyOwns(i)\n);",
+          "new_string": "// Items YOU own: pending, not blocked, not claimed by baby, not baby-owned by rule.\nlet p=t.items.filter(i =>\n  i.status==='pending' && !i.blocked_on &&\n  i.claimed_by !== 'analyst-baby' &&\n  !babyOwns(i)\n);\n\n// PROP-044: subtract items currently held by an active Opus claim from a\n// concurrent run. Active = run_id present AND expires_at > now.\nlet claimedTracker=new Set(), claimedOrphan=new Set();\ntry{\n  const claim=JSON.parse(process.env.CLAIM_JSON||'{}');\n  if(claim.run_id && Date.parse(claim.expires_at||0)>Date.now()){\n    (claim.claimed_tracker_ids||[]).forEach(id=>claimedTracker.add(id));\n    (claim.claimed_orphan_iss_ids||[]).forEach(id=>claimedOrphan.add(id));\n  }\n}catch(e){}\np = p.filter(i => !claimedTracker.has(i.item_id));",
+          "notes": "Uses item.item_id (the canonical tracker key, e.g., 'EXP-411'). If a tracker entry uses a different key field, adjust the filter — but in current tracker entries item_id is the identifier."
+        },
+        {
+          "patch_id": "P3",
+          "target_file": "monitor/prompts/analyst.md",
+          "where": "Mode 1 trigger filter — modify the orphan-ISS computation (immediately after the `p` filter above) to also subtract claimed orphan ISS IDs.",
+          "old_string": "const orphans=oi.issues.filter(i =>\n  i.status==='assigned-analyst' && !tracked.has(i.id) &&\n  (i.severity === 'major' || i.severity === 'critical' || i.severity == null || i.severity === '')\n);",
+          "new_string": "let orphans=oi.issues.filter(i =>\n  i.status==='assigned-analyst' && !tracked.has(i.id) &&\n  (i.severity === 'major' || i.severity === 'critical' || i.severity == null || i.severity === '')\n);\norphans = orphans.filter(i => !claimedOrphan.has(i.id));"
+        },
+        {
+          "patch_id": "P4",
+          "target_file": "monitor/prompts/analyst.md",
+          "where": "Inside the Mode 1 trigger-check `bash` block, AFTER the `console.log` that announces 'EXPANSION MODE: …' but BEFORE the `→ Read \\`monitor/prompts/reference/analyst-mode1-expansions.md\\`…` redirect line. This is the workstart write step — only fires when Mode 1 is actually selected.",
+          "old_string": "Trigger: Either (a) actionable pending expansions you own (excludes baby-claimed and baby-owned-by-rule items, and items with `blocked_on` field), OR (b) PROP-029 safety net detects Opus-owned orphan ISSs (status='assigned-analyst', severity in {major, critical, null}, no tracker entry).\n→ Read `monitor/prompts/reference/analyst-mode1-expansions.md`, execute that procedure. **If the safety net fires (path b), also emit an attention-inbox notice** so tinker investigates the tracker-write decoupling (see analyst-mode1-expansions.md \"Check for Orphaned Issues\" section for the exact format).",
+          "new_string": "Trigger: Either (a) actionable pending expansions you own (excludes baby-claimed and baby-owned-by-rule items, and items with `blocked_on` field), OR (b) PROP-029 safety net detects Opus-owned orphan ISSs (status='assigned-analyst', severity in {major, critical, null}, no tracker entry).\n\n**PROP-044 — Mode 1 workstart claim.** If Mode 1 is selected for this run, write the active-claim file to FUSE BEFORE descending into the procedure module. Use the candidate IDs computed in the trigger-check filter above (the post-Opus-filter `p` and `orphans` arrays). Procedure is in `monitor/prompts/reference/analyst-cross-run-claim.md` → \"Workstart write.\" Inline minimum:\n\n```bash\nWORKSPACE=$(find /sessions/*/mnt/dome-model-review -maxdepth 0 2>/dev/null | head -1)\nCLAIM_FILE=\"${WORKSPACE}/monitor/analyst/active-claim.json\"\nMODE1_RUN_ID=\"analyst-$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\"\nMODE1_CLAIMED_AT=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\nMODE1_EXPIRES_AT=$(date -u -d '+90 minutes' +%Y-%m-%dT%H:%M:%S.000Z)\n# CANDIDATE_TRACKER_IDS and CANDIDATE_ORPHAN_IDS must be populated by the\n# trigger-check script (export them when Mode 1 fires). Procedure module has\n# the JS snippet that produces them as a JSON array.\nnode -e \"\nconst fs=require('fs');\nconst obj={\n  schema_version:'v1',\n  run_id:'${MODE1_RUN_ID}',\n  agent:'analyst',\n  claimed_at:'${MODE1_CLAIMED_AT}',\n  expires_at:'${MODE1_EXPIRES_AT}',\n  mode:'Mode 1',\n  claimed_tracker_ids: JSON.parse(process.env.CANDIDATE_TRACKER_IDS||'[]'),\n  claimed_orphan_iss_ids: JSON.parse(process.env.CANDIDATE_ORPHAN_IDS||'[]'),\n  claim_source: process.env.CLAIM_SOURCE||'tracker'\n};\nfs.writeFileSync('${CLAIM_FILE}', JSON.stringify(obj,null,2));\nconsole.log('PROP-044: claimed '+(obj.claimed_tracker_ids.length+obj.claimed_orphan_iss_ids.length)+' items, expires '+obj.expires_at);\n\"\nexport MODE1_RUN_ID\n```\n\nIf the trigger-check yielded zero candidates (both p and orphans empty), do NOT write the claim — Mode 1 will fall through to other modes.\n\n→ Read `monitor/prompts/reference/analyst-mode1-expansions.md`, execute that procedure. **If the safety net fires (path b), also emit an attention-inbox notice** so tinker investigates the tracker-write decoupling (see analyst-mode1-expansions.md \"Check for Orphaned Issues\" section for the exact format)."
+        },
+        {
+          "patch_id": "P5",
+          "target_file": "monitor/prompts/analyst.md",
+          "where": "Inside the Postlude section, AFTER 'Step P2 — Update `monitor/status.json`' and BEFORE the '## Progressive Disclosure & TLDRs' heading. Add a new Step P3 for claim release.",
+          "old_string": "**Step P2 — Update `monitor/status.json`** with `last_analyst_run: <ISO-TS>` and `last_analyst_mode: <mode-list>`. Use `${WORKSPACE}/monitor/status.json` (FUSE-canonical) to match the rest of the pipeline.\n\n## Progressive Disclosure & TLDRs",
+          "new_string": "**Step P2 — Update `monitor/status.json`** with `last_analyst_run: <ISO-TS>` and `last_analyst_mode: <mode-list>`. Use `${WORKSPACE}/monitor/status.json` (FUSE-canonical) to match the rest of the pipeline.\n\n**Step P3 — Release active-claim file (PROP-044, every run, every mode).** If this run wrote a Mode-1 claim at workstart (i.e., MODE1_RUN_ID is set), clear the FUSE active-claim file to the 'released' state. Always safe to run unconditionally — if no claim was written this run, the read-then-conditional-write is a no-op.\n\n```bash\nWORKSPACE=$(find /sessions/*/mnt/dome-model-review -maxdepth 0 2>/dev/null | head -1)\nCLAIM_FILE=\"${WORKSPACE}/monitor/analyst/active-claim.json\"\nnode -e \"\nconst fs=require('fs');\nconst path='${CLAIM_FILE}';\nlet cur={};\ntry{cur=JSON.parse(fs.readFileSync(path,'utf8'));}catch(e){}\nconst myRunId=process.env.MODE1_RUN_ID;\n// Only clear if we are the current holder OR the file is already empty/released.\nif(!cur.run_id || cur.run_id===myRunId){\n  const obj={\n    schema_version:'v1',\n    run_id:null,\n    agent:null,\n    claimed_at:null,\n    expires_at:null,\n    released_at:new Date().toISOString(),\n    released_by_run_id: myRunId||cur.run_id||null,\n    last_claim_mode: cur.mode||null\n  };\n  fs.writeFileSync(path, JSON.stringify(obj,null,2));\n  console.log('postlude P3: released active-claim');\n} else {\n  console.log('postlude P3: active-claim held by '+cur.run_id+' (not ours, '+myRunId+'); leaving in place');\n}\n\"\n```\n\nNote: Step P3 deliberately does NOT delete the file (FUSE cannot unlink). It writes the released state, which subsequent prelude reads interpret as 'no active claim' via the run_id===null check.\n\n## Progressive Disclosure & TLDRs"
+        },
+        {
+          "patch_id": "P6",
+          "target_file": "monitor/prompts/workspace-sync.md",
+          "where": "Inside the NEVER_PUSH array (currently at line 86-area, between 'monitor/decisions/closure-ledger.jsonl' and the closing comment about .md files). Add monitor/analyst/active-claim.json with a one-line comment.",
+          "old_string": "  'monitor/decisions/closure-ledger.jsonl'\n  # All .md files under monitor/prompts/ are operator-edited (dynamic rule\n  # in is_never_push() below).\n)",
+          "new_string": "  'monitor/decisions/closure-ledger.jsonl'\n  # PROP-044: Opus analyst's cross-run claim file. FUSE-only ephemeral state;\n  # written at Mode-1 workstart and released at postlude. Never lives in git.\n  'monitor/analyst/active-claim.json'\n  # All .md files under monitor/prompts/ are operator-edited (dynamic rule\n  # in is_never_push() below).\n)"
+        },
+        {
+          "patch_id": "P7",
+          "target_file": "build.js",
+          "where": "Inside the OWNERSHIP object, in the workspace-owned section (after 'monitor/sloppytoppy/latest-score-summary.txt': 'workspace' and BEFORE the NOTE comment about curmudgeon/tracker.json). Add the new entry with a brief comment.",
+          "old_string": "  // PROP-039 Phase 1 (2026-05-16): sloppytoppy-score's per-run summary.\n  // Daily cadence at 03:30 UTC. Workspace-owned, workspace-sync rescues.\n  'monitor/sloppytoppy/latest-score-summary.txt': 'workspace',\n  // NOTE: monitor/curmudgeon/tracker.json is DELIBERATELY NOT listed here.",
+          "new_string": "  // PROP-039 Phase 1 (2026-05-16): sloppytoppy-score's per-run summary.\n  // Daily cadence at 03:30 UTC. Workspace-owned, workspace-sync rescues.\n  'monitor/sloppytoppy/latest-score-summary.txt': 'workspace',\n  // PROP-044 (2026-05-17): Opus analyst's cross-run claim. FUSE-ephemeral,\n  // never round-trips to git (also in workspace-sync.md NEVER_PUSH). Classified\n  // 'workspace' so build.js publish does NOT copy git→workspace (and since\n  // the file is not committed to git, there is nothing to copy regardless).\n  'monitor/analyst/active-claim.json': 'workspace',\n  // NOTE: monitor/curmudgeon/tracker.json is DELIBERATELY NOT listed here."
+        },
+        {
+          "patch_id": "P8",
+          "target_file": "CLAUDE.md",
+          "where": "Inside the 'workspace-owned' subsection of the File Ownership Rules table (after the entry for 'monitor/sloppytoppy/content-dense-surfaces.json' and BEFORE the 'append-only' subsection). Note: CLAUDE.md is git-only (operator's private global instructions); the project CLAUDE.md is the one at /Users/headknocker/Library/Mobile Documents/com~apple~CloudDocs/claude working folder/dome-model-review/CLAUDE.md. Adding the new entry there.",
+          "old_string": "- `monitor/sloppytoppy/content-dense-surfaces.json` — operator + tinker curated flag list (elevated length thresholds for multi-sub-claim/citation-heavy surfaces). Git-owned.",
+          "new_string": "- `monitor/sloppytoppy/content-dense-surfaces.json` — operator + tinker curated flag list (elevated length thresholds for multi-sub-claim/citation-heavy surfaces). Git-owned.\n- `monitor/analyst/active-claim.json` (PROP-044, 2026-05-17) — Opus analyst's cross-run Mode-1 claim file. FUSE-only ephemeral state. Written at Mode-1 workstart with run_id + claimed_tracker_ids + claimed_orphan_iss_ids + 90-minute TTL (expires_at). Consulted by next prelude (after Step 0a clone refresh) to filter out items currently held by a concurrent run. Released at run-end via postlude Step P3. Never round-trips to git (workspace-sync NEVER_PUSH); classified 'workspace' in build.js OWNERSHIP."
+        },
+        {
+          "patch_id": "P9_new_reference_module",
+          "target_file": "monitor/prompts/reference/analyst-cross-run-claim.md",
+          "where": "NEW FILE (does not currently exist). Contains the full schema, TTL handling, workstart procedure, prelude consumption procedure, release procedure, crash-recovery semantics, and worked example.",
+          "new_file_content_outline": "Section 1: Purpose (one paragraph — why this file exists, what bug it prevents). Section 2: File location + schema (claimed state + released state JSON examples). Section 3: TTL semantics (90 minutes, crash recovery, why this value). Section 4: Prelude procedure (when to read, how to apply the filter). Section 5: Workstart procedure (when to write, what to write, how to populate CANDIDATE_TRACKER_IDS and CANDIDATE_ORPHAN_IDS environment variables). Section 6: Release procedure (postlude Step P3 detail). Section 7: Crash recovery (what happens if a run dies between workstart and release; TTL bound; operator manual override). Section 8: Worked example showing two back-to-back runs with non-overlapping claims. Section 9: Anti-patterns (don't extend claim to non-Mode-1 work without PROP-NNN; don't manually edit claim file; don't reduce TTL below 60min)."
+        }
+      ],
+      "patch_count_one_liner": "Nine patches total: four in analyst.md (P1-P5), one each in workspace-sync.md (P6), build.js (P7), CLAUDE.md (P8), plus one new reference module (P9).",
+      "net_loc_estimate": "~25 lines added to analyst.md, 1 line each to workspace-sync.md / build.js / CLAUDE.md (plus comments), ~70 lines in the new reference module. Total ~100 LOC for behavior; existing modes are untouched."
+    },
+    "verification_pattern": {
+      "description": "How a future tinker run can verify PROP-044 is FIXED vs STILL_BROKEN.",
+      "check_1_fix_landed": "ls monitor/analyst/active-claim.json on FUSE returns existence after any analyst Mode-1 run. Inspect contents: schema_version=v1, run_id either null (released) or non-null with expires_at field present.",
+      "check_2_telemetry": "grep analyst's latest-analysis-summary.txt for 'PROP-044' or 'active-claim' literal. If Mode-1 fires AND latest summary references the claim write, the discipline is in effect.",
+      "check_3_no_duplicate_work": "Inspect monitor/analyst/expansions/ for two consecutive runs (analyst-baby's cadence vs Opus); confirm no two EXP files with overlapping issue_ids authored within the same 2h window by analyst (not baby). False positives possible if both runs legitimately picked up the same item after one was released — check timing against claim file's released_at vs run starts.",
+      "check_4_no_regression": "test.js still passes (no schema check should regress); workspace-sync's NEVER_PUSH self-test (line 119) still passes after addition; build.js publish still completes without OWNERSHIP self-test failures.",
+      "claim_FIXED_if": "all 4 checks above pass AND no duplicate-Mode-1-work attention-inbox items have been authored in the 7 days following landing.",
+      "claim_STILL_BROKEN_if": "a new ATT-*-DUPLICATE-MODE-1-CONCURRENCY item is filed within 30 days of landing, OR active-claim.json never appears in FUSE after a Mode-1 run."
+    }
+  },
+  "counter_arguments_addressed": {
+    "counter_argument_1_no_fix_at_all": {
+      "steelman": "The bug is non-corrupting. Run 2 detected the collision at FUSE-write time and discarded its drafts cleanly. The only cost is ~1 wasted Opus analyst run per collision event. On the free-Claude-weekend the operator referenced, that cost is roughly zero (no marginal $ for the Opus tokens). Shipping ANY fix has a non-trivial maintenance-surface cost: one more file, one more ownership rule, one more postlude step, one more potential failure mode (stuck claim that survives a crash and blocks legitimate work for 90 minutes). The expected-value math doesn't obviously favor the fix on the current observed cadence (~1 collision per day at hourly cadence with current Mode-1 backlog depth).",
+      "rebuttal": "Three reasons to ship anyway: (1) the operator explicitly stated intent to bump cadence to 30m for backlog burn-down, and the directive's 'why_this_matters_now' calls out 1-2/day collision rate post-bump; the bug's expected frequency rises non-linearly with cadence. (2) The 'no-op discard at FUSE-write time' is fragile — it depends on the second run's writer detecting the collision before any side effects (issue-proposals + EXP file commits) have landed. The current Mode-1 cluster-audit code path discarded cleanly this time; a future Mode-1 variant might not. The bug's true blast radius is 'whatever the writer does before its first collision-detection point,' which is not architecturally bounded — only empirically bounded. (3) The fix is ~25 LOC of dispatcher hooks + one new file. The maintenance surface is small enough that 'don't ship' optimizes for the wrong cost axis (review effort > runtime cost over the next 6 months of operation)."
+    },
+    "counter_argument_2_pick_option_C_instead": {
+      "steelman": "Option C reuses the existing claimed_by/claimed_at schema on expansion-tracker.json. It is structurally symmetric with analyst-baby's claim discipline (PROP-034). No new file means no new OWNERSHIP entry, no new NEVER_PUSH entry, no new CLAUDE.md table row, and one fewer thing for future tinker runs to remember about. The operator's stated preference is 'minimal-change-surface' — Option C arguably has less surface change because it doesn't introduce a new file at all.",
+      "rebuttal": "Option C's 'minimal-surface' framing is correct on file count but wrong on schema risk. expansion-tracker.json is documented in CLAUDE.md as 'protected only by scheduling discipline, pre-push integrity gate, and merge-conflict detection.' Adding a third concurrent writer (Opus prelude doing a FUSE-only write at workstart) widens the multi-writer race surface on a file the project has explicitly flagged as fragile. Option B isolates the new writer onto a single-writer file (Opus analyst only writes active-claim.json) — that's a stricter invariant than Option C can offer. The 'baby uses claimed_by, why not analyst' symmetry is real but partial: baby commits its claim via git push (single-writer-at-a-time through git's atomic ref update). Opus is forbidden from git-pushing (analyst.md line 354), so Opus' Option-C analog would write to FUSE only — which is the exact write-direction Option B uses but for a dedicated file. Per the inbox author's own analysis: 'Race window narrows but doesn't fully close without the immediate-copy-to-FUSE step (which is operationally equivalent to option-b's active-claim.json from a write perspective).' Option B wins on write-target isolation."
+    },
+    "counter_argument_3_entirely_different_approach": {
+      "steelman_3a_scheduler_side_lock": "Move the concurrency control out of the analyst prompt entirely. Add a scheduler-level mutex: only one dome-analyst Opus task may be 'running' at any given time; the second invocation is queued or dropped. This is architecturally cleaner — concurrency control belongs to the scheduler, not the agent's prompt. No prompt edits, no new files, no TTL tuning.",
+      "rebuttal_3a": "Two problems. (1) The current scheduler (scheduled-tasks MCP) does not expose an inter-task mutex primitive — adding one is an infrastructure change far outside this PROP's authority. (2) Even with a mutex, the existing operational pattern includes operator-manual triggers (the 02:13Z and 03:11Z timestamps from the bug evidence don't match the hourly cron of `50 * * * *`; both look operator-triggered). A scheduler-mutex would NOT block operator-manual invocations without being made aware of them — which means the manual trigger would still re-fire Mode 1 concurrently. The prompt-level claim handles both cron-fired and operator-fired runs uniformly.",
+      "steelman_3b_eventual_consistency": "Accept the duplicate work and add a deduplicator at the decider's side: when the decider sees two EXP files with overlapping issue_ids written within an hour, keep the earlier one and discard the later. This moves correctness to the decider (closer to where the work lands) and lets the analyst run free.",
+      "rebuttal_3b": "Decider-side dedup is reactive — by the time it fires, both Opus runs have already burned tokens, written issue-proposals, and flipped tracker entries. The analyst-side claim is proactive — the second run no-ops at trigger time and saves the full Opus run. Furthermore, decider-side dedup is non-trivial: 'overlapping issue_ids' is well-defined for cluster audits but ambiguous for partial-overlap deep-attacks (run-1 covers ISS-A, ISS-B; run-2 covers ISS-B, ISS-C — which EXP wins, on what criteria?). The analyst-side claim avoids this judgment call entirely.",
+      "steelman_3c_just_serialize_mode1": "Make Mode 1 strictly serial via a workspace-sync-style hourly cron: only one Mode-1 invocation per N hours, regardless of dispatcher trigger. This is option A's stronger cousin — not 'min-spacing' but 'mandatory-spacing.'",
+      "rebuttal_3c": "Same problem as option A: wrong-sized for the operator's 30m cadence target, and the bug's failure mode is duration-bounded (work runs longer than cadence), not cadence-bounded. Mandatory spacing of (say) 2 hours would prevent collisions but would also halve the Mode-1 throughput — exactly the opposite of the operator's stated 'burn-down the backlog' goal. The claim-based approach lets the dispatcher fire as often as it likes; only items currently held are filtered, preserving throughput on non-overlapping work."
+    }
+  },
+  "operator_other_side_considerations": {
+    "case_for_not_shipping_at_all": {
+      "summary": "Duplicate Opus work on a free-Claude-weekend has zero marginal token cost. The collision is self-correcting (run 2 discards drafts). Shipping a new claim mechanism adds maintenance surface and introduces a new failure mode (stuck-claim-after-crash blocks legitimate work for 90 minutes).",
+      "operator_should_consider": "If (a) the 30m cadence bump is in fact aborted or paused, AND (b) the operator is content to accept ~1 collision/day at hourly cadence, AND (c) the operator wants to minimize prompt-edit churn pre-30m-cadence: 'don't ship' is a defensible position. The directive explicitly framed this as a steelman; the operator may pick it.",
+      "tinker_recommendation": "Ship anyway. The 30m cadence is documented as an operator intent; the fix is small (~25 LOC + 1 new file); the maintenance surface is well-isolated (a single dedicated file with a well-bounded TTL). If telemetry over 7 days post-landing shows no benefit (zero claim-filter activations), revisit and consider rolling back. The reversal cost is low: delete the file, revert four patches, ~10 minutes of work."
+    },
+    "case_for_picking_option_c_instead": {
+      "summary": "Option C reuses the existing claimed_by/claimed_at schema on expansion-tracker.json. Schema-wise it's symmetric with analyst-baby. No new file means lighter ownership-table surface.",
+      "operator_should_consider": "If the operator weights schema-conservation higher than multi-writer-fragility, Option C is the choice. The expansion-tracker.json multi-writer note in CLAUDE.md is a documented concern but has not produced a corruption event yet — its risk is theoretical-but-real, not empirical.",
+      "tinker_recommendation": "Stay with Option B. The multi-writer fragility note in CLAUDE.md exists precisely because the project has internalized that adding writers to expansion-tracker.json is a regression vector. Option B's single-writer-on-a-new-file is the cleaner invariant. If the operator disagrees and wants Option C, the patches are roughly the same shape — substitute 'claimed_by' field writes onto expansion-tracker.json for active-claim.json writes — but the schema-protection wins are lost."
+    },
+    "case_for_entirely_different_approach": {
+      "summary": "Scheduler-side mutex (no prompt edits), decider-side dedup (reactive correctness), or strict serialization (mandatory cron spacing).",
+      "operator_should_consider": "All three move concurrency control out of the analyst prompt. If the operator believes 'concurrency control belongs to the scheduler/decider, not the agent,' one of these is the architecturally cleaner direction.",
+      "tinker_recommendation": "Stay with Option B for now; consider scheduler-mutex as a Phase-2 architectural project. Scheduler-mutex is the long-term right answer but requires infrastructure (MCP scheduler primitives) outside this PROP's authority. Decider-side dedup is more work than the prompt-side claim and produces strictly weaker semantics (after-the-fact instead of before-the-fact). Strict serialization is option-A-cousin and shares its 30m-cadence failure mode."
+    },
+    "case_for_extending_scope_beyond_mode_1": {
+      "summary": "Mode 0 (new WIN onboarding), Mode 1b (predictions), Mode 5 (frozen-pred) all touch shared state with race potential. Why not include them?",
+      "operator_should_consider": "If the operator anticipates the 30m-cadence bump will produce collisions in those modes too, defensive scope-widening is reasonable.",
+      "tinker_recommendation": "Keep Phase 1 scoped to Mode 1. The observed bug is Mode 1; Mode 0 and 1b have natural single-writer protections (Mode 0 only fires on a dome-side count delta — at most one delta in flight at a time; Mode 1b fires on per-prediction-window closures — single-source). Mode 5 is operator-commissioned and rare. Phase 2 can extend scope if 30m-cadence telemetry reveals collisions in other modes; the file schema supports it (just add new claimed_*_ids fields)."
+    }
+  },
+  "regression_check": {
+    "item_a_baby_vs_opus_claim_filter": {
+      "concern": "Does the PROP-044 active-claim filter disrupt analyst-baby's claimed_by='analyst-baby' filter (analyst skips items baby-claimed, baby skips items analyst-claimed)?",
+      "analysis": "No disruption. PROP-044 introduces a NEW filter (active-claim.json) that is ANDed with the existing baby-claim filter. Both filters run in the same Mode-1 trigger-check node script. Order: (1) filter pending tracker items by 'not blocked' AND 'not claimed by baby' AND 'not baby-owned by rule' (existing logic); (2) further filter by 'not in active-claim.claimed_tracker_ids' (new). Each filter is independent and additive. Baby is unaffected because baby reads expansion-tracker.json's claimed_by field, not active-claim.json. Baby does not read or write active-claim.json.",
+      "verdict": "CLEAR — no regression."
+    },
+    "item_b_prop029_orphan_safety_net": {
+      "concern": "Does PROP-044 disrupt PROP-029's safety-net path where analyst picks up orphan ISSs (status='assigned-analyst', not yet in tracker)?",
+      "analysis": "No disruption. The orphan computation in analyst.md (lines 115-120) runs unchanged. PROP-044 adds one filter line after it (P3 in the patches): subtract any orphan IDs currently in active-claim.claimed_orphan_iss_ids. If a concurrent run has already claimed certain orphans, this run skips them — exactly the desired behavior. If no concurrent run is active, the filter is a no-op (empty set minus empty set). The attention-inbox notice that PROP-029's safety net emits (line 128) still fires when the post-filter orphans count > 0; only the items the concurrent run is processing get filtered out.",
+      "verdict": "CLEAR — no regression."
+    },
+    "item_c_mode5_writeverify_discipline": {
+      "concern": "Does PROP-044 disrupt Mode 5's PROP-014 Mech 1b WRITE-VERIFY discipline (HNOTE marked 'consumed' only after the artifact file is verified to exist)?",
+      "analysis": "No interaction. PROP-044 is Mode 1 only. Mode 5 is unscoped here — the active-claim file is never read in the Mode 5 path and never written by Mode 5 work. The postlude Step P3 release IS run-mode-agnostic (always-safe-to-run), so it executes even on Mode 5 runs, but it only writes when MODE1_RUN_ID is set OR the active-claim file is already in a state matching this run's identity. In a pure Mode 5 run, MODE1_RUN_ID is unset and the existing active-claim (if any) is from a separate Opus run — Step P3 correctly leaves it alone (the 'cur.run_id===myRunId' branch fails).",
+      "verdict": "CLEAR — no regression."
+    },
+    "item_d_crash_midrun_stale_claim": {
+      "concern": "If an Opus run crashes between workstart-write and postlude-release, the claim file stays in 'claimed' state. What happens to the next run?",
+      "analysis": "TTL handles this. Schema includes expires_at = claimed_at + 90 minutes. The prelude consumer checks `Date.parse(claim.expires_at||0) > Date.now()` before applying the claim filter. If the claim has expired, the filter treats it as 'no active claim' and processes all items normally. The stale claim file itself stays on disk (FUSE cannot unlink) but is functionally inert. The next successful Mode-1 run overwrites it via its workstart-write step. Operator escape hatch: manually write `{}` to active-claim.json to force-clear, or wait 90 minutes for TTL.",
+      "verdict": "CLEAR — recovery is automatic within 90 minutes; operator override is one-line if urgent."
+    },
+    "item_e_workspace_sync_pickup": {
+      "concern": "Will workspace-sync accidentally push active-claim.json to git, leaking ephemeral state into git history?",
+      "analysis": "Patch P6 adds 'monitor/analyst/active-claim.json' to workspace-sync.md NEVER_PUSH. The smart_copy helper in workspace-sync.md (lines 143-161) returns early for any path in NEVER_PUSH. Additionally, build.js OWNERSHIP classifies the file as 'workspace' (Patch P7), so build.js publish does not copy git→workspace. Net: the file lives only on FUSE and never round-trips.",
+      "verdict": "CLEAR — sync layer is properly fenced."
+    },
+    "item_f_test_js_regression": {
+      "concern": "Does adding active-claim.json to OWNERSHIP cause test.js (the project's test suite) to fail?",
+      "analysis": "test.js validates data/wins.json, data/sections.json, data/predictions.json schemas and HTML-vs-data consistency. It does not currently scan monitor/analyst/ files. No regression expected. Verification: run test.js after landing P1-P9 and confirm pass.",
+      "verdict": "CLEAR pending post-land verification."
+    },
+    "item_g_dispatcher_ordering": {
+      "concern": "Patch P1 inserts Step 0c between Step 0 (gh auth) and the Dispatcher heading. Does this change Mode-priority ordering or affect Mode 0 (highest-priority)?",
+      "analysis": "No. Step 0c is a prelude step (loads CLAIM_JSON into env), not a mode. The dispatcher's Mode-priority order (0 → 0.5 if PROP-043 lands → 1 → 1b → 2 → 2b → 3 → 4 → 5 → Normal) is unchanged. The claim filter is consulted ONLY inside Mode 1's trigger-check; other modes do not consult CLAIM_JSON. Mode 0 still has top priority unchanged.",
+      "verdict": "CLEAR — no dispatcher reordering."
+    },
+    "item_h_baby_concurrent_with_opus": {
+      "concern": "Baby and Opus might run concurrently. If baby claims an item via claimed_by='analyst-baby' (committed in git), does PROP-044 also need to filter baby-claimed items?",
+      "analysis": "No — that filter already exists (analyst.md line 110: `i.claimed_by !== 'analyst-baby'`). PROP-044 is purely about Opus-vs-Opus concurrency. Opus-vs-baby concurrency is handled by the existing schedule offset (baby :20 every 2h, analyst :50 hourly) + the existing claimed_by filter. PROP-044 layers on top without disturbing.",
+      "verdict": "CLEAR — orthogonal mechanisms."
+    }
+  },
+  "rollout_plan": {
+    "phase_1_land_patches": "Operator + cowork-claude apply patches P1-P9 in a single commit. Estimated work: 30-60 minutes (mostly review and the new reference module body).",
+    "phase_2_observe_telemetry_7d": "Tinker monitors monitor/analyst/active-claim.json over 7 days. Two signals: (a) does the file appear after Mode-1 runs (presence-check); (b) does the file get released cleanly at run-end (run_id===null check on subsequent prelude). Append a per-tinker-run signal to queue-history.jsonl: `prop044_claim_observed: boolean`.",
+    "phase_3_30m_cadence_unlock": "Once 7-day telemetry confirms claim discipline is in effect AND zero new ATT-*-DUPLICATE-MODE-1-CONCURRENCY items are filed, operator may bump dome-analyst cron from '50 * * * *' to '*/30 * * * *'. The directive explicitly gates the cadence bump on this PROP landing.",
+    "phase_4_scope_extension_if_needed": "If 30m-cadence telemetry over a further 14 days shows collisions in other modes (Mode 0/1b/2b/5), file PROP-NNN-claim-discipline-mode-extension to widen scope. Out of scope for this PROP."
+  },
+  "success_criteria": {
+    "must_have_to_call_phase_1_done": [
+      "All 9 patches land (P1-P9)",
+      "test.js passes after land",
+      "build.js publish completes without OWNERSHIP self-test failures",
+      "workspace-sync's NEVER_PUSH self-test (line 119) still passes",
+      "First analyst Mode-1 run after land writes a valid active-claim.json to FUSE (presence + schema-check)",
+      "First analyst run after Mode-1 completion releases the claim (run_id===null in subsequent read)"
+    ],
+    "must_observe_within_7d_to_call_phase_2_done": [
+      "Active-claim.json appears in FUSE consistently after Mode-1 runs (presence rate >90%)",
+      "No new ATT-*-DUPLICATE-MODE-1-CONCURRENCY items filed",
+      "At least one Mode-1 candidate-filter activation observed (i.e., a run where the active-claim filter actually subtracted items). If zero activations are observed in 7d, it likely means no concurrent Mode-1 runs happened in 7d — the fix is theoretical-only until the operator triggers a deliberate collision to test it"
+    ],
+    "rollback_criteria": [
+      "If active-claim.json shows >5% stuck-claim rate over 7d (file in claimed state with expires_at>now+1min that doesn't release within the next 2 runs), the TTL or release logic is buggy — investigate and possibly revert P5/P4",
+      "If test.js or build.js publish fails after land, revert and investigate",
+      "If a new collision is observed despite active-claim.json being present and correctly populated, the filter logic in P2/P3 has a bug — investigate and possibly revert"
+    ]
+  },
+  "operator_preference_fit_table": {
+    "minimal_prompt_change_surface": "PARTIAL — analyst.md gets ~25 LOC of new content. The bulk of the procedure body is extracted to a new reference module to keep analyst.md thin. Operator's stated concern about analyst.md change-risk is honored by isolating the procedure body.",
+    "capability_preserving": "YES — Mode 1/2/2b/5 procedures continue working unchanged. The claim is a guard-step that filters candidates; it does not change what the analyst does with the items it picks up.",
+    "forward_compatible_with_30m_cadence": "YES — the file-based claim mechanism's effective concurrency window is sub-second (prelude-read to workstart-write); the work window is 5-60 minutes. At 30m cadence the ratio is the same as at hourly; the fix scales.",
+    "backward_compatible": "YES — no schema changes to existing files. In-flight runs that started before the patch lands will not have written a claim, so the next run's prelude sees 'no active claim' and processes normally. No migration step needed."
+  },
+  "notes_for_operator": [
+    "The directive explicitly forbids tinker self-applying analyst.md edits. This PROP is design-only.",
+    "Patch P9 (new reference module) requires authoring the body of monitor/prompts/reference/analyst-cross-run-claim.md. The shape is outlined in patch P9's 'new_file_content_outline' field. Operator + cowork-claude should write the body during apply.",
+    "The TTL of 90 minutes is heuristic. If post-landing telemetry shows long-tail Mode-1 cluster audits exceeding 90 minutes, tune up to 120 minutes via a one-line edit in patch P4. Do not tune below 60 minutes — that risks false-clear during normal work.",
+    "The directive flagged a Phase-2 question: 'should tinker.md dispatcher be wired to read recommended_recipient:tinker inbox items the way it now reads operator-directives?' This PROP does NOT address that — it is a separate concern (dispatcher routing, not concurrency discipline). File as PROP-045 if/when the operator wants tinker.md to dispatch off attention-inbox.",
+    "Out-of-scope per directive: bundling into PROP-043 (analyst-operator-commission-priority). The two PROPs are orthogonal — PROP-043 is about WHEN to run Mode-0.5 commissions vs Mode 1; PROP-044 is about NOT-DUPLICATING Mode 1 work between concurrent runs. Apply order is independent — neither blocks the other."
+  ]
+}
