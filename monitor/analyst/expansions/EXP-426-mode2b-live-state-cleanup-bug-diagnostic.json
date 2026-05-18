@@ -1,0 +1,50 @@
+{
+  "item_id": "EXP-426",
+  "target": "Live-state cleanup bug pattern: archive-write succeeds but live-array remove fails — twin symptoms observed 2026-05-18 in attention-inbox and open-issues",
+  "category": "pipeline-bug-diagnostic",
+  "priority": "medium",
+  "status": "ready-for-decider-routing",
+  "expansion_type": "diagnostic-finding",
+  "written_by": "analyst-mode2b",
+  "written_at": "2026-05-18T12:10:38.958Z",
+  "review_class": "diagnostic",
+  "short_recommendation": "Route to tinker for root-cause analysis. Two parallel symptoms today: (1) ATT-2026-05-18T05:24:22.762Z archived as resolved at 08:02Z by previous analyst run mode2b-singleton, but live attention-inbox.json never had the entry removed — surfaced again at next analyst-run boot; (2) ISS-1547 closed in closed-issues.json at 09:24:32Z by decider, but open-issues.json still contains ISS-1547 with status=assigned-analyst. Both look like the same bug class: state-mutation pipeline where the multi-step \"add to archive/closed-list + remove from live/open-list\" sequence completes the first write but not the second. Both files involved are workspace-canonical (FUSE) for attention-inbox, and decider-canonical (clone→commit→push) for open-issues — different ownership, same failure shape.",
+  "symptoms_observed": [
+    {
+      "symptom_id": "SYM-1",
+      "file": "monitor/analyst/attention-inbox.json (FUSE) + attention-inbox-archive.jsonl",
+      "affected_id": "ATT-2026-05-18T05:24:22.762Z (WIN-057 c5 patches verification)",
+      "observed_state": "Item present in both live (status=pending) AND archive (status=resolved by mode2b-singleton at 2026-05-18T08:02:21.980Z).",
+      "caused_by_run": "Previous analyst run 2026-05-18T08:05:12Z reported in latest-analysis-summary.txt that it resolved ATT-2026-05-18T05:24:22.762Z and that pending-inbox=0 at end-of-run. The archive entry confirms resolve was attempted; the live remove was the failure mode.",
+      "this_run_action": "Removed from live, appended JANITOR-2026-05-18-ATT-WIN-057-LIVE-CLEANUP record to archive (not a duplicate of the original resolved item)."
+    },
+    {
+      "symptom_id": "SYM-2",
+      "file": "monitor/decisions/open-issues.json + monitor/decisions/closed-issues.json (origin/main)",
+      "affected_id": "ISS-1547",
+      "observed_state": "Item present in open-issues.json (status=assigned-analyst, severity=info) AND closed-issues.json (status=closed, fixed_at=2026-05-18T09:24:32.906Z).",
+      "caused_by_run": "Decider run between 2026-05-18T09:06 and 09:24:32 closed ISS-1547 in closed-issues.json but failed to remove from open-issues.json. Closure was correct (acted on proposal-ISS-1547-resolution.json from previous analyst); add-to-closed step succeeded, remove-from-open step did not.",
+      "this_run_action": "NONE — open-issues.json is decider-canonical (clone-write only) and analyst must not modify. Flagged here for tinker to root-cause."
+    }
+  ],
+  "bug_class_hypothesis": "Both files have a multi-step state-transition pattern. The mutation that adds to the dead-letter side (archive jsonl, closed-issues.json) is implemented as an append, which is single-step and atomic-ish. The mutation that removes from the live side (live attention-inbox.json array, open-issues.json issues array) requires read-modify-write of a larger JSON object. The asymmetry suggests three possible failure modes: (a) the writer code path for live-side removes has an exception-handling gap where archive-side success masks live-side failure; (b) the write happens but to a different copy of the file than the next reader sees (FUSE/clone race or stale-state read); (c) the writer never executes the second mutation at all (logic bug where a single-step happy-path elides the cleanup).",
+  "tinker_investigation_recommendations": [
+    "Audit analyst-mode2b code paths that touch attention-inbox.json: look for try/catch around the archive write that does not properly back out the live mutation, or sequencing that does the archive append then writes the unchanged live array. The pattern in analyst.md Mode 2b shows fs.writeFileSync(livePath, JSON.stringify(arr,null,2)) AFTER the appendFileSync and splice, which should be safe; the previous run reporting (Attention-inbox→resolved: 1) and counting (pending-inbox=0) suggests the writer THOUGHT it did the remove. Look at whether the previous run wrote to the clone-side path instead of FUSE — the mode2b documentation explicitly says \"Always read AND write /sessions/loving-happy-hypatia/mnt/dome-model-review/monitor/analyst/attention-inbox.json for this mode; never the relative path.\" If the previous run forgot the /sessions/loving-happy-hypatia/mnt/dome-model-review prefix, it would have written to a clone-side file that is not the canonical inbox.",
+    "For ISS-1547: audit decider Step E (close-issue-on-proposal) for the open-issues-array remove path. The decider clones, edits, commits, pushes; the failure could be (i) the in-memory open issues was correctly mutated but the write-to-disk step had a bug; (ii) the write succeeded but a subsequent re-write of open-issues.json by another decider step (BAU triage, patch application) overwrote with a stale copy that still had ISS-1547. Check if decider performs multiple writes to open-issues.json in one run and whether they all use the same in-memory snapshot.",
+    "Cross-symptom check: are there other open-issues/closed-issues duplicates in current state? Could surface a broader inventory of skip-the-second-write incidents.",
+    "Likely fix shape: a post-write integrity gate that asserts \"if X is in archive, X is NOT in live\" and \"if X is in closed-issues, X is NOT in open-issues\" before push. The existing integrity agent could run this nightly."
+  ],
+  "scientific_content": {
+    "note": "This is a diagnostic / pipeline-bug expansion, NOT a scientific analysis. The actual Mode 2b scientific verifications (WIN-057 c5 patches science, EXP-295 Part 6.13 integration faithfulness) are documented in the archived attention-inbox resolved_reason fields. No new scientific claims here."
+  },
+  "routing": {
+    "decider_action": "Create assigned-tinker issue from this EXP. Severity: minor (data integrity, no user-visible impact, easily auto-detected). The bug self-heals at the next workspace-sync cycle for attention-inbox; the open-issues case may persist longer.",
+    "auto_close_candidate": "No — leave open until tinker investigates root cause and either patches the writer or adds the integrity gate."
+  },
+  "related_artifacts": {
+    "archive_entry_for_WIN_057": "tail of monitor/analyst/attention-inbox-archive.jsonl pre-this-run showed the ATT-2026-05-18T05:24:22.762Z resolved-at 08:02:21.980Z record.",
+    "janitor_entry": "JANITOR-2026-05-18-ATT-WIN-057-LIVE-CLEANUP appended to archive jsonl this run as the post-hoc remove signal.",
+    "previous_run_summary": "monitor/analyst/latest-analysis-summary.txt (pre-this-run) reported Attention-inbox→resolved: 1 (ATT-2026-05-18T05:24:22.762Z), pending-inbox=0 — strong evidence the previous run thought the live write succeeded.",
+    "iss_1547_closure_commit": "Inspect closed-issues.json fixed_at=2026-05-18T09:24:32.906Z record and locate the decider commit between 09:06 (last workspace-sync) and 09:24:32 (closure timestamp) that should also have removed ISS-1547 from open-issues."
+  }
+}

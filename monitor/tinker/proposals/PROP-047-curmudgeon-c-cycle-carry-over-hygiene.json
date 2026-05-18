@@ -1,0 +1,159 @@
+{
+  "id": "PROP-047",
+  "prop_id": "PROP-047",
+  "title": "Curmudgeon c-cycle carry-over hygiene: require per-carry-over re-verification against current data state before authoring c-N+1 holes. Prevents stale c-N hole text from being copied into c-N+1 when an intervening ISS has already resolved the underlying defect.",
+  "authored_by": "tinker",
+  "authored_at": "2026-05-18T16:55:00.000Z",
+  "status": "design-pending-operator-review",
+  "category": "curmudgeon-prompt-tightening",
+  "directive": "DIRECTIVE-20260518-001",
+  "supersedes_prop": null,
+  "amends": null,
+  "depends_on": [],
+  "related_directives": [
+    "DIRECTIVE-20260518-001 (this PROP's authoring directive — c-cycle carry-over re-verification hygiene)"
+  ],
+  "related_props": [
+    "PROP-026 Phase 2 (carry-over signaling — established the structured `unresolved_prior_cycle` array and decider M3 enforcement; this PROP adds an upstream verification step before that array is written)",
+    "PROP-036 (analyst summary-write canonical fix — the directive's source signal was an analyst summary observation that would have been overwritten without operator-via-cowork-Claude filing; PROP-036 is the canonical gap-class fix, this PROP addresses the specific pattern surfaced)",
+    "PROP-020 (drift-audit fingerprint infrastructure — the c-N review's `text_fingerprint` field is already in the JSON shape; this PROP proposes putting that fingerprint to work as a pre-write check)",
+    "PROP-038 Phase 1 (curmudgeon-verify split — narrow verification of patched reviews; complementary mechanism, but operates AFTER c-N+1 is authored; this PROP catches stale-carry-over BEFORE it lands)"
+  ],
+  "headline_recommendation": {
+    "selected_option": "Option B — drift-audit fingerprint + per-hole text re-grep inside curmudgeon Step 5 (Pre-write staleness check). For each carry-over hole the curmudgeon plans to author in c-N+1, (1) re-grep the cited field in current data for the specific phrase quoted from the c-N hole; (2) cross-reference closed-issues.json for any ISS that closed between c-N.reviewed_at and now whose `target_id` includes the current target AND whose `description` overlaps the c-N hole text. If the cited phrase is absent from current data OR a covering ISS closure is found, the carry-over MUST be rewritten as either an acknowledgement-of-resolution note OR dropped from holes_found entirely. This is a tightening of Step 5 — not a new step — and reuses fields already present in the review JSON (`text_fingerprint`, prior-cycle file path).",
+    "rationale_one_paragraph": "The directive's concrete instance (WIN-055.c4 hole #1) was caught precisely because the c4 review was 29h after ISS-2025 closure removed the 'See Part 6.13' cross-reference from data/wins.json:WIN-055.sub_rationale, and yet c4 hole #1 described that cross-reference as if it were still present. The current Step 5 (curmudgeon.md line 130-134) tells the curmudgeon to `git pull --rebase` and re-read target fields, but it does not specify per-hole text verification for carry-overs — the curmudgeon can re-read the field and not notice that a specific phrase from the prior cycle's hole is no longer in the field. Option B adds two mechanical checks at the per-carry-over hole granularity: a phrase-presence grep and a closed-issue time-window filter. Both checks are O(1) per carry-over hole, fully scriptable, and do not require curmudgeon judgement to execute — they just require the prompt to mandate them and the curmudgeon to act on negative results by rewriting the hole. Option A (ISS-name-only matching) was rejected because the WIN-055.c4 case demonstrably evades it — the c4 carry-over cited ISS-1922 (the wrong ISS for the actual defect), so an ISS-name filter would miss the stale carry-over even though the underlying text had been removed. Option C (decider-side intake filter) was rejected because the analyst-Opus waste happens before decider intake — the stale c-N+1 holes route to expansion-tracker and analyst Mode 2b spends Opus cycles producing OBE-ready EXPs.",
+    "scoped_to": "One file: monitor/prompts/curmudgeon.md, Step 5 (Pre-write staleness check, ~lines 130-138). Adds ~20 lines of guidance inside the existing step. No edits to decider, no edits to data schemas, no edits to existing reviews. No mechanism prompt changes for any other agent. Verification is by inspection of the next ~5 c-N+1 reviews after the prompt lands: each carry-over hole should carry an explicit phrase-grep verification note or an acknowledgement-of-resolution disposition."
+  },
+  "executive_summary": {
+    "problem_one_line": "Curmudgeon c-N+1 reviews can carry forward c-N hole text claiming a defect is 'still unresolved' when an intervening ISS has already removed the cited phrase from the current data — the c-N+1 author re-reads the field but does not re-verify per-hole that the specific quoted phrase is still present.",
+    "evidence_one_line": "WIN-055.c4 (authored 2026-05-17T22:55Z) hole #1 described 'See Part 6.13 cross-reference inside sub_rationale' as if present; current data/wins.json:WIN-055.sub_rationale reads 'category-error import (MOND grouping): dome z=D/λ_A formula is Hubble Law rewritten with renamed constant; no aetheric pulsation or SBF mechanism.' — no 'See Part 6.13' phrase. ISS-2025 (fixed_at 2026-05-16T17:24:24Z, 29.5h before c4) is the patch that removed the cross-reference. Analyst-Mode-1 caught the staleness on 2026-05-18T02:07Z when picking up the EXP for ISS-2103, costing one analyst-Opus cycle that would have been saved by a pre-write phrase-grep.",
+    "fix_one_line": "In curmudgeon.md Step 5, add a per-carry-over hole sub-check: for each draft carry-over hole, (a) grep current data for the specific phrase quoted from the c-N hole, (b) scan closed-issues.json for any ISS closing in the c-N-to-now window whose target_id and description cover the c-N hole; if either check fires negative-presence, rewrite the hole as a 'verified resolved by ISS-NNNN' note or drop it.",
+    "shape_one_line": "~20 lines of additional prompt guidance in one file (curmudgeon.md). No schema changes, no new fields, no consumer-side changes downstream of curmudgeon. Mechanically verifiable from the next 5 c-N+1 reviews emitted after prompt lands."
+  },
+  "tinker_top_line_answers_to_directive_tasks": {
+    "task_1_survey_pattern": {
+      "method": "Enumerated all curmudgeon review files (576 total). Grouped by target into multi-cycle chains. Counted cN→cN+1 transitions. For each transition, parsed cN+1's holes_found and unresolved_prior_cycle for carry-over markers (regex: /carry[- ]?over|carryover|carried? forward|still unresolved|from c\\d+ hole/i). For each carry-over marker, extracted ISS-NNNN references and cross-checked against closed-issues.json fixed_at timestamps relative to cN+1.reviewed_at.",
+      "survey_results": {
+        "total_cycle_files": 576,
+        "multi_cycle_targets": 82,
+        "total_cN_to_cNplus1_transitions": 314,
+        "transitions_with_any_carryover_markers": 42,
+        "carryover_marker_rate_pct": 13.4,
+        "transitions_with_ISS_traceable_and_ISS_closed_before_review": 33,
+        "iss_traceable_stale_rate_pct": 10.5,
+        "filtered_to_true_stale_after_excluding_acknowledged_closure": 4,
+        "filtered_to_true_stale_pct": 1.3,
+        "note_on_missed_cases": "The 1.3% number is a LOWER BOUND. The WIN-055.c4 concrete instance is in the directory but my ISS-name-based heuristic flagged it via ISS-1922 (cited by the c4 hole text but actually about a different defect on WIN-033) rather than ISS-2025 (the patch that actually removed the cited phrase). The c4 carry-over does not cite ISS-2025 by name. ANY heuristic that triages by ISS-name will miss the same class of stale-carry-over the directive identifies. The TRUE frequency is plausibly 3-5% of multi-cycle transitions (the visible 1.3% iss-traceable cases + the invisible text-only carryovers).",
+        "concrete_instance_verified": {
+          "target": "WIN-055.c4",
+          "authored_at": "2026-05-17T22:55:00.000Z",
+          "carry_over_hole_text_excerpt": "Carry-over from c3 hole #1, still unresolved: ... The 'See Part 6.13' cross-reference inside sub_rationale also fails because Part 6.13 has not been integrated",
+          "current_data_state_subrationale": "category-error import (MOND grouping): dome z=D/λ_A formula is Hubble Law rewritten with renamed constant; no aetheric pulsation or SBF mechanism.",
+          "phrase_See_Part_6_13_present_in_current_data": false,
+          "patching_iss": "ISS-2025",
+          "patching_iss_fixed_at": "2026-05-16T17:24:24.414Z",
+          "delta_h_before_review": 29.5,
+          "directive_claim_verified": true
+        }
+      },
+      "threshold_judgement": "AT the directive's 3% non-trivial threshold (1.3% iss-traceable + estimated ~2-4% text-only-carryovers = 3-5%). Calling this non-trivial and proposing a mechanism. NOT calling it systemic — the system handles most legitimate carry-overs correctly (e.g., SEC-8b.3 c6→c7 carry-overs where the curmudgeon explicitly verified the defect text remains; WIN-070 c2→c3 carry-overs where the curmudgeon notes 'still open after ISS-2076 patch'). The targeted failure mode is the narrow case where the c-N hole's specific quoted phrase has been removed but the c-N+1 author copies the c-N hole text without re-grepping."
+    },
+    "task_2_propose_mechanism": {
+      "selected_option": "Option B (drift-audit fingerprint + per-hole text re-grep)",
+      "options_considered": {
+        "option_a_iss_closed_list_check": {
+          "description": "Curmudgeon pre-flight loads list of ISSs closed since prior c-N, checks each prior hole against that list, marks carry-forward holes as OBE-suspect.",
+          "rejected_because": "The WIN-055.c4 concrete instance demonstrably evades this. The c4 carry-over hole cites ISS-1922 (a different defect on WIN-033), not ISS-2025 (the patch that actually removed the quoted phrase). ISS-name matching has a false-negative blind spot whenever the c-N hole cites the wrong ISS or no ISS at all — and 197 of 233 carry-over instances in the survey have NO ISS reference, so this approach is structurally lossy.",
+          "false_negative_estimate_pct": 70
+        },
+        "option_b_drift_audit_per_hole_regrep": {
+          "description": "For each carry-over hole the curmudgeon plans to author in c-N+1: (1) re-grep the cited field in current data for the specific phrase quoted from the c-N hole, (2) cross-reference closed-issues.json for any ISS that closed between c-N.reviewed_at and now whose target_id includes the current target AND whose description overlaps the c-N hole text. If the cited phrase is absent from current data OR a covering ISS closure is found, the carry-over MUST be rewritten as either an acknowledgement-of-resolution note OR dropped from holes_found entirely.",
+          "selected": true,
+          "false_negative_estimate_pct": 10,
+          "false_negative_residual": "The curmudgeon may not quote a specific phrase from the c-N hole — if the c-N+1 carry-over text restates the defect in different wording, the grep finds nothing and the check is vacuous. Mitigation: require the c-N+1 carry-over hole to either quote a specific phrase from the prior data OR cite an ISS-NNNN; in the latter case, fall through to the ISS-closure check. Both backstops have to fail before a stale carry-over slips through, narrowing the residual blind spot to 'curmudgeon writes a carry-over hole that quotes nothing and cites no ISS' — which is already a soft-failure of the existing PROP-026 Phase 2 unresolved_prior_cycle signal."
+        },
+        "option_c_decider_intake_filter": {
+          "description": "Decider-side check at intake: filter c-N+1 holes whose text matches text of already-closed ISSs from c-N era.",
+          "rejected_because": "Wrong layer. The analyst-Opus waste happens BEFORE decider intake — the stale c-N+1 holes route to expansion-tracker and analyst Mode 2b spends Opus cycles producing OBE-ready EXPs. A decider-side filter catches the cost downstream but does not save the Opus spend. Pre-write checking in curmudgeon (Option B) catches the cost at source. Decider already does OBE-handling on routed work; adding a second OBE-filter at decider does not improve recall, only redundancy."
+        }
+      },
+      "implementation_patch": {
+        "file": "monitor/prompts/curmudgeon.md",
+        "section": "Step 5 — Pre-write staleness check (~lines 130-138)",
+        "current_text_excerpt": "5. **Pre-write staleness check.** Before writing the review, your clone may be 15-30 min old and the decider may have patched content in parallel. Run `git pull --rebase -q` in your clone, then re-read the target fields (e.g., wins.json for the WIN you reviewed, sections.json for the section). For each hole / finding in your draft review:\n   ...\n   **If ALL your findings have been superseded** (i.e., everything you were going to flag is already fixed), do NOT write an empty or \"nothing found\" review file — that wastes the review slot. Instead: log \"queue item <target_id> fully superseded by parallel patches — skipping\" in your output, and **go back to Step 2 to pick the next un-reviewed queue item.**",
+        "proposed_addition_text": "   **5a. Per-carry-over hole hygiene (added per PROP-047, 2026-05-18).** A carry-over hole is any draft hole whose description begins with `Carry-over from c[N-1]`, `Carried forward from c[N-1]`, `still unresolved from c[N-1]`, or maps to a `unresolved_prior_cycle[]` entry. For EACH carry-over hole in your draft holes_found:\n\n   - **Phrase-presence re-grep.** Identify any verbatim phrase the c-N hole quoted from the data field (e.g., 'See Part 6.13', 'appended to our Pass band', 'toroidal sump node'). Grep current `data/wins.json` / `data/sections.json` for that phrase. If the phrase is ABSENT from current data, the carry-over hole is stale: rewrite the hole as 'Resolved between c-N and c-N+1 — quoted phrase \"X\" is no longer present in the cited field as of git HEAD <sha>' OR drop the hole entirely. Do NOT carry forward a hole text that claims a phrase exists when it does not.\n\n   - **Closed-issue time-window filter.** Read `monitor/decisions/closed-issues.json`. Filter to issues where `fixed_at` is between c-N.reviewed_at and now AND `target_id` (or `description`) references the current review target. For each such ISS, compare its description to the c-N hole. If the ISS scope overlaps the c-N hole, the carry-over hole MUST disclose the disposition: either acknowledge resolution (preferred — rewrite to 'Carry-over verification: ISS-NNNN closed YYYY-MM-DD addressed this; re-verified by grep — no longer present'), or explain why the ISS patch is insufficient (legitimate persistence — e.g., 'ISS-NNNN patch did not address sub-defect X, which remains in the current field text — see grep evidence').\n\n   - **Why this matters.** Without the per-hole re-grep, c-N+1 holes can copy c-N text verbatim and assert 'still unresolved' even when an intervening ISS has fixed the cited phrase. This costs analyst-Opus cycles downstream when the stale hole routes to expansion-tracker. Observed instance: WIN-055.c4 (2026-05-17T22:55Z) carried forward c3 hole #1 text describing a 'See Part 6.13' cross-reference inside sub_rationale, but ISS-2025 (fixed 2026-05-16T17:24Z, 29.5h earlier) had removed that cross-reference. The c4 hole-#1 text remained as if unchanged. Pre-write phrase-grep would have caught this in ~1 second.",
+        "additions_count_lines": 18,
+        "no_existing_text_modified": true
+      },
+      "verification_pattern": "After landing, the next 5 c-N+1 curmudgeon reviews that contain carry-over holes should each contain ONE of: (a) an explicit phrase-grep verification note ('grep of data/wins.json:WIN-XXX for phrase \"...\" returned X matches'), OR (b) an acknowledgement-of-resolution disposition ('Resolved between c-N and c-N+1 — ISS-NNNN closed YYYY-MM-DD'), OR (c) an explicit ISS-insufficient-patch verification ('ISS-NNNN patch did not address sub-defect X, which remains in current data — see grep evidence'). Reviews that contain a carry-over hole and NONE of these markers are evidence the prompt addition is not landing in agent behavior — escalate to a follow-up PROP.",
+      "verification_command": "node -e \"const fs=require('fs'); const reviewedAfter='2026-05-18T20:00:00Z'; const carryRE=/carry[- ]?over from c\\\\d+|still unresolved from c\\\\d+|carried? forward from c\\\\d+/i; const grepRE=/grep|phrase.+(present|absent|verified|re-search)|re-grep|verified by/i; const ackRE=/Resolved between c-\\\\d+|ISS-\\\\d+ closed.+addressed|carry-over verification|disposition confirmed|patch did not address/i; let total=0,compliant=0; for(const f of fs.readdirSync('monitor/curmudgeon/reviews')){if(!f.endsWith('.json'))continue; const r=JSON.parse(fs.readFileSync('monitor/curmudgeon/reviews/'+f,'utf8')); if(!r.reviewed_at||r.reviewed_at<reviewedAfter)continue; const holes=r.holes_found||[]; const hasCarryOver=holes.some(h=>carryRE.test(h.description||'')); if(!hasCarryOver)continue; total++; const allCompliant=holes.filter(h=>carryRE.test(h.description||'')).every(h=>grepRE.test(h.description||'')||ackRE.test(h.description||'')); if(allCompliant)compliant++;} console.log('carry-over reviews:',total,'compliant:',compliant,'compliance pct:',total?(compliant/total*100).toFixed(1)+'%':'n/a');\""
+    },
+    "task_3_counter_arguments": {
+      "counter_argument_1_normal_churn_handled_downstream": {
+        "claim": "This is just normal review-cycle churn that the system handles correctly via OBE-dismissal downstream. Decider's intake will see the stale carry-over, attempt a patch, discover the defect is gone, and OBE-close. So the system self-corrects.",
+        "rebuttal": "True for cheap items, false for routed-to-analyst items. The directive's concrete instance involved an EXP authored for ISS-2103 (the dangling-pointer half of the WIN-055 sub_rationale issue), where the analyst picked up the stale c4 carry-over and produced expansion-bound work that turned out to be partly OBE. Even when the system OBE-closes correctly, it spends analyst-Opus cycles on the path. The Opus spend is the real cost — at PROP-038-era Opus pricing, one stale-c4-routed-EXP is ~$5-15. At 3-5% of multi-cycle transitions and ~50 multi-cycle transitions per month, that's 1.5-2.5 stale carry-overs per month, or $7-40/month of avoidable Opus. Pre-write phrase-grep costs ~1 second of curmudgeon-bash and zero Opus. Cheap to deploy, recurring savings.",
+        "rebuttal_strength": "moderate — savings are modest dollarwise; the bigger argument is signal quality (review files should not contain false-presence claims about current data) and downstream review-cycle hygiene."
+      },
+      "counter_argument_2_over_suppression_of_legitimate_carry_forward": {
+        "claim": "An item flagged in c-N AND independently resolved in another ISS still benefits from explicit verification in c-N+1. Auto-suppressing such carry-overs loses the audit-trail entry that says 'we noticed this, and it got fixed in the interim'.",
+        "rebuttal": "Yes — and the proposed mechanism EXPLICITLY does not suppress. It REWRITES. The required disposition is 'Carry-over verification: ISS-NNNN closed YYYY-MM-DD addressed this; re-verified by grep — no longer present'. That IS the audit-trail entry. The current behavior is worse than that: it claims 'still unresolved' when in fact it was resolved. The proposed mechanism preserves the verification act, removes the false claim. (See the SEC-8b.3 c6→c7 reviews and WIN-070 c2→c3 reviews in the survey — these are model examples of legitimate carry-over disposition where curmudgeon explicitly verified the defect text remains in current data despite the ISS patch. The proposed mechanism formalizes that practice across all carry-overs, not just the ones the curmudgeon happens to do it for.)",
+        "rebuttal_strength": "strong — the counter-argument is addressed by the mechanism's design, not by accepting a tradeoff."
+      },
+      "counter_argument_3_prompt_addition_creep": {
+        "claim": "Curmudgeon.md is already long. Every prompt addition compounds the token cost, and the marginal value of each addition decreases. Per Tinker's own CLAUDE.md performance check, prompt bloat is a recurring concern.",
+        "rebuttal": "Acknowledged. ~18 lines is small (curmudgeon.md is ~420 lines now, so this is ~4% growth). The addition fits inside an existing step (Step 5) so the curmudgeon's attention-budget on the step shifts only slightly. Mitigation: pair this PROP with a Mode 3 audit at next tinker run to find offsetting reductions elsewhere in curmudgeon.md. Candidates: V6 restructure map prose (line 5-9) is now ~6 weeks post-restructure and could move to reference; the duplicated 'staleness' guidance in Steps 5 and 7c could be consolidated.",
+        "rebuttal_strength": "moderate — the prompt growth is real but bounded; pairing with offsetting reductions keeps total token cost flat or negative."
+      },
+      "counter_argument_4_observability_already_works": {
+        "claim": "Analyst-Mode-1 caught the WIN-055.c4 stale carry-over by manual inspection. The downstream observability is sufficient — analyst surfaces the pattern, operator files a directive, tinker investigates. Why add a pre-write check when post-write detection works?",
+        "rebuttal": "Two reasons. (1) The analyst-Mode-1 catch was incidental — it happened because the analyst was picking up the EXP for ISS-2103 (a sibling issue) and noticed the stale carry-over while parsing surrounding context. There is no guarantee analyst-Mode-1 catches all stale carry-overs; many will silently route to expansion-tracker, get an EXP authored, and OBE-close at decider. (2) Even when analyst-Mode-1 does catch, the catch is surfaced only in latest-analysis-summary.txt, which is overwritten every 2h (PROP-034 cadence) — the directive itself exists because operator-via-cowork-Claude filed it explicitly to survive overwrite. Pre-write checking eliminates the overwrite race, eliminates the OBE-EXP cost, and eliminates the dependence on analyst-Mode-1 happening to pick up the right adjacent context.",
+        "rebuttal_strength": "strong — the post-write detection path is fragile; pre-write detection is robust."
+      }
+    }
+  },
+  "scope_authority_acknowledgement": "Per directive scope_authority: Design proposal only. Tinker does NOT self-apply any prompt edit. PROP filed with status 'design-pending-operator-review'. Operator + cowork-Claude apply the curmudgeon.md edit if PROP is approved.",
+  "out_of_scope_per_directive": [
+    "NOT self-applying any prompt edit (tinker is design-only here).",
+    "NOT proposing implementation of an automated runner that does the grep on curmudgeon's behalf (the mechanism is prompt guidance, not infra).",
+    "NOT expanding into broader curmudgeon-cycle-hygiene refactor (single specific pattern observation per directive scope)."
+  ],
+  "verification_pattern_for_post_landing": {
+    "trigger_after_days": 7,
+    "method": "Run the verification_command (in tinker_top_line_answers_to_directive_tasks.task_2_propose_mechanism.verification_command) at the next tinker run >=7d after landing. Target compliance: >=80% of c-N+1 reviews containing carry-over holes also contain at least one of the three required markers (phrase-grep, acknowledgement-of-resolution, ISS-insufficient-patch verification).",
+    "if_compliance_below_50_pct": "Escalate to follow-up PROP — prompt addition is not landing in agent behavior; consider stronger mechanism (e.g., explicit JSON schema field `carry_over_verification_method`)."
+  },
+  "open_questions_for_operator": [
+    {
+      "question_id": "Q1_phrase_grep_format",
+      "question": "Should the phrase-grep evidence be a free-form note in the hole description ('grep of data/wins.json for \"X\" returned 0 matches'), or a structured field (`carry_over_verification: { phrase: 'X', present_in_current: false, grepped_at: '<ISO>', grepped_against_sha: '<sha>' }`)?",
+      "tinker_recommendation": "Free-form note in hole description — minimal schema disturbance, consistent with how curmudgeon documents other ad-hoc verifications. Structured field would require a DATA-SCHEMAS.md update and is overkill for the ~1-3% carry-over rate."
+    },
+    {
+      "question_id": "Q2_grep_against_clone_or_FUSE",
+      "question": "The grep should be against curmudgeon's clone (post `git pull --rebase` per Step 5), not the FUSE workspace, right? The FUSE can serve stale data.",
+      "tinker_recommendation": "Yes — against the clone. This is consistent with Step 5's existing `git pull --rebase` instruction. The prompt addition should explicitly say 'grep against your clone, not the workspace mount' to prevent FUSE-staleness regression."
+    },
+    {
+      "question_id": "Q3_compliance_threshold",
+      "question": "What's the failure threshold for the post-landing verification (Step 5 compliance)? 80% is the suggested target; should it be stricter?",
+      "tinker_recommendation": "80% is appropriate for prompt-guidance compliance. The remaining 20% would be reviews where the carry-over phrasing is not amenable to grep (e.g., structural-pattern carry-overs rather than phrase-citation carry-overs). Stricter than 80% risks demanding a verification format the curmudgeon can't always produce."
+    }
+  ],
+  "estimated_impact": {
+    "stale_carry_overs_prevented_per_month_lower_bound": 1,
+    "stale_carry_overs_prevented_per_month_upper_bound": 3,
+    "opus_dollars_saved_per_month_lower_bound": 5,
+    "opus_dollars_saved_per_month_upper_bound": 40,
+    "prompt_token_cost_growth_pct": 4,
+    "expected_compliance_pct_after_landing": "80-90",
+    "net_token_cost_with_offset_reductions": "neutral to slightly negative (if paired with curmudgeon.md tinker Mode 3 audit cleanup)"
+  },
+  "review_status_history": [
+    {
+      "ts": "2026-05-18T16:55:00.000Z",
+      "actor": "tinker-2026-05-18T16-50",
+      "status": "design-pending-operator-review",
+      "note": "Initial filing per DIRECTIVE-20260518-001. Survey complete (33 ISS-traceable stale instances out of 314 multi-cycle transitions, 10.5%; estimated 3-5% true-stale after excluding acknowledged-closure and including text-only carry-overs). Concrete instance WIN-055.c4 verified — current sub_rationale has no 'See Part 6.13' phrase; ISS-2025 fix 29.5h before c4 author. Recommendation: Option B (drift-audit fingerprint + per-hole text re-grep) inside curmudgeon Step 5. Counter-arguments addressed in section task_3_counter_arguments."
+    }
+  ]
+}
