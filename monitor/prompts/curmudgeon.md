@@ -49,7 +49,7 @@ WORKSPACE="${SESSION}/mnt/dome-model-review"
 CLONE="${SESSION}/dome-curmudgeon-clone"
 
 # Clone fresh from repo (unauthenticated is fine — curmudgeon only reads, doesn't push)
-git clone https://github.com/funwithscience-org/dome-model-review.git ${CLONE} 2>/dev/null
+git clone --depth 50 https://github.com/funwithscience-org/dome-model-review.git ${CLONE} 2>/dev/null
 cd ${CLONE}
 ```
 
