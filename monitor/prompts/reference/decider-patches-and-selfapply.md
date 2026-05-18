@@ -68,7 +68,7 @@ if [ -z "$AUTH_URL" ] || [[ "$AUTH_URL" != *"x-access-token"* ]]; then
   echo "WARNING: No authenticated URL found in workspace. Falling back to unauthenticated clone (push will fail)."
   AUTH_URL="https://github.com/funwithscience-org/dome-model-review.git"
 fi
-git clone "$AUTH_URL" ${CLONE}
+git clone --depth 50 "$AUTH_URL" ${CLONE}
 cd ${CLONE}
 npm install
 
