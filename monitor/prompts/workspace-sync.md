@@ -22,7 +22,7 @@ if [ ! -d "$CLONE" ]; then
     echo "ERROR: Could not extract PAT from workspace git remote URL. Aborting."
     exit 1
   fi
-  git clone "https://x-access-token:${PAT}@github.com/funwithscience-org/dome-model-review.git" "$CLONE"
+  git clone --depth 50 "https://x-access-token:${PAT}@github.com/funwithscience-org/dome-model-review.git" "$CLONE"
 fi
 
 cd "$CLONE"
