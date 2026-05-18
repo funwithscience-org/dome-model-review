@@ -1,0 +1,65 @@
+{
+  "directive_id": "DIRECTIVE-20260518-002",
+  "title": "Audit clone-create sites across all agents and add --depth 50 where missing. Specifically locate analyst-baby's clone-create site (operator-direct survey couldn't find it; baby's run summary says it had a 659MB full clone to clean up).",
+  "filed_by": "operator-via-cowork-claude",
+  "filed_at": "2026-05-18T06:45:00Z",
+  "issued_at": "2026-05-18T06:45:00Z",
+  "status": "pending",
+  "priority": "medium",
+  "scope_authority": "Survey + recommend. Tinker authors PROP-NNN listing all clone-create sites with the depth-flag patch for each. Operator + cowork-claude apply.",
+  "bug_summary": {
+    "observed_event": "analyst-baby run summary 2026-05-18T05:14Z reported: 'DISK NOTE: Root partition at 93% full (722MB free). Clone was 659MB. Cleanup will reclaim ~659MB.' This is a FULL clone, not a depth-limited one. Operator was already managing root-partition disk pressure (hit 100% ENOSPC earlier today).",
+    "already_patched_in_session": [
+      "monitor/prompts/curmudgeon.md (added --depth 50)",
+      "monitor/prompts/workspace-sync.md (added --depth 50)",
+      "monitor/prompts/reference/decider-patches-and-selfapply.md (added --depth 50)",
+      "monitor/prompts/reference/OPERATOR-RUNBOOK.md line 14 (added --depth 50)"
+    ],
+    "cannot_find": "analyst-baby.md inherits Step 0a from analyst.md, which only refreshes (git fetch + pull --rebase) and does NOT create the clone. Operator-direct grep across prompts/ + reference/ did not surface a clone-create command that baby uses. Yet baby clearly HAS a clone (659MB evidence). Possibilities: (a) some pre-flight wrapper outside the prompt creates the clone, (b) baby implicitly clones via gh CLI or similar, (c) the clone is left over from a prior agent run that did not clean up due to uncommitted changes (baby skips cleanup if dirty), (d) a node script in analyst.md or analyst-baby.md does a clone implicitly when reading from CLEAN_CLONE path."
+  },
+  "operator_preferences_for_proposal": [
+    "Surgical: small patch per site (just add --depth 50 to git clone command).",
+    "Capability-preserving: --depth 50 covers ~2-3 days of git history at current cadence, plenty for any pull-rebase or git-log query the agents do.",
+    "Find ALL sites: if baby is using an uncommon clone source, document it.",
+    "Counter-arguments mandatory."
+  ],
+  "tasks_for_tinker": [
+    {
+      "task_id": "task_1_full_audit",
+      "description": "Grep all of monitor/prompts/ + monitor/prompts/reference/ + monitor/scripts/ + build-scripts/ for 'git clone' and document every site. Cross-reference against which agents use which sites. Identify sites that already have --depth 50 vs those that don't.",
+      "deliverable": "audit_results section in PROP listing all clone-create sites with current depth setting."
+    },
+    {
+      "task_id": "task_2_locate_baby_clone",
+      "description": "Figure out where analyst-baby actually obtains its clone. Read analyst-baby.md + analyst.md carefully. If the clone source is genuinely inherited from a missing-but-implicit step, document the implicit behavior. If there's a non-obvious clone command, add --depth 50 there.",
+      "deliverable": "baby_clone_source section explaining the root cause."
+    },
+    {
+      "task_id": "task_3_patches",
+      "description": "Author a comprehensive patch set: each clone-create site gets --depth 50 (unless --depth already specified). Include the 4 already-patched sites by operator-direct this morning as already-done in the PROP for completeness.",
+      "deliverable": "phase_1_design.patches list with each site."
+    },
+    {
+      "task_id": "task_4_counter_arguments",
+      "description": "Counter-arguments: (a) why --depth 50 not --depth 10 (smaller) or --depth 200 (safer for git history queries)? (b) any agent that genuinely needs deep history (e.g., curmudgeon-side drift-audit walks git log)? Be opinionated.",
+      "deliverable": "counter_arguments_addressed section."
+    }
+  ],
+  "in_scope_for_tinker": [
+    "Comprehensive audit + patch list",
+    "Locate baby's clone source",
+    "Standardize --depth 50 across the estate (or argue for a different value with justification)"
+  ],
+  "out_of_scope_for_tinker": [
+    "Do NOT self-apply any prompt edit",
+    "Do NOT redesign the clone discipline architecture — just add the depth flag"
+  ],
+  "expected_artifacts": [
+    "monitor/tinker/proposals/PROP-NNN-clone-depth-standardization.json (status: design-pending-operator-review)"
+  ],
+  "related_props": [
+    "PROP-016 (Mech A NEVER_PUSH detect) — sibling clone-discipline concern",
+    "CLAUDE.md 'Per-session clone discipline' (2026-05-09) — operator-side discipline section"
+  ],
+  "deadline_target": "Next tinker scheduled run (daily 03:30Z tomorrow). Low priority but disk pressure has bitten 2x today."
+}
