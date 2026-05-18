@@ -1,0 +1,90 @@
+{
+  "point_id": "part2b-W001-signflip",
+  "topic": "W001 sign-flip paragraph inserted into SEC-2b.7 (EXP-070 / ISS-723)",
+  "reviewed_at": "2026-04-12T14:30:00Z",
+  "cycle": 2,
+  "review_type": "section-new",
+  "queue_id": 26,
+  "triggered_by": "EXP-070 integration: W001 sign-flip paragraph added to SEC-2b.7",
+  "current_verdict_holds": true,
+  "confidence": 0.72,
+  "our_argument_summary": "New paragraph in SEC-2b.7 argues: W001 predicted -2.1 nT, observed +3.73 nT (sign wrong), dome classified it as below_detection_threshold instead of falsified. Our text claims this is a 7-sigma miss being hidden by a 'falsification shield' — the detection threshold overrides the direction check. The paragraph distinguishes between legitimate detection thresholds ('we could not measure a signal') and illegitimate falsification shields ('we measured a signal in the opposite direction but will pretend we didn't'). Concludes: 'A 7-sigma deviation with the wrong sign is not a non-detection — it is a detection of the wrong answer.'",
+  "holes_found": [
+    {
+      "severity": "major",
+      "category": "sigma_distance_vs_snr_conflation",
+      "description": "The paragraph's central rhetorical punch — 'A 7-sigma deviation with the wrong sign is not a non-detection — it is a detection of the wrong answer' — conflates two different metrics. The sigma_distance of 7.3 measures how far the observation is from the prediction in units of PREDICTION UNCERTAINTY (~0.8 nT). The detection threshold is about whether the OBSERVATION exceeds the NOISE FLOOR of the instrument. These are measuring different things. From ISS-705-verification, W001 has snr_sufficient: false, meaning the observed signal (3.73 nT) is below the noise floor. If the noise floor is ~4-5 nT (analogous to W004's 4.4 nT), then 3.73 nT IS genuinely in the noise. A dome defender can make a technically valid argument: 'The sigma_distance uses prediction uncertainty (0.8 nT) as the denominator, not the instrument noise floor. When the signal is below the noise floor, the observed sign is unreliable — a +3.73 measurement in 4+ nT noise could just as easily have been -0.5 or +2.0. You cannot call it a detection of the wrong answer when the signal is buried in noise. Your 7-sigma statistic is comparing apples (statistical distance from prediction) to oranges (measurement reliability).' This defense is strong because it's technically correct about how magnetometric detection thresholds work. The paragraph needs to either (a) prove the noise floor is smaller than the observed signal (which it cannot, given snr_sufficient=false), or (b) reframe the argument away from 'this IS a detection' toward the structural critique 'predictions below your own noise floor are unfalsifiable by construction.'",
+      "recommendation": "Reframe the argument. Instead of: 'A 7-sigma deviation with the wrong sign is not a non-detection — it is a detection of the wrong answer,' write something like: 'The dome predicted -2.1 nT at Huancayo, a signal below its own noise floor — guaranteeing that any outcome, including an observation in the opposite direction, would be classified as non-detected rather than wrong. The prediction was unfalsifiable by construction: the dome's detection threshold ensures that small-magnitude predictions can never count against the model regardless of what the instruments measure. When the observed value was +3.73 nT (wrong sign, sigma_distance 7.3), the scoring system worked exactly as designed — classifying a directional miss as a non-detection. The issue is not that the dome ignores a reliable measurement; it is that the dome makes predictions small enough that NO measurement can reliably falsify them.' This version concedes the legitimate noise point (you can't trust a sub-noise measurement's sign) while making the STRONGER structural argument (the predictions are designed to be unfalsifiable)."
+    },
+    {
+      "severity": "moderate",
+      "category": "noise_floor_value_absent",
+      "description": "The paragraph references 'a noise threshold' but never states what the noise floor value actually is. The dome's results.json has noise_floor fields for other entries (W004: 4.4 nT), and the fact that snr_sufficient=false for W001 confirms the signal is below noise. But our text never gives the reader the noise_floor number for W001. A dome defender can say: 'You complain about our detection threshold but don't even report what the threshold IS. Our noise floor at Huancayo during the transit was X nT. The observed signal of 3.73 nT was below that — this is basic magnetometry.' By omitting the noise floor, we appear to be hiding the number that weakens our claim.",
+      "recommendation": "Add the W001 noise_floor value from results.json. If the ISS-705 data doesn't include it (the w001_verification in ISS-705 is missing noise_floor), then explicitly state: 'The dome's results.json does not report W001's noise floor value, making independent verification of the threshold impossible — another gap in the structured scoring the dome presents as transparent.' Either way, the noise floor should be addressed, not ignored."
+    },
+    {
+      "severity": "moderate",
+      "category": "dome_defense_not_preempted",
+      "description": "The paragraph frames the detection threshold as purely an 'escape hatch' without acknowledging that detection thresholds are standard practice in magnetometry. The EXP-070 proposal itself noted in its kernel_of_truth: 'Detection thresholds are legitimate in magnetometry — low-SNR measurements genuinely cannot distinguish signal from noise.' But this acknowledgment did not make it into the integrated paragraph. A dome defender reading this paragraph will see a reviewer who doesn't understand basic signal detection theory. We look like we're complaining that the dome uses a noise floor, which is standard, rather than complaining about HOW they use it (to make predictions unfalsifiable by construction), which is our real objection.",
+      "recommendation": "Add a sentence acknowledging the legitimate use of detection thresholds before making the structural critique: 'Detection thresholds are standard practice in magnetometry — a 3.73 nT signal in a 4+ nT noise environment genuinely cannot be trusted as a reliable measurement. The issue is not that the dome uses a detection threshold; the issue is that the dome makes a -2.1 nT prediction below its own noise floor, ensuring the prediction can never be falsified. Any observation within the noise band — positive, negative, or zero — is automatically classified as not-detected rather than tested-and-failed. The below_detection_threshold category is legitimate for measurements that happen to fall near noise; it becomes a falsification shield when the predictions are systematically calibrated to sit below the noise floor.'"
+    },
+    {
+      "severity": "moderate",
+      "category": "overrides_language_imprecise",
+      "description": "The paragraph says 'the below_detection_threshold escape hatch overrides the direction check.' The verb 'overrides' implies that direction_correct normally triggers a failure which is then suppressed. But from the scoring rules as expressed in results.json fields (ISS-705), the logic appears to be: pass = direction_correct AND snr_sufficient. When snr_sufficient = false, the entire test is classified as below_detection_threshold regardless of direction. The direction check isn't 'overridden' — it's moot when SNR is insufficient. This is standard in signal processing: you don't evaluate a signal's properties when it's below your detection limit. The word 'overrides' anthropomorphizes the scoring code and implies deliberate suppression of a valid check. A dome defender will say: 'Nothing overrides anything. When the signal is below noise, direction cannot be determined. That's not an escape hatch — that's how instruments work.'",
+      "recommendation": "Replace 'the below_detection_threshold escape hatch overrides the direction check' with a more precise description: 'the scoring logic classifies any result with snr_sufficient=false as below_detection_threshold, regardless of what direction_correct reports — even when the observation is 5.83 nT away from the prediction with the wrong sign.' This describes the mechanism without implying deliberate suppression."
+    },
+    {
+      "severity": "minor",
+      "category": "diagnostic_difference_claim_imprecise",
+      "description": "The paragraph says: 'This is the diagnostic difference between a detection threshold (legitimate: \"we could not measure a signal\") and a falsification shield (illegitimate: \"we measured a signal in the opposite direction but will pretend we didn't\").' The parenthetical for the 'falsification shield' mischaracterizes the dome's position. The dome isn't saying 'we measured a signal and will pretend we didn't' — they're saying 'the measurement is below our noise floor, so we can't determine what the signal was.' These are different claims. Our characterization is a strawman of the dome's actual position, which weakens our credibility with technically literate readers.",
+      "recommendation": "Rewrite the distinction: 'This is the difference between a detection threshold applied to genuinely uncertain measurements (legitimate) and predictions systematically placed below the noise floor so that no observation can count against them (illegitimate).'"
+    },
+    {
+      "severity": "minor",
+      "category": "by_any_reasonable_standard",
+      "description": "The phrase 'By any reasonable standard this is a falsification' is an assertion, not an argument. A reasonable standard in magnetometry is that below-noise measurements are unreliable. So 'any reasonable standard' actually includes the standard that says below-noise observations should be discarded. The assertion undermines our credibility with readers who know signal detection.",
+      "recommendation": "Remove the assertion or qualify it: 'By the dome's own direction_correct criterion, this would be a failure — the field explicitly reads false — but the detection threshold classification takes precedence over the direction check.'"
+    }
+  ],
+  "stronger_arguments": [
+    {
+      "description": "The strongest argument is structural, not observational: the dome predicted a -2.1 nT signal using instruments with a noise floor likely exceeding 4 nT. This means the prediction was unfalsifiable before any data arrived — any outcome would be below noise. The paragraph should lead with this structural critique rather than the observational critique of the sign flip. The sign flip is the symptom; the unfalsifiable-by-design prediction is the disease.",
+      "sources": ["ISS-705-verification.json W001 entry: snr_sufficient=false confirms signal is below noise; W004 noise_floor=4.4 nT provides a reference point"]
+    },
+    {
+      "description": "If the W001 prediction uncertainty is ~0.8 nT but the noise floor is ~4-5 nT, the dome is claiming prediction precision (±0.8 nT) far exceeding their measurement capability (±4+ nT noise). This is a separate falsification-shield pattern: state precise predictions that your instruments cannot test. Compare this to a weather forecaster predicting 72.3±0.1°F using a thermometer accurate to ±5°F — the precision is performative, not testable.",
+      "sources": ["Computed from ISS-705 data: prediction uncertainty = |3.73-(-2.1)|/7.2875 ≈ 0.8 nT; W004 noise_floor = 4.4 nT"]
+    },
+    {
+      "description": "Count how many dome predictions fall below the noise floor and receive below_detection_threshold verdicts. If this is a pattern (multiple predictions systematically below noise), the structural argument becomes much stronger than a single W001 anecdote. ISS-705 shows W001 is one of two 'below detection threshold' entries. The dome's own wins page lists 'W001 — Noise Floor Limit' and 'W004 — Noise Floor Limit' under this category. But W004 actually has auto_verdict: confirmed_strong in results.json — a different treatment of the same category. This inconsistency (W001 below threshold, W004 confirmed despite same category label on wins page) is itself worth documenting.",
+      "sources": ["Dome raw-text/02-wins.txt line 129-132: '=== BELOW DETECTION THRESHOLD (2) === W001, W004'", "ISS-705: W004 actually scored as confirmed_strong, not below_detection_threshold"]
+    }
+  ],
+  "kernel_of_truth": {
+    "description": "The paragraph correctly identifies that W001's direction_correct=false field reveals a directional miss that the scoring system does not count against the model. The broad point — that the dome's scoring rules can classify a wrong-direction observation as a non-detection — IS a valid critique. The distinction between detection threshold and falsification shield IS the right analytical framework. The data (predicted -2.1, observed +3.73, sigma 7.3) IS correctly reported.",
+    "why_it_doesnt_save_claim": "The paragraph's factual accuracy on the data values does not save its rhetorical overreach on the interpretation. By claiming 'A 7-sigma deviation with the wrong sign is not a non-detection — it is a detection of the wrong answer,' the paragraph stakes its credibility on a claim that a technically literate reader can challenge: when the signal IS below the noise floor, the observed sign IS unreliable, and sigma_distance computed from prediction uncertainty IS a different metric from signal-to-noise ratio. The strongest version of this argument leads with structure (predictions below noise floor = unfalsifiable by design) rather than observation (this specific measurement was wrong). The current version is forensically exciting but scientifically vulnerable."
+  },
+  "recommended_action": "major_rewrite",
+  "text_fingerprint": {
+    "paragraph_type": "new_insertion",
+    "approximate_length_chars": 950,
+    "location": "SEC-2b.7, after W001 detection-threshold paragraph",
+    "verdict_unchanged": true
+  },
+  "citation_check": {
+    "citations_verified": [
+      "W001 predicted -2.1 nT — confirmed from ISS-705-verification.json w001_verification.prediction_value",
+      "W001 observed +3.73 nT — confirmed from ISS-705-verification.json w001_verification.observed_value",
+      "direction_correct: false — confirmed from ISS-705-verification.json",
+      "sigma_distance: 7.2875 — confirmed; text rounds to 7.3, acceptable",
+      "auto_verdict: below_detection_threshold — confirmed from ISS-705-verification.json",
+      "counts_against_model: false — confirmed from ISS-705-verification.json"
+    ],
+    "citations_failed": [],
+    "citations_unchecked": [
+      "W001 noise_floor value — not included in paragraph or in ISS-705 w001_verification subset; would need direct results.json re-fetch (endpoint now 404)"
+    ]
+  },
+  "deeper_analysis": "This review exercises genuine adversarial rigor against a paragraph that the curmudgeon's own previous review (SEC-2b.7-rewrite.c2.json) recommended adding. That prior review identified the W001 sign-flip as a 'stronger argument' and recommended its integration. Now that it IS integrated, I must attack it as a dome defender would — and the attack is surprisingly strong.\n\nThe core vulnerability is that the paragraph treats sigma_distance (statistical distance from prediction) as though it means 'detection confidence.' But sigma_distance and signal-to-noise ratio measure different things. The sigma_distance of 7.3 says: 'this observation is 7.3 prediction-uncertainty units away from the prediction.' The SNR says: 'this observation is X noise-floor units above the instrument noise.' When snr_sufficient=false (as ISS-705 confirms for W001), the observation IS in the noise, regardless of how far it is from the prediction. A dome defender who understands signal processing will immediately spot this conflation and use it to discredit not just this paragraph but our broader technical competence.\n\nThe fix is to reframe from observational ('we caught a wrong-sign measurement being hidden') to structural ('the dome makes predictions below its own noise floor, guaranteeing they can never be falsified'). The structural argument is airtight: if prediction magnitude < noise floor, then no observation can count against the model, because any observation will either confirm or be classified as below_detection_threshold. This is true regardless of whether any individual below-noise measurement 'really' shows a sign flip.\n\nThe other side of the argument: one could defend the paragraph as written by arguing that the dome's results.json explicitly includes BOTH direction_correct=false AND below_detection_threshold=true — meaning the dome's own code DOES evaluate and record direction even when SNR is insufficient. If the dome truly believed below-noise measurements carry no directional information, why compute and store direction_correct at all? The fact that the field exists suggests the dome's code considers direction meaningful even below noise threshold. This is a reasonable counter-counter-argument, but the paragraph doesn't make it.\n\nOn balance: the paragraph's data is solid, its conclusion (W001 scoring is a falsification shield) is correct, but its argumentative path (7 sigma = detection of wrong answer) is vulnerable. A rewrite that leads with the structural unfalsifiability argument and uses the sign-flip data as supporting evidence (rather than as the headline claim) would be much harder to challenge."
+}

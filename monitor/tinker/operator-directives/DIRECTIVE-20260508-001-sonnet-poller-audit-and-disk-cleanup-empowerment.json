@@ -1,0 +1,80 @@
+{
+  "directive_id": "DIRECTIVE-20260508-001",
+  "title": "Audit first Sonnet poller run + empower /tmp clone cleanup on disk pressure",
+  "filed_by": "operator",
+  "filed_at": "2026-05-08T05:30:00Z",
+  "status": "completed",
+  "completed_at": "2026-05-08T16:05:23Z",
+  "completed_by_run": "tinker-2026-05-08T16-05",
+  "priority": "high",
+  "scope_authority": "tinker is empowered to take corrective action DIRECTLY where described — not just file a follow-up PROP. See per-task authority lines.",
+
+  "context": [
+    "Poller flipped from Opus 4.7 to Sonnet 4.6 on 2026-05-07 between the 11:06Z and 23:06Z scheduled runs. The 23:08Z run was the first Sonnet pass.",
+    "Three other agent demotions (workspace-sync, integrity, social) all held format and substance on first Sonnet runs. Poller is the load-bearing test because its last_poll_note is consumed by analyst / decider / curmudgeon / integrity on every cycle.",
+    "Operator preliminary read of 23:08Z run: chg-* artifacts (3 files) look substantively correct — HIGH-band transition (Step 10b day-8+) for 8 EOM PREDs, 20-day manual-commit drought milestone, 10-commit automated rollup. No obvious factual errors.",
+    "BUT: monitor/status.json's last_poll field still reads 2026-05-07T11:05:55Z (the prior Opus run), and last_poll_note text is the 11:06Z narrative. Sonnet wrote the chg-* files but appears to have skipped updating these canonical pipeline-state fields. Downstream readers will see a stale poller signal."
+  ],
+
+  "tasks": [
+    {
+      "task_id": "task_1_audit_sonnet_run_quality",
+      "description": "Read monitor/changes/chg-20260507-2308-001/002/003.json AND monitor/status.json. Compare last_poll / last_poll_note / changes_pending_analysis / consecutive_quiet_polls fields against the chg-* file timestamps and content. Verify whether Sonnet's run produced ALL canonical artifacts the prompt asks for.",
+      "specifically_check": [
+        "Did last_poll move forward to 2026-05-07T23:08Z?",
+        "Did last_poll_note get rewritten with the new poll's narrative (HIGH-band transition + 20-day drought + auto rollup)?",
+        "Did changes_pending_analysis increment correctly (the 23:08Z run produced 1 substantive chg-*; consistent accounting convention)?",
+        "Did consecutive_quiet_polls reset to 0 (substantive HIGH-band-transition chg-* should reset)?",
+        "Is monitor/curmudgeon/latest-poll-summary.txt fresh (likely produced by poller)?",
+        "Did the chg-* file structure match prior Opus runs (severity, kind/type fields populated, schema-conformant)? Operator quick-check showed severity=None, kind=None on all three files via terse JSON inspection — verify whether that's a schema regression or just operator-side reading.",
+        "Compare 23:08Z chg-* narrative density against a sample of prior Opus chg-* files (e.g., chg-20260506-2306-001). Sonnet may produce slightly terser narratives — is the substance preserved (KEY FINDINGs, watch-for-next-poll items)?"
+      ],
+      "authority": "READ-ONLY for the audit itself."
+    },
+    {
+      "task_id": "task_2_corrective_action_empowered",
+      "description": "If task 1 finds the canonical state-update fields stale (last_poll, last_poll_note, etc.), TAKE CORRECTIVE ACTION DIRECTLY — do not file a PROP and wait for human review. Two acceptable mechanisms:",
+      "mechanism_a_backfill_status_json": {
+        "when": "Sonnet's run produced correct chg-* artifacts but skipped status.json field updates. Backfill is mechanical.",
+        "what": "Synthesize the last_poll_note from the 23:08Z chg-* files content. Update last_poll, last_poll_note, changes_pending_analysis, consecutive_quiet_polls in monitor/status.json (FUSE workspace). Workspace-sync rounds it to git within 1h.",
+        "preserve": "Other-owned fields in status.json (last_decider_*, last_analyst_*, etc.) MUST stay untouched — only update poller-owned fields per the file's existing schema."
+      },
+      "mechanism_b_revert_poller_to_opus": {
+        "when": "Sonnet's run produced material content errors (e.g., factual error in a chg-* file, missing a real signal, wrong severity classification, narrative format that breaks analyst's parsing) that affect downstream pipeline correctness.",
+        "what": "File HNOTE-OPERATOR-POLLER-REVERT-001 in monitor/decisions/human-notes.json explaining what regressed and recommending the operator revert poller's model to Opus 4.7 (or Opus 4.6 as middle rung). Specific evidence cited (chg-* file paths, what went wrong). HNOTE is operator-actionable; tinker does NOT change the scheduled-task model directly.",
+        "rationale": "Model selection is operator-controlled in the Cowork UI — tinker can't flip it. So the corrective lever for content-quality regressions is an HNOTE asking the operator."
+      },
+      "authority": "WRITE empowered for mechanism A (backfill status.json poller-owned fields). WRITE empowered for mechanism B (file HNOTE). Either is single-commit, FUSE-side, no schema additions."
+    },
+    {
+      "task_id": "task_3_disk_pressure_cleanup_empowerment",
+      "description": "Standing empowerment, not just this run: when tinker's Mode 2 disk audit detects /tmp footprint > 500MB AND any /tmp/*-clone directory older than 24h, tinker is empowered to `rm -rf` the stale clones DIRECTLY. Log the cleanup in the tinker run report (cleaned_paths array). Also describe the policy briefly in monitor/prompts/tinker.md so future tinker runs know it's authorized.",
+      "rationale_with_evidence": "Disk-fill recurrence killed decider's clone path overnight 2026-05-07→08. Bash sandbox went to 100% on root, decider fell into degraded-fuse mode, applied EXP-293 archive-cite patch via file tools without JSON-validity checks, broke wins.json, took ~3h to detect and recover. Three /tmp/*-clone directories (prop017-clone 33h old, check-clone, check2) accounted for 600MB+ of the 940MB project footprint tinker reported. Cleanup is mechanical, low-risk (operator-created clones can always be re-cloned in <30s), and removes the structural cause.",
+      "safety_constraints": [
+        "ONLY remove directories matching the glob /tmp/*-clone (or /tmp/*-clone-*).",
+        "REQUIRE mtime older than 24h — never touch a fresh active clone.",
+        "Log every removal in the tinker run report under findings.cleanup_actions[].",
+        "If unsure about a directory, file a HNOTE-OPERATOR-DISK-CLEANUP-AMBIGUOUS-NNN listing what tinker considered but didn't clean, and let the operator decide."
+      ],
+      "exclusions": [
+        "Never touch /tmp/edit-clone if its mtime is fresh (<2h) — the operator may be actively using it for a session.",
+        "Never touch anything outside /tmp.",
+        "Never touch /sessions/intelligent-brave-lamport/ or any FUSE mount."
+      ],
+      "authority": "WRITE empowered to `rm -rf` matching directories AND to add the policy paragraph to monitor/prompts/tinker.md. Single-commit acceptable."
+    }
+  ],
+
+  "completion_criteria": "(1) task 1 audit results are in tinker's next run report. (2) IF a regression was found in task 1, mechanism A or B was taken (not just proposed). (3) tinker.md has the disk-cleanup policy paragraph (one-time addition). (4) directive status flips pending → completed with `completed_at` and `completed_by_run` per DIRECTIVE-LIFECYCLE.",
+
+  "supersedes": null,
+  "amends": null,
+  "cross_references": [
+    "monitor/changes/chg-20260507-2308-001.json (HIGH-band transition)",
+    "monitor/changes/chg-20260507-2308-002.json (cadence rollup)",
+    "monitor/changes/chg-20260507-2308-003.json (auto-commits rollup)",
+    "monitor/status.json (canonical poller-owned fields)",
+    "monitor/tinker/proposals/PROP-024-workspace-sync-json-validity-gate.json (overnight wins.json incident — also on tinker's plate)",
+    "monitor/decisions/applied-patches/applied-2026-05-08T06-10-00Z-degraded-fuse.json (the degraded-fuse EXP-293 patch that broke wins.json — root cause was disk pressure)"
+  ]
+}

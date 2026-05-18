@@ -1,0 +1,18 @@
+{
+  "id": "ISS-AUTO-FROM-PROP-009r2",
+  "created_at": "2026-04-18T12:55:00Z",
+  "source": "PROP-009r2 orthogonal finding",
+  "severity": "moderate",
+  "target_type": "pipeline_bug",
+  "target_id": "curmudgeon-self-contradictory-reviewed-at",
+  "title": "Curmudgeon review JSON reviewed_at can contradict the file mtime by hours",
+  "description": "SEC-4.1.c3.json file mtime 2026-04-18T00:16:21Z but its internal reviewed_at is 2026-04-18T07:42:00Z — 7h26m AFTER the file was written. SEC-4.1.c4.json file mtime 2026-04-18T06:12:46Z but its internal reviewed_at is 2026-04-18T05:12:46.475Z — ~1h BEFORE the file was written. This contradiction is NOT a cycle-numbering race (cycle numbers track file mtimes correctly: c3 mtime < c4 mtime). The anomaly is inside each review file: reviewed_at does not match write time. Impact: PROP-009's soft-fallback pop filter compares reviewed_at > pushed_at; a self-contradictory reviewed_at can cause a review written BEFORE a push to falsely appear to service that push (reviewed_at > pushed_at satisfied on stale timestamp, even though the file was written first).",
+  "evidence_files": [
+    "monitor/curmudgeon/reviews/SEC-4.1.c3.json",
+    "monitor/curmudgeon/reviews/SEC-4.1.c4.json"
+  ],
+  "recommended_fix": "Investigate where curmudgeon.md Step 7 generates reviewed_at. Likely candidates: (a) curmudgeon copies pushed_at from the queue snapshot it loaded at run start, not fs.statSync(reviewPath).mtime; (b) an agent process clock drifts from the FUSE filesystem clock; (c) the review file is written in two passes with an earlier draft using an initial timestamp. Fix: set reviewed_at to `new Date().toISOString()` at the exact moment of fs.writeFileSync, not earlier. Needs its own PROP.",
+  "assignee": "tinker",
+  "blocks_prop_009r2": false,
+  "status": "open"
+}

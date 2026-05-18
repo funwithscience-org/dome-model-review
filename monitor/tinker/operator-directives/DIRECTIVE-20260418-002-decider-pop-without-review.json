@@ -1,0 +1,78 @@
+{
+  "directive_id": "DIRECTIVE-20260418-002",
+  "issued_at": "2026-04-18T14:45:00Z",
+  "issued_by": "steve (via cowork session)",
+  "target_agent": "tinker",
+  "target_mode": "Mode 1 — Pipeline Health / Mode 3 — Cost Engineering / Mode 4 — Proposals",
+  "priority": "high",
+  "status": "open",
+  "title": "Diagnose decider draining post-integration re-review queue items without curmudgeon review files",
+  "summary": "Between 07:27Z and 09:41Z on 2026-04-18, the decider pushed and then popped 10 priority-queue items (queue_ids 165-174, all post-integration SEC/WIN re-reviews triggered by EXP-181 and EXP-182 integration) without producing matching curmudgeon review files. The only review file in the window (SEC-4.1.c3.json at 07:42Z) is tagged queue_id 158 — a queue item popped 08 hours earlier, on 2026-04-17T23:26Z. So the pipeline is: decider integrates an expansion → decider pushes post-integration re-review items → decider pops them in the same or next run → no curmudgeon ever sees them. The adversarial-review step that is the whole point of queueing post-integration reviews is being skipped.",
+  "context": {
+    "observed_pattern": "Two consecutive decider runs (07:30Z and 09:41Z) each pushed 5 post-integration re-review items to priority-queue.json and then drained them within minutes, with popped_by=decider on all 10 entries. Curmudgeon does not produce review files for 9 of the 10 items. The one review file that does exist (SEC-4.1.c3 at 07:42Z) claims cycle 3 despite a cycle-4 file existing at 05:12Z (cycle numbering going backwards) and is tagged with queue_id 158 which was drained the prior evening. So that one review is not actually covering any of queue_ids 165-174 — it is a stale-state echo.",
+    "concrete_evidence": {
+      "queue_history_07_27Z_pops": ["165 SEC-4.1", "166 WIN-058", "167 WIN-058b", "168 WIN-062", "169 WIN-053"],
+      "queue_history_09_41Z_pops": ["170 SEC-2b.5", "171 SEC-4.1", "172 WIN-058", "173 WIN-058b", "174 WIN-062"],
+      "curmudgeon_reviews_in_window": ["SEC-4.1.c3.json reviewed_at 2026-04-18T07:42Z tagged queue_id 158 (drained 2026-04-17T23:26Z)"],
+      "decider_09_41_daily_report_says": "curmudgeon_reviews_processed is empty list; expansions_integrated has EXP-181 and EXP-182; expansions_routed has EXP-183 → curmudgeon expansion-draft",
+      "popped_by_value": "decider (not curmudgeon) on all 10 entries"
+    },
+    "impact": "Post-integration content never gets adversarially reviewed. SEC-4.1 post-EXP-182 (a major fold-in rewrite superseding EXP-178/179/180, with the 47.69σ independence-violation wedge) went live with no curmudgeon cross-check. WIN-058 and WIN-062 post-EXP-181 (the WIN-058 recompute, which changed the kappa badge visibly) went live the same way. If EXP-183 and EXP-184 get the same treatment after pre-integration review, we lose both pre- and post-integration adversarial checks.",
+    "why_this_is_not_the_change_detection_issue_DIRECTIVE_001": "DIRECTIVE-20260418-001 / PROP-008 is about change-driven scans (Step 0d) re-reviewing items too aggressively. That's the opposite problem — too much curmudgeon work on small changes. This directive is about curmudgeon work being skipped entirely on integration-driven pushes. Orthogonal pathway. PROP-008's gates would not touch this bug.",
+    "relevant_prompts": {
+      "decider.md_Step_E": "Says curmudgeon review files are the signal that an item is done; decider pops on processing review files. But the decider is popping items with no review files.",
+      "curmudgeon.md_steps_6_7": "Says decider is primary writer, pops happen when decider processes review files. Matches the intended contract. The bug is in decider's enforcement."
+    }
+  },
+  "hypotheses_to_rule_in_or_out": [
+    {
+      "hypothesis": "Decider treats 'just integrated this expansion' as equivalent to 'queue item reviewed' and pops speculatively.",
+      "how_to_verify": "Search decider.md for any rule that pops a queue item based on integration-completion rather than review-file-existence. Look for code snippets or pseudocode that match the observed pattern."
+    },
+    {
+      "hypothesis": "Decider's dedup/cleanup logic pops items that duplicate recently-popped targets (WIN-058 at 166 duplicates an older WIN-058 pop, and decider auto-drains duplicates).",
+      "how_to_verify": "Diff the pushed items across the two runs. If decider pushed SEC-4.1 at queue_id 165 and 171, and popped both, check whether the pop logic triggers on 'target_id previously popped within N hours'."
+    },
+    {
+      "hypothesis": "Curmudgeon DID run between the pushes but got stopped at Step 0d change-detection filtering before reaching the priority queue, then misrecorded its review against queue_id 158 (stale assignment from a prior run).",
+      "how_to_verify": "Check curmudgeon cron firing times. With 20 */4 * * * scheduled, it should have run at 08:20Z and 12:20Z. Inspect whatever logs exist for those runs. The 07:42Z review file is suspicious — its reviewed_at is not on a cron fire time (08:20 would be next). Was it produced by a manual trigger, by an overrun from an earlier run, or by something else?"
+    },
+    {
+      "hypothesis": "Decider calls a batch-drain operation as part of 'queue management' (referenced in commit e4630ec title) that pops ALL currently-queued non-expansion-draft items and treats them as reviewed-by-integration.",
+      "how_to_verify": "Examine the e4630ec commit and its daily-report-2026-04-18T09-41.json for a queue_management action. Note the report's curmudgeon_queue.action_taken is 'none' at report-generation time, so either the pop happened outside the reported path or the report is stale relative to the actual queue writes."
+    }
+  ],
+  "deliverable_requested": {
+    "format": "PROP file in monitor/tinker/proposals/ following existing PROP-* conventions (PROP-009 or next available)",
+    "contents": [
+      "Root-cause analysis: which of the four hypotheses (or some combination) explains the 10-item drain? Trace through decider.md Step E and any batch-drain logic.",
+      "Verify the gap: produce a list of all queue history entries from 2026-04-15 onward where popped_by=decider and no curmudgeon review file with matching queue_id exists. This quantifies scope.",
+      "Proposed prompt patch: decider.md must NOT pop a queue item unless (a) a curmudgeon review file with matching queue_id exists in monitor/curmudgeon/reviews/, OR (b) the item is explicitly flagged 'require_matching_review_file: false' by the pusher. Exact text changes, not a description.",
+      "Address the cycle-numbering-goes-backwards anomaly: SEC-4.1.c3 written at 07:42Z after SEC-4.1.c4 at 05:12Z. Is this a curmudgeon bug, a cycle-detection bug in its clone, or intentional? Flag for separate follow-up if orthogonal.",
+      "Migration plan: apply the decider.md patch immediately, or run a shadow period where decider logs 'would have popped but no matching review' without actually skipping the pop? Recommend one."
+    ]
+  },
+  "escape_hatches": [
+    "Do not regress the legitimate pop-on-review path — when curmudgeon does write a review file with matching queue_id, decider must still pop promptly. The fix is adding a precondition, not changing the pop mechanism itself.",
+    "Expansion-draft target_type items (like queue_id 175 EXP-183 currently waiting) should NOT be affected — those are the documented pre-integration review pathway and curmudgeon actually reviews them. The pop-blocking precondition is mainly for auto-pushed post-integration re-review items where the bug is observed.",
+    "Operator-pushed items (pushed_by containing 'operator') should also have the precondition enforced — human pushes are the minority case that would most disrupt a deadlock, so if this precondition creates a backlog, the escape hatch is for operator to set require_matching_review_file=false explicitly."
+  ],
+  "concerns_to_address": [
+    "Risk that the precondition creates queue deadlock if curmudgeon never reviews an item (e.g., always deferred by change-detection filtering). MITIGATION: add a stale-queue-item detector with 7-day-old-and-still-unreviewed-by-curmudgeon flag → escalate to tinker (not auto-pop).",
+    "Risk that the bug is intentional behavior for cost savings (the decider deliberately avoids queueing post-integration reviews because they are usually minor_edit) and the fix would blow up Opus spend. MITIGATION: tinker should quantify retroactively: of the would-have-been-popped-but-blocked items, what fraction would have produced critical/major findings? Use the last 30 days of history as the sample.",
+    "Risk that 'post-integration re-review' is genuinely redundant when the expansion itself was produced adversarially (which EXP-182 was). COUNTER-ARGUMENT: analyst-authored expansions are not adversarially reviewed by curmudgeon at draft time unless we queue them as expansion-draft (like EXP-183/EXP-184 are being treated). For older auto-integrated expansions that never got expansion-draft review, post-integration review is the only adversarial check available. So the redundancy claim depends on the upstream review path being reliable, which it currently is not."
+  ],
+  "cross_references": {
+    "related_directive": "DIRECTIVE-20260418-001-change-detection-cooldown.json (orthogonal pathway — Step 0d change-driven scans, not integration-driven pushes)",
+    "related_proposal": "PROP-008 (change-detection magnitude+cooldown gates — does not overlap with this gap)",
+    "related_commits": [
+      "2fa4b57 Decider self-apply: EXP-178, EXP-181, WIN-053 — triggered the 07:27Z push+drain",
+      "191a3d4 Decider: EXP-182 integration — triggered the 09:41Z push+drain",
+      "e4630ec Decider run 2026-04-18: queue management, EXP-183 routed — 'queue management' phrase may be the smoking gun"
+    ],
+    "related_human_note": "monitor/decisions/human-notes.json :: HN-20260418-Txxxx-re-push-post-integration-reviews (will be created alongside this directive — the operational remediation; this directive is the systemic remediation)",
+    "prompt_file": "monitor/prompts/decider.md",
+    "prompt_section": "Step E — priority-queue.json mutations (push and pop semantics)"
+  },
+  "completion_criteria": "Tinker produces a PROP file addressing the deliverable list above. Operator (Steve) reviews and approves the precondition wording and the cycle-numbering follow-up scope before the decider.md patch is applied. Migration plan is Steve's call (immediate vs shadow)."
+}

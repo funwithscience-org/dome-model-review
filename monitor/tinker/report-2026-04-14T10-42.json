@@ -1,0 +1,211 @@
+{
+  "generated_at": "2026-04-14T10:42:00Z",
+  "report_date": "2026-04-14",
+  "run_label": "run-1 (morning)",
+  "mode_selected": "infrastructure_and_fuse",
+  "mode_reason": "Two Mode 2 triggers: (1) FUSE stale file build-scripts/digest-reviews.js persists (same mismatch as 2026-04-13 report — still unsynced), (2) disk crossed 80% WARNING threshold (81% used, 1861MB free). Auth OK, CI green, test.js passes. Pipeline health is green otherwise, and all previous Mode 1 triggers (stalled agents) are absent.",
+  "modes_checked": {
+    "pipeline_health": "green — all 8 agents producing. Poller 10h ago (12h cadence OK — next run 11:05Z). Analyst 1h ago (hourly cadence). Curmudgeon 0h ago (30min cadence). Decider 1h ago (hourly cadence). Integrity ran this morning 09:08Z. Social ran yesterday 16:14Z (daily cadence — next run 11:05Z today). Workspace-sync 3h ago (4h cadence). Tinker this run. NOTE: schedules have shifted from yesterday's report — today curmudgeon is fastest (*/30), analyst and decider are hourly. No agent stalled.",
+    "infrastructure": "amber — FUSE stale: build-scripts/digest-reviews.js still mismatched between workspace (0a11b762) and GitHub (cda50957). Same stale file as yesterday's report. Other 4 checked files match. DISK at 81% used (1861MB free) — crossed 80% WARNING threshold per dispatcher rule. Not critical (<90%) but one bad agent run from full. Auth OK (PAT valid, API returns 200). CI green (last 3 runs successful).",
+    "cost_engineering": "Schedules re-pivoted since yesterday: curmudgeon now fastest (*/30) while analyst and decider are hourly. Queue depth dropped 15→13. Open issues dropped 32→7 — massive closure (closed-issues.json updated 09:29Z). Churn-and-burn still active but workload clearly draining. Priority-queue.json metadata STILL shows BAU (mode='bau', last_schedule_change='2026-04-11T10:42:23.359Z') — even more divergent than yesterday because actual crons rotated but metadata frozen. Step E4 bug unfixed.",
+    "proposals": "Multiple carryovers: PROP-005 still unimplemented (8th consecutive), decider.md stale schedule descriptions (4th consecutive), OWNERSHIP misalignment (4th consecutive). Orphan proposals from yesterday (ISS-800, ISS-837) now in ledger — but new orphan appeared (ISS-738). Ongoing ledger hygiene issue, not a one-shot fix."
+  },
+  "pipeline_health": {
+    "agents_running": 8,
+    "agents_stalled": [],
+    "output_freshness": {
+      "poller": "10h ago (12h cadence) — green, next 11:05Z",
+      "analyst": "1h ago (hourly cadence) — green, next 10:07Z",
+      "curmudgeon": "0h ago (30min cadence) — green, most recent SEC-1.9.c1.json",
+      "decider": "1h ago (hourly cadence, :15 offset) — green, latest daily-report-2026-04-14T23-13.json",
+      "integrity": "ran this morning 08:08Z — green",
+      "social": "ran yesterday 16:14Z (daily cadence) — green, next 11:05Z",
+      "tinker": "this run — green",
+      "workspace_sync": "3h ago (4h cadence) — green"
+    },
+    "open_issues": 7,
+    "open_issues_note": "Dropped from 32 to 7 overnight — major cleanup by decider. Closed-issues.json total: 833. Queue depth dropped 15→13. This suggests churn-and-burn did its job and BAU transition may be imminent.",
+    "tracker_status": "curmudgeon tracker.json uses holistic-checks schema (top-level keys: current_cycle, points, holistic_checks, etc.), not the old per-target status schema. 15 items_reviewed visible. No collision signature.",
+    "test_js": "3316 passed, 0 failed",
+    "ci": "last 3 runs successful (CI + pages deployment)"
+  },
+  "infrastructure_findings": [
+    {
+      "severity": "moderate",
+      "category": "disk",
+      "description": "DISK AT 81% USED — crossed Mode 2 WARNING threshold. 1861MB free on 9.6GB partition. Filesystem is /dev/nvme0n1p1 / — the sandbox system volume, not the FUSE workspace (which is only 61MB). Agent clones accumulate on system volume. Per dispatcher: 'one bad run from full'. Not yet critical (<90%) but trending closer.",
+      "evidence": "df -h /: 9.6G total, 7.7G used, 1.9G avail, 81% used. /tmp is only 3.1M. /sessions is 61M. The 7.7G is primarily the base system image, not agent artifacts — so recovery options are limited to (a) clearing /tmp scratch files, (b) cleaning any agent's local clone directories, (c) accepting the baseline.",
+      "suggested_fix": "Not self-fixable from tinker run (sandbox is per-agent). Recommend decider/curmudgeon/analyst audit their scratch clones after each run — if any leave /tmp files behind, clean them. Also worth verifying workspace-sync.md cleans up its temporary clone. If disk trend continues upward, will escalate to critical in subsequent reports.",
+      "self_fixable": false,
+      "fix_applied": false
+    },
+    {
+      "severity": "minor",
+      "category": "infrastructure",
+      "description": "FUSE STALE CARRYOVER: build-scripts/digest-reviews.js mismatched between workspace (md5 0a11b762) and GitHub main (md5 cda50957). Same file, same hashes as yesterday's report — NOT yet auto-fixed by a publish cycle. This is 2nd consecutive report with this exact mismatch. Any agent reading digest-reviews.js from workspace will run stale code.",
+      "evidence": "md5sum workspace: 0a11b76276b71343d3b356f06aed0e98. Curl GitHub raw: cda50957ede0772d66bf0e5b8e448313. Unchanged since 2026-04-13T16:11.",
+      "suggested_fix": "Decider or human: run `cp` from fresh clone to workspace, OR trigger a `node build.js publish` which has the workspace-sync step. The digest-reviews.js is used by the decider when pulling curmudgeon reviews — if the decider clones fresh each run (per freshness protection), the stale workspace copy doesn't corrupt its operation. Still worth fixing for consistency.",
+      "self_fixable": false,
+      "fix_applied": false
+    },
+    {
+      "severity": "info",
+      "category": "git_auth",
+      "description": "Git auth healthy: PAT found (93 chars), API response 200. No authentication failures in last 10 decider reports.",
+      "evidence": "curl -H Authorization api.github.com/repos/funwithscience-org/dome-model-review → 200.",
+      "self_fixable": false,
+      "fix_applied": false
+    },
+    {
+      "severity": "info",
+      "category": "ci",
+      "description": "CI healthy: last 3 GitHub Actions runs all successful.",
+      "evidence": "api/actions/runs: success - CI - 2026-04-14T09:31:13Z; success - pages build - 2026-04-14T09:31:12Z; success - CI - 2026-04-14T08:29:43Z.",
+      "self_fixable": false,
+      "fix_applied": false
+    }
+  ],
+  "previous_followup": [
+    {
+      "finding": "METADATA-VS-REALITY: priority-queue.json shows BAU, actual crons accelerated",
+      "status": "STILL_BROKEN",
+      "evidence": "priority-queue.json mode='bau', schedule_state shows analyst=120min, curmudgeon=240min, decider=240min, last_schedule_change='2026-04-11T10:42:23.359Z'. Actual crons today: analyst='0 * * * *' (hourly=60min), decider='15 * * * *' (hourly=60min), curmudgeon='*/30 * * * *' (30min). ALL THREE diverge from metadata. Additionally, the roles flipped since yesterday's report (curmudgeon went from hourly to */30; analyst and decider went from */30 to hourly) and the metadata STILL reflects none of this movement. Step E4 bug remains the root cause — decider.md End-of-Run Step B operates on the metadata without checking actual crons via list_scheduled_tasks.",
+      "severity": "major"
+    },
+    {
+      "finding": "2 orphan proposals (ISS-800, ISS-837) missing from processed-proposals.json ledger",
+      "status": "PARTIAL — yesterday's two now in ledger, but one new orphan appeared",
+      "evidence": "Proposal files on disk: 62. Ledger files: 61. Missing from ledger today: ISS-738-resolution.json. The previously-flagged ISS-800 and ISS-837 are both now recorded. So yesterday's specific fix landed, but the underlying leak persists — a new proposal (ISS-738) wasn't added during processing. Ledger update step in decider's proposal-processing loop is unreliable, not broken once.",
+      "severity": "moderate"
+    },
+    {
+      "finding": "PROP-005: decider pre-flight work check (8th consecutive report)",
+      "status": "STILL_BROKEN",
+      "evidence": "grep -c 'Pre-flight Work Check' monitor/prompts/decider.md → 0. Unimplemented. During churn-and-burn this has been low-cost (most runs substantive), but open_issues just dropped 32→7, suggesting BAU transition is near and this waste will return.",
+      "severity": "moderate"
+    },
+    {
+      "finding": "decider.md stale schedule descriptions lines 12-14 (4th consecutive report)",
+      "status": "STILL_OPEN — now MORE wrong due to schedule rotation",
+      "evidence": "decider.md line 12: '- **Poller** (every 4h)' — actual 12h. Line 13: '- **Analyst** (every 30min)' — actual hourly now (was */30 yesterday). Line 14: '- **Curmudgeon** (every 10min)' — actual */30 now (was hourly yesterday). The lines were wrong yesterday for different reasons — today's schedule rotation makes them wrong again, which suggests the right fix is to describe BAU (canonical) rather than the current churn state. Canonical from CLAUDE.md: Poller 12h, Analyst 2h BAU, Curmudgeon 4h BAU, Decider 4h BAU.",
+      "suggested_fix_updated": {
+        "file": "monitor/prompts/decider.md",
+        "find": "- **Poller** (every 4h): Dome site changes\n- **Analyst** (every 30min): Deep scientific analysis, new WIN entries, expansions\n- **Curmudgeon** (every 10min): Adversarial self-review",
+        "replace": "- **Poller** (every 12h): Dome site changes\n- **Analyst** (every 2h BAU): Deep scientific analysis, new WIN entries, expansions\n- **Curmudgeon** (every 4h BAU): Adversarial self-review"
+      },
+      "severity": "minor"
+    },
+    {
+      "finding": "OWNERSHIP misalignment: data/predictions.json, docs/llms.txt, docs/sitemap.xml, docs/robots.txt missing from build.js OWNERSHIP (4th consecutive report)",
+      "status": "STILL_BROKEN",
+      "evidence": "grep -c 'predictions.json|llms.txt|sitemap.xml|robots.txt' build.js → 0. Zero of the four files have been added since the finding was first logged.",
+      "severity": "moderate"
+    },
+    {
+      "finding": "CLAUDE.md bloat (39% growth)",
+      "status": "RESOLVED — reconfirmed",
+      "evidence": "CLAUDE.md still 144L (unchanged from yesterday). Below pre-bloat baseline of 156L. No new bloat."
+    }
+  ],
+  "prompt_sizes": {
+    "analyst.md": 189,
+    "curmudgeon.md": 320,
+    "decider.md": 312,
+    "poller.md": 277,
+    "social.md": 309,
+    "structure-integrity.md": 398,
+    "tinker.md": 134,
+    "workspace-sync.md": 289,
+    "prose-extraction-task.md": 293,
+    "dispatcher_total_active_agents": 2228,
+    "previous_dispatcher_total": 2221,
+    "dispatcher_growth_pct": 0.3,
+    "reference_total": 2795,
+    "previous_reference_total": 2793,
+    "reference_growth_pct": 0.1,
+    "tinker_self_growth": "127→134L (+5.5%) — added Mode 2 disk check block. Within budget.",
+    "curmudgeon_self_growth": "313→320L (+2.2%) — modest creep."
+  },
+  "context_load": {
+    "claude_md_lines": 144,
+    "previous_claude_md_lines": 144,
+    "trend": "STABLE — both dispatcher prompts and reference files flat within rounding (+0.3% / +0.1%). No agent crosses the 10% growth alert threshold.",
+    "alerts": []
+  },
+  "claude_md_audit": {
+    "size_lines": 144,
+    "previous_size_lines": 144,
+    "growth_pct": 0,
+    "accuracy_findings": [
+      {
+        "issue": "OWNERSHIP misalignment persists (4th consecutive report). CLAUDE.md lists data/predictions.json, docs/llms.txt, docs/sitemap.xml, docs/robots.txt as git-owned, but build.js OWNERSHIP object does not include them. If a workspace-side writer ever touches one, the direction-guard will still allow it because the file isn't classified.",
+        "severity": "moderate",
+        "status": "carryover",
+        "action": "Route through decider — file a PROP to add these four files to build.js OWNERSHIP."
+      },
+      {
+        "issue": "Monitoring Pipeline table in CLAUDE.md documents BAU schedules. Actual state is churn-and-burn with schedules that rotate. Not a documentation error — CLAUDE.md correctly documents the canonical BAU. The discrepancy belongs to priority-queue.json metadata, not CLAUDE.md.",
+        "severity": "info"
+      }
+    ],
+    "performance_assessment": "CLAUDE.md stable at 144L. Below pre-bloat baseline. No action."
+  },
+  "cost_engineering_peek": {
+    "note": "Full cost engineering audit is a Mode 3 task; this section is a quick observation from dispatcher data.",
+    "actual_schedules_vs_bau": {
+      "analyst": {"actual": "hourly", "bau": "2h", "ratio": "2x"},
+      "decider": {"actual": "hourly", "bau": "4h", "ratio": "4x"},
+      "curmudgeon": {"actual": "30min", "bau": "4h", "ratio": "8x"},
+      "interpretation": "Curmudgeon is at the most aggressive acceleration because it owns the priority-queue (13 items). Analyst and decider have dropped from */30 to hourly — workload easing. Open issues 32→7 and queue 15→13 confirm drain-down. A BAU restore should land in the next 1-2 days."
+    },
+    "bau_transition_readiness": "LOW — the Step E4 bug means auto-restore will again update metadata without verifying actual crons. If the restore runs while any agent's cron is still accelerated, metadata will say BAU while the cron stays fast. Strongly recommend Step E4 fix before the next restore."
+  },
+  "recommendations": [
+    {
+      "priority": 1,
+      "type": "human_decision",
+      "description": "FIX STEP E4 DESIGN FLAW (escalated 3rd consecutive report): decider.md End-of-Run Step B/E4 must call list_scheduled_tasks and compare actual cron expressions against priority-queue.json schedule_state. Today's schedules rotated without metadata updating — this is the third divergence in four days. With open_issues dropping 32→7 and a BAU restore likely imminent, this fix is time-sensitive."
+    },
+    {
+      "priority": 2,
+      "type": "self_fix_deferred",
+      "description": "Fix decider.md stale schedule descriptions (4th consecutive report). Recommend describing BAU (canonical) not current state: Poller 12h, Analyst 2h BAU, Curmudgeon 4h BAU. Deferred to Mode 4 run — not self-applying in Mode 2."
+    },
+    {
+      "priority": 3,
+      "type": "human_action",
+      "description": "Clear FUSE stale digest-reviews.js: `cp clean-clone/build-scripts/digest-reviews.js workspace/build-scripts/digest-reviews.js` or trigger a `node build.js publish`. Unresolved across 2 consecutive reports."
+    },
+    {
+      "priority": 4,
+      "type": "monitor",
+      "description": "Disk at 81%. Not yet critical but trending. Recommend agents audit their scratch file cleanup (particularly /tmp writers). Will re-check next run."
+    },
+    {
+      "priority": 5,
+      "type": "human_decision",
+      "description": "Fix OWNERSHIP misalignment (4th consecutive): add data/predictions.json, docs/llms.txt, docs/sitemap.xml, docs/robots.txt to build.js OWNERSHIP."
+    },
+    {
+      "priority": 6,
+      "type": "human_decision",
+      "description": "Apply PROP-005 (decider pre-flight work check, 8th consecutive). BAU transition is near; waste will return."
+    },
+    {
+      "priority": 7,
+      "type": "decider_hygiene",
+      "description": "Orphan proposal ledger update: ISS-738-resolution.json not in processed-proposals.json. Yesterday's two (ISS-800, ISS-837) are now in the ledger, but the underlying leak persists. Decider's post-processing ledger update should be reviewed for reliability."
+    }
+  ],
+  "tinker_self_audit": {
+    "mode_selected_correctly": true,
+    "mode_selection_logic": "Mode 2 triggered by two distinct infrastructure signals: (a) persistent FUSE stale file, (b) disk crossing 80% WARNING. Previous Mode 1/2/3/4 check confirmed no stalled agents; Mode 4 fixes existed but Mode 2 outranks per priority order.",
+    "substantive_findings": 4,
+    "new_findings_this_run": 2,
+    "carryovers": 5,
+    "resolved_this_run": 1,
+    "prop_verification_performed": true,
+    "self_assessment": "Clean Mode 2 run. Key new finding: disk at 81% (new). Key carryover: FUSE stale persists from yesterday. Pipeline health green (all 8 agents producing). Cost engineering observations noted but full audit deferred to next Mode 3. Note the schedule rotation since yesterday — curmudgeon now fastest instead of analyst/decider — which means the decider.md line 12-14 fix MUST describe BAU canonical, not current state, because 'current' rotates."
+  },
+  "notes_to_future_tinker": "Observations trending toward BAU transition: open_issues 32→7, queue 15→13. When BAU restores, watch for: (1) Step E4 bug will again produce metadata divergence; (2) PROP-005 waste rate will spike as no-op decider runs resume. If BAU restore happens before next tinker run, the first priority next run becomes verifying metadata-vs-reality converged. Also: FUSE stale digest-reviews.js is on day 2 without resolution — if it persists another cycle, escalate to major severity and manually cp. Consider filing a combined PROP bundling Step E4 + PROP-005 + decider.md schedule descriptions as a single 'decider hygiene' patch — the sequence of 4-8 consecutive reports without movement on these items suggests implementation friction benefits from bundling."
+}

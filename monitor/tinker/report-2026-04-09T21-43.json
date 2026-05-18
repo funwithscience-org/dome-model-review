@@ -1,0 +1,178 @@
+{
+  "generated_at": "2026-04-09T21:43:00Z",
+  "report_date": "2026-04-09",
+  "run_label": "run-3 (evening)",
+  "session": "youthful-nifty-fermat",
+  "mode_selected": "cost_engineering",
+  "mode_reason": "Mode 1 and Mode 2 quick checks both green: no stalled agents, FUSE hash check 5/5 files in sync with GitHub main, auth 200 OK. Last report (10:45Z) explicitly said to drop back to Mode 3 once PROP-004 verified and FUSE stayed clean. Both conditions met.",
+  "modes_checked": {
+    "pipeline_health": "green — all 7 agents producing on schedule; decider daily-report at 19:07Z (<1h ago); curmudgeon review at 20:09Z (Cycle 2 Phase 1); analyst expansion tracker at 20:13Z; poll summary at 09:09Z (10.6h old, within 12h cadence); status.json at 08:49Z.",
+    "infrastructure": "green — 5-file FUSE hash check clean (wins.json, sections.json, digest-reviews.js, generate-html.js, docs/index.html all match GitHub raw). GitHub API auth 200. No workspace-sync skips in this session.",
+    "cost_engineering": "Last Mode 3 work: 2026-04-08. Two open PROPs both verified FIXED this run (see previous_followup). No pending Mode 3 prop.",
+    "proposals": "0 proposed (PROP-001/002/003/004 all implemented after this run's updates). 1 new observation queued as a Mode-3 candidate (decider Haiku pre-flight gate — see cost_engineering.proposals_queued)."
+  },
+  "pipeline_health": {
+    "agents_running": 7,
+    "agents_stalled": [],
+    "output_freshness": {
+      "poller": "10.6h ago (12h cadence → within window)",
+      "analyst": "0.5h ago (2h cadence → fresh)",
+      "curmudgeon": "2.6h ago (4h cadence → fresh)",
+      "decider": "0.6h ago (4h cadence → fresh)",
+      "integrity": "last run ~13h ago (daily 9:00 AM → due tomorrow)",
+      "social": "last run 11:09Z today (daily → due tomorrow)",
+      "workspace_sync": "implicit — FUSE in-sync so last sync was successful"
+    },
+    "curmudgeon_phase": "Phase 1 Cycle 2, progress 71/69 (sections bleeding into WIN counter — non-critical display quirk)",
+    "open_issues": 13,
+    "closed_issues": 586,
+    "priority_queue": "1 item, mode=bau",
+    "expansion_tracker": "51 complete / 2 pending / 53 total"
+  },
+  "findings": [
+    {
+      "severity": "minor",
+      "category": "self",
+      "description": "Two open PROPs (PROP-003, PROP-004) were filed AFTER their target bugs were already fixed (by 30 and 21 minutes respectively). PROP-003 was then re-escalated in 9 consecutive reports because the escalation loop used md5-of-workspace-vs-main as its verification — which matches whenever both are fixed. This is the exact cautionary tale captured in tinker-proposals-and-fixes.md lines 100. The second PROP to hit this pattern (PROP-004) had the same root cause: no verification_pattern field.",
+      "evidence": "PROP-003 created 2026-04-08T20:30; fix commit f094909 landed 2026-04-08T19:59:24Z (30 min earlier). PROP-004 created 2026-04-09T10:45; fix commit 0734e78 landed 2026-04-09T10:24:02Z (21 min earlier). Both PROPs lacked verification_pattern; md5 matched through every escalation.",
+      "suggested_fix": {
+        "file": "monitor/prompts/reference/tinker-proposals-and-fixes.md",
+        "find": "Step 2a PROP template",
+        "replace": "Make verification_pattern a HARD REQUIREMENT in the PROP template, and have Step 2b refuse to write a PROP without one — error out with a self finding. Current wording ('Always include') is advisory; the last two PROPs both shipped without it.",
+        "rationale": "The cautionary-tale paragraph captures the lesson but doesn't block the behavior. Enforce at write-time, not review-time."
+      },
+      "self_fixable": false,
+      "fix_applied": false
+    },
+    {
+      "severity": "moderate",
+      "category": "efficiency",
+      "description": "Decider no-op rate ~40% over the last 10 runs (Opus, 4h cadence). In a quiet-dome regime (3 consecutive quiet polls, dome site in maintenance since V51.1 Australia Validation push) the decider frequently wakes to find: 0 new curmudgeon reviews in digest, 0 new expansions, 0 external reports, 0 poll changes. Substantive work always exists when one of those triggers fires, but the pre-roll setup (clone, pull, read prompt, read digest, read trackers) is paid every run regardless.",
+      "evidence": "10 most recent daily-report-*.json scanned by counting curmudgeon_reviews_processed + expansions_processed + internal_issues.new_issues_created + code_analysis_updates. SUBST runs: 6 (19:07, 15:09, 04:18, 18:32, 11:08, 10:30). NOOP runs: 4 (23:06, 17:27, 07:10, 19:40 prev day). 40% no-op on Opus at 4h cadence = ~4 Opus invocations/day doing pure discovery → nothing.",
+      "suggested_fix": {
+        "file": "new scheduled task + PROP",
+        "find": null,
+        "replace": "Haiku pre-flight gate that runs before each decider invocation: reads digest-reviews.js output + expansion-tracker.json + latest-poll-summary.txt + external-reports count, returns a 1-bit 'work_available' signal. Scheduled task reads the signal and skips Opus decider when false. Savings: ~4 Opus invocations/day × ~60% of cycles the dome is quiet ≈ 2-3 Opus runs/day saved at the cost of 6 Haiku runs/day.",
+        "rationale": "Quiet-dome is the current steady state and likely to persist until the author pushes V52. The decider's prompt is self-aware enough that it already reports 'no new digest entries' runs as its first Step. The signal to skip is mechanical."
+      },
+      "self_fixable": false,
+      "fix_applied": false,
+      "prop_candidate": "PROP-005 (deferred to next Mode 3 run — this run's budget went to PROP verification and self-finding)."
+    },
+    {
+      "severity": "minor",
+      "category": "efficiency",
+      "description": "Counter-argument to the decider Haiku gate proposal (required by CLAUDE evenhandedness): the decider's no-op runs are not pure waste. (a) Step 1i poll-summary triage still cross-checks against open-issues.json even when no new findings exist, catching drift from earlier runs. (b) The decider's processed-reviews ledger maintenance is cheap but needs to happen even on quiet days. (c) Gating Opus on Haiku output introduces a new failure mode: Haiku mis-reads the digest and the decider never runs. These are all real but secondary to the straight cost math — still worth including in any PROP-005 tradeoff section.",
+      "evidence": "Decider prompt Step 1i, Step 2c ledger update. Decider already writes a 'pipeline_status' block even when no substantive work is done, which is evidence that quiet-run bookkeeping has some value.",
+      "suggested_fix": null,
+      "self_fixable": false,
+      "fix_applied": false
+    }
+  ],
+  "previous_followup": [
+    {
+      "finding": "PROP-003: digest-reviews.js processedWinIds legacy fallback (9th consecutive escalation as of last run)",
+      "status": "FIXED",
+      "evidence": "Manual verification: `grep -q 'processedWinIds' build-scripts/digest-reviews.js` returns no matches. Line 143 reads `const isProcessed = processedSet.has(file);` — exactly the replacement PROP-003 proposed. GitHub API confirms fix commit f094909 on 2026-04-08T19:59:24Z ('Remove dead processedWinIds legacy fallback from digest-reviews.js'). PROP-003 was created 30 minutes AFTER this commit — it was born already-fixed. Escalation history was an artifact of md5-based verification against main (which matched because both were fixed). PROP-003 file updated in place this run: status=implemented, implemented_at=2026-04-08T19:59:24Z, verification_pattern added.",
+      "do_not_re_escalate": true
+    },
+    {
+      "finding": "PROP-004: build.js hardcoded /sessions/busy-cool-mayer workspace path",
+      "status": "FIXED",
+      "evidence": "build.js lines 217-238 contain dynamic session detection: `const sessionMatch = (process.cwd().match(/\\/sessions\\/([^/]+)/) || [])[1]` + /sessions scan fallback + visible `⚠️  Workspace sync skipped` warning at line 329. The hardcoded busy-cool-mayer path is gone. Fix commit: 0734e78 ('Close PROP-004: dynamic session detection in build.js workspace sync') on 2026-04-09T10:24:02Z — 21 minutes BEFORE PROP-004 was filed (10:45). This run's FUSE hash check is the first downstream verification: 5/5 files match main. PROP-004 file updated in place: status=implemented, verification_pattern added.",
+      "do_not_re_escalate": true
+    },
+    {
+      "finding": "Social agent daily no-op rate — deferred from last run",
+      "status": "STILL_BROKEN (partial)",
+      "evidence": "Social run 2 summary (11:09Z today) reads: 'Nothing has changed since run 1 earlier today'. Dome machine-readable layer byte-identical to run 1. No new TikTok/Twitter/Reddit activity. 'Actions taken this run: none (steady-state).' Social runs daily on Sonnet — the second daily run of a quiet day is a prime Haiku-gate candidate alongside the decider. Bundling into the same PROP-005 makes sense: one pre-flight gate script, two consumers."
+    }
+  ],
+  "open_issue_health": {
+    "total_open": 13,
+    "aged_out": [],
+    "repeated_deferrals": [],
+    "missing_patches": [],
+    "zombie_fixes": [],
+    "note": "Open-issue audit not performed this run (Mode 3 budget spent on PROP verification + self-finding). Deferred to next Mode 3 or Mode 4 run."
+  },
+  "cost_engineering": {
+    "agent_efficiency": [
+      {
+        "agent": "decider",
+        "recent_runs_checked": 10,
+        "substantive_runs": 6,
+        "no_op_runs": 4,
+        "estimated_waste_pct": 40,
+        "model": "opus",
+        "cadence": "4h",
+        "recommendation": "Haiku pre-flight gate (PROP-005 candidate). Write full proposal next Mode 3 run."
+      },
+      {
+        "agent": "social",
+        "recent_runs_checked": 2,
+        "substantive_runs": 1,
+        "no_op_runs": 1,
+        "estimated_waste_pct": 50,
+        "model": "sonnet",
+        "cadence": "daily (but may run twice)",
+        "recommendation": "Bundle into PROP-005 or switch to every-other-day + event-trigger on dome changes."
+      },
+      {
+        "agent": "analyst",
+        "recent_runs_checked": "tracker state only",
+        "note": "51/53 expansions complete. Fingerprint hunt active in idle cycles. No no-op analysis this run."
+      },
+      {
+        "agent": "curmudgeon",
+        "recent_runs_checked": "10 reviews in last ~24h",
+        "substantive_runs": 10,
+        "no_op_runs": 0,
+        "model": "opus",
+        "recommendation": "Healthy. Cycle 2 progressing normally. Phase 2 holistic checks coming up."
+      },
+      {
+        "agent": "tinker (self)",
+        "recent_runs_checked": 10,
+        "note": "This run produced: 2 PROP lifecycle closures (PROP-003, PROP-004), 1 self-finding (PROPs without verification_pattern), 1 new efficiency observation (decider + social Haiku gate). Previous 9 runs re-escalated a fixed bug due to bad verification — that is pure self-waste and argues for enforcing verification_pattern at PROP-write time.",
+        "self_waste_estimate": "9 of last 10 runs spent token budget on re-escalating an already-fixed PROP. That is ~30-50% of tinker's Mode 1/2 overhead on a dead finding. The self-finding in this report is a harder fix than the prompt edit — it requires write-time enforcement, not just better verification discipline."
+      }
+    ],
+    "proposals_written": [],
+    "proposals_queued": [
+      {
+        "id": "PROP-005 (not yet written)",
+        "summary": "Haiku pre-flight gate for decider (and optionally social) on quiet-dome days",
+        "priority": "medium",
+        "prerequisites": "Need to measure 7-day decider no-op rate (not just last 10 runs) and social 14-day no-op rate to validate savings. Also need to design the 'work_available' signal schema so it survives the FUSE mount."
+      }
+    ],
+    "implemented_since_last_report": [
+      {"id": "PROP-003", "summary": "digest-reviews.js legacy fallback removed", "verified_this_run": true},
+      {"id": "PROP-004", "summary": "build.js dynamic session detection", "verified_this_run": true}
+    ],
+    "cumulative_estimated_savings": "PROP-003: prevented Cycle 3+ under-coverage (not a token saving — a correctness fix). PROP-004: eliminated silent workspace-sync skip across ephemeral sessions (not token — correctness + downstream staleness prevention). Both are quality fixes, not cost fixes. Tinker has not yet landed a pure cost PROP — PROP-005 would be the first."
+  },
+  "recommendations": [
+    {
+      "priority": 1,
+      "type": "prop",
+      "description": "Write PROP-005: Haiku pre-flight gate for decider and social on quiet-dome days. Include counter-arguments (Step 1i triage, ledger maintenance, Haiku misread failure mode).",
+      "prop_id": "PROP-005"
+    },
+    {
+      "priority": 2,
+      "type": "self_fix",
+      "description": "Update monitor/prompts/reference/tinker-proposals-and-fixes.md Step 2a to make verification_pattern a hard requirement: refuse to write a PROP without one, emit a self finding instead. Prevents the PROP-003/004 pattern from recurring.",
+      "prop_id": null,
+      "target_file": "monitor/prompts/reference/tinker-proposals-and-fixes.md"
+    },
+    {
+      "priority": 3,
+      "type": "self_fix",
+      "description": "Next tinker run (likely Mode 3): audit open-issue health (13 open) — nothing looked urgent this run but no actual audit was performed. Check for aged-out / repeated-deferral patterns.",
+      "prop_id": null
+    }
+  ],
+  "notes_to_future_tinker": "If you see PROP-003 or PROP-004 flagged as STILL_BROKEN in a future report, read their actual_result field — they are closed and have explicit grep-based verification_patterns. Re-escalation means the pattern returned STILL_BROKEN, which would be a genuine regression in digest-reviews.js or build.js respectively. The md5-vs-main verification pattern from earlier runs is disallowed."
+}

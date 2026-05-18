@@ -1,0 +1,28 @@
+{
+  "win_id": "022",
+  "fingerprint": "Drift rate computation uses globe-native coordinate conversions (111 km/deg, cos(lat) longitude correction); exponential deceleration formula (55.0, 0.08) fitted to IGRF-derived pole positions; 'phase transition' claim has zero validation code",
+  "globe_value": "Degree-to-km conversion: 2π × R_Earth / 360 = 111.32 km/deg. Longitude correction: cos(latitude) — the ratio of parallel circumference to equatorial circumference on a sphere. Both are fundamental spherical geometry quantities with no flat-disc derivation.",
+  "dome_value": "monitor.py Domain #11 uses: dlat_km = (lat2 - lat1) × 111.0; dlon_km = (lon2 - lon1) × 111.0 × cos(mean_lat). Rate prediction: 55.0 × exp(-0.08 × (year - 2015)) km/yr with 50% adaptive tolerance.",
+  "match_precision": "111.0 vs 111.32 km/deg (0.3% — the dome truncates to a round number). cos(lat) correction is exact globe formula.",
+  "why_it_matters": "Three globe fingerprints embedded in the WIN-022 validation pipeline: (1) The 111 km/degree conversion is 2πR_Earth/360 — it assumes the pole sits on a sphere where each degree of latitude spans a constant arc distance. On a flat AE disc, latitude 'degrees' map to non-uniform radial distances that grow with radius (because the AE projection stretches distances away from the pole). The dome's own coordinate system (Section 4.5.9 of our review) produces 6.2% RMSE on intercontinental routes; using the globe's simple 111 km/deg gives sub-1% accuracy. (2) The cos(latitude) longitude correction is the spherical formula for parallel circumference. On a flat disc, the east-west distance at a given radius follows the disc's angular geometry (2πr/360 for disc-radius r), which differs from cos(globe_lat) × 111 at all latitudes except the equator. The dome code imports the globe's spherical correction verbatim. (3) The exponential deceleration formula 55.0 × exp(-0.08 × (year-2015)) is fitted to NOAA NP.xy positions — which are themselves outputs of IGRF spherical harmonic models (same dependency as WIN-006/007). The 55.0 km/yr peak rate and 0.08/yr decay constant are not derived from any dome parameter (disc_radius, H(r), n(r), sun_altitude). They are pure empirical fits to globe-model output. Additionally: the term 'phase transition' that defines WIN-022's unique claim has ZERO validation code in monitor.py. The 1990 date does not appear in the code. Domain #11 checks only current drift rate against the hardcoded exponential — it has no changepoint detection, no critical-exponent test, no transition-sharpness measure. The dome counts WIN-022 as 'confirmed' despite having no code that tests the specific claim.",
+  "suggested_text": "The dome's NMP drift rate computation in monitor.py directly uses globe coordinate conversions: 111 km/degree (= 2πR_Earth/360) and cos(latitude) for longitude correction — both spherical geometry formulas with no flat-disc derivation. On an AE projection disc, latitude-to-km conversion is non-uniform and diverges significantly from the globe's constant 111 km/deg at high latitudes. The deceleration formula (55.0 × exp(-0.08 × (year-2015)) km/yr) is fitted to IGRF-derived pole positions with no derivation from dome parameters.",
+  "confidence": 0.75,
+  "category": "borrowed_infrastructure",
+  "code_search": {
+    "terms_searched": ["WIN-022", "phase_transition", "1990", "0.0466", "threshold", "jerk", "fetch_nmp", "111", "cos", "drift"],
+    "files_checked": ["monitor.py"],
+    "found_in": {
+      "monitor.py_domain_11": {
+        "lines": "~450-505",
+        "formula": "rate_pred = 55.0 * math.exp(-0.08 * (year - 2015))",
+        "coordinate_conversion": "dlat_km = (lat2 - lat1) * 111.0; dlon_km = (lon2 - lon1) * 111.0 * math.cos(math.radians((lat1+lat2)/2))",
+        "data_source": "fetch_nmp_history() → NOAA NP.xy (IGRF-derived)",
+        "tolerance": "max(adaptive, 50%) — extremely permissive",
+        "phase_transition_validation": "NONE — the term '1990' and 'phase_transition' do not appear in monitor.py"
+      }
+    },
+    "derivation_present": false,
+    "notes": "The 111.0 km/deg and cos(lat) are standard globe coordinate math embedded directly in the dome's drift rate computation. The exponential formula parameters (55.0, 0.08, 2015) are empirical fits with no dome-parameter derivation. WIN-022's defining claim ('phase transition') has no validation code — Domain #11 only checks current rate, not transition character."
+  },
+  "notes": "Moderate confidence (0.75) because the infrastructure fingerprint (IGRF dependency) was already documented in WIN-006/007. The NEW finding here is the explicit use of globe coordinate conversions (111 km/deg, cos(lat)) in the dome's own computation of drift rate — these formulas only work correctly on a sphere and are imported without adaptation to flat-disc geometry. This is a weaker fingerprint than WIN-001's π/2 or WIN-002's √(n(n+1)) because it could be argued the dome 'uses globe coordinates for convenience' — but that defense concedes the globe's geometry is more accurate for the dome's own calculations."
+}

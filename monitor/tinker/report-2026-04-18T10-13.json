@@ -1,0 +1,232 @@
+{
+  "generated_at": "2026-04-18T10:13:49Z",
+  "report_date": "2026-04-18",
+  "run_label": "mid-morning run (second of day) — operator DIRECTIVE-002 pickup",
+  "mode_selected": "proposals",
+  "mode_reason": "Second operator directive of the day — DIRECTIVE-20260418-002 (decider popping post-integration re-review items without curmudgeon reviews) landed on main at 2026-04-18T10:05Z (commit 4ae92a6, 80 minutes after the previous tinker run's Mode 3 report). Directive explicitly targets tinker with a deliverable list for a new PROP file (PROP-009). Proposals mode is the correct fit — the bug is diagnosed and the fix is a prompt patch; this is not a cost-engineering question. Mode 2 infrastructure findings (FUSE staleness, disk 83%) are still present from the prior report's Mode 2-class alert but are not newly urgent — noted in modes_checked for continuity. Mode 1 pipeline health is green-but-busy (same as 80 min ago).",
+  "modes_checked": {
+    "pipeline_health": "green-but-busy — unchanged since 09:50Z report. All 8 agents producing within cadence. Decider cadence stayed at 5 substantive runs/12h (01:29, 03:30, 05:32, 07:26, 09:39 UTC). Curmudgeon on 4h BAU (cron 20 */4). Analyst quiet (last run 2026-04-17T20:52Z). 1 queued item EXP-183 (expansion-draft) still waiting for curmudgeon. Open issues count unchecked this run (time budget on PROP-009); morning briefing said 24 at 09:40Z, no reason to expect drift in 30 min. CI: operator commit 4ae92a6 succeeded at 10:05Z. Auth 200.",
+    "infrastructure": "yellow — FUSE quick-check 2/5 STALE (data/wins.json, docs/index.html) + extended scan CLAUDE.md STALE. sections.json has caught up since 09:50Z (was stale then, fresh now). The NEW finding here: the prior report's hypothesis that 'build.js publish's workspace-sync is inconsistently covering sections.json vs wins.json' is REFUTED by today's evidence — the actual mechanism is that the decider bypasses `build.js publish` entirely (decider.md has no call to it; only `git push origin main` after `node build.js html`). The workspace gets no git→mount copy after a decider push. Only the scheduled `dome-workspace-sync` agent (every 4h) does any sync, and it only goes workspace→git, never git→workspace. So the workspace ONLY catches up on git-owned files when (a) an operator manually runs `build.js publish` or (b) some future reverse-sync fires. This is a systemic architectural gap, not a one-off bug. Classifying as 'moderate' rather than 'major' because the consumers of stale mount files are all protected: integrity clones fresh, social cross-checks GitHub raw, curmudgeon/decider clone fresh, analyst cross-checks counts. The stale mount only hurts when a human reads it manually or when a future agent is added without freshness protection. Disk 83% (1714MB free), unchanged.",
+    "cost_engineering": "deferred — last Mode 3 run 2026-04-18T09:50Z (80 min ago) covered the full cost-engineering loop for DIRECTIVE-001 / PROP-008. No need to re-run Mode 3 so soon.",
+    "proposals": "selected — DIRECTIVE-002 asks for PROP-009; wrote it. PROP-005 and PROP-008 still proposed. No new self-fixes required this run — the fix is not mechanical (would require editing live agent prompts, which requires operator approval per the migration plan)."
+  },
+  "pipeline_health": {
+    "agents_running": 8,
+    "agents_stalled": [],
+    "output_freshness": {
+      "poller": "2026-04-17T23:10Z (last poll, 12h cadence — next ~11:10Z, imminent)",
+      "analyst": "2026-04-17T20:52Z (8h quiet cadence — long overdue but expected; analyst runs on inputs, not a fixed schedule)",
+      "curmudgeon": "2026-04-18T05:12Z last review file (SEC-4.1.c4) — next 4h BAU fire at ~08:20Z SHOULD have happened; 11:20Z next. No review file dated 08:20-11:13Z window visible; curmudgeon may have run but found nothing to review (expected — qid 175 EXP-183 requires analyst expansion-draft context curmudgeon is waiting on)",
+      "decider": "2026-04-18T09:41Z (EXP-182 integration + 7 issues closed + 10-item queue drain — the buggy drain that triggered this directive)",
+      "integrity": "2026-04-18T08:15Z — green",
+      "social": "not yet run today (daily 11:00Z — due in ~55 min)",
+      "tinker": "this run 10:13Z (second of day; previous 09:50Z) — fine because operator directives legitimately re-invoke tinker",
+      "workspace_sync": "2026-04-18T07:05Z last sync; next 11:05Z (due in ~50 min, will catch up CLAUDE.md from main)"
+    },
+    "open_issues": "unchecked this run (time budget on PROP-009; 24 as of 09:40 morning briefing)",
+    "priority_queue": {
+      "depth": 1,
+      "items": ["EXP-183 (expansion-draft, pushed 2026-04-18T09:36Z by decider)"],
+      "note": "Ironically, qid 175 EXP-183 will NOT trigger the substring-pop bug because its target_id 'EXP-183' has no pre-existing reviews to substring-match against. The bug is only triggered by re-pushes of target_ids with old review history. But once curmudgeon writes EXP-183-proposal.c1.json (or similar), any future re-push of EXP-183 as expansion-draft would trigger the same bug."
+    },
+    "ci": "success on all recent runs (checked via gh api — 10:05Z operator commit 4ae92a6 passed)"
+  },
+  "infrastructure_findings": [
+    {
+      "severity": "moderate",
+      "category": "staleness",
+      "description": "FUSE git→workspace coverage gap is ARCHITECTURAL, not a timing glitch. The decider never calls `build.js publish` — its patch workflow ends at `node build.js html` + `git add` + `git commit` + `git push origin main`. The `build.js publish` workspace-sync block only runs when an operator manually publishes or when a non-existent automated caller invokes it. The workspace-sync scheduled agent (every 4h) only copies workspace→clone, never git→workspace. So git-owned files (wins.json, sections.json, docs/index.html, CLAUDE.md, etc.) land on origin/main and the FUSE mount only catches up if somebody manually runs `build.js publish`. Today's observed pattern: sections.json was synced at some point (fresh now, was stale 80 min ago) but wins.json and docs/index.html remain stale vs main HEAD, with CLAUDE.md still at the 08:35Z operator snapshot rather than the 09:36Z version. The prior report's 'one-time sync glitch' hypothesis is refuted by consistent recurrence.",
+      "evidence": "`grep -n 'build.js publish' monitor/prompts/decider.md monitor/prompts/reference/decider-*.md` returns nothing — decider NEVER invokes publish. `grep -n 'git push' monitor/prompts/reference/decider-patches-and-selfapply.md` → line 178 `git push origin main` bare push with no subsequent workspace sync. workspace-sync.md Step 2 starts with 'Copy files from workspace to clone' (direction: mount→git only).",
+      "self_fixable": false,
+      "fix_applied": false,
+      "why_not_self_fixed": "This needs a PROP — candidate options are (a) have workspace-sync also do a git→workspace copy for git-owned files at the top of its run, (b) have decider call `build.js publish` instead of raw `git push`, (c) a dedicated reverse-sync agent. All three require careful thinking about race conditions and ownership. Not writing a PROP today because DIRECTIVE-002 already consumed the PROP budget; flagging for next Mode 2 run as PROP-010 candidate.",
+      "recommended_next_action": "tinker next Mode 2 run — write PROP-010 for git→workspace reverse sync in the workspace-sync agent. Low risk because it's adding a fetch step at the top of a read-only-from-git clone, and the 'git-owned' classification is already canonical (build.js OWNERSHIP and workspace-sync.md OWNED_BY_GIT) so the copy list is known."
+    },
+    {
+      "severity": "info",
+      "category": "disk",
+      "description": "Disk 83% (1714MB free) — unchanged since prior report 80 min ago. Flat trajectory, not trending critical.",
+      "evidence": "df / → 83% (1714MB avail)",
+      "self_fixable": false
+    },
+    {
+      "severity": "info",
+      "category": "git_auth",
+      "description": "Auth healthy — PAT 93 chars, api.github.com returns 200.",
+      "self_fixable": false
+    }
+  ],
+  "findings": [
+    {
+      "severity": "major",
+      "category": "handoff",
+      "description": "Decider Step E2 pop filter and curmudgeon Step 0b skip filter both use substring-only match against the reviews/ directory. Neither checks queue_id or reviewed_at-vs-pushed_at. Result: any target_id with pre-existing old reviews gets auto-popped on re-push, and curmudgeon skips it thinking it's already reviewed. 10 confirmed unreviewed pops in the 72h window (qids 165-174). SEC-4.1, WIN-058, WIN-062, WIN-058b all went live post-EXP-181/EXP-182 integration with no adversarial check.",
+      "evidence": "monitor/prompts/decider.md lines 194-205 (hasReview=reviews.some(f=>searchTerms.some(t=>f.includes(t)))); monitor/prompts/curmudgeon.md Step 0b procedure line 2 (identical substring match); priority-queue.json history entries qids 165-174 with popped_by=decider and no matching review file; git show 29e11ac and e4630ec confirm push+pop in same decider run.",
+      "suggested_fix": "See PROP-009.json — replace both substring matches with strict queue_id match + soft reviewed_at>pushed_at fallback + operator bypass.",
+      "self_fixable": false,
+      "fix_applied": false,
+      "why_not_self_fixed": "Requires coordinated prompt changes on decider.md AND curmudgeon.md, operator approval of the precondition wording, and a 3-day shadow migration. Not a mechanical fix. Formalized as PROP-009."
+    },
+    {
+      "severity": "moderate",
+      "category": "efficiency",
+      "description": "Orthogonal to PROP-009: SEC-4.1 review files show cycle numbering going backwards — c3.json at 2026-04-18T07:42Z (queue_id 158, popped yesterday 23:26Z) was written AFTER c4.json at 2026-04-18T05:12Z (queue_id 163, popped 05:32Z today). Likely cause: concurrent curmudgeon runs on differently-aged clones determining cycle number via 'highest existing cycle + 1' — one run's clone missed the other's c4, computed next=3, and wrote c3 hours late. Does not corrupt review content but misleads chronology readers.",
+      "evidence": "curl raw SEC-4.1.c3.json reviewed_at=2026-04-18T07:42:00Z cycle=3 queue_id=158; SEC-4.1.c4.json reviewed_at=2026-04-18T05:12:46.475Z cycle=4 queue_id=163",
+      "suggested_fix": "Separate PROP required. Options: (1) curmudgeon uses reviewed_at ordering instead of cycle number for chronology; (2) atomic cycle allocation via a counter file; (3) cycle number is purely cosmetic and gets recomputed by a post-hoc script from reviewed_at ordering. Recommend (1) — cycle-numbering is display sugar, not semantic. But this is speculation; operator should decide.",
+      "self_fixable": false,
+      "fix_applied": false,
+      "why_not_self_fixed": "Orthogonal to this run's directive (DIRECTIVE-002 explicitly asks to flag for separate follow-up). Did not write PROP-010 for it because tinker's one-mode-per-run rule caps work to PROP-009 today."
+    }
+  ],
+  "self_fixes_applied": [],
+  "self_fix_candidates_not_applied": [],
+  "new_proposals": [
+    {
+      "id": "PROP-009",
+      "title": "Decider Step E2 + curmudgeon Step 0b: replace substring-match with queue_id-strict + reviewed_at-soft precondition",
+      "category": "prompt_diet",
+      "target": "monitor/prompts/decider.md, monitor/prompts/curmudgeon.md",
+      "response_to_directive": "DIRECTIVE-20260418-002",
+      "status": "proposed",
+      "verification_pattern": "grep -q 'PROP-009 precondition' monitor/prompts/decider.md && grep -q 'PROP-009 precondition' monitor/prompts/curmudgeon.md && echo FIXED || echo STILL_BROKEN",
+      "migration": "3-day shadow (logs would-have-blocked items but still pops); then flip PROP_009_ENFORCE=true",
+      "deliverables_addressed": {
+        "root_cause_analysis": "yes — hypothesis ruling for all 4 directive hypotheses (H1 partial, H2 ruled out, H3 partial via curmudgeon mirror bug, H4 ruled out); true root cause is substring-only match on both sides",
+        "verify_the_gap": "yes — enumerated qids 165-174 with per-item evidence; flagged pre-165 lookback limited by 50-entry history cap",
+        "proposed_prompt_patch_with_exact_text": "yes — find/replace blocks for both decider.md and curmudgeon.md; PROP-009 marker embedded for verification",
+        "cycle_numbering_backwards": "yes — flagged as orthogonal, documented likely cause, recommended a future PROP",
+        "migration_plan": "yes — 3-day shadow, single-commit rollback, co-land both patches"
+      }
+    }
+  ],
+  "previous_followup": [
+    {
+      "finding": "PROP-005 / decider pre-flight work check",
+      "status": "STILL_BROKEN",
+      "evidence": "grep -q 'Pre-flight Work Check' monitor/prompts/decider.md → no match. 13th consecutive report. status=proposed.",
+      "severity": "minor_now",
+      "note": "Unchanged from prior report — decider still in BAU with 5 substantive runs overnight. Marginal utility of this PROP stays low during active periods. Recommendation: revisit when pipeline returns to quiet."
+    },
+    {
+      "finding": "PROP-008 / change-detection magnitude + cooldown gates (written 80 min ago)",
+      "status": "STILL_BROKEN",
+      "evidence": "grep -q 'Apply change-driven gates' monitor/prompts/reference/curmudgeon-change-and-holistic.md → no match. status=proposed. Expected — PROP was written this morning, operator has not yet reviewed.",
+      "severity": "pending_review",
+      "note": "Not a regression; just the normal proposed→implemented latency. Operator review expected in the coming days."
+    },
+    {
+      "finding": "PROP-007 / build.js and build-scripts OWNERSHIP",
+      "status": "FIXED",
+      "evidence": "grep -q \"'build.js': 'git'\" build.js → matches. status=implemented. Unchanged since yesterday.",
+      "severity": "closed"
+    },
+    {
+      "finding": "FUSE staleness — 3 consecutive days",
+      "status": "RECURRENT (architectural gap)",
+      "evidence": "Today: wins.json + docs/index.html + CLAUDE.md stale vs main. Root cause identified this run: decider bypasses build.js publish entirely, and workspace-sync is one-way (mount→git). This is not a timing bug; it's a design gap that will persist until a reverse-sync path is added.",
+      "severity": "moderate",
+      "note": "Upgrade from 'staleness incident' to 'architectural finding'. Candidate PROP-010 noted in infrastructure_findings.recommended_next_action. Do NOT auto-fix by manually copying — that reintroduces the same gap on next decider push."
+    },
+    {
+      "finding": "Disk trajectory 82% → 83% bounce",
+      "status": "STABLE",
+      "evidence": "5-day window: 81, 82, 83, 82, 83. No trend. Not a concern unless it breaks 85%.",
+      "severity": "info"
+    },
+    {
+      "finding": "CLAUDE.md line 35 (operator push path) clarity proofread",
+      "status": "DEFERRED",
+      "evidence": "Time budget consumed by DIRECTIVE-002. Next Mode 3 run.",
+      "severity": "info"
+    },
+    {
+      "finding": "Orphan proposals / processed-proposals ledger",
+      "status": "HEALTHY",
+      "evidence": "Unchanged; dedup invariant holding.",
+      "severity": "info"
+    }
+  ],
+  "context_load": {
+    "claude_md_lines": "145 (unchanged vs prior run; operator commit a4133ff didn't change line count)",
+    "prompt_corpus_total_lines": "5481 (unchanged — no prompt edits landed between 09:50Z and 10:13Z)",
+    "per_agent_this_run": {
+      "tinker": {
+        "dispatcher": 134,
+        "reference_loaded": "tinker-infrastructure.md (121L) + tinker-proposals-and-fixes.md (171L) — loaded both because primary mode is proposals but had to verify Mode 2 staleness pattern too",
+        "claude_md": 145,
+        "total": "~571 lines",
+        "note": "Higher than prior run's 399 because Mode 2 + Mode 4 were both partially loaded (directive required infrastructure-findings context too)"
+      }
+    },
+    "trend": "STABLE",
+    "alerts": []
+  },
+  "claude_md_audit": {
+    "accuracy_findings": [
+      {
+        "severity": "info",
+        "description": "No changes required. CLAUDE.md architecture description still accurate — ownership table matches build.js OWNERSHIP, schedule descriptions match cron reality, File Ownership Rules section mentions the exact dual-write pattern human-notes use. The FUSE Staleness Warning section correctly identifies that the workspace can serve stale content and that agents that read from FUSE need freshness protection; today's finding (decider bypasses build.js publish) is consistent with this warning, so CLAUDE.md does not need a new warning.",
+        "evidence": "CLAUDE.md line 88-90: 'The workspace FUSE mount can serve stale file content. Agents that make decisions based on data file contents (wins.json, sections.json) must clone fresh or cross-check against GitHub. Currently: decider and curmudgeon clone fresh each run; analyst cross-checks counts against GitHub raw URL.' — matches reality.",
+        "self_fixable": false,
+        "close_prior_finding": false
+      }
+    ],
+    "performance_findings": [
+      {
+        "severity": "info",
+        "description": "CLAUDE.md at 145 lines (workspace) and 145 lines (main, via curl). Under 200L target. No diet candidate.",
+        "evidence": "wc -l CLAUDE.md = 145"
+      }
+    ]
+  },
+  "cost_engineering": {
+    "note": "Mode 4 was selected; full Mode 3 loop deferred to next run (prior Mode 3 was 09:50Z, only 23 min earlier counting from mode-selection). No new agent efficiency findings this run.",
+    "agent_efficiency_spotcheck": {
+      "decider": "Ran at 09:41Z producing the buggy 10-item drain — the very bug PROP-009 fixes. Efficiency this run was NEGATIVE (it actively created work for tinker). Once PROP-009 lands, the decider's E2 step becomes 4-6× longer code but runs <=5×/day. Trade-off: +100 extra tokens/day for a critical quality gate. Clearly worth it.",
+      "curmudgeon": "No review files in 08:20Z fire window visible. Either run was no-op (queue had only qid 175 EXP-183 which needed expansion content not yet ready) or ran off-cron. Will confirm next tinker run. If curmudgeon skipped qid 175 because of the substring bug (WIN-058b-post-EXP102.c2 has 'EXP' substring that MIGHT collide), that would be a third instance — but EXP-183 has no pre-existing reviews so the bug does not apply here.",
+      "tinker": "Second run of the day driven by a second operator directive. Sustainable if directives stay at 1-2/day. If they become 3+/day, tinker needs a 'Mode 5 — Operator Directive Response' to avoid loading wrong reference files. Flag from prior run still valid."
+    }
+  },
+  "recommendations": [
+    {
+      "priority": 1,
+      "type": "human_decision",
+      "description": "Review and approve PROP-009 wording. Decide: 3-day shadow migration (recommended) vs immediate enforcement. Land decider.md + curmudgeon.md patches in a single commit.",
+      "prop_id": "PROP-009"
+    },
+    {
+      "priority": 2,
+      "type": "human_decision",
+      "description": "Decide whether to open a separate PROP for the SEC-4.1 cycle-numbering-backwards anomaly or defer. Recommendation: defer unless pattern repeats in next 7 days. If deferred, tinker will auto-reopen if it sees another cycle-backwards case.",
+      "prop_id": "pending"
+    },
+    {
+      "priority": 3,
+      "type": "prop",
+      "description": "Next Mode 2 run: write PROP-010 to add git→workspace reverse sync in the workspace-sync agent. The FUSE staleness pattern is now confirmed architectural — 3 consecutive days of stale git-owned files on the mount. Fix: workspace-sync clones fresh at start (already does), then BEFORE copying workspace→git, copies git-owned files git→workspace. Run-safe because git-owned files are single-writer from the clone direction.",
+      "prop_id": "PROP-010 (pending)"
+    },
+    {
+      "priority": 4,
+      "type": "prop",
+      "description": "PROP-005 (decider pre-flight work check) — still proposed 13th consecutive run. Recommend merge-or-close this week. Pipeline is in BAU, not quiet, so its marginal value is low right now; closing it is reasonable if we decide the cost of keeping an open proposal we won't use.",
+      "prop_id": "PROP-005"
+    }
+  ],
+  "the_other_side": {
+    "prop_009_strongest_objection": "The bug is real but its total impact over 72h is bounded — 10 unreviewed pops, of which the content was all already curmudgeon-reviewed in PRIOR cycles. So the 'adversarial review gap' is not a review gap in absolute terms; it's a post-integration-retest gap. Someone could reasonably argue that if EXP-181 and EXP-182 were themselves adversarially reviewed (pre-integration expansion-draft reviews, which they were not in full — see directive concerns_to_address item 3), the post-integration review is redundant for the fraction of changes that didn't introduce new material. Against this: post-integration reviews catch integration-time bugs — typos in the sections.json merge, broken anchors, truncated citations, kappa-badge math errors — that the pre-integration review cannot see because the prose doesn't exist yet. The 72h evidence does NOT show whether any of the 10 unreviewed pops would have produced critical findings; a shadow period is specifically designed to answer that empirical question rather than assume.",
+    "migration_objection": "3-day shadow is conservative; an alternative is 'enforce immediately and fix forward on any queue backlog'. If PROP-009 strict-match is correct, curmudgeon's first run should write a queue_id-tagged review within 4h, and the decider's next run pops it. Worst case if curmudgeon fails to tag queue_id: the soft fallback (reviewed_at > pushed_at) catches it. So a 0-day shadow is arguably safe. The counter is: we've been wrong about 'safe' before (PROP-003 took 8 runs to close, operators landed changes mid-migration, and a shadow lets us catch curmudgeon clones that are stale and write reviews with misleading timestamps). 3 days is cheap insurance.",
+    "orthogonal_cycle_numbering_objection": "It could be argued the SEC-4.1.c3/c4 backwards-cycle case is BENIGN — the decider's pop gate doesn't care about cycle numbers, only queue_id and reviewed_at. So why fix it? Counter: cycle numbers are the primary way humans navigate review history in the reviews/ directory. Backwards cycles mislead manual triage and can cause an operator to apply a stale review's patch over a fresher review's superseding patch. Cost of a fix is likely small (cycle = rank of reviewed_at among same-target reviews, recomputed on read) but the operator should decide the priority.",
+    "fuse_staleness_objection": "Adding a git→workspace reverse sync to workspace-sync sounds simple but may race with curmudgeon/analyst runs that are actively writing to the FUSE mount. Example: workspace-sync does git pull at T0, copies wins.json git→mount at T1. Meanwhile analyst at T0.5 was reading the old wins.json from the mount to produce an expansion. Race outcome: analyst's expansion is based on pre-T1 data. This is actually no worse than today's world (analyst reads whatever is on the mount at read time), but it introduces a new flavor of race. Mitigation: put the reverse-sync AFTER the workspace→git push so mount→git sync happens first on the old content, then git→mount sync updates the mount for the next run. This is how the PROP-010 proposal should be structured when it's written. Not a blocker, but worth flagging for the PROP-010 writer."
+  },
+  "notes_to_future_tinker": [
+    "DIRECTIVE-002 deliverables fully addressed in PROP-009 sections — check those before re-writing if a followup is needed.",
+    "If PROP-009 lands in shadow mode, you will see entries appear in monitor/integrity/prop-009-shadow.jsonl. Track the rate and composition daily. When the ratio of 'legitimate block' to 'false block' stabilizes and we've seen at least one strict_queue_id pop in history, recommend enforcing.",
+    "The SEC-4.1 cycle-backwards orthogonal finding: do NOT open a separate PROP unless you see another cycle-backwards case. One-off is likely a race; two is a pattern worth fixing.",
+    "PROP-005 has been 'proposed' for 13 runs. If pipeline ever re-enters quiet mode (8h cadences, zero curmudgeon queue, analyst only working human-notes), revisit. Until then, consider closing.",
+    "FUSE staleness architectural gap → PROP-010 is the obvious next candidate but save it for a proper Mode 2 run when you have time to think through the race conditions (see 'the_other_side.fuse_staleness_objection' for the nuance).",
+    "If the next operator directive arrives within 2 hours of this run, it is reasonable to do a THIRD run and load the dispatcher + proposals module only (Mode 4 has lower context cost than Mode 3). The 09:50Z → 10:13Z → possibly-next cadence is driven by operator work rate, which is not a tinker-configurable thing.",
+    "workspace-sync agent runs at 11:05Z — it will NOT push this tinker report or PROP-009 back to git because both files are in 'append_only' / 'append_only_glob' directories (monitor/tinker/ and monitor/tinker/proposals/). Workspace-sync's append-only walker will copy them mount→clone, then commit. Expected commit message pattern: 'Workspace sync: 2026-04-18T11:05:xxZ'.",
+    "The PROP-009 find/replace blocks contain escaped characters (backslash-d, backslash-n). When the operator applies the patch via sed or node-apply-patches, verify the regex escapes survived JSON serialization — specifically the `\\\\d+` in secMatch and the `\\\\n` in appendFileSync. If they didn't, the patch will fail to apply; operator should hand-transcribe those two lines."
+  ]
+}

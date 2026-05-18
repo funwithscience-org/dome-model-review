@@ -1,0 +1,150 @@
+{
+  "generated_at": "2026-04-07T09:42:00Z",
+  "report_date": "2026-04-07",
+  "pipeline_health": {
+    "agents_running": 5,
+    "agents_stalled": [],
+    "output_freshness": {
+      "poller": "~1.5 hours ago (latest-poll-summary.txt updated 08:07 UTC)",
+      "analyst": "~0.3 hours ago (latest-analysis-summary.txt updated 10:23 UTC, last analysis JSON 2026-04-05T19:41)",
+      "curmudgeon": "~0.2 hours ago (WIN-038.c2.json at 10:29 UTC, tracker shows 38/67 Cycle 2 WINs reviewed)",
+      "decider": "~0.1 hours ago (daily-report-2026-04-08T06-30.json at 10:35 UTC, multiple runs today)",
+      "integrity": "~0.5 hours ago (report-2026-04-07T08-11.json at 09:11 UTC)"
+    }
+  },
+  "handoff_issues": [
+    {
+      "severity": "critical",
+      "producer": "curmudgeon",
+      "consumer": "decider (via digest-reviews.js)",
+      "description": "RECURRING: digest-reviews.js processedWinIds fallback silently skips ALL new Cycle 2 reviews for WINs whose Cycle 1 review is already processed. 5 unprocessed c2 reviews (WIN-034 through WIN-038) exist on disk but digest shows 0 pending entries, and decider processed 0 reviews in its last 4 runs.",
+      "evidence": "38 c2 review files on disk, 33 in processed-reviews.json (WIN-001.c2 through WIN-033.c2). Pending-digest.json generated at 09:23 shows 0 entries. Decider daily-report-2026-04-08T06-30.json has curmudgeon_reviews_processed: []. Root cause: build-scripts/digest-reviews.js line 143-144: `processedWinIds.has(entry.win_id)` matches 'WIN-034' from the Cycle 1 file 'WIN-034.json' already in the ledger, causing WIN-034.c2.json to be treated as processed despite being a new review.",
+      "suggested_fix": {
+        "file": "build-scripts/digest-reviews.js",
+        "find": "    // Check processed status by filename first, then fall back to legacy WIN ID\n    const isProcessed = processedSet.has(file) || processedSet.has(entry.win_id) ||\n      processedWinIds.has(entry.win_id);",
+        "replace": "    // Check processed status by filename only.\n    // IMPORTANT: Do NOT fall back to bare WIN ID — this incorrectly marks Cycle 2+\n    // reviews as processed when the Cycle 1 review of the same WIN is in the ledger.\n    // Legacy bare-ID entries (if any remain) are also in processedSet directly.\n    const isProcessed = processedSet.has(file);",
+        "rationale": "The processedWinIds fallback was added for legacy compatibility when the ledger contained bare IDs like 'WIN-034' instead of filenames. Now all ledger entries use filenames ('WIN-034.json', 'WIN-034.c2.json'). The fallback maps ALL processed filenames to bare WIN IDs, so any new cycle file for a previously-processed WIN is silently treated as already processed. This was flagged as P1 in the 2026-04-06T21-24 tinker report but remains unfixed. Removing the fallback to processedWinIds is safe because: (a) the processedSet already contains full filenames, and (b) any legacy bare-ID entries would be matched by processedSet.has(entry.win_id) on line 143 if needed — but we can simplify to filename-only since the ledger has been filename-based since the processed-reviews.json migration."
+      }
+    }
+  ],
+  "prompt_issues": [
+    {
+      "severity": "major",
+      "prompt_file": "monitor/prompts/decider.md",
+      "description": "Decider prompt at 413 lines — 65% over the 250-line ceiling. Previous tinker (P3) flagged at 339 lines; it has GROWN by 74 lines instead of shrinking. Long prompts cause LLMs to deprioritize earlier instructions, particularly the data flow rules in the first half.",
+      "suggested_fix": {
+        "find": null,
+        "replace": null,
+        "rationale": "Not self-fixable. Recommend human refactor: move the patch template schema, severity definitions, and expansion integration procedure into separate reference files (e.g., monitor/prompts/decider-schemas.md, monitor/prompts/decider-expansion-proc.md) that the decider reads at runtime. Keep the main prompt under 250 lines focused on procedure and judgment rules."
+      }
+    },
+    {
+      "severity": "moderate",
+      "prompt_file": "monitor/prompts/analyst.md",
+      "description": "Analyst prompt at 296 lines — 18% over the 250-line ceiling. Lower priority than decider but trending upward.",
+      "suggested_fix": {
+        "find": null,
+        "replace": null,
+        "rationale": "Not self-fixable. Recommend extracting Mode 3 (globe fingerprint hunt) procedure into a separate reference file since it's the lowest-priority mode and takes up the most space."
+      }
+    },
+    {
+      "severity": "minor",
+      "prompt_file": "monitor/config.json",
+      "description": "Config.json schedule fields are stale: decider says 'daily 6:30 AM UTC' but runs multiple times daily (4+ runs today); curmudgeon says 'every 15 minutes' but CLAUDE.md says 10 minutes; analyst says 'every 8 hours' but CLAUDE.md says 30 minutes. Config is a reference doc, not functional, but stale values mislead tinker/human audits.",
+      "suggested_fix": {
+        "find": "    \"curmudgeon\": { \"model\": \"opus\", \"schedule\": \"every 15 minutes\", \"role\": \"adversarial self-review of review arguments\" },\n    \"decider\": { \"model\": \"opus\", \"schedule\": \"daily 6:30 AM UTC\", \"role\": \"triage actions, morning briefing, suggested patches\" }",
+        "replace": "    \"curmudgeon\": { \"model\": \"opus\", \"schedule\": \"every 10 minutes\", \"role\": \"adversarial self-review of review arguments\" },\n    \"decider\": { \"model\": \"opus\", \"schedule\": \"every 20 minutes\", \"role\": \"triage actions, morning briefing, suggested patches\" }",
+        "rationale": "Align config.json with actual scheduled task intervals per CLAUDE.md."
+      }
+    }
+  ],
+  "open_issue_health": {
+    "total_open": 21,
+    "total_closed": 444,
+    "aged_out": [],
+    "repeated_deferrals": [
+      {
+        "issue_id": "ISS-074",
+        "description": "SEC-3.1 Live Power page not archived. Status: 'assigned-analyst' but requires poller enhancement, not analyst work. Has been deferred across multiple decider runs.",
+        "recommendation": "Re-categorize as pending-human or infrastructure — the analyst cannot archive external pages."
+      }
+    ],
+    "missing_patches": [],
+    "zombie_fixes": []
+  },
+  "schedule_issues": [
+    {
+      "severity": "minor",
+      "description": "Decider runs significantly more often than config suggests (4-6 runs/day vs documented 'daily 6:30 AM'). This is working well — the frequent runs keep up with curmudgeon output. No action needed on schedule itself, just config accuracy (addressed in prompt_issues)."
+    },
+    {
+      "severity": "minor",
+      "description": "Globe fingerprint hunt (analyst Mode 3) has 0/34 items complete. The analyst is never idle enough to enter Mode 3 because Modes 1-2 always have work. This is expected behavior but means the fingerprint hunt will not progress until expansion backlog clears (6 pending EXP items)."
+    }
+  ],
+  "state_hygiene": {
+    "open_issues_count": 21,
+    "closed_issues_count": 444,
+    "bloat_risk": "low — 21 open issues is well-managed. 444 closed is large but the decider reads only open-issues.json.",
+    "tracker_disk_consistency": "OK — 38 reviewed WINs in tracker, 38 c2 review files on disk. Match.",
+    "pending_digest_stale": "YES — digest generated at 09:23 UTC with 0 entries despite 5 unprocessed c2 reviews existing. Caused by the critical digest-reviews.js bug (see handoff_issues).",
+    "code_analysis_sync": "OK — all 67 WINs have code_analysis.reviewed=true per integrity report.",
+    "expansion_tracker": "11 items: 5 complete+integrated, 6 pending (EXP-006 through EXP-011). Pipeline healthy.",
+    "prompt_sizes": {
+      "analyst.md": 296,
+      "curmudgeon.md": 221,
+      "decider.md": 413,
+      "poller.md": 83,
+      "structure-integrity.md": 164,
+      "tinker.md": 220,
+      "over_limit": ["decider.md (413 lines)", "analyst.md (296 lines)"]
+    }
+  },
+  "previous_tinker_followup": {
+    "P1_digest_c2_bug": "STILL UNFIXED — same critical bug persists. Flagged again as top priority.",
+    "P2_analyst_yeet_gap": "PARTIALLY ADDRESSED — decider has been creating EXP items (EXP-006 through EXP-011) to cover yeeted issues. But many assigned-analyst issues still lack EXP entries.",
+    "P3_decider_refactor": "NOT ADDRESSED — decider.md grew from 339 to 413 lines (opposite direction).",
+    "P4_decider_c2_fields": "UNCLEAR — decider is processing c2 reviews when they reach it via the digest, but new ones are blocked by the P1 bug.",
+    "P5_decider_timestamp": "PARTIALLY FIXED — filenames still show next-scheduled timestamp (e.g., '2026-04-08T06-30') instead of actual run time, but this is cosmetic.",
+    "P6_human_patches": "ADDRESSED — decider is self-applying patches now (5 patches applied in latest run, 15 issues closed)."
+  },
+  "recommendations": [
+    {
+      "priority": 1,
+      "type": "script_fix",
+      "description": "Fix digest-reviews.js line 143-144: remove processedWinIds fallback that silently blocks all new Cycle 2 reviews from reaching the decider. Replace the 3-way isProcessed check with `processedSet.has(file)` only. This is the same P1 from the 2026-04-06 tinker report — still unfixed and causing the entire curmudgeon→decider pipeline to stall for Cycle 2 items WIN-034+.",
+      "self_fixable": true,
+      "fix_applied": false,
+      "rationale": "Cannot self-fix because changes to build-scripts/ need a build cycle. Flagging for human application."
+    },
+    {
+      "priority": 2,
+      "type": "config_fix",
+      "description": "Update monitor/config.json agent schedule fields to match actual intervals: curmudgeon=10min, decider=20min, analyst=30min.",
+      "self_fixable": true,
+      "fix_applied": true
+    },
+    {
+      "priority": 3,
+      "type": "prompt_fix",
+      "description": "Refactor decider.md (413 lines → target <250). Extract patch template schema, severity matrix, and expansion integration procedure into separate reference files.",
+      "self_fixable": false,
+      "fix_applied": false
+    },
+    {
+      "priority": 4,
+      "type": "issue_reclassification",
+      "description": "ISS-074 (Live Power page archival) is classified as assigned-analyst but requires infrastructure work (poller enhancement or manual wget). Reclassify to pending-human or infrastructure.",
+      "self_fixable": false,
+      "fix_applied": false
+    },
+    {
+      "priority": 5,
+      "type": "prompt_fix",
+      "description": "Extract analyst Mode 3 (globe fingerprint hunt) procedure into a separate file to bring analyst.md under 250 lines.",
+      "self_fixable": false,
+      "fix_applied": false
+    }
+  ]
+}

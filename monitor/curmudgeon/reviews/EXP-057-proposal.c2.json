@@ -1,0 +1,200 @@
+{
+  "point_id": "EXP-057",
+  "topic": "Kill-shot rating system schema proposal — structured verdicts, strength ratings, Wait-and-See category, data/kill-shots.json",
+  "reviewed_at": "2026-04-10T23:15:00Z",
+  "cycle": 2,
+  "review_type": "proposal",
+  "proposal_verdict": "approve_with_changes",
+  "confidence": 0.88,
+  "summary": "Strong proposal. The separate-file architecture is well-reasoned, the verdict assignments are defensible, and the Wait-and-See definition is appropriately strict. Five issues found: one major (strength-tier definitions are undefined), three moderate (dome_status discrepancy for KS-006, missing aggregation placeholder for straw-man count, eclipse numerical inconsistency needs station-level specificity), one minor (section_anchor IDs need to be added to existing HTML). Recommend approval after these fixes.",
+
+  "architectural_review": {
+    "separate_file_decision": {
+      "verdict": "sound",
+      "reasoning": "The rationale is correct on all four points. Kill-shots don't map 1:1 to WINs (Tests 1 and 3 have no direct WIN), merging creates double-counting risk in every aggregation query, unique fields (dome_prediction, dome_claimed_globe_prediction) don't belong in wins.json, and KS-NNN IDs can coexist in the tracker without namespace collision. The strongest argument the proposal doesn't make explicit: a separate file creates an architectural boundary that makes double-counting bugs impossible rather than merely unlikely. Convention-based exclusion filters (kill_shot:true) are one forgotten WHERE clause away from inflating headline numbers. File-level separation is the right call.",
+      "concern": "The proposal says kill-shots.json should be git-owned in the OWNERSHIP table. This is correct but needs to be added to three places per the File Ownership Rules: CLAUDE.md, build.js (OWNERSHIP object), and workspace-sync.md (OWNED_BY_GIT array). The proposal's build_pipeline_changes list mentions CLAUDE.md and build.js but not workspace-sync.md."
+    },
+    "schema_design": {
+      "verdict": "mostly sound",
+      "strengths": [
+        "Fields map cleanly to the existing WIN schema where shared (verdict, code_analysis, finding)",
+        "Kill-shot-specific fields (dome_prediction, dome_claimed_globe_prediction, actual_globe_prediction) capture the three-way comparison that makes kill-shots distinctive",
+        "The straw_man_identified/straw_man_detail fields are excellent — they formalize what the prose already describes for 4/6 tests",
+        "reproducibility field adds genuine analytical value not present in WIN entries"
+      ],
+      "issues": [
+        {
+          "severity": "major",
+          "field": "our_strength",
+          "description": "The three strength tiers (decisive/major/supportive) have no formal definitions. When is an argument 'decisive' vs 'major'? KS-003 (JFK-LHR) is rated 'decisive' because it has three independent discriminating tests. KS-001 (Sydney-Perth) is 'major' despite having four distinct problems (calibration, railway match, cross-route failure, internal disagreement). Is 'decisive' about the number of independent tests? The strength of each individual test? Whether the argument alone would be sufficient to settle the question? Without definitions, different reviewers will apply different thresholds, and the ratings will be arbitrary rather than systematic.",
+          "recommendation": "Define each tier explicitly. Suggestion: 'decisive' = this single test, if accepted, would by itself falsify the dome or prove non-discrimination (binary result, no room for interpretation); 'major' = strong evidence requiring multiple lines of rebuttal to challenge, but a skilled defender could construct a non-trivial response; 'supportive' = adds weight to the overall case but does not independently resolve the question. Include definitions in the schema file header or a companion reference document."
+        },
+        {
+          "severity": "moderate",
+          "field": "dome_status (KS-006)",
+          "description": "The verdict_summary_table lists KS-006 dome_status as 'Pending (39.9% error)' but the existing Part 5 HTML badge reads 'Failing (39.9% Error)' — sourced from the dome's own kill-shot page. The dome itself appears to show this as failing (or at least, our existing rendering shows it as failing). The proposal should match the dome's actual self-assessment. If the dome says 'Pending' on its page but our HTML shows 'Failing,' we need to document which is authoritative.",
+          "recommendation": "Verify against the dome's current killshot.html. If the dome marks it as failing, use 'Failing (39.9% Error)'. If the dome still marks it as 'Pending' despite the 39.9% error, that itself is worth noting as evidence of the asymmetric scorecard pattern. Update the KS-006 entry and verdict_summary_table to match the dome's actual current self-assessment."
+        }
+      ]
+    }
+  },
+
+  "verdict_assignment_review": {
+    "overall": "All six verdict assignments are defensible and consistent with the existing Part 5 prose. No verdict-flip issues found.",
+    "per_item": {
+      "KS-001": {
+        "proposed_verdict": "Misleading",
+        "assessment": "Correct. Calibration dressed as prediction, railway vs geometric distance, cross-route failure, internal inconsistency. 'Misleading' captures the post-hoc calibration and cherry-picked metric. The kernel_of_truth is generous and fair — crediting mathematical sophistication while maintaining the verdict.",
+        "concern": null
+      },
+      "KS-002": {
+        "proposed_verdict": "Not Demonstrated",
+        "assessment": "Correct. Single unreplicated measurement within error budget, no published methodology, contradicted by dome's own Polaris falsification. 'Not Demonstrated' is appropriate rather than 'Refuted by Data' because there is no data that directly contradicts the claim — rather, the claim lacks the evidential support needed to be demonstrated.",
+        "concern": "Minor — the related_failures lists FAIL-001 but the proposal doesn't explain what FAIL-001 is. If FAIL-001 is the dome's own Polaris falsification, this should be made explicit."
+      },
+      "KS-003": {
+        "proposed_verdict": "Std Model Explains",
+        "strength_rating": "decisive",
+        "assessment": "Correct on both verdict and strength. Three independent discriminating tests (seasonal variation, equatorial absence, hemispheric variation) each independently reject the dome's mechanism. The straw-man identification (globe predicts '0% after wind') is well-documented with the Rule 15 AI directive as smoking-gun evidence of relabeling.",
+        "concern": null
+      },
+      "KS-004": {
+        "proposed_verdict": "Std Model Explains",
+        "strength_rating": "supportive",
+        "assessment": "Correct. Non-discriminating — both models predict the same direction from the same data. 'Supportive' is right because the argument adds context (showing the dome borrows globe data) but doesn't independently resolve anything. A dome defender can always say 'the aether causes what you call core dynamics' and the prediction still matches.",
+        "concern": "The straw_man_detail correctly identifies the false framing of globe predicting stability. This is the weakest of the four straw-man findings — the dome may be comparing against a layperson's understanding rather than deliberately misrepresenting geophysics. But since formal geomagnetic models (IGRF-14, WMM2025) clearly predict decline, the straw-man identification stands."
+      },
+      "KS-005": {
+        "proposed_verdict": "Std Model Explains",
+        "strength_rating": "major",
+        "assessment": "Correct. Chapman mechanism (1933) predicts the observed range. However, there is one angle the proposal could strengthen: the dome presents THREE different numerical predictions (-17 to -21 nT homepage, -28.9 nT killshot.html, -29.1 nT monitor.py). The proposal mentions this but doesn't push hard enough on why this matters. A model that claims precision ('28.9 nT') while publishing three different values for the same prediction is undermining its own claimed methodology. This should be flagged as a distinct sub-finding.",
+        "concern": "The proposal should verify whether all three values are for the same station (Ebro) and same baseline. If -17 to -21 nT is for a different station set or baseline method, the three-value inconsistency argument weakens. If all three are for Ebro under the same conditions, the inconsistency is damning."
+      },
+      "KS-006": {
+        "proposed_verdict": "Refuted by Data",
+        "strength_rating": "decisive",
+        "assessment": "Mostly correct but premature-verdict risk is real. The 2027 deadline has not passed. The dome defender's strongest counter: 'You are evaluating a prediction 15 months before its deadline. The drift rate IS decelerating — it's gone from ~55 km/yr (2003) to ~35 km/yr (2024). If it continues decelerating at a similar rate, it could plausibly reach <20 km/yr by end of 2027.' The proposal's anticipated objection addresses this but doesn't quantify: reaching 20 km/yr from 35 km/yr in ~20 months requires a deceleration of ~9 km/yr/yr, whereas the observed deceleration over 2003-2024 has been roughly ~1 km/yr/yr. The required rate of change is 9x the historical rate. THAT is the number that makes 'Refuted by Data' defensible NOW rather than premature.",
+        "recommendation": "Add the quantitative implausibility argument: current deceleration rate ~1 km/yr/yr, required rate ~9 km/yr/yr, gap is 9x. Without this number, the premature-evaluation objection has teeth."
+      }
+    }
+  },
+
+  "wait_and_see_review": {
+    "definition_quality": "Excellent. The three criteria (genuinely unique, grounded in data, verifiable) are strict, well-defined, and appropriately gate a verdict that is effectively a compliment to the dome.",
+    "current_applicability_assessment": "Correct — none of the six current kill-shots qualify. The proposal correctly identifies the failure point for each.",
+    "concerns": [
+      {
+        "severity": "moderate",
+        "description": "The definition says Wait-and-See 'will extend to Prospective Wins (ISS-677) when that work lands.' But ISS-677 may define its own criteria for what constitutes a genuinely pending prediction. The Wait-and-See definition should explicitly note that the ISS-677 extension may refine or tighten these criteria based on the specific context of prospective wins, to avoid locking in definitions prematurely.",
+        "recommendation": "Add a clause: 'These criteria define Wait-and-See for kill-shots. When extended to Prospective Wins (ISS-677), additional criteria may apply (e.g., minimum specificity of prediction, required derivation from dome geometry).'"
+      },
+      {
+        "severity": "minor",
+        "description": "The badge color (#B3D4FC light, #2C5282 dark) is close to the 'Self-Contradicted' color (#B3E5FC). At a glance, they could be confused. Wait-and-See should be visually distinct from all six critical verdicts.",
+        "recommendation": "Use a warmer neutral — perhaps a soft amber (#FFF3CD) or a distinctive grey-blue (#CFD8DC) — that doesn't overlap with any existing verdict color. Or shift to a clearly different hue like a muted teal (#B2DFDB)."
+      }
+    ]
+  },
+
+  "code_analysis_tags_review": {
+    "note": "All six kill-shots have reviewed:false, correctly flagging that the curmudgeon hasn't yet validated these tags. The proposed values are reasonable first-pass assignments but several need verification once the curmudgeon reviews the kill-shots individually (which the proposal correctly plans via KS-NNN tracker items).",
+    "specific_concerns": [
+      {
+        "kill_shot": "KS-004",
+        "field": "monitoring",
+        "proposed_value": "live_fetch",
+        "concern": "The proposal claims live_fetch but doesn't cite which specific monitoring function or API endpoint verifies this kill-shot. The related WIN-004 has live_fetch (INTERMAGNET data), but the kill-shot is specifically about the African cell field strength threshold — is there a separate monitoring function for the kill-shot's 21,500 nT threshold? Or does this piggyback on WIN-004's monitoring? Without monitor.py available to verify, this should be flagged as 'needs verification' rather than asserted as live_fetch.",
+        "recommendation": "Set to 'none' until curmudgeon review confirms monitoring exists for this specific kill-shot threshold. The reviewed:false already signals this, but the initial value should be conservative."
+      },
+      {
+        "kill_shot": "KS-006",
+        "field": "monitoring",
+        "proposed_value": "live_fetch",
+        "concern": "Same issue — the related WIN-006 has live_fetch for NMP position data, but does the dome specifically monitor the <20 km/yr threshold? The proposal should note that the kill-shot monitoring classification applies to the dome's killshot-specific monitoring, not the general NMP monitoring that feeds into WIN-006."
+      }
+    ]
+  },
+
+  "missing_elements": [
+    {
+      "severity": "moderate",
+      "description": "No proposed {{KS_*}} placeholder for straw-man count. The proposal finds that 4 of 6 kill-shots misrepresent the globe prediction. This is a powerful structural finding that deserves a computed placeholder (e.g., {{KS_STRAW_MAN_COUNT}}) for use in Part 5 or Part 9 prose. The finding is too important to leave buried in per-item data without aggregation.",
+      "recommendation": "Add at minimum: {{KS_STRAW_MAN_COUNT}} (count of straw_man_identified:true), {{KS_TOTAL}} (total kill-shots), and {{KS_VERDICT_TALLY}} (verdict breakdown). These follow the same never-hardcode-counts principle that governs WIN tallies."
+    },
+    {
+      "severity": "moderate",
+      "description": "The proposal doesn't address how kill-shot badges interact with the existing dome-status badges. The badge_rendering section mentions showing both (dome's claim left, our verdict right), but doesn't specify what happens when the dome updates its self-assessment. If the dome changes KS-006 from 'Failing' to 'Claimed Confirmed' (by widening tolerance further), do we update dome_status automatically? How is dome_status kept current?",
+      "recommendation": "Add a maintenance note: dome_status values are updated by the poller when it detects changes on the dome's killshot.html page, following the same pipeline as WIN count changes. If no poller coverage exists for killshot.html, flag that as a gap for the poller prompt."
+    },
+    {
+      "severity": "minor",
+      "description": "The section_anchor values (ks-test-1 through ks-test-6) don't exist in the current HTML. The existing kill-shot divs use <div class='ks-test'> without id attributes. The build pipeline change to inject badges also needs to add these anchor IDs so that related_wins cross-references and external links can target specific kill-shots.",
+      "recommendation": "Include anchor ID addition in the build_pipeline_changes list: 'Add id attributes to kill-shot div elements matching the section_anchor values in kill-shots.json.'"
+    },
+    {
+      "severity": "minor",
+      "description": "workspace-sync.md is not mentioned in build_pipeline_changes for OWNERSHIP updates. The File Ownership Rules require triple-update (CLAUDE.md, build.js, workspace-sync.md) for any new classified file.",
+      "recommendation": "Add workspace-sync.md to the OWNERSHIP update list in build_pipeline_changes."
+    }
+  ],
+
+  "anticipated_objections_assessment": {
+    "quality": "Strong. Five objections are well-chosen and the responses are substantive rather than dismissive. The strongest objection (KS-006 premature verdict) is correctly identified as the most dangerous and receives the most detailed response.",
+    "missing_objections": [
+      {
+        "objection": "You're grading the dome's presentation (straw-man arguments, numerical inconsistency) rather than the dome's actual science. A dome defender could fix the straw-man characterizations of globe predictions without changing any of their underlying model. Are you reviewing the dome or reviewing the dome's communication?",
+        "response_suggestion": "Both, and deliberately. The straw-man characterizations aren't presentation flaws — they're structural to how the kill-shot framework works. The dome's kill-shot rule says 'if any single test confirms, globe is falsified.' But Tests 3, 4, 5, and 6 can only 'confirm' by comparison to a misrepresented globe prediction. Fix the straw-man and the 'confirmation' evaporates — the dome's prediction matches the globe's, and the test becomes non-discriminating rather than globe-falsifying. The straw-man IS the science problem."
+      },
+      {
+        "objection": "Why is KS-001 rated 'major' when it has more distinct problems (4) than KS-003 (3 discriminating tests) which is rated 'decisive'? Aren't more problems stronger?",
+        "response_suggestion": "This objection exposes the undefined strength-tier issue flagged above. It should be addressed by formalizing the tier definitions."
+      }
+    ]
+  },
+
+  "kernel_of_truth_assessment": {
+    "quality": "Excellent. The proposal's kernel_of_truth paragraph is one of the best in the entire review pipeline. It correctly identifies that the kill-shot framework's Popperian structure is commendable, credits the dome for maintaining visible error tracking (39.9% NMP), and frames our rating system as honoring the dome's own methodology by taking it seriously. This is exactly the charitable-but-rigorous tone the review needs. No changes recommended.",
+    "one_addition": "Consider noting that the dome's kill-shot framework is actually stronger methodology than its WIN framework — the WINs have post-hoc retrodiction problems, but the kill-shot tests at least attempt prospective falsifiability. This distinction between the dome's two frameworks (strong methodology in kill-shots, weak in WINs) could inform the holistic review."
+  },
+
+  "holes_found": [
+    {
+      "severity": "major",
+      "description": "The our_strength field (decisive/major/supportive) lacks formal definitions. Without definitions, the ratings are subjective and cannot be consistently applied across kill-shots, future additions, or curmudgeon reviews. This is the single most important fix needed.",
+      "recommendation": "Add explicit tier definitions to the schema. Proposed: decisive = independently sufficient to resolve the question (a single test that, if accepted, settles the matter); major = strong multi-faceted argument that requires significant rebuttal effort but does not independently settle the question; supportive = adds corroborating weight but relies on other arguments to carry the burden of proof."
+    },
+    {
+      "severity": "moderate",
+      "description": "KS-006 dome_status discrepancy between proposal ('Pending') and existing HTML badge ('Failing (39.9% Error)'). The verdict_summary_table will be the source of truth for dome_status; it must match reality.",
+      "recommendation": "Update KS-006 dome_status to 'Failing (39.9% Error)' in both the kill_shot_ratings entry and the verdict_summary_table, matching the dome's own page rendering."
+    },
+    {
+      "severity": "moderate",
+      "description": "Wait-and-See badge color (#B3D4FC) is too close to Self-Contradicted (#B3E5FC). Both are light blue. At a glance or in colorblind rendering, they may be indistinguishable.",
+      "recommendation": "Use a visually distinct color — muted teal (#B2DFDB), soft amber (#FFF3CD), or slate grey (#CFD8DC)."
+    },
+    {
+      "severity": "moderate",
+      "description": "KS-006 Refuted by Data verdict needs the quantitative implausibility argument to preempt the 'premature evaluation' objection. The proposal notes that the dome has 39.9% error but doesn't compute the required deceleration rate needed to hit <20 km/yr by 2027.",
+      "recommendation": "Add: 'Current drift rate ~35 km/yr, observed deceleration ~1 km/yr/yr over 2003-2024. Reaching 20 km/yr by end 2027 requires ~9 km/yr/yr deceleration — 9x the historical rate. The prediction is not just currently failing; the physics of the required course correction makes success implausible.'"
+    },
+    {
+      "severity": "minor",
+      "description": "Build pipeline changes omit workspace-sync.md from OWNERSHIP triple-update requirement.",
+      "recommendation": "Add to build_pipeline_changes: 'Update OWNED_BY_GIT in workspace-sync.md to include data/kill-shots.json.'"
+    }
+  ],
+
+  "stronger_arguments": [
+    {
+      "description": "The 4/6 straw-man finding is structurally devastating and should be promoted to a headline stat. Frame it as: 'Four of six dome kill-shots can only claim success by misrepresenting what standard physics predicts. Fix the straw-man and the tests become non-discriminating.' This converts a per-item finding into a framework-level indictment.",
+      "sources": ["KS-003 straw_man_detail", "KS-004 straw_man_detail", "KS-005 straw_man_detail", "KS-006 straw_man_detail"]
+    },
+    {
+      "description": "The proposal doesn't note that 0 of 6 kill-shots qualify for Wait-and-See. This is a finding in itself: the dome's strongest self-described tests — the ones it stakes its entire model on ('if any single test fails, dome is falsified') — do not contain a single genuinely unique, non-post-hoc, non-relabeled prediction that standard physics cannot already explain. A {{KS_WAIT_AND_SEE_COUNT}} placeholder showing 0 would be rhetorically powerful.",
+      "sources": ["wait_and_see_definition.current_applicability"]
+    }
+  ],
+
+  "recommended_action": "approve_with_changes — implement the five fixes (define strength tiers, fix KS-006 dome_status, add straw-man aggregation placeholder, quantify KS-006 implausibility, update OWNERSHIP triple), then proceed to implementation. The proposal is architecturally sound and the verdict assignments are defensible."
+}

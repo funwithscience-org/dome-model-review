@@ -1,0 +1,37 @@
+{
+  "directive_id": "DIRECTIVE-20260426-001",
+  "issued_at": "2026-04-26T07:16:36.064Z",
+  "issued_by": "steve (via cowork session)",
+  "target_agent": "tinker",
+  "target_mode": "Mode 4 — Proposals & Self-Fixes",
+  "priority": "medium-high",
+  "status": "open",
+  "title": "Audit all agent dispatcher trigger scripts for queue/inbox shape mismatches",
+  "summary": "Operator caught a 14-day silent queue-read miss in analyst Mode 2b: the dispatcher trigger expected attention-inbox.json shaped as {items:[...]} but the file is itself a top-level array. The check `a.items ? a.items.filter(...) : []` returned 0 every run while 70 items piled up pending. Same class of bug could exist in any other agent's dispatcher trigger code that reads queue/inbox/tracker files. Tinker should audit and report.",
+  "principle": "Silent-skip bugs are high-cost, low-visibility. An agent that goes no-op when there's actually work creates the appearance of a quiet pipeline while the work compounds invisibly. Every dispatcher trigger that reads a JSON file and decides 'work / no work' must be verified against the file's actual current shape — not against an assumed shape. The trigger code should also be defensive: handle both array and object-with-items shapes when the file's shape could plausibly evolve.",
+  "context": {
+    "triggering_incident": {
+      "bug_location": "monitor/prompts/analyst.md line 112 (Mode 2b — Attention Inbox dispatcher trigger)",
+      "bug_pattern": "const p = a.items ? a.items.filter(x=>x.status==='pending') : [];",
+      "actual_file_shape": "monitor/analyst/attention-inbox.json is a top-level Array, not {items: [...]}",
+      "effect": "Trigger returned 'NO ATTENTION ITEMS' on every analyst run from at least 2026-04-12 through 2026-04-26 (14 days). 70 pending items accumulated.",
+      "fix_committed_at": "8fa4eaa (2026-04-26)",
+      "fix_pattern": "const arr = Array.isArray(a) ? a : (a.items || []); const p = arr.filter(x=>x.status==='pending');"
+    },
+    "why_we_caught_this": "Operator suspicion. Analyst's status.json note said 'Mode-dispatcher NO-OP — every priority mode came back clear' but operator independently checked Mode 2b and found 70 pending items.",
+    "similar_class_of_bug": "Any dispatcher trigger that reads a JSON file and applies a shape-dependent filter. Examples to audit: priority-queue.json, expansion-tracker.json, globe-fingerprint-tracker.json, human-notes.json (multiple agents have one), pending-digest.json, processed-proposals.json, attention-inbox.json, processed-reviews.json, open-issues.json, closed-issues.json, status.json fields."
+  },
+  "expected_actions": [
+    "Audit each scheduled agent's dispatcher trigger code in monitor/prompts/*.md and monitor/prompts/reference/*.md. Specifically: poller, analyst, decider, curmudgeon, social, structure-integrity, tinker, workspace-sync.",
+    "For each trigger script that reads a JSON file: identify the assumed shape, then verify the file's current shape on disk (FUSE or clone) matches. Look for patterns like `a.items?...:[]`, `a.queue?...:[]`, `a.notes?...:[]`, `a.entries?...:[]` and similar where the assumption could be wrong.",
+    "For each mismatch found: file a PROP (proposal) under monitor/tinker/proposals/ with the exact line, current behavior, and proposed fix. Pattern after this directive's fix (Array.isArray(a) ? a : (a.items || [])) for backward compat.",
+    "If the same mismatch silently affected work for multiple days, include an estimate of accumulated pending count (count items now and estimate when the silent-skip began from file mtime or git history).",
+    "Surface findings in tinker's next report. If 0 mismatches found, that itself is a valuable signal — say so explicitly."
+  ],
+  "out_of_scope": [
+    "Do NOT fix the prompts directly — file PROPs and let the standard PROP lifecycle (operator review → apply) run. The analyst Mode 2b fix at 8fa4eaa was operator-direct because it was urgent (14 days of accumulated pending). Future similar bugs should follow the normal review path.",
+    "Do NOT audit non-dispatcher code (e.g., one-off scripts inside agent procedures). Focus only on the trigger scripts that gate WHETHER an agent does work.",
+    "Do NOT audit code in /scripts/, /build-scripts/, /tests/, or other non-prompt directories. Those have their own review path."
+  ],
+  "acceptance_criteria": "Tinker report includes a 'Dispatcher Shape Audit' section listing every agent's dispatcher triggers, the file each reads, the shape each assumes, and a verification check (or PROP filed if mismatch). Either the report shows 0 mismatches found across all agents, OR each mismatch has a corresponding PROP in monitor/tinker/proposals/ ready for operator review."
+}

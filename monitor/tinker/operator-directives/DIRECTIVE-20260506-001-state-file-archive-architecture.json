@@ -1,0 +1,98 @@
+{
+  "directive_id": "DIRECTIVE-20260506-001",
+  "issued_at": "2026-05-06T07:00:00.000Z",
+  "issued_by": "operator (steve via cowork session)",
+  "target_agent": "tinker",
+  "target_mode": "Mode 4 — Proposals & Self-Fixes",
+  "title": "State-file archive architecture review — separate live state from historical record across the whole pipeline (PROP-021 Option C done right, broadened in scope)",
+  "priority": "medium",
+  "status": "completed",
+  "summary": "PROP-021's instrumentation surfaced that monitor/curmudgeon/priority-queue.json is 50KB but only 981 bytes is live state — 98% is history (175 popped items, capped at 200 by PROP-009r2 during April's backlog) plus schema metadata. Same pattern likely applies to human-notes.json (39KB, 9 consumed notes, 0 pending), tracker.json, decider's closed-issues.json (grows forever), processed-reviews.json, expansion-tracker.json, attention-inbox.json, and possibly others. The bloat is the byproduct of one file serving two readers with very different needs: (a) live-state readers (dispatchers) want a yes/no answer fast; (b) historical-record readers (audits, lifecycle verification, attribution) want long memory. The current pattern collapses both into one file, paying the long-memory cost on every fast-path read. Operator wants tinker to design a unified archive architecture across ALL agent state files: live state in one file, historical record in a sibling archive. Constraint: do not break any existing consumer (PROP-009r2 audit, PROP-019/020 fingerprint compare, decider lifecycle verification, integrity coverage checks, etc.). PROPOSE ONLY.",
+  "context": {
+    "trigger": "Operator memory check 2026-05-06 ~07:00Z, after reviewing PROP-021: 'weeks ago didn't we talk about needing an archive for that at some point because of this specific problem?' Confirmed by grep — decider.md line 370 carries the receipt: '// PROP-009r2: bumped history cap 50 -> 200 so 3-day rolling audit window always fits.' That bump was contextually correct in mid-April (3-day backlog audit needed history), but the backlog has since drained, the audit's needs are stable, and the live-state readers now pay the bumped cost on every run forever. Same shape likely applies to several other state files — none have been re-examined since the bloat accreted.",
+    "bigger_picture_framing": "This is not a curmudgeon-side optimization (PROP-021's framing). It's a pipeline-wide architectural pattern: every state file that combines live state + history is a potential bloat source for fast-path readers. Tinker should treat the whole pipeline as the unit of analysis — find the pattern wherever it exists, propose ONE consistent archive convention applied across all of them, and document the convention so future state files inherit it correctly.",
+    "files_known_or_suspected_to_carry_the_pattern": [
+      "monitor/curmudgeon/priority-queue.json — confirmed 50KB / 981 bytes live (175 history entries, cap 200 from PROP-009r2)",
+      "monitor/decisions/human-notes.json — likely (39KB, 9 consumed notes / 0 pending observed in PROP-021 instrumentation)",
+      "monitor/curmudgeon/human-notes.json — likely (39KB, similar consumed-vs-pending shape)",
+      "monitor/analyst/human-notes.json — likely (similar shape)",
+      "monitor/social/human-notes.json — likely (similar shape)",
+      "monitor/decisions/closed-issues.json — strong candidate, grows forever as decider closes issues",
+      "monitor/decisions/processed-reviews.json — moderate candidate, grows with reviews processed",
+      "monitor/curmudgeon/tracker.json — needs investigation; carries cycle state per WIN, may have implicit history",
+      "monitor/analyst/expansion-tracker.json — needs investigation; lifecycle of expansions",
+      "monitor/analyst/attention-inbox.json — needs investigation; may accumulate resolved items",
+      "monitor/integrity/workspace-sync-skips.jsonl — already JSONL append-only, may already be archive-shaped (verify)",
+      "monitor/decisions/applied-patches/*.json — separate-file-per-patch already; may be the pattern to emulate",
+      "Anything else tinker discovers in the audit pass."
+    ],
+    "consumers_we_must_not_break": [
+      "**PROP-009r2 3-day rolling audit** — reads priority-queue.json history. The audit's contract: at least one strict_queue_id pop per recent window, majority-strict ratio over 3 days. Archive design must preserve audit's ability to read 3 days of history.",
+      "**PROP-019 + PROP-020 fingerprint compare** — reads monitor/curmudgeon/reviews/*.json. NOT touched by this directive. (Reviews directory is per-file-per-review, already good.) Confirm tinker doesn't accidentally propose changes here.",
+      "**Decider lifecycle verification** — closed-issues.json carries verification_pattern, status flips, attribution. Decider reads the whole file every cycle. Archive design must preserve decider's ability to look up an issue by ID.",
+      "**Integrity coverage checks** — integrity walks several state files for structural audits. Archive design must preserve integrity's ability to verify lifecycle.",
+      "**Tinker's own audit lenses** — Mode 1 pipeline-health, Mode 3 cost-engineering. If tinker reads any of the candidate files, archive design must accommodate.",
+      "**Operator workflow** — operators currently append human notes to *.json files directly. Archive design must specify which file operators append to (live or archive), and the migration must not silently break existing operator habits."
+    ],
+    "design_intuition": "The pattern: one canonical file per concept (priority-queue, human-notes, etc.) carrying ONLY live state. A sibling archive file (suggested: <name>-history.jsonl, append-only JSON-Lines) carries the historical record. Live-state readers read the canonical file (small, fast). Historical readers read the archive (potentially large, but read only when needed). Migration: strip history fields from canonical files into newly-created archive files, update writers to append to archive instead of mutating canonical. Backward-compat: keep both fields readable for one cycle (writers update both, readers can read from either).",
+    "interaction_with_PROP_018_sync_manifest": "PROP-018 introduces monitor/sync-manifest.json as the single source of truth for FUSE↔git boundary classifications. Each new archive file (e.g., priority-queue-history.jsonl) needs to be classified in the manifest. Tinker should propose the classifications as part of this directive (don't wait for PROP-018 implementation). Likely classifications: live state = workspace_to_clone (decider/curmudgeon mutate from FUSE); archive = workspace_to_clone (append-only, smart_copy mtime-guard works fine). Verify with tinker.",
+    "what_changed_since_PROP_009r2": "PROP-009r2 was filed 2026-04-18 when curmudgeon's queue had a 50+ item backlog and the 3-day audit window needed pop history sized to capture all 50 entries. Today: live queue is 0, recent throughput is ~3-4 reviews/day. The audit window can be MUCH narrower (or paginated to the archive file). The original sizing decision is no longer load-bearing. Tinker should call out the obsolete-justification cleanly so future readers don't reverse the change."
+  },
+  "deliverable_requested": {
+    "output_file": "monitor/tinker/proposals/PROP-NNN-state-file-archive-architecture.json (assign next available PROP number after PROP-021)",
+    "structure": {
+      "audit_pass": "Walk every state file in the pipeline (the list in 'files_known_or_suspected' is a starting point — find others). For each: total size, live-state size, history-or-consumed size, schema overhead, who reads it, who writes it, what the readers need. Quantify byte sizes and read-count cost. Prioritize by bloat-impact (live-state-readers × wasted-bytes-per-read).",
+      "unified_archive_convention": "Propose ONE consistent archive convention applied across all bloat-affected files. Spec: file naming (`<name>-history.jsonl`? `<name>-archive.json`? something else?), content shape (per-line JSON object? array file with cap?), append vs. mutate semantics, where the convention is documented (CLAUDE.md? a new monitor/prompts/reference/state-file-archives.md?), how new state files inherit the convention by default. Argue.",
+      "per_file_migration_plan": "For each affected file, the specific migration: which fields move to archive, which stay live, what the writer's append code becomes, what the audit reader's lookup code becomes, backward-compat strategy (both-readable for N cycles, then deprecate the legacy field). Order the migrations by risk — start with the lowest-risk file (likely workspace-sync-skips.jsonl, already JSONL) to validate the convention, end with highest-risk (likely closed-issues.json — decider critical path).",
+      "consumer_protection_matrix": "For each consumer in 'consumers_we_must_not_break', explicitly verify the archive design preserves their access pattern. If a consumer's pattern doesn't fit the unified convention, propose an exception (with reasoning) rather than break the consumer. The PROP-009r2 audit is the most important — it MUST continue to work post-migration; specify the exact code change needed in the audit reader.",
+      "obsolete_justification_cleanup": "Document which legacy caps/sizes were sized for since-resolved conditions (PROP-009r2's 200-cap is the canonical example). For each, note: original justification, what changed since, what the new sizing is in the archive era. Future operators reading the code should understand WHY the cap exists (or doesn't) rather than guess.",
+      "rollback_story": "If the migration introduces a regression in any consumer, what's the rollback? Per-file rollback (revert just one migration) vs. all-or-nothing? Operator's lean: per-file, atomic per file (one PR per file's migration). Argue.",
+      "PROP_018_classifications": "For each new archive file, the proposed entry in the (future) sync-manifest.json: path, direction, owner_agent, classification, notes. Don't wait for PROP-018 to land; propose now so the manifest can absorb the new files cleanly.",
+      "regression_test": "How do we verify each migration didn't break a consumer? Define a test for each file's migration: pre-state, migration steps, post-state assertions. The audit consumer (PROP-009r2 3-day) is the most subtle — specify the exact assertion that proves it still works. Acceptance: every existing consumer test still passes; no consumer reads stale data; no consumer crashes on missing fields.",
+      "estimated_impact": "Total token reduction across all dispatchers and fast-path readers per day. Total wall-clock reduction. Disk-space cost of the archive files (likely negligible, but quantify). Maintenance cost of the unified convention going forward."
+    },
+    "propose_only": true,
+    "do_not_implement": "DO NOT modify any state file, prompt, or script. Operator reviews PROP and authorizes implementation in a separate step. Treat this as a pure design exercise — the migration may be staged across multiple subsequent operator-authorized commits.",
+    "open_design_questions_for_tinker_to_address": [
+      "Should the unified convention be a single archive file per source (priority-queue + priority-queue-history) or a directory of per-event files (priority-queue/events/2026-05-05.jsonl)? Argue. JSONL is operationally simpler; per-event-files give finer git-blame granularity.",
+      "Should the convention include automatic rotation (e.g., monthly archive files) or unbounded append? Argue. Unbounded append works until disk pressure; rotation adds complexity but bounds growth.",
+      "How does the convention interact with FUSE's no-unlink limitation? Archive files should be append-only-friendly to avoid unlink entirely. Confirm the design doesn't require deleting old archive files.",
+      "Should integrity gain a new check that surfaces 'state file's live portion exceeds N bytes' as a soft alert — i.e., catch the bloat before it accretes again? Argue.",
+      "Operator workflow: when an operator wants to write a new human note, do they always append to the live file (which is then immediately consumed → archived by the agent), or is there a different write target? Specify the operator-facing contract clearly. Bad answer: 'depends on the file' — the convention should be uniform.",
+      "If a state file currently lacks a clear consumed/active distinction (e.g., closed-issues.json — once an issue is closed, is it 'live state' or 'history'?), how does the archive design handle the ambiguity? Argue. Operator's lean: if the file is read on every dispatcher cycle, anything not actively-consulted is archive. If the file is only read on lookup-by-id, the slimming concern is smaller and may not warrant an archive at all."
+    ]
+  },
+  "non_goals": [
+    "Do NOT propose changes to monitor/curmudgeon/reviews/*.json (per-file-per-review, already correctly sized). PROP-019/020 fingerprint compare reads these — out of scope.",
+    "Do NOT propose changes to monitor/integrity/drift-audit.json (PROP-020 artifact, intentionally regenerated). Out of scope.",
+    "Do NOT propose changes to data/wins.json, data/sections.json, etc. (canonical content data, no live/history split applies).",
+    "Do NOT propose schema changes to the live-state portion of any file beyond what's needed for the archive split. Schema-tinkering is a separate concern.",
+    "Do NOT broaden scope to other architectural cleanups. Focus narrowly on the bloat pattern — live state vs. historical record."
+  ],
+  "proposed_fix_spec": {
+    "note_to_tinker": "Operator's framing: 'we had a huge backlog at the time and we're much much slimmer now.' The PROP-009r2-era sizes were correct for then, wrong for now. Treat this as a recurring failure mode: sizing decisions made under load become permanent unless re-examined. The unified archive convention is partly a fix for the current bloat, partly a structural prevention so future state files don't repeat the pattern."
+  },
+  "completion_criteria": {
+    "file_present": "monitor/tinker/proposals/PROP-NNN-state-file-archive-architecture.json exists with all 9 deliverable structure sections.",
+    "audit_quantified": "Every candidate state file has byte-size + live/history split numbers.",
+    "convention_concrete": "Unified archive convention specified with example file naming, schema, append semantics, documentation location.",
+    "per_file_plans_drafted": "Each affected file has a specific migration plan with backward-compat strategy.",
+    "consumer_protection_explicit": "PROP-009r2 audit, decider lifecycle, integrity checks, operator workflow each have a verified-preservation entry.",
+    "PROP_018_classifications_proposed": "Each new archive file has a proposed sync-manifest entry.",
+    "open_questions_addressed": "All 6 open design questions answered with reasoning, not deferred.",
+    "mark_directive_completed": "Set status:'completed' with completed_at + completed_by_run + prop_id_authored fields appended per DIRECTIVE-LIFECYCLE additive-edit exception."
+  },
+  "cross_references": [
+    "PROP-021 (Option C deferred — this directive is Option C done right, broadened to pipeline-wide)",
+    "PROP-009r2 (the bumped queue history cap — primary obsolete-justification example)",
+    "PROP-018 (sync manifest — must absorb new archive files in classifications)",
+    "PROP-019/PROP-020 (fingerprint compare — explicitly off-limits, do not touch)",
+    "monitor/prompts/decider.md line 370 (the 200-cap line carrying the original justification comment)",
+    "monitor/curmudgeon/priority-queue.json (canonical bloat example)",
+    "monitor/decisions/closed-issues.json (highest-risk migration target)"
+  ],
+  "supersedes": null,
+  "completed_at": "2026-05-06T05:50:06.631Z",
+  "completed_by_run": "tinker-2026-05-06T05-50",
+  "prop_id_authored": "PROP-022"
+}

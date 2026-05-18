@@ -1,0 +1,72 @@
+{
+  "point_id": "predictions-catalog",
+  "topic": "Predictions catalog (predictions.json) — 94 entries, verdict quality and data integrity review",
+  "reviewed_at": "2026-04-12T12:00:00Z",
+  "cycle": 2,
+  "queue_id": 24,
+  "review_type": "section-rewrite",
+  "confidence": 0.90,
+  "summary": "Verdict quality across the 94-entry catalog is generally strong — reasoning is specific, evidence-based, and consistently applies the review's methodological principles. However, the data file has several structural bugs (stale metadata, schema mismatches, restates_win:false instead of null) and the verdict taxonomy for restates_win entries is inconsistently applied. One latent bug (restates_win:false inflating recycled count) could surface in published HTML if the PRED_RECYCLED placeholder is ever used.",
+  "holes_found": [
+    {
+      "severity": "critical",
+      "description": "restates_win:false in all 8 PROS entries (PROS-001 through PROS-008). The build computes PRED_RECYCLED as entries.filter(e => e.restates_win != null).length. In JavaScript, false != null evaluates to true, so all 8 PROS entries are counted as 'recycled'. This inflates the recycled count from 26 (actual restatements) to 34. While PRED_RECYCLED is not currently rendered in visible HTML prose, the count IS computed and logged by the build. If any section adds {{PRED_RECYCLED}} in future, it will display 34 — a factually wrong number that a dome defender could use to argue we're inflating recycling claims.",
+      "recommendation": "Change restates_win from false to null in all 8 PROS entries (PROS-001 through PROS-008). This is the only safe value for 'does not restate a WIN'."
+    },
+    {
+      "severity": "major",
+      "description": "_meta.computed_counts is entirely stale. Claims 86 entries but actual is 94. Every count is wrong: total (86→94), prospective (16→15), pending (18→8), falsified (6→7), std_relabel (31→38), recycled (14→26/34 depending on the false-vs-null bug). While the build computes counts dynamically and ignores _meta, agents reading this file for context (analyst, curmudgeon, decider) may trust these numbers and make wrong decisions.",
+      "recommendation": "Either remove _meta.computed_counts entirely (since the build ignores it) or add a build step that overwrites it with actual computed values after each build. Removing is safer — a stale cache that looks authoritative is worse than no cache."
+    },
+    {
+      "severity": "major",
+      "description": "Build schema mismatch: generate-html.js line 1000 counts stdRelabel via entries.filter(e => e.derivation === 'standard_physics'), but NO entry has a 'derivation' field. Similarly, line 1001 counts testable via e.testability === 'testable' (field absent), and line 1008 checks e.test_window?.status (test_window is a string, not an object). This means PRED_STD_RELABEL, PRED_TESTABLE, PRED_DOME_DERIVED, and PRED_ACTIVE_WINDOWS are permanently 0. These placeholders aren't currently used in section HTML, but the build's count logic is dead code that creates a false impression of tracking these metrics.",
+      "recommendation": "Either add the missing fields (derivation, testability) to entries, or remove the dead count logic from the build to avoid confusion. If the intent is to track these metrics, the fields should be populated from our_verdict (derivation maps to standard_physics verdict) and from testability assessment during onboarding."
+    },
+    {
+      "severity": "major",
+      "description": "Verdict taxonomy inconsistency for restates_win entries. 12 entries have restates_win set (pointing to a specific WIN) but their verdict is NOT 'recycled' — they get standard_physics (5), unfalsifiable (6), or pending (1). Meanwhile, 14 entries with restates_win are verdicted 'recycled'. There is no documented rule for when restating a WIN warrants 'recycled' vs a substantive verdict. A dome defender could argue: 'Your review classifies PRED-094 (restates WIN-001) as recycled but PRED-TESLA-002 (also restates WIN-001) as unfalsifiable — which is it? Are you double-dipping to inflate both your unfalsifiable and recycled counts?' The current approach gives each entry the most appropriate individual verdict, which is defensible, but the lack of explicit criteria creates an attack surface.",
+      "recommendation": "Add a brief taxonomy note to the _meta section explaining the distinction: 'recycled' = prediction literally restates a confirmed WIN with no new testable content beyond what the WIN already covered. Other verdicts (standard_physics, unfalsifiable) apply when the prediction adds new claims beyond the restated WIN — even if it references the same domain. The restates_win field tracks the cross-reference regardless of verdict. Document this explicitly so the logic is transparent."
+    },
+    {
+      "severity": "moderate",
+      "description": "PROS-003 restates_win is false (not null), making it count as 'recycled' in the build despite being the most important entry in the entire catalog — the only genuinely prospective prediction with a closed test window that was falsified. If a reader follows the recycled count trail, they'd find PROS-003 there, which is misleading because PROS-003 is the OPPOSITE of recycled — it's the one entry we WANT people to examine closely.",
+      "recommendation": "Fix restates_win to null for PROS-003 (and all other PROS entries per the critical bug above)."
+    },
+    {
+      "severity": "moderate",
+      "description": "Inconsistent restates_win format: some entries use bare IDs ('035', '068'), others use 'WIN-001' format. The build normalizes both correctly (line 768 strips WIN- prefix), but the inconsistency suggests the data was assembled by different processes without validation. Five entries use the WIN- prefix format: PRED-094 (WIN-001), PRED-099 (WIN-065), PRED-100 (WIN-056), PRED-CURR-004 (WIN-024), PRED-CURR-008 (WIN-058). All others use bare IDs.",
+      "recommendation": "Normalize all restates_win values to bare three-digit IDs (e.g., '001' not 'WIN-001') for consistency. Add a validation check to the build or to the analyst's onboarding procedure."
+    },
+    {
+      "severity": "moderate",
+      "description": "W019 and W020 have author_status 'refined' but our_verdict 'falsified'. The dome page reclassifies failed predictions as 'refined' to avoid counting them as failures. Our review correctly challenges this (Section 6.5 documents the pattern), but the predictions.json entries don't explicitly note the reclassification discrepancy in their detail_reasoning. W019's reasoning discusses NMP drift and calls it falsified but doesn't flag that the dome calls it 'refined' to avoid acknowledging failure.",
+      "recommendation": "Add a sentence to W019 and W020 detail_reasoning noting: 'The dome classifies this as refined rather than falsified — part of the pattern documented in Section 6.5 where failed predictions are silently reclassified to avoid the falsified count.' This strengthens the cross-reference."
+    },
+    {
+      "severity": "minor",
+      "description": "10 entries with null verdict are all data_watch or manual_test type. This is correct per the schema (operational entries don't get verdicts). No action needed, but the null verdicts cause the computed counts to show '10 unassessed' which could confuse someone skimming the data."
+    }
+  ],
+  "verdict_spot_checks": {
+    "verdicts_challenged": 0,
+    "verdicts_confirmed": 12,
+    "notes": "Spot-checked 12 entries across all verdict categories. PROS-007 (standard_physics) correctly identifies field decay as trend extrapolation. PRED-TESLA-002 (unfalsifiable) correctly identifies circular VA=1.574c reasoning. W024 (falsified) correctly matches dome's own self-falsification. PRED-R002 (standard_physics) correctly identifies SAA threshold as WMM2025 extrapolation. PRED-PARALLAX-001 (falsified) correctly identifies catastrophic failure against Hipparcos. W019/W020 (falsified) correctly challenge dome's 'refined' reclassification. PRED-TIER-1 (pending) appropriately defers until August 2026. PRED-R001 (pending) appropriately defers on long-window SAA separation. Unfalsifiable entries (PRED-NEW-003, PRED-SLIP-004, PRED-CURR-005-REV, PRED-EGG-001) correctly identify absent test criteria. No verdicts overturned."
+  },
+  "stronger_arguments": [
+    {
+      "description": "The catalog contains 26 entries with restates_win set, meaning 28% of all cataloged predictions are restatements of already-confirmed WINs. This ratio should be prominently surfaced in Part 6 prose — it quantifies the dome's prediction-padding strategy more precisely than the current prose does.",
+      "sources": ["data/predictions.json restates_win field"]
+    },
+    {
+      "description": "PROS-003 (the only genuinely prospective prediction with a closed test window) was falsified AND the dome silently suspended it. This single data point deserves more prominence — it's the best available evidence about the dome's actual predictive power when tested prospectively. The current detail_reasoning is excellent but the TLDR is missing for PROS-003.",
+      "sources": ["data/predictions.json PROS-003"]
+    }
+  ],
+  "kernel_of_truth": {
+    "description": "The dome model's predictions page IS structurally impressive: it registers predictions with timestamps, assigns confidence levels, and tracks outcomes. This infrastructure is more transparent than most pseudoscientific frameworks, which typically avoid falsifiable commitments entirely.",
+    "why_it_doesnt_save_claim": "The infrastructure is undercut by three patterns our catalog documents: (1) recycling already-confirmed WINs as 'new' predictions (26 entries, 28%), (2) reclassifying failures as 'refined' (W019, W020, W027-PRED-R006), and (3) timestamping observation records rather than prediction documents (the canary — see Timestamp Error tab). The framework looks rigorous until you examine what it actually tracks."
+  },
+  "recommended_action": "major_rewrite",
+  "recommended_action_detail": "The predictions.json data structure needs cleanup (restates_win:false→null, _meta update or removal, format normalization), and the build's dead count logic should be removed or the schema fields populated. The verdict quality is sound — no verdicts need changing. The taxonomy for restates_win entries needs documented criteria."
+}

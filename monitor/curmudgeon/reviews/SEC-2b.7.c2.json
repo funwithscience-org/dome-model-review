@@ -1,0 +1,112 @@
+{
+  "point_id": "SEC-2b.7",
+  "topic": "April 2026 Scoreboard Drift: Two Scoreboards, One Observation",
+  "reviewed_at": "2026-04-10T11:30:00Z",
+  "cycle": 2,
+  "review_type": "section-new",
+  "queue_id": 3,
+  "current_verdict_holds": true,
+  "confidence": 0.72,
+  "our_argument_summary": "Section 2b.7 documents the April 2026 results.json drift from 33/34 (97.0%) to 35/35 (100.0%) and identifies four specific scoring anomalies: (1) W004/WIN-025 scoreboard split — the 2024 eclipse test is simultaneously REMOVED on the wins tab and confirmed_strong in results.json; (2) TASK-3-1 has pred=obs with noise_floor=0, the hardcoded fingerprint; (3) WIN-027 has null-vs-null auto-confirmed; (4) W001 below_detection_threshold keeps a non-detection out of the failure denominator. Concludes that 100% pass rate is arithmetically unreachable to fail under these rules.",
+  "holes_found": [
+    {
+      "severity": "critical",
+      "category": "w004_identity_confusion",
+      "description": "The section labels the eclipse scoreboard split as 'W004 / WIN-025' and identifies W004 in results.json as the 2024 Eclipse 9-Station test. However, the dome's own raw text (raw-text/02-wins.txt, under 'BELOW DETECTION THRESHOLD') defines 'W004' as 'Noise Floor Limit (empirical recalibration at v50.2 established baseline -22.24 nT)' — a detection-threshold item about the HUA lunar transit empirical baseline, NOT the 2024 eclipse. On the predictions page (raw-text/03-predictions.txt), W004 appears as a baseline reference for the August 2026 eclipse station predictions ('W004 pred -21.7 nT') — again, a baseline, not the 9-station confirmation itself. If the dome's W-number for the 2024 eclipse 9-station confirmation is NOT W004, the entire 'two scoreboards' argument is built on a misidentification. The section's strongest paragraph — that the same observation is simultaneously REMOVED and confirmed_strong — may be comparing two different entries that happen to be about eclipses but are tracked under different IDs.",
+      "root_cause": "The analyst who wrote EXP-055 fetched results.json live and identified an entry about eclipse magnetic data. But the dome's W-number namespace is not the same as the WIN-number namespace, and the W004 label in results.json may refer to the noise-floor calibration baseline rather than the 2024 replication test. Without seeing the actual results.json entry title and fields, we cannot confirm the mapping. The analyst's report says the results.json entry has 'prediction -10 ± 2 nT and observation -17.6 nT' — this matches WIN-025 (BOU 2017 baseline scaled to 2024) rather than W004 (which on the predictions page uses -22.24 as baseline). So either: (a) results.json uses different W-numbers than the wins page, which means 'W004' in results.json IS the eclipse test despite the wins-page W004 being something else — confusing but possibly correct; or (b) the analyst misread the results.json entry. We need independent verification before publishing this claim.",
+      "recommendation": "BEFORE any other edit: re-fetch results.json from the live dome API and dump the W004 entry's full field set to confirm the mapping. If W004 in results.json IS titled '2024 Eclipse 9-Station' (or similar) with prediction -10 ± 2 nT, the section is correct and the W-number collision is a dome-side naming inconsistency worth noting. If W004 in results.json is titled 'Noise Floor Limit' or 'HUA empirical baseline,' the section is wrong and must be rewritten with the correct identifier. This is a binary verification — do not publish until it is done.",
+      "blocker": true
+    },
+    {
+      "severity": "major",
+      "category": "direction_correct_snr_criterion_unverified",
+      "description": "The section claims: 'results.json defines a pass as direction_correct AND snr_sufficient.' This is stated as fact but the source of this claim is not cited. Did the analyst read the dome's code that generates results.json? Did results.json itself document its scoring rule? Or was this inferred from the field names (sigma_distance, overshoot_ratio, etc.)? A dome defender can say: 'You have misrepresented our scoring algorithm. We do not use direction_correct AND snr_sufficient — we use a more nuanced criterion that you did not examine.' The reductio ad absurdum that follows ('would count as confirmed at -30, -100, or -10000') depends entirely on the accuracy of this criterion description.",
+      "recommendation": "Cite the source: 'results.json includes a boolean field direction_correct and a field snr_sufficient [or whatever the actual field names are]; the auto_verdict field resolves to confirmed_strong when both are true, as observed in the W004 entry where sigma_distance = 3.8 yet auto_verdict = confirmed_strong.' If the criterion was inferred rather than documented, say so explicitly: 'The scoring rule appears to be [X] based on the observed fields; the dome site does not publish the scoring algorithm separately.' Transparency about inference is stronger than confident claims that could be wrong.",
+      "blocker": false
+    },
+    {
+      "severity": "major",
+      "category": "finlay_2020_uncertainty_extrapolation",
+      "description": "The section claims: 'CHAOS-7 field uncertainties reported by Finlay et al. 2020 are 1-3 nT at the internal-field level, which translates to a nonzero angular uncertainty on any derived separation quantity.' Two issues: (1) The Finlay et al. (2020) paper reports CHAOS-7 model uncertainties for magnetic field components, not for derived angular quantities like 'pole-separation angle.' The translation from field uncertainty to angular uncertainty requires a specific error-propagation calculation that is not shown. A dome defender who has read the paper can say: 'You cited uncertainties in nanotesla and asserted they apply to angular measurements without showing the math.' (2) The TASK-3-1 entry is about SAA exponential cell separation (an angular measurement), not about magnetic field strength directly. The uncertainty framework may be different for angular vs. field-strength measurements. The argument that noise_floor=0 is impossible is intuitively correct but the citation does not directly support the specific claim being made.",
+      "recommendation": "Either (a) show the error propagation: 'At 1-3 nT field uncertainty over typical SAA separations of ~50 deg, the angular uncertainty propagates to [X] deg, which is incompatible with noise_floor=0'; or (b) make the argument more directly: 'No geophysical measurement reported in peer-reviewed literature has zero uncertainty. TASK-3-1 reports noise_floor=0 and sigma_distance=0 simultaneously — this is characteristic of a value written back from the model rather than compared against an independent measurement, regardless of the specific uncertainty budget.' Option (b) is more robust because it does not depend on a specific citation.",
+      "blocker": false
+    },
+    {
+      "severity": "moderate",
+      "category": "reductio_lacks_upper_bound",
+      "description": "The sign-test reductio argues that a prediction of -10 ± 2 counts as confirmed at -17.6, -30, -100, or -10000. But reasonable scoring systems often include implicit upper bounds (the SNR threshold acts as a floor, not a ceiling, but large overshoot ratios might trigger a separate check). If results.json has any overshoot or outlier filtering that we did not examine, the reductio fails. The section should acknowledge whether an upper-bound check exists.",
+      "recommendation": "Add one sentence: 'We checked results.json for overshoot or outlier thresholds and found none; the scoring logic as expressed in the JSON fields contains no upper bound on acceptable deviation in the direction-correct case.' If this check was NOT done, say 'We did not find documented upper-bound thresholds in results.json; if such thresholds exist in the dome's scoring code, they are not reflected in the JSON fields.' This preempts the 'you missed our outlier filter' defense.",
+      "blocker": false
+    },
+    {
+      "severity": "moderate",
+      "category": "null_vs_null_dismissible_as_bug",
+      "description": "The WIN-027 null-vs-null finding is strong but a dome defender can trivially dismiss it: 'That is a data-entry gap we will fix in the next commit. It does not reflect our scoring methodology.' The section presents it as a structural scoring pathology, but the defender can reframe it as a one-off oversight. To make this argument stick, we need to show that the null entry is not a bug but a pattern — e.g., by identifying other entries with missing values, or by showing that the null entry has been present across multiple versions of results.json.",
+      "recommendation": "If there are other entries with null prediction or observation values (even partially — e.g., prediction.unit=null while prediction.value is populated), cite them. If WIN-027 is the only null-vs-null entry, say so explicitly and note that the entry has survived across at least N versions of results.json without correction, which suggests it is not an oversight but an accepted state. Alternatively, frame it as: 'Even as a one-off bug, its presence in the 35/35 denominator means the 100% figure includes at least one vacuous confirmation — a denominator inflation that a manual review should have caught.' This framing survives the 'we will fix it' defense.",
+      "blocker": false
+    },
+    {
+      "severity": "moderate",
+      "category": "counts_against_model_math_unstated",
+      "description": "The W001 detection-threshold paragraph says: 'The 100% pass rate is computed as passing / (passing + failing-that-count).' This is our reconstruction of the scoring math, not a documented dome formula. If the dome's actual math is different (e.g., if they compute 34/35 and round, or if they report 'excluding W001' separately), our characterization could be incorrect. The section should distinguish between the dome's reported figures and our inferred computation.",
+      "recommendation": "State the observed figures and infer the formula: 'results.json reports 35 entries, 0 with counts_against_model=true. The dome's reported accuracy is 100.0%. Reverse-engineering from these values, the effective formula is confirmed / (confirmed + counts_against_model=true), which excludes below_detection_threshold items from the failure numerator while keeping them in the total count.' This makes the inference explicit.",
+      "blocker": false
+    },
+    {
+      "severity": "minor",
+      "category": "live_fetch_staleness",
+      "description": "The section says 'we fetched the live file' on 2026-04-09. The results.json endpoint is live and changes with every dome commit (the poller summary shows 20 automated commits in 24h). If the dome modifies results.json between our fetch and publication, any specific field values we cite could be stale. The section currently presents a point-in-time snapshot as if it were a permanent state.",
+      "recommendation": "Add a parenthetical: '(all values from results.json as fetched 2026-04-09; the file is live and may have been updated since).' This is defensive boilerplate but protects against 'we fixed that already' retorts.",
+      "blocker": false
+    },
+    {
+      "severity": "minor",
+      "category": "kernel_paragraph_placement",
+      "description": "The 'Kernel of truth' paragraph is the second-to-last paragraph, placed between the four anomaly findings and the data-file-update note. In Sections 2b.1 through 2b.6, the kernel of truth (if present) does not appear as a labeled paragraph. The explicit label makes this section stylistically inconsistent with the rest of Part 2b.",
+      "recommendation": "Either remove the 'Kernel of truth.' bold label and integrate the paragraph as unlabeled prose (matching 2b.1-2b.6 style), or check whether earlier sections should also have an explicit kernel acknowledgment. Stylistic inconsistency in a section about the dome's inconsistencies is ironic.",
+      "blocker": false
+    }
+  ],
+  "stronger_arguments": [
+    {
+      "description": "The section could strengthen the TASK-3-1 argument by checking whether any other results.json entry has sigma_distance=0 AND noise_floor=0 simultaneously. If TASK-3-1 is the ONLY entry with both zeros, it is a statistical outlier among the dome's own entries — the dome's own scoring system treats other WINs as having nonzero measurement uncertainty but treats this one as having zero. That internal inconsistency within results.json is stronger than citing an external paper's uncertainty estimates.",
+      "sources": ["results.json entries with sigma_distance and noise_floor fields"]
+    },
+    {
+      "description": "The section could note that the 33/34 → 35/35 transition happened without any public announcement or changelog entry on the dome site. Version updates (V50→V51→V51.1) are documented in the evolution page, but scoring-methodology changes are silent. This is itself a finding: the scoreboard rules changed, the pass rate jumped from 97% to 100%, and the only record is a git diff that most readers will never see.",
+      "sources": ["raw-text/06-evolution.txt (no mention of results.json methodology change)", "git log for the dome repo"]
+    },
+    {
+      "description": "The dome's uncounted-failures.json entries (FAIL-006 and FAIL-007) confirm that WIN-010 and WIN-025 are both labeled REMOVED on the dome's wins.html as of 2026-03-15, citing storm contamination. If results.json still scores the same observation as confirmed_strong, the contradiction is documented from BOTH sides — the dome's wins tab and our own failure tracking. Cross-referencing uncounted-failures.json in Section 2b.7 would make the argument self-contained rather than dependent on a single results.json fetch.",
+      "sources": ["data/uncounted-failures.json FAIL-006, FAIL-007"]
+    }
+  ],
+  "kernel_of_truth": {
+    "description": "Section 2b.7 identifies a genuine and important contradiction in the dome's scoring infrastructure. The insight that a live API endpoint and a manually curated wins page can disagree on the same observation — and that the disagreeement reveals the scoring rules rather than hiding them — is analytically sharp. The dome's move from 97% to 100% by adding entries with zero noise floors and null values IS the kind of scoreboard management that deserves documentation. The section's overall argument is correct: a 100% pass rate computed under rules that cannot produce failure is not evidence of predictive success.",
+    "why_it_doesnt_save_claim": "The section's argument is correct at the strategic level but fragile at the evidence level. The W004/WIN-025 mapping is unverified, the scoring-rule description is uncited, and the CHAOS-7 uncertainty citation does not directly support the specific claim. If ANY of these evidence-level claims is wrong, a dome defender can dismiss the entire section as 'they didn't even check which entry they were criticizing.' The fix is verification, not rewriting."
+  },
+  "recommended_action": "minor_edit",
+  "action_gating": "One critical verification (W004/WIN-025 identity in results.json) must be completed before this section can be considered safe. If the verification confirms the mapping, the section needs only moderate edits (cite the scoring-rule source, fix the Finlay et al. extrapolation, add reductio caveats). If the verification shows W004 is NOT the 2024 eclipse test, the scoreboard-split paragraph must be rewritten with the correct identifier and re-verified.",
+  "gating_conditions_before_clean_bill": [
+    "1. Re-fetch results.json from dome API and dump the entry labeled W004 (or whatever the dome's identifier is for the 2024 eclipse 9-station test). Verify that the entry in Section 2b.7 with prediction -10 ± 2 nT is correctly identified. (CRITICAL)",
+    "2. Cite the source of the 'direction_correct AND snr_sufficient' scoring criterion — is it documented in the dome's code, inferred from field names, or stated on the dome site? (MAJOR)",
+    "3. Either show the error-propagation math for CHAOS-7 field uncertainty → angular uncertainty, or replace the Finlay et al. citation with a direct 'no measurement has zero uncertainty' argument. (MAJOR)",
+    "4. Check whether other results.json entries have sigma_distance=0 AND noise_floor=0. If TASK-3-1 is unique, note this as internal inconsistency within the dome's own scoring. (MODERATE)",
+    "5. Confirm WIN-027 null-vs-null has persisted across multiple results.json versions — if it has, it is a feature not a bug. (MODERATE)",
+    "6. Remove or re-integrate the 'Kernel of truth.' bold label to match Part 2b style. (MINOR)"
+  ],
+  "citation_check": {
+    "citations_verified": [
+      "uncounted-failures.json FAIL-006 and FAIL-007 — confirmed WIN-010 and WIN-025 marked REMOVED on dome wins.html as of 2026-03-15",
+      "ISS-671 — confirmed as the originating issue for this section"
+    ],
+    "citations_failed": [
+      "W004 / WIN-025 mapping — UNVERIFIED. The dome's raw-text assigns W004 to 'Noise Floor Limit (empirical recalibration)' not to the 2024 eclipse test. The analyst may have used a different numbering from results.json. NEEDS VERIFICATION.",
+      "Finlay et al. 2020 — cited for 1-3 nT internal-field uncertainty. The paper exists and reports CHAOS-7 uncertainties, but the specific claim that this 'translates to a nonzero angular uncertainty on any derived separation quantity' requires error propagation not shown in the section."
+    ],
+    "citations_unchecked": [
+      "results.json field values (prediction.value, observed.value, sigma_distance, overshoot_ratio for W004 and TASK-3-1) — taken from the analyst's EXP-055 report without independent verification by the curmudgeon. A re-fetch would settle this."
+    ]
+  },
+  "deeper_analysis": "Section 2b.7 is doing exactly the right kind of analytical work — taking the dome's own structured data endpoint and showing that the scoring rules produce an unfalsifiable pass rate. This is the most powerful kind of criticism because it uses the dome's own transparency against its claims. The four anomalies identified (scoreboard split, pred=obs fingerprint, null-vs-null, detection-threshold escape) are individually strong and collectively devastating.\n\nBUT: the section's credibility hinges on getting the evidence right, and the W004/WIN-025 mapping uncertainty is a serious vulnerability. If a dome defender can show that W004 in results.json is the noise-floor calibration baseline (which is what the dome's own wins page calls it) rather than the 2024 eclipse test, the opening argument of the section — the dramatic 'two scoreboards, one observation' framing — collapses. The defender does not need to rebut the other three anomalies; they just need to say 'the authors of this review did not correctly identify which entry they were criticizing' and the section's authority is damaged.\n\nOn the other side of the argument: the dome's W-number namespace is legitimately confusing. W004 on the wins page is 'Noise Floor Limit,' but the dome may reuse the W004 label in results.json for a different entry (the eclipse test). The analyst who wrote EXP-055 may have been working from the actual results.json data where W004 IS the eclipse entry. If so, the dome has two different things both called W004 — which is itself a finding worth documenting (namespace collision in the dome's own tracking system). But we cannot assert the mapping without verification.\n\nThe other three anomalies (TASK-3-1, WIN-027 null, W001 threshold) are on firmer ground because they do not depend on identifier mapping — the field values speak for themselves. Even if the W004 argument falls, the section still demonstrates that the 100% pass rate includes at least one pred=obs entry with zero noise floor, one null-vs-null confirmation, and one detection-threshold exclusion. That is enough to sustain the headline claim that the scoring rules make failure arithmetically unreachable.\n\nRecommendation to decider: verify the W004 mapping before the next publish cycle. If confirmed, leave the section as-is with minor edits. If disconfirmed, rewrite paragraph 2 with the correct identifier and retest. Do not publish this section's strongest claim on unverified identifier mapping."
+}

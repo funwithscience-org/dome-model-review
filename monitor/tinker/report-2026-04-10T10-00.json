@@ -1,0 +1,222 @@
+{
+  "generated_at": "2026-04-10T10:00:00Z",
+  "report_date": "2026-04-10",
+  "run_label": "run-1 (morning)",
+  "session": "exciting-confident-turing",
+  "mode_selected": "cost_engineering",
+  "mode_reason": "Mode 1 and Mode 2 quick checks both green. All agents producing on schedule, FUSE 3/3 checked files match GitHub. All 4 PROPs are implemented and verified. Previous report (21:43Z yesterday) recommended writing PROP-005 as top priority for the next Mode 3 run. Pipeline healthy → Mode 3.",
+  "modes_checked": {
+    "pipeline_health": "green — all 8 agents producing. Poller 10h (12h cadence). Curmudgeon 2h. Analyst 0h. Decider 6h (4h cadence, slightly past due but within jitter). Integrity ran 2h ago. Social due in ~1h. Workspace-sync 3h ago.",
+    "infrastructure": "green — FUSE hash check 3/3 files match GitHub (wins.json, sections.json, generate-html.js). No auth check performed this run (all 4 PROPs verified last run, no infra suspicion).",
+    "cost_engineering": "PROP-005 written this run (decider pre-flight gate). 7-day decider no-op rate validated at 42% (18/42 runs). Social no-op rate ~50%. Priority queue has 8 items at BAU cadence — a separate observation.",
+    "proposals": "PROP-005 written. 0 self-fixes this run."
+  },
+  "pipeline_health": {
+    "agents_running": 8,
+    "agents_stalled": [],
+    "output_freshness": {
+      "poller": "10h ago (12h cadence → within window)",
+      "analyst": "0h ago (2h cadence → fresh)",
+      "curmudgeon": "2h ago (4h cadence → fresh)",
+      "decider": "6h ago (4h cadence → slightly past, next run due imminently at 11:03Z)",
+      "integrity": "2h ago (daily 9 AM → ran today)",
+      "social": "12h ago (daily 11 AM → due at ~10:05Z today)",
+      "tinker": "this run",
+      "workspace_sync": "3h ago (4h cadence → fresh)"
+    },
+    "curmudgeon_phase": "Phase 1 Cycle 2, items_reviewed=71 / total_items=69 (sections bleeding past WIN count — known display quirk, not a bug)",
+    "open_issues": 10,
+    "closed_issues": 591,
+    "priority_queue": {
+      "depth": 8,
+      "mode": "bau",
+      "drain_rate_at_bau": "1 item per 4h run = ~6/day → queue drains in ~32h",
+      "oldest_item_age_h": 12,
+      "note": "Queue grew from 1 to 8 in the last 12h due to EXP-053/054/055/056/059 integrations. BAU mode is working as designed (churn-and-burn requires human note to activate). At 8 items and 4h cadence, the curmudgeon will take ~32 hours to clear the queue. This is not a bug but is a throughput observation — the human may want to toggle churn-and-burn if fast review turnaround matters."
+    },
+    "expansion_tracker": "57 complete/integrated, 1 pending, 58 total"
+  },
+  "findings": [
+    {
+      "severity": "moderate",
+      "category": "efficiency",
+      "description": "PROP-005 written: Decider pre-flight work check. Adds a Step 0c to the decider dispatcher that checks all 5 work signals (new WINs, pending curmudgeon reviews, pending expansions, new external reports, human notes) in one bash block before any reference files are read. If all zero, writes a minimal quiet-run report and exits. Estimated to save ~700 lines of reference file reads per no-op run (42% of 7-day history).",
+      "evidence": "7-day analysis: 42 decider reports, 18 no-op (42%). Prompt: 204 lines + 4 reference files totaling ~715 lines. On no-op runs, ALL reference content is loaded and never used. PROP-005 adds ~35 lines to the dispatcher but eliminates the 715-line reference load on quiet runs.",
+      "suggested_fix": {
+        "file": "monitor/tinker/proposals/PROP-005.json",
+        "find": null,
+        "replace": null,
+        "rationale": "Full proposal with exact find/replace text written to PROP-005.json. Ready for human review and apply."
+      },
+      "self_fixable": false,
+      "fix_applied": false,
+      "prop_candidate": "PROP-005"
+    },
+    {
+      "severity": "minor",
+      "category": "efficiency",
+      "description": "Priority queue throughput observation: 8 items queued, BAU mode (4h cadence), estimated 32h drain time. The queue accumulated 7 new items in the last 12 hours from a burst of expansion integrations (EXP-053/054/055/056/059). This is not a bug — churn-and-burn requires a human note to activate, and BAU drains 1 item per run. But the human should be aware that curmudgeon quality reviews of recently integrated expansions will lag by 32+ hours at current throughput.",
+      "evidence": "Priority queue: queue_id 2-9, oldest pushed_at 2026-04-09T22:01Z (12h ago). Curmudgeon runs every 4h, pops 1 item per run. 8 items / 6 runs per day ≈ 32h to drain. Curmudgeon has already reviewed 1 item from the queue (EXP-050-proposal, queue_id=1, moved to history).",
+      "suggested_fix": {
+        "file": null,
+        "find": null,
+        "replace": null,
+        "rationale": "No prompt fix needed. If the human wants faster queue drain, they can toggle churn-and-burn via human note: {\"action\": \"set_curmudgeon_mode\", \"mode\": \"churn-and-burn\"} in monitor/decisions/human-notes.json. This would bump curmudgeon to 30-min cadence and drain the queue in ~4 hours."
+      },
+      "self_fixable": false,
+      "fix_applied": false
+    },
+    {
+      "severity": "minor",
+      "category": "efficiency",
+      "description": "Counter-argument to PROP-005 (evenhandedness): The pre-flight gate introduces a new failure mode: if any of the 5 signal sources crash silently (returns 0 instead of an error), the decider skips work. The '|| echo 0' fallbacks are necessary for robustness but also mask failures. Additionally, Step 1i poll-summary triage provides a light drift-detection function even on quiet runs — PROP-005 would skip this. These are secondary to the 42% waste reduction but should be weighed.",
+      "evidence": "Decider prompt Step 1i: 'scans for analyst_priority: HIGH/MEDIUM items'. This runs even when curmudgeon/expansion signals are zero. In practice, Step 1i has created issues (ISS-699 from the 23:10 run yesterday) during otherwise-quiet runs. PROP-005 would have classified that run as 'quiet' and skipped 1i. However: ISS-699 was created from a social draft, not a poll-summary finding, so the pre-flight would have caught it via the human_notes signal.",
+      "suggested_fix": null,
+      "self_fixable": false,
+      "fix_applied": false
+    },
+    {
+      "severity": "minor",
+      "category": "self",
+      "description": "Previous report recommended updating tinker-proposals-and-fixes.md to make verification_pattern a hard requirement at PROP-write time. This run did NOT apply that self-fix (Mode 3 budget spent on PROP-005 instead). Deferred to next Mode 4 run. However: PROP-005 was written WITH a verification_pattern, so the lesson from PROP-003/004 was applied manually even though the enforcement isn't in place yet.",
+      "evidence": "PROP-005.json includes: \"verification_pattern\": \"grep -q 'Pre-flight Work Check' monitor/prompts/decider.md && echo FIXED || echo STILL_BROKEN\"",
+      "suggested_fix": {
+        "file": "monitor/prompts/reference/tinker-proposals-and-fixes.md",
+        "find": "Step 2a PROP template — make verification_pattern a hard requirement",
+        "replace": "Deferred to next Mode 4 run",
+        "rationale": "Self-discipline worked this time; enforcement still needed for future-proofing."
+      },
+      "self_fixable": true,
+      "fix_applied": false
+    }
+  ],
+  "previous_followup": [
+    {
+      "finding": "PROP-003: digest-reviews.js processedWinIds legacy fallback",
+      "status": "FIXED",
+      "evidence": "PROP-003.json status=implemented, verified in last run (21:43Z). No re-escalation needed.",
+      "do_not_re_escalate": true
+    },
+    {
+      "finding": "PROP-004: build.js hardcoded workspace path",
+      "status": "FIXED",
+      "evidence": "PROP-004.json status=implemented, verified in last run (21:43Z). No re-escalation needed.",
+      "do_not_re_escalate": true
+    },
+    {
+      "finding": "Social agent daily no-op rate",
+      "status": "ACKNOWLEDGED",
+      "evidence": "Social had 2 runs on April 9: run-1 (11:09Z, substantive — rankings update, draft strategy) and run-2 (22:45Z, no-op — 'nothing changed since run-1'). Social runs daily on Sonnet. The scheduled task shows lastRunAt 2026-04-09T21:43Z (run-2 was the evening), next at 10:05Z today. One run/day seems to be the natural cadence, with occasional second runs. Social no-op rate is ~50% when it runs twice in a day, but approaching 0% when running once daily. The daily cadence already right-sizes this. No PROP needed — social is Sonnet, not Opus, and its runs are relatively cheap."
+    },
+    {
+      "finding": "Decider Haiku gate proposal (queued as PROP-005 candidate)",
+      "status": "WRITTEN",
+      "evidence": "PROP-005 written this run. Chose a prompt-level pre-flight gate over a separate Haiku agent — simpler architecture, no new scheduled task, same savings. The Opus model still loads but short-circuits before reading reference files."
+    },
+    {
+      "finding": "tinker-proposals-and-fixes.md verification_pattern enforcement",
+      "status": "STILL_OPEN",
+      "evidence": "Not applied this run. Deferred to Mode 4. PROP-005 was manually written with verification_pattern, proving the lesson landed even without enforcement."
+    }
+  ],
+  "open_issue_health": {
+    "total_open": 10,
+    "total_closed": 591,
+    "aged_out": [],
+    "repeated_deferrals": [],
+    "missing_patches": [],
+    "zombie_fixes": [],
+    "note": "Open issues dropped from 13 to 10 since last run (3 closed by decider). 3 pending-human (ISS-442, ISS-675, ISS-699), 1 blocked-curmudgeon (ISS-696), 6 assigned-analyst, 1 open. No aged-out patterns detected. The 3 pending-human items should be flagged to the human — they can only be unblocked by operator action."
+  },
+  "cost_engineering": {
+    "agent_efficiency": [
+      {
+        "agent": "decider",
+        "recent_runs_checked": 42,
+        "substantive_runs": 24,
+        "no_op_runs": 18,
+        "estimated_waste_pct": 42,
+        "model": "opus",
+        "cadence": "4h (6 runs/day)",
+        "recommendation": "PROP-005 written: pre-flight gate in dispatcher. Estimated 60-70% token reduction on no-op runs."
+      },
+      {
+        "agent": "social",
+        "recent_runs_checked": 4,
+        "substantive_runs": 2,
+        "no_op_runs": 2,
+        "estimated_waste_pct": 50,
+        "model": "sonnet",
+        "cadence": "daily (sometimes runs twice due to jitter/resets)",
+        "recommendation": "No action needed. Sonnet is cheap and the daily cadence is already right-sized. Double runs are occasional, not systematic."
+      },
+      {
+        "agent": "analyst",
+        "recent_runs_checked": "tracker state",
+        "note": "57/58 expansions complete. 1 pending (recent). Mode 4 fingerprint hunt fills idle cycles. No waste detected — analyst has real work every run.",
+        "model": "opus",
+        "cadence": "2h"
+      },
+      {
+        "agent": "curmudgeon",
+        "recent_runs_checked": "last 10 reviews",
+        "substantive_runs": 10,
+        "no_op_runs": 0,
+        "model": "opus",
+        "cadence": "4h",
+        "recommendation": "Healthy. Zero no-op rate. Priority queue (8 items) ensures work exists for the foreseeable future. When queue drains and Cycle 2 Phase 1 completes, Phase 2 holistic checks begin — also substantive."
+      },
+      {
+        "agent": "tinker (self)",
+        "recent_runs_checked": 3,
+        "note": "This run: Mode 3 deep work, PROP-005 written. Previous run: PROP-003/004 closure + PROP-005 design. Run before that: infrastructure verification. Self-waste eliminated after PROP-003/004 escalation loop was broken. Current efficiency: good — every run produces deliverables.",
+        "model": "opus",
+        "cadence": "daily"
+      }
+    ],
+    "proposals_written": [
+      {"id": "PROP-005", "summary": "Decider pre-flight work check — early exit on quiet runs", "priority": "medium"}
+    ],
+    "implemented_since_last_report": [],
+    "cumulative_estimated_savings": "PROP-001/002 (correctness fixes, not token savings). PROP-003 (correctness — prevented Cycle 2+ under-coverage). PROP-004 (correctness — dynamic session detection). PROP-005 (first cost PROP — estimated 2-3 Opus reference-file-read equivalents saved per day during quiet-dome periods). Tinker has now produced its first pure efficiency proposal."
+  },
+  "schedule_audit": {
+    "dome-poller": {"cron": "0 */12 * * *", "enabled": true, "prompt_says": "Every 12h", "match": true},
+    "dome-analyst": {"cron": "0 */2 * * *", "enabled": true, "prompt_says": "Every 2h", "match": true},
+    "dome-curmudgeon": {"cron": "0 */4 * * *", "enabled": true, "prompt_says": "Every 4h (BAU)", "match": true},
+    "dome-decider": {"cron": "0 */4 * * *", "enabled": true, "prompt_says": "Every 4h", "match": true},
+    "dome-integrity": {"cron": "0 9 * * *", "enabled": true, "prompt_says": "Daily 9 AM", "match": true},
+    "dome-tinker": {"cron": "30 10 * * *", "enabled": true, "prompt_says": "Daily 10:30 AM", "match": true},
+    "dome-social": {"cron": "0 11 * * *", "enabled": true, "prompt_says": "Daily 11 AM", "match": true},
+    "dome-workspace-sync": {"cron": "0 */4 * * *", "enabled": true, "prompt_says": "Every 4h", "match": true},
+    "disabled_tasks": ["dome-prose-extraction", "dome-decider-catchup-1", "dome-decider-catchup-2", "dome-integrity-post-refactor", "dome-daily-summary-apr7", "curmudgeon-cycle2-alert"],
+    "note": "All 8 active tasks match their prompt descriptions. 6 disabled one-time/legacy tasks — no action needed. Decider prompt line 17 says 'Analyst (every 30min)' and 'Curmudgeon (every 10min)' which are stale — actual schedules are 2h and 4h respectively. These are cosmetic prompt errors in the decider's Context section, not functional issues (the decider doesn't use them for routing). Minor prompt fix candidate for Mode 4."
+  },
+  "recommendations": [
+    {
+      "priority": 1,
+      "type": "human_decision",
+      "description": "Review and apply PROP-005 (decider pre-flight gate). The PROP contains exact find/replace text for monitor/prompts/decider.md. No code changes, no new files — just a prompt insertion. Apply, run `node build.js html && node test.js` to verify no build breakage, commit.",
+      "prop_id": "PROP-005"
+    },
+    {
+      "priority": 2,
+      "type": "human_decision",
+      "description": "Consider toggling curmudgeon to churn-and-burn mode. Priority queue has 8 items (32h drain at BAU). If fast review turnaround on recently integrated expansions matters, add a human note to monitor/decisions/human-notes.json: {\"action\": \"set_curmudgeon_mode\", \"mode\": \"churn-and-burn\", \"status\": \"pending\"}. The decider will honor it on its next run (due ~11:03Z today).",
+      "prop_id": null
+    },
+    {
+      "priority": 3,
+      "type": "self_fix",
+      "description": "Next Mode 4 run: (a) enforce verification_pattern requirement in tinker-proposals-and-fixes.md, (b) fix stale schedule descriptions in decider.md Context section (line 17: 'Analyst every 30min' → 'every 2h', 'Curmudgeon every 10min' → 'every 4h').",
+      "prop_id": null
+    },
+    {
+      "priority": 4,
+      "type": "prop",
+      "description": "Future Mode 3: investigate whether the curmudgeon's Phase 2 holistic checks (coming after Cycle 2 Phase 1 completes) need a pre-flight pattern similar to PROP-005. The curmudgeon currently has zero no-op rate, but Phase 2 is a different workload shape.",
+      "prop_id": null
+    }
+  ],
+  "notes_to_future_tinker": "PROP-005 verification_pattern: `grep -q 'Pre-flight Work Check' monitor/prompts/decider.md && echo FIXED || echo STILL_BROKEN`. If the PROP was applied but the section was renamed, adapt the grep. Priority queue depth=8 at BAU is expected to resolve organically over ~32h unless human toggles churn-and-burn. The stale schedule descriptions in decider.md (line 17) are cosmetic — don't PROP them, just self-fix in the next Mode 4 run."
+}

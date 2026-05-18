@@ -1,0 +1,412 @@
+{
+  "id": "PROP-034",
+  "prop_id": "PROP-034",
+  "title": "Split analyst into baby-analyst (Sonnet, BAU-drain, ~2h cadence) + analyst (Opus, deep work, 4h cadence). Class-based model-split pattern, phased deployment, conservative scope on phase 1.",
+  "authored_by": "tinker (2026-05-13T21:54Z run, in response to DIRECTIVE-20260513-002-split-analyst-baby-vs-deep)",
+  "authored_at": "2026-05-13T21:54:00Z",
+  "status": "design-pending-operator-review",
+  "category": "throughput + cost_engineering + class_based_model_routing",
+  "directive": "DIRECTIVE-20260513-002-split-analyst-baby-vs-deep",
+  "supersedes_prop": [],
+  "amends": [],
+  "depends_on": [
+    "PROP-025 (review_class field — the primary routing axis for the split)",
+    "PROP-027 (class_hint on issues — secondary routing signal)",
+    "PROP-029 (decider writes tracker entry on ROUTE-TO-ANALYST — both baby and analyst dispatch on tracker)",
+    "PROP-030 (backlog-trend monitoring — measurement instrument for validating the split's effectiveness)",
+    "PROP-031 (decider-bau-route source enum — the work-stream baby is designed to drain)"
+  ],
+  "headline_recommendation": "APPROVE phased deployment, NOT full directive-as-stated. Phase 1: baby-analyst on Sonnet at 2h cadence (not hourly), Mode 1 BAU drain ONLY (not Mode 2b, not Mode 1b verification). Phase 2 (conditional on 5-7 days of green PROP-030 metrics): expand baby to Mode 2b attention-inbox sweep. Phase 3 (conditional on Phase 1+2 success): consider 'Mode 1b verification class' carve-out — but only after declaring a `prediction_class` field on predictions.json, because the directive's 'verification-class Mode 1b' is not a pre-existing concept in the codebase. Sequencing rationale lives in §counter_argument and §phased_implementation_plan below.",
+  "executive_summary": {
+    "problem_one_line": "analyst dispatcher's strict-priority ordering (Modes 0 > 1 > 1b > 2 > 2b > 3 > 4) means Mode 1 BAU drain rarely wins the dispatcher slot when curmudgeon raises any work — empirically today (2026-05-13) Mode 1 BAU drain fired exactly once across 4 dispatched runs, while 137 pre-PROP-029-orphan ISSs sit at status='assigned-analyst' and the assigned_analyst_count has been stuck at ~151 for 36+ hours despite a HEALTHY net closure velocity (135/7d).",
+    "fix_one_line": "Decouple BAU drain from Opus-driven deep work by introducing dome-analyst-baby (Sonnet, ~2h cadence, narrow dispatcher: Mode 1 BAU drain only on Phase 1) that reads the SAME expansion-tracker.json + open-issues.json files but is constrained to ONLY pick up items with `source IN {decider-bau-route, decider-m1-route, decider-m3-carry-over}` OR `review_class === 'verification'` OR orphan assigned-analyst ISSs of severity minor/moderate.",
+    "tinker_top_line_recommendations": {
+      "Q1_split_dimension": "HYBRID — primary axis is `review_class` (per PROP-025 author-declared, advisory hint from PROP-027 when class is null). Fallback when `review_class` and `class_hint` are both null: `source` enum. Concretely: baby owns items where (a) `review_class === 'verification'`, OR (b) review_class is null AND `source IN {decider-bau-route, decider-m1-route, decider-m3-carry-over}`, OR (c) the item is an orphan assigned-analyst ISS of severity minor/moderate (pre-PROP-029 backlog). analyst owns everything else: `review_class IN {'deep-attack', 'holistic'}`, OR review_class null AND source NOT in the baby-owned set (typical: `analyst-hnote-author`, `analyst-mode1-orphan-drain` self-authored, manual operator-routed). Rationale: review_class is already authoritative per PROP-025 — using it for model routing extends an existing declared-state surface rather than inventing a new one.",
+      "Q2_boundary_cases_curmudgeon_driven_verification": "If decider routed an ISS to analyst with class_hint='verification', a tracker entry was written with review_class hint inherited. Baby picks it up. On intake, if baby determines the work is actually deep-attack scope (e.g., the curmudgeon review revealed a new argument needs construction, not just verification), baby's escape-hatch is to ESCALATE: write a small `escalate-to-analyst.json` marker in monitor/analyst/expansions/ with `escalated_from: 'analyst-baby'`, `original_review_class: 'verification'`, `new_review_class: 'deep-attack'`, and the rationale. The marker re-routes the item to analyst's next run by being a tracker entry analyst's Mode 1 dispatcher would pick up. Cost of an escalation is one no-op baby run + one normal analyst run, vs the alternative of having baby produce a low-quality deep-attack EXP. Worth it.",
+      "Q3_coordination_writes_to_tracker": "Confirmed: standard PROP-029 multi-writer protection suffices. The existing decider+analyst share-writer protection (a) git pull --rebase at run start, (b) pre-push integrity gate, (c) git merge-conflict detection, (d) non-concurrent scheduling) is symmetric in number-of-writers. Adding a third writer (baby) does not change the protection's correctness — only its frequency of triggering rebases. Expected rebase-conflict rate at the new 3-writer ×~7-12 runs/day cadence: <1 per day, well within current handling capacity. Note: workspace-sync's universal-pusher rescue path (CLAUDE.md §Universal-pusher mode) ALREADY covers `expansion-tracker.json` round-trip from FUSE — no new file needs OWNERSHIP/NEVER_PUSH classification.",
+      "Q4_collision_risk_baby_2h_vs_analyst_4h": "Acceptable. Proposed cadence: baby at `20 */2 * * *` (every 2h at :20), analyst unchanged at `50 */4 * * *` (every 4h at :50). Minimum gap between back-to-back baby↔analyst runs: 30 min (e.g., baby at 04:20Z, analyst at 04:50Z). Per-run clones isolate working state. The narrow contention is the tracker-write race: both could pick up the same item if their clones started before the other wrote 'complete'. Mitigation: each agent claims an item by writing `status='in-progress'` + `claimed_by: <agent-name>` + `claimed_at` to the tracker BEFORE doing the work; on re-read, if the item already has `status='in-progress'` or has been moved to `complete`, agent skips it. This is a small dispatcher change (add a claim-stamp step before work). Same pattern decider+analyst already use implicitly via tracker write-then-work ordering.",
+      "Q1_schedule_hourly_vs_2h": "2h cadence, NOT hourly. The directive proposes hourly (`20 */1 * * *`); my analysis shows that's too aggressive. Math: current backlog is 137 orphan ISSs + 14 tracker pending = ~151 drain candidates. At baby's likely throughput of 5-10 ISSs/run, the backlog drains in 15-30 runs. At hourly cadence, that's 15-30 hours of work; at 2h cadence, 30-60 hours. EITHER cadence drains the backlog within 3-4 days. Steady-state throughput need: decider's PROP-031 BAU 3b routes ~5-10 ISSs/day. At 2h cadence (12 runs/day) baby has 12 dispatcher opportunities to drain ~5-10 new items — i.e., 8-11 of 12 runs/day are no-ops in steady state. At hourly (24 runs/day), 19-22 of 24 runs are no-ops. Sonnet no-op runs cost ~$0.01-0.05 each (context-load only), so the cost delta hourly-vs-2h is ~$0.20-0.40/day — minor, but 2h is the closer fit to the actual work-arrival rate and reduces overall context-load attention on a noisy operator-facing latest-baby-summary stream. Recommend 2h. Hourly remains a fallback if 2h proves insufficient.",
+      "Q2_baby_owns_daily_report_or_share": "Baby writes its own `monitor/analyst-baby/latest-baby-summary.txt` (new directory, new file) — keeps audit trails per-agent and avoids race-writes against analyst's own summary. Tinker's pipeline-health checks should extend their staleness check to cover this new file. Tradeoff: one more thing to track. Worth it for clarity.",
+      "Q3_share_latest_summary_or_separate": "Separate — `latest-baby-summary.txt` lives at `monitor/analyst-baby/latest-baby-summary.txt`, NOT in `monitor/analyst/`. Reason: when an operator-Claude session needs to investigate analyst pipeline health, having the two summaries in different directories makes the agent-distinction obvious in directory listings and `grep`. Operator's morning briefing (latest-decider-summary.txt) can pull from both files.",
+      "Q4_phase1_phase2_phase3_sequencing": "See §phased_implementation_plan for the full sequencing logic. Headline: Phase 1 deploys baby with Mode 1 BAU drain only. Phase 2 (after 5-7 days of green PROP-030 metrics) expands to Mode 2b. Phase 3 considers Mode 1b verification class — but only if `prediction_class` field is introduced first (it doesn't exist today)."
+    },
+    "scope_clarification": "This PROP authorizes design only. All edits are agent-applied prompt edits + one new scheduled task creation + one new directory. NONE are NEVER_PUSH (monitor/prompts/*.md is git-owned agent-applied; scheduled task creation is operator-side via Claude desktop UI or scheduled-tasks MCP). Operator reviews PROP, then either tinker self-applies the prompt edits (under PROP-014-amendment-001 Q6 lifecycle) or operator routes via directive."
+  },
+  "context_verification": {
+    "directive_filed_at": "2026-05-13T17:35:00Z",
+    "tinker_investigated_at": "2026-05-13T21:54:00Z",
+    "empirical_validation_today": {
+      "directive_claim": "analyst ran 4 times today (05:06Z, 09:11Z, 13:04Z, 17:07Z); only the LAST run entered Mode 1 BAU drain",
+      "tinker_measured": {
+        "analyst_runs_today": "5 (mtime evidence on EXP outputs: 04:06Z, 08:11Z, 12:04Z, 16:07Z, 20:05Z). Directive count of 4 was filed at 17:35Z, before the 20:05Z run.",
+        "exp_outputs_today": {
+          "EXP-364-SEC-6.14-c3-batch.json": "04:06Z — c3 batch (7 ISSs), CURMUDGEON-driven Mode 1 normal (not BAU drain)",
+          "EXP-365-kappa-cluster-c5-batch.json": "08:11Z — c5 batch (4 ISSs), CURMUDGEON-driven Mode 1 normal (not BAU drain)",
+          "EXP-323.json": "12:04Z — c4 singleton, CURMUDGEON-driven (not BAU drain)",
+          "EXP-366-stale-tracker-drain-batch.json": "16:07Z — STALE-TRACKER DRAIN BATCH (12 ISSs), Mode 1 BAU drain pattern: 'M1 had 27 pending tracker entries; 10 had ISSs already closed in closed-issues.json...'",
+          "EXP-326-WIN-021-tau-I-framing-close.json": "20:05Z — c4 singleton verification, curmudgeon-driven (not BAU drain)"
+        },
+        "interpretation": "Of 5 analyst runs today, 1 (20%) was a Mode 1 BAU drain. Directive's '1-of-4' claim is verified. The pattern is real — BAU drain wins the dispatcher slot ~1-in-4-or-5 runs."
+      }
+    },
+    "queue_state_at_tinker_investigation": {
+      "ts": "2026-05-13T21:54:00Z (just-computed PROP-030 metrics, this run)",
+      "open_issues_total": 160,
+      "status_open_count": 0,
+      "status_assigned_analyst_count": 151,
+      "status_pending_human_count": 1,
+      "status_blocked_on_curmudgeon_count": 4,
+      "status_monitoring_count": 2,
+      "status_partially_fixed_pending_verification_count": 1,
+      "status_assigned_tinker_count": 1,
+      "age_ge_14d_count": 78,
+      "age_ge_30d_count": 1,
+      "new_issues_velocity_7d": 16,
+      "closed_issues_velocity_7d": 151,
+      "net_velocity_7d_positive": 135,
+      "open_status_trend_36h": "207 (2026-05-12T05:14Z) → 175 (2026-05-13T02:41Z) → 161 (2026-05-13T20:57Z) → 160 (this run) — DECLINING (good)",
+      "assigned_analyst_trend_36h": "150 → 165 → 152 → 151 — FLAT (stuck despite healthy closure rate)",
+      "age_ge_14d_trend_36h": "31 → 56 → 76 → 78 — RISING (items aging in queue)"
+    },
+    "queue_breakdown_for_routing_design": {
+      "assigned_analyst_total": 151,
+      "orphans_no_tracker_entry": 137,
+      "in_tracker_with_pending_status": 14,
+      "in_tracker_with_other_status": 0,
+      "class_hint_distribution": {
+        "(none)": 138,
+        "verification": 6,
+        "deep-attack": 6,
+        "holistic": 1
+      },
+      "severity_distribution": {
+        "minor": 100,
+        "moderate": 48,
+        "major": 2,
+        "info": 1
+      },
+      "age_distribution_assigned_analyst": {
+        "<1d": 2,
+        "1-3d": 8,
+        "3-7d": 4,
+        "7-14d": 26,
+        "14-21d": 61,
+        ">21d": 11,
+        "unknown_age": 39
+      },
+      "interpretation": "138/151 (91%) have NO class_hint — they're the pre-PROP-029 orphan bolus. 100/151 (66%) are severity=minor; 48/151 (32%) are moderate. Only 2 are major. This is a near-perfect fit for Sonnet baby-analyst BAU drain — large volume of mechanical close-out work on low-severity items."
+    },
+    "tracker_state": {
+      "total_items": 63,
+      "pending_non_blocked": 14,
+      "by_source_7d": {
+        "decider-bau-route": 39,
+        "decider-m3-carry-over": 9,
+        "decider-m1-route": 4,
+        "analyst-mode2-hnote-orphan-drain": 2,
+        "analyst-batch-author": 2,
+        "(none)": 3,
+        "analyst-mode1-orphan-drain": 1,
+        "analyst-hnote-author": 1
+      },
+      "by_review_class": {
+        "(none)": 39,
+        "verification": 20,
+        "deep-attack": 4
+      },
+      "interpretation": "39 of 61 7d-tracker entries are source=decider-bau-route — this is exactly the work-stream baby is designed to drain. Their review_class is mostly null (decider doesn't always set it), but their source is consistent and unambiguous. Source-fallback routing handles this cleanly."
+    },
+    "verification_of_directive_premise": "Directive's premise (Mode 1 BAU dispatch starvation) is empirically confirmed: 1-of-5 Mode 1 BAU drain wins today, 137 stuck orphans, assigned_analyst_count flat at 151 despite healthy closure rate. PROP-030 metrics already fire OPERATOR_ESCALATION tier this run (assigned_analyst_count > 150). The structural fix in PROP-031 (BAU 3b routing) is feeding the queue at ~5-10 ISSs/day from decider, and analyst's BAU drain can't keep up at 1 successful dispatch per 5 runs."
+  },
+  "design_space_evaluation": {
+    "by_mode": {
+      "directive_proposal": "baby = Mode 1 (BAU drain) + Mode 2b (attention inbox) + Mode 1b (verification class)",
+      "tinker_evaluation": "Partial-approve. Mode 1 BAU drain is the right scope for Phase 1 — it's the empirically-validated bottleneck. Mode 2b (attention inbox) is a natural Phase 2 addition because attention-inbox items are mostly mechanical (per analyst.md's 3-phase OBE/batch/singleton procedure — Phases 1+2 are literally 'mechanical empirical verification', Phase 3 is the substantive one). Phase 1+2 split: baby handles OBE+batch, analyst handles singleton substantive. Mode 1b 'verification class' is NOT a pre-existing concept — predictions.json has no `prediction_class` field. Either (a) we introduce `prediction_class` first (Phase 3 prerequisite), or (b) we accept that Mode 1b stays on Opus for now."
+    },
+    "by_review_class": {
+      "directive_proposal": "baby reads tracker for items where item.review_class === 'verification' OR item.source in {'decider-bau-route','decider-m1-route','decider-m3-carry-over'} AND ISS count > 1 (batchable). analyst reads tracker for items where item.review_class IN {'deep-attack','holistic'} OR singleton high-effort items.",
+      "tinker_evaluation": "Approve with adjustments. The 'AND ISS count > 1 (batchable)' constraint is too restrictive — many decider-bau-route entries are singletons (single ISS = single tracker entry per PROP-029 Q2 spec). Drop the count constraint; baby handles singleton verifications too. Adjusted rule: baby owns items where review_class === 'verification' OR (review_class is null AND source IN baby-owned-set) OR (orphan assigned-analyst ISS with severity in {minor, moderate}). analyst owns: review_class IN {'deep-attack', 'holistic'} OR (review_class is null AND source NOT in baby-owned-set) OR severity=major/critical orphan ISSs."
+    },
+    "by_source": {
+      "directive_proposal": "baby owns: source IN {decider-bau-route, decider-m1-route, decider-m3-carry-over} when review_class='verification'. analyst owns: everything else.",
+      "tinker_evaluation": "Approve with relaxation. The 'when review_class=verification' constraint is too restrictive — many decider-routed entries have null review_class (decider doesn't always set it). Adjusted: source IN baby-owned-set with review_class IN {'verification', null} → baby. source IN baby-owned-set with review_class IN {'deep-attack', 'holistic'} → analyst (decider's explicit declaration overrides source default)."
+    },
+    "the_hybrid_rule_recommended": {
+      "summary": "Primary axis = review_class, fallback axis = source, override = orphan handling.",
+      "decision_tree": [
+        "1. If review_class IN {'deep-attack', 'holistic'} → ROUTE TO analyst (regardless of source)",
+        "2. Else if review_class === 'verification' → ROUTE TO baby",
+        "3. Else (review_class is null):",
+        "   3a. If source IN {'decider-bau-route', 'decider-m1-route', 'decider-m3-carry-over'} → ROUTE TO baby",
+        "   3b. Else → ROUTE TO analyst (default safe: judgment-heavy)",
+        "4. Orphan handling (assigned-analyst ISS not in tracker):",
+        "   4a. If severity IN {'minor', 'moderate'} → baby (creates a self-authored tracker entry, then processes)",
+        "   4b. If severity IN {'major', 'critical'} → analyst (judgment-heavy)",
+        "   4c. If severity is null → analyst (default safe)"
+      ]
+    }
+  },
+  "phased_implementation_plan": {
+    "rationale": "The directive's empirical motivation is real but the system is currently net-draining (closure velocity 7d = 151, new velocity = 16, net = +135). The split is architecturally clean and inexpensive, but a full directive-as-stated deployment (Mode 1 + 2b + 1b verification on Sonnet hourly) crosses three boundaries simultaneously: new agent, new scope, new model. Phased deployment lets us validate each boundary independently and roll back any phase if it underperforms.",
+    "phase_1": {
+      "name": "Phase 1: Mode 1 BAU drain ONLY, Sonnet, 2h cadence",
+      "scope": [
+        "New scheduled task: dome-analyst-baby, cron `20 */2 * * *`, model claude-sonnet-4-6 (or successor available at deployment time).",
+        "New prompt file: monitor/prompts/analyst-baby.md (~50-80 lines, narrow dispatcher).",
+        "Baby's dispatcher ONLY runs Mode 1 BAU drain per the hybrid rule decision tree above. All other modes are explicitly delegated to analyst.",
+        "Analyst's prompt (analyst.md) is edited to add a Phase-1 cross-reference note: 'baby-analyst handles Mode 1 BAU drain — analyst still handles Mode 1 deep-attack singletons. Both consult the same tracker; routing decided by review_class + source.'",
+        "Tinker's pipeline-health check (tinker-pipeline-health.md) is extended to monitor baby's freshness — latest-baby-summary.txt staleness check, every-2h cadence verified.",
+        "PROP-030 backlog-trend metrics gain a `baby_drain_count_7d` field (count of EXPs authored by baby in the last 7 days) so we can measure Phase 1 effectiveness."
+      ],
+      "exit_criteria_phase_to_2": [
+        "assigned_analyst_count drops from 151 to <50 within 7 days (orphan backlog drained)",
+        "OR: 5 consecutive days of net_velocity_7d > 0 with assigned_analyst_count stable or declining",
+        "AND: zero baby-vs-analyst write-collision incidents in tinker reports",
+        "AND: zero baby-authored EXPs flagged by curmudgeon as inadequate-quality on re-review (verifies Sonnet is producing acceptable BAU work)"
+      ],
+      "rollback_criteria": [
+        "If baby-authored EXPs are flagged by curmudgeon as inadequate-quality more than 2 in 7 days → disable baby's scheduled task, route work back to analyst.",
+        "If tracker write-conflicts exceed 1/day for 3 consecutive days → revisit the claim-stamp mechanism in Q4, possibly add a per-item lock file."
+      ]
+    },
+    "phase_2": {
+      "name": "Phase 2: Add Mode 2b attention-inbox Phase 1+2 (OBE + batch) to baby",
+      "conditional_on": "Phase 1 exit criteria met. NOT before.",
+      "scope": [
+        "Edit analyst-baby.md to add Mode 2b dispatcher entry constrained to Phase 1 OBE + Phase 2 small-item batch (the procedural Phase 3 singleton substantive work stays on analyst).",
+        "Reason for the split-within-Mode-2b: attention-inbox Phase 1 (OBE triage) and Phase 2 (batch verification) are explicitly mechanical empirical verification per analyst.md L139-156. Phase 3 (singleton substantive) is judgment-heavy — re-examining a section with fresh eyes.",
+        "Phase 1+2 are perfect Sonnet work. Phase 3 stays on Opus analyst."
+      ],
+      "exit_criteria_phase_to_3": [
+        "Phase 2 runs for at least 14 days with zero quality regressions",
+        "AND: prediction_class field exists on predictions.json (prerequisite for any Mode 1b carve-out)",
+        "AND: operator explicitly requests Phase 3 (this is a high-risk phase due to Mode 1b being a state-bearing surface — our_verdict on dome predictions)"
+      ]
+    },
+    "phase_3": {
+      "name": "Phase 3 (SPECULATIVE): Mode 1b verification-class predictions to baby",
+      "conditional_on": "Phase 2 success AND prediction_class field exists on predictions.json AND operator explicit approval.",
+      "scope": [
+        "Define `prediction_class` field on predictions.json (NEW schema — needs a separate PROP). Values: `verification` (mechanical: look up a number, check a date, compare an observation against a stated value) vs `deep-analysis` (interpret a pattern, weigh competing hypotheses).",
+        "Migrate existing predictions to declared class (analyst Mode 1b authoring writes the class going forward; backfill is operator-side).",
+        "Add Mode 1b verification-class entries to baby's dispatcher."
+      ],
+      "rationale_for_speculative_status": "The directive proposes this, but the codebase lacks the prerequisite schema. Authoring a Mode 1b prediction is state-bearing (it goes into data/predictions.json and affects our public verdicts). Risk of Sonnet authoring a low-quality verdict before we've validated Phase 1+2 → don't even design Phase 3 in detail until Phase 1+2 land."
+    },
+    "estimated_phase_1_implementation_cost": {
+      "scheduled_task_creation": "10 minutes operator-side (Claude desktop UI). One-time.",
+      "prompt_file_authoring": "1-2 tinker runs to author analyst-baby.md from analyst.md scaffold. Tinker can self-apply under PROP-014-amendment-001 Q6 if operator approves this PROP.",
+      "analyst_md_edits": "30 lines of edits (dispatcher cross-reference + Mode 1 BAU drain delegation note). Tinker self-applies.",
+      "claude_md_update": "Extend the Monitoring Pipeline table with the new agent row. Operator-or-tinker.",
+      "tinker_pipeline_health_extension": "5-line addition to the staleness check for latest-baby-summary.txt. Tinker self-applies.",
+      "prop_030_metric_extension": "Add `baby_drain_count_7d` field to backlog-trend computation. Tinker self-applies.",
+      "total_estimated_calendar_time_to_phase_1_live": "1 tinker run + 1 operator review session + 1 scheduled-task creation. ~2 hours total operator+agent attention."
+    }
+  },
+  "scheduled_task_design": {
+    "dome_analyst_baby": {
+      "taskId": "dome-analyst-baby",
+      "description": "BAU tracker drain + (Phase 2) attention-inbox sweep. High volume, narrow scope. Sonnet for cost + literal rule-compliance.",
+      "model": "claude-sonnet-4-6 (or successor available at deployment time)",
+      "cron": "20 */2 * * * (every 2 hours at :20)",
+      "rationale_cron_choice": "2h cadence (not hourly per directive). At hourly, 19-22 of 24 daily runs are no-ops in steady state — wasted context-load cost. At 2h, 8-11 of 12 daily runs are no-ops, which is still slack-heavy but better fits the work-arrival rate. :20 offset chosen to avoid collision with analyst at :50, decider at :10, curmudgeon at :30 — provides a 10-30min isolation window from every other agent's run.",
+      "prompt_file": "monitor/prompts/analyst-baby.md (NEW)",
+      "outputs_directory": "monitor/analyst-baby/ (NEW — parallel to monitor/analyst/)",
+      "outputs": [
+        "monitor/analyst-baby/latest-baby-summary.txt (per-run summary, overwritten each run)",
+        "monitor/analyst-baby/expansions/EXP-NNN-baby-*.json (baby-authored expansions — flagged with `authored_by: 'analyst-baby'` field for curmudgeon's re-review attention)",
+        "monitor/analyst-baby/issue-proposals/proposal-*.json (for assigned-analyst ISS resolution signaling, same convention as analyst)"
+      ]
+    },
+    "dome_analyst_existing": {
+      "taskId": "dome-analyst",
+      "description": "Updated description noting the split. Schedule UNCHANGED.",
+      "model": "claude-opus-4-6 (unchanged)",
+      "cron": "50 */4 * * * (unchanged from current — `50 */4 * * *`)",
+      "prompt_file": "monitor/prompts/analyst.md (EDITED — Phase 1 dispatcher delegation note for Mode 1 BAU drain; Modes 0, 1 deep-attack, 1b, 2, 2b Phase 3, 3, 4, 5 unchanged)"
+    }
+  },
+  "prompt_file_split_design": {
+    "analyst_baby_md": {
+      "purpose": "Narrow-scope drain agent. Inherits philosophical context (kernel-of-truth, dome architecture) by reference to analyst.md rather than duplicating.",
+      "sections_inherited_from_analyst_md_by_reference": [
+        "Content Security (untrusted data discipline)",
+        "Step 0a (refresh clean clone)",
+        "Step 0 (authenticate gh CLI)",
+        "Critical Rules (general discipline)",
+        "Cleanup (mandatory rm -rf clone)"
+      ],
+      "sections_baby_specific": [
+        "Dispatcher — narrow priority order: Mode 1 BAU drain ONLY (Phase 1) / + Mode 2b Phase 1+2 (Phase 2)",
+        "Sonnet-compliance framing: 'process every BAU-eligible item up to budget cap, do not skip on judgment'",
+        "Cost engineering reminder: 'this agent is cheap; batch eagerly; if budget reaches 70% of expected, defer remaining to next 2h cycle'",
+        "Hybrid-rule decision tree (the §design_space_evaluation.the_hybrid_rule_recommended rule, restated as bash filter)",
+        "Escalation protocol: when intake reveals deep-attack scope, write an `escalate-to-analyst.json` marker per Q2 above",
+        "Quality discipline: baby's EXPs MUST include `authored_by: 'analyst-baby'` field so curmudgeon's c4 verification cycle attends with appropriate skepticism on the first few runs"
+      ],
+      "estimated_length": "50-80 lines (vs analyst.md's 295 lines). The brevity is intentional — Sonnet performs better on narrow, explicit instructions than on broad judgment-cued prompts."
+    },
+    "analyst_md_edits": {
+      "dispatcher_section_addition": "After Mode 1 trigger check, add: '**Note: Mode 1 BAU drain is delegated to dome-analyst-baby (Phase 1, PROP-034). This Opus analyst handles ONLY Mode 1 deep-attack singletons and Mode 1 holistic items. Filter the tracker pending list by `review_class IN {deep-attack, holistic} OR (review_class is null AND source NOT IN baby-owned-set)` before entering Mode 1.**'",
+      "mode_1_intake_filter_extension": "Add a node block at the top of Mode 1 entry: filter out items that match the baby-owned rule (review_class=verification or source=decider-*-route with null class). Skip those; they're baby's.",
+      "mode_2b_phase_1_2_delegation_phase_2_only": "If Phase 2 has landed: add 'Phase 1 OBE and Phase 2 batch are delegated to dome-analyst-baby; this analyst handles ONLY Phase 3 singleton substantive items.' Phase 2 edit is conditional and lands as a separate amendment after Phase 1 exit criteria met."
+    },
+    "reference_analyst_mode1_expansions_md_edits": {
+      "class_hint_intake_section_extension": "After the existing class_hint intake table (L89-95), add: 'If `review_class === verification` (declared) OR (`review_class === null` AND source IN baby-owned-set) → this item belongs to dome-analyst-baby. If you (Opus analyst) reach an item in this category, escalate-or-skip — set tracker entry `assigned_to: analyst-baby` and move on. Do not produce a deep-attack EXP for a BAU-drain item.'"
+    },
+    "reference_data_schemas_md_edits": {
+      "expansion_tracker_section_extension": "Add a note: 'expansion-tracker.json is now read by THREE agents under PROP-034: decider (writer, M1 routing), dome-analyst (reader+writer, Mode 1 deep-attack/holistic + Mode 3 defense), dome-analyst-baby (reader+writer, Mode 1 BAU drain). Multi-writer protection is the same as decider+analyst (PROP-029 git pull --rebase + pre-push integrity gate + non-concurrent scheduling).'",
+      "tracker_item_field_additions": "Optional new fields per item: `claimed_by` ('analyst' | 'analyst-baby' | null), `claimed_at` (ISO timestamp). Set by agent BEFORE work begins; cleared when status flips to 'complete'."
+    },
+    "claude_md_edits": {
+      "monitoring_pipeline_table_extension": "Add a row: '| dome-analyst-baby | Every 2h | Sonnet | analyst-baby.md | BAU tracker drain (Phase 1) / + Mode 2b OBE+batch (Phase 2) |'. Phase 2 row-text lands when Phase 2 lands.",
+      "file_ownership_extensions": "Add `monitor/analyst-baby/latest-baby-summary.txt` to workspace-owned. Add `monitor/analyst-baby/expansions/` and `monitor/analyst-baby/issue-proposals/` to append-only directories. The build.js OWNERSHIP and workspace-sync.md OWNED_BY_GIT updates are mechanical."
+    },
+    "workspace_sync_md_edits": {
+      "smart_copy_addition": "If baby writes outputs to monitor/analyst-baby/, workspace-sync's normal smart_copy iteration over monitor/ subdirectories already covers it — no special-case code needed. Verify by reading workspace-sync.md to confirm iteration covers all monitor/ subdirs, not a hardcoded list. (Tinker reads this during Phase 1 implementation.)"
+    }
+  },
+  "dry_run_simulation": {
+    "baseline_today_observed": {
+      "analyst_runs": 5,
+      "mode_1_bau_drain_runs": 1,
+      "exps_authored_bau": 1,
+      "iss_drained_via_bau": 12,
+      "iss_drained_via_other_modes": "approx 11 across c3/c5/c4 batches + singletons",
+      "total_iss_throughput_today": "approx 23 ISSs touched by analyst",
+      "assigned_analyst_queue_change": "+0 net (151 stable; HNOTE-driven drain was zero today)",
+      "opus_runs": 5,
+      "estimated_opus_cost_today": "approx $5-10 (per recent run sizes); 5 runs × $1-2/run"
+    },
+    "phase_1_simulation_today_replayed": {
+      "baby_runs_potential": 12,
+      "expected_baby_no_ops": "approx 3-5 (no Mode 1 BAU-eligible work after the bolus drains)",
+      "expected_baby_drain_runs": "approx 7-9 (each picking up 3-10 BAU items)",
+      "iss_drained_via_baby_one_day": "approx 30-60 (vs today's 12 via analyst's single BAU drain)",
+      "opus_analyst_runs_unchanged": 5,
+      "opus_work_today_unchanged": "c3/c5 batches + singleton — same deep work as today",
+      "assigned_analyst_queue_change": "approx -30 to -60 (orphan backlog finally drained at scale)",
+      "estimated_sonnet_cost_today": "approx $0.30-1.50 (12 runs × $0.05-0.15 per drain run, less for no-op runs at <$0.05)",
+      "estimated_total_cost_today_phase_1": "approx $5-10 Opus + $0.30-1.50 Sonnet ≈ $5-12. Slight increase from today's $5-10 baseline (the Sonnet $0.30-1.50 is net-new). Modest cost-for-throughput tradeoff.",
+      "net_benefit": "approx 30-60 ISSs drained/day vs 12 today. Backlog of 137 orphans drains in 3-5 days (vs current trend: never, queue is flat)."
+    },
+    "phase_1_simulation_steady_state_post_drain": {
+      "baby_runs_per_day": 12,
+      "expected_baby_no_ops": "approx 8-11 (decider produces only ~5-10 new BAU items/day per PROP-031)",
+      "expected_baby_drain_runs": "approx 1-4",
+      "iss_drained_via_baby_per_day": "approx 5-10 (matches decider's PROP-031 production rate — net-zero queue at steady state)",
+      "estimated_sonnet_cost_steady_state": "approx $0.15-0.50/day (mostly no-op runs)",
+      "interpretation": "In steady state, baby is over-provisioned but cheap. The cost of having it on call for the rare days when decider produces 20+ BAU items is worth the constant-low cost."
+    }
+  },
+  "counter_argument": {
+    "stipulated": "Operator explicitly requires this section per directive task_5. Tinker MUST honestly evaluate whether the split is premature/overkill.",
+    "case_a_sample_size_is_one_day_could_be_noise": {
+      "argument": "Today's 1-of-5 Mode 1 BAU drain dispatch rate is a single data point. The system might fire BAU drain more often on quieter days. We have no baseline data on the multi-day BAU dispatch rate.",
+      "counter_evidence": "Queue-history.jsonl shows assigned_analyst_count is FLAT at ~151 over the past 36+ hours despite a healthy closure velocity of 135/7d. If BAU drain were firing more often on average, the queue would be shrinking. The flat queue is the structural evidence — independent of today's 4-vs-5 run count.",
+      "tinker_verdict": "Concern is partially valid but the queue-trend evidence is stronger than the single-day dispatch evidence. Recommendation: log baby-drain-count daily and treat first 7 days as a real measurement; if Phase 1 ends Day 7 with the orphan backlog NOT drained, that's the actual failure mode."
+    },
+    "case_b_recent_fixes_need_steady_state_time": {
+      "argument": "PROP-031 (anti-tap-out) landed 2026-05-11 (2 days ago) and the consolidation language extension landed today. Both increase decider's BAU 3b output rate. Neither has had 5-7 days to demonstrate steady-state. The current backlog drain might be a recovery from the pre-PROP-031 stalled state, not the new steady-state. Adding split-analyst now is changing two variables at once.",
+      "counter_evidence": "PROP-031 has been live 2 days; we've seen 30+ decider-bau-route entries in that window. The CREATION rate of BAU items is established. What's NOT yet visible is whether analyst's BAU drain can keep up — and today's 1-of-5 dispatch suggests no.",
+      "tinker_verdict": "Strong concern. Recommendation: phased deployment is exactly the response to this concern. Phase 1 deploys baby in a 'BAU drain only' scope that is reversible (disable scheduled task → drain stops, no data corruption, no architectural change to roll back). If the system would have drained naturally without baby, baby's no-op rate will be high and we'll know to roll back. If baby drains aggressively and queue shrinks, we'll know it was necessary."
+    },
+    "case_c_cheaper_alternative_analyst_at_2h_cadence": {
+      "argument": "We considered yesterday (2026-05-12 session) that bumping analyst's cadence from 4h to 2h is a much smaller intervention than splitting. At 2h analyst cadence with the SAME dispatcher, BAU drain would fire on ~2-3 of 12 daily runs instead of ~1 of 5. That alone might drain the backlog without architectural complexity.",
+      "counter_evidence": "Bumping analyst to 2h cadence doubles Opus costs (~5 runs → ~10 runs/day) without addressing the underlying issue: Opus's dispatcher is judgment-heavy and gravitates toward 'interesting work' (curmudgeon reviews, defender pivots) rather than BAU drain. Even at 2h cadence, Opus might fire BAU drain on 2-3 of 12 runs vs the directive's preferred 12+ baby runs/day. Cost: ~doubled Opus cost (~$10-20/day) vs Sonnet split (~$5-12/day total) — split is cheaper despite adding an agent.",
+      "tinker_verdict": "The 2h-cadence alternative is real, cheaper to deploy (one cron edit), and reversible. RECOMMENDATION: as a pre-Phase 1 step, BUMP ANALYST TO 2h CADENCE FOR 3 DAYS. If that alone drains the backlog meaningfully (assigned_analyst_count drops below 100), defer the split until next time we see this pattern. If 3 days of 2h-cadence Opus doesn't drain it (most likely outcome — the dispatcher gravity is the issue, not the cadence), proceed to Phase 1 split. This 'try cheaper first' step is operator-friendly and provides a clean fallback path. NOTE: this contradicts the directive's preferred path; the operator should weigh this counter-recommendation explicitly."
+    },
+    "case_d_split_curmudgeon_too": {
+      "argument": "If we split analyst, should we also split curmudgeon? Curmudgeon's batch-gate (PROP-025) already classifies by review_class — same dimension proposed for analyst split. Symmetry argument: do both at once for architectural consistency.",
+      "counter_evidence": "Curmudgeon's review_class-based batching ALREADY handles its workload: verification reviews batch (3 items × 20KB), deep-attack reviews are singleton (1 review per run). Curmudgeon doesn't have the analyst's 'dispatcher gravity toward interesting work' problem because its dispatcher is queue-driven, not mode-driven. There's no observed bottleneck on curmudgeon. Splitting it would be solution-in-search-of-a-problem.",
+      "tinker_verdict": "Operator's stated lean ('analyst first, then curmudgeon if same pattern shows up') is correct. Don't split curmudgeon now. Re-evaluate after Phase 1 of analyst split has 14 days of data."
+    },
+    "case_e_quality_risk_of_sonnet_on_bau_drain": {
+      "argument": "Sonnet authoring expansions might produce lower-quality work than Opus. The 'kernel of truth' standard that analyst.md emphasizes (find what dome got right, acknowledge it, then show why it fails) is judgment-heavy. Sonnet may flatten this into mechanical bust-the-claim work.",
+      "counter_evidence": "BAU drain work is NOT 'find the kernel' work — it's verification close-out: confirming the patch landed cleanly, the citation is correct, the value matches the data file. These are mechanical tasks where Sonnet's literal rule-compliance is a STRENGTH. The deep work (Mode 0 new WIN onboarding, Mode 1 deep-attack singletons) stays on Opus. If Phase 1 reveals Sonnet quality regression on BAU drain, the rollback criteria fire (curmudgeon c4 flags >2 inadequate-quality baby EXPs in 7d → disable baby).",
+      "tinker_verdict": "Risk is real but mitigated by phase 1's narrow scope + curmudgeon's c4 re-review safety net. Acceptable."
+    },
+    "case_f_writers_to_tracker_collision_complexity": {
+      "argument": "Adding a third writer (baby) to the tracker introduces more chances for stale-clone bugs. The decider+analyst dual-writer pattern has already been a source of bugs (CLAUDE.md §FUSE Staleness Warning).",
+      "counter_evidence": "The dual-writer bug class is about FUSE↔git sync, not about multiple agents writing to git. Baby's writes go through its own clone like every other agent, with the same git pull --rebase + pre-push integrity gate. Adding a third writer scales the multi-writer protection symmetrically. The structural risk is bounded.",
+      "tinker_verdict": "Acceptable. The Q4 claim-stamp mechanism adds belt-and-suspenders protection against the new failure mode (two agents picking up the same item)."
+    },
+    "overall_counter_argument_synthesis": "Three of six concerns (a, b, c) are STRONG enough to warrant the phased deployment. One (c — 'try 2h Opus first') is strong enough to potentially PREEMPT the split entirely if it works. The remaining three (d, e, f) are addressable through the phased plan's exit/rollback criteria. RECOMMENDED PATH: (1) operator bumps analyst to 2h cadence as a 3-day experiment FIRST; (2) if backlog drains, defer this PROP; (3) if backlog doesn't drain, deploy Phase 1 of this PROP. This gives the operator a graceful escalation ladder rather than a binary big-or-nothing decision."
+  },
+  "what_NOT_to_do": {
+    "stipulated": "Per directive task_6: explicit 'do not touch' section.",
+    "do_not_redesign_analyst_md_from_scratch": "analyst.md is 295 lines of carefully-evolved Opus instructions. Phase 1 edits are LIMITED to: (1) dispatcher cross-reference note delegating Mode 1 BAU drain to baby, (2) Mode 1 intake filter to skip baby-owned items. No restructure, no philosophy changes.",
+    "do_not_change_prop_025_review_class_semantics": "review_class values remain {'verification', 'deep-attack', 'holistic'} per PROP-025. The split uses these as ROUTING signals, not as authoring guidance. Authors continue to declare review_class per PROP-025 rules.",
+    "do_not_touch_decider_curmudgeon_or_tinker_prompts": "Decider's M1 routing already writes review_class hint via PROP-029. No edit needed. Curmudgeon's c4 verification continues to attend to all EXPs regardless of authoring agent. Tinker's pipeline-health check is the only tinker-side change — and it's additive.",
+    "do_not_introduce_per_task_model_overrides_at_runtime": "Use cowork's scheduled-task model assignment (the `model` field in the task config). No dynamic model-selection logic inside the prompt files.",
+    "do_not_split_curmudgeon_in_this_prop": "Operator's lean: sequence analyst first, watch 14+ days, then re-evaluate curmudgeon. Separate directive if/when warranted.",
+    "do_not_extend_to_mode_0_or_mode_3": "New WIN onboarding (Mode 0) and defense neutralization (Mode 3) are judgment-heavy and stay on Opus. These are not in scope for the split now or in any phase.",
+    "do_not_design_phase_3_in_detail_in_this_prop": "Phase 3 (Mode 1b verification-class predictions) requires prediction_class schema work. That's a separate PROP. This PROP describes Phase 3 only at the 'speculative future direction' level, not at implementable-design level."
+  },
+  "cost_analysis": {
+    "current_baseline_estimated": {
+      "analyst_4h_cadence_opus": "5-6 runs/day × $1-2/run ≈ $5-12/day",
+      "decider_4h_opus": "6 runs/day × $1-2/run ≈ $6-12/day",
+      "curmudgeon_4h_opus": "6 runs/day × $0.50-1.50/run ≈ $3-9/day (often-batchable now per PROP-025)",
+      "tinker_daily_opus": "1 run/day × $0.50-1.50 ≈ $0.50-1.50/day",
+      "pipeline_subtotal": "approx $14-35/day"
+    },
+    "phase_1_estimated": {
+      "analyst_4h_opus_unchanged": "$5-12/day",
+      "baby_2h_sonnet_drain_days_1_to_5": "12 runs/day × $0.10-0.20/run (mixed drain + no-op) ≈ $1.20-2.40/day",
+      "baby_2h_sonnet_steady_state": "12 runs/day × $0.05-0.10/run (mostly no-op) ≈ $0.60-1.20/day",
+      "phase_1_subtotal_steady_state": "approx $14-36/day (range overlap with baseline — net cost-neutral within noise)"
+    },
+    "phase_1_cost_vs_throughput_summary": "Phase 1 adds ~$0.60-2.40/day on top of current baseline. In exchange: 30-60 ISSs drained/day during the first 5 days (~3-5x current), then 5-10 ISSs/day matching decider's BAU production rate. Cost-per-ISS-drained: drops from ~$0.40-1.00 to ~$0.10-0.25 because Sonnet is much cheaper per item.",
+    "rollback_cost": "Disabling baby's scheduled task takes 1 minute operator-side. No data migration needed (tracker entries baby created remain valid; their `assigned_to: 'analyst-baby'` field is informational, not blocking)."
+  },
+  "acceptance_criteria_phase_1": [
+    "Within 7 days of Phase 1 deploy: assigned_analyst_count drops below 80 (from current 151, target 47% reduction)",
+    "AND: zero curmudgeon c4 verification findings of `inadequate-quality` against baby-authored EXPs",
+    "AND: zero tracker write-conflicts requiring manual operator intervention",
+    "AND: PROP-030 backlog-trend metrics show net_velocity_7d remains positive throughout the window",
+    "If all met: declare Phase 1 successful, plan Phase 2.",
+    "If assigned_analyst_count drops to <50 (target 67% reduction): consider Phase 2 immediately rather than waiting full 14 days."
+  ],
+  "implementation_files": [
+    "monitor/prompts/analyst-baby.md (NEW)",
+    "monitor/prompts/analyst.md (EDITED — Mode 1 BAU drain delegation note, ~30 lines added)",
+    "monitor/prompts/reference/analyst-mode1-expansions.md (EDITED — class_hint intake extension noting baby-handles-verification, ~10 lines added)",
+    "monitor/prompts/reference/DATA-SCHEMAS.md (EDITED — expansion-tracker multi-writer note + optional claimed_by/claimed_at fields, ~15 lines added)",
+    "monitor/prompts/reference/tinker-pipeline-health.md (EDITED — staleness check for monitor/analyst-baby/latest-baby-summary.txt, ~5 lines added)",
+    "monitor/prompts/tinker.md (EDITED — backlog-trend metric extension to include baby_drain_count_7d, ~3 lines added in PROP-030 pre-flight block)",
+    "monitor/prompts/workspace-sync.md (VERIFY — confirm smart_copy iteration covers monitor/analyst-baby/ without code change; if hardcoded list, add the directory)",
+    "CLAUDE.md (EDITED — Monitoring Pipeline table row added, File Ownership notes for monitor/analyst-baby/ — ~10 lines added)",
+    "build.js (EDITED — OWNERSHIP object: add monitor/analyst-baby/latest-baby-summary.txt as workspace-owned; add monitor/analyst-baby/expansions/ and issue-proposals/ as append-only — ~5 lines added)",
+    "Scheduled task creation: dome-analyst-baby (operator-side, Claude desktop UI or scheduled-tasks MCP)"
+  ],
+  "implementation_authority": "PROP authorizes design only. On operator approval:",
+  "implementation_authority_steps": [
+    "Step 1 (operator): Decide whether to take the §counter_argument.case_c 'try 2h Opus first' detour. If yes, defer steps 2-6 by 3 days.",
+    "Step 2 (operator): Create dome-analyst-baby scheduled task via Claude desktop UI or scheduled-tasks MCP. Set model=claude-sonnet-4-6, cron=20 */2 * * *, enabled=false initially.",
+    "Step 3 (tinker self-apply under PROP-014-amendment-001 Q6 lifecycle): Author analyst-baby.md, edit analyst.md + reference files + CLAUDE.md + build.js + tinker.md per §implementation_files list. Commit + push.",
+    "Step 4 (operator): Verify analyst-baby.md content. On approval, set dome-analyst-baby enabled=true.",
+    "Step 5 (tinker/operator): Watch first 24h of baby runs — check that latest-baby-summary.txt is fresh, baby's tracker writes are landing, baby is not picking up deep-attack items.",
+    "Step 6 (tinker, every run for 7 days): Append baby_drain_count_7d to PROP-030 metrics; check Phase 1 acceptance criteria; report progress in tinker reports."
+  ],
+  "related_props": [
+    "PROP-025 (review_class — primary routing axis)",
+    "PROP-027 (class_hint — secondary routing signal on ISSs)",
+    "PROP-029 (decider writes tracker entry on ROUTE-TO-ANALYST — both baby and analyst dispatch on tracker)",
+    "PROP-030 (backlog-trend monitoring — measurement instrument)",
+    "PROP-031 (decider-bau-route source enum — work-stream baby drains)",
+    "PROP-032 (BAU triage severity-vs-judgment routing — same conceptual framing applied to decider; this PROP applies it to analyst)"
+  ],
+  "related_directives": [
+    "DIRECTIVE-20260513-002 (this PROP's authoring directive)",
+    "DIRECTIVE-20260511-001 (PROP-031 authoring — decider-side throughput fix; this PROP is the analyst-side mirror)",
+    "DIRECTIVE-20260510-005 (PROP-030 authoring — measurement instrument)"
+  ],
+  "open_questions_for_operator": [
+    "Q-OPERATOR-1: Take the §counter_argument.case_c detour (bump analyst to 2h Opus cadence as a 3-day pre-experiment) or proceed directly to Phase 1 split deployment?",
+    "Q-OPERATOR-2: Approve Phase 1 scope as designed (Mode 1 BAU drain only on Sonnet 2h), OR prefer a wider Phase 1 (Mode 1 + Mode 2b OBE/batch) at the slightly-higher-risk cost?",
+    "Q-OPERATOR-3: 2h cadence (recommended) or hourly cadence (directive-proposed)? My recommendation is 2h with hourly as fallback if 2h proves insufficient.",
+    "Q-OPERATOR-4: Auto-rollback behavior on Phase 1 quality regression (curmudgeon flags >2 baby EXPs as inadequate-quality in 7d): disable baby automatically, OR require operator confirmation before disabling?",
+    "Q-OPERATOR-5: Tinker self-apply authority — should tinker apply the prompt edits under PROP-014-amendment-001 Q6 lifecycle on PROP approval, or does the operator want to review each prompt-file diff individually?"
+  ]
+}

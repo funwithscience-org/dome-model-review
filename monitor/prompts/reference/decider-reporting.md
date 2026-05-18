@@ -1,0 +1,201 @@
+# Decider: Reporting, Issue Management, and Morning Briefing
+
+## Step 3: Cross-Reference Open Issues
+
+Read `monitor/decisions/open-issues.json` (open issues ONLY — fixed/wontfix are in closed-issues.json).
+
+For each new finding:
+- Already tracked? Update the existing issue.
+- Previously closed as wontfix? `node -e "const c=JSON.parse(require('fs').readFileSync('monitor/decisions/closed-issues.json','utf8'));c.issues.filter(i=>i.status==='wontfix').forEach(i=>console.log(i.issue_id,i.win_id,i.description.slice(0,80)))"` — if matching wontfix exists, do NOT re-raise.
+- Genuinely new? Create new issue entry.
+
+When fixed: move from open → closed with `status: "fixed"`, `fixed_at` timestamp.
+
+## Step 4: Daily Report
+
+**Mech 2 verify-on-read gate (PROP-014).** Before writing any `severity: critical` entry in `internal_issues`, OR any `recommended_actions[].action` that contains "OPERATOR" / "REQUIRED" / `requires_operator: true`, AND the source is a curmudgeon review file ≥1h old, run the verify-on-read primitive (`monitor/prompts/reference/state-verification.md` Discipline 2; full procedure in `monitor/prompts/reference/decider-curmudgeon.md` Step 4b). If the cited content is no longer present at HEAD, downgrade severity for that finding and log it in the new `verify_on_read_outcomes` array. Do not write the critical declaration based on a stale citation.
+
+**Mech 3 narrate-cite discipline (PROP-014).** Every paragraph (>1 sentence) in declared-state prose surfaces — `pipeline_status.poller`, `pipeline_status.analyst`, `pipeline_status.curmudgeon`, `pipeline_status.decider` (if present), and `recommended_actions[].action` prose — MUST contain at least one inline citation matching `(file.json:anchor)` or `(file.json)` pointing to a JSON field, log line, or run-output file from THIS run. No narrating from prompt-chain memory of prior reports. Examples:
+
+- ❌ BAD: `"poller": "Net quiet — manual-commit drought continues at 13.5d."`
+- ✅ GOOD: `"poller": "Net quiet — manual-commit drought continues at 13.5d (monitor/status.json:last_poll_note)."`
+- ❌ BAD: `"action": "Push failure: workspace-sync rescue is in place. Operator may want to verify git PAT / credential configuration if recurring."` (the "if recurring" clause is unanchored speculation)
+- ✅ GOOD: `"action": "Push failure for commit <SHA>; workspace-sync rescue executed (monitor/integrity/push-failure-<ts>.json:rescue_outcome). 0 prior 403s in last 7 daily-reports per integrity log."`
+
+The `monitor/scripts/audit-narrative-citations.js` script (TBA, invoked by workspace-sync per Mech 3 Stage 1) will FAIL any paragraph in these surfaces without a citation. Stage 2 verifies the cited file/anchor exists. Stage 3 (semantic match) is operator-sampled.
+
+Add `verify_on_read_outcomes: []` to the daily-report schema below. Each outcome:
+```json
+{
+  "source_review": "monitor/curmudgeon/reviews/<file>.json",
+  "source_reviewed_at": "ISO timestamp of the review",
+  "cited_file": "docs/index.html or build-scripts/generate-html.js or similar",
+  "cited_pattern": "verbatim text the review cited as the problem",
+  "head_sha": "commit SHA verified against",
+  "verified_at": "ISO timestamp of the verify run",
+  "outcome": "still_present_critical_stands | gone_stale_downgraded",
+  "downgrade_target_severity": "moderate | minor (only if outcome=gone_stale)"
+}
+```
+
+Write to `monitor/decisions/daily-report-YYYY-MM-DDTHH-MM.json`:
+
+```json
+{
+  "generated_at": "ISO 8601 timestamp",
+  "report_date": "YYYY-MM-DD",
+  "curmudgeon_reviews_processed": ["WIN-042", "WIN-043"],
+  "pipeline_status": {
+    "poller": "summary",
+    "analyst": "summary",
+    "curmudgeon": "progress (N/total reviewed)"
+  },
+  "external_changes": {
+    "dome_site_changes": "summary or 'no changes'",
+    "threat_level": "none|low|medium|high"
+  },
+  "internal_issues": [
+    {
+      "issue_id": "ISS-NNN",
+      "win_id": "WIN-NNN",
+      "severity": "critical|major|moderate|minor",
+      "category": "factual_error|citation|verdict|missing_argument|code_analysis",
+      "description": "What's wrong",
+      "source": "curmudgeon|analyst|poller",
+      "status": "new|existing|fixed",
+      "suggested_patch": {
+        "file": "data/wins.json or data/sections.json",
+        "field": "detail_evidence or section identifier",
+        "find": "exact text to replace",
+        "replace": "corrected text"
+      }
+    }
+  ],
+  "code_analysis_updates": [
+    {
+      "win_id": "WIN-NNN",
+      "tags": {
+        "monitoring": "hardcoded|live_fetch|none",
+        "relabels_standard": true,
+        "post_hoc": true,
+        "derives_from_dome": false,
+        "reviewed": true
+      },
+      "source_review": "monitor/curmudgeon/reviews/WIN-NNN.json"
+    }
+  ],
+  "recommended_actions": [
+    {
+      "priority": 1,
+      "action": "description",
+      "urgency": "immediate|next_session|backlog"
+    }
+  ],
+  // NOTE: Do NOT blindly echo findings from integrity/tinker reports into
+  // recommended_actions. Before surfacing an integrity finding:
+  // 1. Check whether it's already been reported in a previous daily report
+  // 2. If it has, either investigate it THIS run or drop it — don't keep echoing
+  // 3. For "phantom" or "missing file" findings, check for fields like
+  //    no_output_file_reason that explain legitimate absences
+  // Repeated unactioned recommendations waste human attention.
+  "breaking_news_suggestions": [
+    {
+      "headline": "Short punchy headline (clickbait-y, max ~15 words)",
+      "summary": "2-3 sentence summary with specific numbers. Link to relevant section.",
+      "link_target": "#anchor-id",
+      "link_tab": "tab-name",
+      "source": "Which agent/analysis produced this finding",
+      "why_newsworthy": "Brief justification — what makes this a headline vs routine finding"
+    }
+  ]
+}
+```
+
+## Step 5: Update Issue Tracker
+
+**CRITICAL: Issue ID Assignment.** `open-issues.json` has a `next_id` field (integer). When creating new issues:
+1. Read `next_id` from `open-issues.json`
+2. Assign the new issue `ISS-{next_id}`
+3. Increment `next_id` and write it back
+
+**Never scan for max ID across issues.** IDs were historically reused between open and closed files, causing collisions. The `next_id` counter is the single source of truth for the next available ID.
+
+```bash
+# Example: create a new issue
+node -e "
+const fs=require('fs');
+const o=JSON.parse(fs.readFileSync('monitor/decisions/open-issues.json','utf8'));
+const id='ISS-'+o.next_id;
+o.next_id++;
+o.issues.push({id, win_id:null, severity:'moderate', category:'content-update', status:'open', description:'...', found_by:'decider', found_at:new Date().toISOString()});
+fs.writeFileSync('monitor/decisions/open-issues.json',JSON.stringify(o,null,2));
+console.log('Created',id);
+"
+```
+
+Update `monitor/decisions/open-issues.json`:
+```json
+{
+  "last_updated": "ISO timestamp",
+  "next_id": 674,
+  "issues": [
+    {
+      "id": "ISS-NNN",
+      "win_id": "WIN-NNN or null",
+      "severity": "critical|major|moderate|minor",
+      "category": "factual_error|citation|verdict|missing_argument|code_analysis",
+      "description": "What's wrong",
+      "source": "curmudgeon|analyst|poller",
+      "found_date": "YYYY-MM-DD",
+      "status": "open|fixed|wontfix",
+      "fix_details": "How it was fixed, or null",
+      "fix_date": "YYYY-MM-DD or null"
+    }
+  ]
+}
+```
+
+## Step 5b: Archive Closed Issues
+
+If open-issues.json has >50 entries with status "fixed" or "wontfix" older than 7 days, move them to closed-issues.json (append). Keep only open + recently-closed in active file.
+
+## Step 6b: Breaking News Suggestions
+
+The overview page has a "Latest Findings" section (reverse-chronological, 3–5 items, slightly clickbait-y). **Adding items is a human decision** — your job is to surface candidates.
+
+**When to suggest:** A finding is newsworthy if it represents a major new argument, a dramatic self-contradiction, a significant dome site change, or a milestone in the predictions catalog. Routine patches, minor fixes, and incremental expansions are NOT news.
+
+**Good examples:** "Dome moves the sun to fix X, breaks Y other predictions." "N new predictions mined, M already falsified." "Dome author fixes [canary item] — confirms he's reading our review." "Kill-shot test X now has hard data: dome fails by N×."
+
+**Bad examples:** "Fixed a typo in Section 3.2." "Curmudgeon reviewed 5 more WINs." "Analyst expanded Section 6.8."
+
+Include `breaking_news_suggestions` in the daily report whenever you have a candidate. The analyst and poller can also flag items — look for `newsworthy` or `breaking_news` fields in their outputs. All suggestions go in the daily report and run summary for human review.
+
+## Step 7: Latest Run Summary
+
+Write to `monitor/decisions/latest-decider-summary.txt`. **This file is overwritten on every decider run** (one file per agent per repo, latest-only — same pattern as the analyst's `latest-analysis-summary.txt`, curmudgeon's `latest-review-summary.txt`, integrity's `latest-integrity-summary.txt`). It is NOT a daily once-per-morning artifact — decider runs ~6×/day, and the operator wants the freshest run summary on top regardless of clock time.
+
+(Naming history: this was previously `morning-briefing.txt` and titled "MORNING BRIEFING — YYYY-MM-DD", from when decider ran daily. The cadence has since moved to 4h, so the morning framing was misleading. Renamed 2026-05-09. The full per-run record persists in `monitor/decisions/daily-report-<ts>.json` — that's the one with permanent history; the summary file is the at-a-glance latest.)
+
+```
+DECIDER RUN SUMMARY — YYYY-MM-DDTHH:MMZ
+Generated: YYYY-MM-DDTHH:MM:SSZ
+Curmudgeon reviews processed this run: N (WIN-XXX through WIN-YYY)
+Previous decider run: YYYY-MM-DDTHH:MM:SSZ
+```
+
+Include:
+- Site health (integrity: pass/warn/fail)
+- External status (dome changes: yes/no)
+- Internal status (issues found, severity breakdown)
+- Top 3 priority actions
+- Curmudgeon progress
+- Code analysis tag status (validated vs pending)
+
+## Step 8: Update Status
+
+Update `monitor/status.json` and `monitor/review-state.json` if needed.
+
+## Code Analysis Tag Tracking
+
+When curmudgeon reviews include `code_analysis_tags`, note unsynced count. Tags applied via: `node build-scripts/sync-code-analysis.js --apply --workspace`. Recommend in run summary if gap exists.

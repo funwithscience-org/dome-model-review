@@ -1,0 +1,45 @@
+{
+  "id": "PROP-001",
+  "created_at": "2026-04-08T19:30:00Z",
+  "category": "prompt_diet",
+  "target": "monitor/prompts/analyst.md",
+  "problem": "Analyst prompt at 598 lines — 139% over the 250-line ceiling. Grew 229 lines in one report period (was 369). At this size, LLM instruction-following degrades significantly for content in the first half of the prompt. The prompt contains ~250 lines of reference material (mode schemas, globe fingerprint procedure details, dome repository search patterns, output format examples) that could be extracted to files read on-demand only when the relevant mode is active.",
+  "proposed_fix": {
+    "summary": "Extract three blocks of reference material into separate files: (1) Mode 4 globe fingerprint search procedure + dome repo patterns (~90 lines, starting at 'Mode 4: Globe Fingerprint Hunt'), (2) Mode 3 defense neutralization procedure (~50 lines), (3) Author monitoring infrastructure details + output format schemas (~60 lines). Each mode's step reads the relevant reference file only when that mode is active. Main prompt shrinks from 598 to ~400 lines. A second pass could extract Mode 0 new WIN onboarding (~65 lines) and Mode 1 expansion procedure (~60 lines) to reach ~280 lines.",
+    "files_to_create": [
+      {
+        "path": "monitor/prompts/reference/analyst-mode4-fingerprints.md",
+        "content": "# Extract lines 439-594 from analyst.md (Mode 4 procedure + dome repo search + output format)\n# This is a placeholder — the actual content is the block starting at '## Mode 4: Globe Fingerprint Hunt (idle work)' through '### What makes a good defense neutralization' (~155 lines).\n# Human should copy-paste the exact lines from analyst.md.",
+        "purpose": "Reference file read by analyst only when Mode 4 (fingerprint hunt) or Mode 3 (defense neutralization) is active. Saves ~155 lines of context on Mode 0/1/2 runs."
+      },
+      {
+        "path": "monitor/prompts/reference/analyst-infrastructure.md",
+        "content": "# Extract lines 53-67 from analyst.md (Author's Monitoring Infrastructure section)\n# This is a placeholder — copy the exact block from analyst.md.\n# Also extract output format schemas from step 6b (~40 lines of JSON examples).",
+        "purpose": "Reference file for dome infrastructure details. Read once at step 0 if needed."
+      }
+    ],
+    "files_to_modify": [
+      {
+        "path": "monitor/prompts/analyst.md",
+        "find": "## Mode 4: Globe Fingerprint Hunt (idle work)",
+        "replace": "## Mode 4: Globe Fingerprint Hunt (idle work)\n\n**Read `monitor/prompts/reference/analyst-mode4-fingerprints.md` now for the full procedure, search patterns, and output format.**",
+        "explanation": "Replace the 155-line Mode 4+3 procedure block with a single-line reference read instruction. Agent reads the reference file only when Mode 4 or 3 is active."
+      },
+      {
+        "path": "monitor/prompts/analyst.md",
+        "find": "## Author's Monitoring Infrastructure",
+        "replace": "## Author's Monitoring Infrastructure\n\n**Read `monitor/prompts/reference/analyst-infrastructure.md` for dome monitoring script details (monitor.py, pull_data.py).**",
+        "explanation": "Replace the infrastructure detail block with a reference read. Agent reads only when analyzing changes that involve the dome's monitoring code."
+      }
+    ],
+    "files_to_delete": []
+  },
+  "tradeoffs": "GAIN: ~200 fewer lines in main prompt, saving ~1,000 tokens per run across ~48 daily analyst runs = ~48,000 tokens/day. Agent only loads reference material when the relevant mode is active. RISK: Agent must do 1-2 extra file reads on Mode 3/4 runs, adding ~2-3 seconds. Minor risk: agent may forget to read reference file if instruction is too terse — mitigated by making the read instruction prominent (bold, at top of section). SERENDIPITY LOSS: Minimal. Mode 4 fingerprint procedure is highly mechanical — having it in context during Mode 0/1/2 runs provides no cross-pollination benefit.",
+  "estimated_impact": "~200 lines removed from main prompt. ~48,000 tokens/day saved at current run frequency. No quality impact on analytical output.",
+  "requires_human_judgment": true,
+  "why_human_needed": "Human needs to decide: (1) which exact line ranges to extract (my ranges are approximate), (2) whether to do the full extraction (598→280) or the conservative first pass (598→400). The human should copy the exact text blocks, not rely on my placeholder content.",
+  "status": "implemented",
+  "implemented_at": "2026-04-08T18:49:25.370Z",
+  "implemented_by": "human+claude CW14",
+  "actual_result": "analyst.md 598→436 lines (-162). Mode 3/4 + infrastructure extracted to 2 reference files."
+}

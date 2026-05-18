@@ -1,0 +1,118 @@
+{
+  "directive_id": "DIRECTIVE-20260513-002",
+  "title": "Split analyst into baby-analyst (Sonnet, hourly, BAU drain) + analyst (Opus, 4h, deep work) — same class-based model-split pattern we discussed for curmudgeon. Mode 1 BAU drain is currently starved by higher-priority modes; split decouples the contention.",
+  "filed_by": "operator",
+  "filed_at": "2026-05-13T17:35:00Z",
+  "status": "completed",
+  "priority": "medium",
+  "scope_authority": "Design proposal only (PROP-NNN). Operator reviews PROP before implementation. Tinker designs the split architecture; operator + tinker apply prompt edits + scheduled-task changes. This is the canonical implementation of the class-based model-selection pattern previously discussed (operator-Claude session 2026-05-11T23:00Z, end-of-day session).",
+  "context": [
+    "Empirical observation 2026-05-13: analyst ran 4 times today (05:06Z, 09:11Z, 13:04Z, 17:07Z). Only the LAST run entered Mode 1 BAU drain (EXP-366, 12-ISS stale-tracker consolidation). The other three runs went to Mode 2/2b/3-style work (curmudgeon-review-driven SEC-6.14 c3 batch, kappa-cluster c5 batch, singleton EXP-323). Mode 1 won the dispatcher exactly once.",
+    "Root cause: analyst.md dispatcher priority order. Mode 0 (new WINs) is priority #1; Mode 1 (Section Expansion Queue) is #2. But Modes 1b/2/2b/3 have their own triggers and effectively compete: if curmudgeon raises new reviews (which happens every 4h cycle), HNotes are pending, or attention-inbox has items, those win the dispatcher slot. Mode 1 BAU drain only fires when no other mode has work.",
+    "Throughput math at current cadence: 4h cadence × 1 Mode-1-run/day (today's observed pattern) × ~10 ISSs/batch = ~10 BAU drains/day. Decider's BAU 3b routes 5-10 items/day in steady state. We're roughly break-even on quiet days, net-positive on busy days where curmudgeon raises lots of work (Mode 1 gets even less dispatcher attention).",
+    "Recent fixes that EXPOSED this bottleneck: PROP-031 closed the decider-side tap-out (yesterday) and the consolidation language extension landed today. Both fixes assumed analyst would process the BAU-route tracker entries at scale. Today proved: even with permission to consolidate, Mode 1 doesn't fire often enough to drain the queue at the rate decider feeds it.",
+    "The class-based model-split pattern was discussed but not yet implemented for either curmudgeon or analyst. Operator framing 2026-05-11T22:30Z: 'we'd do something like a split curmudgeon/analyst queue. have a baby curmudgeon that only processed the easy bits.' Operator framing today 2026-05-13T17:30Z: 'let's get tinker to write up b' (option b in the day's analyst-throughput conversation = split-agent architecture).",
+    "Recent operator session also established the cost-engineering rationale: per-run cost has variable (work tokens) + fixed (context load) components. With fewer agents running each at higher per-run scope, fixed overhead amortizes better. Sonnet pricing (~3-5× cheaper than Opus) on volume work compounds the savings. Compliance argument: Sonnet is more literal about explicit prompt rules ('process every BAU entry') than Opus' judgment-heavy 'I'll do the interesting work' tendency."
+  ],
+  "operator_intent": "Tinker designs a clean split-analyst architecture: dome-analyst-baby (Sonnet, hourly cadence, Mode 1 BAU drain + Mode 2b attention inbox + Mode 1b prediction writeups of verification class) + dome-analyst (Opus, 4h cadence, Modes 0/2/3/5 + Mode 1b prediction writeups of deep-attack class + Mode 1 deep-attack singletons). Two scheduled tasks read the SAME expansion-tracker.json; coordination via PROP-025 review_class field or per-source-enum routing.",
+  "tasks": [
+    {
+      "task_id": "task_1_design_the_split_boundary",
+      "description": "Specify exactly which modes / item-types each variant handles. Avoid duplicated work or starvation gaps.",
+      "design_space": {
+        "by_mode": "baby = Mode 1 (BAU drain) + Mode 2b (attention inbox) + Mode 1b (verification class). analyst = Mode 0 + Mode 1 (deep-attack/holistic) + Mode 2 (HNotes — operator commissions) + Mode 3 (defense neutralization) + Mode 5 (frozen prediction drafts).",
+        "by_review_class": "baby reads tracker for items where item.review_class==='verification' OR item.source in {'decider-bau-route','decider-m1-route','decider-m3-carry-over'} AND ISS count > 1 (batchable). analyst reads tracker for items where item.review_class IN {'deep-attack','holistic'} OR singleton high-effort items.",
+        "by_source": "baby owns: source IN {decider-bau-route, decider-m1-route, decider-m3-carry-over} when review_class='verification'. analyst owns: everything else."
+      },
+      "design_questions_for_tinker": [
+        "Q1: Which split dimension is cleanest — by mode, by review_class, by source, or a hybrid? Recommend with rationale.",
+        "Q2: What happens at boundary cases — e.g., a curmudgeon-review-driven item that's clearly verification class (analyst-mode1-expansions.md 'class_hint intake' default)? Does it go to baby or analyst?",
+        "Q3: How do the two variants coordinate writes to the SAME expansion-tracker.json? Per the existing CLAUDE.md 'multi-writer' protection (git pull --rebase + pre-push integrity gate), adding a second analyst writer is symmetric with how decider+analyst already share tracker writes. Same protection should suffice — confirm.",
+        "Q4: If both variants run on the same hourly cycle (baby) and 4h cycle (analyst), are there collision risks at the hour where both happen to fire? (Baby runs hourly, analyst runs every 4h — at the :50 mark they'd be ~10min apart; per-run clones isolate the work.)"
+      ]
+    },
+    {
+      "task_id": "task_2_scheduled_task_design",
+      "description": "Specify the cron + model assignment for each variant.",
+      "proposed_tasks": [
+        {
+          "taskId": "dome-analyst-baby",
+          "model": "claude-sonnet-4-6 (or successor)",
+          "cron": "20 */1 * * * (every hour at :20 minutes)",
+          "purpose": "BAU tracker drain + attention-inbox sweep + verification-class prediction writeups. High volume, narrow scope.",
+          "prompt_file": "monitor/prompts/analyst-baby.md (new — derives from analyst.md but with reduced mode set and explicit Sonnet-aware compliance language)"
+        },
+        {
+          "taskId": "dome-analyst",
+          "model": "claude-opus-4-6 (unchanged)",
+          "cron": "50 */4 * * * (unchanged from current)",
+          "purpose": "New WIN onboarding, deep-attack EXP authoring, defense neutralization, HNote-commissioned analysis, frozen prediction drafts. Judgment-heavy.",
+          "prompt_file": "monitor/prompts/analyst.md (existing, edited to remove baby-handled modes from dispatcher)"
+        }
+      ],
+      "design_questions_for_tinker": [
+        "Q1: Hourly cadence for baby — too aggressive? At 24 runs/day × ~3-10 ISSs/run we'd drain ~70-240 ISSs/day. Decider's max output is ~5-10/day. So baby could easily idle most runs. Consider 2h cadence as alternative.",
+        "Q2: Should baby write its own daily-report (analogous to decider's), or piggyback on analyst's? Recommend per audit-trail clarity.",
+        "Q3: Should analyst-baby share the latest-analysis-summary.txt with analyst, or have its own latest-analyst-baby-summary.txt? Recommend per readability."
+      ]
+    },
+    {
+      "task_id": "task_3_prompt_file_split",
+      "description": "Specify the analyst-baby.md content. Most can be inherited/referenced from analyst.md; the differences are the dispatcher (reduced mode set), the Sonnet-compliance framing (explicit 'process every item' rule), and the cost-engineering reminder (this agent is cheap; batch eagerly; if budget reaches 70% defer remaining to next hour).",
+      "expected_implementation_files": [
+        "monitor/prompts/analyst-baby.md (NEW)",
+        "monitor/prompts/analyst.md (EDITED — remove Mode 1/Mode 2b/verification-class Mode 1b from dispatcher; add cross-reference 'baby handles these' note)",
+        "monitor/prompts/reference/analyst-mode1-expansions.md (EDITED — clarify which variant handles which class)",
+        "monitor/prompts/reference/DATA-SCHEMAS.md (EDITED — note that tracker is now read by TWO analyst variants; coordination via standard multi-writer protection)",
+        "monitor/prompts/workspace-sync.md (POSSIBLY — confirm baby's output paths route through normal smart_copy iteration)",
+        "CLAUDE.md (EDITED — agent table extended with dome-analyst-baby row)"
+      ]
+    },
+    {
+      "task_id": "task_4_dry_run_simulation",
+      "description": "Re-simulate today's empirical 4-run pattern under the split architecture. What WOULD have happened if baby was running hourly at :20 today?",
+      "expected_outcome_template": "Today, in real schedule, analyst ran 4 times (05:06Z, 09:11Z, 13:04Z, 17:07Z) and Mode 1 BAU drain fired exactly once. Under split: dome-analyst-baby would have fired ~24 times (every hour at :20), each consulting tracker for batchable verification-class items. At 5-10 BAU drains per baby run, baby could have drained the 32-item backlog in 4-6 hours instead of by-end-of-day. dome-analyst (Opus) would have fired 4 times same as today, on the deep work (SEC-6.14 c3 batch, kappa-cluster c5 batch, singleton EXP-323, EXP-366-equivalent for non-BAU work). Total cost: 24 Sonnet runs (cheap) + 4 Opus runs (same as today). Net win on throughput, net cost reduction vs current model."
+    },
+    {
+      "task_id": "task_5_counter_argument_required",
+      "description": "Honest evaluation. Per the directive's prior phrasing convention, tinker MUST weigh: is the split actually a good idea, or is it complexity for complexity's sake?",
+      "tinker_must_evaluate": [
+        "(a) Is the Mode 1 BAU dispatch starvation real, or did today happen to be a high-curmudgeon-output day? Sample size = 1 day; observation could be noise.",
+        "(b) Does the current consolidation pattern (which landed today) need 2-3 more days to demonstrate steady-state before adding architectural complexity?",
+        "(c) Cost of two scheduled tasks + two prompt files + coordination semantics vs the cost of just running analyst at 2h cadence (which we briefly considered yesterday as a cheaper intervention).",
+        "(d) If we're going to split, should we ALSO split curmudgeon at the same time (so curmudgeon-baby on Sonnet handles verification reviews + curmudgeon on Opus handles deep-attack)? Or sequence: analyst first, learn from it, then curmudgeon?"
+      ],
+      "deliverable": "PROP must include a 'counter-argument' section. If tinker concludes the split is premature/overkill, retire the directive as superseded with rationale (operator wants honest assessment, not justify-the-directive)."
+    },
+    {
+      "task_id": "task_6_carve_out_what_NOT_to_do",
+      "description": "Don't redesign the existing analyst.md from scratch. Don't change PROP-025 review_class semantics. Don't touch decider, curmudgeon, or tinker prompts (curmudgeon split is a separate directive if/when warranted). Don't introduce per-task model overrides at runtime; use the scheduled-task model assignment that already exists in cowork.",
+      "deliverable": "Explicit 'do not touch' section in PROP."
+    }
+  ],
+  "constraints": [
+    "PROP-NNN authoring authority only. Operator reviews PROP before implementation.",
+    "Output one PROP under monitor/tinker/proposals/PROP-NNN-split-analyst-baby-vs-deep.json or similar.",
+    "Respect PROP-025 (review_class semantics), PROP-029 (tracker schema), PROP-031 (BAU 3b routing), and the consolidation extension that landed today (DATA-SCHEMAS.md). The new PROP layers on top of these without redesigning.",
+    "If tinker recommends sequencing this AFTER another change (e.g., 'first watch 3 more days of consolidation behavior, then split if dispatcher starvation persists'), that's a valid recommendation."
+  ],
+  "expected_output_files": [
+    "monitor/tinker/proposals/PROP-NNN-split-analyst-baby-vs-deep.json"
+  ],
+  "related_iss_to_retire_on_prop_landing": [],
+  "related_directives": [
+    "DIRECTIVE-20260511-001-decider-throughput-audit-and-tap-out-investigation.json (PROP-031 — the analogous decider-side throughput fix; today's analyst observation is the analyst-side mirror image of that bug)",
+    "DIRECTIVE-20260510-005-tinker-backlog-trend-monitoring.json (PROP-030 — provides the metrics that would let us empirically validate whether the split helps)"
+  ],
+  "operator_notes_to_tinker": [
+    "The previous session (2026-05-11T22:30Z) established the architectural sketch: 'have a baby curmudgeon that only processes the easy bits.' Same pattern applies to analyst. The operator framing has been consistent: cheap model for volume, expensive model for judgment.",
+    "Today's data (4 analyst runs, 1 Mode 1 dispatch, 32→15 tracker drain by end of day) is the canonical empirical motivation. Use it in the retroactive simulation (task_4) to validate the design.",
+    "Operator's lean: split-analyst BEFORE split-curmudgeon. Analyst's bottleneck is more visible (we just spent 3 sessions debugging it); curmudgeon's pattern is less observed. Land analyst first, then sequence curmudgeon as a follow-on if the same pattern shows up there.",
+    "If the PROP recommends 'watch 3 more days first', that's a valid output — operator wants the honest answer, not a forced design.",
+    "Cost note: hourly baby on Sonnet ≈ $X/day at current pricing (tinker should estimate against the 24-run hourly cadence). 4h analyst on Opus ≈ $Y/day. Compare to current $Z/day from single 4h analyst on Opus. Estimate the delta — if it's a wash or saving, the cost case is clean. If it's a meaningful increase, that's a budget conversation."
+  ],
+  "completed_at": "2026-05-13T22:04:34.532Z",
+  "completed_by_run": "tinker-2026-05-13T21-54",
+  "prop_id_authored": "PROP-034",
+  "amendment_file_authored": null
+}

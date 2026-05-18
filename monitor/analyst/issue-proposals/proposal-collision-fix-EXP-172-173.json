@@ -1,0 +1,37 @@
+{
+  "type": "housekeeping_collision_fix",
+  "title": "EXP-172 and EXP-173 ID collision — reconciled",
+  "created_at": "2026-04-17T19:54:22.591Z",
+  "problem": {
+    "observed": "The expansion tracker had two pending entries with IDs EXP-172 (WIN-032 defense) and EXP-173 (Timestamp verification) added by the decider at 2026-04-17T19:24:21Z and 19:24:33Z from curmudgeon cycle-3 reviews. But the files monitor/analyst/expansions/EXP-172.json and EXP-173.json had already been written ~50 seconds later (at 19:25:13Z) by an analyst session for unrelated HNOTE-DOMAIN-001 (Live Dashboard audit) and HNOTE-AI-TAB-001 (AI perception management) work. The files had internal item_id fields set to EXP-172/EXP-173 and had their own proposals already submitted (proposal-EXP-172-new-section-2b5.json and proposal-ISS-1073-ai-tab-scope.json).",
+    "risk_if_unfixed": "On the next decider run, the decider would read tracker status=pending for EXP-172 (WIN-032 defense) and look for EXP-172.json as the findings file — but find the Live Dashboard content instead, and either integrate the wrong thing or crash. The Timestamp-verification work would never be done because the tracker row pointed at an already-claimed ID."
+  },
+  "resolution_applied": {
+    "step_1": "Wrote new file monitor/analyst/expansions/EXP-174.json containing the WIN-032 defense neutralization analysis originally queued as the pending EXP-172 tracker entry.",
+    "step_2": "Renamed the pending tracker entry EXP-172 (WIN-032 defense) → EXP-174 and marked it complete with output_file=EXP-174.json.",
+    "step_3": "Renamed the pending tracker entry EXP-173 (Timestamp verification) → EXP-175, kept status=pending, preserved all other metadata (curmudgeon_review, issue_ids, category, priority, notes).",
+    "step_4": "Added retroactive tracker entries EXP-172 (status=complete, output_file=EXP-172.json, source=HNOTE-DOMAIN-001) and EXP-173 (status=complete, output_file=EXP-173.json, source=HNOTE-AI-TAB-001) so the decider can see the already-written HNOTE work.",
+    "step_5": "Kept filenames EXP-172.json and EXP-173.json and their existing proposals unchanged (FUSE cannot unlink, and the proposals already reference those paths). The files’ internal item_id fields still say EXP-172 and EXP-173, which is consistent with the retroactive tracker rows.",
+    "files_untouched": [
+      "monitor/analyst/expansions/EXP-172.json (HNOTE-DOMAIN-001 Live Dashboard audit)",
+      "monitor/analyst/expansions/EXP-173.json (HNOTE-AI-TAB-001 AI perception management)",
+      "monitor/analyst/issue-proposals/proposal-EXP-172-new-section-2b5.json",
+      "monitor/analyst/issue-proposals/proposal-ISS-1073-ai-tab-scope.json",
+      "monitor/analyst/issue-proposals/proposal-ISS-1073-resolution.json"
+    ],
+    "files_created_this_run": [
+      "monitor/analyst/expansions/EXP-174.json (WIN-032 defense neutralization)",
+      "monitor/analyst/issue-proposals/proposal-ISS-1084-resolution.json",
+      "monitor/analyst/issue-proposals/proposal-collision-fix-EXP-172-173.json (this file)"
+    ],
+    "files_modified_this_run": [
+      "monitor/analyst/expansion-tracker.json — added 2 retroactive rows, renamed 2 rows, marked 1 complete"
+    ]
+  },
+  "recommended_decider_action": "No action required beyond normal processing. Integrate the four tracker rows in order — EXP-172 (HNOTE Live Dashboard), EXP-173 (HNOTE AI tab), EXP-174 (WIN-032 defense via ISS-1084), EXP-175 (still pending Timestamp verification for the next analyst run). The renumbering preserves the decider’s assumption that tracker row ID = findings filename stem; no code changes needed.",
+  "root_cause_analysis": "Two analyst-adjacent writers raced without a lock. The decider was adding curmudgeon-derived tracker entries at 19:24 while a separate analyst session was writing HNOTE expansion files at 19:25. The HNOTE session chose next-available IDs from the tracker snapshot it had read before the decider’s update landed. Future fix options: (a) analyst reads a fresh tracker snapshot immediately before choosing an ID and holds a short write lock during create-file + add-tracker-row; (b) analyst IDs use a timestamp suffix (EXP-NNN-YYYYMMDDHHMM) instead of a sequential number; (c) tracker additions include a provisional filename-reservation step that the file-writer checks. Option (a) is cheapest; option (b) is most robust.",
+  "followups_for_decider": [
+    "On next analyst run, EXP-175 remains pending (Timestamp Error tab verification, citation-category, medium-priority, ISS-1089). The work is: fetch live methodology.json and claim_index.json from john09289.github.io, diff verbatim quotes and WIN-level classifications against what the ts-april-2026-update block states, and either patch or close ISS-1089.",
+    "Curmudgeon c3 also flagged two minor holes for WIN-032 (out of scope for EXP-174): (a) redundant ‘monitor.py contains no validation domain’ restated in paragraph 2 duplicating paragraph 1; (b) ‘doubly unfalsifiable’ rhetorical phrase invites the binary-unfalsifiability rebuttal. These can be spawned as a polish expansion if desired."
+  ]
+}

@@ -1,0 +1,191 @@
+{
+  "generated_at": "2026-04-06T21:24:00Z",
+  "report_date": "2026-04-06",
+  "pipeline_health": {
+    "agents_running": 5,
+    "agents_stalled": [],
+    "output_freshness": {
+      "poller": "~1 hour ago (latest-poll-summary.txt updated 20:06 UTC)",
+      "analyst": "~0 hours ago (latest-analysis-summary.txt updated 22:14 UTC)",
+      "curmudgeon": "~0 hours ago (WIN-003.c2.json at 22:06 UTC, tracker last_run 02:45 UTC today)",
+      "decider": "~0 hours ago (daily-report-2026-04-07T06-33.json at 22:13 UTC)",
+      "integrity": "~0 hours ago (report-2026-04-06T21-21.json at 22:21 UTC)"
+    }
+  },
+  "handoff_issues": [
+    {
+      "severity": "major",
+      "producer": "curmudgeon",
+      "consumer": "decider",
+      "description": "Digest shows 0 pending reviews but 42 unprocessed Cycle 2 reviews exist. The digest-reviews.js script counts 69 items in processed-reviews.json, which includes only Cycle 1 filenames. The 3 new Cycle 2 reviews (WIN-001.c2.json, WIN-002.c2.json, WIN-003.c2.json) plus all 9 holistic reviews from the Cycle 1→2 bridge are newer than most decider runs, but the digest reports pending_count=0. This means either (a) digest-reviews.js does not distinguish .c2.json filenames from .json filenames, treating the base WIN ID as already processed, or (b) the holistic reviews are being counted against the 67 Cycle 1 total. The decider processed WIN-002 in its latest run but the digest should be surfacing all Cycle 2 reviews as new work.",
+      "evidence": "pending-digest.json: total_reviews=67, already_processed=69, pending_count=0. But monitor/curmudgeon/reviews/ contains 111 files including WIN-001.c2.json through WIN-003.c2.json (all from the last few hours). Decider report-2026-04-07T06-33.json lists curmudgeon_reviews_processed: ['WIN-002'] — only 1 of 3 available Cycle 2 reviews.",
+      "suggested_fix": {
+        "file": "build-scripts/digest-reviews.js",
+        "find": "N/A — requires code audit",
+        "replace": "digest-reviews.js should treat .c2.json files as distinct from .json files in its processed-reviews deduplication. The processed-reviews.json ledger stores filenames (e.g., 'WIN-001.json'), so 'WIN-001.c2.json' should NOT be considered already-processed. Verify the dedup logic uses full filenames, not bare WIN IDs.",
+        "rationale": "Without this fix, all Cycle 2 curmudgeon reviews are silently ignored by the digest, and the decider only processes them if it happens to directly enumerate the reviews directory (which it apparently did for WIN-002 but missed WIN-001 and WIN-003)."
+      }
+    },
+    {
+      "severity": "moderate",
+      "producer": "analyst",
+      "consumer": "decider",
+      "description": "61 of 79 open issues are assigned-analyst, but the analyst expansion tracker only has 13 items (EXP-001 through EXP-013), of which 6 are complete. The gap between 61 assigned issues and 13 expansion items means 48 issues assigned to the analyst have no corresponding expansion work item. These issues are in limbo — the decider yeeted them, but the analyst doesn't know about most of them.",
+      "evidence": "open-issues.json: 61 issues with status 'assigned-analyst'. expansion-tracker.json: 13 items (6 complete, 1 revised, 6 pending). The decider creates ISS entries and sets status='assigned-analyst' but the analyst only picks up items that appear in expansion-tracker.json.",
+      "suggested_fix": {
+        "file": "monitor/prompts/decider.md",
+        "find": "N/A — requires prompt audit",
+        "replace": "When yeeting an issue to the analyst, the decider must ALSO append an entry to monitor/analyst/expansion-tracker.json with the issue details, not just set status='assigned-analyst' in open-issues.json. Alternatively, the analyst prompt should include a step to scan open-issues.json for status='assigned-analyst' items not yet in expansion-tracker.json and create EXP entries for them.",
+        "rationale": "The current two-step handoff (decider sets status, analyst reads tracker) has a gap: the decider doesn't write to the tracker. Either the decider needs to write tracker entries, or the analyst needs to poll open-issues.json."
+      }
+    },
+    {
+      "severity": "minor",
+      "producer": "integrity",
+      "consumer": "decider",
+      "description": "Integrity report and decider report disagree on broken link count. Integrity (21:21 UTC) reports 1 broken link (INTERMAGNET 404). Decider (22:13 UTC, timestamped as 2026-04-07T06-33) reports 2 broken links (CUORE 404, CHAMP 404). These are from different integrity report versions. The decider appears to be reading an older integrity report.",
+      "evidence": "integrity report-2026-04-06T21-21.json: 1 broken link (INTERMAGNET). decider daily-report-2026-04-07T06-33.json: 2 broken links (CUORE, CHAMP). The INTERMAGNET link is new; CUORE and CHAMP are from previous reports.",
+      "suggested_fix": {
+        "file": null,
+        "find": null,
+        "replace": null,
+        "rationale": "Low impact — timing issue. The decider ran before the latest integrity report was generated. The decider will pick up the INTERMAGNET link on its next run. No fix needed."
+      }
+    }
+  ],
+  "prompt_issues": [
+    {
+      "severity": "major",
+      "prompt_file": "monitor/prompts/decider.md",
+      "description": "Decider prompt is 339 lines, well over the 250-line threshold. This is the longest prompt in the pipeline and handles the most complex logic (digest reading, issue triage, patch generation, expansion integration, human notes). Risk of instruction deprioritization in later sections.",
+      "suggested_fix": {
+        "find": null,
+        "replace": null,
+        "rationale": "Recommend refactoring: extract the patch template schema, the issue severity definitions, and the expansion integration steps into separate reference files (e.g., monitor/prompts/decider-schemas.md, monitor/prompts/decider-expansion-guide.md) that the decider reads at runtime. Keep the main prompt under 250 lines focused on procedure and rules."
+      }
+    },
+    {
+      "severity": "moderate",
+      "prompt_file": "monitor/prompts/structure-integrity.md",
+      "description": "Integrity prompt references 'test.js' for automated tests. The latest integrity report says '2017 tests passed' (from the 14:46 report) but the decider report from the same day says '1791/1791 PASS'. This inconsistency suggests the test count changed between runs or the agents are reading different build states. Not a prompt issue per se, but indicates the workspace may have different build artifacts at different times.",
+      "suggested_fix": {
+        "find": null,
+        "replace": null,
+        "rationale": "Informational only. Test counts fluctuate when builds occur between agent runs. No prompt fix needed."
+      }
+    }
+  ],
+  "open_issue_health": {
+    "total_open": 79,
+    "by_severity": {
+      "critical": 3,
+      "major": 35,
+      "moderate": 27,
+      "minor": 14
+    },
+    "by_status": {
+      "assigned-analyst": 61,
+      "patched": 16,
+      "open": 2
+    },
+    "aged_out": [],
+    "repeated_deferrals": [],
+    "missing_patches": [
+      "61 issues assigned to analyst have no patches (expected — they need expansion work first). 2 issues in 'open' status have no patches and are not assigned."
+    ],
+    "zombie_fixes": [],
+    "key_observation": "16 issues have status 'patched' — meaning patches exist in suggested-patches files but have not been applied by a human. These represent ready-to-apply improvements that are blocked on human intervention. The 2 truly open (unassigned) issues should be triaged by the decider on its next run."
+  },
+  "schedule_issues": [
+    {
+      "severity": "minor",
+      "description": "Decider timestamp drift: daily-report filenames use future dates (2026-04-08T06-30.json created on 2026-04-06). This appears to be the decider pre-computing the 'next scheduled' timestamp rather than the actual run time. Causes confusion when sorting reports chronologically — the latest report by modification time has a future-dated filename.",
+      "evidence": "ls -lt shows daily-report-2026-04-08T06-30.json modified Apr 6 21:36, daily-report-2026-04-07T17-30.json modified Apr 6 21:15. These are named for future dates despite running today.",
+      "suggested_fix": "Decider should use the actual run timestamp in filenames, not the next scheduled run time. This is a prompt clarification."
+    }
+  ],
+  "state_hygiene": {
+    "open_issues_bloat": "79 open issues — within acceptable range. 404 closed issues archived properly in closed-issues.json. No action needed.",
+    "tracker_disk_consistency": "Curmudgeon tracker shows 3 reviewed in Cycle 2 (WIN-001, WIN-002, WIN-003). All 3 have corresponding .c2.json files in reviews/. Consistent.",
+    "baseline_freshness": "Baselines last updated 2026-04-05 19:25-26 UTC (~26 hours ago). Poller has not detected substantive changes since then. Baselines are current.",
+    "prompt_sizes": {
+      "analyst.md": "242 lines — under threshold",
+      "curmudgeon.md": "221 lines — under threshold",
+      "decider.md": "339 lines — OVER 250-line threshold (flagged above)",
+      "poller.md": "83 lines — well under threshold",
+      "structure-integrity.md": "164 lines — under threshold",
+      "tinker.md": "220 lines — under threshold"
+    },
+    "code_analysis_sync": "All 67 WINs have code_analysis tags with reviewed=true in wins.json. Previous tinker report flagged 0/67 sync — this has been FIXED since last run. sync-code-analysis.js was applied successfully.",
+    "globe_fingerprint_progress": "0/67 items complete. Mode 3 (background queue) has not started processing. Analyst has been prioritizing Mode 1 expansions. This is expected behavior — Mode 3 is lowest priority.",
+    "cycle2_review_staleness": "Cycle 2 just started — 3 of 99 items reviewed. Too early to assess staleness. Will monitor in future runs."
+  },
+  "spot_checks": {
+    "curmudgeon_cycle2": {
+      "file": "WIN-003.c2.json",
+      "well_formed": true,
+      "has_code_analysis_tags": true,
+      "has_holes": false,
+      "has_stronger_arguments": true,
+      "has_deeper_analysis": true,
+      "observation": "Cycle 2 reviews include new fields (text_fingerprint, deeper_analysis, citation_check) not present in Cycle 1. These are substantive additions. The decider prompt should be made aware of these new fields to extract maximum value."
+    },
+    "decider_latest": {
+      "file": "daily-report-2026-04-07T06-33.json",
+      "processed_reviews": 1,
+      "produced_patches": 10,
+      "observation": "Decider produced 10 patches (all targeting sections.json for expansion integration). Good — it's integrating completed EXP items. But it only processed 1 curmudgeon review (WIN-002) despite 3 Cycle 2 reviews being available. This confirms the digest handoff gap identified above."
+    }
+  },
+  "recommendations": [
+    {
+      "priority": 1,
+      "type": "script_fix",
+      "description": "Fix digest-reviews.js to recognize Cycle 2 review files (.c2.json) as distinct unprocessed items. The current dedup logic appears to match base WIN IDs, treating WIN-001.c2.json as already processed because WIN-001.json is in the processed ledger. All Cycle 2 curmudgeon output is being silently dropped.",
+      "self_fixable": false,
+      "fix_applied": false
+    },
+    {
+      "priority": 2,
+      "type": "prompt_fix",
+      "description": "Close the analyst yeet gap: 61 issues are assigned-analyst but only 13 have EXP tracker entries. Either (a) add a decider prompt step to write expansion-tracker entries when yeeting, or (b) add an analyst prompt step to scan open-issues.json for untracked assigned-analyst items. Option (b) is simpler and doesn't require the decider to understand tracker format.",
+      "self_fixable": false,
+      "fix_applied": false
+    },
+    {
+      "priority": 3,
+      "type": "prompt_fix",
+      "description": "Refactor decider.md (339 lines) to stay under 250-line threshold. Move patch template schema, severity definitions, and expansion integration protocol into separate reference files the decider reads at runtime.",
+      "self_fixable": false,
+      "fix_applied": false
+    },
+    {
+      "priority": 4,
+      "type": "prompt_fix",
+      "description": "Inform decider about Cycle 2 curmudgeon review fields (text_fingerprint, deeper_analysis, citation_check). These new fields contain valuable data the decider currently doesn't know to look for.",
+      "self_fixable": false,
+      "fix_applied": false
+    },
+    {
+      "priority": 5,
+      "type": "prompt_fix",
+      "description": "Fix decider timestamp in filenames: use actual run timestamp, not next-scheduled timestamp. Current behavior produces future-dated filenames that break chronological sorting.",
+      "self_fixable": false,
+      "fix_applied": false
+    },
+    {
+      "priority": 6,
+      "type": "config_fix",
+      "description": "16 patched issues awaiting human application. Recommend human run apply-patches.js against the latest suggested-patches files to clear the backlog. Note: apply-patches.js does not exist on disk (ISS-480) — patches must be applied manually or the script must be created first.",
+      "self_fixable": false,
+      "fix_applied": false
+    }
+  ],
+  "previous_report_followup": {
+    "R1_code_analysis_sync": "RESOLVED. All 67 WINs now have code_analysis tags with reviewed=true in wins.json. The sync-code-analysis.js script was successfully applied.",
+    "R2_config_agents": "RESOLVED. Config.json now includes all 6 agents with correct schedules.",
+    "R3_curmudgeon_schedule": "RESOLVED. Previous tinker applied fix.",
+    "R4_broken_link_issues": "PARTIALLY RESOLVED. ISS-049 exists for Apollo LRR and CUORE. INTERMAGNET is a new broken link (found by today's integrity report) that needs a new issue.",
+    "R5_schedule_reorder": "NOT APPLIED. Flagged for human approval. Low impact continues — decider sees previous day's integrity report."
+  }
+}

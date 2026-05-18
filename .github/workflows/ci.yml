@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build HTML
+        run: node build.js html
+
+      - name: Run tests
+        run: npm test
+
+      - name: Verify wins.json is valid JSON
+        run: node -e "JSON.parse(require('fs').readFileSync('data/wins.json','utf8'))"
+
+      - name: Check for hardcoded counts in prose (smoke test)
+        run: |
+          # Ensure no literal "67 wins" hardcoded in the HTML generator
+          # (the count should be computed from wins.json at build time)
+          if grep -Pn '(?<!wins\.length|total|count|\.length).*\b67\s+(wins|WINs|predictions)' build-scripts/generate-html.js; then
+            echo "WARNING: Possible hardcoded count found in generate-html.js"
+            echo "All counts should be computed from wins.json"
+            # Don't fail — this is a smell test, not a hard rule
+          fi

@@ -1,0 +1,275 @@
+{
+  "generated_at": "2026-04-13T16:11:00Z",
+  "report_date": "2026-04-13",
+  "run_label": "run-1 (afternoon)",
+  "mode_selected": "cost_engineering",
+  "mode_reason": "Pipeline health green (all 8 agents producing within cadence). FUSE has 1 stale file (digest-reviews.js — minor). No Mode 1/2 urgency. Mode 3 selected: three Opus agents back at accelerated schedules with stale BAU metadata — same Step E4 bug from yesterday, now affecting all three agents. High workload justifies acceleration but metadata discrepancy persists.",
+  "modes_checked": {
+    "pipeline_health": "green — all 8 agents producing. Poller 10h ago (12h cadence OK). Analyst 3h ago (running */30). Curmudgeon 4h ago (running hourly). Decider 11 reports today (running */30). Integrity ran today. Social ran yesterday (daily). Workspace-sync 7h ago (4h cadence). Tinker this run.",
+    "infrastructure": "amber — 1 FUSE stale file: build-scripts/digest-reviews.js (workspace hash differs from GitHub). Other 4 checked files match. Not urgent but worth noting for next publish.",
+    "cost_engineering": "All three Opus agents back at accelerated schedules (analyst */30, decider */30, curmudgeon hourly) while priority-queue.json metadata still says BAU since 2026-04-11. Step E4 metadata-vs-reality bug persists. Churn-and-burn is justified (15 queue items, 32 open issues, 45 pending expansions). CLAUDE.md shrank 34% (resolved). Prompt/reference growth moderate.",
+    "proposals": "PROP-005 (decider pre-flight) still unimplemented — 7th consecutive report. Decider.md stale schedule descriptions still present — 3rd consecutive report. 2 orphan proposals detected."
+  },
+  "pipeline_health": {
+    "agents_running": 8,
+    "agents_stalled": [],
+    "output_freshness": {
+      "poller": "10h ago (12h cadence) — green",
+      "analyst": "3h ago (*/30 cadence) — green, high throughput",
+      "curmudgeon": "4h ago (hourly cadence) — green, cycle 3",
+      "decider": "2h ago (*/30 cadence) — green, 11 reports today, 32 yesterday",
+      "integrity": "ran today — green",
+      "social": "ran yesterday (daily cadence) — green",
+      "tinker": "this run — green",
+      "workspace_sync": "7h ago (4h cadence) — green"
+    },
+    "open_issues": 32,
+    "open_issues_note": "Up from 4 to 32 — reflects massive churn-and-burn work creating issues faster than they close. Active pipeline, not a stall. Notable: ISS-867 (n(r) defense preemption), ISS-837 (stale counts in SEC-1.7), ISS-835 (B(r) formula error)."
+  },
+  "findings": [
+    {
+      "severity": "major",
+      "category": "metadata",
+      "description": "ALL THREE OPUS AGENTS AT ACCELERATED SCHEDULES WITH STALE BAU METADATA: dome-analyst (*/30), dome-decider (*/30), dome-curmudgeon (hourly) are all running at churn-and-burn speeds. But priority-queue.json mode='bau' since 2026-04-11T10:42Z and all schedule_state intervals show BAU values (analyst=120min, curmudgeon=240min, decider=240min). The decider's schedule_check field in recent reports is empty {} — Step E4 isn't even logging. The acceleration appears justified (15 queue items, 32 open issues, 45 pending expansions) but the metadata is completely disconnected from reality.",
+      "evidence": "list_scheduled_tasks: analyst=*/30, decider=*/30, curmudgeon=0 * * * *. priority-queue.json schedule_state: analyst=120min, curmudgeon=240min, decider=240min, mode=bau. Decider reports daily-report-2026-04-13T06-14.json through T14-30: schedule_check={} (empty). Task descriptions explicitly say 'churn-and-burn'.",
+      "suggested_fix": "Two fixes needed: (1) Update priority-queue.json schedule_state to reflect actual crons (analyst=30, curmudgeon=60, decider=30, mode=churn-and-burn). (2) Fix Step E4 in decider.md to call list_scheduled_tasks and compare actual crons against schedule_state metadata. When mismatch: either update metadata to match reality, or flag for human review.",
+      "self_fixable": false,
+      "fix_applied": false
+    },
+    {
+      "severity": "moderate",
+      "category": "efficiency",
+      "description": "2 ORPHAN PROPOSALS NOT IN LEDGER: proposal-ISS-800-resolution.json and proposal-ISS-837-resolution.json exist on FUSE but are not in processed-proposals.json ledger. These will be re-processed by the decider on every run, wasting tokens on already-processed content.",
+      "evidence": "30 proposal files on disk, 28 in ledger. Missing: proposal-ISS-800-resolution.json, proposal-ISS-837-resolution.json.",
+      "suggested_fix": "Decider should add these to the ledger after processing. If already processed, manually add filenames to monitor/analyst/processed-proposals.json files array.",
+      "self_fixable": false,
+      "fix_applied": false
+    },
+    {
+      "severity": "moderate",
+      "category": "prompt",
+      "description": "DECIDER.MD SCHEDULE DESCRIPTIONS STILL STALE (3rd consecutive report): Lines 12-14 show Poller as 'every 4h' (actual: 12h), Curmudgeon as 'every 10min' (actual: hourly in current churn / 4h BAU). Self-fixable but deferred to Mode 4 for 3 reports.",
+      "evidence": "decider.md line 12: '(every 4h)', line 14: '(every 10min)'. Actual crons: poller '0 */12', curmudgeon '0 * * * *'.",
+      "suggested_fix": {
+        "file": "monitor/prompts/decider.md",
+        "find": "- **Poller** (every 4h): Dome site changes\n- **Analyst** (every 30min): Deep scientific analysis, new WIN entries, expansions\n- **Curmudgeon** (every 10min): Adversarial self-review",
+        "replace": "- **Poller** (every 12h): Dome site changes\n- **Analyst** (every 2h BAU / 30min churn): Deep scientific analysis, new WIN entries, expansions\n- **Curmudgeon** (every 4h BAU / 1h churn): Adversarial self-review"
+      },
+      "self_fixable": true,
+      "fix_applied": false
+    },
+    {
+      "severity": "moderate",
+      "category": "prompt",
+      "description": "OWNERSHIP MISALIGNMENT PERSISTS (3rd consecutive report): 4 files listed as git-owned in CLAUDE.md but missing from build.js OWNERSHIP: data/predictions.json, docs/llms.txt, docs/sitemap.xml, docs/robots.txt. Additional unclassified: data/kill-shots.json.",
+      "evidence": "grep for each file in build.js returns no match.",
+      "suggested_fix": "Route through decider to add to build.js OWNERSHIP.",
+      "self_fixable": false,
+      "fix_applied": false
+    },
+    {
+      "severity": "minor",
+      "category": "infrastructure",
+      "description": "FUSE STALE: build-scripts/digest-reviews.js differs between workspace and GitHub. Next build.js publish will fix.",
+      "evidence": "md5 mismatch: ws=0a11b76276b71343d3b356f06aed0e98 vs gh=cda50957ede0772d66bf0e5b8e448313.",
+      "suggested_fix": "Will auto-fix on next publish. No manual action needed.",
+      "self_fixable": false,
+      "fix_applied": false
+    },
+    {
+      "severity": "minor",
+      "category": "bloat",
+      "description": "ANALYST DISPATCHER GREW 15% (164L→189L) and DECIDER DISPATCHER GREW 7% (291L→312L). Reference total grew 11% (2517→2793L). Growth is moderate and likely reflects new features (prediction pipeline, verdict assignments).",
+      "evidence": "wc -l analyst.md=189 (was 164), decider.md=312 (was 291). reference total=2793L (was 2517L).",
+      "suggested_fix": "Monitor. Analyst dispatcher 15% growth exceeds the 10% alert threshold but is likely feature-driven. Review on next Mode 3 run if trend continues.",
+      "self_fixable": false,
+      "fix_applied": false
+    }
+  ],
+  "previous_followup": [
+    {
+      "finding": "DECIDER SCHEDULE STUCK AT 30 MIN",
+      "status": "WORSENED",
+      "evidence": "Yesterday: only decider stuck at */30. Today: ALL THREE Opus agents at accelerated schedules (analyst */30, decider */30, curmudgeon hourly) with metadata still showing BAU. The decider re-accelerated all three (justified by workload) but never updated priority-queue.json metadata. The Step E4 circular validation bug means this metadata drift is invisible to the decider."
+    },
+    {
+      "finding": "PROP-005: Decider pre-flight work check",
+      "status": "STILL_BROKEN",
+      "evidence": "grep -q 'Pre-flight Work Check' decider.md → not found. 7th consecutive report. At current churn-and-burn cadence with high throughput, the waste is lower (most runs are substantive). But once BAU resumes, this will matter again."
+    },
+    {
+      "finding": "OWNERSHIP MISALIGNMENT (4+3 files)",
+      "status": "STILL_BROKEN",
+      "evidence": "grep for predictions.json, llms.txt, sitemap.xml, robots.txt in build.js → no match. 3rd consecutive report."
+    },
+    {
+      "finding": "Stale schedule descriptions in decider.md lines 12-14",
+      "status": "STILL_OPEN",
+      "evidence": "decider.md still shows 'Poller (every 4h)' and 'Curmudgeon (every 10min)'. 3rd consecutive report. Self-fixable — deferred to Mode 4."
+    },
+    {
+      "finding": "CLAUDE.MD BLOAT (39% growth)",
+      "status": "RESOLVED",
+      "evidence": "CLAUDE.md shrank from 217L to 144L (-34%). Below the previous baseline of 156L. Excellent cleanup."
+    }
+  ],
+  "wasted_compute": {
+    "re_reviews": [],
+    "re_reviews_note": "228 unique targets across 232 review files — only 4 near-duplicates. Very clean.",
+    "re_work": [],
+    "re_work_note": "No stale complete expansions. Expansion pipeline flowing smoothly.",
+    "orphan_reprocessing": [
+      {"file": "proposal-ISS-800-resolution.json", "in_ledger": false},
+      {"file": "proposal-ISS-837-resolution.json", "in_ledger": false}
+    ],
+    "duplicate_outputs": [],
+    "stale_queue_items": [],
+    "estimated_wasted_opus_runs": 0,
+    "trend": "STABLE",
+    "note": "Pipeline is in high-throughput churn-and-burn mode. All runs appear substantive — 32 open issues, 15 queue items, 45 pending expansions. No-op waste is near zero during churn. Waste risk will return when BAU resumes."
+  },
+  "cost_engineering": {
+    "agent_efficiency": [
+      {
+        "agent": "decider",
+        "recent_runs_checked": 11,
+        "substantive_runs": 11,
+        "no_op_runs": 0,
+        "estimated_waste_pct": 0,
+        "model": "opus",
+        "current_schedule": "every 30min (churn-and-burn — justified)",
+        "bau_schedule": "every 4h",
+        "recommendation": "Healthy during churn. Metadata must be updated to reflect actual state. When queue drains, BAU restoration must update BOTH crons AND metadata atomically — the Step E4 fix is prerequisite."
+      },
+      {
+        "agent": "analyst",
+        "model": "opus",
+        "current_schedule": "every 30min (churn-and-burn — justified)",
+        "bau_schedule": "every 2h",
+        "recommendation": "High throughput: 10+ expansions today. No waste detected. Dispatcher grew 15% (164→189L) — monitor."
+      },
+      {
+        "agent": "curmudgeon",
+        "model": "opus",
+        "current_schedule": "every hour (accelerated — justified)",
+        "bau_schedule": "every 4h",
+        "recommendation": "Cycle 3, substantive reviews. Queue has 15 items. Acceleration justified."
+      },
+      {
+        "agent": "social",
+        "model": "sonnet",
+        "current_schedule": "daily",
+        "recommendation": "Low-cost Sonnet daily. No action needed."
+      }
+    ],
+    "churn_and_burn_status": {
+      "actual_mode": "churn-and-burn (all three Opus agents accelerated)",
+      "metadata_mode": "bau (STALE — not updated since 2026-04-11T10:42Z)",
+      "queue_depth": 15,
+      "open_issues": 32,
+      "pending_expansions": 45,
+      "justification": "High workload justifies acceleration. 32 decider reports yesterday, 11 today (all substantive). Curmudgeon producing 7+ reviews/day. Analyst producing 10+ expansions/day.",
+      "risk": "When queue empties, auto-restore will hit the same Step E4 bug — it will update metadata without verifying actual crons. Must fix Step E4 before next BAU transition."
+    },
+    "prompt_sizes": {
+      "analyst.md": 189,
+      "curmudgeon.md": 313,
+      "decider.md": 312,
+      "poller.md": 277,
+      "social.md": 309,
+      "structure-integrity.md": 398,
+      "tinker.md": 127,
+      "workspace-sync.md": 289,
+      "total": 2507,
+      "previous_prompt_total": 2456,
+      "prompt_growth_pct": 2.1,
+      "reference_total": 2793,
+      "previous_reference_total": 2517,
+      "reference_growth_pct": 11.0
+    },
+    "dispatcher_conversion_status": {
+      "converted": ["analyst (189L dispatcher + 6 worker modules incl mode5)", "decider (312L dispatcher + 4 worker modules)", "tinker (127L dispatcher + 4 worker modules)"],
+      "excluded": ["curmudgeon (benefits from holistic context)"],
+      "unconverted_low_priority": ["social (309L, Sonnet daily)", "structure-integrity (398L, Haiku daily)", "workspace-sync (289L, Haiku 4h)", "poller (277L, Sonnet 12h)"],
+      "note": "All Opus agents converted or excluded. No new conversion work needed. Focus remains on Step E4 fix and PROP-005."
+    }
+  },
+  "claude_md_audit": {
+    "size_lines": 144,
+    "previous_size_lines": 217,
+    "growth_pct": -33.6,
+    "growth_alert": "RESOLVED — shrank 34%, now below original 156L baseline",
+    "accuracy_findings": [
+      {
+        "issue": "OWNERSHIP misalignment persists: 4 files in CLAUDE.md as git-owned but missing from build.js OWNERSHIP. 3rd consecutive report.",
+        "severity": "moderate",
+        "status": "carryover"
+      },
+      {
+        "issue": "Predictions pipeline documented in Data Flow section (line 120). Adequate.",
+        "severity": "info"
+      },
+      {
+        "issue": "Monitoring Pipeline table shows correct BAU schedules but actual system is in churn-and-burn. Not a documentation error — CLAUDE.md documents the canonical schedules.",
+        "severity": "info"
+      }
+    ],
+    "performance_assessment": "CLAUDE.md shrank 34% (217→144L). Previous 39% bloat alert is fully resolved. Excellent cleanup. Content is now leaner than the pre-bloat baseline of 156L."
+  },
+  "context_load": {
+    "claude_md_lines": 144,
+    "previous_claude_md_lines": 217,
+    "per_agent": {
+      "analyst": {"dispatcher": 189, "references": 827, "claude_md": 144, "total": 1160, "previous_total": 1157, "change_pct": 0.3},
+      "curmudgeon": {"dispatcher": 313, "references": 173, "conditional": 107, "claude_md": 144, "base_total": 630, "max_total": 737, "previous_max": 784, "change_pct": -6.0},
+      "decider": {"dispatcher": 312, "references": 1119, "claude_md": 144, "total": 1575, "previous_total": 1498, "change_pct": 5.1},
+      "tinker": {"dispatcher": 127, "references": 666, "claude_md": 144, "total": 937, "previous_total": 888, "change_pct": 5.5}
+    },
+    "trend": "MIXED — CLAUDE.md down 34% (great), but reference files up 11% and dispatcher prompts up 2%. Net effect: analyst flat, curmudgeon down 6%, decider up 5%, tinker up 5%. No agent exceeds the 10% growth alert threshold.",
+    "alerts": [
+      "Analyst dispatcher grew 15% (164→189L) — crosses 10% per-file threshold but total context load only +0.3% due to CLAUDE.md shrinkage offsetting.",
+      "Reference files grew 11% (2517→2793L) — monitor for continued creep."
+    ]
+  },
+  "recommendations": [
+    {
+      "priority": 1,
+      "type": "human_action",
+      "description": "FIX METADATA-VS-REALITY: Update priority-queue.json schedule_state to reflect actual churn-and-burn state (analyst=30min, curmudgeon=60min, decider=30min, mode=churn-and-burn). This is immediate data correction."
+    },
+    {
+      "priority": 2,
+      "type": "human_decision",
+      "description": "FIX STEP E4 DESIGN FLAW (escalated from yesterday — now affecting all 3 agents): decider.md Step E4 must call list_scheduled_tasks and compare actual cron expressions against schedule_state metadata. When mismatch detected: either update metadata to match (if intentional acceleration) or log schedule_action_needed (if drift). This is the root cause of all metadata-reality discrepancies."
+    },
+    {
+      "priority": 3,
+      "type": "self_fix",
+      "description": "Add 2 orphan proposals to processed-proposals.json ledger: proposal-ISS-800-resolution.json, proposal-ISS-837-resolution.json. This prevents re-processing waste on every decider run."
+    },
+    {
+      "priority": 4,
+      "type": "self_fix",
+      "description": "Fix decider.md stale schedule descriptions (lines 12-14). 3rd consecutive report. Poller: 4h→12h. Curmudgeon: 10min→4h BAU/1h churn."
+    },
+    {
+      "priority": 5,
+      "type": "human_decision",
+      "description": "Apply PROP-005 (decider pre-flight work check). 7th consecutive report. Less urgent during churn-and-burn (no-op rate ~0%) but critical for BAU."
+    },
+    {
+      "priority": 6,
+      "type": "human_decision",
+      "description": "Fix OWNERSHIP misalignment: add data/predictions.json, docs/llms.txt, docs/sitemap.xml, docs/robots.txt to build.js OWNERSHIP. 3rd consecutive report."
+    }
+  ],
+  "tinker_self_audit": {
+    "mode_selected_correctly": true,
+    "substantive_findings": 6,
+    "new_findings": 2,
+    "carryover_findings": 4,
+    "resolved_findings": 1,
+    "self_assessment": "Substantive run. Key new finding: all three Opus agents are back in churn-and-burn but metadata was never updated — the same Step E4 bug from yesterday, now worse. Also found 2 orphan proposals causing re-processing. CLAUDE.md bloat from yesterday resolved (down 34%). Pipeline is in healthy high-throughput mode; cost focus shifts to metadata accuracy and BAU-transition readiness."
+  },
+  "notes_to_future_tinker": "The metadata-vs-reality gap is now the #1 systemic issue. When the queue drains and BAU restore triggers, the Step E4 bug will again produce a silent mismatch. Priority: get Step E4 fix implemented before the next BAU transition. PROP-005 is at 7 reports — at this point consider filing a new combined PROP that bundles Step E4 fix + schedule descriptions + PROP-005 as a single 'decider hygiene' patch to reduce implementation friction. The 2 orphan proposals (ISS-800, ISS-837) should be ledger-fixed next Mode 4 run. Reference file growth (11%) is moderate — mostly from decider reference expansion — watch for continued creep."
+}

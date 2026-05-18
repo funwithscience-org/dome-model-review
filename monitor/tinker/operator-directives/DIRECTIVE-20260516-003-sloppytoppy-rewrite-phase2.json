@@ -1,0 +1,124 @@
+{
+  "directive_id": "DIRECTIVE-20260516-003",
+  "title": "Author PROP-041: dome-sloppytoppy-rewrite (Phase 2, Opus) — the rewriter half of the sloppytoppy pair. Single Opus agent, all five rewrite categories (load-bearing splits / list extraction / em-dash splits / buried-lead restructure / formatting moves) included from day one, always-propose mode, decider integrates after curmudgeon-on-rewrite verification.",
+  "filed_by": "operator",
+  "filed_at": "2026-05-16T08:50:00Z",
+  "status": "completed",
+  "priority": "medium",
+  "scope_authority": "Design proposal only (PROP-NNN). Operator reviews PROP before implementation. Tinker authors the design end-to-end, identifies the canonical Phase 2 fix, does NOT self-apply. Phase 2 affects published prose on the live site — getting the design wrong on the agent side can damage scientific argument quality during the period when we're 'getting the science nailed down', so operator wants a complete proposal-with-counter-args before any agent runs.",
+  "context": [
+    "PROP-039 Phase 1 (sloppytoppy-score) shipped 2026-05-16. Run 1 + Run 2 = 99 surfaces scored, 33 below acceptable_floor (7.5), 21 high-priority (<6.0). Carry-over ~377 surfaces — full sweep takes ~7-8 more daily runs.",
+    "Subtraction tally across all below-floor surfaces: sentence_complexity -113 (67%), forward_references -42 (25%), buried_lead -6 (4%), jargon_density -4 (2%), citation_density -2 (1%), concept_stacking -1 (1%). Looks like 'mostly mechanical' on the surface.",
+    "BUT the operator + cowork-claude zoom-in on WIN-067.detail_evidence (composite 5.4, sc -5, buried_lead -2) revealed that the SUBTRACTION-TALLY is mechanical but the FIX is not. Long sentences in detail_evidence fall into 5 categories with very different rewrite-safety profiles:",
+    "  Cat A — Load-bearing logical structure (IF...THEN conditionals, multi-clause derivations). Splitting requires understanding what's load-bearing; mechanical split breaks the science.",
+    "  Cat B — List-as-sentence ('(1)... (2)... (3)...' compounds). Mechanically convertible to <ol>/<ul>. Low risk.",
+    "  Cat C — Citation/context bundles joined by em-dashes. Splittable on the em-dash; low risk.",
+    "  Cat D — Buried-lead structural fixes. Paragraph-level reorder so detail_evidence mirrors TLDR's punchline-first pattern. Judgment-required.",
+    "  Cat E — Formatting moves (tables for comparisons, sub-headings for distinct sub-arguments, bullet lists, block quotes for cited claims, code/math blocks). Word-preserving by construction; lowest-risk category. Operator confirmed 2026-05-16 that bullets/tables/formatting carry real cognitive-load reduction for the flat-earth-level reader — not just a sentence_complexity workaround.",
+    "Worked-example evidence: a hand-rewrite of WIN-067.detail_evidence applying all 5 categories produced an estimated rescore from composite=5.4 to ~8.4 (predicted delta +3.0, well above the 1.5 gate). Every number, citation, verdict, and argument structure was preserved. Took ~15 minutes of focused human-equivalent work — implies Opus per-surface cost is 5-10x the scoring agent's per-surface cost.",
+    "Architectural decisions confirmed by operator during design conversation 2026-05-16:",
+    "  D1 — Single Opus agent (not split-by-category). Rationale: scheduler binds one model per task; can't tier Sonnet-mechanical + Opus-substantive inside one agent. Operator stated 'we may divide/downgrade later, but i'd rather have more capability in the beginning or we risk breaking things just as we're getting the science nailed down.' YAGNI in the other direction — start with full Opus capability across all 5 categories, demote/script-out later once the pattern distribution is known.",
+    "  D2 — Decider is the apply mechanism. Rewriter writes proposals to monitor/sloppytoppy/rewrites/RW-NNN.json (matching analyst-EXP pattern). Decider integrates after curmudgeon-on-rewrite verification. Rewriter never self-applies to wins.json/sections.json. This matches the operator's stated preference for 'don't break things while we're getting the science nailed down' — every rewrite goes through review.",
+    "  D3 — Always-propose mode at launch. Once curmudgeon-on-rewrite track record is clean (say 2 weeks, zero content-preservation defects caught), operator may revisit class-gated self-apply for the trivially-safe categories (E formatting, B list-extraction, C em-dash splits).",
+    "Cooldown + acceptable_floor + minimum_improvement_delta gates per rubric-config.json already defined (Phase 1 wrote these informationally; Phase 2 reads them as gating logic).",
+    "Same shape as PROP-039 Phase 1: narrow-purpose Opus/Sonnet scheduled agent. Reuses scoring infrastructure (rubric, content_hash, scores.json) — Phase 2 reads but does not write scores.json (single-writer is sloppytoppy-score)."
+  ],
+  "operator_intent": "Tinker authors PROP-041 as a complete Phase 2 proposal that the operator can review and (after iteration) approve for implementation. The design should be model-class-resilient (works on Opus, doesn't depend on Sonnet-style rule-following), should be capability-first (cover all 5 rewrite categories from day one), should have an explicit content-preservation audit mechanism, and should integrate cleanly with existing decider intake + curmudgeon review patterns.",
+  "tasks": [
+    {
+      "task_id": "task_1_audit_phase2_prerequisites",
+      "description": "Re-read PROP-039 + the conversation history of the 2026-05-16 design session (rubric v1.1 amendment, the WIN-067 zoom-in, the formatting-moves discussion, the operator's confirmed architectural decisions D1/D2/D3). Confirm there's nothing in Phase 1's design that conflicts with Phase 2 — in particular the scores.json schema, content_hash mechanism, and rubric-config thresholds should all be reusable.",
+      "deliverable": "Short audit confirming Phase 1 prerequisites are met OR listing concrete blockers."
+    },
+    {
+      "task_id": "task_2_design_agent_prompt_skeleton",
+      "description": "Draft the canonical structure of monitor/prompts/sloppytoppy-rewrite.md (Opus, every-2-3-days cadence at e.g. 05:00 UTC, offset from sloppytoppy-score's 03:30). Include: Step 0 fresh clone (matching sloppytoppy-score.md pattern), Step 1 read scores.json + rubric-config + rubric reference, Step 2 build rewrite-eligible queue (composite < 7.5, content_hash matches scored, last rewrite > cooldown_days ago, not already in pending RW), Step 3 select batch (5-10 surfaces, prioritize high before medium), Step 4 per-surface: analyze categories present → draft rewrite → predict-improvement-delta via draft-then-score-then-compare → if delta >= min_delta then build RW-NNN.json proposal else build punt record, Step 5 commit + push, Step 6 write run summary. Apply Phase 1's clone-canonical-write discipline (no FUSE writes).",
+      "deliverable": "Section-by-section skeleton of sloppytoppy-rewrite.md with placeholders for actual prompt text. Do NOT write the full prompt yet — operator reviews structure first."
+    },
+    {
+      "task_id": "task_3_design_RW_NNN_schema",
+      "description": "Define the schema for monitor/sloppytoppy/rewrites/RW-NNN.json (append-only directory, one file per rewrite proposal). Required fields: rw_id, surface_id, surface_type, original_content_hash (matches the scored version), original_text, rewritten_text, rewrite_category_tags ([A,B,C,D,E] subset), predicted_delta_breakdown (length/understandability/composite before+after), rationale (1-3 sentences explaining why the rewrite improves understandability), CONTENT_PRESERVATION_AUDIT (numbers_preserved: [list of every numeric value]; citations_preserved: [list]; verdict_unchanged: bool; claim_unchanged: bool; argument_structure_summary: <one-line>), authored_by_run, authored_at, status (pending|approved|rejected|integrated|superseded). Plus punt-record schema for cases where no rewrite passes the delta gate (rw_id, surface_id, punt_reason, scored_composite_remains).",
+      "deliverable": "JSON schema + 1 example RW proposal (use WIN-067.detail_evidence as the example, since we have a worked rewrite). Plus 1 punt example."
+    },
+    {
+      "task_id": "task_4_design_decider_intake_integration",
+      "description": "Specify the decider-intake step that reads pending RW proposals. Reference existing analyst-EXP intake pattern in decider-intake.md as the template (RW proposals are analogous to EXPs — written by an upstream agent, decider reviews + integrates). Define: (a) priority bracket within decider's intake order (probably between EXP integration and curmudgeon-priority-queue draining — rewrites aren't urgent), (b) decider's actions for each RW: route to curmudgeon-on-rewrite for verification, on approval integrate (replace surface text in wins.json or sections.json), on rejection mark RW status=rejected, on supersede (a newer score made the surface acceptable) mark superseded, (c) commit message convention for rewrite integrations ('rewrite integration: <surface_id> composite <old> -> <new>'), (d) what happens if curmudgeon takes >N runs to verify (suppress, escalate to human-note).",
+      "deliverable": "Decider-intake.md draft edits (Step NNN — Rewrite Proposal Integration). Mark with PROP-041-NNN markers so operator can find them in the diff."
+    },
+    {
+      "task_id": "task_5_design_curmudgeon_on_rewrite_path",
+      "description": "Design how curmudgeon verifies a rewrite proposal. Two options to evaluate:",
+      "options": {
+        "option_A_priority_queue_new_class": "Add review_class='rewrite-verify' to priority-queue.json. Rewrite proposals enqueue here; curmudgeon picks them up alongside change-and-holistic and verification classes. Reuses existing queue infrastructure. Curmudgeon's rewrite-rubric is added as a new section in curmudgeon-change-and-holistic.md OR a new reference file curmudgeon-rewrite-rubric.md.",
+        "option_B_dedicated_review_agent": "New agent dome-sloppytoppy-rewrite-verify (Sonnet, similar to PROP-038's curmudgeon-verify). Reads pending RW proposals, runs content-preservation audit (string-diff against numbers_preserved + citations_preserved + verdict_unchanged), approves or kicks back to operator. Decouples rewrite verification from curmudgeon's regular queue. More machinery but cleaner separation.",
+        "option_C_curmudgeon_with_audit_helper": "Curmudgeon (Opus) reviews rewrites via priority-queue class='rewrite-verify' (option A), BUT a node script monitor/scripts/audit-rewrite.js runs first as a pre-check: takes the RW record, verifies numbers_preserved actually appear in rewritten_text, verifies citations match, etc. Curmudgeon only spends Opus tokens on the structure/argument question, not on string-matching. Belt-and-suspenders."
+      },
+      "design_questions_for_tinker": [
+        "Q1: Which option (A/B/C) minimizes operator review burden + risk of content-preservation defects shipping? Operator preference unstated; default to the option that's most resilient.",
+        "Q2: How does curmudgeon score 'argument structure preserved'? Free-text Opus judgment, or a checklist (verdict unchanged + claim unchanged + load-bearing connectives preserved + paragraph-order preserves logical flow)?",
+        "Q3: Failure mode — what happens if curmudgeon rejects a rewrite? RW.status = rejected; the underlying low composite remains; does it re-enter the rewrite queue after cooldown (giving the rewriter another shot with a different approach), or get permanently flagged 'cannot be auto-rewritten, operator-attention'?"
+      ],
+      "deliverable": "Recommend one option with rationale. Spec the rewrite-rubric content (the actual checklist curmudgeon applies)."
+    },
+    {
+      "task_id": "task_6_design_predict_improvement_delta_mechanism",
+      "description": "Spec the draft-then-score-then-decide pattern. Two sub-options:",
+      "options": {
+        "option_X_full_double_score": "Rewriter drafts the rewritten_text, then applies the full rubric to it (same logic sloppytoppy-score uses, but inline within the rewrite agent), produces a predicted score, compares to current scored composite, applies delta gate. Expensive (effectively double the Opus tokens per surface) but uses the canonical rubric for the prediction.",
+        "option_Y_heuristic_delta": "Rewriter estimates the delta from category-fixes: 'I fixed buried_lead so understandability +2; I converted 4 long sentences to a list so sentence_complexity goes from -X to -Y; expected new composite Z.' Cheaper (single pass) but relies on Opus's calibrated guesses about the rubric's behavior.",
+        "option_Z_hybrid": "Heuristic delta for the draft-decision (option Y), then the canonical rescore happens NATURALLY at the next sloppytoppy-score run after integration. If the actual rescore < predicted delta, the rewriter's predictions need recalibration — flag for operator in next-run summary."
+      },
+      "deliverable": "Recommend one option with rationale. If option Z, spec the recalibration-flag mechanism (when does it fire? what does it tell the operator?)."
+    },
+    {
+      "task_id": "task_7_design_counter_arguments",
+      "description": "Steelman the case for NOT building Phase 2 aggressively. Strongest counter-arguments to address:",
+      "counter_args_to_address": [
+        "'Phase 2 risks damaging scientific arguments during the period when we're getting the science nailed down. Better to delay Phase 2 until the WIN set is more stable.' Rebuttal expected: Phase 2 is propose-only with curmudgeon review — there's no scenario where a rewrite ships without human-or-Opus-curmudgeon eyes on it. The risk is bounded; the reward (better readability for flat-earth-level reader, which is the whole site's purpose) is structural.",
+        "'Most of the readability defects are sentence_complexity and forward_references. A node script could fix 30-40% of them mechanically (em-dash splits, list extraction). LLM rewriter is overkill for that share.' Rebuttal expected: agreed in principle, but operator decided 'capability-first, downgrade later' — Phase 2 will reveal which categories are actually mechanical vs judgment-required, and we can extract a script later if the data supports it. Premature optimization to script-pre-pass before we have the evidence.",
+        "'The PROP-039 Phase 1 sloppytoppy-score is still finding calibration issues (WIN-038 v1.1 fix). Phase 2 is premature until the rubric is stable.' Rebuttal expected: Phase 1 calibration is converging — 4/5 baseline surfaces now within tolerance after v1.1. The remaining 21 high-priority surfaces are concentrated in sentence_complexity + forward_references, which the rubric clearly catches. Phase 2 designed against a rubric that's still tuning is OK as long as Phase 2 reads rubric-config dynamically (which it will). If the rubric changes, Phase 2 picks up the new thresholds on next run.",
+        "'Decider's intake is already crowded — PROP-037 just added integrity finding intake; PROP-040 just extracted curmudgeon-pq mechanics. Adding rewrite-intake makes decider's job even bigger.' Rebuttal expected: rewrite-intake is small in volume (5-10 surfaces every 2-3 days), and the intake step is itself simple (read pending RW records, enqueue for curmudgeon, integrate on approval). Doesn't compete with decider's high-stakes work."
+      ]
+    },
+    {
+      "task_id": "task_8_handle_cadence_and_scope",
+      "description": "Recommend (a) initial cadence — every 2 days at 05:00 UTC vs every 3 days vs daily — based on expected queue size and Opus cost; (b) initial batch size — 5 surfaces vs 10 vs adaptive; (c) initial scope filter — does Phase 2 launch covering all surface types (WIN fields + section_details_block) or start with one (e.g., WIN detail_evidence only, since those have the highest below-floor concentration) and expand?",
+      "deliverable": "Recommendations with rationale for each (a)/(b)/(c). Operator-preference is for capability-first, so the conservative-scope option needs strong evidence to win."
+    },
+    {
+      "task_id": "task_9_propose_only",
+      "description": "Author the PROP-041 as DESIGN-PENDING-OPERATOR-REVIEW. Do NOT self-apply. Operator reviews proposal, requests amendments if needed, then operator + cowork-claude apply prompt edits + new agent registration.",
+      "deliverable": "monitor/tinker/proposals/PROP-041-sloppytoppy-rewrite-phase2.json with the full design (all tasks 1-8 incorporated). Include: agent prompt skeleton, RW schema, decider intake integration, curmudgeon-on-rewrite design, predict-delta mechanism, counter-arg section, cadence/batch/scope recommendations, and Q-OP-N operator-decision questions for anything left open."
+    }
+  ],
+  "in_scope_for_tinker": [
+    "Read PROP-039 in full",
+    "Read this DIRECTIVE's context block to understand the 2026-05-16 design conversation conclusions",
+    "Read decider-intake.md, decider.md, curmudgeon-change-and-holistic.md, curmudgeon-verify.md (PROP-038 narrow-verify agent — pattern reference), sloppytoppy-score.md (PROP-039 Phase 1 prompt)",
+    "Read DATA-SCHEMAS.md for priority-queue.json + decider intake conventions",
+    "Read monitor/sloppytoppy/rubric-config.json + sloppytoppy-rubric.md to confirm Phase 2 thresholds are already specified",
+    "Read CLAUDE.md File Ownership rules + state-file-archives.md for any RW-archive considerations",
+    "Author one PROP-041 with the full design"
+  ],
+  "out_of_scope_for_tinker": [
+    "Do NOT modify any prompts directly. Propose-only.",
+    "Do NOT create new agent scheduling entries.",
+    "Do NOT touch rubric-config.json or math-dense-surfaces.json or content-dense-surfaces.json — those are operator-curated.",
+    "Do NOT propose script-pre-pass as Phase 2's first step. Operator decided capability-first; scripts come later if data supports.",
+    "Do NOT batch with DIRECTIVE-20260516-001 (sloppytoppy-score Phase 1, completed) or DIRECTIVE-20260516-002 (decider context-load extraction, completed). PROP-041 is independent."
+  ],
+  "operator_preferences_for_proposal": [
+    "Counter-argument section mandatory (per operator preference 'Think about the other side of the argument too')",
+    "Recommend capability-first: all 5 rewrite categories at launch. Don't propose deferring categories.",
+    "Decider as apply mechanism (confirmed, not negotiable)",
+    "Always-propose mode at launch (confirmed, not negotiable). Class-gated self-apply is a future iteration, not Phase 2.",
+    "Content-preservation audit MUST be a first-class output field on every RW proposal (numbers_preserved, citations_preserved, verdict_unchanged, claim_unchanged, argument_structure summary)",
+    "Q-OP-N questions for anything genuinely undecided after counter-arg analysis (curmudgeon-on-rewrite review path option A/B/C, predict-delta mechanism option X/Y/Z, cadence)"
+  ],
+  "expected_artifacts": [
+    "monitor/tinker/proposals/PROP-041-sloppytoppy-rewrite-phase2.json (status: design-pending-operator-review)"
+  ],
+  "completed_at": "2026-05-16T08:05:53.224Z",
+  "completed_by_run": "tinker-2026-05-16T07-55",
+  "prop_id_authored": "PROP-041"
+}

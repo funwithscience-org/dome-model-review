@@ -1,0 +1,111 @@
+{
+  "point_id": "EXP-255",
+  "topic": "Overview hero rework — thesis-led composition replacing four-up scorecard",
+  "queue_id": 266,
+  "queue_pushed_at": "2026-04-26T03:24:28.360Z",
+  "reviewed_at": "2026-04-26T15:47:47.969Z",
+  "cycle": 1,
+  "trigger": "priority-queue-expansion-proposal",
+  "target_type": "proposal",
+  "current_verdict_holds": false,
+  "confidence": 0.95,
+  "our_argument_summary": "EXP-255 proposes replacing the four-up Overview scorecard (Claimed Wins / Actual Wins / Failures / Timestamp Error) with a thesis-led hero — operator-authored display-scale sentence, eclipse Live-test-pending badge, and a body-weight figures row preserving the same four numbers. Implements HNOTE Items 1, 2 (audit no-op), and 5; defers Items 3 and 4 to follow-up EXPs.",
+  "proposal_review_questions": {
+    "verdict_flip_plausibility": "N/A — this is a design proposal, not a WIN-verdict proposal. Equivalent question: \"Does this proposal achieve its stated objective if integrated as written?\" Answer: NO, the patch will not apply (see hole #1).",
+    "new_tag_naming": "The replacement introduces ten new CSS classes — thesis-hero, thesis-statement, thesis-meta, thesis-badge, thesis-badge-dot, thesis-badge-pre, thesis-badge-date, thesis-figures, tf-item, tf-number, tf-textnum, tf-accent, tf-label, tf-link. None carry the project ds- prefix used elsewhere. See hole #3.",
+    "alternatives_considered": "Adequate. The proposal documents Item 2 audit (no six-tile redundancy found) and discusses the round-1-vs-round-2 design decision in kernel_of_truth. Anticipated_objections cover thesis-vs-badge competition, animation, link-target stability, and chunking choice. Round-1 reviewer rationale is acknowledged.",
+    "unknowns_acknowledged": "Visual-fold check is correctly flagged as a post-integration verification step. Build-impact estimates are roughly right. Two unknowns are NOT acknowledged: (a) the proposal does not flag that the find strings drop the ds- prefix and therefore will not match; (b) the dark-mode color of the pulsing dot box-shadow (hardcoded RGB) is not addressed."
+  },
+  "proposal_package_analysis": {
+    "chunking_rationale_check": "Sound. Items 1+2+5 are visually + structurally coupled to the first-viewport hero composition. Items 3 and 4 are spatially separable. HNOTE explicitly permits chunking ('Deliver as ONE coordinated EXP OR up to FIVE separate EXPs, at the analyst's discretion').",
+    "audit_finding_item2_check": "Correct. I independently verified that build-scripts/generate-html.js renders the verdict bar chart at line 1439 (one line above the four-up scorecard at line 1441). No six-tile distribution display exists. The reviewer almost certainly miscounted the four-up sc-hero as six tiles, since the four-up sublabels make each tile dense. Item 2 as a no-op is the right call.",
+    "badge_link_target_check": "Verified stable. id=\"p4-426\" exists in built docs/index.html under heading \"4.2.6 What would change our verdict\". EXP-254 has already integrated (id=\"p4-427\" is also live with heading \"4.2.7 What else would have to be true...\"); 4.2.6 was not renumbered. Badge link will not break on next reorganization.",
+    "counts_total_substitution_check": "Defensible. Project CLAUDE.md does prohibit hardcoded derived numbers, and the operator's HNOTE says the literal '69' represented an accurate count at write-time. Substituting ${counts.total} (live = 71) preserves the sentence structure. However, the anticipated_objection response would be stronger if it cited the operator-specific instruction ('numbers stay; only their visual hierarchy changes') alongside CLAUDE.md, since the HNOTE's verbatim wording was elevated to a near-instruction.",
+    "load_bearing_content_audit_check": "Partially WRONG. The proposal claims 'the full prose zero falsifications is now in the accuracy-math-section directly below the hero (untouched)'. I verified: the phrase 'zero falsifications' appears EXACTLY ONCE in build-scripts/generate-html.js, at line 1445, inside the sublabel that the patch removes. The accuracy-math-section directly below uses different phrasing ('the dome's public denominator includes only X acknowledged falsifications'). After the swap, the literal phrase 'zero falsifications' disappears from the Overview tab. This is small but it is a content loss the audit denied."
+  },
+  "holes_found": [
+    {
+      "severity": "critical",
+      "description": "FC1 and FC2 find anchors do NOT match the actual code. The codebase uses a ds- prefix on every scorecard class (verified: grep -c on the actual strings returns 0 for the proposal's find strings, 1 for the prefixed strings). FC1 looks for class=\"scorecard sc-hero\" but the file contains class=\"ds-scorecard ds-sc-hero\". FC2 looks for .sc-domains{grid-template-columns:repeat(3,1fr)}\\n.verdict-bars{margin:1.5rem 0 2rem;padding:0;border:none} but the file contains .ds-sc-domains{...}\\n.ds-verdict-bars{...}. exact_string_replace will fail to apply either patch.",
+      "recommendation": "Analyst must rewrite both find blocks to include the ds- prefix on every class name, and re-verify with grep -c against build-scripts/generate-html.js BEFORE pushing the proposal back to curmudgeon. Specifically: FC1 find should start with <div class=\"ds-scorecard ds-sc-hero\" style=\"grid-template-columns:repeat(4,1fr)\"> and use ds-sc-card / ds-sc-number / ds-sc-label / ds-sc-sublabel throughout the sublabel block. FC2 find should be .ds-sc-domains{...}\\n.ds-verdict-bars{...}."
+    },
+    {
+      "severity": "critical",
+      "description": "FC1 verification gate is tautological. The proposal specifies 'grep -c class=\"scorecard sc-hero\" build-scripts/generate-html.js  # expect 0 (the only sc-hero usage was the four-up tile block)' as the post-condition. This count is already 0 BEFORE any patch is applied (because the actual class is ds-sc-hero, not sc-hero). A failed FC1 patch would still appear to pass this verification. This hides the bug above and could let a no-op patch land.",
+      "recommendation": "Replace the post-condition with grep -c 'class=\"ds-scorecard ds-sc-hero\"' build-scripts/generate-html.js  # expect 0 (only after patch). The positive gate (grep -c 'class=\"thesis-hero\"' >= 1) is already correct and should be paired with the negative gate fixed. The decider should also fail-loud if exact_string_replace returns 'no match' on either find — currently the decider's pipeline may swallow that as a non-fatal warning."
+    },
+    {
+      "severity": "moderate",
+      "description": "Naming convention violation. The codebase uses a ds- prefix consistently (ds-tab-bar, ds-tab-btn, ds-scorecard, ds-sc-card, ds-verdict-bars, ds-vb-row, ds-breaking-news, ds-stance-statement, ds-section-nav, ds-toc, ds-pred-meta, etc.). The new classes are all unprefixed: thesis-hero, thesis-statement, thesis-meta, thesis-badge, thesis-figures, tf-item, tf-number, tf-label, tf-link, tf-accent, tf-textnum, plus the @keyframes thesis-badge-pulse. This breaks the design-system invariant that any class name without the prefix is by convention not part of our scope. Future grep-by-prefix audits will silently miss this hero.",
+      "recommendation": "Rename to ds-thesis-hero / ds-thesis-statement / ds-thesis-meta / ds-thesis-badge / ds-thesis-figures / ds-tf-item / ds-tf-number / ds-tf-label / ds-tf-link / ds-tf-accent / ds-tf-textnum, and the keyframe to ds-thesis-badge-pulse. CSS selectors and HTML class attributes both need updating. This is mechanical but should not be deferred — every additional ds- inconsistency that lands raises the cost of a future cleanup pass."
+    },
+    {
+      "severity": "moderate",
+      "description": "load_bearing_content_audit overclaims preservation of 'zero falsifications'. The phrase 'zero falsifications' exists exactly once in generate-html.js, in the sublabel that this patch deletes. The accuracy-math-section directly below uses different phrasing ('only X acknowledged falsifications'). After the swap the literal phrase 'zero falsifications' is gone from the Overview tab. Small content loss but the audit explicitly denied this.",
+      "recommendation": "Either accept the loss (the rhetorical work of the phrase is arguably done by 'Survive scrutiny: 0' in the figures row) and correct the audit to acknowledge it, OR add 'zero falsifications' to the accuracy-math-section's first sentence. Recommend acceptance + audit correction — adding the phrase to ams-p would mildly violate the proposal's own out_of_scope (accuracy-math-section is preserved untouched)."
+    },
+    {
+      "severity": "moderate",
+      "description": "Above-the-fold estimate is wrong, though the conclusion still holds. The proposal estimates 'thesis ~85px tall × 2 lines = ~170px'. At clamp(1.85rem,3.6vw,2.65rem) on 1440x900, computed font-size = min(42.4px, 51.84px) = 42.4px, line-height 1.18 × 42.4 = ~50px per line. The 104-character thesis at max-width 32ch (~22ch on a serif at 42px ≈ 704px wide) wraps to ~4 lines, not 2 — total thesis ~200px. Adding 36px (badge meta) + 90px (figures, 1.55rem ~ 25px font + label ~ 10px + padding) gets ~330px hero height. Still well above a 900px fold (with ~120px title block above the hero, total ~450px). But the per-line estimate is half-truth.",
+      "recommendation": "Curmudgeon does not block on this — fold check still passes. Note for the analyst: re-derive line-height × computed font-size estimates from the actual CSS values, not from a guess of '85px tall', so the next fold-bound proposal does not under- or over-estimate. Mobile (<420px) hero will be closer to 360px tall — still above the iPhone fold but takes more of the first viewport than desktop."
+    },
+    {
+      "severity": "minor",
+      "description": "Pulse keyframe hardcodes rgba(74,111,165,...) — the light-mode --accent literal. Dark-mode --accent is #8fafd4 (RGB 143,175,212). The pulse ring color stays light-mode-blue in dark mode while the dot itself is var(--accent) and changes correctly. Visually this is subtle and probably unnoticed by most users, but it is a cosmetic dark-mode regression and is the kind of detail the round-2 designer would notice.",
+      "recommendation": "Either (a) switch the keyframe to use a CSS custom property that toggles in the dark-mode media query block (e.g., --thesis-pulse-rgb: 74,111,165 in :root and 143,175,212 in @media(prefers-color-scheme:dark) :root), or (b) accept the inconsistency and document it. Recommend (a) — it costs four lines and matches the rest of the file's dark-mode discipline."
+    },
+    {
+      "severity": "minor",
+      "description": "Visual asymmetry in figures row: three of the four figures use 1.55rem serif numbers (.tf-number); the fourth (timestamp) uses 1.05rem text (.tf-textnum) for the words 'Wrong side'. The other three figures dwarf it visually. The original four-up tile fixed this with a 1.4rem font-size override on the same word. The new design carries the asymmetry forward at smaller scale. This was the very kind of stat-tile awkwardness the round-2 designer was trying to fix.",
+      "recommendation": "Consider replacing 'Wrong side' with a real number (e.g., 'Apr 7' as the date the author conceded the timestamp distinction, or 'Apr 2026' month — pick something with three or four characters) so the textnum class can be retired and all four figures share .tf-number style. Alternatively, demote 'timestamp error' to a compact link below the three numeric figures rather than a full figure cell. Curmudgeon does not block; this is a polish call."
+    }
+  ],
+  "stronger_arguments": [
+    {
+      "description": "The lead-with-thesis composition has an unstated additional benefit: it accelerates LLM crawler indexing. Every retrieval-augmented system that hits this page first parses the H1+subtitle+meta+thesis, and the thesis sentence is exactly the form that a vector-similar query ('does the dome model add anything physics doesn't explain?') would expect to retrieve. The original four-tile copy was less retrieval-friendly because it interleaved numbers and prose. This is an SEO/AI-discoverability angle the proposal doesn't invoke but supports the same conclusion.",
+      "sources": [
+        "docs/llms.txt — already optimized for LLM consumption; the new hero strengthens the same thesis at the user-visible page"
+      ]
+    },
+    {
+      "description": "The verbatim sentence ('None of the X predictions produces a dome-specific result that standard physics cannot already explain') is testable and falsifiable, which makes it a stronger thesis than 'the dome fails' would be. A defender who wants to refute us can target this sentence directly: produce one prediction that IS dome-specific and standard physics cannot explain. That clarity benefits the curmudgeon as much as the operator — it gives a stable target for adversarial review.",
+      "sources": [
+        "proposal anticipated_objection #2"
+      ]
+    }
+  ],
+  "kernel_of_truth": {
+    "description": "The thesis-led composition IS sound rhetorically. The HNOTE author's analysis (numbers do not add to a coherent thesis; the actual thesis is none survives scrutiny; the thesis sentence belongs at display scale) is correct. The accessibility plumbing (aria-labelledby, aria-label, prefers-reduced-motion) is competently done. The Item 2 audit is correctly resolved as no-op. The chunking choice is permitted by the HNOTE and minimizes integration risk. The badge link target is verifiably stable (verified independently — both p4-426 and p4-427 are live).",
+    "why_it_doesnt_save_claim": "None of those strengths overcome the broken find anchors. A patch that does not match its targets does no work at all — the live page would be unchanged after a build, but ALL downstream verification (acceptance_criteria items 1-7) reads from the post-build DOM that was never patched in the first place. The decider would self-detect via the positive grep ('class=\"thesis-hero\"' >= 1) — that gate fails — but only if the decider runs the FULL acceptance check, not the tautological negative gate. The proposal cannot be integrated as written. It must be re-issued with corrected anchors."
+  },
+  "recommended_action": "major_rewrite",
+  "recommended_action_rationale": "Two critical patch-application failures (find anchors broken; tautological verification) plus four moderate-or-below cleanups. The analyst must reissue with correct find strings, fix the verification gate, and decide on the ds- prefix question. Once those land, this becomes a strong proposal worth integrating. Decider: do NOT integrate this version. Push back to analyst with the patch corrections enumerated under hole #1 and #3, then re-queue for curmudgeon spot-check rather than full re-review.",
+  "text_fingerprint": {
+    "proposal_size_bytes": 32575,
+    "file_changes_count": 2,
+    "new_classes_introduced": 11,
+    "new_keyframes_introduced": 1,
+    "css_added_lines_estimate": 24,
+    "html_added_lines_estimate": 22
+  },
+  "deeper_analysis": "This is a substantive, well-reasoned design proposal that misses on execution at the literal-string-match layer. The find/replace mismatch is the kind of bug that would have been caught instantly by running the exact grep the proposal recommends as verification — except the proposal recommends the wrong grep, which is itself the bug compounded. The analyst likely wrote the find blocks from memory or from a stale read of the source rather than a fresh grep against the live file. Fix is mechanical (s/scorecard/ds-scorecard/, s/sc-/ds-sc-/, s/.sc-domains/.ds-sc-domains/, s/.verdict-bars/.ds-verdict-bars/) but the proposal as written cannot land. The deeper concern is that the analyst's verification step was self-confirming — grep for a string that does not exist, get 0, declare success. The decider's integration pipeline should treat exact_string_replace miss as a hard failure, not an advisory; if it does not already, that is a structural recommendation for tinker.",
+  "citation_check": {
+    "citations_verified": [
+      "p4-426 anchor exists in docs/index.html with heading '4.2.6 What would change our verdict' — verified",
+      "p4-427 anchor exists in docs/index.html with heading '4.2.7 What else would have to be true...' — verified, EXP-254 already integrated",
+      "verdict bar chart renders before sc-hero in build-scripts/generate-html.js (lines 1439 vs 1441) — verified",
+      "CSS variables --accent / --heading / --rule / --ink-3 / --link / --serif / --sans all exist in :root and dark-mode block — verified",
+      "Project CLAUDE.md prohibits hardcoded derived numbers — verified verbatim"
+    ],
+    "citations_failed": [
+      "load_bearing_content_audit claim: 'zero falsifications' phrasing is preserved in accuracy-math-section — FAILED. Phrase exists only in the deleted sublabel."
+    ],
+    "citations_unchecked": [
+      "design-review-2026-04-25-external.html and design-review-2026-04-17-external.html — not opened, accepted at face value as the source for round-1 vs round-2 framing",
+      "DIRECTIVE-20260422-003 design rubric — not loaded; assumed to authorize the operator-driven edit"
+    ]
+  },
+  "summary_for_decider": "REJECT-AS-WRITTEN, REWORK. Two critical bugs make the patch a no-op: (1) find anchors drop the ds- prefix that every other class uses; (2) FC1 verification gate would pass even if the patch fails. Plus four moderate cleanups (ds- prefix on new classes; corrected load-bearing audit; re-derived fold estimate; dark-mode-aware pulse color). Push back to analyst, ask for corrected find strings + ds- prefix on new classes, then short re-review (spot-check) rather than full curmudgeon cycle. Substance of the design — thesis-led composition, badge to p4-426, deferred Items 3 and 4 — is sound and should be preserved on rework.",
+  "popped_by_queue_id": 266,
+  "popped_by_queue_id_at": "2026-04-26T15:49:57.316Z"
+}

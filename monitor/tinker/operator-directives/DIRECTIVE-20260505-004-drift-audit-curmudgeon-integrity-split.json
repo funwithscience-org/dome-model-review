@@ -1,0 +1,77 @@
+{
+  "directive_id": "DIRECTIVE-20260505-004",
+  "issued_at": "2026-05-05T20:30:00.000Z",
+  "issued_by": "operator (steve via cowork session)",
+  "target_agent": "tinker",
+  "target_mode": "Mode 4 — Proposals & Self-Fixes",
+  "title": "Architectural split — move expensive full-drift scan from curmudgeon's hot path to integrity's cold path; curmudgeon reads pre-computed candidate list",
+  "priority": "medium",
+  "status": "completed",
+  "completed_at": "2026-05-05T20:35:00.000Z",
+  "completed_by_run": "tinker-2026-05-05T20-30",
+  "prop_id_authored": "PROP-020",
+  "summary": "Curmudgeon's Priority 3 change-detection currently rescans all ~462 review fingerprints in-LLM every run, computing drift for ~70 WINs + sections every time. That's expensive Opus token spend on what is effectively deterministic Node-script work. Operator proposes splitting the workload: curmudgeon reads a pre-computed candidate list (cheap, every 4h) and integrity periodically refreshes it via full scan (expensive, every 3-4 days). Net: curmudgeon hot-path stays cheap on every review cycle, integrity does occasional batch-cost audit. Tinker designs the split, the candidate-list schema, the staleness handling, and the prompt edits. PROPOSE ONLY.",
+  "context": {
+    "trigger": "Operator observation 2026-05-05 ~20:00Z: a manual curmudgeon run took noticeably long on the 'evaluate which item to pick' phase. Investigation: the LLM is reading 462 review files in-context, extracting fingerprints, computing drift per item — work that a Node script would do in under a second. At current 4h cadence × ~6 runs/day, that's 6× the same expensive scan, with most runs returning the same candidate list (because the drift state changes slowly relative to the scan cost). Architecturally wasteful.",
+    "design_intuition": "Operator's framing: 'efficient curmudgeon where the cost matters and an occasionally expensive integrity.' Curmudgeon's value is the deep adversarial review of ONE item per run. The 'pick which item' decision can be precomputed externally and handed to curmudgeon as input. Integrity already runs daily and has a structural-audit charter — adding a periodic drift-audit task fits its role.",
+    "scope": "Architectural refactor of Priority 3 change-detection: input-side change. Output-side (the actual review) stays exactly as is. The candidate list is informational input to curmudgeon, not a binding directive — curmudgeon can skip a stale candidate if it determines the item was already re-reviewed since the list was generated.",
+    "what_does_not_change": "Curmudgeon's Priority 1 (priority queue) and Priority 2 (human notes) routing is unchanged. Mode A holistic review and Mode B spot-checks are unchanged. The fingerprint comparison rule itself (PROP-019, common-fields-only) is unchanged. The drift-magnitude tiebreak (commit 71be960) is unchanged.",
+    "interaction_with_in_flight_work": {
+      "PROP-018_sync_manifest": "PROP-018 will subsume the workspace-sync iteration enumeration but does not touch curmudgeon or integrity logic. This directive is orthogonal to PROP-018.",
+      "PROP-019_fingerprint_compare": "Already landed (commit 730f1d1). Reduced-set comparison rules carry forward into the precomputation script.",
+      "magnitude_tiebreak_71be960": "Already landed. The precomputation script must produce a list ordered by drift magnitude (largest first) within each priority bucket; curmudgeon then reads top-N.",
+      "deep_tail_clearing": "The integrity-side full-scan will rediscover the deep-tail items on first run. They auto-populate the candidate list. Curmudgeon picks from list per existing prioritization. This actually accelerates deep-tail clearing relative to in-prompt scanning."
+    }
+  },
+  "deliverable_requested": {
+    "output_file": "monitor/tinker/proposals/PROP-NNN-drift-audit-split.json (assign next available PROP number after PROP-019)",
+    "structure": {
+      "candidate_list_schema": "Define the schema for the pre-computed drift candidate list. Suggested path: monitor/integrity/drift-audit.json (lives with integrity outputs). Suggested shape: {generated_at: ISO, generator_run_id: string, source_data_versions: {wins_sha: short, sections_sha: short}, candidates: [{item_id, current_fingerprint, last_review: {file, cycle, reviewed_at, fingerprint}, drifts: {field: pct}, max_drift_pct, drifted_fields, priority_bucket: 'verdict_changed' | 'large_rewrite' | 'new_item' | 'tldr_only', is_pre_tldr_schema: bool, tiebreak_score}], non_drifting_count, total_items_audited}. Argue path location and shape; flag fields you'd add or drop.",
+      "integrity_prompt_edit": "Specify the new step in monitor/prompts/structure-integrity.md (or its referenced material). The step runs a Node script (suggested: monitor/scripts/compute-drift-audit.js) that walks reviews, computes drift per item, and writes the candidate list. Cadence: periodic — operator's lean is every 3-4 days. Argue exact cadence and how to express it (e.g. only run if last drift-audit.json is >72h old, or unconditional on Mon/Thu, or...). Specify the script's responsibilities: deterministic, no LLM calls, idempotent.",
+      "curmudgeon_prompt_edit": "Specify the change to monitor/prompts/reference/curmudgeon-change-and-holistic.md Priority 3 procedure. New flow: Step 1 reads the candidate list instead of computing it; Step 2 cross-checks each candidate's last_review against the actual latest review file (skip-if-newer-review-since-list-generated); Step 3-4 prioritization unchanged. Show the diff. Specify fallback: if drift-audit.json is missing or older than threshold (e.g. 7 days), curmudgeon falls back to the existing in-prompt scan. This preserves correctness if integrity is broken.",
+      "staleness_handling": "Spell out the cross-check curmudgeon does. Each candidate has a last_review.reviewed_at from when the audit ran. Curmudgeon reads the actual latest review for that item — if the actual review is newer, the candidate is OBE (obsolete on examination) and curmudgeon skips to next candidate. Argue how many OBE-skips before curmudgeon falls through to fresh scan. Operator's lean: skip up to 3 OBE candidates, fall through on the 4th. Argue.",
+      "script_design": "Sketch monitor/scripts/compute-drift-audit.js. Inputs: data/wins.json, data/sections.json, monitor/curmudgeon/reviews/*.json. Output: monitor/integrity/drift-audit.json. Logic: for each item, find latest review by reviewed_at, compute current fingerprint, compare on common fields per PROP-019, classify into priority bucket, sort. Acceptance: script runs in <5 seconds on current corpus; output file is deterministic byte-for-byte given identical inputs.",
+      "scheduling_change": "Should integrity's existing daily cadence absorb the drift audit, or should there be a new scheduled task? Argue. If absorbed: integrity runs the script as a step in its existing prompt; the >72h gate prevents wasted reruns. If new task: scheduled separately at a different cadence. Operator's lean: absorb into integrity, with the >72h gate. Argue.",
+      "first_run_disposition": "Once the directive lands and the first integrity-side audit runs, what should curmudgeon's NEXT change-detect cycle do? Specifically: if WIN-050 / WIN-028 / etc. show up in drift-audit.json with 838% / 837% drift, does curmudgeon process them in order (one per cycle), or batch-handle? Operator's lean: one per cycle, current cadence. Argue.",
+      "regression_test": "How would we verify the split worked? Pre-split, measure typical curmudgeon change-detect cycle wall-clock + token spend. Post-split, measure: (a) curmudgeon hot-path is meaningfully faster/cheaper, (b) integrity wall-clock includes the new audit step, (c) candidate list is fresh after each integrity run, (d) curmudgeon correctly picks deep-tail items in magnitude order on its next change-detect after the first audit. Define disprove conditions.",
+      "side_effects": "What breaks or surprises? E.g.: the holistic-review check 'are tldr fields consistent with detail fields' — does that still work? E.g.: the spot-check (Priority 5) — does it still draw from a random previously-reviewed item, or is it sourced from the candidate list too? Argue. Specify which existing curmudgeon procedures depend on the in-prompt scan and how each is preserved.",
+      "future_extensions": "Briefly note adjacent optimizations the split enables. E.g. integrity could surface 'deep tail health' as a metric in its daily report; the candidate list could carry richer signals (priority queue duplicates, claim conflicts, related-WIN-changed flags). Don't design these now; just note the doors that open."
+    },
+    "propose_only": true,
+    "do_not_implement": "DO NOT modify monitor/prompts/curmudgeon.md, monitor/prompts/reference/curmudgeon-change-and-holistic.md, monitor/prompts/structure-integrity.md, or create monitor/scripts/compute-drift-audit.js. Operator reviews PROP and authorizes implementation in a separate step.",
+    "open_design_questions_for_tinker_to_address": [
+      "Where should the candidate list live: monitor/integrity/drift-audit.json (writer's directory, integrity's output) or monitor/curmudgeon/drift-audit.json (reader's directory, curmudgeon's input)? The operator ownership convention (file in writer's directory) suggests integrity/, but readability for curmudgeon prompt suggests curmudgeon/. Argue.",
+      "Should the candidate list cap at top-N items (e.g. top 20) or include all items above the >20% threshold? Cap = bounded curmudgeon read cost, but loses tail visibility. No cap = full picture, but the LLM has to read potentially hundreds of items. Operator's lean: cap at top 30, paginate if needed. Argue.",
+      "What happens if integrity's audit step fails (script crashes, etc.)? Does curmudgeon notice and fall back, or silently use stale list? Specify the failure mode contract.",
+      "Should the candidate list also contain non-drifting items (so curmudgeon has full visibility), or only drifting candidates? Operator's lean: only drifting (cap at top 30 plus the verdict-changed/new-item items unconditionally). Argue.",
+      "How does this interact with the priority queue? Curmudgeon's existing Priority 1 reads the queue. Should the candidate list cross-reference queue items (so curmudgeon knows 'WIN-050 is in the candidate list AND already in queue', avoiding duplicate work)? Argue."
+    ]
+  },
+  "non_goals": [
+    "Do NOT propose changes to the actual review procedure (Steps 5-8 of Priority 3). Output stays the same.",
+    "Do NOT propose changes to the priority queue, decider routing, or any consumer of curmudgeon's reviews.",
+    "Do NOT propose a real-time watch/notify mechanism — periodic batch audit is simpler and sufficient.",
+    "Do NOT broaden scope to other curmudgeon optimizations (e.g. holistic review batching). Focus narrowly on the change-detection scan."
+  ],
+  "proposed_fix_spec": {
+    "note_to_tinker": "Operator's framing is the key constraint: efficient curmudgeon, occasionally expensive integrity. The 3-4 day cadence is a starting point — argue if a different cadence is better. The fallback story (curmudgeon falls back to in-prompt scan if list is missing) is non-negotiable — never let this refactor introduce a hard dependency that breaks on integrity failure."
+  },
+  "completion_criteria": {
+    "file_present": "monitor/tinker/proposals/PROP-NNN-drift-audit-split.json exists with all 10 deliverable structure sections.",
+    "schema_concrete": "Candidate-list schema specified with example entries (≥3 covering different priority buckets including a pre-tldr-schema item).",
+    "prompt_diffs_drafted": "Both curmudgeon and integrity prompt diffs sketched in prose with before/after.",
+    "fallback_clear": "Curmudgeon's behavior when the candidate list is missing/stale is unambiguously specified.",
+    "obe_skip_policy_argued": "How many OBE-skips before falling through to fresh scan is decided with reasoning.",
+    "open_questions_addressed": "All 5 open design questions answered with reasoning, not deferred.",
+    "mark_directive_completed": "Set status:'completed' with completed_at + completed_by_run + prop_id_authored fields appended per DIRECTIVE-LIFECYCLE additive-edit exception."
+  },
+  "cross_references": [
+    "PROP-019 — fingerprint compare common-fields-only (precondition; the audit script implements this rule)",
+    "commit 71be960 — drift-magnitude tiebreak (the audit script must produce magnitude-sorted output)",
+    "monitor/prompts/curmudgeon.md (Priority 3 dispatcher)",
+    "monitor/prompts/reference/curmudgeon-change-and-holistic.md (Step 1-2 are what gets replaced)",
+    "monitor/prompts/structure-integrity.md (where the new audit step lands)",
+    "build-scripts/digest-reviews.js (precedent: a deterministic Node script that pre-digests review state for the decider)"
+  ],
+  "supersedes": null
+}

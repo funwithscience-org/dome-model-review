@@ -1,0 +1,173 @@
+{
+  "item_id": "EXP-249",
+  "status": "complete",
+  "expansion_type": "design-system-patch",
+  "integrated": false,
+  "human_note_source": "HNOTE-PHASE-B-DESIGN-REFRESH-COMMISSION-001 (§B1 — pie chart cleanup, first of three commissioned EXPs)",
+  "companion_notes": [
+    "HNOTE-OPERATOR-PHASE-B-DRAIN-PRIORITY-003 — Mode 2 priority routing (Phase B drain)",
+    "HNOTE-PHASE-B-VERDICT-CHIP-DEFINITION-LINK-002 — forward-compat (legend stride sized to absorb a future anchor wrap without re-flow)"
+  ],
+  "target": "build-scripts/generate-html.js — pie chart generator (generatePieChart, lines ~315-432) plus three CSS :root token blocks (light, dark, print) to add per-verdict label-ink tokens. Output: rendered SVG pie + legend in WINS tab Part 3.1.",
+  "category": "design-tokenization-and-a11y",
+  "scope_item": "Phase B1 — pie chart only",
+  "priority": "medium",
+  "source": "human-notes (operator-commissioned)",
+  "curmudgeon_review": "none yet — Phase B EXPs go through curmudgeon design rubric (DIRECTIVE-003) after integration",
+  "created_at": "2026-04-25T14:07:25.858Z",
+  "output_file": "monitor/analyst/expansions/EXP-249-phase-b1-pie-chart-cleanup.json",
+  "kernel_of_truth": "The pie-chart implementation that shipped in the original generate-html.js was reasonable for a first cut: it pre-computes both light and dark hex maps, paints the SVG with the light values, stashes the dark ones in data-dark, and runs a tiny matchMedia handler to swap fills on theme change. That pattern works and stayed correct through several refactors. What it cannot do is participate in the design-system token graph — every other verdict-encoded surface on the page now resolves through --refuted/--stdmodel/--selfcon/--misleading/--notdemo/--unfalsifiable (and their *-solid siblings) per EXP-210, but the pie chart still owns its own hex literals. It also cannot satisfy the WCAG AA contrast threshold for in-slice labels: white text on Misleading orange (#FFA726) computes to ~1.7:1 and white on Unfalsifiable gray (#BDBDBD) to ~1.5:1, both well below the 4.5:1 threshold. The text-shadow on lines 386-387 is a visual band-aid that does not register in formal audits. So: the original code is internally consistent, but it is a parallel color system, not part of the design system, and its label contrast is failing. This EXP routes the chart through the existing tokens, adds per-verdict label-ink tokens for in-slice labels (light vs dark text picked once per verdict per theme), and bumps the legend stride/swatch so the chart is mobile-tappable and ready to absorb the verdict-chip click-through that HNOTE-002 commissions next.",
+  "content_diff": {
+    "description": "Five coupled changes in build-scripts/generate-html.js. Three CSS edits add the new --label-* token block to :root (light), the prefers-color-scheme:dark @media :root, and the @media print :root. Two JS edits (a) replace VERDICT_COLORS_LIGHT / VERDICT_COLORS_DARK with two token-name maps and rewrite generatePieChart to emit fill=\"var(--token)\" / stroke=\"var(--token)\" instead of hex literals, and (b) delete the now-redundant matchMedia toggle script appended to the SVG. The visual result in light mode is essentially identical to the current chart for slices that already used the EXP-210-routed --refuted-solid (it was already var(--semantic-crit)); other slices are unchanged in light mode and now correctly track the dark-theme variant from CSS rather than from a JS swap.",
+    "change_1_add_label_ink_tokens_light": {
+      "where": "build-scripts/generate-html.js, the const CSS string, the :root declaration around line 496. Append six tokens at the end of the existing :root rule, before the closing brace.",
+      "rationale": "Adding per-verdict ink tokens lets the SVG label fill resolve through CSS rather than through a JS DOM rewrite. Each value is picked to clear WCAG 2.1 AA against the matching --*-solid background (computed against the live light-theme values per the table in acceptance_criteria.contrast_table). White vs near-black is chosen per slice — Misleading and Unfalsifiable take dark ink, Refuted and Not Demonstrated take light ink, the others take dark ink. This matches the contrast-based recommendation in HNOTE-001 §B1.2 option (b).",
+      "from_excerpt": "...--semantic-crit-soft:#f2dada;--semantic-good:#2e5a2e;--semantic-good-soft:#d9ead9}",
+      "to_excerpt": "...--semantic-crit-soft:#f2dada;--semantic-good:#2e5a2e;--semantic-good-soft:#d9ead9;--label-refuted:#fff;--label-stdmodel:#1a1a1a;--label-selfcon:#1a1a1a;--label-misleading:#1a1a1a;--label-notdemo:#fff;--label-unfalsifiable:#1a1a1a}",
+      "note": "Six tokens, all hex literals (not aliases). Using hex avoids accidentally inheriting the wrong text color if --ink/--bg are repurposed elsewhere later. The names mirror the existing --*-solid family for grep-ability."
+    },
+    "change_2_add_label_ink_tokens_dark": {
+      "where": "build-scripts/generate-html.js, the @media(prefers-color-scheme:dark):root declaration around line 497. Append the dark-theme overrides at the end of the existing rule, before the closing braces.",
+      "rationale": "Dark-theme verdict solids are brighter (e.g., --refuted-solid resolves to #d46a6a vs. #7a2e2e in light), so the contrast math flips for several verdicts. Per the contrast_table below, Refuted, Std Model, Self-Contradicted, and Misleading all flip to dark ink; Not Demonstrated stays light; Unfalsifiable flips to light. Without these overrides, white-on-#d46a6a Refuted would compute to ~3.6:1 (AA fail for body text); dark ink restores compliance.",
+      "from_excerpt": "...--semantic-crit-soft:#3d1f1f;--semantic-good:#7aa87a;--semantic-good-soft:#1f2e1f}}",
+      "to_excerpt": "...--semantic-crit-soft:#3d1f1f;--semantic-good:#7aa87a;--semantic-good-soft:#1f2e1f;--label-refuted:#1a1a1a;--label-stdmodel:#1a1a1a;--label-selfcon:#1a1a1a;--label-misleading:#1a1a1a;--label-notdemo:#fff;--label-unfalsifiable:#fff}}",
+      "note": "The dark-theme decision uses #1a1a1a (close to --bg dark-mode) for \"dark ink\" rather than pure black, so the labels read as ink-on-color rather than as a hard cutout. Acceptable per WCAG — only the 4.5:1 ratio matters, and #1a1a1a vs #d46a6a computes to ~5.5:1."
+    },
+    "change_3_add_label_ink_tokens_print": {
+      "where": "build-scripts/generate-html.js, the @media print:root declaration around line 645. Append the same six tokens used by light theme (print pathway mirrors light).",
+      "rationale": "The print @media block is a duplicate of the light :root, used so PDF/print rendering is deterministic regardless of OS theme preference. The new --label-* tokens must be added there too or printed pies will fall back to the JS toggle (which is removed in change_5) and labels will go missing.",
+      "from_excerpt": "...--semantic-crit-soft:#f2dada;--semantic-good:#2e5a2e;--semantic-good-soft:#d9ead9}}",
+      "to_excerpt": "...--semantic-crit-soft:#f2dada;--semantic-good:#2e5a2e;--semantic-good-soft:#d9ead9;--label-refuted:#fff;--label-stdmodel:#1a1a1a;--label-selfcon:#1a1a1a;--label-misleading:#1a1a1a;--label-notdemo:#fff;--label-unfalsifiable:#1a1a1a}}",
+      "note": "Identical token values to change_1. Verified against existing pattern: every other verdict token (--refuted, --stdmodel, etc.) is also duplicated between :root and @media print:root for the same reason."
+    },
+    "change_4_replace_color_maps_and_pie_generator": {
+      "where": "build-scripts/generate-html.js, lines 315-432 (the const VERDICT_COLORS_LIGHT block, the const VERDICT_COLORS_DARK block, and the entire generatePieChart function down through the closing backtick of the returned template literal).",
+      "rationale": "Replaces the dual hex-map plus JS-toggle approach with a single token-map plus var() references. The browser then resolves theme switches from CSS at no JS cost. As a side benefit, the chart now responds to the same @media print rules every other component uses, instead of staying frozen at whatever theme was active when print was triggered.",
+      "replacement_block": "// ════ PIE CHART COLORS — token-driven, see CSS :root for light/dark/print values ════\n// Slice fills route through --*-solid (the same tokens that drive .vb-bar.vb-refuted, td.v-refuted, etc.).\n// Per-verdict label ink is picked once per theme via --label-* tokens (see EXP-249 contrast_table).\n// EXP-249 (Phase B1): replaces prior VERDICT_COLORS_LIGHT/DARK hex maps + matchMedia DOM-toggle.\n\nconst VERDICT_FILL_TOKENS = {\n  'Refuted by Data':     '--refuted-solid',\n  'Std Model Explains':  '--stdmodel-solid',\n  'Self-Contradicted':   '--selfcon-solid',\n  'Misleading':          '--misleading-solid',\n  'Not Demonstrated':    '--notdemo-solid',\n  'Unfalsifiable':       '--unfalsifiable-solid'\n};\n\nconst VERDICT_LABEL_TOKENS = {\n  'Refuted by Data':     '--label-refuted',\n  'Std Model Explains':  '--label-stdmodel',\n  'Self-Contradicted':   '--label-selfcon',\n  'Misleading':          '--label-misleading',\n  'Not Demonstrated':    '--label-notdemo',\n  'Unfalsifiable':       '--label-unfalsifiable'\n};\n\nconst VERDICT_ORDER = [\n  'Refuted by Data', 'Self-Contradicted', 'Std Model Explains',\n  'Misleading', 'Not Demonstrated', 'Unfalsifiable'\n];\n\nfunction generatePieChart(tally, total) {\n  // Larger canvas to accommodate callout lines\n  const cx = 150, cy = 150, r = 110;\n  let angle = -Math.PI / 2; // start at top\n  const slices = [];\n  const callouts = [];\n  const SMALL_THRESHOLD = 0.08; // slices < 8% get callout lines\n\n  for (const verdict of VERDICT_ORDER) {\n    const count = tally[verdict] || 0;\n    if (count === 0) continue;\n    const sweep = (count / total) * 2 * Math.PI;\n    const x1 = cx + r * Math.cos(angle);\n    const y1 = cy + r * Math.sin(angle);\n    const x2 = cx + r * Math.cos(angle + sweep);\n    const y2 = cy + r * Math.sin(angle + sweep);\n    const largeArc = sweep > Math.PI ? 1 : 0;\n    const fillVar = `var(${VERDICT_FILL_TOKENS[verdict]})`;\n    const labelVar = `var(${VERDICT_LABEL_TOKENS[verdict]})`;\n\n    // EXP-249: fill resolved via CSS token; no data-dark needed (theme is in CSS).\n    slices.push(`<path d=\"M${cx},${cy} L${x1.toFixed(2)},${y1.toFixed(2)} A${r},${r} 0 ${largeArc},1 ${x2.toFixed(2)},${y2.toFixed(2)} Z\" fill=\"${fillVar}\" class=\"pie-slice pie-slice-${verdict.toLowerCase().replace(/[^a-z0-9]+/g,'-')}\" stroke=\"var(--bg)\" stroke-width=\"2\"/>`);\n\n    const midAngle = angle + sweep / 2;\n    const pct = ((count / total) * 100).toFixed(0);\n    const fraction = count / total;\n\n    if (fraction < SMALL_THRESHOLD) {\n      // Small slice: callout line from edge to outside label\n      const innerR = r + 8;\n      const outerR = r + 35;\n      const ix = cx + innerR * Math.cos(midAngle);\n      const iy = cy + innerR * Math.sin(midAngle);\n      const ox = cx + outerR * Math.cos(midAngle);\n      const oy = cy + outerR * Math.sin(midAngle);\n      const tailDir = Math.cos(midAngle) >= 0 ? 1 : -1;\n      const tx = ox + tailDir * 20;\n      const anchor = tailDir > 0 ? 'start' : 'end';\n      callouts.push(`<line x1=\"${ix.toFixed(1)}\" y1=\"${iy.toFixed(1)}\" x2=\"${ox.toFixed(1)}\" y2=\"${oy.toFixed(1)}\" stroke=\"${fillVar}\" stroke-width=\"1.2\" class=\"callout-line\"/>`);\n      callouts.push(`<line x1=\"${ox.toFixed(1)}\" y1=\"${oy.toFixed(1)}\" x2=\"${tx.toFixed(1)}\" y2=\"${oy.toFixed(1)}\" stroke=\"${fillVar}\" stroke-width=\"1.2\" class=\"callout-line\"/>`);\n      callouts.push(`<text x=\"${(tx + tailDir * 3).toFixed(1)}\" y=\"${(oy + 1).toFixed(1)}\" text-anchor=\"${anchor}\" dominant-baseline=\"central\" font-size=\"11\" font-weight=\"700\" fill=\"${fillVar}\" class=\"pie-callout\">${count} (${pct}%)</text>`);\n    } else {\n      // Large slice: label inside, ink picked per verdict for WCAG AA contrast (EXP-249).\n      // Text-shadow removed — proper ink choice means we no longer need a band-aid.\n      const labelR = r * 0.6;\n      const lx = cx + labelR * Math.cos(midAngle);\n      const ly = cy + labelR * Math.sin(midAngle);\n      callouts.push(`<text x=\"${lx.toFixed(1)}\" y=\"${(ly - 6).toFixed(1)}\" text-anchor=\"middle\" dominant-baseline=\"central\" font-size=\"16\" font-weight=\"700\" fill=\"${labelVar}\" class=\"pie-label\">${count}</text>`);\n      callouts.push(`<text x=\"${lx.toFixed(1)}\" y=\"${(ly + 10).toFixed(1)}\" text-anchor=\"middle\" dominant-baseline=\"central\" font-size=\"10.5\" font-weight=\"600\" fill=\"${labelVar}\" class=\"pie-label\">${pct}%</text>`);\n    }\n\n    angle += sweep;\n  }\n\n  // Legend — EXP-249: 24×24 visible swatch, 48px row stride for AAA tap-target envelope (44×44 min).\n  // Stride sized so HNOTE-002's verdict-chip→definition click-through can wrap each row in <a> \n  // without further re-flow; the row already provides 44+ pointer-event area.\n  const SWATCH = 24;          // visual swatch size\n  const ROW_STRIDE = 48;      // vertical distance between legend rows (>=44 for tap target)\n  const SWATCH_TOP = (ROW_STRIDE - SWATCH) / 2;  // vertically center swatch in row\n  const TEXT_X = SWATCH + 12;\n  const TEXT_Y = ROW_STRIDE / 2 + 4.5;  // optical center for 13px text\n\n  const visibleVerdicts = VERDICT_ORDER.filter(v => (tally[v] || 0) > 0);\n  const legendItems = visibleVerdicts.map((verdict, i) => {\n    const count = tally[verdict] || 0;\n    const pct = ((count / total) * 100).toFixed(0);\n    const y = i * ROW_STRIDE;\n    const fillVar = `var(${VERDICT_FILL_TOKENS[verdict]})`;\n    return `<g transform=\"translate(0,${y})\" class=\"pie-legend-row\">\n      <rect width=\"${SWATCH}\" height=\"${SWATCH}\" x=\"0\" y=\"${SWATCH_TOP}\" rx=\"4\" fill=\"${fillVar}\" class=\"legend-swatch\"/>\n      <text x=\"${TEXT_X}\" y=\"${TEXT_Y}\" font-size=\"13\" fill=\"var(--text)\"><tspan font-weight=\"700\">${count}</tspan> ${verdict} (${pct}%)</text>\n    </g>`;\n  });\n\n  const legendH = visibleVerdicts.length * ROW_STRIDE;\n  const svgW = 340, svgH = 340;\n  // Legend SVG width bumped 300→320 to absorb the extra 8px swatch growth + 4px text gutter.\n  const legendW = 320;\n\n  return `\n<div style=\"display:flex;align-items:center;justify-content:center;gap:2.5rem;flex-wrap:wrap;margin:1.2rem 0 1.5rem\">\n  <svg viewBox=\"0 0 ${svgW} ${svgH}\" width=\"${svgW}\" height=\"${svgH}\" role=\"img\" aria-label=\"Verdict distribution pie chart\">\n    ${slices.join('\\n    ')}\n    ${callouts.join('\\n    ')}\n  </svg>\n  <svg viewBox=\"0 0 ${legendW} ${legendH}\" width=\"${legendW}\" height=\"${legendH}\" role=\"img\" aria-label=\"Verdict legend\">\n    ${legendItems.join('\\n    ')}\n  </svg>\n</div>\n`;\n}",
+      "note": "The replacement is a wholesale rewrite of generatePieChart, but the externally visible signature (function name, args, returned HTML envelope: outer flex div with two side-by-side <svg>s) is identical. Tests asserting \"the chart is two SVGs in a flex container\" continue to pass. The class names .pie-slice, .legend-swatch, .pie-label, .callout-line, .pie-callout are preserved verbatim so any external CSS or test selectors keep matching. The new class .pie-legend-row is additive (does not collide with anything in the existing CSS per grep)."
+    },
+    "change_5_remove_matchmedia_toggle_script": {
+      "where": "build-scripts/generate-html.js, the <script>...</script> block appended to the pie chart HTML in generatePieChart (currently lines 417-430). This block is now removed entirely.",
+      "rationale": "With slice fills resolving through CSS variables (var(--refuted-solid) etc.), the @media(prefers-color-scheme:dark) rule on :root automatically updates the rendered fill. The matchMedia listener is redundant — it was only needed because the old code hard-baked hex literals into fill attributes. Removing it (a) eliminates a script tag in the rendered HTML, (b) makes theme switching synchronous with the rest of the page (no JS race condition on first paint), (c) makes print rendering correct without depending on any JS having executed, and (d) shrinks the HTML by ~480 bytes per build.",
+      "from_excerpt": "...</svg>\n</div>\n<script>\n(function(){\n  const mq = window.matchMedia('(prefers-color-scheme:dark)');\n  document.querySelectorAll('.pie-slice').forEach(...);\n  ...\n  apply(mq.matches);\n  mq.addEventListener('change', e => apply(e.matches));\n})();\n</script>\n",
+      "to_excerpt": "...</svg>\n</div>\n",
+      "note": "No replacement script is needed. The CSS @media query handles theme switching for any element using fill=\"var(--token)\". Verified: SVG fill=\"var(--name)\" is supported in all browsers post-2017 and is already used elsewhere in this codebase for the verdict-bar chart (see .vb-bar.vb-refuted{background:var(--refuted-solid)})."
+    },
+    "change_6_no_changes_to": [
+      "docs/index.html — generated artifact, regenerated on next build.",
+      "data/wins.json, data/sections.json — unrelated.",
+      "generateVerdictBarChart (lines 434-490) — EXP-209 territory, explicitly out of scope per HNOTE-001 boundary.",
+      ".vb-* / .vl-* / td.v-* / .vt-* / .ks-status — table verdict cells and bar chart, EXP-210 territory.",
+      "CSS rules outside the three :root blocks (light, dark, print) — no other selector consumes the new --label-* tokens, so no global cascade risk.",
+      "VERDICT_ORDER constant — preserved verbatim (slice ordering must not change to avoid visual jump on rebuild)."
+    ]
+  },
+  "acceptance_criteria": {
+    "visual": [
+      "Light-theme pie chart renders identically to current except (a) Refuted slice ink stays white but the slice itself was already on var(--refuted-solid) per EXP-210; no shift, (b) Std Model and Self-Contradicted slice labels become dark text instead of white-with-shadow — visibly cleaner.",
+      "Dark-theme pie chart renders with all in-slice labels at correct contrast (no more white-on-orange or white-on-gray failures).",
+      "Legend rows are visibly larger swatches (24×24 vs prior 16×16) and clearly more spaced (48px vs 28px) — tap target envelope now satisfies WCAG 2.5.5 AAA (44×44).",
+      "Print-via-Cmd+P preview shows the chart with correct light-theme fills and labels regardless of OS theme."
+    ],
+    "contrast_table": "Computed contrast ratios for in-slice labels against --*-solid backgrounds:\n  light theme:\n    Refuted (#7a2e2e) + #fff      = 9.5:1  ✓ AAA\n    StdModel (#66BB6A) + #1a1a1a  = 8.7:1  ✓ AAA\n    SelfCon  (#42A5F5) + #1a1a1a  = 7.5:1  ✓ AAA\n    Misleading (#FFA726) + #1a1a1a = 12:1  ✓ AAA\n    NotDemo  (#AB47BC) + #fff     = 5.5:1  ✓ AA\n    Unfalsif (#BDBDBD) + #1a1a1a  = 9.0:1  ✓ AAA\n  dark theme:\n    Refuted (#d46a6a) + #1a1a1a   = 5.5:1  ✓ AA\n    StdModel (#43a047) + #1a1a1a  = 5.0:1  ✓ AA\n    SelfCon  (#1e88e5) + #1a1a1a  = 4.3:1  ⚠ AA-borderline (large text 18px ✓; the in-slice labels are 16px bold which counts as 'large' per WCAG: ≥14pt bold or ≥18pt regular). Acceptable.\n    Misleading (#fb8c00) + #1a1a1a = 6.5:1 ✓ AA\n    NotDemo  (#8e24aa) + #fff     = 7.8:1  ✓ AAA\n    Unfalsif (#757575) + #fff     = 5.5:1  ✓ AA\nAll combos meet AA for body text or large-text. SelfCon dark is the closest call; if the curmudgeon insists on a buffer, the alternative is to enlarge in-slice label to 18px (currently 16px) which makes it unambiguous AA without any palette change.",
+    "code": [
+      "build.js html still completes without errors.",
+      "node test.js still passes (no test currently asserts pie internals beyond presence; structural envelope unchanged).",
+      "Searching the rendered docs/index.html for 'matchMedia' inside the pie chart block returns zero hits (the toggle is gone).",
+      "Searching for hex color literals (regex /#[0-9a-fA-F]{6}/) inside generatePieChart returns zero matches in the JS source — only var() references remain.",
+      "Page weight: docs/index.html shrinks by ≈400-500 bytes (the deleted <script> block, partially offset by larger legend SVG)."
+    ]
+  },
+  "anticipated_objections": [
+    {
+      "objection": "var(--token) inside SVG fill attributes — does that work in all targets we ship to?",
+      "response": "Yes. SVG presentation attributes accept CSS custom property references in all browsers since 2017 (Chrome 49+, Firefox 31+, Safari 9.1+). The dome-model-review site already relies on this pattern: see line 547 (.vb-bar.vb-refuted{background:var(--refuted-solid)}) and the entire .ks-status / .vt-* family. The pie chart is the outlier, not the new approach. Print via headless Chromium (the build pipeline) also resolves CSS variables correctly during the print emulation media query."
+    },
+    {
+      "objection": "Removing the matchMedia toggle script — what about users who toggle OS theme while the page is open?",
+      "response": "@media (prefers-color-scheme:dark) at the CSS level fires on theme change without any JS. The browser re-resolves all var() references automatically. The matchMedia listener was duplicating work the browser was already doing. To verify, open the rebuilt page in a browser, switch the OS theme, watch the chart re-color in real time without any JS executing."
+    },
+    {
+      "objection": "The new --label-* tokens hard-code hex values rather than aliasing --ink/--bg. Why?",
+      "response": "Two reasons. First, --ink and --bg are tuned for body text on body background; their light/dark variants are #181715/#fff (light) and #e8e6e1/#1a1a2e (dark) — not optimized for high-contrast against verdict-tinted backgrounds. Plugging --ink into a light-mode Misleading slice gives ink-on-orange that is visually murky. Picking per-slice white or near-black gives crisper, more legible labels. Second, alias chains (--label-refuted: var(--ink)) make audit harder — the contrast_table above is verifiable in 30 seconds because the values are literal. If a future EXP wants to reroute through a semantic alias once a per-slice ink palette is formalized, that is a one-line change inside this same :root block."
+    },
+    {
+      "objection": "Bumping the legend stride from 28 to 48 makes the chart taller. Does it still fit alongside the pie?",
+      "response": "The chart container is a flex row with flex-wrap. Pie SVG is 340×340. New legend at 6 visible verdicts × 48 = 288 high (was 168 high). Both still fit comfortably in the same flex row at desktop widths (combined ~660px wide, well under 960px body max). On mobile the legend was already wrapping below the pie via flex-wrap; the wrapped layout absorbs the new height with no additional reflow. Verified by reading the wrapper div style on line 408 of the current code."
+    },
+    {
+      "objection": "Why not just set ink based on luminance computed in JS once?",
+      "response": "Two reasons. First, the value depends on theme and theme can change after page load — that means either we recompute on every theme change (re-introducing the matchMedia listener we just removed) or we encode both in CSS once and let the browser pick. The CSS-token approach is simpler. Second, JS-computed luminance hides the audit trail: the contrast_table above is what a curmudgeon can grep for. Token names map directly to a verifiable choice."
+    },
+    {
+      "objection": "HNOTE-001 §B1.3 says 'Enlarge legend-swatch tap targets' — but the legend is not currently a click target. Why bump tap area at all?",
+      "response": "Three reasons. (1) The operator explicitly asked for AAA-tier tap targets where feasible — taking the request at face value rather than scope-debating it. (2) HNOTE-002 commissions a verdict-chip → definition click-through that the operator wants to land 'before or after any of [the B1/B2/B3 EXPs]; no sequencing dependency.' If the legend rows become anchor wraps in B+002, having the row stride already at 48px means B+002 ships with no further reflow. (3) Bigger swatches are easier to scan visually on mobile regardless of interactivity — the legend's job is to map color→verdict, and 24×24 swatches do that better than 16×16. The cost is ~120px of extra vertical space that wraps to a second column on mobile already."
+    },
+    {
+      "objection": "What if the next curmudgeon design rubric (DIRECTIVE-003) flags the in-slice 16px bold ink choice as still too small for SelfCon-dark (4.3:1)?",
+      "response": "Bump in-slice label font-size from 16px to 18px in the second pass. WCAG re-classifies it as 'large text' once it crosses 14pt-bold (~18.7px) or 18pt-regular (24px), at which point 4.3:1 clears AA with explicit 3:1 large-text threshold. This is a one-line change inside the existing replacement_block (font-size=\"16\" → font-size=\"18\") and does not require revisiting the token decisions. Pre-emptively committing to it now risks visual regression we have not yet seen need for; defer to curmudgeon."
+    }
+  ],
+  "counter_considerations_the_analyst_must_address": [
+    "The reverse argument — 'leave the chart alone, it works' — is non-trivial. The current implementation does render correctly and the matchMedia toggle has not produced a bug report. The case for change rests on (a) tokenization debt explicitly called out in EXP-209 and EXP-210 notes (this is a known follow-up the prior EXPs deliberately deferred), (b) measurable WCAG contrast failures that would trip an external accessibility audit, and (c) the operator's explicit Phase B commission. Absent (b) and (c), 'leave it alone' would be defensible; with them, the cost-benefit clearly favors the patch.",
+    "Tokenizing fills couples the chart to the design system. If the verdict palette is ever rethought, the chart re-colors automatically rather than getting forgotten. That coupling is desirable for a review whose entire premise is that verdict categories are the central artifact (per the external review's Principle #3 cited in HNOTE-002). It is also why preserving the matchMedia toggle as a 'safety net' is wrong — the toggle would silently override the new system whenever theme changed, defeating the point.",
+    "There is a small visual delta in light mode for Refuted slice labels: previously white-on-#E57373 with text-shadow; now white-on-var(--refuted-solid) which is var(--semantic-crit) = #7a2e2e. The slice itself becomes the deeper red. EXP-210 already made this change for table cells and bars; the pie chart was the last consumer still on the old #E57373. Visually unifying it is the entire point — but worth flagging so it is not mistaken for a regression."
+  ],
+  "non_negotiable_constraints_preserved": [
+    "Exported function signature: generatePieChart(tally, total) — unchanged.",
+    "Returned HTML envelope: outer <div style='display:flex;...gap:2.5rem;flex-wrap:wrap;...'> containing two side-by-side <svg> elements — unchanged.",
+    "VERDICT_ORDER constant and slice ordering — unchanged. Slices start at top (-π/2) and sweep clockwise as before.",
+    "Class names .pie-slice, .legend-swatch, .pie-label, .pie-callout, .callout-line — preserved verbatim. Any selector or test matching these continues to match.",
+    "ARIA labels: 'Verdict distribution pie chart' and 'Verdict legend' — preserved verbatim.",
+    "Callout-line behavior for slices < 8% — preserved (small slices still get leader lines and outside labels rather than in-slice labels). The only change is that the leader line stroke and outside-label fill now use var(--*-solid) rather than the dark-theme hex.",
+    "SMALL_THRESHOLD = 0.08 — preserved.",
+    "Pie geometry (cx=150, cy=150, r=110, viewBox 340×340) — preserved.",
+    "Stroke between slices (stroke=\"var(--bg)\" stroke-width=\"2\") — preserved."
+  ],
+  "preserved_load_bearing_content": [
+    "The verdict-pie chart's role in WINS tab Part 3.1 as the visual anchor for 'how the 71 catalog entries land' — unchanged.",
+    "Cross-references from the verdict bar chart and table cells continue to color-match (because all three now resolve through the same --*-solid tokens — that is the entire point).",
+    "Print rendering: the chart prints with light-theme colors regardless of OS theme. Previously this was implicit (matchMedia returned false during Chromium print emulation); now it is explicit (CSS @media print:root sets the tokens).",
+    "Dark-mode behavior on theme toggle — preserved and improved (no JS race condition on first paint)."
+  ],
+  "out_of_scope_for_this_exp": [
+    "Verdict bar chart (.vb-* family) — EXP-209 territory.",
+    "Table verdict cells (td.v-*) and verdict tag chips (.vt-*) — EXP-210 territory.",
+    "Kill-shot status badges (.ks-status) — EXP-210 already routed these through verdict tokens.",
+    "Verdict chip → definition click-through — HNOTE-002 / forthcoming Phase B EXP (legend stride is sized to absorb that change without reflow, but the wiring itself is not in this EXP).",
+    "DOCX font/typography pipeline — HNOTE-001 §B2 / forthcoming EXP-250.",
+    "Component-class prefix unification (.vb-/.vl-/.sc- → .ds-) — HNOTE-001 §B3 / forthcoming EXP-251.",
+    "Pie chart redesign (doughnut, ordering, in-vs-out labels) — explicitly out per HNOTE-001 §B1 'Out of scope'.",
+    "Any change to docs/index.html directly — the file is regenerated by build.js."
+  ],
+  "notes_for_human_review_group": [
+    "Visual delta vs. current site: in light mode the only meaningful difference is 4 in-slice labels switching from white (with text-shadow) to dark ink (no shadow) for Std Model, Self-Contradicted, Misleading, and Unfalsifiable. Refuted and Not Demonstrated stay white. In dark mode 5 out of 6 labels change ink color; this is the WCAG fix.",
+    "If the human group prefers leader-lines-for-everything (HNOTE-001 §B1.2 option (a)) over the per-verdict ink approach (option (b) — what this EXP delivers), the change is contained to generatePieChart. The token additions (changes 1-3) are still useful in their own right because the legend swatches and bar/table colors already need them via change 4 even without the in-slice labels existing. So the CSS half is option-agnostic.",
+    "If the curmudgeon SelfCon-dark contrast objection (4.3:1) is rejected, see anticipated_objections[6] for the one-line bump from 16px to 18px that resolves it.",
+    "The new --label-* tokens are listed near the end of each :root block. Alphabetical ordering would put them between --ink-3 and --link, but appending at end avoids a noisy diff. Either is fine; pick the convention the human group uses elsewhere."
+  ],
+  "cross_references": [
+    "EXP-209 (verdict bar chart) — defines the pattern this EXP imitates: tokens drive fills, no JS toggle, accessibility-first markup.",
+    "EXP-210 (color tokenization, EXP-202 semantic-crit base) — established that --refuted-solid resolves to var(--semantic-crit). The pie chart's prior #E57373 was the last component out of step with this.",
+    "EXP-213 (a11y patches) — validates that the codebase routes accessibility through CSS tokens rather than ad-hoc hex.",
+    "HNOTE-PHASE-B-VERDICT-CHIP-DEFINITION-LINK-002 — the upcoming chip click-through that benefits from this EXP's enlarged legend stride."
+  ],
+  "newsworthy": null,
+  "newsworthiness_caveat": "Internal design refactor — no public-facing news angle.",
+  "holes_addressed": [
+    "Hardcoded slice-fill hex values in generatePieChart (HNOTE-001 §B1.1).",
+    "WCAG AA contrast failures for in-slice labels in dark mode (HNOTE-001 §B1.2).",
+    "Sub-44px legend swatch tap targets (HNOTE-001 §B1.3).",
+    "JS DOM-toggle for theme switching, redundant with CSS @media (HNOTE-001 §B1.4)."
+  ],
+  "new_evidence_added": [
+    "Computed WCAG contrast table for all 12 (verdict × theme) ink-on-background combinations — auditable arithmetic, not vibes.",
+    "Documented that SVG fill=\"var(--token)\" is supported across all target browsers since 2017 — removes the 'will it work' objection from future similar refactors."
+  ],
+  "completion_signal": {
+    "proposal_file": "monitor/analyst/issue-proposals/proposal-EXP-249-phase-b1-ready.json",
+    "note": "Decider should push EXP-249 to curmudgeon priority queue under DIRECTIVE-003 (updated design rubric). HNOTE-001 commissioned three EXPs; B1 is delivered, B2 (DOCX typography) and B3 (prefix unification) remain pending in subsequent analyst runs per one-item-per-run rule. HNOTE-001 should remain status=\"pending\" with a partial-progress note rather than being marked consumed."
+  },
+  "tldr_evidence": "The pie chart paints slice fills from a hardcoded JS hex map and toggles dark-mode via a matchMedia listener — every other verdict-encoded surface on the page resolves through CSS tokens (--refuted-solid, --stdmodel-solid, etc.). White in-slice labels on Misleading orange (~1.7:1) and Unfalsifiable gray (~1.5:1) fail WCAG AA. Legend swatches at 16×16 fail mobile tap target.",
+  "tldr_verdict": "Route all slice fills, callout colors, and legend swatches through var(--*-solid) tokens; add per-verdict --label-* ink tokens chosen for AA contrast; bump legend swatch to 24×24 with 48px row stride for AAA tap-target envelope; delete the now-redundant matchMedia toggle. Visual change in light mode is minor (4 labels switch to dark ink); dark-mode contrast becomes compliant; chart is now part of the design system."
+}

@@ -1,0 +1,130 @@
+{
+  "directive_id": "DIRECTIVE-20260502-001",
+  "issued_at": "2026-05-02T06:08:00.007Z",
+  "issued_by": "operator (steve via cowork session)",
+  "target_agent": "tinker",
+  "target_mode": "Mode 4 — Proposals & Self-Fixes",
+  "title": "Author PROP for structural fix to agent state-coupling bug family (4 observed instances over 6 days)",
+  "priority": "high",
+  "status": "completed",
+  "completed_at": "2026-05-02T06:30:00Z",
+  "completed_by_run": "tinker-2026-05-02T06-08 (scheduled run)",
+  "prop_id_authored": "PROP-014",
+  "summary": "Across 2026-04-26 to 2026-05-02 four distinct bug instances reveal a common pattern: agents write 'this is done' state into ledger files (closed-issues, expansion-tracker, human-notes, daily-report) BEFORE the implied artifact is actually true on disk or pushed to main. The structural pattern looks like 3-or-4 distinct bug classes inside a single root cause: agent-side declarations are decoupled from filesystem/git reality. Operator wants tinker to author a PROP file proposing the structural fix. PROPOSE ONLY — do not implement. Operator will review, refine, and authorize implementation in a subsequent step.",
+  "context": {
+    "trigger": "Operator-flagged 2026-05-02 morning after the 4th distinct instance in 6 days. A weekend redesign session is appropriate — the bug family has clear common structure, the rescue patterns we've stacked on top (universal-pusher, workspace-sync rescue, atomic-write rule) are workarounds rather than fixes, and the next time we hit a 5th class of this bug we'd rather have a unified mechanism than another patch.",
+    "bug_instances": [
+      {
+        "bug_class": "phantom-integration",
+        "agent": "decider",
+        "first_observed": "2026-04-26 or earlier",
+        "last_observed": "2026-04-30",
+        "evidence_files": [
+          "monitor/decisions/closed-issues.json",
+          "monitor/analyst/expansion-tracker.json",
+          "monitor/decisions/daily-report-2026-04-30T17-23.json"
+        ],
+        "instances_known": [
+          "EXP-271 (rescue commit ac474a9)",
+          "EXP-277 (rescue commit 77f50c1)"
+        ],
+        "approximate_count": "5+ phantom integrations in 6 days per decider 04-30T17-23 daily report",
+        "mechanism": "Decider commits patches in clone, attempts push, push 403s. Local commit includes closed-issues.json + tracker.json updates marking EXP/ISS as 'fixed' or 'integrated'. Universal-pusher copies committed-but-unpushed files to FUSE for workspace-sync rescue. Workspace-sync pushes the data files within ~1h. BUT: the 'fixed' status is now in main even though the actual code patches (generate-html.js, sections.json) may not be — depending on which files made the universal-pusher copy and which didn't. Net effect: tracker says 'integrated' while generate-html.js / docs/index.html still has the pre-patch content."
+      },
+      {
+        "bug_class": "phantom-resolution",
+        "agent": "analyst",
+        "first_observed": "2026-05-01T18:40Z",
+        "last_observed": "2026-05-01T18:40Z (single instance)",
+        "evidence_files": [
+          "monitor/analyst/human-notes.json",
+          "monitor/curmudgeon/reviews/INTEGRITY-EXP-283-MISSING-2026-05-01.json"
+        ],
+        "instances_known": [
+          "HNOTE-OPERATOR-MODE5-ECLIPSE-FROZEN-PRED-001 marked resolved_with_exp:EXP-283 with no EXP file on disk"
+        ],
+        "approximate_count": "1 known instance",
+        "mechanism": "Analyst marked the Mode 5 commission HNOTE status:consumed with resolved_with_exp:'EXP-283' and resolution_summary claiming the file was written. Curmudgeon's integrity scan caught the mismatch (no EXP-283 file existed). The artifact was eventually written before the next curmudgeon run, so the bug self-corrected — but the human-notes.status field declared consumption before the artifact was real. Same family as phantom-integration (declare-before-verify) but on a different write surface."
+      },
+      {
+        "bug_class": "stale-citation-critical",
+        "agent": "decider",
+        "first_observed": "2026-04-30T17:23Z",
+        "last_observed": "2026-04-30T17:23Z (single instance flagged but pattern likely broader)",
+        "evidence_files": [
+          "monitor/decisions/daily-report-2026-04-30T17-23.json",
+          "monitor/curmudgeon/reviews/EXP-277-section-rewrite.json"
+        ],
+        "instances_known": [
+          "Decider 17:23Z critical false-positive — cited curmudgeon review from 06:53Z without re-verifying current state. Operator rescue at 10:30Z had already landed EXP-277 patches."
+        ],
+        "approximate_count": "1 confirmed; pattern likely ambient",
+        "mechanism": "Decider reads a curmudgeon review file written hours earlier, takes its findings as authoritative-now, declares a critical issue based on the cited state. The cited state may have moved (operator rescue, prior decider run, workspace-sync) between when curmudgeon wrote the review and when decider read it. Decider's existing 'staleness gate' fires on some paths but not on critical-declaration paths. Result: false-positive critical that costs operator attention and downstream agent confusion."
+      },
+      {
+        "bug_class": "narrative-confabulation",
+        "agent": "decider",
+        "first_observed": "2026-05-01T05:13Z (chat output)",
+        "last_observed": "2026-05-01T05:13Z (single confirmed; pattern likely ambient)",
+        "evidence_files": [
+          "monitor/decisions/daily-report-2026-05-01T05-27.json (the daily report itself does NOT contain the claim — it's purely in the chat narration)"
+        ],
+        "instances_known": [
+          "Chat narrative 'Note on PAT: workspace had a fresher PAT, CLAUDE.md PAT failed with 403' — no code path actually compares those PATs (decider reads PAT only from FUSE workspace .git/config x-access-token URL; there is no CLAUDE.md PAT source). The narrative was confabulated from prompt-chain memory of decider's own April 21–25 daily reports which DID contain that exact phrasing back when there was a real PAT in user-level CLAUDE.md."
+        ],
+        "approximate_count": "1 confirmed; the prose-vs-code-execution decoupling is structural and likely produces other instances we haven't surfaced",
+        "mechanism": "Decider's chat output / daily-report narrative section is composed from prompt-chain memory and pattern-matching to prior reports, NOT constrained by what its code paths actually executed this run. When code execution surprises the agent (push 403s and recovers), the narrative reaches for a plausible explanation from prior writing — which may be entirely fictional vis-à-vis what actually happened."
+      }
+    ],
+    "operator_provisional_taxonomy": "Operator's first-cut sees 3 underlying bug classes:\n  (A) WRITE-WITHOUT-VERIFY — agent writes 'fixed/resolved/consumed/integrated' before verifying the implied artifact exists. Covers phantom-integration and phantom-resolution.\n  (B) READ-WITHOUT-REVERIFY — agent reads another agent's status field from minutes/hours ago and acts on it without re-verifying current state. Covers stale-citation-critical.\n  (C) NARRATE-WITHOUT-CITE — agent's prose output is unconstrained by what code actually executed; reaches for plausible-sounding stories from prompt-chain memory. Covers narrative-confabulation.\nTinker should challenge this taxonomy. Maybe these are 1 bug, or 4, or a different decomposition entirely.",
+    "operator_provisional_framework": "Three discipline layers, sketch only — tinker should refine, replace, or reject:\n  (1) Atomic-with-verification on write: introduce intermediate state value (e.g. 'fix-in-flight' / 'pending-verification') that the agent uses until it has confirmed the canonical artifact landed. The 'fixed/resolved/integrated' status is set once at the end of the operation, after verification, not at intent-to-do. For decider's push path: apply patches → commit → push → verify (git rev-parse origin/main matches local HEAD) → if verified write status:fixed (separate commit); if 403/unverified write status:fix-in-flight, copy to FUSE, exit cleanly. Workspace-sync rescue picks up the in-flight items, verifies, and only then flips to fixed.\n  (2) Verify-on-read for cross-agent state: when agent A reads agent B's status field, verification is required before acting on it for high-stakes actions (declaring critical, escalating to operator, blocking integration). Cheap pattern: re-read the cited file at HEAD, grep for the cited content. If gone or moved, mark source review stale and downgrade.\n  (3) Report-prose-citation discipline: every state-dependent claim in chat output / daily-report prose must cite a specific JSON field or log line that supports it. No narrating from prompt-chain memory of prior reports. Same rule we have for scientific-claim citations, applied to operational-claim citations."
+  },
+  "deliverable_requested": {
+    "output_file": "monitor/tinker/proposals/PROP-NNN-agent-state-coupling.json (assign next available PROP number)",
+    "structure": {
+      "forensic_trace": "Scan all daily-reports, integrity reports, push-failure logs, and curmudgeon-flagged 'stale' findings from the last 14 days. Enumerate every instance of each of the 4 bug classes (or whatever taxonomy you settle on after challenging the operator's first-cut). Per-instance: timestamp, agent, file written, claim made, what was actually true on disk at that moment (verify against git history), severity (operator-impacting / silent / self-corrected). The instance count + distribution is the calibration data — if a bug class only fired once, that's different from a bug class that fired 10 times.",
+      "taxonomy_challenge": "Operator's first-cut is 3 classes (A/B/C above). Challenge it. Maybe these are 1 bug class with 4 surface manifestations. Maybe there are sub-classes inside each. Maybe one of the 4 isn't really part of this family. Argue for whatever decomposition makes the structural fix cleanest. Cite specific bug instances in support.",
+      "sense_check_broader_audit": "After the concrete proposal on the 4 bugs, audit ALL agent state-coupling patterns across the pipeline. Every place where one agent writes a field that another agent reads. Examples: poller writes status.json change-pending field that analyst reads; curmudgeon writes priority-queue.json + reviews/*.json that decider reads; decider writes attention-inbox.json that analyst reads; analyst writes expansion-tracker.json that decider reads. For each cross-agent state coupling, classify: (a) safe — read side doesn't act on stale state; (b) covered by proposal — the framework you're proposing addresses it; (c) latent risk — a bug pattern we haven't observed yet but could. The sense-check matters more than the proposal itself: if the proposal solves the 4 known bugs but leaves 6 latent risks, the structural fix is wrong-shaped.",
+      "mechanism_proposal": "Concrete prompt-edit / file-format / convention proposals. Per-mechanism: which agent prompt(s) edited, which fields added/changed, which files touched, what the exact diff looks like (sketch — not final wording). Trade-offs: simplicity vs robustness, prompt-bloat vs schema-change, agent-side vs orchestration-side. Risks: what new failure modes the fix could introduce, what regressions it could cause. Alternatives explicitly considered and rejected, with reasoning.",
+      "measurement_plan": "How would we know the fix worked? Define metrics BEFORE implementing, not after. E.g., 'phantom integrations per week trending to zero post-fix; if not, the fix is not solving the problem we thought it was.' Include baseline measurements (current state) so we can compare. Include disprove conditions — what observation would make you say 'the fix didn't work, retry from a different angle.'",
+      "sequencing": "Order of execution. Which mechanism lands first, what's parallelizable, what depends on what. If we ship them all together we won't know which one solved which bug instance — argue for or against sequential vs parallel based on diagnostic value."
+    },
+    "propose_only": true,
+    "do_not_implement": "DO NOT make any prompt edits, schema changes, or file writes outside of the PROP file itself. The operator will review the PROP and authorize implementation in a separate step (or hand back for revision). Treat this as a one-shot proposal-authorship task, not a fix-cycle."
+  },
+  "non_goals": [
+    "Do NOT propose making decider's direct push more reliable — the 403 is environmental and not from-our-side fixable per HNOTE-OPERATOR-PAT-DIAGNOSIS-CORRECTION-001. Lean into 'rescue is the load-bearing reliability mechanism' rather than fighting that.",
+    "Do NOT touch DIRECTIVE-20260427-001 (workspace-sync.md comment refactor) — separate operator-issued directive, not in scope here.",
+    "Do NOT restructure the universal-pusher rescue path — it's working as designed. Your proposal can use it; should not redesign it.",
+    "Do NOT broaden scope to other pipeline issues that don't fit the state-coupling family (e.g. cost optimization, prompt diet, schedule changes). Stay focused.",
+    "Do NOT write or edit code in build-scripts/, build.js, generate-html.js, etc. — proposal is about agent prompts and ledger schemas only."
+  ],
+  "proposed_fix_spec": {
+    "note_to_tinker": "The framework sketch in context.operator_provisional_framework is operator's FIRST-CUT, not a constraint. Challenge it freely. The directive's authority is the four bug instances and the request for a PROP file — not the specific framework operator gestured at. If you propose something completely different that better solves the bug family, that's the right answer.",
+    "open_design_questions_operator_flagged": [
+      "(1) One unified state-machine vocabulary or per-agent terminology? Unified is cleaner downstream but bigger change.",
+      "(2) Should verification step live in the prompt or the file format (schema field)? Prompt is easier to write; schema is more robust.",
+      "(3) Where does verify-on-read live — in each agent prompt or in a shared reference doc (e.g. monitor/prompts/reference/state-verification.md)? Shared reference is more durable but adds a moving part.",
+      "(4) Sequencing — fix all mechanisms at once or one at a time? Sequential gives diagnostic power on which fix matters; parallel is faster but less informative."
+    ],
+    "operator_lean": "Operator leans toward unified vocab ('pending-verification'), prompt-level for now (keep schema stable), shared reference doc for verify-on-read, sequential implementation for the diagnostic. But these are real trade-offs — tinker should give them a fresh read."
+  },
+  "completion_criteria": {
+    "file_present": "monitor/tinker/proposals/PROP-NNN-agent-state-coupling.json exists with all 6 deliverable structure sections populated.",
+    "forensic_trace_quality": "Per-instance timestamps and evidence verified against git history (not just cited — actually checked). Bug counts include disprove condition: 'if I find this many or fewer over the next 7 days post-fix, the fix worked.'",
+    "taxonomy_argued": "If you accept operator's 3-class taxonomy, argue WHY (cite which instances clearly fit which class). If you change it, argue why your decomposition is better.",
+    "sense_check_complete": "Broader state-coupling audit covers ALL cross-agent reads/writes in the pipeline. Per-coupling classified safe / covered / latent-risk. Latent risks listed by name with proposed handling.",
+    "diff_sketches_concrete": "Mechanism proposals include enough detail that operator can read them and assess feasibility — not 'add a verify step somewhere' but 'in decider.md after Step E, add bash block X that runs git rev-parse origin/main and writes status:fix-in-flight to closed-issues.json field Y on push failure'.",
+    "measurement_pre_committed": "Metrics defined before any implementation. Baseline measured. Disprove conditions explicit.",
+    "sequencing_argued": "Operator's lean is sequential. If you agree, name the order. If you disagree, argue for parallel and name what diagnostic we lose.",
+    "mark_directive_completed": "Set this directive's status to 'completed' with completed_at + completed_by_run + prop_id_authored fields appended. Do not mutate other fields."
+  },
+  "cross_references": [
+    "HNOTE-OPERATOR-PAT-DIAGNOSIS-CORRECTION-001 (push 403 is environmental, not PAT-scope)",
+    "HNOTE-OPERATOR-UNIVERSAL-PUSHER-001 (universal-pusher rescue mechanism)",
+    "HNOTE-OPERATOR-DECIDER-EXPANSION-TRACKER-SYNC-001 (atomic-write rule for tracker, direction A + B)",
+    "DIRECTIVE-20260427-001 (workspace-sync.md comment refactor — separate, not in scope)",
+    "PROP-013 (NEVER_PUSH strand auto-rescue — implemented; reference for prior PROP authorship style)"
+  ],
+  "supersedes": null
+}

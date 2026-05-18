@@ -1,0 +1,121 @@
+{
+  "generated_at": "2026-05-05T09:50:00Z",
+  "mode_selected": "Mode 2 — Infrastructure & FUSE (with Mode 4 self-fix)",
+  "mode_selected_reason": "Quick-check showed FUSE staleness (data/wins.json, docs/index.html drifted from main) and disk WARNING at 583MB project footprint (above 500MB warn threshold). FUSE staleness diagnosed as the expected universal-pusher rescue lag (decider 09:25Z 403-rescue, workspace-sync 10:06Z will absorb). Disk warning traced to 4 stale /tmp clones totaling 383MB. Schedule-table doc drift was also confirmed and self-fixed via clean clone push.",
+  "modes_checked": {
+    "mode_1_pipeline_health": {
+      "result": "GREEN",
+      "evidence": [
+        "poller last 2026-05-03T23:05Z, next 2026-05-05T11:05Z (12h cadence on track)",
+        "analyst last 2026-05-05T07:58Z, next 15:57Z (8h cadence on track)",
+        "decider last 2026-05-05T09:13Z (5 patches applied, 5 issues closed in run); next 13:13Z (4h cadence)",
+        "curmudgeon last 2026-05-05T06:35Z, queue depth 1 (qid 302 = WIN-017.c3 verification, fresh from decider 09:25Z); next 10:35Z (4h cadence)",
+        "workspace-sync running on schedule, 10 successful runs since midnight; latest 09:06Z absorbed prior decider commits, next 10:06Z will rescue 09:25Z 403",
+        "integrity last 2026-05-05T08:08Z (daily 9 AM cadence on track)",
+        "social last 2026-05-04T10:06Z, next 10:05Z today (~25 min from this run)",
+        "no stranded patches >24h old"
+      ]
+    },
+    "mode_2_infrastructure_fuse": {
+      "result": "YELLOW",
+      "evidence": {
+        "fuse_drift": "data/wins.json (FUSE 472933B vs GH 472611B, +322B) and docs/index.html (FUSE 1499514B vs GH 1499194B, +320B). Both have FUSE mtime 09:26:27Z, exactly matching decider 09:25Z run. Decider report push_status='403-rescued' / 'Universal-pusher rescue executed — 8 files copied to FUSE'. Expected behavior — workspace-sync 10:06Z will push the rescue files.",
+        "auth": "GitHub API HTTP 200",
+        "disk": "Project-induced footprint 583MB (above 500MB warn threshold, well below 1000MB crit). Breakdown: /sessions/.../mnt 199MB, /tmp/check-clone 127MB (May 4 19:35), /tmp/win001-fix-clone 109MB (May 4 19:36), /tmp/dome-clone 86MB (May 3 23:07), /tmp/tinker-clone 61MB (May 2 06:18). 4 stale clones = 383MB.",
+        "errors_in_agent_outputs": "1 hard 403 (decider's own report — already self-classified as expected and rescued). Soft complaints: PROP-014 Mech 1 still_pending=2 across last 4 days (ISS-1827 closed but verification_pattern_failed; ISS-1834 open with no verification_pattern field). narrative-cite uncited=2995 bogus=15 (acknowledged pre-existing baseline)."
+      }
+    },
+    "mode_3_cost_engineering": "deferred — Mode 2 issues took precedence",
+    "mode_4_proposals_and_fixes": "applied — schedule-table doc-drift self-fix committed (sha 7e828b9)"
+  },
+  "previous_followup": [
+    {
+      "id": "FINDING-2026-05-04-001",
+      "claim": "Decider's 09:24Z daily-report missing push_status / commit_sha / push_failure_log / recovery_path fields that appeared in 05-24Z report.",
+      "verification_method": "Surveyed push_status presence across the last 10 decider daily-reports (2026-05-03 through 2026-05-05).",
+      "outcome": "RESOLVED — not a reporting bug. The push_status field is only emitted by decider when there is an active 403-rescue or pending rescue, not on every run. Evidence: 2026-05-04T13-26 has it (rescue path); 2026-05-04T09-24, 17-20, 21-21, 2026-05-05T01-19, 05-23 all omit it (push succeeded on first try, no rescue triggered); today's 2026-05-05T09-25 has it (another 403). The yesterday-9:24Z FUSE-vs-GH 600B delta I observed was the lagged universal-pusher rescue from a prior failure (e.g. 05:24's 403_rescue_pending), not a fresh undocumented failure. Recommend NO PROP — the emit-on-incident design is reasonable telemetry hygiene.",
+      "status": "FIXED"
+    },
+    {
+      "id": "PROP-016 (source-file rescue gap)",
+      "claim": "Source-file rescue gap when decider commits include NEVER_PUSH paths.",
+      "verification_method": "ls monitor/tinker/proposals/PROP-016-*.json and read status field.",
+      "outcome": "STILL_PROPOSED — authored 2026-05-02T16:45Z, no decision/operator response field present. ~89 hours old (was 65h yesterday). Today's decider 09:25Z run touched only data/wins.json and other runtime data files (no NEVER_PUSH source-file half) so the original hazard pattern did NOT recur today. Continuing to watch.",
+      "status": "STILL_BROKEN_OPERATOR_BLOCKED"
+    },
+    {
+      "id": "yesterday's 7-file rescue queue + workspace-sync stalls",
+      "claim": "FUSE wins.json delta from prior decider rescues should land on GitHub via 10:03Z workspace-sync.",
+      "verification_method": "md5 wins.json FUSE vs GH; survey workspace-sync run logs for 24h.",
+      "outcome": "FIXED. 06:06Z workspace-sync committed 11 files including data/wins.json + docs/index.html. Subsequent 4 syncs all routine. Yesterday's wins.json rescue absorbed cleanly. (Today's mismatch is a NEW rescue from decider's 09:25Z 403, on track for 10:06Z absorption.)",
+      "status": "FIXED"
+    }
+  ],
+  "new_findings": [
+    {
+      "id": "FINDING-2026-05-05-001",
+      "severity": "low",
+      "category": "documentation/doc-drift",
+      "title": "Schedule-table doc drift in CLAUDE.md and monitor/prompts/tinker.md",
+      "evidence": "Live cron via list_scheduled_tasks: dome-curmudgeon=4h (cron 30 3,7,11,15,19,23 * * *), dome-decider=4h (cron 10 2,6,10,14,18,22 * * *), dome-workspace-sync=hourly (cron 0 * * * *), dome-analyst=8h (cron 50 */8 * * *). Pre-fix CLAUDE.md table had curmudgeon/decider as '8h quiet' and workspace-sync as 'Every 4h'. Pre-fix tinker.md table had analyst='Every 4h', curmudgeon='Hourly', decider='Every 2h', workspace-sync='Every 4h'. None of these matched live cron.",
+      "self_fix_applied": "commit 7e828b9 on main: 7 line edits across CLAUDE.md and monitor/prompts/tinker.md to match live cron. Verified post-push via GitHub API (raw CDN was still serving cached pre-push content but contents endpoint returns the new tinker.md table).",
+      "verification_pattern": "curl -s -H \"Authorization: token $PAT\" 'https://api.github.com/repos/funwithscience-org/dome-model-review/contents/monitor/prompts/tinker.md?ref=main' | python3 -c 'import json,sys,base64; d=json.load(sys.stdin); print(base64.b64decode(d[\"content\"]).decode())' | grep -E 'Workspace-sync|Decider|Curmudgeon|Analyst' | head -4 — should show 'Every 8h', 'Every 4h', 'Every 4h', 'Hourly'.",
+      "status": "FIXED_THIS_RUN"
+    },
+    {
+      "id": "FINDING-2026-05-05-002",
+      "severity": "low",
+      "category": "infrastructure/disk",
+      "title": "/tmp clone leak — 4 stale ad-hoc clones totaling 383MB",
+      "evidence": "Stale /tmp clones (oldest first): /tmp/tinker-clone (May 2, 61MB) — leftover from a 3-day-old tinker run; /tmp/dome-clone (May 3, 86MB); /tmp/check-clone (May 4 19:35, 127MB); /tmp/win001-fix-clone (May 4 19:36, 109MB). All 4 contain valid dome-model-review checkouts, mtime stable (no active use). Project footprint 583MB pushes the dispatcher's 500MB warn threshold, ~417MB headroom to the 1000MB crit threshold.",
+      "self_fix_applied": "NONE — clones not deleted. Tinker rule says 'Conservative self-fixes. Only fix things you're certain about.' These are ad-hoc clones (not the standard scheduled-agent ephemeral clones, which agents do clean themselves) and may belong to operator debugging sessions or interrupted runs that the operator wants to inspect. Auto-deletion risks losing context. Today's tinker self-fix used /tmp/tinker-runclone-20260505 and was cleaned up immediately after push (good baseline behavior).",
+      "recommendation": "Operator: review /tmp/check-clone, /tmp/dome-clone, /tmp/tinker-clone, /tmp/win001-fix-clone — if no longer needed, rm -rf to free ~383MB. Tinker will keep watching footprint; if it crosses 1000MB without operator action, escalate to medium-severity finding with a PROP for an explicit operator-ack-and-sweep workflow.",
+      "verification_pattern": "du -sm /tmp/check-clone /tmp/dome-clone /tmp/tinker-clone /tmp/win001-fix-clone 2>/dev/null — all four should disappear once operator cleans up; project-footprint should drop below 250MB.",
+      "status": "FLAGGED_OPERATOR_ACTION"
+    },
+    {
+      "id": "FINDING-2026-05-05-003",
+      "severity": "very-low",
+      "category": "verification/data-integrity",
+      "title": "PROP-014 Mech 1 stuck on 2 issues across multiple days",
+      "evidence": "workspace-sync agent_notes across 2026-05-04 and 2026-05-05 consistently report 'Mech1 still_pending=2 (ISS-1827, ISS-1834 verification_pattern_failed)'. ISS-1827 is in closed-issues.json with status='fixed-pending-verification' (no closed_at). ISS-1834 is in open-issues.json since 2026-05-04T21:18Z (12.4h old) with no verification_pattern field — that's why Mech 1 fails on it.",
+      "diagnosis": "ISS-1834 was authored by curmudgeon (source: WIN-014.c5.json) with no verification_pattern. Decider's issue-creation flow doesn't emit verification_pattern for curmudgeon-sourced issues — the field is added when decider self-applies a patch. ISS-1834 hasn't been patched yet (it's a WIN-012 detail_evidence sign-convention propagation, recommended_action specifies the exact replacement). Once decider patches it, the verification_pattern should flow naturally. ISS-1827 is closed but verification_pattern_failed — would need to inspect what verification_pattern was attached and why it fails.",
+      "recommendation": "Don't author a PROP yet. Wait for decider's 13:13Z run to patch ISS-1834 (decider already has 5 self-applies under its belt this morning). If ISS-1834 stays unpatched 24h+ or both ISS-1827 and ISS-1834 are still pending after a curmudgeon re-review cycle, escalate to PROP for a Mech-1-skip-or-flag mechanism.",
+      "status": "WATCHING"
+    }
+  ],
+  "claude_md_audit": {
+    "size_lines": 198,
+    "size_lines_after_fix": 198,
+    "accuracy_findings": [
+      "FIXED THIS RUN: schedule table had 3 stale entries (curmudgeon, decider quiet-cadence; workspace-sync interval). Now matches live cron.",
+      "PROP-009 / PROP-014 / PROP-016 references in CLAUDE.md File Ownership section all still match build.js OWNERSHIP and workspace-sync.md OWNED_BY_GIT (no drift detected by md5 of CLAUDE.md FUSE vs main = match)."
+    ],
+    "performance_findings": [
+      "CLAUDE.md is read by all 8 agents on every run. Net change this run: ±0 lines (4 single-token-class edits). No bloat introduced.",
+      "Universal-pusher mode block (lines 101-103) is now ~10 days old and stable; could potentially be shortened by trimming the parenthetical history once it's settled, but not urgent."
+    ]
+  },
+  "context_load": {
+    "note": "Per-agent context-load measurement deferred — this run was Mode 2 + Mode 4 self-fix, not Mode 3. Last full measurement was tinker-2026-05-04T09-40. No agent prompts edited this run, so per-agent totals unchanged from yesterday.",
+    "tinker_self": {
+      "tinker_md_lines": 194,
+      "trend_vs_yesterday": "unchanged (no edits to tinker.md beyond the 4-line schedule-table fix)"
+    }
+  },
+  "snapshot_metrics": {
+    "open_issues": 228,
+    "open_issues_delta_vs_yesterday": "+4 (was 224)",
+    "closed_issues": 1498,
+    "closed_issues_delta_vs_yesterday": "+12 (was 1486)",
+    "curmudgeon_queue_depth": 1,
+    "curmudgeon_queue_mode": "bau",
+    "stranded_patches_over_24h": 0,
+    "fuse_drift_files": ["data/wins.json (+322B, expected rescue lag)", "docs/index.html (+320B, expected rescue lag)"],
+    "tmp_clone_leak_mb": 383,
+    "project_induced_footprint_mb": 583,
+    "github_api_status": 200,
+    "git_commit_pushed_this_run": "7e828b9"
+  },
+  "other_side_considered": "Counter-arguments to today's choices: (1) Should I have deleted the 4 stale /tmp clones autonomously? They're not in active use (mtimes >1d) and total 383MB. Counter-counter: tinker rule is conservative self-fixes; auto-deleting an operator's debugging clone (especially win001-fix-clone, which has a topic-specific name suggesting an in-progress investigation) could destroy unrecoverable scratch work. The current footprint is at warn (583MB) not crit (1000MB), so delegating to operator is proportionate. (2) Should I have written a PROP for the schedule-table drift instead of self-fixing? The prompt says 'Conservative self-fixes. Only fix things you're certain about — stale URLs, wrong paths, missing fields.' Schedule values are like wrong paths: factually-incorrect data with a verifiable correct value. The fix is reversible and trivially verifiable. PROP would be over-engineering. (3) Should I have escalated PROP-016 today? It's now ~89h old without operator response. Counter: escalation looks like nagging when operator may be deliberately holding the decision pending more data; the pattern hasn't recurred today (decider's 09:25 run touched only runtime data, not source files). Keeping it on the watch list is the right call. (4) Should FINDING-2026-05-04-001 have been escalated rather than resolved? On revisit, the emit-on-incident pattern is consistent across 10 reports — what looked like a reporting gap yesterday is actually a sensible design choice (don't emit zero-information fields on success). Marking RESOLVED is honest; insisting on the prior framing would be confirmation bias."
+}

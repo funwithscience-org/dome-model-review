@@ -1,0 +1,91 @@
+{
+  "directive_id": "DIRECTIVE-20260514-001",
+  "title": "Investigate + propose canonical fix for the analyst summary-write gap. monitor/analyst/latest-analysis-summary.txt has been stale since 2026-04-25T08:04Z despite analyst running successfully many times. Two suspected bugs: (1) path typo monitor/analysis/ vs monitor/analyst/ in analyst-normal-analysis.md, and (2) summary write only documented in Normal mode dispatcher, missing from Modes 0/1/1b/2/2b/3/4/5.",
+  "filed_by": "operator",
+  "filed_at": "2026-05-14T05:30:00Z",
+  "status": "completed",
+  "priority": "medium",
+  "scope_authority": "Design proposal only (PROP-NNN). Operator reviews PROP before implementation. Tinker investigates the root cause across analyst.md + reference/analyst-*.md, designs the canonical fix (what to write, when to write, where to write), and proposes prompt edits.",
+  "context": [
+    "Empirical observation 2026-05-14T05:00Z: latest-analysis-summary.txt mtime is 2026-04-25 08:04 UTC. Content of the file is from a 2026-04-25T07:04Z Normal-mode no-op run. That means analyst has run dozens of times since Apr 25 without overwriting the summary file.",
+    "Real work HAS been happening. Verified by mtime + completed_at scan on 2026-05-14T05:00Z: at least 20 tracker entries flipped to status=complete since 2026-05-13T12:00Z including EXP-329-WIN-057-AICBIC-defender-pivot, EXP-330-WIN-056-direct-import-post-hoc-correction, EXP-366-stale-tracker-drain-batch, EXP-326-WIN-021-tau-I-framing-close, and a large batch completed 16:06Z (EXP-325/327/331/338/339/340/341/344/345/346/347). 14 fresh issue-proposals also written. Two of the EXPs (329, 330) directly serviced baby's first-run escalations from PROP-034 Phase 1.",
+    "So analyst is healthy and producing work. The summary-write sentinel is broken, which hid analyst's state from the operator's pipeline-health dashboard and from tinker's pipeline-health audit (tinker uses 'Last output timestamp vs expected schedule' as the staleness check, and the broken sentinel makes analyst look paused since Apr 25).",
+    "Smoking gun 1 (path typo): /tmp/edit-clone/monitor/prompts/reference/analyst-normal-analysis.md line 7 and line 153 both reference 'monitor/analysis/latest-analysis-summary.txt' — note 'analysis' (with -is) directory, not 'analyst' (with -t). The actual workspace path everyone reads is monitor/analyst/latest-analysis-summary.txt. If analyst is literally writing to monitor/analysis/, that's a different directory the rest of the pipeline doesn't watch. (Or, more likely, the analyst recognizes the typo and uses the workspace canonical path — but then there's no enforcement that the write actually happens.)",
+    "Smoking gun 2 (dispatcher gap): Step 7 'Write summary and update status' in analyst-normal-analysis.md is part of the Normal mode procedure. The Mode 0/1/1b/2/2b/3/4/5 dispatchers in analyst.md don't reference Step 7 — they have their own procedures (Mode 1 in analyst-mode1-expansions.md, Mode 2b in analyst.md inline, etc.). None of those dispatchers prescribe an explicit 'write summary' step at end-of-run. So when analyst runs Mode 1 (the dominant overnight case), it does the work but never updates latest-analysis-summary.txt.",
+    "Apr 25 last-write date matches the introduction of the workspace-canonical attention-inbox path (PROP-022 Phase 1 / FUSE source-of-truth shift). Hypothesis: the analyst.md edits that landed around then refactored the dispatcher to read inbox from FUSE, and in the refactor the Normal-mode 'Step 7 write summary' fell out of the per-mode procedures. Worth confirming via git log of analyst.md around 2026-04-25 to 2026-04-27.",
+    "Compare with curmudgeon's latest-review-summary.txt and decider's latest-decider-summary.txt — both update reliably every run. Whatever pattern they use, analyst should follow."
+  ],
+  "operator_intent": "Tinker investigates the two suspected bugs (path typo + missing dispatcher hookup), confirms or refutes each via prompt-file analysis and git log review, identifies any third cause we missed, and proposes the canonical fix. The fix should ensure latest-analysis-summary.txt is overwritten EVERY analyst run (mode-agnostic), including no-op runs (so operator can see 'analyst ran 04:50Z, no work to do' rather than infer absence from a stale timestamp).",
+  "tasks": [
+    {
+      "task_id": "task_1_confirm_path_typo_scope",
+      "description": "grep all of monitor/prompts/ for both 'monitor/analysis/' (with 'analysis') and 'monitor/analyst/' (with 'analyst') references. Tabulate which files use which. Identify any other directories that have a similar typo risk (e.g. monitor/integrity/ vs monitor/integrety/). Report each occurrence with file + line.",
+      "deliverable": "A short tabulated list inside the PROP. Per-file count of 'analysis' vs 'analyst' references."
+    },
+    {
+      "task_id": "task_2_confirm_dispatcher_gap",
+      "description": "Read analyst.md + analyst-normal-analysis.md + analyst-mode0-onboarding.md + analyst-mode1-expansions.md + analyst-mode1b-predictions.md + analyst-mode34-procedures.md + analyst-mode5-prospective.md. For each, identify whether the mode procedure prescribes a summary write at end-of-run. List which modes have it and which don't. Confirm the hypothesis that only Normal mode does, and that all dispatcher modes lack it.",
+      "deliverable": "Per-mode table: mode_name | writes_summary_at_end | path_used | conditional_or_unconditional."
+    },
+    {
+      "task_id": "task_3_git_log_root_cause",
+      "description": "git log monitor/prompts/analyst.md and the reference subdirectory, focusing on 2026-04-20 → 2026-04-30 window. Identify the commit (or commits) that broke the summary-write contract. Hypothesis: a refactor that introduced FUSE-canonical workspace paths for attention-inbox dropped the Normal-mode Step 7 from per-mode procedures.",
+      "deliverable": "One or more candidate commit SHAs, with one-line description of what each touched. Conclude either 'confirmed: commit X introduced the gap' or 'not confirmed: gap predates 2026-04-25; the Normal-mode no-op pattern just happened to be the last code path that fired'.",
+      "fallback": "If the git log doesn't surface a clear commit, search closed-issues.json + tinker reports for any historical mention of 'latest-analysis-summary' to see if this was discussed before."
+    },
+    {
+      "task_id": "task_4_design_canonical_fix",
+      "description": "Propose the canonical fix as a PROP-NNN. Options to evaluate:",
+      "design_space": {
+        "option_A_dispatcher_postlude": "Add a 'Write summary' postlude block to analyst.md that runs unconditionally at the end of every mode (and after every mode-switch in multi-mode runs). Path: monitor/analyst/latest-analysis-summary.txt. Content: per-run digest of which mode(s) fired, what was processed, what was deferred. Mirrors curmudgeon's latest-review-summary.txt pattern.",
+        "option_B_per_mode_step": "Add an explicit 'Step N: Write summary' to each mode's reference file. More surface area but mode-specific summary content.",
+        "option_C_status_json_only": "Drop the .txt summary file entirely and rely on status.json + the agent's actual outputs (EXPs, issue-proposals) as the dashboard signal. Tinker's pipeline-health audit would need to update its staleness rule accordingly.",
+        "option_D_hybrid": "Option A + tinker pipeline-health audit explicitly checks both summary mtime AND substantive-output mtime (EXPs, issue-proposals, tracker writes), so a broken summary write can't silently hide a healthy agent."
+      },
+      "design_questions_for_tinker": [
+        "Q1: Recommend one option with rationale. Operator preference unstated; default to the option that minimizes new failure modes.",
+        "Q2: For option A or B: what's the minimum content the summary must contain to be useful as a dashboard sentinel? Mode fired, items processed, next-run carry-over — what else?",
+        "Q3: For option D: should tinker's pipeline-health audit always cross-check substantive output mtimes even when the summary file IS fresh? (Defense against future similar bugs.)",
+        "Q4: Should the path typo fix be part of THIS PROP or a separate trivial fix? Recommendation: include here for atomicity.",
+        "Q5: Should the same audit be applied to baby's latest-baby-summary.txt? Baby's prompt has an explicit write step (analyst-baby.md step 10), but tinker's staleness check should still cover it. Confirm coverage."
+      ]
+    },
+    {
+      "task_id": "task_5_counter_argument",
+      "description": "Steve prefers honest evaluation. Steelman the case for NOT fixing this. Strongest counter-arguments to consider:",
+      "counter_args_to_address": [
+        "'Analyst is producing real work — the broken sentinel isn't hurting anything. Fix it only when something downstream actually breaks.' Rebuttal expected: the broken sentinel hides analyst state from operator situational awareness, masked Phase 1 split-analyst dynamics for ~18h, and is one of the prompt-correctness signals operators rely on to know whether to investigate.",
+        "'The mode dispatcher's no-op summary in Normal mode IS the correct pattern. The fix is to migrate Normal-mode style summaries to each mode, not add a postlude.' Rebuttal expected: postludes are less per-mode-surface and harder to forget; per-mode requires editing 7 reference files.",
+        "'Per-mode summaries lose information (mode-specific verbosity) when consolidated into a postlude.' Operator may need to decide on verbosity trade-off."
+      ]
+    },
+    {
+      "task_id": "task_6_propose_only",
+      "description": "Author the PROP-NNN as DESIGN-PENDING-OPERATOR-REVIEW. Do NOT self-apply. Operator reviews proposal, then operator + tinker apply prompt edits.",
+      "deliverable": "monitor/tinker/proposals/PROP-NNN-analyst-summary-write-canonical-fix.json with the full design, including the chosen option (with rationale), the verbatim prompt edits to apply, the path-typo fix, and the tinker-pipeline-health update."
+    }
+  ],
+  "in_scope_for_tinker": [
+    "Read analyst.md, all reference/analyst-*.md, latest-analysis-summary.txt, status.json",
+    "git log analyst.md history (2026-04-20 to present)",
+    "grep monitor/prompts/ for 'monitor/analysis' typos",
+    "Read curmudgeon.md and decider.md latest-summary patterns for comparison",
+    "Author one PROP-NNN file with the full design"
+  ],
+  "out_of_scope_for_tinker": [
+    "Do NOT modify analyst.md or any reference file directly. Propose-only.",
+    "Do NOT touch scheduling. Cadence is a separate concern.",
+    "Do NOT batch with PROP-035 (which is about clone-side disk archival, unrelated). Keep this PROP focused on the summary-write contract."
+  ],
+  "operator_preferences_for_proposal": [
+    "Counter-argument section is mandatory (per operator preference 'Think about the other side of the argument too')",
+    "Recommend the most-conservative option that fixes the actual bug. Avoid scope creep into 'while we're here, redesign the dashboard'",
+    "Include exact verbatim prompt edits where applicable so operator can apply via copy-paste"
+  ],
+  "expected_artifacts": [
+    "monitor/tinker/proposals/PROP-NNN-analyst-summary-write-canonical-fix.json (status: design-pending-operator-review)"
+  ],
+  "completed_at": "2026-05-15T02:52:34.448Z",
+  "completed_by_run": "tinker-2026-05-15T02-42Z",
+  "prop_id_authored": "PROP-036"
+}

@@ -1,0 +1,104 @@
+{
+  "directive_id": "DIRECTIVE-20260502-003",
+  "issued_at": "2026-05-02T07:34:09.960Z",
+  "issued_by": "operator (steve via cowork session)",
+  "target_agent": "tinker",
+  "target_mode": "Mode 4 — Proposals & Self-Fixes (with implementation authorization)",
+  "title": "Author monitor/scripts/verify-pending-state.js + monitor/scripts/audit-narrative-citations.js per PROP-014 + amendment-001",
+  "priority": "high",
+  "status": "completed",
+  "completed_at": "2026-05-02T07:55:00Z",
+  "completed_by_run": "tinker-2026-05-02T07-35 (scheduled run, DIRECTIVE-20260502-003)",
+  "scripts_authored": [
+    "monitor/scripts/verify-pending-state.js (290 lines, --dry-run flag, version 1.0.0)",
+    "monitor/scripts/audit-narrative-citations.js (448 lines, --dry-run/--since/--all flags, version 1.0.0)",
+    "monitor/prompts/workspace-sync.md Step 3.6 (insert; PROP-014 verifier + audit invocation; ~85 lines added between existing Step 3.5 and Step 4)"
+  ],
+  "summary": "Path C step: operator has implemented Mech 2 + Mech 3 prompt edits across decider.md, decider-curmudgeon.md, decider-reporting.md, curmudgeon.md, analyst.md, and built the shared reference doc monitor/prompts/reference/state-verification.md. Two scripts remain — both novel infrastructure, both requiring deliberate authorship. Tinker authors them. Operator reviews and lands. This directive AUTHORIZES IMPLEMENTATION (writing actual JavaScript code, not just proposing). Tinker writes the two .js files in this directive's run, plus the workspace-sync.md integration block that invokes them. Tinker does NOT push to git or commit — operator handles git ops after review.",
+  "context": {
+    "trigger": "Operator-driven 2026-05-02 mid-morning. PROP-014 + amendment-001 are landed. Path C decided. Path B authorized for Mech 3 parallel with Mech 1+2.",
+    "prompt_edits_already_landed": [
+      "monitor/prompts/decider.md — Cross-Agent State-Coupling Discipline preface section + 3 bullet rules",
+      "monitor/prompts/reference/decider-curmudgeon.md — Staleness Gate intro extended with Discipline 2 reference + Step 4b for RS-b re-flagging gate",
+      "monitor/prompts/reference/decider-reporting.md — Mech 2 verify-on-read gate + Mech 3 narrate-cite discipline + verify_on_read_outcomes schema",
+      "monitor/prompts/curmudgeon.md — kernel_of_truth NARRATE-CITE rule",
+      "monitor/prompts/analyst.md — Mode 1b verdict prose NARRATE-CITE rule",
+      "monitor/prompts/reference/state-verification.md — NEW canonical reference for all three disciplines",
+      "CLAUDE.md — DIRECTIVE-LIFECYCLE additive-edit exception"
+    ],
+    "why_tinker_not_operator": "Both scripts are novel infrastructure (~150 lines each) with edge-case handling, idempotency requirements, and integration with workspace-sync's existing flow. Tinker has the audit-mode focus. Operator-as-implementer in the same context where prompt edits were done risks underspecified edge handling."
+  },
+  "deliverable_requested": {
+    "file_1_verify_pending_state": {
+      "path": "monitor/scripts/verify-pending-state.js",
+      "purpose": "Mech 1 verifier — flips '*-pending-verification' to terminal status when verification_pattern passes against origin/main",
+      "invoked_by": "monitor/prompts/workspace-sync.md (new step in existing flow)",
+      "input": "Iterates entries in monitor/decisions/closed-issues.json (issues array) and monitor/analyst/expansion-tracker.json (items array). Picks entries with status matching /-pending-verification$/.",
+      "per_entry_processing": [
+        "1) Read the verification_pattern field.",
+        "2) For Mech 1a (status:fixed-pending-verification): run `git show origin/main:<patch_file>` and grep the verification_pattern; pass = patch landed in main.",
+        "3) For Mech 1b (status:resolved-pending-verification): test -f the verification_artifact_path field; pass = file exists.",
+        "4) On pass: flip status to terminal value (fixed | resolved | integrated), write verified_at + verified_by_run + verifier_script_version.",
+        "5) On fail: leave entry pending; write last_verify_attempt + last_verify_attempt_failure_reason; do not retry-loop in the same run."
+      ],
+      "terminal_status_mapping": "fixed-pending-verification → fixed; resolved-pending-verification → resolved; integrated-pending-verification → integrated. Script must NEVER set terminal status if verification fails. Defensive default: if verification_pattern absent or malformed, log error and leave pending.",
+      "idempotency": "Running the script multiple times against the same state must produce the same outcome. Already-terminal entries skipped. Never-pending entries skipped.",
+      "output": "1) Updates closed-issues.json + expansion-tracker.json in place (additive edit on per-entry basis). 2) Writes monitor/integrity/verify-pending-run-<ISO-ts>.json with summary {checked, flipped, still_pending, errors}. 3) Console output suitable for workspace-sync's commit message.",
+      "error_handling": "Bad JSON → log + skip entry. Missing files → log + skip entry. Git command failure → log + skip entry; do NOT retry within run. NEVER throw or exit non-zero on per-entry failure.",
+      "tests": "Include --dry-run flag that prints what would be flipped without writing. Operator runs --dry-run before authorizing for workspace-sync invocation.",
+      "length_estimate": "~150 lines Node, no external dependencies.",
+      "stub_for_operator_review": "5-line header comment block: PROP-014 reference, amendment-001 reference, version (start at 1.0.0), invocation pattern, related files."
+    },
+    "file_2_audit_narrative_citations": {
+      "path": "monitor/scripts/audit-narrative-citations.js",
+      "purpose": "Mech 3 narrative-cite enforcement — Stage 1 paragraph-citation gate + Stage 2 anchor-match",
+      "invoked_by": "monitor/prompts/workspace-sync.md (new step alongside verify-pending-state.js)",
+      "input": "Iterates declared-state prose surfaces: monitor/decisions/daily-report-*.json (pipeline_status fields, recommended_actions[].action), monitor/curmudgeon/reviews/*.json (kernel_of_truth.description, kernel_of_truth.why_it_doesnt_save_claim, our_argument_summary), monitor/tinker/report-*.json (findings[].description). Configurable list of (file_glob, json_path) pairs.",
+      "stage_1_paragraph_gate": "For each surface, extract prose. Split into paragraphs (double-newline). For each paragraph >1 sentence (count via /[.!?]\\s+[A-Z]/ matches), require at least one citation match against /\\(([^)]+\\.(json|jsonl|txt|md))(:[\\w-]+)?\\)/. Track per-surface pass/fail counts.",
+      "stage_2_anchor_match": "For each citation with anchor (':<field-name>'), test -f the cited file. If JSON, JSON-parse and walk the anchor path. If anchor resolves to a value, mark verified. If not, mark bogus-anchor.",
+      "output": "Writes monitor/integrity/narrative-cite-audit-<ISO-ts>.json with per-surface counts {surface_path, paragraphs_total, paragraphs_uncited, citations_total, citations_bogus_anchor, sample_uncited_paragraph_text}.",
+      "configuration": "List of (file_glob, json_path_to_prose) at top of script as constants. Adding new surface = 1-line edit.",
+      "edge_cases": "Empty prose → skip. Code blocks (```...```) → exclude from sentence count. Headers/list-items → exclude from paragraph extraction. Audit DECLARED-STATE PROSE only.",
+      "idempotency": "Multiple runs produce same output for same input state. Audit doesn't mutate inputs — purely observational.",
+      "length_estimate": "~150 lines Node.",
+      "stub_for_operator_review": "5-line header comment block per the verify-pending-state.js pattern."
+    },
+    "file_3_workspace_sync_modification": {
+      "path": "monitor/prompts/workspace-sync.md (modification, not creation)",
+      "purpose": "Add invocations of both scripts at appropriate point in existing workspace-sync flow",
+      "spec": "Add new step (Step 3.6 or wherever fits best) that: 1) Runs `node monitor/scripts/verify-pending-state.js` against freshly-pulled clone state. 2) Runs `node monitor/scripts/audit-narrative-citations.js` against same. 3) If verify-pending-state.js made flips, those files get added to smart_copy iteration so they push back to git. 4) If audit-narrative-citations.js found uncited paragraphs in declared-state surfaces, write audit report to monitor/integrity/ and append soft-complaint line to workspace-sync run report (no blocking; operator reviews on next morning briefing). Place AFTER smart_copy iteration but BEFORE git commit/push."
+    },
+    "propose_only_no_commit": "Tinker writes script files and workspace-sync.md modification. Tinker does NOT git add, git commit, or git push. Operator reviews (including running --dry-run on each script) before committing.",
+    "test_mode_required": "Both scripts MUST have --dry-run flag printing intended actions without performing them."
+  },
+  "non_goals": [
+    "Do NOT modify any agent prompt other than workspace-sync.md (decider/curmudgeon/analyst edits already landed).",
+    "Do NOT modify actual ledger files (closed-issues.json, expansion-tracker.json) in this run — only the scripts.",
+    "Do NOT add new fields to PROP-014 or amendment-001 — operator handles further additions.",
+    "Do NOT extend scope to Mech 2 read-verify (prompt-only, already implemented).",
+    "Do NOT implement Stage 3 of Mech 3 (LLM-as-judge / manual sampling) — deferred per amendment-001 Q3."
+  ],
+  "proposed_fix_spec": {
+    "note_to_tinker": "Both scripts described in detail in PROP-014 (proposed_fix.files_to_create) and amendment-001 (Q3 stage definitions). You may deviate IF you find cleaner implementation, but call out deviations in a header comment + brief note in your report."
+  },
+  "completion_criteria": {
+    "files_present": [
+      "monitor/scripts/verify-pending-state.js exists, valid JavaScript, has --dry-run flag",
+      "monitor/scripts/audit-narrative-citations.js exists, valid JavaScript, has --dry-run flag",
+      "monitor/prompts/workspace-sync.md modification visible in git status as edit"
+    ],
+    "dry_run_self_test": "Run --dry-run on each script against current clone state. Output should show intended actions without errors. Include dry-run output in tinker report.",
+    "documentation": "Each script has 5-line header comment block per spec.",
+    "mark_directive_completed": "Set status:'completed' with completed_at + completed_by_run + scripts_authored fields appended per DIRECTIVE-LIFECYCLE additive-edit exception. Do not mutate other fields.",
+    "operator_handoff": "Brief tinker-report section: files written, dry-run output summary, any spec deviations + reasoning, recommended next operator action."
+  },
+  "cross_references": [
+    "DIRECTIVE-20260502-001 (parent — PROP-014 authorship, completed)",
+    "DIRECTIVE-20260502-002 (sibling — PROP-014-amendment-001 authorship, completed)",
+    "PROP-014-agent-state-coupling.json (canonical proposal, additively-edited 2026-05-02 with amendment-001 conclusions)",
+    "PROP-014-amendment-001.json (Q3 three-stage measurement spec, Q5 scope enumeration)",
+    "monitor/prompts/reference/state-verification.md (canonical disciplines reference)",
+    "CLAUDE.md DIRECTIVE-LIFECYCLE additive-edit exception"
+  ],
+  "supersedes": null
+}

@@ -1,0 +1,84 @@
+{
+  "point_id": "WIN-030",
+  "topic": "Elliptical disc geometry V5-V9",
+  "reviewed_at": "2026-04-07T20:15:00Z",
+  "cycle": 2,
+  "current_verdict_holds": true,
+  "confidence": 0.88,
+  "our_argument_summary": "Our review classifies WIN-030 as Misleading, arguing that (1) adding free parameters always reduces residuals — AIC/BIC comparison is required, (2) the 48.6% RMS figure is unverifiable (no computation in repo), and (3) the ellipse is fitting WGS84 globe-derived distances, absorbing projection distortion rather than discovering a physical shape. The argument has been substantially improved since Cycle 1, incorporating the 48.6% unreproducibility point and the WGS84 circularity argument that were recommended in the previous review.",
+  "dome_code_analysis": {
+    "relevant_files": [
+      "generate_advanced_map_v2.py (hardcoded a=20015, b=15000, orient=60°)",
+      "test_curve_stretching.py (ellipse test uses sqrt(1-(r/R)²) — semicircle, not true ellipse)",
+      "find_curve.py (8 cities, WGS84 distances, no ellipse comparison)",
+      "build_complete_api.py (disc_shape: ellipse, parameters marked approximate)"
+    ],
+    "calculation_pipeline": "No pipeline exists that computes the 48.6% RMS reduction. The map generation scripts hardcode ellipse parameters for visualization only. find_curve.py computes dome-to-WGS84 distance errors for 8 city pairs with no elliptical correction applied. No script performs a circular-vs-elliptical RMS comparison.",
+    "hardcoded_vs_computed": "All ellipse parameters are hardcoded: a=20015, b=15000, orient=60°. The b/a ratio is listed as 0.70-0.90 'converging' across V5-V9, but no convergence script or optimization routine exists. The 48.6% RMS figure appears only in descriptive text.",
+    "data_sources_used": ["WGS84 reference distances between 8 city pairs (hardcoded in find_curve.py)"],
+    "escape_clauses": "OPEN-003 ('Ellipse parameters still converging') provides an indefinite escape clause — the ellipse can always be retuned when errors are found.",
+    "our_code_claims_accurate": true,
+    "code_discrepancies": "No inaccurate code claims. Our detail_evidence now correctly notes the 48.6% figure is unreproducible, paralleling the 95.2% finding."
+  },
+  "code_analysis_tags": {
+    "monitoring": "none",
+    "monitoring_evidence": "No domain, data fetch, or comparison logic for WIN-030 (elliptical geometry) exists in monitor.py or pull_data.py. The ellipse parameters are used only in visualization scripts, not in any monitoring pipeline.",
+    "relabels_standard": true,
+    "relabels_standard_evidence": "The underlying phenomenon — systematic distance errors growing with latitude on a flat projection — is explained by standard cartography as azimuthal equidistant projection distortion from a spherical Earth. The dome relabels the cause as 'the disc is elliptical' while the distances being fitted are still WGS84-derived.",
+    "post_hoc": true,
+    "post_hoc_evidence": "Inter-city distances were already known from WGS84 geodesy long before the dome model fitted an ellipse to them. The 48.6% RMS reduction is measured against pre-existing globe-derived distances, not a prospective prediction.",
+    "derives_from_dome": false,
+    "derives_from_dome_evidence": "The ellipse parameters (a, b, orient) are fitted to WGS84-derived distances, not derived from dome geometry equations. No formula in the dome model starts from dome-specific principles and arrives at b/a≈0.75 or orient≈60°. The values are empirical curve-fitting results.",
+    "reviewed": true
+  },
+  "holes_found": [
+    {
+      "severity": "major",
+      "description": "The `finding` field contains a duplicated phrase: 'Adding parameters always improves fit; no AIC/BIC comparison shown; 48.6% RMS figure unverifiable (no computation in repo); 48.6% RMS figure unverifiable (no computation in repo)'. The semicolon-separated clause '48.6% RMS figure unverifiable (no computation in repo)' appears twice. This is clearly a merge/patch artifact and looks sloppy — a dome defender could use it to argue our review process is careless.",
+      "recommendation": "Remove the duplicate. The finding should read: 'Adding parameters always improves fit; no AIC/BIC comparison shown; 48.6% RMS figure unverifiable (no computation in repo)'"
+    },
+    {
+      "severity": "major",
+      "description": "The detail_evidence contains substantial redundancy between paragraphs 1 and 2. Both paragraphs make the same WGS84 projection-absorption argument in nearly identical language: Para 1 says 'the ellipse is not discovering the Earth's shape — it is absorbing the radial scaling distortion that the Azimuthal Equidistant projection introduces when a sphere is projected onto a flat disc.' Para 2 says 'The ellipse is not discovering the shape of a flat disc — it is absorbing the systematic distortion that results from projecting a sphere onto a plane.' The second paragraph also re-states 'Any smooth closed curve with enough free parameters will improve the fit to spherically-derived inter-city distances,' which is nearly identical to the first paragraph's 'Any smooth closed curve with sufficient parameters would reduce RMS against spherically-derived distances.' This is a clear merge artifact from applying Cycle 1 patches — the new 48.6% content was appended without removing the now-redundant repetition of the WGS84 argument.",
+      "recommendation": "Consolidate into a single coherent argument. The first paragraph should present the AIC/BIC point and the WGS84 absorption argument. The second paragraph should focus exclusively on the 48.6% unreproducibility finding and its parallel to the 95.2% accuracy issue. Remove the repeated WGS84 language from paragraph 2. Suggested second paragraph: 'The 48.6% RMS reduction figure cannot be reproduced — no script in the repository computes it. Like the 95.2% accuracy figure (see Section 3.5.6), it appears only in descriptive text with no derivation or verification code.'"
+    },
+    {
+      "severity": "moderate",
+      "description": "Our review still doesn't mention the b/a range of 0.70–0.90 across V5-V9, which the Cycle 1 review identified as a strong argument. A 29% variation in a supposedly physical parameter (compared to WGS84's b/a=0.99664) reveals that the ellipse is a fitting parameter absorbing residuals, not measuring a physical shape. This point was recommended in Cycle 1 but not incorporated.",
+      "recommendation": "Add a brief note: 'The axis ratio b/a ranges from 0.70 to 0.90 across versions V5–V9 — a 29% variation in a supposedly fixed geometric property. By comparison, the WGS84 ellipsoid has b/a = 0.997. The wandering ratio reveals a fitting parameter, not a measured shape.'"
+    },
+    {
+      "severity": "minor",
+      "description": "The DOI 10.1007/978-0-387-98135-2 points to Burnham & Anderson (2002) 'Model Selection and Multimodel Inference' — this is the correct and authoritative Springer reference for AIC/BIC methodology. No citation issue here. However, the link text just says 'Akaike Information Criterion (AIC) or Bayesian Information Criterion (BIC)' without naming the source, which makes it harder for readers to evaluate the authority of the reference.",
+      "recommendation": "Consider naming the source in the link text, e.g., 'Akaike Information Criterion (AIC) or Bayesian Information Criterion (BIC) (Burnham & Anderson, 2002)'. Low priority."
+    }
+  ],
+  "stronger_arguments": [
+    {
+      "description": "The 'never reversed' claim (ellipse always outperformed circle across V5-V9) remains unaddressed in our text. This is trivially guaranteed for nested models — an ellipse with free b/a subsumes the circle (b/a=1) as a special case. Saying 'never reversed' is like saying a polynomial of degree 3 never fit worse than degree 2. It's mathematically guaranteed, not empirically meaningful. Mentioning this would preempt a defender citing 'never reversed' as evidence of robustness.",
+      "sources": ["Basic model selection theory: nested models always have equal or better fit on the training set"]
+    },
+    {
+      "description": "The dome's OPEN-001 ('dome-native coordinates without WGS84') and OPEN-003 ('ellipse parameters still converging') are self-acknowledged weaknesses that our review could cite more explicitly. The dome model itself concedes that its coordinate system depends on WGS84 and that the ellipse parameters are not settled. These are the dome's own admissions that the ellipse is not a stable physical measurement.",
+      "sources": ["raw-text/05-model.txt: OPEN-001, OPEN-003", "raw-text/04-coordinates.txt: b/a = 0.70-0.90"]
+    }
+  ],
+  "kernel_of_truth": {
+    "description": "The dome model correctly identified that a circular azimuthal equidistant projection centered on the North Pole produces systematic distance errors that grow with latitude, especially for southern hemisphere and cross-equator routes. This is a genuine cartographic fact. The observation that the error structure is systematic rather than random is a real insight — it's what you'd expect from projection distortion on a sphere.",
+    "why_it_doesnt_save_claim": "The systematic error pattern is exactly what spherical geometry predicts for a flat azimuthal equidistant projection. The elliptical 'fix' is the dome model inadvertently detecting globe geometry: it needs an increasingly complex flat projection to approximate what spherical trigonometry handles with zero free shape parameters. The ellipse is absorbing the globe's curvature, not discovering the disc's shape."
+  },
+  "recommended_action": "minor_edit",
+  "text_fingerprint": {
+    "claim_length": 24,
+    "finding_length": 178,
+    "detail_evidence_length": 1544,
+    "detail_verdict_length": 98,
+    "verdict": "Misleading"
+  },
+  "deeper_analysis": "Cycle 2 review of WIN-030. The detail_evidence has been substantially improved since Cycle 1, incorporating two key recommendations: (1) the 48.6% RMS figure is noted as unreproducible, paralleling the 95.2% finding, and (2) the WGS84 projection-absorption argument is now present. However, the patch application introduced two bugs:\n\n1. The `finding` field has a duplicated semicolon-separated clause. This is clearly a copy-paste or patch merge error.\n\n2. The detail_evidence now states the WGS84 absorption argument twice — once in paragraph 1 (original) and again in paragraph 2 (appended with the 48.6% content). The second paragraph should have been written as a standalone addition focusing on unreproducibility, but instead it re-states the projection distortion point verbatim.\n\nBoth are straightforward to fix by deduplication. The underlying arguments are sound and the verdict of 'Misleading' remains correct. The claim is misleading because it presents curve-fitting to globe-derived distances as evidence for a physical disc shape — the classic circular reasoning pattern that pervades the dome model's coordinate system.\n\nThe code_analysis tags from Cycle 1 remain correct: monitoring=none (no automation), relabels_standard=true (cartographic projection distortion renamed as disc shape discovery), post_hoc=true (distances were known before the fit), derives_from_dome=false (parameters are empirical fits, not geometric derivations).\n\nThe Cycle 1 stronger arguments about b/a variation (0.70-0.90) and the 'never reversed' triviality for nested models were not incorporated. These remain worthwhile additions but are lower priority than fixing the duplication bugs.",
+  "citation_check": {
+    "citations_verified": ["https://doi.org/10.1007/978-0-387-98135-2 — Burnham & Anderson (2002) Model Selection and Multimodel Inference, Springer. Correct reference for AIC/BIC methodology."],
+    "citations_failed": [],
+    "citations_unchecked": []
+  }
+}

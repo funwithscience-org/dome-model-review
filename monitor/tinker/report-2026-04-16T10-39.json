@@ -1,0 +1,180 @@
+{
+  "generated_at": "2026-04-16T10:39:00Z",
+  "report_date": "2026-04-16",
+  "run_label": "run-1 (morning)",
+  "mode_selected": "infrastructure_and_fuse",
+  "mode_reason": "Three Mode 2 triggers: (1) FUSE STALE on 4 files — build.js (stale 6+ days, new hash 12d95af0 vs workspace c3ad8c95), build-scripts/digest-reviews.js (carryover, 3rd consecutive report), build-scripts/generate-html.js (new staleness, commit 2026-04-15T17:00:44Z), docs/index.html (new staleness, commit 2026-04-16T03:42:14Z); (2) disk at 83% used (1715MB free), above 80% warning threshold; (3) PROP-007 still unimplemented after 2 reports. Pipeline health green, auth OK, CI green.",
+  "modes_checked": {
+    "pipeline_health": "green — all 8 enabled scheduled tasks producing within cadence. Poller lastRun 2026-04-15T23:05Z (12h cadence, next 11:05Z). Analyst lastRun 2026-04-16T09:16Z (2h cadence). Curmudgeon lastRun 2026-04-16T07:05Z (4h cadence). Decider lastRun 2026-04-16T07:33Z (4h cadence). Integrity lastRun 2026-04-16T08:07Z (daily). Social lastRun 2026-04-15T10:05Z (daily, next due ~10:05Z today — not stalled). Workspace-sync lastRun 2026-04-16T07:03Z (4h cadence). Open issues: 7 (down from 10 yesterday). No agent stalled.",
+    "infrastructure": "amber — FUSE staleness expanded from 2 files (yesterday) to 4 files today. build.js itself has a NEW GitHub hash (12d95af0, disk-bloat gc commit from 2026-04-15T16:37Z) vs the workspace copy that hasn't changed since before 2026-04-10. generate-html.js is newly stale (ISS-1035 commit 2026-04-15T17:00Z). docs/index.html is newly stale (decider self-apply 2026-04-16T03:42Z). digest-reviews.js carryover from yesterday. Root cause unchanged: these files are not in build.js OWNERSHIP, so publish never copies them to workspace. PROP-007 prescribes the fix but remains unimplemented. Auth OK (PAT valid, API 200). Disk 83% used, 1715MB free (up 1pp from 82% yesterday). New build.js has git gc --auto in publish loop — should slow pack-file growth.",
+    "cost_engineering": "deferred (Mode 2 selected). Last full Mode 3 run was 2026-04-13T16-11.",
+    "proposals": "PROP-005 STILL_BROKEN (10th consecutive). PROP-007 STILL_BROKEN (2nd consecutive). PROPs 001-004, 006 confirmed FIXED previously."
+  },
+  "pipeline_health": {
+    "agents_running": 8,
+    "agents_stalled": [],
+    "output_freshness": {
+      "poller": "11h ago (12h cadence) — green, next 11:05Z",
+      "analyst": "1.4h ago (2h cadence) — green",
+      "curmudgeon": "3.5h ago (4h cadence) — green",
+      "decider": "3h ago (4h cadence) — green",
+      "integrity": "ran 08:07Z today — green",
+      "social": "~24h ago (daily cadence, next ~10:05Z — due imminently) — green",
+      "tinker": "this run — green",
+      "workspace_sync": "3.5h ago (4h cadence) — green"
+    },
+    "open_issues": 7,
+    "ci": "last 3 runs successful (latest 2026-04-16T08:28:51Z)"
+  },
+  "infrastructure_findings": [
+    {
+      "severity": "major",
+      "category": "staleness",
+      "description": "FUSE STALE: build.js. Workspace md5 c3ad8c95 vs main md5 12d95af0 (NEW hash — yesterday it was dbd0e96c). Latest GitHub commit 2026-04-15T16:37:03Z added git gc --auto to publish loop for disk-bloat prevention. Workspace has never received ANY of the 3+ commits to build.js since 2026-04-10. This is the 3rd consecutive report flagging build.js staleness.",
+      "evidence": "md5sum build.js (workspace) c3ad8c95 vs curl raw main 12d95af0. GitHub commits API: latest commit 2026-04-15T16:37:03Z 'Disk-bloat prevention: git gc in publish + archive-old-reports utility'.",
+      "root_cause": "build.js is not in its own OWNERSHIP table. The publish loop iterates OWNERSHIP keys and copies git-owned files to workspace; build.js is not a key, so it never copies itself.",
+      "suggested_fix": "PROP-007 (unchanged from yesterday). The decider needs to implement this proposal.",
+      "self_fixable": false,
+      "fix_applied": false,
+      "prop_id": "PROP-007"
+    },
+    {
+      "severity": "major",
+      "category": "staleness",
+      "description": "FUSE STALE: build-scripts/generate-html.js. Workspace md5 f8654941 vs main md5 88402006. NEW staleness — first time this file is flagged. Latest commit 2026-04-15T17:00:44Z 'ISS-1035: Add WIN-068 to eclipse magnetometer dedup cluster'. This file generates the HTML site; any agent or manual run using the workspace copy will produce stale HTML.",
+      "evidence": "md5sum build-scripts/generate-html.js (workspace) f8654941 vs curl raw main 88402006.",
+      "root_cause": "generate-html.js IS in OWNERSHIP as git-owned, so this should be copied on publish. Either (a) no publish has run since the commit, or (b) the publish ran but the sync step failed/skipped. Since build.js itself is stale, if a publish ran using the stale workspace build.js (unlikely — decider clones fresh), it would use an old OWNERSHIP that might not have this file. More likely: the publish ran from a clone that has the OWNERSHIP entry, but build.js's copyFileSync for generate-html.js encountered a FUSE glitch.",
+      "suggested_fix": "Check whether the next publish properly syncs this file. If it persists another day, the sync step may need a retry/verify loop.",
+      "self_fixable": false,
+      "fix_applied": false
+    },
+    {
+      "severity": "moderate",
+      "category": "staleness",
+      "description": "FUSE STALE CARRYOVER: build-scripts/digest-reviews.js. Workspace md5 0a11b762 vs main md5 6a742c5e. 3rd consecutive report. The exit-code-2 fix from 2026-04-15T05:23Z is still not in the workspace. Not classified in OWNERSHIP, so publish never copies it.",
+      "evidence": "md5sum build-scripts/digest-reviews.js (workspace) 0a11b762 vs curl raw main 6a742c5e.",
+      "root_cause": "Not in OWNERSHIP. PROP-007 covers this.",
+      "suggested_fix": "PROP-007.",
+      "self_fixable": false,
+      "fix_applied": false,
+      "prop_id": "PROP-007"
+    },
+    {
+      "severity": "moderate",
+      "category": "staleness",
+      "description": "FUSE STALE: docs/index.html. Workspace md5 cf859205 vs main md5 db5d9288. Latest commit 2026-04-16T03:42:14Z 'Decider self-apply: 5 patches'. This file IS in OWNERSHIP as git-owned. Same mystery as generate-html.js: either no publish since the commit, or the sync step encountered an issue.",
+      "evidence": "md5sum docs/index.html (workspace) cf859205 vs curl raw main db5d9288.",
+      "root_cause": "Likely: the decider committed at 03:42Z but the next publish hasn't run yet, or publish ran but the sync step partially failed. generate-html.js and docs/index.html are both OWNERSHIP-classified, so their staleness is NOT caused by the PROP-007 gap — it's a different mechanism.",
+      "suggested_fix": "Monitor next publish run. If both classified files sync correctly, this is a timing issue. If they remain stale after the next publish, investigate the sync step's error handling.",
+      "self_fixable": false,
+      "fix_applied": false
+    },
+    {
+      "severity": "moderate",
+      "category": "disk",
+      "description": "DISK AT 83% USED, 1715MB free. Trajectory: 79% (04-13) → 81% (04-14) → 82% (04-15) → 83% (04-16). At ~1pp/day, 90% critical in ~7 days. Good news: new build.js commit added git gc --auto to publish, which should slow pack-file growth. Disk breakdown: /usr 6.1G (system, non-reducible), /var 1.4G, /sessions 62M, /tmp 98M. The growth is in /var, not monitor/ (which is only 16MB total).",
+      "evidence": "df / → 83% used, 1715MB free. du -sh /var → 1.4G. du -sh monitor/ → 16M.",
+      "root_cause": "System image baseline (/usr 6.1G) plus /var growth (logs, package cache). Monitor append-only directories are NOT the primary growth vector (only 16MB). The git gc --auto addition may help if pack files in /var/... are contributing.",
+      "suggested_fix": "The disk trajectory is concerning but the new git gc --auto should help. If %use crosses 85% tomorrow, escalate to human. Consider /var cleanup (apt cache, logs) as a future PROP if gc doesn't bend the curve.",
+      "self_fixable": false,
+      "fix_applied": false
+    },
+    {
+      "severity": "info",
+      "category": "git_auth",
+      "description": "Git auth healthy: PAT present, API returns 200.",
+      "evidence": "curl -H 'Authorization: token $TOKEN' API → 200.",
+      "self_fixable": false,
+      "fix_applied": false
+    },
+    {
+      "severity": "info",
+      "category": "ci",
+      "description": "CI healthy: last 3 runs all successful, most recent 2026-04-16T08:28:51Z.",
+      "evidence": "gh API actions/runs → success, success, success.",
+      "self_fixable": false,
+      "fix_applied": false
+    },
+    {
+      "severity": "info",
+      "category": "error_patterns",
+      "description": "No new hard errors in agent outputs. Historical 403s are all ScienceDirect/gracefo bot-blocking (known, low-priority). Social report-2026-04-07 had -1 values for github_activity (gh CLI unavailable at that time) — resolved in subsequent runs. No recurring error patterns detected in recent daily reports.",
+      "evidence": "grep -ri scan of daily-report, social/report, tinker/report files.",
+      "self_fixable": false,
+      "fix_applied": false
+    }
+  ],
+  "previous_followup": [
+    {
+      "finding": "PROP-005 / decider pre-flight work check",
+      "status": "STILL_BROKEN",
+      "evidence": "grep -q 'Pre-flight Work Check' monitor/prompts/decider.md returns nothing. 10th consecutive report. PROP status still 'proposed'. Escalation: either the human needs to approve this, or the decider needs to self-apply it. The 42% no-op rate savings case is strong. Recommending human decision: merge or close.",
+      "severity": "major"
+    },
+    {
+      "finding": "PROP-007 / build.js + build-scripts OWNERSHIP classification",
+      "status": "STILL_BROKEN",
+      "evidence": "grep -q \"'build-scripts/digest-reviews.js': 'git'\" build.js returns nothing on GitHub main. 2nd consecutive report. PROP status still 'proposed'. This is the root cause of the build.js and digest-reviews.js staleness class — and would partially address generate-html.js and docs/index.html IF the sync step is the issue.",
+      "severity": "major"
+    },
+    {
+      "finding": "decider.md stale schedule descriptions (lines 12-14)",
+      "status": "STILL_BROKEN",
+      "evidence": "decider.md still reads '- **Poller** (every 4h)' / '- **Analyst** (every 30min)' / '- **Curmudgeon** (every 10min)'. Actual: poller=12h, analyst=2h, curmudgeon=4h. 5th consecutive report. Self-fixable mechanical patch.",
+      "severity": "minor",
+      "self_fixable": true
+    },
+    {
+      "finding": "Orphan proposals vs processed-proposals ledger",
+      "status": "HEALTHY",
+      "evidence": "74 proposal files on disk, 6 in processed-proposals.json ledger. The gap is expected — most proposals are processed via open-issues.json, not the processed-proposals.json ledger. No new orphan accumulation pattern detected.",
+      "severity": "info"
+    },
+    {
+      "finding": "Disk trajectory (reaching 90% in ~8 days per yesterday's report)",
+      "status": "ONGOING — now ~7 days to 90%",
+      "evidence": "83% today vs 82% yesterday. New git gc --auto in build.js may slow growth. Primary growth vector is /var (1.4G), not monitor/ (16MB). Monitor next 2 days to see if gc bends the curve.",
+      "severity": "moderate"
+    }
+  ],
+  "self_fixes_applied": [],
+  "self_fix_candidates_not_applied": [
+    {
+      "target": "monitor/prompts/decider.md lines 12-14",
+      "proposed_find": "- **Poller** (every 4h): Dome site changes\n- **Analyst** (every 30min): Deep scientific analysis, new WIN entries, expansions\n- **Curmudgeon** (every 10min): Adversarial self-review",
+      "proposed_replace": "- **Poller** (every 12h): Dome site changes\n- **Analyst** (every 2h): Deep scientific analysis, new WIN entries, expansions\n- **Curmudgeon** (every 4h BAU; 30min churn-and-burn): Adversarial self-review",
+      "why_not_applied": "Mode 2 run focused on infrastructure. This is a clean mechanical fix — 5th consecutive report deferring it. Recommending next Mode 4 run apply this self-fix, or the decider can pick it up directly from this report.",
+      "severity": "minor"
+    }
+  ],
+  "new_proposals": [],
+  "recommendations": [
+    {
+      "priority": 1,
+      "type": "prop",
+      "description": "Apply PROP-007 urgently. FUSE staleness has expanded from 2 files (yesterday) to 4 files today. build.js itself now has a 3rd different GitHub hash that the workspace has never seen. Every publish cycle runs without git gc --auto (the workspace build.js predates that addition). The staleness class is growing, not shrinking.",
+      "prop_id": "PROP-007"
+    },
+    {
+      "priority": 2,
+      "type": "investigation",
+      "description": "generate-html.js and docs/index.html ARE in OWNERSHIP but are still stale. This is a DIFFERENT bug from PROP-007. Either no publish has run since their latest commits, or the publish sync step is silently failing for these files. The next decider publish should verify these files sync. If they remain stale after the next publish, the sync step needs debugging."
+    },
+    {
+      "priority": 3,
+      "type": "human_decision",
+      "description": "PROP-005 (decider pre-flight work check) — 10th consecutive STILL_BROKEN. Either merge the prompt change to save ~700 lines/no-op-run (42% of runs), or close as won't-fix so tinker stops re-escalating.",
+      "prop_id": "PROP-005"
+    },
+    {
+      "priority": 4,
+      "type": "self_fix",
+      "description": "decider.md lines 12-14 schedule descriptions are wrong for the 5th consecutive report. Next Mode 4 run should apply the mechanical patch from self_fix_candidates_not_applied."
+    },
+    {
+      "priority": 5,
+      "type": "monitor",
+      "description": "Disk trajectory: 83% and climbing 1pp/day. git gc --auto was added to build.js but workspace doesn't have it yet (PROP-007 dependency). If gc can't bend the curve, /var cleanup (apt cache purge, log rotation) would be the next lever. Escalate at 85%."
+    }
+  ]
+}

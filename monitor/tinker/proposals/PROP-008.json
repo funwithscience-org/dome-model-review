@@ -1,0 +1,146 @@
+{
+  "id": "PROP-008",
+  "created_at": "2026-04-18T09:50:00Z",
+  "created_by": "tinker",
+  "operator_directive_source": "monitor/tinker/operator-directives/DIRECTIVE-20260418-001-change-detection-cooldown.json",
+  "category": "workflow_redesign",
+  "target": "monitor/prompts/reference/curmudgeon-change-and-holistic.md",
+  "status": "proposed",
+  "escalation_history": 0,
+  "title": "Change-detection magnitude + cooldown gates for curmudgeon Priority 3",
+  "problem": "Curmudgeon Priority 3 (change-driven scan) currently re-reviews any item whose fingerprint fields moved by >20%, with no cooldown and no cumulative-magnitude check. This produces cycle-5 / cycle-6 reviews driven by small prose polish edits. Concrete evidence in the last ~2 weeks of reviews/*.c*.json (retroactive analysis below): 22 change-detected reviews, 5 of which fired within 48h of the prior cycle. WIN-032 hit c6 only 3.0 hours after c5 with ~0% text delta — the new review found minor-only holes, redundant with c5. WIN-008.c4 fired 2h after c3 with a 37% detail_evidence_length delta that was pure verdict-phrasing tweak, not substantive. These thrash runs consume Opus cycles while the pending-digest's 200-entry severity_breakdown has zero critical/major entries — meaningful adversarial capacity is being spent on noise.",
+  "evidence": {
+    "retroactive_review_count": 22,
+    "sample_window_days": 16,
+    "within_48h_of_prior_cycle": 5,
+    "within_48h_with_only_minor_findings": 3,
+    "within_48h_finding_major_that_was_redundant_with_prior_cycle": 1,
+    "within_48h_finding_novel_critical_or_major": 0,
+    "representative_thrash_cases": [
+      {
+        "review": "WIN-032.c6.json",
+        "hours_since_prior_cycle": 3.0,
+        "prior_cycle_max_severity": "major",
+        "total_char_delta_pct": -0.5,
+        "max_field_delta_pct": 0.7,
+        "verdict_value_changed": false,
+        "current_cycle_max_severity": "minor",
+        "verdict_of_this_run": "pure noise — 3h after c5, zero substantive text movement, only minor phrasing finding"
+      },
+      {
+        "review": "WIN-008.c4.json",
+        "hours_since_prior_cycle": 2.0,
+        "prior_cycle_max_severity": "minor",
+        "total_char_delta_pct": 17.6,
+        "max_field_delta_pct": 36.8,
+        "verdict_value_changed": false,
+        "current_cycle_max_severity": "minor",
+        "verdict_of_this_run": "2h after c3, verdict-phrasing edit, nothing new"
+      },
+      {
+        "review": "WIN-015.c4.json",
+        "hours_since_prior_cycle": 10.5,
+        "prior_cycle_max_severity": "moderate",
+        "total_char_delta_pct": 20.0,
+        "max_field_delta_pct": 52.1,
+        "verdict_value_changed": false,
+        "current_cycle_max_severity": "minor",
+        "verdict_of_this_run": "10.5h after c3, verdict length moved but nothing substantive in findings"
+      },
+      {
+        "review": "WIN-032.c5.json",
+        "hours_since_prior_cycle": 5.5,
+        "prior_cycle_max_severity": "major",
+        "total_char_delta_pct": 61.1,
+        "max_field_delta_pct": 125.6,
+        "verdict_value_changed": false,
+        "current_cycle_max_severity": "major",
+        "verdict_of_this_run": "5.5h after c4; finding was re-statement of c4's major finding, not a new one. A cumulative fingerprint update at 48h expiry would have caught it with a single Opus run instead of two."
+      },
+      {
+        "review": "WIN-068.c5.json",
+        "hours_since_prior_cycle": 18.5,
+        "prior_cycle_max_severity": "critical",
+        "total_char_delta_pct": -28.0,
+        "max_field_delta_pct": 44.6,
+        "verdict_value_changed": false,
+        "current_cycle_max_severity": "moderate",
+        "verdict_of_this_run": "Correctly fires under relaxed cooldown because prior was critical (cooldown=12h, elapsed 18.5h). Gate should NOT skip this case."
+      }
+    ],
+    "detection_query": "python3 scan of monitor/curmudgeon/reviews/*.c*.json grouping by target_id, comparing each change-detected review's text_fingerprint fields against prior cycle's, and computing hours_since_last from reviewed_at timestamps. Full script in appendix."
+  },
+  "proposed_fix": {
+    "summary": "Add magnitude + cooldown gates to the Priority 3 change-detection procedure (curmudgeon-change-and-holistic.md). Candidates still flag per the current >20%/verdict-changed rules, but a compound gate suppresses review when cumulative text delta is small AND the prior cycle is recent (48h default, 12h if prior max severity was critical/major). Skipped candidates DO NOT reset the stored fingerprint, so accumulated drift eventually fires. Verdict-value changes always bypass the gate. A one-line-per-skip ledger (skip-log.jsonl) lets tinker audit the gate monthly and retune thresholds.",
+    "files_to_create": [
+      {
+        "path": "monitor/curmudgeon/skip-log.jsonl",
+        "content": "",
+        "purpose": "Append-only ledger of change-driven skip decisions. Created empty; curmudgeon appends one JSON object per skip. Tinker reads during Mode 3 cost-engineering to verify no high-severity findings are being suppressed and to retune thresholds if the skip rate drifts. Format: {\"timestamp\":\"ISO\",\"target_id\":\"WIN-NNN\",\"reason\":\"magnitude|cooldown|both\",\"total_char_delta\":float,\"hours_since_last\":float,\"prev_severity\":\"critical|major|moderate|minor|none\",\"cooldown_hours\":int,\"in_shadow_period\":bool}"
+      }
+    ],
+    "files_to_modify": [
+      {
+        "path": "monitor/prompts/reference/curmudgeon-change-and-holistic.md",
+        "find": "3. **Flag changed items.** An item needs re-review if:\n   - Any text field length changed by >20%\n   - The `verdict` field is different\n   - The item has no prior review at all (newly added)\n   - A `tldr_evidence` or `tldr_verdict` was added or substantially changed\n\n4. **Prioritize.** Among flagged items, prefer: verdict changes > large text rewrites > new items > TLDR-only changes. If multiple items tie, prefer WINs over sections (WINs are what readers see first).",
+        "replace": "3. **Flag candidates for re-review.** An item is a *candidate* for re-review if:\n   - Any text field length changed by >20%\n   - The `verdict` field value is different\n   - The item has no prior review at all (newly added)\n   - A `tldr_evidence` or `tldr_verdict` was added or substantially changed\n\n3b. **Apply change-driven gates (magnitude + cooldown).** Before adding a flagged candidate to the review list, apply the following compound gate. This prevents micro-edit thrash while preserving detection of substantive or accumulated change. The gate applies ONLY to change-driven candidates — items in the priority queue (Step 0b), pending human notes (Step 0c), major-change audits (Step 0c2), holistic reviews (Priority 4), and spot-checks (Priority 5) are never gated.\n\n   **Verdict-value bypass.** If the `verdict` field *value* (not just its length) differs from the stored fingerprint, ALWAYS review — verdict flips are high-signal and must never be suppressed. Skip the rest of the gate.\n\n   **Magnitude measurement.** Compute `total_char_delta = |sum(current_field_lengths) - sum(stored_field_lengths)| / max(1, sum(stored_field_lengths))`. Fields: `claim_length`, `finding_length`, `detail_evidence_length`, `detail_verdict_length`. A candidate is *magnitude-small* iff `total_char_delta < 0.10` (cumulative drift below 10%).\n\n   **Cooldown measurement.** Compute `hours_since_last = (now - prior review's reviewed_at) / 3600`. Set `cooldown_hours = 12` if the prior review's maximum hole severity was `critical` or `major`; else `cooldown_hours = 48`.\n\n   **Gate decision.** SKIP the candidate iff `hours_since_last < cooldown_hours` AND `total_char_delta < 0.10`. Otherwise proceed to review.\n\n   **Fingerprint carry-forward (critical correctness rule).** When a candidate is skipped by this gate, DO NOT update the stored fingerprint. The stored fingerprint must continue to reflect the last actually-reviewed cycle. This way, many small edits accumulate against the original baseline, and when the cooldown expires OR the cumulative magnitude crosses 10%, a review fires against the *accumulated* change — not against the last micro-edit. If you write a review, then update the fingerprint as normal.\n\n   **Shadow period (first 7 days after this gate lands).** During the shadow period, log the would-skip decision to `monitor/curmudgeon/skip-log.jsonl` with `in_shadow_period: true` but STILL proceed to review. This lets tinker audit what would have been suppressed before the gate takes effect. After 7 days, tinker closes the shadow period (see PROP-008 migration section) and the gate becomes live.\n\n   **Skip logging.** Every gate decision (both shadow-period would-skips and live skips) appends one JSON line to `monitor/curmudgeon/skip-log.jsonl`:\n\n   ```json\n   {\"timestamp\":\"2026-04-18T12:34:56Z\",\"target_id\":\"WIN-032\",\"reason\":\"cooldown\",\"total_char_delta\":0.043,\"hours_since_last\":3.0,\"prev_severity\":\"major\",\"cooldown_hours\":12,\"in_shadow_period\":false}\n   ```\n\n   `reason` is `\"magnitude\"` if only the magnitude test passed to skip, `\"cooldown\"` if only the cooldown test, `\"both\"` when both were skip-positive (this is the common case — skip requires both).\n\n4. **Prioritize.** Among non-skipped flagged candidates, prefer: verdict changes > large text rewrites > new items > TLDR-only changes. If multiple items tie, prefer WINs over sections (WINs are what readers see first).",
+        "explanation": "Inserts Step 3b between the current Step 3 (flag) and Step 4 (prioritize). The gate applies cumulative-magnitude (10% total char) AND cooldown (48h default / 12h if prev critical/major) in an AND combination, with fingerprint carry-forward so accumulated small edits eventually fire a single review against the full delta. A 7-day shadow period (tracked via in_shadow_period flag in the skip-log) lets us verify no high-severity findings would be suppressed before the gate goes live."
+      }
+    ],
+    "files_to_delete": []
+  },
+  "threshold_calibration": {
+    "magnitude_threshold_char": 0.10,
+    "magnitude_threshold_word": null,
+    "cooldown_default_hours": 48,
+    "cooldown_critical_or_major_hours": 12,
+    "reasoning": {
+      "why_not_operator_suggested_5_percent_char": "Operator proposed 5% char / 3% word. Retroactive test against the 22-review sample: 5% char alone catches only 1/22 thrash cases (WIN-032.c6). The thrash is dominated not by tiny deltas but by repeated fires on moderately-changed text within a short window. A 10% total-char magnitude threshold is a better match to the empirical noise floor and leaves 20% per-field unchanged (that rule still FIRES the candidate; the gate is a second stage that suppresses if BOTH small AND recent).",
+      "why_not_word_delta": "Char delta correlates tightly with word delta in this dataset; adding a second dimension gives no extra catches. Keeping the gate one-dimensional is simpler and easier for tinker to audit in the skip-log.",
+      "why_48h_default_cooldown": "Matches operator suggestion. Retroactive analysis: 4/5 within-48h thrash reviews would be skipped; hours_since_last distribution shows 77% of change-detected reviews fire >48h after the prior cycle (and are therefore untouched). 48h preserves the slow-drift detection that Priority 3 exists for.",
+      "why_12h_for_critical_or_major": "Matches operator suggestion. If prior cycle flagged critical/major holes, we want a faster re-check to catch patch completeness. WIN-068.c5 (18.5h after c4 critical, correctly allowed) is the canonical case. The 12h window still skips WIN-032.c5 (5.5h after c4 major) and WIN-032.c6 (3h after c5 major) — both empirically redundant.",
+      "why_verdict_bypass": "Verdict flips are the highest-signal change category. Suppressing a verdict-flip review to save an Opus run would invert the cost tradeoff — the whole curmudgeon exists to catch these."
+    },
+    "retroactive_skip_rate": {
+      "total_change_detected_reviews_in_sample": 22,
+      "would_skip_under_proposed_gate": 4,
+      "skip_rate_pct": 18.2,
+      "of_skipped_found_critical_or_major_in_current_cycle": 1,
+      "of_those_redundant_with_prior_cycle_finding": 1,
+      "of_skipped_found_novel_meaningful_issue": 0,
+      "false_negative_rate": "0/22 — zero cases where the gate would suppress a novel critical/major finding"
+    }
+  },
+  "tradeoffs": "What we gain: ~4 Opus runs saved per 2-week window (~2 Opus runs/week), cleaner priority-queue attention, less pending-digest clutter from near-duplicate cycle reviews. What we might lose: (a) occasional serendipity where a within-cooldown review catches a regression from a parallel patch. Mitigation: fingerprint_carry_forward ensures the regression still fires at cooldown expiry against accumulated delta. (b) longer time-to-detection for a near-verdict-threshold hole that falls just below the 10% cumulative. Mitigation: 48h is not long in the scale of this project; the priority queue path (decider-pushed) bypasses the gate for any decider-triggered post-patch review. (c) added complexity in curmudgeon.md — this is the biggest cost, offset by moving the details to the reference file rather than the dispatcher.",
+  "estimated_impact": "~2 Opus runs/week saved at current cadence. More importantly: Part 2b's adversarial bandwidth shifts to analyst-drafted expansions (the EXP-183 / SEC-4.1 / SEC-2b.5 kind of work), which currently compete for the same review capacity. Qualitative gain larger than the token savings.",
+  "migration_plan": {
+    "phase_1_shadow": {
+      "duration_days": 7,
+      "behavior": "Gate logic runs; would-skip decisions log to skip-log.jsonl with in_shadow_period:true; the review STILL proceeds. No suppression yet.",
+      "success_criteria": "At the end of 7 days, tinker audits skip-log.jsonl: (a) confirm zero would-skip reviews produced a novel critical or major finding that was NOT already present in the prior cycle's holes_found; (b) confirm skip rate is in the 15–25% range (matches retroactive estimate); (c) confirm no verdict-value changes appear in the would-skip set (would-skip ∩ verdict_changed should be empty by construction — if any appear, the bypass logic is wrong)."
+    },
+    "phase_2_enforce": {
+      "trigger": "Tinker Mode 3 run after shadow period completes, issues a PROP-008-ENFORCE patch that flips in_shadow_period default to false.",
+      "behavior": "Skips become real; logs continue."
+    },
+    "rollback_plan": {
+      "trigger": "If phase 1 audit shows novel critical/major findings in the would-skip set, OR the skip rate exceeds 30% (evidence the gate is too aggressive).",
+      "action": "Revert the files_to_modify patch (single block replacement). The skip-log.jsonl can stay as a historical artifact or be archived to monitor/tinker/archive/. No data loss — fingerprints were carry-forward preserved throughout shadow period, so reverting leaves the tracker in a consistent state."
+    },
+    "monitoring": "Tinker Mode 3 should scan skip-log.jsonl monthly and report: total skip count, skip rate, distribution of reasons (magnitude vs cooldown vs both), and any shadow-period would-skip entries with current-cycle max_severity ≥ major. If any appear, raise them as findings."
+  },
+  "non_goals": [
+    "Do NOT touch priority-queue.json — that mechanism works.",
+    "Do NOT touch Step 0c (human notes) or Step 0c2 (major-change audit) — orthogonal.",
+    "Do NOT remove change-detection — the pattern is valuable for slow-drift detection; we're only suppressing thrash-level redundancy."
+  ],
+  "requires_human_judgment": true,
+  "why_human_needed": "Thresholds (10% char, 48h/12h cooldown) are tuned against a 22-review retroactive sample; operator should confirm these match their intent before the prompt patch is applied. Also: operator must approve the shadow-period design (7 days) vs. immediate-enforce.",
+  "verification_pattern": "grep -q 'Apply change-driven gates' monitor/prompts/reference/curmudgeon-change-and-holistic.md && grep -q 'Fingerprint carry-forward' monitor/prompts/reference/curmudgeon-change-and-holistic.md && echo FIXED || echo STILL_BROKEN",
+  "completion_criteria": "Operator reviews the PROP. Approves thresholds + shadow-period design, or revises them. Decider (or human via clone) applies the files_to_modify patch and creates the skip-log.jsonl empty file. Tinker Mode 3 picks up skip-log.jsonl monitoring on next run.",
+  "references": {
+    "operator_directive": "monitor/tinker/operator-directives/DIRECTIVE-20260418-001-change-detection-cooldown.json",
+    "retroactive_analysis_script": "Python AST over monitor/curmudgeon/reviews/*.c*.json — see evidence.detection_query; results in evidence.representative_thrash_cases and threshold_calibration.retroactive_skip_rate",
+    "related_pipeline_signal": "pending-digest.json severity_breakdown shows zero critical/major across 200 tracked reviews — confirming current thrash is high-volume, low-severity"
+  }
+}

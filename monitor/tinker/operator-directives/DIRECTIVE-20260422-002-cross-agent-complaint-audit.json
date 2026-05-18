@@ -1,0 +1,103 @@
+{
+  "directive_id": "DIRECTIVE-20260422-002",
+  "issued_at": "2026-04-22T05:17:41Z",
+  "issued_by": "steve (via cowork session)",
+  "target_agent": "tinker",
+  "target_mode": "Mode 4 — Proposals & Self-Fixes (and possibly a new Mode 5 — Cross-Agent Complaint Audit)",
+  "priority": "high",
+  "status": "open",
+  "supersedes": "DIRECTIVE-20260422-001",
+  "title": "Cross-agent complaint audit — tinker should read what every other agent writes",
+  "summary": "The core failure mode revealed by two recent incidents (human-notes status-vocabulary drift + workspace-sync skip-log noise) is not two separate bugs. It is one structural gap: tinker is not systematically reading the output files that other agents produce. Every agent surfaces its complaints, blockers, stale items, and silent-skips in plain-text or structured fields — but no agent walks those outputs looking for patterns that persist across runs. This directive subsumes DIRECTIVE-20260422-001; handle both instances under one coherent proposal.",
+  "context": {
+    "incident_1_human_notes": {
+      "file": "monitor/analyst/human-notes.json (plus peer human-notes.json in monitor/{decisions,social,curmudgeon}/)",
+      "observed": "Operator wrote HNOTE-DESIGN-REFRESH-PHASE-A-CLARIFICATION-001 and -002 with status=\"unclaimed\". Analyst preflight (analyst.md line ~105) triggers on status===\"pending\" only. Notes were silently ignored until operator noticed by chance. See also decider/social/curmudgeon human-notes — probably same latent bug.",
+      "surface": "Silent. No agent complained. Operator had to flip the bit manually."
+    },
+    "incident_2_sync_skip_log": {
+      "file": "monitor/integrity/workspace-sync-skips.jsonl",
+      "observed": "13 files in monitor/curmudgeon/reviews/ accumulating monotonically-growing skips with reason \"mtime-guard; git newer\". Root cause: decider.md dual-write loop was calling new Date().toISOString() per-base, so workspace and clone stamps drifted by 2-5 ms. Bug was latent for ~4 weeks. Fixed today in commit d948d6a.",
+      "surface": "Skip-log grew from 5 to 15 entries per sync run over 8 consecutive runs. Nobody was reading the skip-log. Tinker cited FUSE-drift in his reports but framed it as git-owned-file-freshness (leading to PROP-010) rather than drilling into per-file drift patterns."
+    },
+    "shared_pattern": "An agent wrote a complaint to a file. No other agent reads that file. Complaint persisted for weeks before a human noticed. This is the exact silent-failure mode we flag in the dome review — we should not replicate it in our own pipeline."
+  },
+  "proposed_fix_spec": {
+    "deliverable": "A single PROP proposing (a) an immediate one-time audit and (b) a recurring audit pattern. Specific choices are yours; optimize for \"every agent-surfaced complaint that persists across N runs becomes a tinker finding, loudly.\"",
+    "audit_surfaces_to_consider": [
+      "monitor/integrity/workspace-sync-skips.jsonl — group by reason+path, flag paths skipping >N runs in a row",
+      "monitor/integrity/alerts.txt — integrity agent's own alerts",
+      "monitor/integrity/latest-integrity-summary.txt — integrity summary",
+      "monitor/integrity/report-*.json — integrity structured reports (severity fields)",
+      "monitor/decisions/daily-report-*.json — decider daily report (error sections, unresolved items)",
+      "monitor/decisions/suggested-patches-*.json — decider-flagged patches not applied",
+      "monitor/social/latest-summary.txt — social's operator-hand checklist",
+      "monitor/social/report-*.json — social structured report",
+      "monitor/analyst/report*.txt / .json — analyst output",
+      "monitor/analyst/attention-inbox.json — pending attention items",
+      "monitor/changes/latest-poll-summary.txt — poller latest",
+      "monitor/curmudgeon/tracker.json — severity_breakdown fields",
+      "monitor/curmudgeon/pending-digest.json — curmudgeon accumulations",
+      "monitor/{analyst,decisions,social,curmudgeon}/human-notes.json — status vocabulary across all four",
+      "monitor/analyst/expansion-tracker.json — pending/blocked items",
+      "monitor/analyst/globe-fingerprint-tracker.json — pending fingerprints"
+    ],
+    "extraction_rules_to_consider": [
+      "Regex keyword scan: skip|stale|error|fail|block|wait|drift|orphan|mismatch|inconsistent|TODO|WARN|ISSUE|critical|major (case-insensitive)",
+      "Severity fields: scan every report_*.json for .severity in [critical,major] and .status in [open,pending,unresolved]",
+      "Human-notes status enum: walk all four human-notes.json files and enumerate distinct status values. If any non-canonical (non {pending,consumed,deferred,rejected}) value appears, flag",
+      "Append-only integrity: walk monitor/*/{reviews,expansions,proposals,drafts}/ — any mtime-drift between workspace and clone for matching IDs is a red flag (content diff, not just mtime)",
+      "Persistence detection: if the same complaint-key (file path + reason, or ID + severity) appears in two consecutive tinker audits without resolution, upgrade it to a finding. Three consecutive = urgent finding."
+    ],
+    "thinking_prompts": [
+      "Which audit surfaces are already covered by existing tinker modes? Do not re-implement what Mode 1 already does.",
+      "Which complaint-keywords produce signal vs. noise? Tune thresholds against actual recent output.",
+      "Where should findings land? New monitor/tinker/complaint-audit-*.json? Appended to daily report? Both?",
+      "How to avoid token cost blowup — the full text of every agent artifact per run would be expensive. Suggest reading only latest-summary.txt equivalents and diffing structured-field summaries.",
+      "Persistence detection requires cross-run memory. Where is that stored? monitor/tinker/complaint-state.json? Merge with existing report format?"
+    ]
+  },
+  "deliverable_requested": {
+    "format": "PROP file in monitor/tinker/proposals/ following existing PROP-* naming conventions.",
+    "contents": [
+      "One-time audit: enumerate today's distinct complaint-keys across ALL audit surfaces listed above. Group by (agent, severity, keyword). Report counts and point-of-origin.",
+      "Human-notes status-vocabulary section: enumerate every distinct status value found across all four human-notes.json files with counts per agent. Recommended canonical enum + enforcement mechanism (schema validator, widened preflight, default-pending, or hybrid). Cross-reference incident_1.",
+      "Skip-log audit section: audit workspace-sync-skips.jsonl for the last 30 days. Group by (path-prefix, reason). Any prefix with >20 skips in a rolling 7-day window is a candidate finding.",
+      "Recurring audit design: propose when tinker runs this (every tinker run? new Mode 5? sub-step of Mode 1?), which files get scanned each pass, persistence thresholds.",
+      "Concrete prompt patch: exact text changes to tinker.md.",
+      "Escalation path: how do findings from this audit become actionable? Auto-filed as a monitor/tinker/operator-directives/ directive to self? Appended to daily report? Cross-posted to decider human-notes?",
+      "Cost estimate: expected token add per tinker run vs. current cost.",
+      "Rollback plan if audit produces false positives at a rate that drowns out real signal."
+    ]
+  },
+  "non_goals": [
+    "Do NOT propose replacing any existing agent output surface. The files mentioned above are correctly scoped; this directive is purely about READING them.",
+    "Do NOT propose that tinker autonomously fix anything it finds. Findings are surfaced to the operator and/or the relevant agent via established channels.",
+    "Do NOT add a ninth scheduled agent. This is a tinker scope expansion, not a new agent.",
+    "Do NOT attempt to unify or merge the four human-notes.json files. Per-agent separation is deliberate."
+  ],
+  "cross_references": {
+    "superseded_directive": "monitor/tinker/operator-directives/DIRECTIVE-20260422-001-hnote-status-schema.json",
+    "related_commits": [
+      "c2a50b3 — HNOTE-SEC2B1-FORMULA-DRIFT-001 (social draft stranded, no ISS filed)",
+      "cb540b1 — flipped CLARIFICATION-001/002 unclaimed->pending",
+      "8c633c1 — DIRECTIVE-20260422-001 (now superseded by this file)",
+      "d948d6a — decider pop-write timestamp drift fix + 13-file workspace-clone cleanup"
+    ],
+    "related_prompt_files": [
+      "monitor/prompts/tinker.md",
+      "monitor/prompts/analyst.md",
+      "monitor/prompts/decider.md",
+      "monitor/prompts/curmudgeon.md",
+      "monitor/prompts/social.md",
+      "monitor/prompts/structure-integrity.md",
+      "monitor/prompts/workspace-sync.md"
+    ],
+    "related_claude_md_sections": [
+      "Monitoring Pipeline",
+      "File Ownership Rules",
+      "Data Flow (summary)"
+    ]
+  },
+  "completion_criteria": "Tinker produces a PROP file addressing the deliverable list. Operator reviews + approves the recurring-audit design and persistence thresholds before the tinker.md patch is applied through the normal clone-side edit -> build.js publish flow."
+}

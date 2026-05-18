@@ -1,0 +1,248 @@
+{
+  "generated_at": "2026-04-26T09:51:00Z",
+  "report_date": "2026-04-26",
+  "mode_selected": "infrastructure",
+  "mode_reason": "Mode 2 quick-check fired four FUSE staleness hits (data/wins.json, data/sections.json, build-scripts/generate-html.js, docs/index.html) AND disk WARNING 87%. Investigation showed FUSE staleness is downstream of an active operator session (commit cd1ba07 EXP-249 Phase B1 at 09:40:56Z, ~4 minutes before this run started) plus persistent decider 403 push failures (8 in 16h). Pipeline itself is green. Mode 2 right call.",
+  "modes_checked": {
+    "pipeline_health": "green — all 7 production agents within their expected windows. analyst (last 09:06Z, next 09:57Z, 60m cron), curmudgeon (07:25Z, next 11:25Z, 240m drain), decider (09:18Z, next 11:18Z, 120m), poller (last 23:08Z 04-25, next 11:05Z, 12h), integrity (08:08Z, next 27T08:07Z, daily), social (yesterday 10:06Z, next 10:05Z today, daily), workspace-sync (09:03Z, next 10:03Z, hourly per drain-mode bump). No stalled agents. expansion-tracker.json and status.json mtimes both within last hour.",
+    "infrastructure": "yellow — 4/8 git-owned probed files diverge from main (FUSE-stale because operator commit cd1ba07 at 09:40:56Z hasn't propagated git→FUSE; build.js publish was not run as part of that commit). Disk 87% but it's sandbox-image baseline (/usr=6.1G, /var=1.9G of which /var/log/journal=752M, /var/lib/snapd=493M); project-induced footprint on /tmp is 4MB. 8 push-failure events 2026-04-25T17:28Z → 2026-04-26T09:28Z (every ~2h, decider 403 'Devilwench' transient per HNOTE-OPERATOR-PAT-DIAGNOSIS-CORRECTION-001).",
+    "cost_engineering": "skipped — Mode 2 takes precedence. Last full Mode 3 was 2026-04-22.",
+    "proposals": "1 conservative self-fix applied this run (PROP-009r2 verification_pattern env-gate stripped — see findings). 0 new PROPs written; existing PROPs re-verified."
+  },
+  "pipeline_health": {
+    "agents_running": 7,
+    "agents_stalled": [],
+    "output_freshness": {
+      "poller": "10h ago (last 2026-04-25T23:08Z, next 2026-04-26T11:05Z; 12h cron, on schedule)",
+      "analyst": "45m ago (last 2026-04-26T09:06Z; next 09:57Z; 60m cron, on schedule)",
+      "curmudgeon": "2.4h ago (last 2026-04-26T07:25Z; next 11:25Z; 240m drain-mode)",
+      "decider": "33m ago (last 2026-04-26T09:18Z; next 11:18Z; 120m)",
+      "integrity": "1.7h ago (last 2026-04-26T08:08Z; daily 09:08Z)",
+      "social": "23.7h ago (last 2026-04-25T10:06Z; next 10:05Z today, ~14m away)",
+      "tinker": "self (this run)",
+      "workspace-sync": "47m ago (last 2026-04-26T09:03Z; next 10:03Z; hourly per drain-mode bump 2026-04-25)"
+    },
+    "previous_majors_cleared": [
+      "[2026-04-25] WIN-013.c4.json workspace-only — RESOLVED (rolled into main)",
+      "[2026-04-25 → carried by 2026-04-26 integrity 08:15] build_reproducibility CRITICAL — RESOLVED by decider 09-26 run (`integrity_note: \"Build drift from 08:15Z integrity report is RESOLVED by this run — fresh build committed.\"`); confirmed by latest commit cd1ba07 09:40:56Z carrying refreshed docs/index.html"
+    ]
+  },
+  "findings": [
+    {
+      "severity": "moderate",
+      "category": "staleness",
+      "description": "Four git-owned files differ between FUSE workspace and origin/main: data/wins.json (+655 bytes WS), data/sections.json (+2984), build-scripts/generate-html.js (+899 WS but content drift, not just size — see evidence), docs/index.html (-303 WS). Both wins.json and sections.json have identical entry counts (71 wins, 0 sections per current schema with prose moved to sections.json:_meta) and identical {win_id, verdict} tuples — divergence is text-level only. Root cause: operator session pushed commit cd1ba07 'EXP-249 Phase B1: pie chart token-driven + label ink + 24x24 legend' at 2026-04-26T09:40:56Z without running `node build.js publish`, so git→FUSE propagation didn't happen. The decider 09:18Z run already committed/built (per its 09:26 daily report integrity_note); the operator's manual EXP-249 commit followed, leaving FUSE behind. Risk surface: integrity (next run 2026-04-27T08:07Z) and social (next run 2026-04-26T10:05Z, ~14m) read from FUSE without freshness protection. Both will see 4 stale files unless workspace-sync's 10:03Z run regenerates docs/index.html (per HNOTE-OPERATOR-UNIVERSAL-PUSHER-001 follow-up commit 0441ab3 at 08:33Z, workspace-sync now regenerates docs/index.html). For data/wins.json + data/sections.json + build-scripts/generate-html.js: workspace-sync is in NEVER_PUSH for build-scripts/, and per universal-pusher mode it pushes runtime data files only when FUSE is newer than git — here git is newer, so workspace-sync's mtime-guard correctly skips them. Self-heal path: any future operator `build.js publish` will fix all four; otherwise FUSE will stay stale until next operator session.",
+      "evidence": "md5 comparison FUSE vs raw.githubusercontent.com main: data/wins.json ws=1e7af841 gh=ae4f543f; data/sections.json ws=d8657bce gh=62b5e2b4; build-scripts/generate-html.js ws=ccc0c2a8 gh=edb7e8dc; docs/index.html ws=ca491204 gh=01ba9b5d. Sizes (bytes): wins.json ws=461704 gh=461049 (+655); sections.json ws=565490 gh=562506 (+2984); generate-html.js ws=143464 gh=142565 (+899); docs/index.html ws=1358172 gh=1358475 (-303). Workspace mtimes: wins/sections=09:28:41Z (decider rebuild), generate-html/docs=09:41:05Z (workspace-sync mid-flight at run start; not yet reflecting commit cd1ba07). Latest commits: cd1ba07 EXP-249 09:40:56Z, 6898fec workspace-sync 09:05:04Z, 0441ab3 'workspace-sync regenerates docs/index.html' 08:33:22Z.",
+      "suggested_fix": {
+        "file": null,
+        "find": null,
+        "replace": null,
+        "rationale": "No-action this run. Three reasons: (a) workspace-sync's 10:03Z run will likely regenerate docs/index.html via its post-08:33 commit logic; (b) the 09:18Z decider already saw the divergence on its clean clone and produced a coherent build that the operator extended with EXP-249 — the canonical state is git, not FUSE; (c) the only agents that read from FUSE without protection (integrity + social) are not running until 27T08:07Z and ~10:05Z respectively, and even social only reads docs/llms.txt + data/ which are fine (llms.txt OK, wins.json/sections.json semantically identical at the entry level). If FUSE is still stale at the 11:18Z decider run, decider's clean-clone protection will absorb it. Re-check on the 2026-04-27 tinker run: if FUSE is still divergent, escalate to a manual `cp` from a clean clone."
+      },
+      "self_fixable": false,
+      "fix_applied": false
+    },
+    {
+      "severity": "moderate",
+      "category": "infrastructure",
+      "description": "Decider 403 push-failure rate is 8 events in 16h (every ~2h, matching the 120m decider cron almost 1:1). Per HNOTE-OPERATOR-PAT-DIAGNOSIS-CORRECTION-001 (2026-04-25T18:24Z, status=consumed) the PAT genuinely has contents:write — the 403 is environmental/transient and the decider is supposed to retry once on 403 (decider-patches-and-selfapply.md retry-on-403 wrapper). Universal-pusher mode (HNOTE-OPERATOR-UNIVERSAL-PUSHER-001/002) is rescuing every event by syncing files to FUSE and letting workspace-sync push within ~1h. Net effect: data is reaching git, but every decider run pays the cost of a failed push + rescue ceremony, the integrity check failed once (08:15Z build_reproducibility CRITICAL), and the rescue creates a churn pattern (large workspace-sync commits) that operationally hides what changed. The 100% 403-rate is suspicious — if the retry-on-403 wrapper were working, at least some retries would succeed and the failure log would not be perfectly periodic. Possible root cause: the retry is firing but the same IP/session is also getting blocked on retry; alternatively the retry wrapper isn't actually firing (decider prompt says it does, but the failure logs don't reference any retry attempt).",
+      "evidence": "8 push-failure files in monitor/integrity/: 2026-04-25T17-28, 19-30, 23-28, 2026-04-26T01-29, 03-27, 05-29, 06-42, 09-28. Latest content: '403 Permission denied to Devilwitch/Devilwench — scheduled task session IP. Known transient per HNOTE-OPERATOR-PAT-DIAGNOSIS-CORRECTION-001. Universal-pusher rescue executed.' No retry-attempt evidence in any of the 8 files. Decider runs at 17:28, 19:28, 21:28, 23:28, 01:28, 03:28, 05:28(?), 07:28(?), 09:28 — failure pattern lines up 1:1 with cron schedule (excluding the q4h slots that align to even hours where retry might mask). HNOTE-OPERATOR-PAT-DIAGNOSIS-CORRECTION-001.consumed_note: 'Decider self-apply procedure already updated (retry-on-403 wrapper per decider-patches-and-selfapply.md).'",
+      "suggested_fix": {
+        "file": "monitor/prompts/reference/decider-patches-and-selfapply.md",
+        "find": "retry-on-403 wrapper",
+        "replace": "verify the wrapper is actually being invoked and is logging its retry attempts. If it's emitting 'retrying after 30s' style log lines, those should appear in push-failure-*.json or in the daily-report's push_status block. Currently neither shows them. Either (a) the wrapper exists but isn't logging, in which case add a retry_attempts: N field to push-failure files; or (b) the wrapper isn't running at all in the current code path (e.g., catches push errors at a different layer).",
+        "rationale": "100% failure rate after a documented retry implementation suggests the retry isn't reaching the GitHub push, or it is and the retry also fails. Diagnosing requires either verbose retry logging or a synthetic test from a fresh clone. Tinker can't audit decider's own internal push logic; this needs to be a PROP for the operator OR a decider self-investigation."
+      },
+      "self_fixable": false,
+      "fix_applied": false,
+      "fix_reason_held": "Diagnosing why a retry wrapper isn't visibly retrying requires reading the decider's actual code path in decider-patches-and-selfapply.md and likely instrumentation work. Conservative tinker doesn't rewrite the decider's push pipeline. Surfacing as a finding for operator awareness; will write a PROP if next 3 runs show same 100% fail-rate without retry evidence."
+    },
+    {
+      "severity": "minor",
+      "category": "documentation_drift",
+      "description": "CLAUDE.md `Monitoring Pipeline` table lists workspace-sync schedule as 'Every 4h', but actual cron is hourly (`0 * * * *`, last 09:03Z, next 10:03Z). Schedule was bumped 2026-04-25 per the dome-workspace-sync description in list_scheduled_tasks: 'Bumped to hourly 2026-04-25 — fewer agent runs lose effective work to FUSE↔git sync staleness when sync runs every hour vs every 4h.' tinker.md dispatcher table also says 'Every 4h' for workspace-sync. CLAUDE.md is read by every new session and every agent; an out-of-date schedule there can mislead any new contributor or any agent doing self-audit. Same drift exists in monitor/prompts/tinker.md.",
+      "evidence": "CLAUDE.md line ~218 'dome-workspace-sync | Every 4h | Haiku | workspace-sync.md | Commits workspace-only files to git'. monitor/prompts/tinker.md line 22 'Workspace-sync | workspace-sync.md | Every 4h | pushes workspace-owned files → git'. Live cron from list_scheduled_tasks: dome-workspace-sync cronExpression='0 * * * *', schedule='At 3 minutes past the hour, every hour, every day'. dome-workspace-sync.description literally documents the bump.",
+      "suggested_fix": {
+        "file": "CLAUDE.md + monitor/prompts/tinker.md",
+        "find": "workspace-sync.*Every 4h",
+        "replace": "workspace-sync row schedule column 'Hourly (bumped from 4h on 2026-04-25 per drain-mode HNOTE; revert to 4h once open-issues drop below 50 and curmudgeon queue stays at 0 for ≥48h)'",
+        "rationale": "CLAUDE.md is git-owned and operator-curated, so tinker writes a recommendation rather than self-applying. tinker.md is owned by the prompts folder and is also git-owned (NEVER_PUSH per workspace-sync.md). Both edits should land via a clean-clone operator commit or via decider self-apply if the change is precondition-clear."
+      },
+      "self_fixable": false,
+      "fix_applied": false
+    },
+    {
+      "severity": "minor",
+      "category": "verification_recipe",
+      "description": "PROP-009r2.verification_pattern was env-gated on `[ -n \"${CLEAN_CLONE:-}\" ]`. Yesterday's tinker noted the gate short-circuits to STILL_BROKEN whenever CLEAN_CLONE is unset, and explicitly said 'If still flagged on the 2026-04-26 run, tinker will apply it.' This is the 2026-04-26 run and it's the 4th consecutive STILL_BROKEN flag. Manually setting CLEAN_CLONE=1 confirms FIXED. The underlying state has been FIXED since 2026-04-18; the env-gate is a verification recipe bug, not a state regression.",
+      "evidence": "Default-env run of yesterday's pattern: STILL_BROKEN. CLEAN_CLONE=1 run of yesterday's pattern: FIXED. All six required substrings present: decider.md ('PROP-009 precondition' x2, 'prop-009-enforce.flag' x1, 'pq.history.length>200' x1), curmudgeon.md ('PROP-009 precondition' x1), build.js (\"'monitor/decisions/prop-009-enforce.flag': 'git',\" x1), workspace-sync.md (\"'monitor/decisions/prop-009-enforce.flag'\" x1).",
+      "suggested_fix": {
+        "file": "monitor/tinker/proposals/PROP-009r2.json",
+        "find": "[ -n \"${CLEAN_CLONE:-}\" ] && grep -Fq ...",
+        "replace": "Drop the env-gate; keep all six grep checks unchanged. Add verification_pattern_history block recording the prior pattern + reason for change.",
+        "rationale": "Conservative self-fix: change limited to the verification recipe, no semantic change to PROP-009r2 itself. This was explicitly authorized by yesterday's report ('If still flagged on the 2026-04-26 run, tinker will apply it'). Verification: bash -c <new_pattern> returns FIXED."
+      },
+      "self_fixable": true,
+      "fix_applied": true,
+      "fix_applied_at": "2026-04-26T09:50Z",
+      "fix_evidence": "PROP-009r2.json verification_pattern updated; verification_pattern_history block added recording prior pattern and removal rationale; bash -c <new_pattern> returns FIXED in default env."
+    },
+    {
+      "severity": "minor",
+      "category": "staleness",
+      "description": "priority-queue.json schedule_state remains stale — same finding as 2026-04-25T10-03 tinker report. schedule_state still claims analyst=30m/curmudgeon=30m/decider=60m with last_schedule_change=2026-04-17T16:43Z and analyst_override_reason='canary-triggered-reactive-update'. Actual cron is analyst=60m, curmudgeon=240m (drain), decider=120m. Decider has stopped re-flagging this as P1 per HNOTE-OPERATOR-DRAIN-MODE-001, so the drift is no longer producing false alarms downstream — but the schedule_state block is increasingly misleading for any new agent or human session. 9 days stale, and the tinker carry-forward warning has now been carried for 2 runs.",
+      "evidence": "monitor/curmudgeon/priority-queue.json schedule_state block, all 5 interval fields stale. List_scheduled_tasks: dome-analyst='50 * * * *' (60m), dome-curmudgeon='20 */4 * * *' (240m), dome-decider='15 */2 * * *' (120m).",
+      "suggested_fix": {
+        "file": "monitor/curmudgeon/priority-queue.json",
+        "find": "schedule_state block",
+        "replace": "Decider should rewrite schedule_state on its next run to actual cron (60/240/120), bump last_schedule_change to 2026-04-25T09:03Z, set last_schedule_change_by='operator', clear analyst_override_reason, and update note to reference HNOTE-OPERATOR-DRAIN-MODE-001 with cancellation criteria.",
+        "rationale": "schedule_state is decider-owned (writers: ['decider']). Tinker cannot self-apply. Carry-forward suggested for the 3rd consecutive run."
+      },
+      "self_fixable": false,
+      "fix_applied": false
+    }
+  ],
+  "previous_followup": [
+    {
+      "finding": "[2026-04-25] schedule_state in priority-queue.json stale since 2026-04-17",
+      "status": "STILL_BROKEN",
+      "evidence": "schedule_state still has analyst/curmudgeon=30m, decider=60m. last_schedule_change still 2026-04-17T16:43:23Z. Re-flagged this run."
+    },
+    {
+      "finding": "[2026-04-25] WIN-013.c4.json workspace-only review",
+      "status": "FIXED",
+      "evidence": "Workspace-sync's 11:03Z run swept it up as predicted. md5 in main matches FUSE."
+    },
+    {
+      "finding": "[2026-04-25] disk WARNING 85% — sandbox baseline, threshold tuning candidate",
+      "status": "STILL_BROKEN",
+      "evidence": "Disk now 87% / 1.4GB free. Baseline crept up 2pp in 24h (likely additional /var/log/journal). Project-induced disk still trivial (~5MB in /tmp). Tinker dispatcher 80% threshold still trips on every Mode 2 run as per yesterday's note. Holding self-fix conservative for one more run."
+    },
+    {
+      "finding": "[2026-04-25] PROP-005 STILL_BROKEN 14d — recommend close-as-wontfix",
+      "status": "STILL_BROKEN",
+      "evidence": "verification_pattern returns STILL_BROKEN. 5th consecutive run flagged. Recommendation: operator close as wontfix; the original 42% no-op rate has self-resolved due to drain-mode throughput."
+    },
+    {
+      "finding": "[2026-04-25] PROP-008 STILL_BROKEN 7d — curmudgeon change-driven gates",
+      "status": "STILL_BROKEN",
+      "evidence": "verification_pattern returns STILL_BROKEN. 8 days now. Drain-mode (curmudgeon q240m) reduces immediate pressure but underlying redesign-rerun problem persists."
+    },
+    {
+      "finding": "[2026-04-25] PROP-009r2 verification_pattern env-gate breaks tinker auto-verify",
+      "status": "FIXED",
+      "evidence": "Self-fix applied 2026-04-26T09:50Z. verification_pattern_history block records prior pattern. Default-env bash run now returns FIXED."
+    },
+    {
+      "finding": "[2026-04-25] PROP-011 STILL_BROKEN 3d — tinker integration_blocked_until",
+      "status": "STILL_BROKEN",
+      "evidence": "verification_pattern returns STILL_BROKEN. 5 days now. Targets a tinker-owned file but is itself a workflow-redesign-class change, requires careful rewrite of Mode 3 Step 1b."
+    },
+    {
+      "finding": "[2026-04-25] PROP-012 STILL_BROKEN 2d — curmudgeon Review Register selection",
+      "status": "STILL_BROKEN",
+      "evidence": "verification_pattern returns STILL_BROKEN. 4 days now. Drain-mode reduces immediate need; will resurface when curmudgeon re-accelerates."
+    },
+    {
+      "finding": "[2026-04-25] PROP-007 (data-context decider mode) — yesterday FIXED",
+      "status": "FIXED",
+      "evidence": "verification_pattern returns FIXED. Stable."
+    },
+    {
+      "finding": "[2026-04-25] PROP-010 — yesterday FIXED",
+      "status": "FIXED",
+      "evidence": "verification_pattern returns FIXED. Stable."
+    },
+    {
+      "finding": "[2026-04-25] open-issues net-negative trend (110→108→106)",
+      "status": "FIXED",
+      "evidence": "Open-issues now 105 (down 1 more from 106). 4-day net-negative streak. Drain mode delivering as designed."
+    },
+    {
+      "finding": "[2026-04-25] cron UI changes for drain BAU not all applied (analyst still hourly, decider still q120m)",
+      "status": "STILL_BROKEN_BY_DESIGN",
+      "evidence": "list_scheduled_tasks confirms analyst still '50 * * * *' (60m) and decider still '15 */2 * * *' (120m). Operator HNOTE specifies these are intentional during the EXP queue drain (5 queue items, 105 open issues — not yet at the 'queue 0 + open <50' threshold the HNOTE sets for cancellation). Not really 'broken' — operator-intended."
+    },
+    {
+      "finding": "[2026-04-25] junk files .build.js / .bak / __test_fuse.tmp",
+      "status": "STILL_BROKEN",
+      "evidence": "Did not re-check directly this run; carrying forward yesterday's status. Will verify next Mode 3."
+    }
+  ],
+  "open_issue_health": {
+    "total_open": 105,
+    "trend": "net-negative for 4 consecutive days (110 → 108 → 106 → 105). Drain mode delivering. 9 issues created this run (per status.json), so absolute closure rate is higher than the net delta.",
+    "issues_pending_human": 5,
+    "curmudgeon_queue_depth": 5,
+    "curmudgeon_queue_items": ["EXP-254 (qid 265)", "EXP-255 (qid 266)", "EXP-256 (qid 267)", "EXP-257 (qid 268)", "SEC-4.2.2 (qid 269)"]
+  },
+  "infrastructure": {
+    "fuse_freshness": "4/8 git-owned probed files diverge from main: data/wins.json, data/sections.json, build-scripts/generate-html.js, docs/index.html. Cause: operator commit cd1ba07 at 09:40:56Z without `node build.js publish`. See findings #1.",
+    "git_auth": "200 OK from api.github.com/repos/funwithscience-org/dome-model-review with workspace PAT. Auth itself is fine; the 403 push-failure pattern (8 in 16h) is environmental/transient per HNOTE-OPERATOR-PAT-DIAGNOSIS-CORRECTION-001. See findings #2.",
+    "disk": "87% used / 1.4GB free; sandbox baseline (Ubuntu image: /usr=6.1G, /var=1.9G of which /var/log/journal=752M, /var/lib/snapd=493M). Project-induced disk: /tmp ~5MB, /sessions ~94MB. No agent-clone accumulation; cleanup is working. Headroom: ~18 fresh clones theoretically before tmpfs full.",
+    "workspace_sync_skip_log": "not re-counted this run; recent entries all 'mtime-guard; git newer' (safe class — workspace spared a newer git file). Universal-pusher mode (per HNOTE-001/002 commits 7th-8th April) confirmed active: rescue executed at last 09:28 push-failure event with files_synced_to_fuse: true.",
+    "junk_files": "carry-forward from 2026-04-25; not re-verified this run (Mode 2 staleness was higher priority)."
+  },
+  "test_status": {
+    "passed": 3452,
+    "failed": 0,
+    "command": "node test.js"
+  },
+  "claude_md_audit": {
+    "scope": "Mode 2 spot-check only; full audit is a Mode 3 step.",
+    "accuracy_findings": [
+      "CLAUDE.md `Monitoring Pipeline` table lists workspace-sync as 'Every 4h' but actual cron is hourly per drain-mode bump (2026-04-25). See findings #3."
+    ]
+  },
+  "context_load": {
+    "skipped": "Mode 2 run; per-agent context measurement is a Mode 3 step. Will run next Mode 3 invocation."
+  },
+  "self_fixes_applied": [
+    {
+      "id": "PROP-009r2-verification-recipe-fix",
+      "file": "monitor/tinker/proposals/PROP-009r2.json",
+      "applied_at": "2026-04-26T09:50Z",
+      "change": "Removed `[ -n \"${CLEAN_CLONE:-}\" ] &&` env-gate from verification_pattern. Added verification_pattern_history block recording prior pattern and rationale.",
+      "verification": "bash -c <new_pattern> returns FIXED in default env (no CLEAN_CLONE required).",
+      "authority": "Pre-authorized by 2026-04-25T10-03 tinker report: 'If still flagged on the 2026-04-26 run, tinker will apply it.'"
+    }
+  ],
+  "recommendations": [
+    {
+      "priority": 1,
+      "type": "operator_action",
+      "description": "When applying multi-step EXP sequences (like EXP-249/251/252 Phase B1/B3/B4), end each commit with `node build.js publish` so docs/index.html (and the FUSE workspace) stay in sync. Today's cd1ba07 EXP-249 Phase B1 commit pushed source data + generate-html.js but did not regenerate docs/index.html — operator-rescue path otherwise relies on workspace-sync's auto-regen at the next hour boundary. Adding `build.js publish` to the EXP-application playbook would prevent the 4-file FUSE staleness pattern observed here.",
+      "prop_id": null
+    },
+    {
+      "priority": 2,
+      "type": "human_decision",
+      "description": "Decider's 100% 403 push-failure rate (8 of 8 last 16h) suggests the documented retry-on-403 wrapper is not effective. Either (a) the wrapper isn't firing in the actual push code path, or (b) the retry is also hitting 403 (transient pattern is longer than 30s). Actionable next step: instrument the wrapper to log retry_attempts: N in push-failure-*.json. Until then, universal-pusher rescue is masking the underlying issue at ~1h delay per cycle. Tinker can't audit decider internals; this is operator-only.",
+      "prop_id": null
+    },
+    {
+      "priority": 3,
+      "type": "operator_or_decider",
+      "description": "Decider should sync schedule_state in priority-queue.json on next run to match actual cron (60/240/120) and clear the 2026-04-17 'churn-and-burn' override note. Tinker cannot write this file. 9-day staleness, 3rd consecutive tinker carry-forward.",
+      "prop_id": null
+    },
+    {
+      "priority": 4,
+      "type": "operator_action",
+      "description": "Update CLAUDE.md `Monitoring Pipeline` table and monitor/prompts/tinker.md dispatcher table: workspace-sync schedule should read 'Hourly (drain-mode bump 2026-04-25; revert to 4h when open-issues <50 and curmudgeon queue 0 for ≥48h)'.",
+      "prop_id": null
+    },
+    {
+      "priority": 5,
+      "type": "prop",
+      "description": "Close PROP-005 as wontfix-archived. Decider no-op rate self-resolved due to drain-mode throughput; original 42% no-op problem doesn't reproduce. 5 consecutive run-flag escalations with no movement.",
+      "prop_id": "PROP-005"
+    },
+    {
+      "priority": 6,
+      "type": "human_decision",
+      "description": "Disk WARNING threshold at 80% always trips on this sandbox (system image baseline now 87%, up 2pp from yesterday). Either raise to 90% in tinker.md, OR change the check to project-relative (du on /sessions/*/mnt + /tmp clones rather than df on /). Holding self-fix this run pending explicit operator intent.",
+      "prop_id": null
+    }
+  ]
+}

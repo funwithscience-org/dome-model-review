@@ -1,0 +1,687 @@
+{
+  "id": "PROP-009r",
+  "supersedes": "PROP-009",
+  "created_at": "2026-04-18T12:29:00Z",
+  "status": "superseded",
+  "superseded_by": "PROP-009r2",
+  "superseded_at": "2026-04-18T14:45:00Z",
+  "superseded_reason": "Hostile review #2 found 3 critical + 4 major + 4 moderate + 3 minor issues (C-1 missing build.js + workspace-sync.md ownership entries for the enforce flag, C-2 shadow-mode claim-skip misread [tinker disagreed with worked example], C-3 mtime narrative factually inverted, block 7 shell single-quote escape bug, trigger-whitelist gaps, shadow-log per-run duplication, coverage denominator error, mixed-version validator). PROP-009r2 addressed all. Applied via commits 314904e (step 1) and 0f2dc79 (step 3).",
+  "category": "prompt_diet",
+  "target": "monitor/prompts/decider.md (Step E2) and monitor/prompts/curmudgeon.md (Step 0b line 2, Step 0b line 7, Step 4, Step 4b, Step 7 schema, Step 7a/7b)",
+  "operator_directive": "DIRECTIVE-20260418-003-prop-009-revision.json (revision of PROP-009 per hostile-review findings and concrete drop-in fixes)",
+  "problem": "Same as PROP-009: the decider's Step E2 pop filter and the curmudgeon's Step 0b skip filter use identical substring match against reviews/. Any target_id with pre-existing review history auto-pops on re-push and auto-skips curmudgeon, silently draining post-integration adversarial review. PROP-009r preserves that diagnosis and the fix direction (strict queue_id + soft reviewed_at > pushed_at fallback) and addresses all 3 critical + 4 major + 3 moderate execution-quality findings from the hostile review.",
+  "disagreements_with_review": {
+    "summary": "Tinker agrees with all 10 critical/major/moderate findings and adopts the concrete fixes with two small adjustments. One partial disagreement (C1) is a scope clarification, not a reversal.",
+    "c1_partial_disagreement": {
+      "finding": "C1 — the decider find-string is not byte-exact. Patch will fail to apply.",
+      "tinker_verification": "Ran content.includes(PROP-009.find) on both monitor/prompts/decider.md and monitor/prompts/curmudgeon.md. Both returned TRUE. The PROP-009 find string, once JSON-decoded from its escaped storage, is already a literal byte-match for the file contents. A naive applier that calls JSON.parse and then uses the resulting string as a find target would apply the patch correctly.",
+      "tinker_position": "The hostile review is correct that the escape convention should be explicit — an applier tool that doesn't JSON-decode the string would fail. But PROP-009 as filed was not broken in the way C1 described. Tinker adopts the array-of-raw-lines format anyway, per the directive's format_constraints, because (a) it is unambiguous regardless of applier implementation, (b) it makes dry_run_check preflights mechanical, and (c) it matches the directive's explicit requirement. So C1 is marked 'fixed_as_specified' in the resolution table — the format change is adopted — but tinker notes for the operator's benefit that the underlying patch would have worked.",
+      "impact": "None on the PROP. Adopting the format is pure defense-in-depth."
+    },
+    "m1_operator_bypass_accepted_as_specified": "The directive marks the 3-field bypass (pushed_by+require_matching_review_file:false+operator_bypass_reason) as NEGOTIABLE, inviting tinker to argue for silent bypasses if operationally better. Tinker's position: REQUIRE the reason field. Auditability is cheap (one extra string at push time) and the bypass is already advertised as emergency-only; a reason field is consistent with the rest of the project's insistence that structural holes get documented. Silent bypasses would be an observability regression that would show up in tinker's own audits as 'why did qid N pop without a review'.",
+    "mod2_seven_day_escalation_removed_from_summary": "The directive offers a choice: remove from summary (default) or implement the full multi-writer attention-inbox write as a counter-proposal. Tinker takes the default (remove) for three reasons: (a) multi-writer attention-inbox with pull-rebase + JSON merge + retry is its own ~80-line node block that deserves its own PROP and its own hostile review; (b) the log-only fallback is not dead code if enforcement is ever flipped — 7d stale items WILL accumulate under enforcement and a log line is visible to tinker's Mode 2 error-pattern scan; (c) conflating two architectural changes in one commit makes rollback harder, which is the exact coordination-fragility failure mode Mod3 addresses. A future PROP-011 can add the real escalation once the shadow→enforce migration completes cleanly.",
+    "mod3_apply_order_adopted": "Curmudgeon first, decider second, flag third. Tinker agrees this is strictly safer than single-commit because it provides three natural rollback points. Tinker adds one note: between step 1 (curmudgeon patch lands) and step 3 (decider patch lands), existing decider runs still use the old substring match, so no unmatched-pops accumulate during the gap.",
+    "m2_consolidation_note": "Tinker adopts the full 6-location queue_id threading. Considered consolidating to 3 locations (Step 0b line 2, Step 7 schema, Step 7b validator) but concluded the three target_type-specific edits (Step 4 proposal, Step 4b prediction-batch, and the inline line 7 reminder) each carry independent load-bearing meaning and should not be dropped. 6 edits total.",
+    "apply_audit_fixes_2026_04_18_T11_50": {
+      "note": "Second-pass apply audit against main HEAD (md5 compared workspace↔main) caught three find-block anchor mismatches in the first PROP-009r draft. Fixed in-place before operator review. Root cause: first draft was built against the FUSE workspace copy of curmudgeon.md (stale vs main by 2 lines in the Step 0b line 7 region) and PROP-009r's new sections were anchored on non-existent headings in DATA-SCHEMAS.md and BUILD-AND-CHANGE.md.",
+      "fixes": [
+        {
+          "block_index": 2,
+          "file": "monitor/prompts/curmudgeon.md",
+          "issue": "find_lines targeted FUSE workspace's shorter Step 0b line 7; main HEAD carries a longer 'escape hatch + git-owned' variant",
+          "fix": "replaced find_lines with main HEAD's longer line; dry_run_check now asserts both the tail phrase and the 'escape hatch' distinguishing token"
+        },
+        {
+          "block_index": 7,
+          "file": "monitor/prompts/reference/DATA-SCHEMAS.md",
+          "issue": "anchored on '## priority-queue.json' but no such section exists in main HEAD",
+          "fix": "re-anchored on the file's last existing line (kill-shots Build-computes template line) and appended the new section; dry_run_check now uses grep -Fqx on the anchor and a negative grep for the new section heading as idempotent guard"
+        },
+        {
+          "block_index": 8,
+          "file": "monitor/prompts/reference/BUILD-AND-CHANGE.md → CLAUDE.md",
+          "issue": "anchor '### File Ownership Rules (Phase 1)' lives in CLAUDE.md, not BUILD-AND-CHANGE.md",
+          "fix": "re-targeted file to CLAUDE.md; dry_run_check confirms heading presence and idempotent absence of the PROP-009 exception text"
+        }
+      ],
+      "lesson_for_future_tinker": "When drafting find/replace blocks that cross agent-prompt files or reference files, always cross-check anchors against main HEAD raw URLs (curl raw.githubusercontent.com) before finalizing. The FUSE workspace can be stale by hours, and reference-file headings can be misremembered. Tinker's PROP_verification gate (the verification_pattern grep) would have caught this after the operator applied, but pre-flight dry_run_check saves the operator a round-trip."
+    }
+  },
+  "fresh_retroactive_audit": {
+    "method": "Read monitor/curmudgeon/priority-queue.json history (50 most recent entries, span 2026-04-14T12:27Z through 2026-04-18T09:41Z — the file's slice cap). For each history entry classify as strict_queue_id (review file exists with matching queue_id), soft (substring match + reviewed_at within 2h at-or-before popped_at), or bug (no match). Soft window chosen per directive guidance to match the per-day breakdown from the concrete-fixes agent.",
+    "total_history_entries": 50,
+    "strict_queue_id_matches": 13,
+    "soft_within_2h_at_or_before_popped_at": 14,
+    "unmatched_bug_pops": 23,
+    "per_day_unmatched": {
+      "2026-04-14": 6,
+      "2026-04-15": 4,
+      "2026-04-16": 1,
+      "2026-04-17": 3,
+      "2026-04-18": 9
+    },
+    "per_target_type_unmatched": {
+      "section-rewrite": "10 / 22 total pops = 45% buggy",
+      "win-detail-rewrite": "13 / 23 total pops = 57% buggy",
+      "prediction-batch": "0 / 2 = clean",
+      "section-new": "0 / 2 = clean",
+      "win-new": "0 / 1 = clean"
+    },
+    "tinker_count_vs_concrete_fixes_agent": "IDENTICAL — 23/50 unmatched, matching per-day breakdown (04-14: 6, 04-15: 4, 04-16: 1, 04-17: 3, 04-18: 9). No classification errors detected. Uses the same 2h-at-or-before-popped_at soft criterion.",
+    "recommended_enforce_flip_threshold": "≤3 would-have-blocked items per day, averaged over 3 consecutive days, with no single day above 6. Rationale: historical bug rate is 5.75/day (23/4 days); 5.75 is inside the noise of the worst single-day numbers (04-18: 9, 04-14: 6). The gate must be strictly below the historical rate to prove strict_queue_id is now populating correctly. ≤3/day with a 3-day moving window is roughly half the historical rate — high enough not to be unreachable, low enough to demonstrate the new pathway is working.",
+    "rejection_of_prop_009_original_threshold": "PROP-009's ≤5/day threshold was uncalibrated. At ≤5/day, 04-14 (6), 04-15 (4), and 04-17 (3) would all be classified 'inside target', which means flipping enforcement would be allowed under purely historical noise — no proof that the new queue_id pathway is working. Revised threshold rejects that.",
+    "current_review_corpus_queue_id_coverage": "56 / 304 review files (18.4%) carry a top-level queue_id field as of this audit. The soft fallback (reviewed_at > pushed_at) will handle the other 81.6% for as long as they exist. Curmudgeon will begin writing queue_id on every queue-sourced review after Mod3 step 1 lands; coverage will rise over time as new reviews supersede old ones."
+  },
+  "resolution_status": {
+    "critical": {
+      "C1_byte_exactness": {
+        "status": "fixed_as_specified",
+        "action": "Store find_lines/replace_lines as JSON arrays of raw-text lines. Add dry_run_check with grep -Fq preflight on every file_to_modify. Applier must read the JSON, join lines with \\n, and do a literal string-replace — no shell sed.",
+        "tinker_note": "PROP-009's escaped strings actually decoded to a literal byte-match (verified), so the original C1 was a false alarm about the specific escape. Tinker adopts the new format anyway because it is unambiguous and dry_run_check is cheap insurance."
+      },
+      "C2_env_var_toggle_broken": {
+        "status": "fixed_as_specified",
+        "action": "Replace ${PROP_009_ENFORCE:-false} shell interpolation with a flag-file mechanism. Check fs.existsSync(CLONE+'/monitor/decisions/prop-009-enforce.flag'). Toggle by touch/commit or git rm/commit. No shell plumbing required. Flag lives in the clone (git-owned) per CLAUDE.md FUSE-unlink constraint."
+      },
+      "C3_soft_fallback_multi_push_single_review": {
+        "status": "fixed_as_specified",
+        "action": "Decider writes popped_by_queue_id (+ popped_by_queue_id_at) onto the matched review file at pop-time, dual-writing to WORKSPACE and CLONE. Future pop filters treat a review as 'consumed' iff popped_by_queue_id is set to a DIFFERENT qid than the item being considered; absent = available, same qid = available (idempotent). This is an additive edit to append-only review files (documented exception in BUILD-AND-CHANGE.md — see Min1 below)."
+      }
+    },
+    "major": {
+      "M1_operator_bypass_reversal": {
+        "status": "fixed_as_specified",
+        "action": "Narrow bypass to all-three: (a) pushed_by contains 'operator', (b) require_matching_review_file === false, (c) operator_bypass_reason is non-empty string. Any one missing → precondition applies normally. Bypass is no longer 'back to buggy substring match'; it is 'pop without requiring any review at all, with a written reason'. More than 3 bypasses in 24h is a pipeline health flag in the daily report. The operator directive marked this NEGOTIABLE; tinker chose the strict version (see disagreements.m1)."
+      },
+      "M2_queue_id_threading_curmudgeon": {
+        "status": "fixed_as_specified",
+        "action": "Thread queue_id through 6 locations in curmudgeon.md: (1) Step 0b Procedure line 2 — the primary replacement already in PROP-009, extended with queue_pushed_at; (2) Step 0b Procedure line 7 — pre-write reminder that queue_id is load-bearing; (3) Step 4 (proposal target_type) — include queue_id/queue_pushed_at in proposal-review JSON; (4) Step 4b (prediction-batch) — same; (5) Step 7 review schema template — add queue_id and queue_pushed_at to the top of the JSON template with REQUIRED annotations; (6) Step 7b validator — assert queue_id present on non-change-detected/non-holistic/non-spot-check reviews. Plus a new Step 7a pre-write assertion.",
+        "tinker_note": "Considered consolidation to 3 locations. Rejected — see disagreements.m2."
+      },
+      "M3_retroactive_audit_done": {
+        "status": "fixed_as_specified",
+        "action": "Fresh audit of priority-queue.json history run this tinker invocation. 23/50 unmatched, per-day (04-14: 6, 04-15: 4, 04-16: 1, 04-17: 3, 04-18: 9). Matches concrete-fixes-agent number exactly. Revised enforce-flip threshold: ≤3/day for 3 consecutive days, no single day above 6. See fresh_retroactive_audit section above for full detail."
+      },
+      "M4_fuse_clone_dual_read": {
+        "status": "fixed_as_specified",
+        "action": "Replace single fs.readdirSync(WORKSPACE+'/monitor/curmudgeon/reviews/') with unionReviewFiles() that reads from both WORKSPACE and CLONE and merges by basename (first-seen wins, WORKSPACE preferred). Shadow log schema extended with legacy_review_read_from and filesystem_read_counts so tinker can detect gaps retroactively (if clone count lags fuse count by >5 for >1 hour, workspace-sync is wedged and should be escalated)."
+      }
+    },
+    "moderate": {
+      "Mod1_cycle_number_anomaly_as_issue": {
+        "status": "fixed_as_specified",
+        "action": "Produce a drop-in ISS JSON for monitor/decisions/open-issues.json that the decider will file on its next run. The issue captures the SEC-4.1 c3-written-after-c4 race, ties it to the curmudgeon cycle-computation-by-scan mechanism, and flags it as blocks_prop_009:false. See files_to_create below."
+      },
+      "Mod2_seven_day_escalation_removed": {
+        "status": "fixed_differently",
+        "action": "Removed from summary as the default choice (see disagreements.mod2). Decider's stale-item block now does log-only (console.log 'PROP-009 STALE_QUEUE_ITEM: ...') with a note that attention-inbox write is deferred to a future PROP. Full multi-writer attention-inbox implementation is tracked as a future PROP-011.",
+        "tinker_note": "Directive invited a counter-proposal for the full escalation. Tinker declined for reasons in disagreements.mod2."
+      },
+      "Mod3_apply_order_documented": {
+        "status": "fixed_as_specified",
+        "action": "migration_plan.apply_order lists: (1) curmudgeon.md patches land first, verify at least one post-patch curmudgeon review contains queue_id; (2) decider.md patches land second, verify shadow log populates and strict_queue_id pop_reason appears; (3) monitor 3 days of shadow log for ≤3/day threshold; (4) touch prop-009-enforce.flag, commit, announce. Three natural rollback points."
+      }
+    },
+    "minor": {
+      "Min1_data_schemas_update": {
+        "status": "fixed_as_specified",
+        "action": "Update monitor/prompts/reference/DATA-SCHEMAS.md priority-queue.json section with pop_reason and claimed_review_file fields. Also update monitor/prompts/reference/BUILD-AND-CHANGE.md with the 'additive edit to review files' exception for popped_by_queue_id. See files_to_modify entries for DATA-SCHEMAS.md and BUILD-AND-CHANGE.md below."
+      },
+      "Min2_clean_clone_guard": {
+        "status": "fixed_as_specified",
+        "action": "verification_pattern extended with [ -n \"${CLEAN_CLONE}\" ] guard and three grep checks (PROP-009 precondition in decider.md, PROP-009 precondition in curmudgeon.md, prop-009-enforce.flag reference in decider.md)."
+      },
+      "Min3_pushed_at_guess_removed": {
+        "status": "fixed_as_specified",
+        "action": "In affected_queue_entries_verified for qid 165, changed pushed_at_guess to pushed_at and added source:'commit 2fa4b57 timestamp'."
+      }
+    }
+  },
+  "problem_evidence": {
+    "operator_window": "2026-04-18T07:26Z (commit 2fa4b57 → 29e11ac) and 2026-04-18T09:34Z (pushed_at) → 09:41Z (commit e4630ec). Ten queue items (qid 165-174, all post-EXP-181/EXP-182 integration re-reviews) were pushed and popped inside the same decider run with no matching curmudgeon review files produced.",
+    "decider_bug_location": "monitor/prompts/decider.md lines 194-205 (Step E2 — Pop reviewed items). The pop filter does: `const hasReview=reviews.some(f=>searchTerms.some(t=>f.includes(t)));` against every file in the reviews directory. No queue_id check, no reviewed_at vs pushed_at check.",
+    "curmudgeon_mirror_bug_location": "monitor/prompts/curmudgeon.md Step 0b procedure line 2 (line 90): 'Check if any filename contains the item's target_id.' — identical substring match, same blind spot.",
+    "affected_queue_entries_verified": [
+      {
+        "queue_id": 165,
+        "target_id": "SEC-4.1",
+        "pushed_at": "2026-04-18T07:26:00Z",
+        "pushed_at_source": "commit 2fa4b57 timestamp",
+        "popped_at": "2026-04-18T07:27:23.393Z",
+        "matching_review_file": "none with queue_id=165; substring-matched against pre-existing SEC-4.1.c2/c3/c4.json (c3 tagged queue_id 158, c4 tagged queue_id 163 — neither covers 165)"
+      },
+      {
+        "queue_id": 166,
+        "target_id": "WIN-058",
+        "popped_at": "2026-04-18T07:27:23.393Z",
+        "matching_review_file": "none with queue_id=166; only WIN-058.json (Apr 08) and WIN-058.c2.json (Apr 08) exist"
+      },
+      {
+        "queue_id": 167,
+        "target_id": "WIN-058b",
+        "popped_at": "2026-04-18T07:27:23.393Z",
+        "matching_review_file": "none with queue_id=167; WIN-058b-post-EXP102.c2.json is tagged queue_id 86 (pre-dates qid 167 by ~80 items)"
+      },
+      {
+        "queue_id": 168,
+        "target_id": "WIN-062",
+        "popped_at": "2026-04-18T07:27:23.393Z",
+        "matching_review_file": "none with queue_id=168; only old WIN-062.json (Apr 08) and WIN-062.c2.json (Apr 08)"
+      },
+      {
+        "queue_id": 169,
+        "target_id": "WIN-053",
+        "popped_at": "2026-04-18T07:27:23.393Z",
+        "matching_review_file": "WIN-053.c3.json reviewed_at 2026-04-18T06:13:49.900Z — queue_id field missing; reviewed_at pre-dates the ~07:26Z push by 73 min, so even a reviewed_at > pushed_at rule would NOT match"
+      },
+      {
+        "queue_id": 170,
+        "target_id": "SEC-2b.5",
+        "pushed_at": "2026-04-18T09:34:14.533Z",
+        "popped_at": "2026-04-18T09:41:02.982Z",
+        "matching_review_file": "none with queue_id=170; SEC-2b.5.c1 (qid 155) and SEC-2b.5-post-apr18.c1 (qid 161) both pre-date qid 170"
+      },
+      {
+        "queue_id": 171,
+        "target_id": "SEC-4.1",
+        "pushed_at": "2026-04-18T09:34:14.533Z",
+        "popped_at": "2026-04-18T09:41:02.983Z",
+        "matching_review_file": "same as qid 165 — no matching queue_id, and nothing reviewed after 09:34Z"
+      },
+      {
+        "queue_id": 172,
+        "target_id": "WIN-058",
+        "pushed_at": "2026-04-18T09:34:14.533Z",
+        "popped_at": "2026-04-18T09:41:02.983Z",
+        "matching_review_file": "none; same as qid 166"
+      },
+      {
+        "queue_id": 173,
+        "target_id": "WIN-058b",
+        "pushed_at": "2026-04-18T09:34:14.533Z",
+        "popped_at": "2026-04-18T09:41:02.983Z",
+        "matching_review_file": "none; same as qid 167"
+      },
+      {
+        "queue_id": 174,
+        "target_id": "WIN-062",
+        "pushed_at": "2026-04-18T09:34:14.533Z",
+        "popped_at": "2026-04-18T09:41:02.983Z",
+        "matching_review_file": "none; same as qid 168"
+      }
+    ],
+    "impact_confirmed": "SEC-4.1 post-EXP-182 (a major fold-in rewrite with a 47.69σ independence-violation wedge), WIN-058 + WIN-062 post-EXP-181 (the kappa-badge recompute), and SEC-2b.5 went live with no adversarial curmudgeon check. Both post-integration review passes (07:26Z and 09:41Z) were silently skipped. If EXP-183 and EXP-184 follow the same path after their pre-integration reviews clear, we will lose both pre-integration AND post-integration adversarial checks — full loss of coverage on expansions."
+  },
+  "hypothesis_ruling": {
+    "H1_integration_equals_reviewed": "PARTIALLY — not by explicit rule but as a side effect. Decider.md has no rule 'if just integrated then pop'; the pop happens because pre-existing old reviews substring-match the target_id.",
+    "H2_dedup_auto_drain": "RULED OUT — decider.md has no dedup-based auto-drain. The push-side dedup rule (line 283) prevents pushing duplicates into the queue, but does not pop existing items.",
+    "H3_curmudgeon_stopped_at_change_detection": "PARTIALLY — curmudgeon probably never reached qid 165-174 because its Step 0b line 2 substring match incorrectly flagged them as already-reviewed (mirror bug). The stale-state echo SEC-4.1.c3.json at 07:42Z tagged queue_id 158 is separate and caused by cycle-numbering race (see orthogonal finding below).",
+    "H4_batch_drain_queue_management": "RULED OUT — commit e4630ec ('queue management') does pop five items in one shot, but it is the normal Step E2 filter popping all items whose target_id substring-matches. No code path says 'pop all items at once'. The batch effect is emergent from N items all substring-matching on one run."
+  },
+  "orthogonal_finding_cycle_numbering_backwards": {
+    "observation": "SEC-4.1.c3.json reviewed_at 2026-04-18T07:42:00Z with cycle=3 and queue_id=158. SEC-4.1.c4.json reviewed_at 2026-04-18T05:12:46Z with cycle=4 and queue_id=163. c4 was written 2.5 hours BEFORE c3 but claims a higher cycle number.",
+    "likely_cause": "Curmudgeon picks next cycle by scanning reviews/ for highest-existing-cycle+1. Two concurrent/stale-clone curmudgeon runs can each decide 'next = c3' or write c3 after c4 has already landed. Aggravating factor: c3's claimed queue_id=158 was popped 2026-04-17T23:26Z (yesterday evening) — so this is an eight-hour-delayed review against an item that should not have been under review anymore. Run A started against qid 158 before overnight churn, was slow, landed 8 hours late.",
+    "scope_classification": "ORTHOGONAL to this PROP. Fixing the pop/skip substring bug does not repair cycle numbering. Filed as an ISS in open-issues.json (see files_to_create below); needs its own PROP if pattern recurs.",
+    "severity_if_unfixed": "moderate — misleads future readers about review chronology and can cause mistaken triage, but does not corrupt review content itself."
+  },
+  "proposed_fix": {
+    "summary": "Replace the decider's Step E2 pop filter and the curmudgeon's Step 0b Procedure line 2 skip filter with a precondition that requires one of: (a) a review file whose queue_id field exactly matches the queue item's queue_id (strict); or (b) a review file whose target_id substring-matches AND whose reviewed_at post-dates the queue item's pushed_at (soft fallback for legacy reviews without queue_id tags). If neither matches, leave the item in place (enforced mode) or pop-with-shadow-log (shadow mode). Decider writes popped_by_queue_id onto the matched review file at pop-time (dual-write WORKSPACE+CLONE, additive only) to prevent one review from claiming multiple pushes. Decider reads reviews/ from BOTH workspace (FUSE) AND clone, union-merged, to close the FUSE staleness race. Enforcement toggled by presence of monitor/decisions/prop-009-enforce.flag. Narrow operator bypass requires pushed_by contains 'operator' AND require_matching_review_file:false AND operator_bypass_reason non-empty string. Stale-item handling is log-only in this PROP (attention-inbox escalation deferred to future PROP-011). Curmudgeon threads queue_id and queue_pushed_at through 6 locations in its prompt so every queue-sourced review carries the identifier the decider uses to match.",
+    "files_to_modify": [
+      {
+        "path": "monitor/prompts/decider.md",
+        "find_lines": [
+          "```bash",
+          "node -e \"",
+          "const fs=require('fs');",
+          "const CLONE='${CLEAN_CLONE}';",
+          "const WORKSPACE=process.cwd(); // FUSE workspace — where curmudgeon writes reviews",
+          "const pq=JSON.parse(fs.readFileSync(CLONE+'/monitor/curmudgeon/priority-queue.json','utf8'));",
+          "// Read reviews from FUSE workspace (curmudgeon writes here; clone may lag behind workspace-sync)",
+          "const reviews=fs.readdirSync(WORKSPACE+'/monitor/curmudgeon/reviews/');",
+          "const before=pq.queue.length;",
+          "if(!pq.history) pq.history=[];",
+          "// Check each queue item — if a review file exists for it, pop it",
+          "pq.queue=pq.queue.filter(item=>{",
+          "  const tid=item.target_id;",
+          "  const secMatch=tid.match(/^part(\\d+[a-z]?)-(.+)$/);",
+          "  const searchTerms=[tid];",
+          "  if(secMatch) searchTerms.push('SEC-'+secMatch[2]);",
+          "  const hasReview=reviews.some(f=>searchTerms.some(t=>f.includes(t)));",
+          "  if(hasReview){",
+          "    pq.history.push({queue_id:item.queue_id,target_id:tid,target_type:item.target_type,popped_at:new Date().toISOString(),popped_by:'decider'});",
+          "    return false;",
+          "  }",
+          "  return true;",
+          "});",
+          "if(pq.history.length>50) pq.history=pq.history.slice(-50);",
+          "const after=pq.queue.length;",
+          "fs.writeFileSync(CLONE+'/monitor/curmudgeon/priority-queue.json',JSON.stringify(pq,null,2));",
+          "if(before!==after){",
+          "  console.log('Popped '+(before-after)+' reviewed items. Queue: '+before+' -> '+after);",
+          "}else{",
+          "  console.log('No items to pop. Queue depth: '+after);",
+          "}",
+          "\"",
+          "```"
+        ],
+        "replace_lines": [
+          "```bash",
+          "node -e \"",
+          "// PROP-009 precondition: pop ONLY if a review file has matching queue_id (strict)",
+          "// OR its target_id substring-matches AND reviewed_at > pushed_at (soft fallback).",
+          "// Neither? Leave item in place (under enforcement) or pop-with-log (during shadow).",
+          "// Dual-reads reviews/ from FUSE workspace AND clone and union-merges the listing,",
+          "// so a freshly-written review that hasn't propagated through workspace-sync yet",
+          "// is still visible. Writes popped_by_queue_id onto the matched review file at",
+          "// pop-time to prevent one review file from claiming multiple pushes.",
+          "// Enforcement toggle is the presence of monitor/decisions/prop-009-enforce.flag",
+          "// in the clone (touch=enforce, git rm=shadow). No shell env-var plumbing.",
+          "const fs=require('fs');",
+          "const path=require('path');",
+          "const CLONE='${CLEAN_CLONE}';",
+          "const WORKSPACE=process.cwd(); // FUSE workspace — where curmudgeon writes reviews",
+          "const pq=JSON.parse(fs.readFileSync(CLONE+'/monitor/curmudgeon/priority-queue.json','utf8'));",
+          "// Union review listing across FUSE and clone (handles FUSE staleness on both sides).",
+          "function unionReviewFiles(){",
+          "  const results=new Map(); // basename -> {path, source}",
+          "  for(const base of [WORKSPACE, CLONE]){",
+          "    const dir=base+'/monitor/curmudgeon/reviews/';",
+          "    try{",
+          "      const files=fs.readdirSync(dir).filter(f=>f.endsWith('.json'));",
+          "      for(const f of files){",
+          "        if(!results.has(f)) results.set(f,{path:dir+f, source:base===WORKSPACE?'fuse':'clone'});",
+          "      }",
+          "    }catch(e){/* dir missing on one side is fine */}",
+          "  }",
+          "  return [...results.entries()].map(([file,v])=>({file, path:v.path, source:v.source}));",
+          "}",
+          "const reviewFilesUnion=unionReviewFiles();",
+          "const sourceCounts={fuse:0, clone:0};",
+          "const reviewsMeta=reviewFilesUnion.map(({file,path:p,source})=>{",
+          "  sourceCounts[source]++;",
+          "  try{",
+          "    const d=JSON.parse(fs.readFileSync(p,'utf8'));",
+          "    return {file, path:p, parsed:d, queue_id:Number.isInteger(d.queue_id)?d.queue_id:null, reviewed_at:d.reviewed_at||null, popped_by_queue_id:Number.isInteger(d.popped_by_queue_id)?d.popped_by_queue_id:null, read_from:source};",
+          "  }catch(e){return {file, path:p, parsed:null, queue_id:null, reviewed_at:null, popped_by_queue_id:null, read_from:source};}",
+          "});",
+          "const enforceFlagPath=CLONE+'/monitor/decisions/prop-009-enforce.flag';",
+          "const enforce=fs.existsSync(enforceFlagPath);",
+          "const shadowLogPath=CLONE+'/monitor/integrity/prop-009-shadow.jsonl';",
+          "const shadow=[]; // would-have-blocked items for migration audit",
+          "const claimsToWrite=[]; // {file, qid, paths:[...]} — flush after filter",
+          "const before=pq.queue.length;",
+          "if(!pq.history) pq.history=[];",
+          "pq.queue=pq.queue.filter(item=>{",
+          "  const tid=item.target_id;",
+          "  const secMatch=tid.match(/^part(\\d+[a-z]?)-(.+)$/);",
+          "  const searchTerms=[tid]; if(secMatch) searchTerms.push('SEC-'+secMatch[2]);",
+          "  const pushedAt=item.pushed_at?new Date(item.pushed_at).getTime():0;",
+          "  // A review is available for this item iff not already consumed by a different qid.",
+          "  const available=reviewsMeta.filter(r=>{",
+          "    return r.popped_by_queue_id==null || r.popped_by_queue_id===item.queue_id;",
+          "  });",
+          "  const strictRev=available.find(r=>r.queue_id===item.queue_id);",
+          "  const softRev=!strictRev ? available.find(r=>{",
+          "    if(!r.reviewed_at) return false;",
+          "    if(!searchTerms.some(t=>r.file.includes(t))) return false;",
+          "    return new Date(r.reviewed_at).getTime()>pushedAt;",
+          "  }) : null;",
+          "  const legacyRev=(!strictRev&&!softRev) ? available.find(r=>searchTerms.some(t=>r.file.includes(t))) : null;",
+          "  // Narrow operator bypass: requires pushed_by containing 'operator' AND explicit opt-out AND a non-empty reason string.",
+          "  const operatorBypass=(item.require_matching_review_file===false) &&",
+          "    typeof item.pushed_by==='string' && item.pushed_by.includes('operator') &&",
+          "    typeof item.operator_bypass_reason==='string' && item.operator_bypass_reason.length>0;",
+          "  const realMatch=strictRev||softRev;",
+          "  const shouldPop=!!realMatch||operatorBypass;",
+          "  if(shouldPop){",
+          "    const claimedFile=realMatch?realMatch.file:null;",
+          "    if(claimedFile){",
+          "      claimsToWrite.push({file:claimedFile, qid:item.queue_id});",
+          "      // Mark consumed in-memory so a second item this run cannot also claim it.",
+          "      for(const r of reviewsMeta){ if(r.file===claimedFile) r.popped_by_queue_id=item.queue_id; }",
+          "    }",
+          "    pq.history.push({",
+          "      queue_id:item.queue_id, target_id:tid, target_type:item.target_type,",
+          "      popped_at:new Date().toISOString(), popped_by:'decider',",
+          "      pop_reason: strictRev?'strict_queue_id':softRev?'soft_reviewed_at_after_pushed_at':'operator_bypass',",
+          "      claimed_review_file: claimedFile,",
+          "      operator_bypass_reason: operatorBypass?item.operator_bypass_reason:null",
+          "    });",
+          "    return false;",
+          "  }",
+          "  if(legacyRev){",
+          "    shadow.push({",
+          "      queue_id:item.queue_id, target_id:tid, pushed_at:item.pushed_at,",
+          "      would_have_popped_via:'legacy_substring', legacy_review_file:legacyRev.file,",
+          "      legacy_review_read_from:legacyRev.read_from,",
+          "      filesystem_read_counts:{fuse:sourceCounts.fuse, clone:sourceCounts.clone, union:reviewFilesUnion.length},",
+          "      blocked_because:'no_strict_or_soft_match_or_already_consumed'",
+          "    });",
+          "    if(!enforce){",
+          "      // Shadow mode: still pop to avoid backlog, but do NOT claim the review file.",
+          "      pq.history.push({",
+          "        queue_id:item.queue_id, target_id:tid, target_type:item.target_type,",
+          "        popped_at:new Date().toISOString(), popped_by:'decider',",
+          "        pop_reason:'shadow_legacy_substring', claimed_review_file:null",
+          "      });",
+          "      return false;",
+          "    }",
+          "    return true; // enforced: leave in queue for curmudgeon",
+          "  }",
+          "  // Stale-item log-only (attention-inbox write deferred to future PROP).",
+          "  if(enforce && item.pushed_at){",
+          "    const ageDays=(Date.now()-new Date(item.pushed_at).getTime())/86400000;",
+          "    if(ageDays>7){",
+          "      console.log('PROP-009 STALE_QUEUE_ITEM: '+tid+' (qid '+item.queue_id+') unreviewed for '+ageDays.toFixed(1)+'d — log only, no auto-pop, no inbox write (deferred to future PROP).');",
+          "    }",
+          "  }",
+          "  return true;",
+          "});",
+          "// Flush claims onto review files (dual-write: workspace AND clone, additive only).",
+          "for(const c of claimsToWrite){",
+          "  for(const base of [WORKSPACE, CLONE]){",
+          "    const p=base+'/monitor/curmudgeon/reviews/'+c.file;",
+          "    try{",
+          "      const d=JSON.parse(fs.readFileSync(p,'utf8'));",
+          "      if(d.popped_by_queue_id==null){",
+          "        d.popped_by_queue_id=c.qid;",
+          "        d.popped_by_queue_id_at=new Date().toISOString();",
+          "        fs.writeFileSync(p,JSON.stringify(d,null,2));",
+          "      }",
+          "    }catch(e){/* absent on one side is fine */}",
+          "  }",
+          "}",
+          "// Shadow log write (clone-side, git-owned).",
+          "if(shadow.length){",
+          "  fs.mkdirSync(path.dirname(shadowLogPath),{recursive:true});",
+          "  for(const s of shadow){",
+          "    s.logged_at=new Date().toISOString();",
+          "    s.enforce_mode=enforce;",
+          "    fs.appendFileSync(shadowLogPath,JSON.stringify(s)+'\\n');",
+          "  }",
+          "  console.log('PROP-009 shadow: '+shadow.length+' item(s) '+(enforce?'BLOCKED (kept in queue)':'logged (shadow mode — popped anyway)'));",
+          "}",
+          "console.log('PROP-009 review read: fuse='+sourceCounts.fuse+' clone='+sourceCounts.clone+' union='+reviewFilesUnion.length+' enforce='+enforce);",
+          "if(pq.history.length>50) pq.history=pq.history.slice(-50);",
+          "const after=pq.queue.length;",
+          "fs.writeFileSync(CLONE+'/monitor/curmudgeon/priority-queue.json',JSON.stringify(pq,null,2));",
+          "if(before!==after){",
+          "  console.log('Popped '+(before-after)+' reviewed items. Queue: '+before+' -> '+after);",
+          "}else{",
+          "  console.log('No items to pop. Queue depth: '+after);",
+          "}",
+          "\"",
+          "```",
+          "",
+          "**Step E2 precondition (PROP-009, enforced default).** The pop filter requires a matching review file. \"Matching\" is strict queue_id OR (soft) substring + `reviewed_at > pushed_at`. This precondition is ALWAYS ON — including for operator-pushed items. Substring alone never pops.",
+          "",
+          "**Narrow operator bypass.** An operator push may bypass only by setting ALL THREE of the following on the queue item JSON at push time:",
+          "1. `pushed_by` contains the string `\"operator\"`.",
+          "2. `require_matching_review_file: false` (explicit opt-out — must be literal boolean false, not missing).",
+          "3. `operator_bypass_reason: \"<non-empty string explaining why>\"` (auditable justification; appears in shadow log and in history `pop_reason`).",
+          "",
+          "All three missing? Precondition applies normally. Any one missing? Precondition applies normally — the bypass is all-or-nothing and requires the explicit reason field. Bypasses are logged to `monitor/integrity/prop-009-shadow.jsonl` with `pop_reason: \"operator_bypass\"` so tinker can audit frequency.",
+          "",
+          "The operator MUST NOT use bypass to push items faster than curmudgeon can review. Bypass is for emergency cleanup (e.g., queue entry whose target was deleted and cannot be reviewed); it is not a throughput tool. More than 3 bypasses in 24h is a pipeline health flag for the daily report.",
+          "",
+          "**Enforcement toggle.** Presence of `monitor/decisions/prop-009-enforce.flag` (clone-side) = enforced. Absence = shadow. Flip with `touch monitor/decisions/prop-009-enforce.flag && git add monitor/decisions/prop-009-enforce.flag && git commit -m 'PROP-009: enforce'`. Roll back with `git rm monitor/decisions/prop-009-enforce.flag && git commit -m 'PROP-009: back to shadow'`."
+        ],
+        "dry_run_check": {
+          "cmd": "grep -Fqx -- 'pq.queue=pq.queue.filter(item=>{' monitor/prompts/decider.md && grep -Fq -- \"const hasReview=reviews.some(f=>searchTerms.some(t=>f.includes(t)));\" monitor/prompts/decider.md",
+          "expect_exit": 0,
+          "note": "Uses -F fixed-string match against the decider.md Step E2 block. Both lines present in the current find_lines block; applier should refuse to apply if this preflight fails."
+        },
+        "explanation": "Replaces decider.md lines 183-214 (entire Step E2 bash block) with the PROP-009r version: unionReviewFiles() dual-read, popped_by_queue_id consumption tracking, strict/soft/operator-bypass filter, flag-file enforcement toggle, shadow log with expanded schema, log-only stale-item. Also appends the PROP-009 precondition + narrow-bypass + enforcement-toggle paragraphs immediately after the bash block."
+      },
+      {
+        "path": "monitor/prompts/curmudgeon.md",
+        "find_lines": [
+          "2. Find the **first un-reviewed** item in `queue` — strict FIFO, no reordering. To determine if an item has already been reviewed, check whether a review file exists in **`${WORKSPACE}/monitor/curmudgeon/reviews/`** (NOT the clone — you write reviews to the workspace, and workspace-sync may not have pushed them to git yet; the clone would be missing your own recent reviews). Check if any filename contains the item's `target_id`. For example, queue item `target_id: \"WIN-003\"` is already reviewed if `WIN-003.c2.json` (or any file matching `WIN-003*`) exists. Queue item `target_id: \"EXP-050\"` is already reviewed if `EXP-050-proposal.c2.json` exists. For `EXP-054-batch`, check for `EXP-054-batch*.json`. For section items like `part3-3.1b`, check for `SEC-3.1b*.json`. **If ALL queue items have matching review files, skip to Step 0c** — the queue is fully reviewed and the decider will clean it up on its next run."
+        ],
+        "replace_lines": [
+          "2. Find the **first un-reviewed** item in `queue` — strict FIFO, no reordering. **PROP-009 precondition:** an item is 'already reviewed' ONLY if one of the following holds (read from `${WORKSPACE}/monitor/curmudgeon/reviews/`, not the clone):",
+          "   - **Strict:** a review file exists whose top-level `queue_id` field equals this item's `queue_id`; OR",
+          "   - **Soft fallback (for legacy reviews without queue_id tags):** a review file exists whose filename substring-matches the `target_id` AND whose `reviewed_at` timestamp post-dates this item's `pushed_at` timestamp.",
+          "",
+          "   Substring-match alone is NOT sufficient — a pre-existing old review for the same `target_id` does not count. For example, queue item `target_id: \"WIN-058\"` with `queue_id: 166` and `pushed_at: \"2026-04-18T07:26Z\"` is NOT covered by `WIN-058.c2.json` from 2026-04-08, even though the filename substring-matches. You MUST review this item.",
+          "",
+          "   When you DO write a review for a queue-sourced item, **always include the `queue_id` field** (integer) and the `queue_pushed_at` field (ISO timestamp) inside the review JSON, copied verbatim from the queue item — this is how the decider's Step E2 pop filter finds your work and prevents post-integration adversarial review from being silently skipped. Do not rely on the filename alone to carry queue identity. Cycle-number determination (`.c2`, `.c3`, `.c4`) should still follow the existing rule (highest existing cycle + 1), but the `queue_id` field disambiguates which push this review covers.",
+          "",
+          "   For section items like `part3-3.1b`, the search-terms expansion (`SEC-3.1b*`) still applies to the substring portion of the soft fallback.",
+          "",
+          "   **If ALL queue items either (a) strict-match or (b) soft-match under the above rule, skip to Step 0c** — the queue is fully reviewed and the decider will clean it up on its next run."
+        ],
+        "dry_run_check": {
+          "cmd": "grep -Fq -- \"Check if any filename contains the item\" monitor/prompts/curmudgeon.md",
+          "expect_exit": 0,
+          "note": "Uses -F fixed-string match. The phrase 'Check if any filename contains the item' appears only in the Step 0b Procedure line 2 block that is being replaced."
+        },
+        "explanation": "Replaces curmudgeon.md line 90 (the Step 0b Procedure line 2 paragraph) with the PROP-009r precondition. Adds queue_id/queue_pushed_at requirement and the soft-fallback rule."
+      },
+      {
+        "path": "monitor/prompts/curmudgeon.md",
+        "find_lines": [
+          "7. **Do NOT modify `priority-queue.json`.** The decider is the primary writer; the human operator may also push items directly as an escape hatch (look for `pushed_by` containing `\"operator\"`). You never write to the queue. Note: `priority-queue.json` is git-owned — you see it from your fresh clone each run, so operator pushes via the FUSE workspace will be invisible to you; operators are expected to push via a git clone. The decider will pop reviewed items and append history records when it processes your review files. Your review file IS the signal that the item is done — treat operator-pushed and decider-pushed items identically."
+        ],
+        "replace_lines": [
+          "7. **Do NOT modify `priority-queue.json`.** The decider is the primary writer; the human operator may also push items directly as an escape hatch (look for `pushed_by` containing `\"operator\"`). You never write to the queue. Note: `priority-queue.json` is git-owned — you see it from your fresh clone each run, so operator pushes via the FUSE workspace will be invisible to you; operators are expected to push via a git clone. The decider will pop reviewed items and append history records when it processes your review files. Your review file IS the signal that the item is done — treat operator-pushed and decider-pushed items identically. **PROP-009: when the triggering work is a queue-sourced item, your review JSON MUST contain a top-level `queue_id` field copied verbatim from `item.queue_id` (integer) and a `queue_pushed_at` field copied from `item.pushed_at`. This is the load-bearing identifier the decider uses to match your review to the push; without it the decider falls back to a timestamp heuristic, and with a wrong value the decider may pop the wrong queue entry. Before writing the review file, assert in your own output: `queue_id set to <N>, matches queue item`. If you are unsure which queue_id you are servicing (e.g., two concurrent pushes of the same target_id), stop and leave a human note rather than guessing.**"
+        ],
+        "dry_run_check": {
+          "cmd": "grep -Fq -- 'Your review file IS the signal that the item is done — treat operator-pushed and decider-pushed items identically.' monitor/prompts/curmudgeon.md && grep -Fq -- 'escape hatch' monitor/prompts/curmudgeon.md",
+          "expect_exit": 0,
+          "note": "Fixed-string match against the UNIQUE tail of Step 0b line 7 AND the 'escape hatch' phrase that distinguishes main HEAD's longer version from earlier variants. If the longer version is ever replaced again, both greps will fail and the applier will stop."
+        },
+        "explanation": "Appends the PROP-009 load-bearing queue_id reminder to Step 0b line 7. The existing text about not modifying priority-queue.json is preserved; the new sentence makes queue_id write-side mandatory.",
+        "note": "Anchor updated 2026-04-18T11:50Z tinker run: main HEAD carries a longer Step 0b line 7 than the FUSE workspace snapshot used to draft PROP-009r. Find/replace now targets main HEAD text verbatim."
+      },
+      {
+        "path": "monitor/prompts/curmudgeon.md",
+        "find_lines": [
+          "4. **For `proposal` target_type**: do NOT attack the prose — it doesn't exist yet. Instead review the proposal package in `monitor/analyst/expansions/<EXP-ID>.json` against the analytical questions in the package itself (verdict-flip plausibility, new-tag naming, alternatives considered, unknowns acknowledged). Write your review to `monitor/curmudgeon/reviews/<EXP-ID>-proposal.json`. Your verdict here gates whether the analyst writes prose next."
+        ],
+        "replace_lines": [
+          "4. **For `proposal` target_type**: do NOT attack the prose — it doesn't exist yet. Instead review the proposal package in `monitor/analyst/expansions/<EXP-ID>.json` against the analytical questions in the package itself (verdict-flip plausibility, new-tag naming, alternatives considered, unknowns acknowledged). Write your review to `monitor/curmudgeon/reviews/<EXP-ID>-proposal.json`, **including `queue_id` and `queue_pushed_at` at the top of the JSON, copied from the queue item** (PROP-009 precondition). Your verdict here gates whether the analyst writes prose next."
+        ],
+        "dry_run_check": {
+          "cmd": "grep -Fq -- 'Your verdict here gates whether the analyst writes prose next.' monitor/prompts/curmudgeon.md",
+          "expect_exit": 0,
+          "note": "Fixed-string match against the unique closing sentence of Step 4 (proposal target_type)."
+        },
+        "explanation": "Edits Step 4 (proposal target_type review instruction) to require queue_id/queue_pushed_at in the proposal-review JSON."
+      },
+      {
+        "path": "monitor/prompts/curmudgeon.md",
+        "find_lines": [
+          "   - Write your review to `monitor/curmudgeon/reviews/<target_id>.json` (e.g., `PRED-batch-2026-04-10.json`). Include per-prediction verdicts: `agree`, `challenge` (with reasoning), or `upgrade` (we were too harsh)."
+        ],
+        "replace_lines": [
+          "   - Write your review to `monitor/curmudgeon/reviews/<target_id>.json` (e.g., `PRED-batch-2026-04-10.json`), **including `queue_id` and `queue_pushed_at` at the top of the JSON, copied from the queue item** (PROP-009 precondition). Include per-prediction verdicts: `agree`, `challenge` (with reasoning), or `upgrade` (we were too harsh)."
+        ],
+        "dry_run_check": {
+          "cmd": "grep -Fq -- 'PRED-batch-2026-04-10.json' monitor/prompts/curmudgeon.md",
+          "expect_exit": 0,
+          "note": "Fixed-string match against the unique filename example in Step 4b (prediction-batch)."
+        },
+        "explanation": "Edits Step 4b (prediction-batch review instruction) to require queue_id/queue_pushed_at in the batch-review JSON."
+      },
+      {
+        "path": "monitor/prompts/curmudgeon.md",
+        "find_lines": [
+          "  \"point_id\": \"WIN-NNN\",",
+          "  \"topic\": \"Short description\",",
+          "  \"reviewed_at\": \"ISO timestamp\",",
+          "  \"cycle\": 1,"
+        ],
+        "replace_lines": [
+          "  \"point_id\": \"WIN-NNN\",",
+          "  \"topic\": \"Short description\",",
+          "  \"queue_id\": 168,                           // PROP-009: REQUIRED when this review services a priority-queue item — copy from queue entry verbatim. Omit ONLY if the review was triggered by change-detection/holistic/spot-check with no queue entry.",
+          "  \"queue_pushed_at\": \"2026-04-18T09:34:14.533Z\",  // PROP-009: REQUIRED alongside queue_id — copy from queue entry; used by decider soft fallback and by tinker audit.",
+          "  \"reviewed_at\": \"ISO timestamp\",",
+          "  \"cycle\": 1,"
+        ],
+        "dry_run_check": {
+          "cmd": "grep -Fq -- '\"point_id\": \"WIN-NNN\",' monitor/prompts/curmudgeon.md && grep -Fq -- '\"topic\": \"Short description\",' monitor/prompts/curmudgeon.md",
+          "expect_exit": 0,
+          "note": "Fixed-string match against unique schema field ordering at the top of the Section 7 review JSON template."
+        },
+        "explanation": "Inserts queue_id and queue_pushed_at as the third and fourth fields of the review JSON schema template, immediately after topic. Both annotated REQUIRED with conditions."
+      },
+      {
+        "path": "monitor/prompts/curmudgeon.md",
+        "find_lines": [
+          "### 7b. Validate the JSON (mandatory)",
+          "",
+          "**After writing the review file, immediately parse it to confirm validity.** Invalid JSON breaks the decider's digest pipeline silently — review findings become inaccessible.",
+          "",
+          "```bash",
+          "node -e \"JSON.parse(require('fs').readFileSync('monitor/curmudgeon/reviews/<filename>.json','utf8'));console.log('valid')\"",
+          "```"
+        ],
+        "replace_lines": [
+          "### 7a. Pre-write assertion — queue_id presence (PROP-009, mandatory for queue-sourced reviews)",
+          "",
+          "Before you finalize the review file, verify: \"Is this review servicing a priority-queue item (Step 0b)? If yes, is `queue_id` set on the review JSON to the integer value from the queue entry I am reviewing? Is `queue_pushed_at` set to the queue entry's `pushed_at`?\" If either answer is \"no, but it should be\", stop and re-read the queue entry. This is the load-bearing identifier — missing or wrong `queue_id` silently breaks the decider's pop filter.",
+          "",
+          "### 7b. Validate the JSON (mandatory)",
+          "",
+          "**After writing the review file, immediately parse it to confirm validity.** Invalid JSON breaks the decider's digest pipeline silently — review findings become inaccessible. PROP-009 extends the validator to assert queue_id presence on queue-sourced reviews.",
+          "",
+          "```bash",
+          "node -e \"const d=JSON.parse(require('fs').readFileSync('monitor/curmudgeon/reviews/<filename>.json','utf8'));if(d.trigger!=='change-detected'&&d.trigger!=='holistic'&&d.trigger!=='spot-check'&&!Number.isInteger(d.queue_id))throw new Error('queue-sourced review missing queue_id');console.log('valid')\"",
+          "```"
+        ],
+        "dry_run_check": {
+          "cmd": "grep -Fq -- '### 7b. Validate the JSON (mandatory)' monitor/prompts/curmudgeon.md && grep -Fq -- 'console.log(\\'valid\\')' monitor/prompts/curmudgeon.md",
+          "expect_exit": 0,
+          "note": "Fixed-string match against the Step 7b section header and the existing validator's success line. Replacement inserts a new Step 7a and extends the Step 7b validator."
+        },
+        "explanation": "Inserts a new Step 7a (pre-write queue_id assertion) before Step 7b, and extends the Step 7b validator to throw on queue-sourced reviews that lack queue_id."
+      },
+      {
+        "path": "monitor/prompts/reference/DATA-SCHEMAS.md",
+        "find_lines": [
+          "Build computes from this file: {{KS_TOTAL}}, {{KS_DECISIVE}}, {{KS_MAJOR}}, {{KS_SUPPORTIVE}}, {{KS_STRAW_MAN_COUNT}}, {{KS_WAIT_AND_SEE_COUNT}}."
+        ],
+        "replace_lines": [
+          "Build computes from this file: {{KS_TOTAL}}, {{KS_DECISIVE}}, {{KS_MAJOR}}, {{KS_SUPPORTIVE}}, {{KS_STRAW_MAN_COUNT}}, {{KS_WAIT_AND_SEE_COUNT}}.",
+          "",
+          "## priority-queue.json Schema",
+          "",
+          "Array-of-objects queue file at `monitor/curmudgeon/priority-queue.json`. Decider is the primary writer; operator may push directly via a git clone. History is capped at a rolling window (currently 50 entries).",
+          "",
+          "**PROP-009+ history fields** (decider writes these on every pop starting with PROP-009 enforce):",
+          "- `pop_reason` (string): one of `strict_queue_id`, `soft_reviewed_at_after_pushed_at`, `operator_bypass`, `shadow_legacy_substring`. Identifies how the decider's Step E2 filter matched this history entry.",
+          "- `claimed_review_file` (string|null): basename of the curmudgeon review file this pop claimed, or null for operator bypass / shadow-mode legacy pops.",
+          "- `operator_bypass_reason` (string|null): non-empty reason string when pop_reason is `operator_bypass`; null otherwise."
+        ],
+        "dry_run_check": {
+          "cmd": "grep -Fqx -- 'Build computes from this file: {{KS_TOTAL}}, {{KS_DECISIVE}}, {{KS_MAJOR}}, {{KS_SUPPORTIVE}}, {{KS_STRAW_MAN_COUNT}}, {{KS_WAIT_AND_SEE_COUNT}}.' monitor/prompts/reference/DATA-SCHEMAS.md && ! grep -Fq -- '## priority-queue.json Schema' monitor/prompts/reference/DATA-SCHEMAS.md",
+          "expect_exit": 0,
+          "note": "Confirms (a) the unique kill-shots Build-computes tail line is present as append anchor, and (b) the new priority-queue.json Schema section is NOT already present (idempotent guard)."
+        },
+        "explanation": "Documents the new history fields so the integrity agent's schema check does not flag the next run.",
+        "note": "Anchor corrected 2026-04-18T11:50Z tinker run: DATA-SCHEMAS.md has no existing '## priority-queue.json' section on main. Appending a new section after the kill-shots Build-computes tail line is the safe option."
+      },
+      {
+        "path": "CLAUDE.md",
+        "find_lines": [
+          "### File Ownership Rules (Phase 1)"
+        ],
+        "replace_lines": [
+          "### File Ownership Rules (Phase 1)",
+          "",
+          "**PROP-009 additive-edit exception:** The decider may write `popped_by_queue_id` (integer) and `popped_by_queue_id_at` (ISO timestamp) onto an existing curmudgeon review file at pop-time. This is an additive edit — the new fields replace no existing fields and the write is idempotent (guarded by `if(d.popped_by_queue_id==null)`). This is the only permitted exception to the append-only-directory rule for `monitor/curmudgeon/reviews/`. No other field may be mutated."
+        ],
+        "dry_run_check": {
+          "cmd": "grep -Fq -- '### File Ownership Rules (Phase 1)' CLAUDE.md && ! grep -Fq -- 'PROP-009 additive-edit exception' CLAUDE.md",
+          "expect_exit": 0,
+          "note": "Confirms (a) the File Ownership Rules heading is present in CLAUDE.md, and (b) the PROP-009 exception text is NOT already present (idempotent guard)."
+        },
+        "explanation": "Documents the one additive-edit exception to append-only semantics on review files, required for C3 consumption tracking to work.",
+        "note": "Anchor corrected 2026-04-18T11:50Z tinker run: '### File Ownership Rules (Phase 1)' lives in CLAUDE.md (line 61), not BUILD-AND-CHANGE.md. Redirected edit to CLAUDE.md, which is the canonical ownership reference per its own architecture description."
+      }
+    ],
+    "files_to_create": [
+      {
+        "path": "monitor/decisions/open-issues-PROP-009r-append.json",
+        "purpose": "Drop-in ISS JSON the decider should append to monitor/decisions/open-issues.json on its next run. Captures the Mod1 cycle-number anomaly as a trackable issue.",
+        "content": "{\n  \"id\": \"ISS-AUTO-FROM-PROP-009r\",\n  \"created_at\": \"2026-04-18T12:29:00Z\",\n  \"source\": \"PROP-009r orthogonal finding\",\n  \"severity\": \"moderate\",\n  \"target_type\": \"pipeline_bug\",\n  \"target_id\": \"curmudgeon-cycle-computation-race\",\n  \"title\": \"Curmudgeon cycle numbers can go backwards under concurrent/stale-clone runs\",\n  \"description\": \"SEC-4.1.c3.json reviewed_at 2026-04-18T07:42:00Z with cycle=3 was written AFTER SEC-4.1.c4.json reviewed_at 2026-04-18T05:12:46Z with cycle=4. Root cause hypothesis: curmudgeon picks the next cycle by scanning reviews/ for highest-existing-cycle+1. Two runs (one with stale clone, one with fresh) can each decide 'next = c3' or write c3 after c4 has already landed. The c3 file also claims queue_id=158 which was popped 2026-04-17T23:26Z — an 8-hour-delayed review.\",\n  \"evidence_files\": [\n    \"monitor/curmudgeon/reviews/SEC-4.1.c3.json\",\n    \"monitor/curmudgeon/reviews/SEC-4.1.c4.json\"\n  ],\n  \"recommended_fix\": \"Either (a) replace cycle-number-by-scan with an atomic cycle counter in a per-target JSON file, or (b) retire cycle-in-filename entirely and rely on reviewed_at for ordering. Needs its own PROP.\",\n  \"assignee\": \"tinker\",\n  \"blocks_prop_009\": false,\n  \"status\": \"open\"\n}",
+        "instruction": "Decider should append the top-level object to the `issues` array of monitor/decisions/open-issues.json on its next intake pass. After appending, decider assigns a real ISS-NNN id and updates this PROP's related.orthogonal_pending_followup field to cross-reference."
+      }
+    ],
+    "files_to_delete": []
+  },
+  "migration_plan": {
+    "apply_order": [
+      {
+        "step": 1,
+        "action": "Land curmudgeon.md patches (cur1-cur6 above) in a single commit. Verify grep assertions pass. Do NOT apply decider.md yet.",
+        "verify": "grep -Fq 'PROP-009 precondition' monitor/prompts/curmudgeon.md && grep -Fq 'queue_id' monitor/prompts/curmudgeon.md # both must succeed"
+      },
+      {
+        "step": 2,
+        "action": "Wait for at least one curmudgeon run to complete and write a review file whose top-level JSON contains queue_id matching a live queue item. Expect within 30 min under churn-and-burn, up to 8h under BAU.",
+        "verify": "node -e \"const fs=require('fs');const dir='monitor/curmudgeon/reviews/';const files=fs.readdirSync(dir).filter(f=>f.endsWith('.json'));const latest=files.map(f=>({f,mtime:fs.statSync(dir+f).mtime})).sort((a,b)=>b.mtime-a.mtime)[0];const d=JSON.parse(fs.readFileSync(dir+latest.f,'utf8'));console.log('latest:',latest.f,'queue_id:',d.queue_id)\" # queue_id should be a number for queue-sourced reviews"
+      },
+      {
+        "step": 3,
+        "action": "Land decider.md patch (the Step E2 bash block + precondition paragraphs) in a second commit. Do NOT create the enforce flag yet.",
+        "verify": "grep -Fq 'PROP-009 precondition' monitor/prompts/decider.md && grep -Fq 'prop-009-enforce.flag' monitor/prompts/decider.md"
+      },
+      {
+        "step": 4,
+        "action": "Wait for one decider Step E2 run. Confirm shadow log exists with at least one entry. Confirm pop_reason:'strict_queue_id' appears for at least one entry (proves the new pathway is populated). No pop_reason:'shadow_legacy_substring' entry should correspond to a real unreviewed push.",
+        "verify": "test -f monitor/integrity/prop-009-shadow.jsonl && grep -q 'strict_queue_id' monitor/curmudgeon/priority-queue.json"
+      },
+      {
+        "step": 5,
+        "action": "Monitor shadow log for 3 consecutive days. Tinker audits per-day would-be-block counts in daily Mode 2 runs. Threshold for flip: ≤3 blocks/day averaged over 3 consecutive days, no single day above 6.",
+        "verify": "# Tinker Mode 2 manual check. See fresh_retroactive_audit.recommended_enforce_flip_threshold."
+      },
+      {
+        "step": 6,
+        "action": "Once threshold met, `touch monitor/decisions/prop-009-enforce.flag && git add monitor/decisions/prop-009-enforce.flag && git commit -m 'PROP-009: enforce'`. Announce in daily report.",
+        "verify": "test -f monitor/decisions/prop-009-enforce.flag"
+      },
+      {
+        "step": 7,
+        "action": "Rollback recipe (if needed): `git rm monitor/decisions/prop-009-enforce.flag && git commit -m 'PROP-009: back to shadow'`. To fully revert the patches, revert the two commits from steps 1 and 3 (no data migration — shadow log is append-only and history schema is backward-compatible).",
+        "verify": "N/A (rollback procedure)"
+      }
+    ],
+    "alternative_considered_immediate_enforce": "REJECTED — immediate enforcement risks creating a queue backlog if curmudgeon's first run after patch doesn't include queue_id. Shadow period lets us confirm the curmudgeon side is also working before pops become strict.",
+    "alternative_considered_single_commit": "REJECTED — hostile review's 'coordination fragility' finding plus Mod3's rollback-points argument both favor the 3-commit sequence. Single-commit is only a marginal simplicity gain and costs two natural rollback points.",
+    "audit_criteria_before_flipping_enforce": [
+      "Shadow log shows ≤3 would-have-blocked items per day, averaged over 3 consecutive days, with no single day above 6.",
+      "Every would-have-blocked item corresponds to a legitimately-unreviewed push (not a pop that should have happened).",
+      "At least one successful end-to-end cycle has occurred where curmudgeon writes queue_id into a review and the decider strict-matches it (verify via pop_reason: 'strict_queue_id' in history).",
+      "No filesystem_read_counts.clone lagging fuse by >5 entries for >1 hour (confirms workspace-sync is keeping up)."
+    ]
+  },
+  "tradeoffs": "GAIN: post-integration adversarial reviews are no longer silently skipped. Soft-fallback-reuse bug (C3) cannot occur because popped_by_queue_id consumption tracking is strict. Operator bypass is explicit and auditable, not silent. FUSE staleness race (M4) is closed via union-read. Retroactive audit gives an evidence-based threshold (M3) instead of a guess. Cycle-number race (Mod1) is tracked rather than lost. LOSE: ~60 extra lines of Opus context in decider.md Step E2 (unionReviewFiles + consumption tracking + dual-write adds length), mitigated by the fact that Step E2 runs once per decider invocation. RISK: the dual-write of popped_by_queue_id to WORKSPACE and CLONE means two writes per pop; on a slow FUSE this adds ~20-50ms. RISK: flag-file-based enforcement is racy if the operator touches the flag mid-decider-run; documented but acceptable (operator can retry). RISK: the 3-commit apply order means there's a window (between step 1 and step 3) where curmudgeon writes queue_id but decider still uses substring match — fine (old path continues to work) but a third party reading commits out of order may be confused.",
+  "estimated_impact": {
+    "token_cost": "decider.md Step E2 grows from ~35 lines to ~120 lines. Runs once per decider invocation (~5-10 times/day). Net: <1000 extra tokens per day on Opus. Curmudgeon.md grows by ~15 lines across 7 edits; runs every curmudgeon invocation (~5-24 times/day). Net: <300 extra tokens per day.",
+    "quality_gain": "critical — closes the post-integration adversarial review gap. Directly prevents the SEC-4.1/WIN-058 class regression documented in the directive. Closes C3 multi-push-single-review double-claim risk (identified by hostile review; not in original PROP-009).",
+    "risk_reduction": "high — the original bug was silent (no error, no log, no alert). Shadow log + filesystem_read_counts on every entry creates observability for FUSE/clone sync gaps as a side benefit."
+  },
+  "requires_human_judgment": true,
+  "why_human_needed": "Operator must (a) approve the revised precondition wording (strict queue_id + soft reviewed_at > pushed_at + narrow 3-field operator bypass), (b) approve the 3-commit apply order, (c) acknowledge the Mod1 ISS entry will be filed by decider (no separate approval needed — decider is authoritative for open-issues.json writes), (d) approve the Mod2 decision to defer full attention-inbox escalation to a future PROP-011, (e) acknowledge the Mod3 apply-order vs single-commit choice (Mod3 recommended).",
+  "verification_pattern": "[ -n \"${CLEAN_CLONE}\" ] && grep -q 'PROP-009 precondition' monitor/prompts/decider.md && grep -q 'PROP-009 precondition' monitor/prompts/curmudgeon.md && grep -q 'prop-009-enforce.flag' monitor/prompts/decider.md && echo FIXED || echo STILL_BROKEN",
+  "escalation_history": 1,
+  "related": {
+    "operator_directive": "DIRECTIVE-20260418-003-prop-009-revision.json",
+    "parent_directive": "DIRECTIVE-20260418-002-decider-pop-without-review.json",
+    "supersedes_proposal": "monitor/tinker/proposals/PROP-009.json",
+    "prior_proposal_non_overlapping": "PROP-008 (change-detection cooldown + magnitude gates — orthogonal; operates on Step 0d change-driven scans, not priority-queue post-integration pushes)",
+    "related_commits": [
+      "2fa4b57 (2026-04-18T07:26Z) — decider integration commit; pushed qids 165-169",
+      "29e11ac (2026-04-18T07:29Z) — decider queue-management commit; popped qids 165-169",
+      "191a3d4 (2026-04-18T09:39Z) — decider EXP-182 integration; pushed qids 170-174",
+      "e4630ec (2026-04-18T09:41Z) — decider queue-management commit; popped qids 170-174"
+    ],
+    "orthogonal_pending_followup": "Mod1 ISS entry for SEC-4.1 cycle-numbering race — see files_to_create above. Decider to assign ISS-NNN number on next intake.",
+    "future_prop_011": "Multi-writer attention-inbox write for 7d+ stale queue items. Deferred from Mod2 per disagreements section."
+  },
+  "updated_at": "2026-04-18T11:50:00Z"
+}

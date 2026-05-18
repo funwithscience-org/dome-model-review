@@ -1,0 +1,245 @@
+{
+  "generated_at": "2026-04-11T10:45:00Z",
+  "report_date": "2026-04-11",
+  "run_label": "run-1 (morning)",
+  "mode_selected": "cost_engineering",
+  "mode_reason": "Pipeline health green (all 8 agents producing within cadence). FUSE green (all 5 checked files match GitHub). Auth OK (200). No urgent Mode 1/2 issues. Mode 3 selected for deep cost engineering analysis of churn-and-burn wind-down readiness and decider efficiency.",
+  "modes_checked": {
+    "pipeline_health": "green — all 8 agents producing. Poller 4h ago (12h cadence), analyst/curmudgeon minutes ago (30min cadence), decider 1h ago (1h cadence), integrity ran today, social last ran yesterday (daily), workspace-sync 3h ago (4h cadence), tinker this run.",
+    "infrastructure": "green — all 5 FUSE-checked files match GitHub (wins.json, sections.json, digest-reviews.js, generate-html.js, index.html). Auth 200. Previous generate-html.js staleness appears RESOLVED.",
+    "cost_engineering": "PROP-005 (decider pre-flight) still STILL_BROKEN. Churn-and-burn active with queue depth 2 — wind-down imminent but auto-restore has a COVERAGE GAP (see findings).",
+    "proposals": "1 self-fix pending (decider.md stale schedule descriptions). PROP-005 pending human application."
+  },
+  "pipeline_health": {
+    "agents_running": 8,
+    "agents_stalled": [],
+    "output_freshness": {
+      "poller": "4h ago (12h cadence) — green",
+      "analyst": "minutes ago (30min cadence) — green",
+      "curmudgeon": "minutes ago (30min cadence) — green",
+      "decider": "1h ago (1h cadence) — green",
+      "integrity": "ran today — green",
+      "social": "ran yesterday (daily cadence) — green",
+      "tinker": "this run — green",
+      "workspace_sync": "3h ago (4h cadence) — green"
+    }
+  },
+  "findings": [
+    {
+      "severity": "major",
+      "category": "efficiency",
+      "description": "CHURN-AND-BURN AUTO-RESTORE COVERAGE GAP: When the priority queue drains, the decider Step E auto-restores only the curmudgeon schedule (30min → 4h) and flips mode to BAU. However, the analyst (currently every 30min, Opus) and decider (currently every 1h, Opus) are ALSO on accelerated churn-and-burn schedules that were set manually. Nothing auto-restores these. When the queue empties (depth currently 2), the curmudgeon will drop to 4h BAU but the analyst and decider will remain at 30min and 1h respectively — burning Opus tokens at full churn-and-burn rate with minimal work to process.",
+      "evidence": "Decider Step E only calls update_scheduled_task on dome-curmudgeon (grep confirms 0 mentions of dome-analyst or dome-decider in decider.md). Analyst cron: */30. Decider cron: 0 * (hourly). No auto-restore mechanism exists for either.",
+      "suggested_fix": {
+        "file": "monitor/prompts/decider.md",
+        "find": "Step E4 churn-and-burn queue.length === 0 block",
+        "replace": "Add dome-analyst restore to every 2h and dome-decider restore to every 4h alongside the curmudgeon restore",
+        "rationale": "All three Opus agents should auto-restore to BAU cadences when churn-and-burn ends. Without this, the pipeline will burn ~6x the normal Opus budget on the analyst alone (30min vs 2h) after the queue drains."
+      },
+      "self_fixable": false,
+      "fix_applied": false
+    },
+    {
+      "severity": "moderate",
+      "category": "prompt",
+      "description": "OWNERSHIP MISALIGNMENT: 4 files listed as git-owned in CLAUDE.md and workspace-sync.md OWNED_BY_GIT but MISSING from build.js OWNERSHIP object: data/predictions.json, docs/llms.txt, docs/sitemap.xml, docs/robots.txt. Consequence: build.js publish does NOT copy these files git→workspace. workspace-sync correctly blocks pushing them workspace→git, but they never get refreshed from git either — creating a one-way staleness trap.",
+      "evidence": "grep for each file in build.js OWNERSHIP returns no match. CLAUDE.md line 49 lists predictions.json, line 51 lists docs/llms.txt,sitemap.xml,robots.txt. workspace-sync OWNED_BY_GIT array includes all 4.",
+      "suggested_fix": {
+        "file": "build.js",
+        "find": "Add 4 missing entries to OWNERSHIP object",
+        "replace": "'data/predictions.json': 'git', 'docs/llms.txt': 'git', 'docs/sitemap.xml': 'git', 'docs/robots.txt': 'git'",
+        "rationale": "Restore three-way consistency (CLAUDE.md ↔ build.js ↔ workspace-sync.md) per Phase 1 rule."
+      },
+      "self_fixable": false,
+      "fix_applied": false
+    },
+    {
+      "severity": "moderate",
+      "category": "prompt",
+      "description": "3 additional unclassified resources found: (1) data/kill-shots.json — exists in data/ but not in OWNERSHIP, CLAUDE.md, or workspace-sync.md. (2) monitor/analyst/issue-proposals/ — referenced in CLAUDE.md and decider.md Priority 1b but not in build.js OWNERSHIP. (3) monitor/external-reports/ — referenced in decider.md Priority 2 but not in build.js OWNERSHIP or CLAUDE.md file ownership table.",
+      "evidence": "ls data/ shows kill-shots.json. grep issue-proposals build.js → no match. grep external-reports build.js → no match.",
+      "suggested_fix": {
+        "file": "build.js",
+        "find": "OWNERSHIP object",
+        "replace": "Add: 'data/kill-shots.json': 'git', 'monitor/analyst/issue-proposals/': 'append_only', 'monitor/external-reports/': 'append_only'. Also add kill-shots.json and issue-proposals/ to CLAUDE.md git-owned and append-only lists respectively.",
+        "rationale": "Unclassified files can cause silent ownership violations."
+      },
+      "self_fixable": false,
+      "fix_applied": false
+    },
+    {
+      "severity": "minor",
+      "category": "prompt",
+      "description": "Decider.md lines 12-14 have stale schedule descriptions: Poller listed as 'every 4h' (actual: every 12h), Curmudgeon listed as 'every 10min' (actual: every 30min in churn-and-burn, 4h BAU).",
+      "evidence": "decider.md line 12: 'Poller (every 4h)' vs cron '0 */12 * * *'. Line 14: 'Curmudgeon (every 10min)' vs cron '*/30 * * * *'.",
+      "suggested_fix": {
+        "file": "monitor/prompts/decider.md",
+        "find": "- **Poller** (every 4h): Dome site changes\n- **Analyst** (every 30min): Deep scientific analysis, new WIN entries, expansions\n- **Curmudgeon** (every 10min): Adversarial self-review",
+        "replace": "- **Poller** (every 12h): Dome site changes\n- **Analyst** (every 30min churn / 2h BAU): Deep scientific analysis, new WIN entries, expansions\n- **Curmudgeon** (every 30min churn / 4h BAU): Adversarial self-review",
+        "rationale": "Stale schedule info in the decider prompt means the decider may make wrong assumptions about upstream freshness."
+      },
+      "self_fixable": true,
+      "fix_applied": false
+    }
+  ],
+  "previous_followup": [
+    {
+      "finding": "PROP-005: Decider pre-flight work check",
+      "status": "STILL_BROKEN",
+      "evidence": "grep -q 'Pre-flight Work Check' decider.md → not found. PROP-005.verification_pattern returns STILL_BROKEN. 5th consecutive report flagging this."
+    },
+    {
+      "finding": "Stale schedule descriptions in decider.md lines 12-14",
+      "status": "STILL_OPEN",
+      "evidence": "decider.md still shows 'Poller (every 4h)' and 'Curmudgeon (every 10min)'. Deferred from 3+ reports. Self-fixable — will do on next Mode 4 run."
+    },
+    {
+      "finding": "generate-html.js FUSE staleness",
+      "status": "FIXED",
+      "evidence": "FUSE md5 check: all 5 files (wins.json, sections.json, digest-reviews.js, generate-html.js, index.html) match GitHub. The persistent staleness that affected AUDIT-001 verification has resolved — likely via a build.js publish sync run."
+    },
+    {
+      "finding": "PROP-006: CLAUDE.md structured refactor",
+      "status": "IMPLEMENTED",
+      "evidence": "Closed in previous report. CLAUDE.md at 156 lines."
+    }
+  ],
+  "open_issue_health": {
+    "total_open": 13,
+    "aged_out": "All 13 issues are 10+ days old (created ~2026-04-01). 3 major issues among them.",
+    "repeated_deferrals": "Several issues have been open since project inception without patches. However, most are large-scope items (predictions catalog, SHA-256 forensics, category proposals) that require multiple agent cycles.",
+    "missing_patches": "Not deeply audited this run (Mode 3 focus).",
+    "zombie_fixes": "Not checked this run."
+  },
+  "cost_engineering": {
+    "agent_efficiency": [
+      {
+        "agent": "decider",
+        "recent_runs_checked": 10,
+        "substantive_runs": 5,
+        "no_op_runs": 5,
+        "estimated_waste_pct": 50,
+        "model": "opus",
+        "current_schedule": "every 1h (churn-and-burn override)",
+        "bau_schedule": "every 4h",
+        "recommendation": "PROP-005 (pre-flight gate) would save ~700 lines of reference reads per no-op run. 5th report flagging. Additionally, auto-restore to 4h BAU when churn-and-burn ends is critical."
+      },
+      {
+        "agent": "analyst",
+        "recent_runs_checked": "not deeply audited",
+        "model": "opus",
+        "current_schedule": "every 30min (churn-and-burn override)",
+        "bau_schedule": "every 2h",
+        "recommendation": "Currently processing predictions and expansions. 64/68 expansions complete. Once prediction intake finishes, 30min cadence will produce mostly no-ops. No auto-restore to 2h exists."
+      },
+      {
+        "agent": "curmudgeon",
+        "recent_runs_checked": "not deeply audited",
+        "model": "opus",
+        "current_schedule": "every 30min (churn-and-burn)",
+        "bau_schedule": "every 4h",
+        "recommendation": "Priority queue depth 2. Auto-restore to 4h BAU exists and will fire when queue empties. This is the ONLY agent with auto-restore — see major finding."
+      },
+      {
+        "agent": "social",
+        "recent_runs_checked": 3,
+        "substantive_runs": 0,
+        "no_op_runs": 3,
+        "estimated_waste_pct": 100,
+        "model": "sonnet",
+        "current_schedule": "daily",
+        "recommendation": "All recent runs report 'quiet'. 305-line prompt with no dispatcher. Candidate for dispatcher conversion, but Sonnet-daily is already cheap. Lower priority than Opus agent fixes."
+      }
+    ],
+    "churn_and_burn_status": {
+      "mode": "churn-and-burn",
+      "queue_depth": 2,
+      "queue_items": ["PRED-batch-2026-04-11", "part2b-sec-2b.7"],
+      "auto_restore_coverage": "PARTIAL — only curmudgeon has auto-restore. Analyst and decider schedules are manual churn-and-burn overrides with NO auto-restore mechanism.",
+      "estimated_churn_remaining": "Queue depth 2 at 30min cadence = likely 1-2 hours until queue drains. Then curmudgeon auto-restores but analyst+decider stay fast.",
+      "cost_risk": "After queue drains, analyst (Opus every 30min) will run 4x more than BAU with minimal work. Decider (Opus every 1h) will run 4x more than BAU with 50% no-op rate. Combined: roughly 8x normal Opus spend on two agents with mostly empty runs."
+    },
+    "proposals_written": [],
+    "implemented_since_last_report": [],
+    "prompt_sizes": {
+      "curmudgeon.md": 368,
+      "social.md": 305,
+      "structure-integrity.md": 304,
+      "prose-extraction-task.md": 293,
+      "workspace-sync.md": 282,
+      "decider.md": 249,
+      "poller.md": 219,
+      "analyst.md": 144,
+      "tinker.md": 126,
+      "total": 2290,
+      "reference_total": 2141
+    },
+    "dispatcher_conversion_status": {
+      "converted": ["analyst (144L dispatcher + 5 worker modules)", "decider (249L dispatcher + 4 worker modules)", "tinker (126L dispatcher + 4 worker modules)"],
+      "excluded": ["curmudgeon (benefits from holistic context)"],
+      "unconverted_low_priority": ["social (305L, Sonnet daily — cheap)", "structure-integrity (304L, Haiku daily — cheap)", "workspace-sync (282L, Haiku 4h — cheap)", "poller (219L, Sonnet 12h — cheap)"],
+      "note": "All Opus agents are converted or excluded. Remaining unconverted agents run on cheap models. Focus shifts to: (1) implementing PROP-005, (2) fixing churn-and-burn auto-restore gap, (3) schedule hygiene."
+    }
+  },
+  "claude_md_audit": {
+    "size_lines": 156,
+    "size_bytes": 10870,
+    "estimated_tokens": 2717,
+    "accuracy_findings": [
+      {
+        "issue": "OWNERSHIP table lists 4 files as git-owned that are missing from build.js OWNERSHIP: data/predictions.json, docs/llms.txt, docs/sitemap.xml, docs/robots.txt",
+        "severity": "moderate",
+        "fix": "Add to build.js OWNERSHIP (see findings)"
+      },
+      {
+        "issue": "data/kill-shots.json exists but is not listed in CLAUDE.md file ownership table",
+        "severity": "minor",
+        "fix": "Add to git-owned list in CLAUDE.md"
+      },
+      {
+        "issue": "monitor/analyst/issue-proposals/ listed in CLAUDE.md append-only but missing from build.js OWNERSHIP",
+        "severity": "minor",
+        "fix": "Add to build.js append_only entries"
+      },
+      {
+        "issue": "monitor/external-reports/ exists and is used by decider but not in build.js OWNERSHIP or CLAUDE.md",
+        "severity": "minor",
+        "fix": "Classify and add to both"
+      },
+      {
+        "issue": "Monitoring Pipeline table shows BAU schedules (analyst 2h, decider 4h) which are correct as defaults, but doesn't note current churn-and-burn overrides. Acceptable since these are temporary.",
+        "severity": "info"
+      },
+      {
+        "issue": "Data Flow diagram does not document the predictions pipeline (analyst Mode 1b → predictions.json → curmudgeon review → decider integration). predictions.json is only mentioned in the git-owned list.",
+        "severity": "minor",
+        "fix": "Add PREDICTIONS PIPELINE section to Data Flow diagram"
+      }
+    ],
+    "performance_assessment": "At 156 lines / ~2717 tokens, CLAUDE.md is lean and well-structured after PROP-006 refactor. No content identified for extraction to reference/. All sections are read by multiple agents. No bloat detected."
+  },
+  "recommendations": [
+    {
+      "priority": 1,
+      "type": "human_decision",
+      "description": "URGENT: Add auto-restore for analyst and decider schedules to the decider's Step E4 churn-and-burn queue-empty handler. Without this, when the priority queue drains (likely within hours), the curmudgeon drops to 4h BAU but analyst stays at 30min Opus and decider stays at 1h Opus — burning ~8x normal Opus budget. Options: (A) extend Step E4 to restore dome-analyst to 2h and dome-decider to 4h alongside curmudgeon, or (B) manually restore schedules now since queue depth is only 2."
+    },
+    {
+      "priority": 2,
+      "type": "human_decision",
+      "description": "Apply PROP-005 (decider pre-flight work check). 5th consecutive report. Would save ~700 lines of reference reads per no-op run. PROP file has exact find/replace text ready to apply.",
+      "prop_id": "PROP-005"
+    },
+    {
+      "priority": 3,
+      "type": "self_fix",
+      "description": "Fix OWNERSHIP misalignment: add data/predictions.json, docs/llms.txt, docs/sitemap.xml, docs/robots.txt to build.js OWNERSHIP. Add data/kill-shots.json, monitor/analyst/issue-proposals/, monitor/external-reports/ as well. Routes through decider since build.js is a git-owned file."
+    },
+    {
+      "priority": 4,
+      "type": "self_fix",
+      "description": "Fix decider.md stale schedule descriptions (lines 12-14). Poller: 4h→12h. Curmudgeon: 10min→30min churn/4h BAU."
+    }
+  ],
+  "notes_to_future_tinker": "The churn-and-burn auto-restore gap is the highest-priority finding. If the queue drains before it's fixed, manually check analyst and decider schedules. PROP-005 has been pending for 5 reports — consider whether to write a PROP-007 that bundles PROP-005 + the auto-restore fix + the schedule description fix into a single decider.md update to reduce implementation friction. The FUSE staleness of generate-html.js that persisted across 3+ reports is now resolved."
+}

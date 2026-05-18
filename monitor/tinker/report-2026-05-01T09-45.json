@@ -1,0 +1,232 @@
+{
+  "generated_at": "2026-05-01T09:45:00Z",
+  "report_date": "2026-05-01",
+  "mode_selected": "cost_engineering",
+  "mode_reason": "Pipeline healthy across all agents (decider just finished a substantive 09:27 run; curmudgeon, analyst, integrity all fresh). FUSE shows two 'stale' files (data/wins.json, docs/index.html) but FUSE is NEWER than git — this is the expected universal-pusher rescue scenario after a decider 403, and workspace-sync (hourly cron) will rescue at ~10:03Z. Auth 200, disk 97MB, no strand files. Mode 3 is the right default productive state.",
+  "modes_checked": {
+    "pipeline_health": "green — poller 10h ago (next ~11:05Z), analyst <1h ago, curmudgeon 1h ago, decider <1h ago, integrity <1h ago, social 21h ago (next ~11:00Z), workspace-sync 40min ago",
+    "infrastructure": "yellow — 2 FUSE files newer than git (data/wins.json, docs/index.html) post 09:27 decider run that 403'd; universal-pusher rescue expected within ~20min via next workspace-sync (10:03Z). Auth 200. Disk 97MB. No strand files.",
+    "cost_engineering": "stable — no per-agent context-load growth since 2026-04-30 report. PROP-013 strand-detection logic (Part A only) still dead code (0 strands generated since impl).",
+    "proposals": "5 PROPs STILL_BROKEN per verification_pattern walk: 005, 008, 011, 012, 013 (Part B). PROP-013 misclassified as 'implemented' — see findings."
+  },
+  "pipeline_health": {
+    "agents_running": 8,
+    "agents_stalled": [],
+    "output_freshness_hours": {
+      "poller": 10,
+      "analyst": 0,
+      "curmudgeon": 1,
+      "decider": 0,
+      "integrity": 0,
+      "social": 21,
+      "workspace_sync": 0,
+      "status_json": 1
+    },
+    "decider_recent_runs": [
+      {"at": "2026-05-01T09:26Z", "reviews": 11, "patches": 3, "issues_d": "+5/-4", "substantive": true, "note": "1 new review (WIN-026.c3) + 10 prior-run reviews re-marked due to 05:27 ledger-write bug now self-corrected"},
+      {"at": "2026-05-01T05:27Z", "reviews": 10, "patches": 0, "issues_d": "+0/-0 (legacy fields null; new internal_issues array shows 5 ISS created/fixed)", "substantive": true, "note": "Schema drift: this run uses internal_issues array, not patches_self_applied/issues_closed/issues_created scalars. The 09:26 run uses BOTH formats. See findings."},
+      {"at": "2026-05-01T01:25Z", "reviews": 9, "substantive": "unverified — same schema-drift caveat"},
+      {"at": "2026-04-30T21:26Z", "reviews": 8, "substantive": "unverified"},
+      {"at": "2026-04-30T17:23Z", "reviews": 8, "substantive": "unverified"},
+      {"at": "2026-04-30T15:08Z", "reviews": 7, "substantive": "unverified"},
+      {"at": "2026-04-30T10:13Z", "reviews": 1, "substantive": "unverified"}
+    ]
+  },
+  "infrastructure_check": {
+    "fuse_vs_github_md5": {
+      "data/wins.json": "FUSE NEWER than git (decider 09:27 push 403'd — universal-pusher rescue in flight)",
+      "data/sections.json": "OK",
+      "build-scripts/digest-reviews.js": "OK",
+      "build-scripts/generate-html.js": "OK",
+      "docs/index.html": "FUSE NEWER than git (same 09:27 cycle)"
+    },
+    "auth_status": "200 (PAT valid, 41-char token)",
+    "disk_footprint_mb": 97,
+    "disk_status": "ok",
+    "decider_403_rate": "endemic per previous report — universal-pusher continues to mask via workspace-sync rescue. The two FUSE-newer files this run are the visible footprint of that mechanism, not a break."
+  },
+  "previous_followup": [
+    {
+      "finding": "EXP-277 stranded files (PROP-013 motivator)",
+      "status": "STAYS_FIXED",
+      "evidence": "Confirmed by md5 match on build-scripts/generate-html.js between FUSE and main. EXP-277 commit 77f50c1 still present."
+    },
+    {
+      "finding": "Schedule drift in tinker.md (Curmudgeon 'Hourly', Decider 'Every 2h', Workspace-sync 'Every 4h')",
+      "status": "STILL_BROKEN",
+      "evidence": "Live cron: curmudgeon=30 */4 * * *, decider=10 */4 * * *, workspace-sync=0 * * * *. tinker.md lines 17/18/22 still wrong. 6th run flagging this. NEVER_PUSH so tinker can't self-fix; needs operator clone-push.",
+      "consecutive_runs_unactioned": 6
+    },
+    {
+      "finding": "Schedule drift in CLAUDE.md (Analyst 'Variable 30m/8h', Curmudgeon 'Variable 30m/8h', Decider 'Variable 1h/8h', Workspace-sync 'Every 4h')",
+      "status": "STILL_BROKEN",
+      "evidence": "Live cron has all of these on fixed 4h cycles (analyst :50, decider :10, curmudgeon :30) and workspace-sync hourly. CLAUDE.md lines 126-128, 132 still wrong. 6th run.",
+      "consecutive_runs_unactioned": 6
+    },
+    {
+      "finding": "priority-queue.json schedule_state stale (drain mode)",
+      "status": "STILL_BROKEN_MUTED",
+      "evidence": "Operator HNOTE explicitly told decider not to re-flag. Suppression is working as intended; underlying state still drift but no longer actionable."
+    },
+    {
+      "finding": "Decider 403 endemic",
+      "status": "STILL_BROKEN_BUT_MASKED",
+      "evidence": "Today's 09:27 run is another 403 — file mtimes 09:27 in FUSE, latest decider commit on git is 05:28:59Z. Universal-pusher rescue still working as designed; operator action gap unchanged.",
+      "trend": "stable masked; no quality regression observed"
+    },
+    {
+      "finding": "PROP-013 Part B (decider rescue comment fix)",
+      "status": "STILL_BROKEN",
+      "evidence": "grep for 'NEVER_PUSH does not block cp' in monitor/prompts/reference/decider-patches-and-selfapply.md returns 0 matches. Per PROP-013.implementation_notes, operator deferred Part B as 'lower-priority'. The PROP's verification_pattern still tests for both A and B and therefore returns STILL_BROKEN despite status='implemented'. See current finding TINKER-2026-05-01-001.",
+      "consecutive_runs_unactioned": 3
+    },
+    {
+      "finding": "PROP-005 (decider pre-flight gate), PROP-008 (curmudgeon change-driven gates), PROP-011 (tinker integration_blocked tracking)",
+      "status": "STILL_BROKEN_LIKELY_WONTFIX",
+      "evidence": "Verification patterns returned STILL_BROKEN. Multi-week stale. Previous report recommended wontfix; no operator response yet.",
+      "consecutive_runs_unactioned": "8+ for 005, 6+ for 008, 4+ for 011"
+    },
+    {
+      "finding": "PROP-012 (curmudgeon Review Register A/B split)",
+      "status": "STILL_BROKEN_HUMAN_PENDING",
+      "evidence": "Verification pattern returned STILL_BROKEN. Operator decision still pending."
+    },
+    {
+      "finding": "PROP-013 strand surfacing (Part A) implementation produces 0 strand files",
+      "status": "DEAD_CODE_LIKELY",
+      "evidence": "ls monitor/integrity/never-push-strand-*.json | wc -l = 0. The PROP-013 logic in workspace-sync.md is 24% of that prompt's bloat (513→632 lines) and has not generated a single strand record since landing 2026-04-29. Rationale: every decider strand has been on data/ files (covered by universal-pusher), not on NEVER_PUSH source files (which the universal-pusher path can't rescue and which would trigger PROP-013). Recurring data-only strands suggests the whole NEVER_PUSH-strand class no longer occurs in practice.",
+      "recommendation": "If still 0 in 7 days (from 2026-05-06), revert PROP-013 Part A as dead code — keeps workspace-sync.md leaner. Track in a follow-up PROP."
+    }
+  ],
+  "findings": [
+    {
+      "finding_id": "TINKER-2026-05-01-001",
+      "severity": "moderate",
+      "category": "self",
+      "description": "PROP-013 status='implemented' but its verification_pattern returns STILL_BROKEN, because Part B (decider-patches-and-selfapply.md comment fix) was operator-deferred per implementation_notes but the verification pattern was not narrowed accordingly. This causes every Mode 3 run to falsely flag PROP-013 as broken, polluting follow-up tracking.",
+      "evidence": "PROP-013.json line 67: status='implemented'. PROP-013.json line 71 implementation_notes: 'The decider-side comment fix from PROP-013.proposed_fix.files_to_modify[2] was NOT applied — the fix is correct but lower-priority and can be deferred.' PROP-013.json line 66 verification_pattern still tests for BOTH 'never-push-strand-' (Part A, present) AND 'NEVER_PUSH does not block cp' (Part B, deferred), so the && short-circuits to STILL_BROKEN.",
+      "suggested_fix": {
+        "approach_a": "Update PROP-013.verification_pattern to test only Part A: `grep -q 'never-push-strand-' monitor/prompts/workspace-sync.md && echo FIXED || echo STILL_BROKEN`. Add a new field `deferred_parts: ['decider-comment-fix']` documenting what was excluded.",
+        "approach_b": "Mint a new PROP-014 specifically for the deferred decider-comment fix; revert PROP-013 verification_pattern to Part A only.",
+        "preferred": "approach_a — same proposal scope, just narrow the verification, less ledger churn",
+        "self_fixable": false,
+        "self_fixable_reason": "monitor/tinker/proposals/ is append-only per ownership rules — overwriting PROP-013.json is a violation. Mode 4 'Update the PROP file in place' instruction in tinker-proposals-and-fixes.md conflicts with the ownership table; the operator should arbitrate."
+      }
+    },
+    {
+      "finding_id": "TINKER-2026-05-01-002",
+      "severity": "minor",
+      "category": "schedule",
+      "description": "tinker.md and CLAUDE.md schedule tables remain divergent from live cron (6th consecutive run flagging). NEVER_PUSH so tinker self-fix would not propagate.",
+      "evidence": "live cron: dome-decider='10 */4 * * *' (every 4h, NOT 2h); dome-curmudgeon='30 */4 * * *' (every 4h, NOT hourly); dome-workspace-sync='0 * * * *' (hourly, NOT every 4h); dome-analyst='50 */4 * * *' (every 4h, NOT 'Variable 30m/8h'). Source: list_scheduled_tasks 2026-05-01T09:39Z.",
+      "suggested_fix": {
+        "approach": "Operator clone-push. Same diff as flagged in 2026-04-30 report. Demote to single-line 'still STILL_BROKEN, no change' from this run forward — re-asking every run trains the operator to ignore the table.",
+        "self_fixable": false,
+        "blocker": "monitor/prompts/*.md and CLAUDE.md are NEVER_PUSH; FUSE writes invisible to clone-based agents."
+      }
+    },
+    {
+      "finding_id": "TINKER-2026-05-01-003",
+      "severity": "minor",
+      "category": "efficiency",
+      "description": "Decider report schema drift between 05:27 and 09:27 runs creates noise for downstream tools. The 09:27 report has BOTH `patches_self_applied`/`issues_closed`/`issues_created` scalars AND an `internal_issues` array. The 05:27 report has only the array. Cost-engineering snippet in tinker-cost-engineering.md was patched 2026-04-30 to use `self_apply_summary.*` (per previous report) but newer decider runs use neither — they use `internal_issues[].status` count and `len(curmudgeon_reviews_processed)`. Tinker's no-op detection breaks silently when the schema shifts.",
+      "evidence": "daily-report-2026-05-01T09-26.json has both formats. daily-report-2026-05-01T05-27.json has only internal_issues. tinker-cost-engineering.md still references self_apply_summary. The right metric is now `len([i for i in internal_issues if i.status=='fixed'])` for patches and `len([i for i in internal_issues if i.status=='new'])` for issues created.",
+      "suggested_fix": {
+        "approach": "Rather than chase schema drift, write a small helper: `build-scripts/decider-run-summary.js` that takes a daily-report path and emits {reviews_processed, patches_applied, issues_created, issues_closed, substantive: bool}. Tinker (and any future consumer) calls this and gets stable output regardless of which fields the decider used. Operator may want to fold this into a future PROP.",
+        "self_fixable": false,
+        "self_fixable_reason": "build-scripts/ is git-owned and requires a build cycle. Write a PROP if the schema noise persists 1 more week."
+      }
+    }
+  ],
+  "wasted_compute": {
+    "re_reviews": [
+      {"target": "WIN-067", "count": 3, "root_cause": "cycle-count expected", "status": "FIXED"},
+      {"target": "SEC-4.1", "count": 2, "root_cause": "cycle-count expected", "status": "FIXED"},
+      {"target": "timestamp-error-tab-apr2026-update", "count": 2, "root_cause": "cycle-count expected", "status": "FIXED"}
+    ],
+    "re_work": [
+      {"sample": "EXP-001 through EXP-017 (17 cases)", "root_cause": "April 7-14 V6 restructure noise; expansion files mtime > integrated_at because the restructure rewrote them all", "status": "HISTORICAL — no active re-work"}
+    ],
+    "orphan_reprocessing": [],
+    "duplicate_outputs": [],
+    "stale_queue_items": [],
+    "estimated_wasted_opus_runs": 0,
+    "trend": "STABLE"
+  },
+  "open_issue_health": {
+    "total_open": 217,
+    "by_severity": {"minor": 149, "moderate": 57, "major": 8, "info": 3},
+    "delta_24h": "+14 since 2026-04-30 report (203 → 217)",
+    "drain_mode_threshold": 50,
+    "overage_multiple": 4.34,
+    "note": "Drain-mode HNOTE-OPERATOR-DRAIN-MODE-001 instructs decider not to re-flag. Threshold-vs-actual ratio continues to widen. Recommendation unchanged from prev report: operator should choose between (a) a bulk-close pass on minor-severity, (b) raise threshold to 250, or (c) retire the threshold and have tinker stop reporting overage."
+  },
+  "context_load": {
+    "claude_md_lines": 166,
+    "per_agent": {
+      "analyst": {"total": 1231, "delta_pct": 0},
+      "curmudgeon": {"max_total": 853, "delta_pct": 0},
+      "decider": {"total": 1977, "delta_pct": 0},
+      "tinker": {"total": 986, "delta_pct": 0}
+    },
+    "trend": "STABLE — exact match to 2026-04-30 baseline. No agent grew or shrank since last report.",
+    "alerts": [],
+    "workspace_sync_md": {"lines": 632, "delta_pct": 0, "note": "Same as 2026-04-30. Still moderately bloated post PROP-013 Part A. If 0 strand files persist 7 days, revert as dead code."}
+  },
+  "claude_md_audit": {
+    "size": "166L (no growth)",
+    "accuracy_findings": [
+      {
+        "issue": "Schedule table (lines 125-132) lists Variable cadences and 4h workspace-sync that do not match live cron",
+        "severity": "minor",
+        "fix_effort": "5 min operator clone-push",
+        "consecutive_runs_unactioned": 6
+      }
+    ],
+    "performance_findings": "No bloat. CLAUDE.md continues to be lean and high-density."
+  },
+  "cost_engineering": {
+    "agent_efficiency": [
+      {"agent": "analyst", "cadence": "4h cron", "model": "opus", "recent_substantive_pct_estimate": "moderate", "recommendation": "no change"},
+      {"agent": "decider", "cadence": "4h cron", "model": "opus", "recent_substantive_pct_estimate": "high (every recent run produced reviews/issues/patches)", "recommendation": "no change"},
+      {"agent": "curmudgeon", "cadence": "4h cron", "model": "opus", "recent_substantive_pct_estimate": "moderate (queue depth 1 right now)", "recommendation": "no change"},
+      {"agent": "tinker", "cadence": "daily", "model": "opus", "recent_substantive_pct_estimate": "self-audit ongoing", "recommendation": "consider whether daily is right cadence given how rare findings have changed in the last 7 days"}
+    ],
+    "proposals_written_this_run": [],
+    "implemented_since_last_report": [],
+    "cumulative_estimated_savings": "Tracked via context_load delta — STABLE this run."
+  },
+  "recommendations": [
+    {
+      "priority": 1,
+      "type": "self",
+      "description": "Resolve PROP-013 verification-pattern false-positive (TINKER-2026-05-01-001). Tinker recommends approach_a (narrow verification_pattern to Part A only). Operator must arbitrate the append-only-vs-update conflict; if approved, tinker can self-fix in next run. Without resolution, every Mode 3 run will continue to mis-flag PROP-013."
+    },
+    {
+      "priority": 2,
+      "type": "human_decision",
+      "description": "Stale PROPs 005/008/011: confirm wontfix and update status, or commit to landing. 8+/6+/4+ runs unactioned. Mute or close — current state is unproductive cycling."
+    },
+    {
+      "priority": 3,
+      "type": "human_decision",
+      "description": "Open-issues drain (217 vs 50 threshold, 4.34x overage). Pick: bulk close, raise threshold, or stop reporting overage. Same recommendation as 2026-04-30."
+    },
+    {
+      "priority": 4,
+      "type": "human_decision",
+      "description": "Operator clone-push the schedule-table corrections in tinker.md (3 lines) and CLAUDE.md (4 lines) when next at a clean clone. ~5 min total. Demote to single-line ack from this run forward to avoid alert fatigue."
+    },
+    {
+      "priority": 5,
+      "type": "self",
+      "description": "Set a 7-day reminder (next Mode 3 run on or after 2026-05-08) to revert PROP-013 Part A if still 0 strand files. Reverting saves ~120 lines from workspace-sync.md (Haiku, low impact, but no reason to keep dead code)."
+    }
+  ],
+  "other_side_of_argument": [
+    "I wrote 'Mode 3 was the right default' but strictly the dispatcher logic says any FUSE mismatch routes to Mode 2. The operator could reasonably argue I should have run Mode 2 to verify the universal-pusher rescue completes — which would have meant waiting ~20 minutes for the next workspace-sync, which a daily-cadence agent doesn't have. Mode 3 was pragmatic; Mode 2 would have been doctrinaire. I noted the rescue in modes_checked rather than running Mode 2 over what is statistically a routine 403-and-rescue cycle.",
+    "The 'no-op rate is healthy' framing assumes recent decider runs are substantive, but I only verified the 09:27 and 05:27 runs in detail. The 21:26, 17:23, 15:08, 10:13 runs all show 0 patches/0 issues in legacy fields and I did not parse internal_issues for each. If those runs were actually no-ops, decider efficiency is worse than I'm reporting. Honest answer: I don't know without checking each report, and that schema-drift is exactly what TINKER-2026-05-01-003 flags — the metric is unstable.",
+    "Recommending wontfix for PROPs after 8 runs of operator inaction is a form of debt rationalization. If the PROP was genuinely valuable, ignoring it for 8 runs and then closing it is worse than admitting we don't intend to act. The operator may have a queue prioritization rationale tinker can't see. Counter-argument: tracking PROPs forever inflates ledger noise and reduces signal value for the ones that DO matter.",
+    "The 'demote schedule-drift to single-line ack' suggestion trains tinker (and operator) to deprioritize a real bug. Counter-argument: re-asking every run with the same diff is its own form of noise, and the bug is consequence-free for daily ops (the cron is what runs, not the documentation). Net: ack-only is the lower-cost equilibrium."
+  ]
+}

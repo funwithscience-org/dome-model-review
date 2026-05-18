@@ -1,0 +1,30 @@
+{
+  "change_id": "CHANGE-decider-pop-timestamp-hoist",
+  "timestamp": "2026-04-22T04:41:48Z",
+  "authored_by": "operator (steve, via cowork session)",
+  "change_type": "bugfix",
+  "scope": "monitor/prompts/decider.md — PROP-009 pop-write block",
+  "severity": "minor",
+  "summary": "Hoist new Date().toISOString() out of the per-base write loop so workspace and clone additive-write stamps are byte-identical.",
+  "root_cause": "In the dual-write loop that stamps popped_by_queue_id and popped_by_queue_id_at on review files, new Date().toISOString() was called inside the inner for(const base of [WORKSPACE,CLONE]) loop. Each iteration produced a fresh millisecond-precision timestamp, so workspace and clone versions of the same file diverged by 2-5 ms on the popped_by_queue_id_at field. The idempotency guard (popped_by_queue_id==null) meant subsequent runs did not re-stamp, so the drift was baked in forever.",
+  "symptom": "monitor/integrity/workspace-sync-skips.jsonl showed monotonic growth of mtime-guard skips over monitor/curmudgeon/reviews/*.json. Latest run (2026-04-22T02:06:57Z) flagged 13 review files plus 2 other files, all with reason \"mtime-guard; git newer\". md5 diff confirmed only the popped_by_queue_id_at field differed, by millisecond-level amounts.",
+  "fix": [
+    "monitor/prompts/decider.md — moved const stamp = new Date().toISOString() to ABOVE the inner for-loop, inside the per-claim outer loop. Both workspace and clone writes now use the identical stamp string.",
+    "Added an inline comment documenting the reason (so future edits do not re-regress)."
+  ],
+  "cleanup": [
+    "Copied clone -> workspace for 13 review files that had baked-in drift (EXP-190-proposal, PRED-batch-2026-04-18, SEC-8b.3.c4, WIN-012.c5, WIN-020.c4, WIN-038.c5, WIN-053.c7, WIN-058.c5, WIN-064.c4, WIN-064.c5, WIN-067.c4, WIN-067.c5, WIN-068.c8). Authoritative version is git-clone. Workspace now matches.",
+    "Did NOT touch monitor/decisions/daily-report-2026-04-14T23-13.json (unrelated, historical, out of scope). Did NOT touch monitor/analyst/category-proposals/CAT-005.json (unrelated, predates this bug)."
+  ],
+  "verification": [
+    "After next decider pop: md5sum workspace vs clone review files must match.",
+    "After next workspace-sync run: skip count for monitor/curmudgeon/reviews/ should drop to zero for newly-popped items.",
+    "Historical drift files already cleaned this commit — those 13 should not re-appear in skips."
+  ],
+  "non_impact": "No semantic change. popped_by_queue_id_at is an audit timestamp; whether it reads Xms or X+3ms is irrelevant to any consuming logic. Before this fix the field was still correct-within-5ms; after the fix it is byte-identical across mirrors.",
+  "cross_refs": {
+    "prompt_file": "monitor/prompts/decider.md (line ~339 area)",
+    "related_sync_log": "monitor/integrity/workspace-sync-skips.jsonl",
+    "related_claude_md_rule": "PROP-009 additive-edit exception (File Ownership Rules)"
+  }
+}

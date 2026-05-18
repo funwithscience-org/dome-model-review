@@ -1,0 +1,117 @@
+{
+  "type": "expansion",
+  "item_id": "EXP-072",
+  "target": "ISS-677: Prospective WIN tracking — analyst design proposal",
+  "category": "coverage_gap",
+  "issue_ids": [
+    "ISS-677"
+  ],
+  "status_for_decider": "ready",
+  "design_proposal": {
+    "summary": "Add prospective tracking to predictions.json (not a new file) with a new analyst Mode 5 and a rendered section on the Predictions Analysis tab.",
+    "decision_1_data_location": {
+      "question": "Separate data/prospective.json or extend predictions.json?",
+      "recommendation": "Extend predictions.json",
+      "reasoning": "The PROS items are predictions with a lifecycle (registered → active → promoted/suspended/removed). predictions.json already tracks dome predictions with the right schema fields: entry_type, our_verdict, author_status, test_window. Adding PROS entries there avoids a new schema, a new build integration, and a new ownership classification. Use entry_type: \"prospective\" to distinguish from \"prediction\" and \"tracking\". The poller already fetches the predictions page where PROS items are listed.",
+      "implementation": "Add 8 entries (PROS-001..PROS-008) to predictions.json with entry_type: \"prospective\", a new field dome_promotion_status (\"promoted\"|\"suspended\"|\"active\"|\"removed\"), and promoted_to_win field linking to the WIN ID when promoted. Build generates a \"Dome Prospective Tracker\" section on the Predictions tab."
+    },
+    "decision_2_site_rendering": {
+      "question": "New tab or section within existing tab?",
+      "recommendation": "New section on Predictions Analysis tab",
+      "reasoning": "A dedicated tab for 8 items (7 already promoted) is overkill. A compact table within the Predictions tab labeled \"Dome Prospective Hit Rate\" fits naturally after the genuinely-prospective tombstone section. The table shows: PROS ID, claim, dome status, our pre-emptive critique, WIN ID if promoted. A headline metric (e.g., \"7/8 promoted, 1 suspended, 0 independently confirmed by our analysis\") complements the existing prediction assessment statistics.",
+      "headline_metric": "{{PROS_PROMOTED}}/{{PROS_TOTAL}} promoted to WIN, {{PROS_SUSPENDED}} suspended — 0 survive independent review because all promoted PROS restate observations that standard physics already explains."
+    },
+    "decision_3_failures_counter": {
+      "question": "Should suspended-prospective items count in the failures tally?",
+      "recommendation": "Yes, as a separate line in Section 6.5 and in the accuracy recomputation",
+      "reasoning": "PROS-003 was suspended because the data contradicted the prediction (eclipse timing audit showed 34-104 min lead/lag, inconsistent with geometric tracking). This is functionally a falsification dressed as a suspension. Currently FAIL-008 manually tracks PROS-003 in uncounted-failures.json. Mode 5 should automatically detect future suspensions and propose new FAIL entries. The accuracy section already includes suspended items (FAIL-005/W021); PROS suspensions follow the same pattern.",
+      "implementation": "When Mode 5 detects a PROS status change to \"suspended\" or \"removed\", it writes a new FAIL entry proposal to monitor/analyst/new-wins/ (or expansions/) with the dome_ref pointing to the PROS ID."
+    },
+    "decision_4_mode5_design": {
+      "trigger": "After all higher-priority modes (0-4) have no work. Runs on every analyst cycle as a lightweight check (~30 seconds).",
+      "steps": [
+        "Parse predictions.json for entry_type === \"prospective\"",
+        "Fetch current dome predictions page (via poller cached raw-text/03-predictions.txt)",
+        "Compare dome PROS statuses vs our tracked statuses",
+        "If new PROS item: write a pre-emptive critique to expansions/ with testability assessment, WIN overlap check, and standard-physics explanation",
+        "If status change (promoted/suspended/removed): write a status-change report for decider integration",
+        "If promoted to WIN: cross-reference against existing wins.json entry to confirm we already have it covered"
+      ],
+      "output_format": "PROS-status-YYYY-MM-DD.json in monitor/analyst/expansions/",
+      "pre_emptive_critique_fields": [
+        "dome_claim",
+        "standard_physics_explanation",
+        "testability",
+        "kernel_of_truth",
+        "predicted_verdict_if_promoted"
+      ]
+    },
+    "decision_5_retrospective_backfill": {
+      "question": "Do we need to backfill pre-emptive critiques for the 7 already-promoted PROS items?",
+      "recommendation": "No — they are already reviewed as WINs in wins.json. Add the PROS-to-WIN mapping in predictions.json entries for traceability, but do not duplicate the WIN analysis.",
+      "exception": "PROS-003 (suspended) needs a standalone entry documenting the suspension timeline, the eclipse timing audit findings, and the pattern of silent removal."
+    },
+    "other_side": {
+      "argument_against_mode5": "With 7/8 PROS already promoted and the dome in a quiet period (9 consecutive quiet polls), Mode 5 may run for months with nothing to do. The overhead is minimal (lightweight check) but the analyst cycles could be spent on more productive work like fingerprint hunting or expansion revisions.",
+      "counter": "The cost of NOT tracking is demonstrated by PROS-003: a suspension went undetected for 3+ weeks. The lightweight check costs ~30 seconds per cycle. The insurance value exceeds the cost even if most runs find nothing.",
+      "design_risk": "If the dome adds many new PROS items in a burst (as it did with V51.0), Mode 5 could become backlogged. Mitigation: cap at 3 new critiques per run, same as Mode 1b predictions."
+    }
+  },
+  "initial_backfill_entries": {
+    "description": "The 8 PROS entries to add to predictions.json",
+    "entries": [
+      {
+        "id": "PROS-001",
+        "claim": "SAA Exponential Cell Separation",
+        "dome_promotion_status": "promoted",
+        "promoted_to_win": "004"
+      },
+      {
+        "id": "PROS-002",
+        "claim": "North Pole Post-1990 Phase Transition",
+        "dome_promotion_status": "promoted",
+        "promoted_to_win": "007"
+      },
+      {
+        "id": "PROS-003",
+        "claim": "Eclipse Magnetic Anomaly Tracks Geometry",
+        "dome_promotion_status": "suspended",
+        "promoted_to_win": null,
+        "suspension_date": "2026-03-15",
+        "suspension_reason": "Eclipse timing audit: Z-component minima led/lagged umbra by 34-104 min across stations. Kp 5-6 geomagnetic storm contaminated March 2024 data."
+      },
+      {
+        "id": "PROS-004",
+        "claim": "Roaring 40s = SAA Southern Boundary",
+        "dome_promotion_status": "promoted",
+        "promoted_to_win": "024"
+      },
+      {
+        "id": "PROS-005",
+        "claim": "SAA African Cell Intensity Below 21,795 nT",
+        "dome_promotion_status": "promoted",
+        "promoted_to_win": "035"
+      },
+      {
+        "id": "PROS-006",
+        "claim": "North Pole Deviation Exceeds 18 deg from 120 deg E",
+        "dome_promotion_status": "promoted",
+        "promoted_to_win": "036"
+      },
+      {
+        "id": "PROS-007",
+        "claim": "Field Decay >=28 nT Since March 2025",
+        "dome_promotion_status": "promoted",
+        "promoted_to_win": "037"
+      },
+      {
+        "id": "PROS-008",
+        "claim": "Schumann Resonance Persistence at 7.83 Hz",
+        "dome_promotion_status": "promoted",
+        "promoted_to_win": "038"
+      }
+    ]
+  },
+  "kernel_of_truth": "The dome deserves credit for maintaining a distinct prospective bucket at all — most alternative-science models do not separate backtested claims from prospective ones. The PROS mechanism shows the author understands that prospective predictions carry more evidential weight than retrodictions. Our tracking should acknowledge this while showing that the prospective hit rate, once suspensions are counted and standard-physics explanations are applied, does not support the dome model.",
+  "assessed_at": "2026-04-11T11:44:36.804Z"
+}

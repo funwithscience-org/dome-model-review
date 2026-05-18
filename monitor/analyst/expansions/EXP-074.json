@@ -1,0 +1,112 @@
+{
+  "item_id": "EXP-074",
+  "type": "mode_design_proposal",
+  "target": "ISS-677 — Analyst Mode 5: Prospective Bucket Monitoring",
+  "category": "pipeline_architecture",
+  "routes_to_curmudgeon_after": false,
+  "status_for_decider": "ready-for-integration",
+  "assessed_at": "2026-04-11T14:30:00Z",
+
+  "context": {
+    "issue": "ISS-677",
+    "already_done": [
+      "EXP-072: 8 PROS entries added to predictions.json with full metadata",
+      "EXP-073: Section 6.11 (Prospective Bucket analysis) added to Part 6 with detail_reasoning for all 8 PROS entries",
+      "PROS verdicts set: 7 standard_physics, 1 falsified (PROS-003)"
+    ],
+    "remaining_gap": "No automated mode to detect new PROS items, status transitions (promoted/suspended/removed), or periodic prospective hit-rate computation. The PROS-003 suspension was missed until manual human review."
+  },
+
+  "design_decision_1_separate_file": {
+    "question": "Should prospective items live in data/prospective.json or predictions.json?",
+    "recommendation": "predictions.json (current location)",
+    "rationale": "PROS entries are already in predictions.json with entry_type='prospective'. A separate file creates a sync burden, a second schema to maintain, and ambiguity about the canonical source. The build already reads predictions.json for {{PRED_*}} placeholders. Adding a second data file would require build changes, integrity checks, and cross-reference logic — all for 8-15 entries that fit naturally in the existing catalog. Single source of truth is better.",
+    "other_side": "A separate file makes Mode 5 simpler to implement (just read/write one small file) and avoids touching the large predictions.json. The counter: predictions.json is already the analyst's working file, and PROS items are predictions by definition."
+  },
+
+  "design_decision_2_mode_scope": {
+    "question": "What does Mode 5 actually do that existing modes don't?",
+    "current_coverage": {
+      "mode_0": "Catches WIN count increases (dome promotes PROS → WIN). But only triggers on count mismatch, doesn't track the promotion path.",
+      "mode_1b": "Writes assessments for predictions with pending verdicts. PROS entries already have verdicts, so Mode 1b skips them.",
+      "poller": "Detects dome site changes including prospective section changes. Writes change reports. But doesn't specifically parse PROS status."
+    },
+    "mode_5_unique_value": [
+      "Detect NEW PROS items the dome adds (PROS-009+) before they become WINs",
+      "Track status transitions: active → promoted/suspended/removed (catch silent suspensions like PROS-003)",
+      "Maintain a prospective hit-rate metric: promoted vs suspended vs active, computed from predictions.json",
+      "Pre-stage critique: when dome adds PROS-009, immediately write assessment so we have analysis ready before promotion"
+    ]
+  },
+
+  "mode_5_specification": {
+    "name": "Mode 5 — Prospective Bucket Monitor",
+    "priority": "Below Mode 4 (idle work only). Runs when no higher-priority work exists.",
+    "trigger_check": "Compare dome site prospective section (from latest poll) against PROS entries in predictions.json. Trigger if: (a) new PROS item detected, (b) status change detected, or (c) last prospective audit was >7 days ago.",
+
+    "step_1_parse_dome_prospective": {
+      "description": "Read the dome's current prospective wins from the latest poll data. The poller captures the full page content including the prospective section.",
+      "implementation": "Read monitor/changes/ for latest poll with prospective section content. Parse PROS item names, descriptions, and statuses. Compare against predictions.json PROS entries.",
+      "fallback": "If no recent poll has prospective data, fetch john09289.github.io/predictions directly and parse the prospective section."
+    },
+
+    "step_2_detect_changes": {
+      "description": "Identify new items, status transitions, and removals.",
+      "output": "List of changes: {id, change_type: 'new'|'promoted'|'suspended'|'removed'|'modified', old_status, new_status, details}",
+      "silent_suspension_detection": "Compare dome's current active PROS list against our predictions.json PROS entries with author_status != 'suspended' and != 'promoted'. Any item in our list but not on the dome = suspected silent removal."
+    },
+
+    "step_3_act_on_changes": {
+      "new_item": "Write preliminary assessment to monitor/analyst/expansions/PRED-assessment-PROS-NNN.json (same format as Mode 1b). Set our_verdict based on quick analysis. Write update file for decider to add to predictions.json.",
+      "promotion": "Update entry in a status-change file for decider. Cross-reference the promoted-to WIN ID. Verify our pre-staged critique covers the WIN version of the claim.",
+      "suspension": "Flag for decider. Check if suspension was already documented in uncounted-failures.json. If not, propose new FAIL-NNN entry.",
+      "removal": "Flag for decider. Log in status-change file with timestamp."
+    },
+
+    "step_4_compute_metrics": {
+      "description": "Compute prospective hit-rate from predictions.json PROS entries.",
+      "metrics": {
+        "total_pros": "Count of PROS-* entries",
+        "promoted": "Count with dome_promotion_status='promoted'",
+        "suspended": "Count with author_status='suspended'",
+        "active": "Count with author_status='active' or 'pending'",
+        "genuinely_prospective": "Count with is_genuinely_prospective=true",
+        "prospective_hit_rate": "promoted / (promoted + suspended)",
+        "genuinely_prospective_hit_rate": "genuinely_prospective promoted / genuinely_prospective total"
+      },
+      "output": "Include metrics in mode summary. Decider can use these for {{PROS_*}} placeholders if/when added to the build."
+    },
+
+    "output_file_format": {
+      "path": "monitor/analyst/expansions/MODE5-audit-YYYY-MM-DD.json",
+      "schema": {
+        "type": "prospective_audit",
+        "audit_date": "ISO timestamp",
+        "dome_pros_count": "number",
+        "our_pros_count": "number",
+        "changes_detected": "array of change objects",
+        "metrics": "hit-rate object from step 4",
+        "next_audit_recommended": "ISO date (audit_date + 7 days)"
+      }
+    }
+  },
+
+  "prompt_file_changes": {
+    "analyst_md": "Add Mode 5 check block after Mode 4 in the dispatcher section. Priority: below Mode 4 (only runs when truly idle). Check: compare PROS entries in predictions.json against dome prospective section from latest poll.",
+    "poller_md": "No changes needed — poller already captures prospective section content in change reports.",
+    "decider_md": "Add step to process MODE5-audit files: integrate new PROS entries to predictions.json, update author_status on status transitions, create FAIL entries for suspended PROS items."
+  },
+
+  "implementation_estimate": {
+    "analyst_prompt_addition": "~30 lines in dispatcher section",
+    "new_reference_file": "monitor/prompts/reference/analyst-mode5-prospective.md (~100 lines)",
+    "decider_integration": "~10 lines in decider prompt",
+    "total_effort": "Small — mostly prompt editing, no code changes"
+  },
+
+  "other_side_analysis": {
+    "argument_against": "Mode 5 adds complexity to an already 5-mode dispatcher. The PROS bucket currently has only 8 items, and future additions are unpredictable. The poller + Mode 0 already catches promotions (via WIN count increase). Is dedicated monitoring of 8 items worth a new mode?",
+    "response": "The value is asymmetric: missing a silent suspension (PROS-003) or a surprise promotion means we're reactive rather than proactive. The PROS-003 miss was exactly the kind of thing this mode prevents. The implementation cost is low (prompt additions only, no code). And if the dome starts registering more PROS items (as the SHA-256 hashing trend suggests), having the monitoring in place matters. Even if Mode 5 runs rarely, its existence means the gap is covered.",
+    "compromise": "Could merge into Mode 1b as a sub-check rather than a separate mode. Mode 1b already handles predictions. Adding a PROS-specific check to Mode 1b would avoid dispatcher complexity. Recommendation: implement as Mode 5 for now (clean separation), but if it rarely triggers, merge into Mode 1b later."
+  }
+}

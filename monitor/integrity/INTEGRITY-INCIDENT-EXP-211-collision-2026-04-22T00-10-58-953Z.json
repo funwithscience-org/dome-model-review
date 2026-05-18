@@ -1,0 +1,43 @@
+{
+  "type": "integrity_incident",
+  "incident_id": "EXP-211-collision-2026-04-22T00-10-58-953Z",
+  "severity": "moderate",
+  "created_at": "2026-04-22T00:10:58.953Z",
+  "produced_by": "analyst",
+  "title": "EXP-211 ID collision: workspace design-refresh vs origin WIN-038",
+  "summary": "Two independent sessions allocated EXP-211 to different tasks. Origin: decider claimed EXP-211 for WIN-038 coupled-eigenvalue c6 hole 1 (2026-04-21T22:34:39Z). Workspace: prior analyst claimed EXP-211 for design-refresh-phase-a accuracy-math sidebar demotion (2026-04-21T23:09:59Z, ~35 minutes later). Workspace-sync has not run since the collision was created (its next scheduled run is ~4h intervals; current run at 2026-04-22T~02:XX). This analyst run discovered the collision by reading the fresh clean clone per Step 0a.",
+  "data_loss": "This analyst run overwrote the workspace monitor/analyst/expansions/EXP-211.json (which contained the prior analyst’s design-refresh content) with the WIN-038 content when executing the EXP-211 task from the origin tracker. FUSE does not support unlink, so the prior content was lost to the overwrite. A disambiguated copy of the WIN-038 content was written to monitor/analyst/expansions/EXP-211-WIN038-coupled-eigenvalue.json to preserve it in case of subsequent resolution-driven cleanup of EXP-211.json.",
+  "impacted_state": {
+    "workspace_tracker": "monitor/analyst/expansion-tracker.json entry for EXP-211 = design-refresh (restored to its pre-incident state)",
+    "origin_tracker": "EXP-211 = WIN-038 pending (as read from fresh clone)",
+    "workspace_exp_file": "monitor/analyst/expansions/EXP-211.json now contains WIN-038 content (design-refresh content lost)",
+    "disambiguated_copy": "monitor/analyst/expansions/EXP-211-WIN038-coupled-eigenvalue.json contains identical WIN-038 content as safety copy",
+    "workspace_proposal_file_stale": "monitor/analyst/issue-proposals/proposal-EXP-211-draft-ready.json (from design-refresh analyst) references findings_file: EXP-211.json but that file’s content is no longer the design-refresh content",
+    "new_completion_proposal": "monitor/analyst/issue-proposals/proposal-EXP-211-WIN038-completion-with-collision-alert.json (written by current analyst)"
+  },
+  "root_cause": "EXP-ID allocation is not atomic across concurrent workspace + decider-clone writers. Both writers independently scan monitor/analyst/expansion-tracker.json for the next unused numeric suffix and append a new entry; when they run without having rebased against each other, they can pick the same ID. workspace-sync’s 4h cadence plus the absence of a shared-lock or sequence-broker means the window is on the order of hours.",
+  "recommended_remediations": [
+    {
+      "target": "decider",
+      "action": "On this run, integrate the WIN-038 EXP-211 patch using monitor/analyst/expansions/EXP-211-WIN038-coupled-eigenvalue.json (preferred) OR monitor/analyst/expansions/EXP-211.json (identical content). Mark origin tracker EXP-211 complete. Do NOT touch the workspace tracker design-refresh entry — treat that as a separate tracker-level conflict to resolve through the tinker/operator track."
+    },
+    {
+      "target": "tinker",
+      "action": "Design a collision-proof EXP-ID allocation mechanism (PROP-011-style). Options: (a) PROP-009-pattern queue-id strict-matching for EXP IDs; (b) UUID-based EXP IDs with short display aliases; (c) operator-serialized allocation through monitor/decisions/human-notes.json. Note: curmudgeon priority-queue already has this problem solved via PROP-009r2 queue_id strict matching; the same pattern is applicable here."
+    },
+    {
+      "target": "operator",
+      "action": "Decide what to do with the lost design-refresh EXP-211 work. Options: (a) reallocate under a fresh EXP ID (e.g., EXP-213) and re-run the Claude Design analyst under that ID; (b) reconstruct from monitor/analyst/issue-proposals/proposal-EXP-211-draft-ready.json summary (full replacement_html not available there; would need re-generation); (c) drop the accuracy-math sidebar demotion from Phase A and re-plan. Recommended: (a), since the Phase A design refresh is on an operator-approved hold-and-iterate track and the added latency is acceptable."
+    },
+    {
+      "target": "workspace-sync",
+      "action": "On next run, the tracker rebase WILL conflict (workspace says EXP-211 design-refresh complete; origin says EXP-211 WIN-038 pending). Existing merge-conflict detection should halt and alert. Verify no silent workspace-wins-always behavior."
+    }
+  ],
+  "reproducibility": "Cannot be rerun; the overwrite is irreversible without git/filesystem backup. However, the collision scenario itself is reproducible by running two analyst sessions within the workspace-sync 4h window, both of which claim the next-available EXP ID from stale trackers.",
+  "verification_commands": [
+    "node -e \"const t=JSON.parse(require('fs').readFileSync('monitor/analyst/expansion-tracker.json','utf8'));const i=t.items.find(x=>x.id==='EXP-211');console.log(i.target)\"  # workspace: prints design-refresh target",
+    "curl -s https://raw.githubusercontent.com/funwithscience-org/dome-model-review/main/monitor/analyst/expansion-tracker.json | node -e \"let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{const t=JSON.parse(d);const i=t.items.find(x=>x.id==='EXP-211');console.log(i.target)})\"  # origin: prints WIN-038 target",
+    "wc -c monitor/analyst/expansions/EXP-211.json monitor/analyst/expansions/EXP-211-WIN038-coupled-eigenvalue.json  # both 17795 bytes, identical"
+  ]
+}

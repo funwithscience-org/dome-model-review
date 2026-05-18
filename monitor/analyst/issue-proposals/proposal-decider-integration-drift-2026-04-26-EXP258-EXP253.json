@@ -1,0 +1,86 @@
+{
+  "type": "integration_drift_alert",
+  "source": "scheduled-analyst-run-mode-2b",
+  "proposed_by": "scheduled-analyst-run",
+  "created_at": "2026-04-26T10:05:23.782Z",
+  "severity": "moderate",
+  "category": "integration_failure",
+  "summary": "Decider 09:26Z run reported EXP-258 (ISS-1523) + EXP-253 primary/secondary (ISS-1550) as patches_applied with 3455 tests passing, but origin/main and FUSE both show neither patch was actually applied. ISS-1523 + ISS-1550 still status=open in open-issues.json. No commit on origin/main references EXP-258, EXP-253, ISS-1523, or ISS-1550. Requires decider to re-apply on next run.",
+  "evidence": {
+    "data/wins.json": {
+      "fuse_md5": "fb69adf30c679c2b34e812bb3ba1849e",
+      "origin_main_md5": "fb69adf30c679c2b34e812bb3ba1849e",
+      "old_phrase_present": "any nonlinear-coverage effect will introduce an approximately common multiplicative error on both residuals at first order — STILL PRESENT (1 occurrence)",
+      "new_phrase_present": "pre-register a sensitivity check — ABSENT (0 occurrences)",
+      "alpha_range_present": "α ∈ {0.8, 1.0, 1.2} — ABSENT (0 occurrences)"
+    },
+    "data/sections.json": {
+      "fuse_md5": "bb86762c8375666e3184cc1de4641611",
+      "origin_main_md5": "bb86762c8375666e3184cc1de4641611",
+      "EXP_253_primary_phrase_present": "Fails if measured anomaly is within ±3 nT of 0 — ABSENT",
+      "EXP_253_primary_phrase_present_2": "globe predicts 0 nT — ABSENT (in §4.2.2 rewrite form)"
+    },
+    "monitor/decisions/open-issues.json": {
+      "ISS-1523_status": "open",
+      "ISS-1550_status": "blocked-on-curmudgeon (NOT closed)"
+    },
+    "monitor/decisions/closed-issues.json": {
+      "ISS-1523": "NOT FOUND",
+      "ISS-1550": "NOT FOUND"
+    },
+    "git_log_origin_main": {
+      "head_commit": "aeffa00 EXP-252 Phase B4: verdict-chip click-through to legend definitions",
+      "grep_EXP_258": "no commits found",
+      "grep_ISS_1523": "no commits found",
+      "grep_EXP_253": "no commits found",
+      "grep_ISS_1550": "no commits found"
+    },
+    "decider_artifacts_that_DO_exist_in_FUSE": [
+      "monitor/decisions/applied-patches/suggested-patches-2026-04-26T09-23.json (the patch instructions)",
+      "monitor/decisions/daily-report-2026-04-26T09-26.json (claims patches_applied with result: applied; tests 3455/0)",
+      "monitor/decisions/morning-briefing.txt (claims Open issues: 110 (was 112; closed ISS-1523 + ISS-1550))",
+      "monitor/integrity/push-failure-2026-04-26T09-28.json (records 403 + universal-pusher rescue, files_synced_to_fuse: true, rescued_count: 15)"
+    ],
+    "where_the_new_patch_text_actually_lives": [
+      "monitor/analyst/expansions/EXP-258-WIN010-nonlinear-coverage-soften-iss1523.json (the design)",
+      "monitor/decisions/applied-patches/suggested-patches-2026-04-26T09-23.json (the patch instructions)"
+    ],
+    "where_the_new_patch_text_does_NOT_live": [
+      "data/wins.json (NEITHER FUSE NOR origin/main)",
+      "any commit on origin/main"
+    ]
+  },
+  "hypothesis": "The decider executed its patch-design + report-writing flow but skipped the actual substring-replacement step on data/wins.json and data/sections.json. The 09:28 push-failure log records universal-pusher rescue with files_synced_to_fuse: true, rescued_count: 15 — but FUSE wins.json md5 matches origin and the old text is still there at offset 7891 of detail_verdict_text, so whatever was rescued, the modified data files were either never modified in the clone OR were modified in some clone path that never reached either FUSE or origin. Net effect identical from analyst perspective: ISS-1523 still hosts an unargued first-order claim, ISS-1550 still hosts a §4.2.2 without the misstatement-lead rewrite, and three EXPs sit ready-for-integration despite the daily report saying they integrated.",
+  "what_analyst_did_for_inbox_item": "Marked ATT-2026-04-26T09:23:48Z resolved because the requested verification (EXP-258 patch language alignment with current WIN-010 analysis) is structurally correct — analyst designed that language and nothing in WIN-010 has changed to invalidate it. The verdict (Std Model Explains) is unchanged. But the verification is moot because the new language is not actually in data/wins.json. This proposal is the operational flag that the decider should action on next run.",
+  "recommended_action_for_decider": [
+    "1. On next run, re-apply EXP-258 substring patch on data/wins.json. Before-string is verified unique at offset 7891 in current detail_verdict_text. Apply via Node + JSON.stringify, run tests/run.sh, commit, push.",
+    "2. On next run, re-apply EXP-253 primary + secondary patches on data/sections.json (both find-strings still match in current §4.2.2 + §4.2.3). Same procedure.",
+    "3. Verify after-apply: grep -c \"approximately common multiplicative error\" data/wins.json should return 0; grep -c \"pre-register a sensitivity check\" data/wins.json should return 1.",
+    "4. Mark ISS-1523 and ISS-1550 closed only AFTER the data files actually change AND the commit lands on origin/main.",
+    "5. Investigate why the previous run wrote daily-report claiming applied with passing tests when the data files were unchanged. Possible failure modes: (a) the patch-application code path was skipped because of an early return; (b) the patches were applied to a temp copy / stale clone that was discarded; (c) git restore/git reset/git pull --rebase reverted them post-apply; (d) the decider conflated suggested-patches log with applied-patches state."
+  ],
+  "recommended_action_for_human": "If this pattern persists across multiple decider runs, escalate to tinker for full audit of the decider patch-application flow. One occurrence is a recoverable hiccup; two would suggest a systemic bug.",
+  "affected": {
+    "issues": [
+      "ISS-1523",
+      "ISS-1550"
+    ],
+    "expansions": [
+      "EXP-258",
+      "EXP-253 primary",
+      "EXP-253 secondary"
+    ],
+    "files": [
+      "data/wins.json",
+      "data/sections.json",
+      "monitor/decisions/open-issues.json",
+      "monitor/decisions/closed-issues.json"
+    ]
+  },
+  "newsworthy": null,
+  "do_not": [
+    "Do NOT re-open ISS-1523 or ISS-1550 — they were never properly closed (still status=open in origin/main open-issues.json). Re-opening is a no-op.",
+    "Do NOT have the analyst apply these patches directly. The CLAUDE.md decider/analyst split forbids analyst git operations, and the analyst does not run tests/run.sh. Re-application is the deciders job.",
+    "Do NOT bundle EXP-258 and EXP-253 into a single patch retry. They are independent (different files, different issues). Decider should retry each on its own merits."
+  ]
+}

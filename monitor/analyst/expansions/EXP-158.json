@@ -1,0 +1,134 @@
+{
+  "item_id": "EXP-158",
+  "target": "data/sections.json — SEC-2b.1 stratification paragraph (replaces fallback caveat with Option-2 template-variable wiring per ISS-934)",
+  "curmudgeon_review": null,
+  "source_issue": "ISS-934",
+  "current_word_count": 175,
+  "replacement_word_count": 240,
+  "kernel_of_truth": "The original prose was scientifically correct at the moment it was written: of the 41 CA_NONE WINs (counted inclusively), exactly 7/15/12/3/2/2 fell into the listed verdict buckets. The author was not making numbers up. The problem is purely architectural — counts that move with the data set should never be hand-typed in prose, especially in a review that criticises the dome model for hardcoding values it claims to derive.",
+  "finding_audit_summary": "Verified all six hardcoded count words against current data/wins.json (April 2026 build). Five of the six are still correct under the inclusive interpretation (all 70 wins). One is incorrect under the canonical {{CA_NONE}} interpretation: \"Two are not demonstrated\" should now read 1, because {{CA_NONE}} is computed from base WINs only (3-digit IDs, per the ISS-692 fix in generate-html.js line 977-978) and WIN-058b — the second Not-Demonstrated CA_NONE entry — is a sub-ID tracking entry. So the prose silently disagrees with its own {{CA_NONE}} = 40 by saying 7+15+12+3+2+2 = 41. The fallback caveat hides this drift but does not fix it; template variables eliminate it permanently.",
+  "current_counts_at_build": {
+    "base_wins_total": 69,
+    "ca_none_total": 40,
+    "by_verdict_base_only": {
+      "Refuted by Data": {
+        "count": 3,
+        "ids": [
+          "001",
+          "033",
+          "065"
+        ]
+      },
+      "Misleading": {
+        "count": 15,
+        "ids": [
+          "013",
+          "014",
+          "021",
+          "022",
+          "030",
+          "041",
+          "042",
+          "047",
+          "048",
+          "052",
+          "055",
+          "057",
+          "058",
+          "062",
+          "069"
+        ]
+      },
+      "Std Model Explains": {
+        "count": 12,
+        "ids": [
+          "020",
+          "025",
+          "035",
+          "039",
+          "040",
+          "043",
+          "059",
+          "060",
+          "063",
+          "064",
+          "066",
+          "068"
+        ]
+      },
+      "Unfalsifiable": {
+        "count": 2,
+        "ids": [
+          "032",
+          "034"
+        ]
+      },
+      "Self-Contradicted": {
+        "count": 7,
+        "ids": [
+          "044",
+          "050",
+          "051",
+          "053",
+          "056",
+          "061",
+          "067"
+        ]
+      },
+      "Not Demonstrated": {
+        "count": 1,
+        "ids": [
+          "054"
+        ]
+      }
+    },
+    "sub_id_excluded": "058b (Not Demonstrated, sub-ID tracking entry — counted inclusively but not in baseWins)",
+    "sum_check": "3+15+12+2+7+1 = 40 == {{CA_NONE}} ✓"
+  },
+  "required_infrastructure_patch": {
+    "file": "build-scripts/generate-html.js",
+    "patch_kind": "two edits — extend codeAnalysis aggregation, then expose new template variables",
+    "edit_1_location": "inside the codeAnalysis IIFE (around line 973-991), before the closing return}",
+    "edit_1_diff": "// Add inside the IIFE just before \"return {\":\nconst noneWins = reviewed.filter(w => w.code_analysis.monitoring === \"none\");\nconst noneByVerdict = noneWins.reduce((acc, w) => {\n  acc[w.verdict] = (acc[w.verdict] || 0) + 1;\n  return acc;\n}, {});\n// then add to the returned object:\nnoneByVerdict,",
+    "edit_2_location": "inside the substitutions map (around line 79, immediately after the {{CA_NONE}} entry)",
+    "edit_2_diff": "\"{{CA_NONE_REFUTED}}\":      context.codeAnalysis?.noneByVerdict?.[\"Refuted by Data\"]    || 0,\n\"{{CA_NONE_MISLEADING}}\":   context.codeAnalysis?.noneByVerdict?.[\"Misleading\"]         || 0,\n\"{{CA_NONE_STD}}\":          context.codeAnalysis?.noneByVerdict?.[\"Std Model Explains\"] || 0,\n\"{{CA_NONE_UNFAL}}\":        context.codeAnalysis?.noneByVerdict?.[\"Unfalsifiable\"]      || 0,\n\"{{CA_NONE_SELFCON}}\":      context.codeAnalysis?.noneByVerdict?.[\"Self-Contradicted\"]  || 0,\n\"{{CA_NONE_NOTDEMO}}\":      context.codeAnalysis?.noneByVerdict?.[\"Not Demonstrated\"]   || 0,",
+    "test_assertion": "After patch, build emits prose containing \"3 are refuted by data ... 15 misleading ... 12 standard-physics relabellings ... 2 unfalsifiable ... 7 self-contradicted ... 1 not demonstrated\". Total = {{CA_NONE}} = 40."
+  },
+  "prose_replacement": {
+    "target_paragraph": "data/sections.json -> part2b.html, the paragraph beginning \"<strong>Stratifying the unmonitored WINs:</strong>\"",
+    "find_text": "<p><strong>Stratifying the unmonitored WINs:</strong> <em>(Counts from wins.json at build time.)</em> The {{CA_NONE}} WINs with no monitoring code are not all equivalent failures. Two are theological assertions with no measurable content (WIN-032, WIN-034) — monitoring is not applicable. Seven are self-contradicted by the dome’s own geometry (WIN-044/050/051 tidal, WIN-053 flux, WIN-056 solar, WIN-061 P-wave, WIN-067 gravity) — monitoring would expose the contradiction. Fifteen are misleading (duplicated, circular, or non-discriminating). Twelve are standard-physics relabellings — monitoring would confirm the phenomenon but not the dome’s causal explanation. Three are refuted by published data — monitoring would expose the failure. Two are not demonstrated. The gaps are systematic: the dome’s monitoring avoids exactly the categories where testing would be most damaging.</p>",
+    "replace_text": "<p><strong>Stratifying the unmonitored WINs:</strong> The {{CA_NONE}} WINs with no monitoring code are not all equivalent failures. The breakdown by verdict at this build: {{CA_NONE_UNFAL}} are theological assertions with no measurable content (e.g. WIN-032, WIN-034) — monitoring is not applicable. {{CA_NONE_SELFCON}} are self-contradicted by the dome’s own geometry (e.g. WIN-044/050/051 tidal, WIN-053 flux, WIN-056 solar, WIN-061 P-wave, WIN-067 gravity) — monitoring would expose the contradiction. {{CA_NONE_MISLEADING}} are misleading (duplicated, circular, or non-discriminating). {{CA_NONE_STD}} are standard-physics relabellings — monitoring would confirm the phenomenon but not the dome’s causal explanation. {{CA_NONE_REFUTED}} are refuted by published data — monitoring would expose the failure. {{CA_NONE_NOTDEMO}} are not demonstrated. The gaps are systematic: the dome’s monitoring avoids exactly the categories where testing would be most damaging.</p>",
+    "notes": [
+      "Removed the \"(Counts from wins.json at build time.)\" caveat — once template variables are wired, the caveat is no longer needed because nothing in the paragraph is hardcoded.",
+      "Changed parenthetical lists from \"(WIN-032, WIN-034)\" to \"(e.g. WIN-032, WIN-034)\" so they remain accurate as the population grows. The exemplars stay illustrative; if a future Unfalsifiable CA_NONE WIN is added the prose still reads correctly.",
+      "Number-vs-word style: switched from English number words (Seven, Fifteen, ...) to digit substitutions ({{CA_NONE_SELFCON}} etc). This matches how {{CA_NONE}} already renders elsewhere in the paragraph (\"The 40 WINs\") and the rest of the document, which freely mixes digits with prose (\"14 self-contradicted WINs (Part 2)\" two paragraphs later)."
+    ]
+  },
+  "holes_addressed": [
+    "Hardcoded English-word counts (Seven, Fifteen, Twelve, Three, Two) decouple from the data and silently rot when verdicts change.",
+    "Existing prose silently disagrees with {{CA_NONE}}: hardcoded sum is 41 but {{CA_NONE}} = 40 because WIN-058b (sub-ID) is excluded from base counts. The fallback caveat hid this; template variables eliminate it.",
+    "Specific WIN-ID parentheticals (WIN-032, WIN-034) lock the prose to a snapshot of which WINs hold each verdict. Switched to \"e.g. ...\" exemplars so the prose stays defensible as the population grows."
+  ],
+  "anticipated_objections": [
+    {
+      "objection": "Why not also turn the WIN-ID lists (WIN-044/050/051, etc.) into template variables?",
+      "response": "Possible but high-risk and low-value. Template variables that emit lists need format-string handling (commas, slashes, conjunctions) that we do not have wiring for. The \"e.g.\" exemplars are a 99% solution at zero infrastructure cost; if a future review wants full dynamic IDs, that is a separate (much larger) infrastructure expansion."
+    },
+    {
+      "objection": "Singular/plural grammar breaks if a count goes to 1 or 0 (\"1 are refuted\" reads badly).",
+      "response": "Real concern. The \"Not Demonstrated\" bucket is currently 1 and the prose now reads \"{{CA_NONE_NOTDEMO}} are not demonstrated\" → \"1 are not demonstrated\". Acceptable trade vs hand-typed staleness; pluralisation helpers can be added later if any single bucket sits at 1 long enough to be embarrassing. Alternative phrasings (\"Not demonstrated: {{CA_NONE_NOTDEMO}}.\") were considered but reduce parallelism with the rest of the list."
+    },
+    {
+      "objection": "The fallback caveat is already in place — why bother rewiring?",
+      "response": "The caveat is the dome model’s own pattern: a disclaimer instead of a fix. Our review explicitly criticises that pattern (e.g. WIN-002 hardcoded comparison, dome’s 94.5% accuracy claim). Leaving a caveat in our own prose where a 30-line patch eliminates the staleness entirely is exactly the kind of inconsistency the curmudgeon flags."
+    }
+  ],
+  "decider_action_required": [
+    "1. Apply the two-edit infrastructure patch to build-scripts/generate-html.js (additive — no existing wiring removed).",
+    "2. Apply the prose find/replace in data/sections.json -> part2b.html.",
+    "3. Rebuild HTML and verify the rendered paragraph contains digits 3 / 15 / 12 / 2 / 7 / 1 (summing to {{CA_NONE}} = 40 at this build).",
+    "4. After verification, mark EXP-158 status: complete, integrated_at: <timestamp>, integration_mode: \"template-variable-wiring\" (replacing the prior fallback-caveat mode)."
+  ],
+  "newsworthy": null,
+  "notes_for_self": "Wrote this as a follow-up to the decider’s 2026-04-14 fallback integration. The fallback (Option 3 — caveat) is currently shipped; this expansion provides Option 2 (template variables, the preferred approach per ISS-934 notes) so the decider can swap it in."
+}

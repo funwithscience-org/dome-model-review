@@ -1,0 +1,27 @@
+{
+  "id": "PROP-SOCIAL-TLS-FUNWITHSCIENCE-NET-001",
+  "filed_at": "2026-05-01T10:25:00Z",
+  "filed_by": "dome-social",
+  "type": "environmental_probe",
+  "priority": "low",
+  "user_impact": "ZERO",
+  "subject": "Persistent TLS handshake failure to https://funwithscience.net/* from scheduled-task sandbox; hostname-specific (other GitHub Pages domains succeed)",
+  "summary": "From the dome-social scheduled-task sandbox, curl to https://funwithscience.net/* fails with 'SSL routines: unexpected eof while reading' (OpenSSL 0A000126) on 3 of the last 4 calendar days (Apr 28 fail / Apr 29 fail / Apr 30 OK / May 1 fail). Same sandbox same run: raw.githubusercontent.com / john09289.github.io / api.github.com all succeed (HTTP 200). Failure is funwithscience.net-hostname-specific. Operator-side browser access + GSC sitemap fetches confirm the live site is healthy for actual users — this is a sandbox/edge-cycling artifact, not a content-side issue.",
+  "observed_pattern": {
+    "2026-04-28": "fail (TLS decode error 562, all 4 GH Pages anycast IPs, all sub-paths)",
+    "2026-04-29": "fail (same)",
+    "2026-04-30": "ok (HTTP/2 200, last-modified Thu 30 Apr 2026 10:06:49 GMT)",
+    "2026-05-01": "fail (SSL: unexpected eof, /, /llms.txt, /sitemap.xml, /google0fa12662dfa239fc.html all fail)",
+    "always_succeed_in_same_run": ["raw.githubusercontent.com", "john09289.github.io", "api.github.com"]
+  },
+  "diagnostic_questions": [
+    "Is the sandbox's OpenSSL/cipher list compatible with funwithscience.net's specific TLS/Cloudflare/GitHub-Pages-edge configuration?",
+    "Does funwithscience.net use a different anycast IP pool or edge cert chain than john09289.github.io (both are GitHub Pages but funwithscience.net is custom-domain via org-level CNAME)?",
+    "Is the failure correlated with a specific GitHub Pages edge POP that this sandbox routes to?",
+    "Is the intermittency related to the org-level CNAME inheritance (funwithscience-org/funwithscience-org.github.io) introducing a different cert/SNI path?"
+  ],
+  "fallback_already_in_place": "dome-social falls back to raw.githubusercontent.com for content verification when funwithscience.net is unreachable. This is sufficient for daily content checks; the only thing we lose is live-smoke-test of the deployed site from the sandbox.",
+  "social_self_caveat": "Filing this proposal is at the boundary of yesterday's escalation criterion. The criterion was '3rd consecutive day = file' which Apr 30 broke. The contrarian addendum 'if recurrence within 7 days, 3-of-N is worth filing' is what I'm acting on, but '3-of-N pattern' isn't a strict statistical threshold. Operator should feel free to mark this proposal NOT_ACTIONABLE if it's overzealous; the cost of filing-too-early is low (one JSON file).",
+  "routing": "tinker — environmental probe. NOT a content-side issue. NOT a build-pipeline issue.",
+  "recommended_disposition": "On next tinker pass, run: (a) `openssl s_client -connect funwithscience.net:443` from sandbox vs same against john09289.github.io, compare TLS handshake details; (b) check sandbox's libcurl/OpenSSL versions; (c) check whether the failure correlates with specific times-of-day. If structural mismatch found, document it; if intermittent, mark as known sandbox quirk and close."
+}

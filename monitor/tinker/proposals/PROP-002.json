@@ -1,0 +1,50 @@
+{
+  "id": "PROP-002",
+  "created_at": "2026-04-08T19:30:00Z",
+  "category": "prompt_diet",
+  "target": "monitor/prompts/decider.md",
+  "problem": "Decider prompt at 577 lines — 131% over the 250-line ceiling. Grew 131 lines since last report (was 446). 5th consecutive report flagging this. The prompt contains ~250 lines of reference/procedural material that is highly mechanical: patch JSON schema (~30 lines at step 6), severity matrix (~20 lines), self-apply procedure with full bash scripts (~100 lines at step 6b), expansion integration procedure (~60 lines at step 2a within step 2), and acknowledged failures processing (~35 lines at step 1e).",
+  "proposed_fix": {
+    "summary": "Extract four blocks into reference files: (1) Self-apply procedure (step 6b, ~100 lines of bash scripts and error handling) into analyst-selfapply.md, (2) Patch schema + severity matrix (~50 lines) into decider-patch-schema.md, (3) Expansion integration procedure (within step 2, ~60 lines) into decider-expansion-integration.md, (4) Acknowledged failures processing (step 1e, ~35 lines) into decider-failures.md. Main prompt shrinks from 577 to ~330 lines. Each reference file is read at the relevant step.",
+    "files_to_create": [
+      {
+        "path": "monitor/prompts/reference/decider-selfapply.md",
+        "content": "# Extract step 6b from decider.md — the self-apply procedure\n# This is the block starting at '### 6b. Self-Apply Easy Patches' through the end of step 6b (~100 lines)\n# Contains: bash clone/build/test/push scripts, error handling, workspace sync\n# Human should copy the exact lines from decider.md.",
+        "purpose": "Self-apply procedure with bash scripts. Read by decider at step 6b only when patches exist to apply."
+      },
+      {
+        "path": "monitor/prompts/reference/decider-patch-schema.md",
+        "content": "# Extract the patch JSON schema from step 6 and severity definitions\n# Contains: patch format JSON example, severity definitions (critical/major/moderate/minor),\n# field targeting rules (wins.json fields, sections.json fields)\n# Human should copy the exact lines.",
+        "purpose": "Patch format reference. Read by decider at step 6 when generating patches."
+      },
+      {
+        "path": "monitor/prompts/reference/decider-expansion-integration.md",
+        "content": "# Extract the expansion integration procedure from within step 2\n# This is the block dealing with expansion-tracker.json reading, status checks,\n# and patch generation from completed expansions (~60 lines)\n# Human should copy the exact lines.",
+        "purpose": "Expansion integration details. Read by decider at step 2a when completed expansions exist."
+      }
+    ],
+    "files_to_modify": [
+      {
+        "path": "monitor/prompts/decider.md",
+        "find": "### 6b. Self-Apply Easy Patches",
+        "replace": "### 6b. Self-Apply Easy Patches\n\n**Read `monitor/prompts/reference/decider-selfapply.md` now for the full self-apply procedure (clone, build, test, push, workspace sync).**",
+        "explanation": "Replace ~100 lines of bash scripts with a reference read. Decider loads this only when it has patches to apply."
+      },
+      {
+        "path": "monitor/prompts/decider.md",
+        "find": "### 6. Generate Suggested Patches",
+        "replace": "### 6. Generate Suggested Patches\n\n**Read `monitor/prompts/reference/decider-patch-schema.md` for patch JSON format, severity definitions, and field targeting rules.**",
+        "explanation": "Replace ~50 lines of schema/severity definitions with a reference read."
+      }
+    ],
+    "files_to_delete": []
+  },
+  "tradeoffs": "GAIN: ~245 fewer lines in main prompt, saving ~1,200 tokens per run across ~72 daily decider runs (20min schedule) = ~86,000 tokens/day. Decider only loads reference material when the relevant step has work. RISK: Agent must do 1-3 extra file reads per run, adding ~3-5 seconds. The self-apply procedure is complex bash — if the reference file is not read, the decider would skip self-applying. Mitigated by making the read instruction mandatory and prominent. SERENDIPITY LOSS: Low. The bash scripts and JSON schemas are mechanical — having them in context during triage steps provides no analytical benefit.",
+  "estimated_impact": "~245 lines removed from main prompt. ~86,000 tokens/day saved at current run frequency. No quality impact on triage or patch quality.",
+  "requires_human_judgment": true,
+  "why_human_needed": "Human needs to: (1) identify exact line ranges for extraction, (2) verify the replacement read instructions are clear enough that the decider won't skip them, (3) test that the decider still successfully self-applies after the refactor. Suggest running 2-3 decider cycles in parallel (old prompt vs new prompt) to verify no regression.",
+  "status": "implemented",
+  "implemented_at": "2026-04-08T18:49:25.370Z",
+  "implemented_by": "human+claude CW14",
+  "actual_result": "decider.md 577→453 lines (-124). Patch schema + self-apply extracted to 1 reference file."
+}

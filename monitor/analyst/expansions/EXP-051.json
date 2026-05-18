@@ -1,0 +1,185 @@
+{
+  "id": "EXP-051",
+  "issue_ids": ["ISS-676"],
+  "target": "uncounted-failures.json reconciliation — namespace audit",
+  "category": "data-integrity-investigation",
+  "status": "complete",
+  "replacement_html": null,
+  "created_at": "2026-04-09T00:00:00Z",
+  "completed_at": "2026-04-09T00:00:00Z",
+  "author": "analyst",
+  "priority": "high",
+  "routes_to_decider_after": true,
+  "headline_finding": "The integrity audit that triggered ISS-676 conflated two distinct dome namespaces: W### (weekly predictions, in 03-predictions.txt) vs WIN-### (confirmed wins, in 02-wins.txt). No dome_ref in FAIL-001..005 has actually been reused for an unrelated prediction. Four of the five W-numbers (W019, W020, W021) are verifiably unchanged in both the V50.6 baseline and the current raw-text. The remaining two (W024, W027) cannot be verified from raw-text because they were never weekly-test slot numbers in 03-predictions.txt — those likely came from a different data source (weekly.json or scorecard.json) that the poller captured separately. The needs_reconciliation:true flags can be cleared with a namespace note, not a W-number remap.",
+  "investigation": {
+    "step_1_current_raw_text": {
+      "file": "raw-text/03-predictions.txt",
+      "scanned_lines": "55-62 (WEEKLY TESTS W017-W022 block)",
+      "finding": "W019 = 'NMP drift direction this week: Poleward dominates lateral (PENDING)'. W020 = 'Roaring 40s 500hPa anomaly: >=3% above climatology (PENDING)'. W021 = 'Moon angular diameter variation: >2% moonrise vs transit (PENDING)'. These three are IDENTICAL to what FAIL-003/004/005 were originally registered against. No reuse.",
+      "w024_w027": "Neither W024 nor W027 appear anywhere in raw-text/*.txt. The weekly-test list runs W017–W022 with W009–W015 in 'RECENTLY CONFIRMED'. There is no W024 or W027 slot in the predictions page — they must come from a different endpoint."
+    },
+    "step_2_v50_6_baseline": {
+      "file": "raw-text-v50.6-2026-03-12/03-predictions.txt",
+      "scanned_lines": "57-62",
+      "finding": "Identical weekly-test block. W019/W020/W021 had the same descriptions at the V50.6 baseline. W024 and W027 also absent from this file. This confirms the W-numbers in question were never weekly-prediction slots on the dome's 03-predictions.txt page."
+    },
+    "step_3_baseline_summary": {
+      "file": "monitor/baseline/03-predictions.txt",
+      "scanned_lines": "40-44",
+      "finding": "This file (a poller-curated summary, NOT a raw mirror) lists the original FAIL attributions under 'Refined/Falsified': W019 NMP weekly drift, W020 Roaring 40s AAO weekly threshold, W024 Polaris elevation excess FALSIFIED, W027 Schumann elevation refined to damping. These came from whatever dome data source the poller was reading at the time (likely api/current/results.json or api/scorecard.json, given that results.json has been moving from 33/34 → 35/35 recently). The W019/W020 entries here already disagree with the 03-predictions.txt NMP/Roaring40s content — the baseline summarizer was labelling them 'Refined/Falsified' while the predictions page still listed them as PENDING. This is internal dome inconsistency, not our error."
+    },
+    "step_4_wins_page_cross_check": {
+      "file": "raw-text/02-wins.txt",
+      "finding": "WIN-019 = 'Solar Analemma Figure-8 Loop Ratio'. WIN-020 = 'Lunar Declination 18.6-Year Cycle'. WIN-021 = 'Gyroscopic Precession Rate'. WIN-024 = 'Roaring 40s = SAA Southern Boundary'. WIN-027 = 'Southern Distance Quadratic Latitude Law'. These are CONFIRMED wins — entirely different from the weekly predictions with the same numeric suffix. The integrity audit that produced ISS-676 saw WIN-019 in 02-wins.txt and W019 in the baseline and concluded the dome had 'reused W019'. That conclusion is wrong: WIN-### and W### are two separate namespaces that happen to share digits."
+    },
+    "step_5_open_bucket_search": {
+      "requested_by_issue": "ISS-676 asks us to survey 'a separate OPEN-NNN bucket we have not audited'",
+      "finding": "Our current raw-text contains references to OPEN-001..OPEN-007 (e.g. '(OPEN-002 resolved)' in 06-evolution.txt line 52). These are the dome's own 'Open Problems' — already represented in our review as 8 entries (67..75 in the WIN arithmetic, per dome_accuracy_variants wins-page-arithmetic formula 67/75). They are not a hidden bucket; they are the same thing the wins page labels as 'Open Problems'. No new reconciliation work required from OPEN-NNN — we already count them in the wins-page denominator."
+    },
+    "step_6_win_058b_investigation": {
+      "hypothesis_from_issue": "WIN-058b may be another instance of dome-reuse pattern",
+      "finding": "Cannot complete from current raw-text: raw-text/02-wins.txt reflects V50.6 content (39 confirmed wins, 'FALSIFIED COUNT: 0') and does not contain WIN-058 or any discussion of PRED-KAPPA-001 / bedrock induction ratio. The dome is now at V51.1 (69 WINs) but the raw-text scrape has not been updated past V50.6 — the v51.0-2026-04-05 subdirectory exists but is empty. Our own wins.json DOES carry 058 (Unified angular coordinate θ = −lonE, Misleading) and 058b (Bedrock Induction Ratio κ = 1.672, Not Demonstrated). The sub-id workaround almost certainly reflects a dome-side renumber between the time we first coded 058 and when 058b was added, not a W-number/WIN-number namespace collision of the kind that triggered ISS-676. RECOMMENDATION: Re-open this sub-investigation as a separate issue once the poller has refreshed raw-text against the live V51.1 site. Do not block the uncounted-failures.json reconciliation on it."
+    }
+  },
+  "namespace_clarification": {
+    "W###": {
+      "meaning": "Weekly prediction slot. Registered in 03-predictions.txt in batches (e.g. 'WEEKLY TESTS W017–W022, registered 2026-03-12, test by 2026-03-19'). Each slot is short-lived: it starts PENDING, gets marked CONFIRMED/REFINED/FALSIFIED/SUSPENDED within ~1 week, and then the number is (in the dome's usage) never reused.",
+      "sources_seen": [
+        "raw-text/03-predictions.txt (page-visible weekly table, slots W009–W022)",
+        "monitor/baseline/03-predictions.txt (poller summary, seen W019, W020, W024, W027 tagged 'Refined/Falsified')",
+        "api/current/results.json (endpoint, currently 35/35; may be the origin of W024/W027 references since they are not in the page-visible table)"
+      ]
+    },
+    "WIN-###": {
+      "meaning": "Confirmed win slot. Listed in 02-wins.txt as the 'wins' catalog. Numeric suffixes run 001..069 currently. Stable IDs in dome usage — the dome renumbers rarely (058 collision with 058b is the only known case)."
+    },
+    "why_the_audit_got_confused": "An automated cross-reference that matched '019' against the wins catalog will always find a 'WIN-019' because the wins list is dense. But W019 (weekly) and WIN-019 (confirmed) are different predictions assigned to different pages. The audit should have matched W019 against 03-predictions.txt (where it is unchanged) not against 02-wins.txt."
+  },
+  "kernel_of_truth": {
+    "what_the_audit_got_right": [
+      "It's genuinely true that the dome reuses and renumbers things. The dome's WIN-058 / 058b collision is documented in our own wins.json. The PROS→WIN promotion path is also a form of renumbering.",
+      "It's also genuinely true that our dome_ref field is too thin. A single string can't distinguish 'this is a W-weekly slot' from 'this is a WIN-confirmed slot' from 'this is a PRED-long-term slot'. If we ever DO see a real reuse, we want the schema to capture it.",
+      "The existence of api/current/results.json with an independently drifting denominator (33/34 → 35/35) confirms that the dome maintains multiple counting systems. It is reasonable to worry that one of them could silently rewrite."
+    ],
+    "what_the_audit_got_wrong": "It concluded that the REUSE had already happened, based on a name collision between W### and WIN-###. It hadn't. But the schema-upgrade recommendation that came with the audit is still worth implementing, as a hedge."
+  },
+  "proposed_schema_upgrade": {
+    "rationale": "The audit asked for three explicit name fields (current_ref, prior_ref, prediction_name). This is a reasonable upgrade even though the immediate reuse concern turned out to be a false alarm — it makes the data structure robust against future actual reuse events. Keeping the upgrade also honors the audit's kernel of truth.",
+    "new_fields": {
+      "dome_ref_namespace": "Enum: 'weekly' | 'win' | 'pred' | 'pros' | 'open'. Distinguishes W### from WIN-### from PRED-### etc. REQUIRED on every entry.",
+      "dome_ref": "Keep as-is. The identifier within that namespace (e.g. 'W019', 'WIN-024', 'PRED-NEW-001').",
+      "dome_ref_current": "String or 'none' or 'unverifiable'. What the dome calls this prediction on the live site RIGHT NOW. If the slot has been reused, this holds the new content; if the slot is unchanged, this mirrors dome_ref; if we cannot confirm from raw-text, this is 'unverifiable'.",
+      "dome_ref_prior": "String or null. If a reuse has been detected, the last known pre-reuse label. null for unchanged entries.",
+      "prediction_name": "Canonical human-readable prediction title as registered (e.g. 'NMP drift direction dominance'). Stable across dome renaming. This is the name we anchor against.",
+      "dome_status_current": "Already exists. Keep.",
+      "needs_reconciliation": "Keep. Set to true only when dome_ref_current = 'unverifiable' AND we have positive evidence that the slot may have been reused.",
+      "_deprecated": "dome_ref_type — the old 'weekly_prediction' string is subsumed by dome_ref_namespace='weekly'. Can be removed after migration."
+    }
+  },
+  "proposed_entry_patches": {
+    "instructions_for_decider": "These are the exact field values to apply. The decider should read this block, construct a patch file against data/uncounted-failures.json, and run it through apply-patches.js. The updated schema is backward-compatible: existing consumers that look for dome_ref will still work.",
+    "FAIL-001": {
+      "set": {
+        "dome_ref_namespace": "weekly",
+        "dome_ref_current": "unverifiable",
+        "dome_ref_prior": null,
+        "prediction_name": "Polaris elevation excess (weekly slot)",
+        "needs_reconciliation": false
+      },
+      "note": "W024 not present in raw-text/03-predictions.txt weekly table — only appears in monitor/baseline/03-predictions.txt summary as 'FALSIFIED 2026-03-15'. Likely sourced from api/current/results.json or weekly.json. The audit's claim that W024 is 'now WIN-024 Roaring 40s' is a WIN-### vs W### namespace confusion and is rejected. dome_ref_current marked 'unverifiable' until poller re-scrapes the API endpoints, not because of suspected reuse but because we lack the raw source. Meanwhile the prediction is still correctly classified as a dome failure — see the dome's own 'FALSIFIED' tag in monitor/baseline/03-predictions.txt line 43."
+    },
+    "FAIL-002": {
+      "set": {
+        "dome_ref_namespace": "weekly",
+        "dome_ref_current": "unverifiable",
+        "dome_ref_prior": null,
+        "prediction_name": "Schumann resonance elevation during G3+ storms",
+        "needs_reconciliation": false
+      },
+      "note": "Same situation as FAIL-001. W027 not in 03-predictions.txt weekly table; only in monitor/baseline/03-predictions.txt. Audit's claim that W027 is 'now WIN-027 Southern Distance Quadratic' rejected — WIN-### namespace. The post-hoc replacement ('refined to damping, PRED-SR-SUPPRESS') is independently documented in 08-live-power.txt line 136 ('Daily Kp–SR suppression — >30% amplitude drop required on G1+ storm') and raw-text/02-wins.txt WIN-002 ('26% damping by aetheric medium'). The 'refinement' swapped the sign of the prediction after it failed — this is the actual argument, unchanged by the reconciliation."
+    },
+    "FAIL-003": {
+      "set": {
+        "dome_ref_namespace": "weekly",
+        "dome_ref_current": "W019",
+        "dome_ref_prior": null,
+        "prediction_name": "NMP drift direction dominance",
+        "needs_reconciliation": false
+      },
+      "note": "W019 is in raw-text/03-predictions.txt line 59: 'NMP drift direction this week: Poleward dominates lateral (PENDING)'. Same text in V50.6 baseline. This weekly slot has NOT been reused — the audit's 'now Solar Analemma Figure-8' claim is a WIN-019 confusion. The original prediction and its 5.5× lateral-dominance failure both stand. The slot is still PENDING on the dome side even though the test window has closed, which is itself a soft failure — consider adding a 'dome_has_not_updated_slot_since_fail_date' flag in a later pass."
+    },
+    "FAIL-004": {
+      "set": {
+        "dome_ref_namespace": "weekly",
+        "dome_ref_current": "W020",
+        "dome_ref_prior": null,
+        "prediction_name": "Roaring 40s 500hPa anomaly",
+        "needs_reconciliation": false
+      },
+      "note": "W020 in raw-text/03-predictions.txt line 60: 'Roaring 40s 500hPa anomaly: >=3% above climatology (PENDING)'. Same in V50.6 baseline. Not reused. Audit conflated with WIN-020 (Lunar Declination 18.6-Year Cycle) — different namespace. Failure stands."
+    },
+    "FAIL-005": {
+      "set": {
+        "dome_ref_namespace": "weekly",
+        "dome_ref_current": "W021",
+        "dome_ref_prior": null,
+        "prediction_name": "Moon angular diameter variation",
+        "needs_reconciliation": false
+      },
+      "note": "W021 in raw-text/03-predictions.txt line 61: 'Moon angular diameter variation: >2% moonrise vs transit (PENDING)'. Same in V50.6 baseline. Not reused. Audit conflated with WIN-021 (Gyroscopic Precession Rate). Suspension claim still holds — dome's own H(r) curve makes this test geometrically unworkable, which is WHY the dome suspended the slot rather than marking it FALSIFIED. The asymmetric burden here (dome fails a test -> it is suspended rather than counted as a failure) is the core argument, unchanged."
+    }
+  },
+  "proposed_meta_patch": {
+    "rationale": "Document the namespace discovery in _meta so future auditors don't repeat the confusion.",
+    "add_to__meta": {
+      "namespace_note": "The dome maintains at least three parallel identifier namespaces: W### (weekly prediction slots, short-lived, recycled within weeks), WIN-### (confirmed wins, stable catalog), and PRED-### (long-term predictions with multi-year horizons). Our dome_ref field holds the identifier; dome_ref_namespace holds which namespace it belongs to. Numeric collisions between W019 / WIN-019 / PRED-019 are expected and are NOT evidence of reuse. Reuse should only be logged when dome_ref_prior is set to a non-null value AND the evidence trail is documented in the entry's note field."
+    }
+  },
+  "devils_advocate": {
+    "header": "Arguments against this reconciliation (per user pref: think about the other side)",
+    "points": [
+      {
+        "objection": "Maybe W024/W027 really were weekly prediction slots that existed pre-W017 and were reaped before our raw-text scraping started. If so, the 'unverifiable' tag is too soft — they really ARE gone from the dome site, which is itself a failure mode.",
+        "response": "Possible. But the absence cuts against the audit's claim of REUSE (no evidence of reuse) while strengthening the broader argument that the dome quietly retires failing slots. If we want to capture 'slot has been fully deleted' as a distinct state, the new dome_ref_current='none' value handles it. We can downgrade 'unverifiable' to 'none' for FAIL-001/FAIL-002 once the poller does a fresh scrape and confirms W024/W027 are not in any current endpoint."
+      },
+      {
+        "objection": "If the integrity audit was wrong, why not just revert and stop there? Why still do the schema upgrade?",
+        "response": "The audit's factual claim was wrong but its threat model (dome may silently rename or reuse identifiers) is sound. WIN-058b already exists as evidence of real dome-side renumbering in a different namespace. The schema upgrade costs us one round of apply-patches and buys protection against a realistic future risk. Low cost, asymmetric upside."
+      },
+      {
+        "objection": "dome_ref_namespace as an enum makes our schema more complex; the dome is not obligated to honor it.",
+        "response": "True. We're imposing structure on data the dome publishes without structure. But the alternative (matching on name-collisions across namespaces) is what produced ISS-676 in the first place. Explicit namespace tagging is the cheapest defense."
+      },
+      {
+        "objection": "FAIL-003/004/005 are marked with dome_ref_current matching dome_ref (unchanged), but the dome has not updated those slots past PENDING even though the test windows closed weeks ago. Shouldn't that itself be flagged as a soft failure?",
+        "response": "Yes, and I recommend the decider track this as a follow-up issue: 'weekly slots remaining PENDING past the test_by date constitute silent-failure behavior and should appear in the uncounted-failures counter even without a dome FALSIFIED tag.' Out of scope for this reconciliation but worth opening as a new issue."
+      },
+      {
+        "objection": "The investigation could not verify WIN-058b because raw-text is stale at V50.6. You're declaring this out of scope, but it was part of the ISS-676 ask.",
+        "response": "Agreed — this is a genuine gap. The poller owes a V51.1 refresh before we can make forensic claims about WIN-058 renumbering history. I recommend the decider (a) close the uncounted-failures.json reconciliation portion of ISS-676 based on this EXP-051, (b) leave ISS-676 open as 'partial — WIN-058b investigation pending poller refresh', and (c) file a new issue assigned-poller to do a full V51.1 raw-text refresh."
+      }
+    ]
+  },
+  "follow_up_recommendations": [
+    {
+      "target": "poller",
+      "action": "Do a full V51.1 refresh of raw-text/ — the current files still say 'V50.6' and 'FALSIFIED COUNT: 0'. The dome has moved on and we're analyzing against a baseline that is ~4 weeks stale."
+    },
+    {
+      "target": "poller",
+      "action": "Also scrape api/current/results.json and api/scorecard.json and save them as raw-text/api/results-YYYY-MM-DD.json so future audits can cross-reference weekly slot IDs that never appear on the page."
+    },
+    {
+      "target": "decider",
+      "action": "Open a new issue: 'Weekly slots W019/W020/W021 remain PENDING past their test_by date (2026-03-19). Silent-failure mode — dome leaves failed predictions in PENDING limbo rather than marking FALSIFIED. Quantify how many weekly slots show this behavior.'"
+    },
+    {
+      "target": "decider",
+      "action": "After applying the proposed schema to uncounted-failures.json, update any HTML or prose that references 'FAIL-001..005 dome_ref field is stale' — the stale claim itself is a false alarm and should not be cited in the review."
+    },
+    {
+      "target": "analyst",
+      "action": "Re-run WIN-058b investigation once poller ships fresh V51.1 raw-text. Check whether the dome's WIN-058 slot in V51.1 refers to 'Unified angular coordinate θ = −lonE' or something else. If it refers to something else, the renumber has happened and 058b gets its own stable slot."
+    }
+  ]
+}

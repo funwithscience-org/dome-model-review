@@ -1,0 +1,62 @@
+{
+  "id": "PROP-024",
+  "prop_id": "PROP-024",
+  "title": "workspace-sync pre-push JSON validity gate (with optional auto-repair)",
+  "authored_by": "tinker (2026-05-08T02:39 run)",
+  "authored_at": "2026-05-08T02:50:00Z",
+  "status": "implemented",
+  "category": "workflow_redesign",
+  "target": "monitor/prompts/workspace-sync.md (and possibly a new monitor/scripts/check-json-validity.sh helper)",
+  "problem": {
+    "summary": "workspace-sync committed an unparseable data/wins.json to main on 2026-05-08T02:05Z (commit d09d978), bricking test.js + build.js + every downstream agent that JSON.parse()s the file. The bug: the WIN-064 detail_extra string was edited in FUSE to insert an HTML <span class=\"archive-cite\"> with nested <a href=\"...\"> attributes, but the four bare double quotes were never escaped to \\\". workspace-sync currently ships any FUSE file that passed the NEVER_PUSH and mtime-guard filters, with no JSON-validity check, even for files known to be JSON.",
+    "evidence": [
+      "Commit d09d978 (Workspace sync: 2026-05-08T02:05:18Z) is the introducing commit; bisect shows 6e68bba (predecessor) parsed cleanly with 71 wins, d09d978 fails at byte 418561.",
+      "node test.js fails immediately on the first check ('wins.json parses as valid JSON').",
+      "node build.js html fails inside printTally at build.js:184 \u2014 same JSON.parse error.",
+      "build-scripts/fix-json-quotes.js \u2014 a script we already maintain for exactly this class of bug \u2014 fixes the file in 4 passes inserting 4 backslashes; the fact that the fix exists implies we have already lived through this once.",
+      "There is precedent: see also stranded-patches-2026-05-08T02-50-00Z.json for the operator-action recovery for this incident."
+    ],
+    "blast_radius": "Decider next-run (05:13Z), curmudgeon next-run (06:35Z), analyst next-run (07:57Z), and every workspace-sync after that all interact with wins.json. Decider clones fresh and will throw before any work is done. Curmudgeon similarly. workspace-sync itself does not parse wins.json, so it would not stop pushing \u2014 the breakage would persist until human intervention."
+  },
+  "proposed_fix": {
+    "summary": "Add a pre-push JSON-validity gate to workspace-sync. Before commit, for any file in the staged set that ends with .json, run JSON.parse() on the FUSE-side content. If it fails: (a) try `node build-scripts/fix-json-quotes.js <file>` (which is already in NEVER_PUSH and lives in the clone); if that produces a parseable file with a small bounded edit (\u2264 K backslash insertions), commit the *repaired* version and emit an integrity record noting auto-repair occurred. (b) If auto-repair fails or exceeds the bound, ABORT the entire push, leave the file unstaged, write a degraded-fuse report, and emit a human-note so the operator notices.",
+    "files_to_modify": [
+      {
+        "path": "monitor/prompts/workspace-sync.md",
+        "find": "git add -A monitor/ data/",
+        "replace": "# JSON-validity gate: refuse to commit unparseable JSON. We have a tool for the\n# common 'unescaped \" in HTML span' bug; if it can't repair within K passes we\n# abort and let the operator handle it. Without this gate, a single bad edit in\n# FUSE wins.json bricks test.js + build.js + every downstream agent until the\n# operator notices and rebuilds.\nfor f in $(git -C \"$CLONE\" diff --name-only --cached -- 'data/*.json' 'monitor/**/*.json'); do\n  [ -f \"$CLONE/$f\" ] || continue\n  if ! node -e \"JSON.parse(require('fs').readFileSync('$CLONE/$f','utf8'))\" 2>/dev/null; then\n    # Try auto-repair via fix-json-quotes.js (\u2264 K backslash insertions).\n    BEFORE=$(stat -c %s \"$CLONE/$f\")\n    node \"$CLONE/build-scripts/fix-json-quotes.js\" \"$CLONE/$f\" 2>/dev/null\n    AFTER=$(stat -c %s \"$CLONE/$f\")\n    DELTA=$((AFTER - BEFORE))\n    if node -e \"JSON.parse(require('fs').readFileSync('$CLONE/$f','utf8'))\" 2>/dev/null && [ \"$DELTA\" -le 32 ]; then\n      echo \"[json-gate] auto-repaired $f (+$DELTA bytes via fix-json-quotes.js)\"\n      git -C \"$CLONE\" add -- \"$f\"\n      AGENT_NOTES=\"$AGENT_NOTES json-gate-auto-repaired:$f(+$DELTA);\"\n    else\n      echo \"[json-gate] CANNOT repair $f \u2014 aborting push\"\n      AGENT_NOTES=\"$AGENT_NOTES json-gate-abort:$f;\"\n      # Restore from main, leave FUSE alone, emit degraded-fuse record.\n      git -C \"$CLONE\" checkout -- \"$f\"\n      mkdir -p \"$CLONE/monitor/integrity\"\n      printf '{\"type\":\"json-gate-abort\",\"file\":\"%s\",\"at\":\"%s\",\"agent\":\"workspace-sync\"}\\n' \"$f\" \"$(date -u +%FT%TZ)\" >> \"$CLONE/monitor/integrity/workspace-sync-skips.jsonl\"\n      JSON_GATE_ABORTED=1\n    fi\n  fi\ndone\nif [ \"${JSON_GATE_ABORTED:-0}\" -eq 1 ]; then\n  echo \"[workspace-sync] aborted push due to json-gate; operator must investigate.\"\n  exit 0  # graceful no-op for this run\nfi\ngit add -A monitor/ data/",
+        "explanation": "Insert a JSON-validity gate immediately before the final 'git add -A monitor/ data/' that workspace-sync runs each cycle. The gate iterates over staged JSON files, attempts auto-repair via the existing fix-json-quotes.js script (bounded at \u2264 32 bytes inserted), and aborts the push entirely if repair fails or the size delta is suspiciously large."
+      }
+    ],
+    "files_to_create": [],
+    "files_to_delete": []
+  },
+  "tradeoffs": {
+    "gain": "Eliminates the entire class of 'workspace-sync ships unparseable JSON' bugs. The data/ files are mission-critical \u2014 wins.json, sections.json, predictions.json, uncounted-failures.json all feed the build. A single bad edit currently propagates straight to main. With this gate, the worst case becomes 'workspace-sync skips this cycle, operator sees the abort record on next tinker run'.",
+    "loss": [
+      "Adds a per-cycle node spawn for JSON.parse + fix-json-quotes per data/*.json file. On a typical run with 4 data files this is ~4 \u00d7 100ms = 400ms; trivial vs the existing ~10s sync runtime.",
+      "If fix-json-quotes.js mis-repairs (runs >32 bytes of 'fix') the gate aborts and operator must hand-fix. We accept this \u2014 better to stall than to ship corruption.",
+      "An aggressive auto-repair could in principle mask a deeper structural bug (e.g., truncated JSON). The 32-byte cap on auto-repair makes truncation cases abort rather than silently 'fix', which is the right behavior."
+    ],
+    "edge_cases_considered": [
+      "What if the gate ITSELF is buggy and rejects valid JSON? Mitigation: gate runs node JSON.parse, which is the exact test the rest of the pipeline uses; a false negative there is also a false negative for build.js and test.js, so no asymmetry introduced.",
+      "What if a fix-json-quotes.js bug introduces malformed content? Mitigation: gate re-validates with JSON.parse AFTER the repair attempt, and aborts if the repaired file still fails. No bypass.",
+      "What if FUSE has multiple JSON files broken simultaneously? Each is auto-repaired independently. If any one cannot be auto-repaired, the entire push aborts to avoid partial state.",
+      "Concurrent edits: the gate operates on the CLONE-side copy of the file (which workspace-sync writes from FUSE before this step). FUSE is not mutated. Operator who pulls down the clone sees the auto-repaired version."
+    ]
+  },
+  "estimated_impact": {
+    "incident_cost_today": "Pipeline downtime from 02:05Z (when commit d09d978 landed) until operator manually fixes \u2014 at least 2.5h at the time this PROP was authored, longer if operator is unavailable. All downstream agents that run during that window throw.",
+    "incident_cost_amortized": "If this class of bug recurs even monthly, the gate pays for itself many times over.",
+    "performance_overhead": "\u2264 500ms per workspace-sync cycle (24 cycles/day = ~12s/day). Negligible."
+  },
+  "requires_human_judgment": true,
+  "why_human_needed": "The exact threshold (32 bytes, 4 passes) and the abort-vs-warn behavior is a judgment call. Operator may also prefer to run the gate as warn-only for a settling period before flipping to abort.",
+  "verification_pattern": "grep -q 'json-gate' monitor/prompts/workspace-sync.md && node -e 'try{JSON.parse(require(\"fs\").readFileSync(\"data/wins.json\",\"utf8\"));process.exit(0)}catch(e){process.exit(1)}' && echo FIXED || echo STILL_BROKEN",
+  "verification_pattern_explanation": "Returns FIXED when (a) the workspace-sync prompt contains the json-gate block AND (b) data/wins.json on the current clone parses cleanly. The conjunction is intentional \u2014 landing the gate without repairing the existing breakage isn't enough; both must be true.",
+  "expected_when_fixed": "Both conditions true on origin/main.",
+  "implemented_at": "2026-05-10T05:30:00Z",
+  "implemented_by": "operator",
+  "implementation_commit": "pending",
+  "implementation_note": "Landed in workspace-sync.md immediately before the existing `git add -A monitor/ data/` line in Step 3. Operator chose abort-from-day-one (no warn-only soft-launch) given existing incident evidence. Implementation differs from PROP code in two ways: (1) iterates working-tree changes rather than --cached (gate runs before git add, so nothing is staged yet); (2) handles both modified and untracked .json files. Smoke-tested with two scenarios: (a) injecting an unescaped `<a href=\"..\">`-style HTML attribute into wins.json \u2014 fix-json-quotes.js auto-repaired in 2 passes / +2 bytes (well under 32-byte threshold); (b) truncating wins.json mid-string \u2014 fix-json-quotes.js correctly failed (delta=0, file still unparseable) and abort path triggers. Q1 (32-byte threshold) and Q2 (abort-vs-warn) both resolved abort-side per operator."
+}

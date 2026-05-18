@@ -1,0 +1,266 @@
+{
+  "generated_at": "2026-04-12T10:39:00Z",
+  "report_date": "2026-04-12",
+  "run_label": "run-1 (morning)",
+  "mode_selected": "cost_engineering",
+  "mode_reason": "Pipeline health green (all 8 agents producing). FUSE green (all 5 checked files match GitHub). Auth OK (200). No Mode 1/2 urgency. Mode 3 selected: critical cost finding — dome-decider actual cron is */30 (every 30 min, Opus) while metadata says restored to 240 min BAU. 24+ hours of unnecessary Opus spend.",
+  "modes_checked": {
+    "pipeline_health": "green — all 8 agents producing. Poller 10h ago (12h cadence ✓), analyst 1h ago (2h BAU ✓), curmudgeon 2h ago (4h BAU ✓), decider 30 min ago (30 min cron — NOT BAU, see findings), integrity ran today, social last ran yesterday (daily), workspace-sync 2h ago (4h), tinker this run.",
+    "infrastructure": "green — all 5 FUSE-checked files (wins.json, sections.json, generate-html.js, index.html, digest-reviews.js placeholder) match GitHub. Auth 200.",
+    "cost_engineering": "CRITICAL: dome-decider cron stuck at */30 (churn-and-burn) for 24+ hours after BAU restore. Burning Opus at 8x normal rate. CLAUDE.md grew 39% (156→217L), exceeding 15% major alert threshold.",
+    "proposals": "PROP-005 (decider pre-flight) still unimplemented — 6th consecutive report. Stale schedule descriptions in decider.md still present — 2nd consecutive report flagging as self-fixable."
+  },
+  "pipeline_health": {
+    "agents_running": 8,
+    "agents_stalled": [],
+    "output_freshness": {
+      "poller": "10h ago (12h cadence) — green",
+      "analyst": "1h ago (2h BAU cadence) — green",
+      "curmudgeon": "2h ago (4h BAU cadence) — green",
+      "decider": "30min ago (*/30 cron — should be 4h BAU!) — AMBER",
+      "integrity": "ran today — green",
+      "social": "ran yesterday (daily cadence) — green",
+      "tinker": "this run — green",
+      "workspace_sync": "2h ago (4h cadence) — green"
+    },
+    "open_issues": 4,
+    "open_issues_note": "Down from 13 last report — excellent pipeline throughput. 4 remaining: ISS-696 (CAT-005 refraction, awaiting curmudgeon gate), ISS-698 (external report triage), ISS-708 (kill-shots pipeline), ISS-732 (SEC-2b.7 identity verify, critical)."
+  },
+  "findings": [
+    {
+      "severity": "critical",
+      "category": "cost",
+      "description": "DOME-DECIDER SCHEDULE NOT RESTORED: The actual scheduled task cron for dome-decider is */30 (every 30 minutes, Opus). Priority-queue.json schedule_state says decider_current_interval_minutes: 240, and the decider's own schedule_check reports 'All agents at BAU intervals. No mismatches detected.' But the ACTUAL cron was never changed. Root cause: decider.md Step E4 says 'Do NOT call update_scheduled_task — log schedule_action_needed' but the decider checks priority-queue.json metadata (which it already set to 240) rather than calling list_scheduled_tasks to verify the real cron. So it declares 'ok' when the task is still fast. The analyst (restored to 2h) and curmudgeon (restored to 4h) were correctly updated at some point, but the decider's own schedule was not. Result: 12 decider reports in the last 24 hours. Of the 6 sampled, 4 had 0 patches and 0 issues created — ~67% no-op rate at an Opus model. Estimated waste: ~8x BAU Opus budget for the decider agent since 2026-04-11T10:42Z.",
+      "evidence": "list_scheduled_tasks: dome-decider cronExpression=*/30, description still says 'Every 30min (churn-and-burn: 68 pending digest items)'. priority-queue.json schedule_state.decider_current_interval_minutes=240, mode='bau', mode_set_at='2026-04-11T10:42:23.359Z'. Decider report 2026-04-12T09-11: schedule_check.status='ok', schedule_check.note='All agents at BAU intervals'. 12 decider daily-report files in last 24h.",
+      "suggested_fix": "IMMEDIATE HUMAN ACTION: Update dome-decider scheduled task cron from '*/30 * * * *' to '0 */4 * * *' (every 4h) and update description to remove churn-and-burn reference. Also fix decider.md Step E4 to cross-check actual scheduled task crons via list_scheduled_tasks instead of trusting priority-queue.json metadata.",
+      "self_fixable": false,
+      "fix_applied": false
+    },
+    {
+      "severity": "major",
+      "category": "bloat",
+      "description": "CLAUDE.MD GREW 39% (156L → 217L): Exceeds the 15% major alert threshold. Since every agent reads CLAUDE.md, this growth multiplies across all 8 agents. The growth is 61 lines. Need to identify what was added and whether any of it could be extracted to reference files or removed.",
+      "evidence": "wc -l CLAUDE.md = 217. Previous tinker report (2026-04-11) measured 156L. Delta = +61 lines (+39%).",
+      "suggested_fix": "Audit the new 61 lines. If they are agent-specific content (e.g., new pipeline documentation, expanded file ownership entries), consider extracting to reference files. If they are corrections to existing content, they may be justified. File an issue for the decider to review and trim.",
+      "self_fixable": false,
+      "fix_applied": false
+    },
+    {
+      "severity": "moderate",
+      "category": "prompt",
+      "description": "DECIDER.MD SCHEDULE DESCRIPTIONS STILL STALE: Lines 12-14 show Poller as 'every 4h' (actual: 12h), Curmudgeon as 'every 10min' (actual: 4h BAU / 30min churn). Flagged in 2 consecutive reports as self-fixable. Deferred because tinker runs Mode 3 and this is a Mode 4 fix.",
+      "evidence": "decider.md line 12: '(every 4h)', line 14: '(every 10min)'. Actual crons: poller '0 */12', curmudgeon '0 */4'.",
+      "suggested_fix": {
+        "file": "monitor/prompts/decider.md",
+        "find": "- **Poller** (every 4h): Dome site changes\n- **Analyst** (every 30min): Deep scientific analysis, new WIN entries, expansions\n- **Curmudgeon** (every 10min): Adversarial self-review",
+        "replace": "- **Poller** (every 12h): Dome site changes\n- **Analyst** (every 2h BAU / 30min churn): Deep scientific analysis, new WIN entries, expansions\n- **Curmudgeon** (every 4h BAU / 30min churn): Adversarial self-review"
+      },
+      "self_fixable": true,
+      "fix_applied": false
+    },
+    {
+      "severity": "moderate",
+      "category": "prompt",
+      "description": "OWNERSHIP MISALIGNMENT PERSISTS: 4 files listed as git-owned in CLAUDE.md and workspace-sync.md but MISSING from build.js OWNERSHIP: data/predictions.json, docs/llms.txt, docs/sitemap.xml, docs/robots.txt. Additionally, data/kill-shots.json, monitor/analyst/issue-proposals/, monitor/external-reports/ remain unclassified. Flagged in 2 consecutive reports.",
+      "evidence": "grep for each file in build.js returns no match.",
+      "suggested_fix": "Route through decider to add to build.js OWNERSHIP.",
+      "self_fixable": false,
+      "fix_applied": false
+    },
+    {
+      "severity": "moderate",
+      "category": "efficiency",
+      "description": "DECIDER STEP E4 DESIGN FLAW — METADATA VS REALITY: The decider checks priority-queue.json schedule_state (which it writes itself) to verify 'no schedule mismatches.' This is circular — it always passes because the decider already set the metadata to BAU. The check should call list_scheduled_tasks and compare actual cron expressions against expected BAU values. This flaw is why the decider's own 30-min cron was invisible for 24+ hours.",
+      "evidence": "decider.md lines 212-222: Step E4 checks priority-queue.json schedule_state. Decider report schedule_check.status='ok' while actual cron is */30.",
+      "suggested_fix": "Add to decider.md Step E4: 'Cross-check by calling list_scheduled_tasks for dome-analyst, dome-curmudgeon, dome-decider. Compare actual cronExpression against BAU expectations (analyst: 0 */2, curmudgeon: 0 */4, decider: 0 */4). If any mismatch, log schedule_action_needed with the specific task and expected cron.'",
+      "self_fixable": false,
+      "fix_applied": false
+    },
+    {
+      "severity": "minor",
+      "category": "bloat",
+      "description": "REFERENCE FILES GREW 18% (2141L → 2517L): New file analyst-mode5-prospective.md (170L) added. decider-patches-and-selfapply.md (230L) and decider-reporting.md (145L) are the largest decider modules. OPERATOR-RUNBOOK.md (50L) and VERSION-ARCHIVE.md (27L) are new small additions.",
+      "evidence": "wc -l monitor/prompts/reference/*.md = 2517 total. Previous report: 2141L. New files: analyst-mode5-prospective.md (170L), OPERATOR-RUNBOOK.md (50L), VERSION-ARCHIVE.md (27L).",
+      "suggested_fix": "Growth is mostly from new analyst mode (prospective predictions) which is a legitimate feature addition. No action needed unless growth continues.",
+      "self_fixable": false,
+      "fix_applied": false
+    },
+    {
+      "severity": "minor",
+      "category": "efficiency",
+      "description": "STRUCTURE-INTEGRITY.MD GREW 31% (304L → 398L): This is a Haiku daily agent so cost impact is low, but the trend should be watched. It's the largest prompt file at 398L, exceeding even the curmudgeon (313L).",
+      "evidence": "wc -l structure-integrity.md = 398. Previous report: 304L.",
+      "suggested_fix": "Low priority — Haiku daily is cheap. Monitor for continued growth.",
+      "self_fixable": false,
+      "fix_applied": false
+    }
+  ],
+  "previous_followup": [
+    {
+      "finding": "CHURN-AND-BURN AUTO-RESTORE COVERAGE GAP",
+      "status": "PARTIALLY_FIXED",
+      "evidence": "Analyst and curmudgeon were correctly restored to BAU crons (2h and 4h respectively — verified via list_scheduled_tasks). However, the decider's own cron remains at */30. The priority-queue.json now tracks all three agents' schedule_state and the mode is 'bau', but the decider never actually called update_scheduled_task on itself. The design says 'Do NOT call update_scheduled_task' and instead log schedule_action_needed, but the decider's schedule_check logic uses metadata instead of actual crons, so it never flags the mismatch."
+    },
+    {
+      "finding": "PROP-005: Decider pre-flight work check",
+      "status": "STILL_BROKEN",
+      "evidence": "grep -q 'Pre-flight Work Check' decider.md → not found. 6th consecutive report."
+    },
+    {
+      "finding": "OWNERSHIP MISALIGNMENT (4+3 files)",
+      "status": "STILL_BROKEN",
+      "evidence": "grep for predictions.json, llms.txt, sitemap.xml, robots.txt in build.js → no match. 2nd consecutive report."
+    },
+    {
+      "finding": "Stale schedule descriptions in decider.md lines 12-14",
+      "status": "STILL_OPEN",
+      "evidence": "decider.md still shows 'Poller (every 4h)' and 'Curmudgeon (every 10min)'. 2nd consecutive report. Self-fixable — deferred to Mode 4."
+    }
+  ],
+  "cost_engineering": {
+    "agent_efficiency": [
+      {
+        "agent": "decider",
+        "recent_runs_checked": 6,
+        "substantive_runs": 2,
+        "no_op_runs": 4,
+        "estimated_waste_pct": 67,
+        "model": "opus",
+        "current_schedule": "every 30min (BUG: should be 4h BAU)",
+        "bau_schedule": "every 4h",
+        "recommendation": "IMMEDIATE: Restore cron to '0 */4 * * *'. At 30min cadence with 67% no-op rate, the decider is consuming ~16x the useful Opus budget (8x cadence × 2x from 67% no-ops vs expected 50%). PROP-005 would further reduce waste on the remaining no-ops."
+      },
+      {
+        "agent": "analyst",
+        "model": "opus",
+        "current_schedule": "every 2h (BAU — correctly restored)",
+        "bau_schedule": "every 2h",
+        "recommendation": "Schedule correctly at BAU. No action needed."
+      },
+      {
+        "agent": "curmudgeon",
+        "model": "opus",
+        "current_schedule": "every 4h (BAU — correctly restored)",
+        "bau_schedule": "every 4h",
+        "recommendation": "Schedule correctly at BAU. Queue depth 2 (SEC-6.11, EXP-050-r2) — draining at normal pace. No action needed."
+      },
+      {
+        "agent": "social",
+        "model": "sonnet",
+        "current_schedule": "daily",
+        "recommendation": "Low-cost Sonnet daily. No action needed."
+      }
+    ],
+    "churn_and_burn_status": {
+      "mode": "bau (since 2026-04-11T10:42Z)",
+      "queue_depth": 2,
+      "queue_items": ["SEC-6.11", "EXP-050-r2"],
+      "auto_restore_coverage": "PARTIAL — analyst and curmudgeon correctly restored. Decider NOT restored (cron still */30). The Step E4 metadata-vs-reality bug masked this for 24 hours.",
+      "cost_risk": "Decider (Opus) running at 30min since BAU restore ~24h ago. Estimated 48 runs at 30min vs expected 6 runs at 4h = 42 unnecessary Opus invocations over 24 hours."
+    },
+    "prompt_sizes": {
+      "curmudgeon.md": 313,
+      "structure-integrity.md": 398,
+      "social.md": 305,
+      "prose-extraction-task.md": 293,
+      "decider.md": 291,
+      "workspace-sync.md": 289,
+      "poller.md": 276,
+      "analyst.md": 164,
+      "tinker.md": 127,
+      "total": 2456,
+      "reference_total": 2517,
+      "previous_prompt_total": 2290,
+      "previous_reference_total": 2141,
+      "prompt_growth_pct": 7.2,
+      "reference_growth_pct": 17.6
+    },
+    "dispatcher_conversion_status": {
+      "converted": ["analyst (164L dispatcher + 6 worker modules incl new mode5)", "decider (291L dispatcher + 4 worker modules)", "tinker (127L dispatcher + 4 worker modules)"],
+      "excluded": ["curmudgeon (benefits from holistic context)"],
+      "unconverted_low_priority": ["social (305L, Sonnet daily)", "structure-integrity (398L, Haiku daily)", "workspace-sync (289L, Haiku 4h)", "poller (276L, Sonnet 12h)"],
+      "note": "All Opus agents converted or excluded. structure-integrity.md grew 31% and is now the largest prompt at 398L, but it runs on Haiku daily — negligible cost. Focus remains on implementing PROP-005 and fixing the decider schedule."
+    }
+  },
+  "claude_md_audit": {
+    "size_lines": 217,
+    "previous_size_lines": 156,
+    "growth_pct": 39.1,
+    "growth_alert": "MAJOR — exceeds 15% threshold",
+    "estimated_tokens": 3800,
+    "accuracy_findings": [
+      {
+        "issue": "OWNERSHIP misalignment persists: 4 files in CLAUDE.md as git-owned but missing from build.js OWNERSHIP. 3 additional unclassified resources.",
+        "severity": "moderate",
+        "status": "carryover from previous report"
+      },
+      {
+        "issue": "CLAUDE.md Monitoring Pipeline table shows correct BAU schedules. Does not note the decider's stuck */30 cron (which is a runtime bug, not a documentation error).",
+        "severity": "info"
+      },
+      {
+        "issue": "Data Flow diagram still lacks predictions pipeline documentation.",
+        "severity": "minor",
+        "status": "carryover from previous report"
+      }
+    ],
+    "performance_assessment": "CLAUDE.md grew 39% (156→217L) since last report. This is a MAJOR bloat alert. The 61 added lines multiply across all 8 agents. Need audit of what was added and whether any content can be extracted to reference files or is duplicative."
+  },
+  "context_load": {
+    "claude_md_lines": 217,
+    "previous_claude_md_lines": 156,
+    "per_agent": {
+      "analyst": {"dispatcher": 164, "references": 776, "claude_md": 217, "total": 1157, "note": "references include new analyst-mode5-prospective.md (170L)"},
+      "curmudgeon": {"dispatcher": 313, "references": 147, "conditional": 107, "claude_md": 217, "base_total": 677, "max_total": 784},
+      "decider": {"dispatcher": 291, "references": 990, "claude_md": 217, "total": 1498, "note": "largest total context load"},
+      "tinker": {"dispatcher": 127, "references": 544, "claude_md": 217, "total": 888}
+    },
+    "trend": "GROWING — CLAUDE.md +39%, references +18%, prompts +7%. Combined growth driven by CLAUDE.md bloat and new analyst mode5.",
+    "alerts": [
+      "CLAUDE.md grew 39% (156→217L) — MAJOR, exceeds 15% threshold. Multiplies across all 8 agents.",
+      "Reference files grew 18% (2141→2517L) — mostly legitimate (analyst-mode5-prospective.md for new feature).",
+      "structure-integrity.md grew 31% (304→398L) — low cost impact (Haiku daily) but now largest prompt file."
+    ]
+  },
+  "recommendations": [
+    {
+      "priority": 1,
+      "type": "human_action",
+      "description": "URGENT: Restore dome-decider schedule from '*/30 * * * *' to '0 */4 * * *'. Update description to 'Triage dome model issues, process backlog. Every 4h (BAU).' The decider has been running at churn-and-burn cadence for 24+ hours since BAU restore, burning ~42 unnecessary Opus invocations. This is the single highest-cost waste in the pipeline right now."
+    },
+    {
+      "priority": 2,
+      "type": "human_decision",
+      "description": "FIX decider.md Step E4 schedule verification: Replace metadata-based check with actual list_scheduled_tasks cross-check. Current design checks priority-queue.json schedule_state (which the decider itself writes) — circular and guaranteed to pass. The fix: Step E4 should call list_scheduled_tasks, extract actual cron expressions for dome-analyst/curmudgeon/decider, and compare against expected BAU values. Log schedule_action_needed if ANY mismatch."
+    },
+    {
+      "priority": 3,
+      "type": "human_decision",
+      "description": "AUDIT CLAUDE.md 39% growth (156→217L). Identify the 61 added lines, determine if any are agent-specific content that could move to reference files. Every line in CLAUDE.md costs 8x (one per agent). This is the highest-leverage bloat reduction target."
+    },
+    {
+      "priority": 4,
+      "type": "human_decision",
+      "description": "Apply PROP-005 (decider pre-flight work check). 6th consecutive report. Would save ~700 lines of reference reads per no-op run. PROP file has exact find/replace text.",
+      "prop_id": "PROP-005"
+    },
+    {
+      "priority": 5,
+      "type": "self_fix",
+      "description": "Fix decider.md stale schedule descriptions (lines 12-14). Poller: 4h→12h. Curmudgeon: 10min→4h BAU/30min churn. 2nd consecutive report flagging."
+    },
+    {
+      "priority": 6,
+      "type": "self_fix",
+      "description": "Fix OWNERSHIP misalignment: add 4+3 files to build.js OWNERSHIP. Routes through decider since build.js is git-owned."
+    }
+  ],
+  "tinker_self_audit": {
+    "mode_selected_correctly": true,
+    "substantive_findings": 7,
+    "new_findings": 3,
+    "carryover_findings": 4,
+    "self_assessment": "Substantive run. Critical finding: decider schedule stuck at 30min for 24h was invisible to the decider itself due to Step E4 design flaw. This is exactly the kind of cross-agent verification the tinker exists to do. Also set context load baseline for future trend tracking."
+  },
+  "notes_to_future_tinker": "The decider schedule restoration is Priority 1 — if not fixed by next run, manually verify by checking list_scheduled_tasks output. The CLAUDE.md 39% growth needs a line-by-line audit to understand what was added (diff against git history). PROP-005 is now at 6 reports — consider bundling it with the Step E4 fix and schedule description fix into a single PROP-007 'decider hygiene' proposal to reduce implementation friction. The reference growth (18%) is mostly from the analyst-mode5-prospective feature — legitimate but watch for continued creep."
+}

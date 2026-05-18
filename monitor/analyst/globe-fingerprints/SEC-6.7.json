@@ -1,0 +1,88 @@
+{
+  "section_id": "SEC-6.7",
+  "section_title": "The Eclipse Prediction: Genuine Test or Pre-Fitted?",
+  "reviewed_at": "2026-04-14T12:13:29.627Z",
+  "fingerprints_found": 3,
+  "cross_reference": "SEC-4.2 already documents: (1) r-coordinate instability across V12/V51; (2) fsf_derivation.py formula shopping through 9 candidates including 1/cos(lat) and sin(lat)/sin(51); (3) monitor.py hidden -18.22 nT baseline not matching published BOU (-10.9) or W004 (-22.24). The three fingerprints below are ADDITIVE — targeting gaps in SEC-6.7 that SEC-4.2 does not cover.",
+  "fingerprint_1": {
+    "name": "The eclipse event itself is imported globe ephemeris",
+    "description": "The dome calls this its most falsifiable prediction, but the prediction consumes three globe-ephemeris outputs that the dome has no independent derivation for: (a) the August 12 2026 DATE of totality, (b) the SHADOW PATH across the 9 INTERMAGNET stations, and (c) the per-station COVERAGE fractions (0.42 LER to 0.95 EBR/COI). All three are products of NASA's spherical-Earth solar system ephemeris — a computation that uses Earth radius R_E=6,371 km, moon orbital inclination 5.145° to the ecliptic, solar angular diameter 0.533° at 1 AU, and a rotating oblate spheroid. On a flat disc with sun at 5,733 km altitude and moon at 2,534 km altitude, the shadow geometry is fundamentally different: the umbra at those distances is a cone with half-angle tan(R_moon/h_moon - R_sun/h_sun), which on dome parameters does not close to a point at Earth's surface at all. The dome scripts (check_eclipse_fsf.py, fsf_derivation.py, monitor.py line 511) all accept NASA-computed coverage values as inputs without publishing any flat-disc derivation. A genuinely prospective dome prediction would need to first predict WHEN the next total solar eclipse occurs, WHICH stations fall in totality, and WHAT coverage each observes — entirely from disc geometry. The dome has not done this for any of its predicted eclipses.",
+    "globe_value": "NASA JPL DE441 ephemeris (spherical Earth + inclined lunar orbit) — used to compute date, path, and station coverage",
+    "dome_value": "Hardcoded literals in dome scripts (coverage=0.95 for EBR in monitor.py line 512; per-station coverages 0.42–0.95 in fsf_derivation.py)",
+    "code_evidence": {
+      "file": "scripts/fsf_derivation.py + monitor.py",
+      "detail": "fsf_derivation.py stations dict has hardcoded coverage values (HAD 0.80, EBR 0.95, LER 0.42, SNK 0.72, etc.) with no derivation comment. monitor.py line 512 hardcodes coverage=0.95 as a literal. No script in the repo computes coverage from dome geometry. The dome publishes no umbra/penumbra derivation on a 20,015 km disc with sun at 5,733 km altitude and moon at 2,534 km altitude.",
+      "verified": true
+    },
+    "why_it_matters": "The section credits this as the model's most falsifiable prediction. That credit is undeserved if the prediction is parasitic on globe astronomy for its entire spatiotemporal structure — the dome only adds a multiplicative fudge factor (FSF) to a globe-computed magnitude. Crediting the prediction as prospective is like crediting a weather forecaster for predicting sunrise: the hard work is done by celestial mechanics the forecaster did not compute.",
+    "confidence": 0.95
+  },
+  "fingerprint_2": {
+    "name": "The Kp<2 escape clause is a globe instrument",
+    "description": "The dome's prediction includes a quiet-time filter: the eclipse magnetic signal only counts if the planetary K-index Kp<2 at the time of observation. This filter is scientifically defensible in principle (storm-time signals can swamp the eclipse signature), but the Kp index itself is a WGS84-geomagnetic-latitude-weighted product computed from 13 globally distributed observatories. The Kp definition requires (a) geomagnetic latitude for each observatory, which is derived from IGRF — a spherical harmonic expansion on a globe, (b) a standardized 3-hour UT window based on Earth rotation, and (c) a K-to-Kp conversion table calibrated against mid-latitude planetary averages assuming global symmetry. On a dome, there is no geomagnetic latitude (the dome's WIN-053 produces a U-shaped field profile that doesn't define latitude) and no spherical harmonic basis; a reconstructed Kp would have to be defined differently. The escape clause accepts Kp as a valid filter, which means the dome's success criterion silently relies on globe geomagnetic infrastructure. monitor.py line 563 fetches Kp from a standard external API — the dome site does not ship an alternative dome-native activity index.",
+    "globe_value": "Kp index (planetary, 13-observatory, WGS84/IGRF-weighted)",
+    "dome_value": "Kp<2 filter accepted as-is in dome prediction; no dome-native replacement defined",
+    "code_evidence": {
+      "file": "monitor.py lines 234, 562-568",
+      "detail": "fetch_kp() function fetches current Kp from an external service. Line 566: \"Kp < 2 required for eclipse signal\". No alternate dome activity index is defined anywhere in the repository. The escape clause imports a globe quantity and applies it without modification.",
+      "verified": true
+    },
+    "why_it_matters": "The section already asks \"does the escape clause allow post-hoc data exclusion\" (point in the TLDR). An additional sharper framing: the escape clause does not just allow exclusion — it cannot even be evaluated without globe infrastructure. If the eclipse is on a quiet day by Kp<2 and the anomaly appears, the success depends on accepting Kp; if it is on an active day and the prediction fails, the exclusion also depends on Kp. Either way, the globe's activity index is the arbiter of the dome's most falsifiable test.",
+    "confidence": 0.85
+  },
+  "fingerprint_3": {
+    "name": "The 8,619 km scale length is stapled across unrelated domains",
+    "description": "The H(r) function used for eclipse FSF derivation, H(r) = 8,537 × exp(-r/8619), shares its decay scale 8,619 km with WIN-053's two-pole geomagnetic formula: B(r_N, r_S) = 62,376 × exp(-r_N/8619) + 64,852 × exp(-r_S/8619). Two unrelated physical domains — firmament \"height\" (a geometric optical function) and geomagnetic field amplitude (an electromagnetic field) — use the identical decay length with no derivation connecting them. If 8,619 km arose from dome physics, one would expect different domains to yield different scale lengths (e.g., atmospheric scale height ~8 km, geomagnetic decay on a dipole ~R_E ≈ 6,371 km, ionospheric scale ~100 km). Instead the dome reuses 8,619 km wherever an exponential is needed. This is a fingerprint of parameter reuse without derivation: the number is fitted in one place (WIN-053 was fitted to known magnetic pole strengths; see section 6.8 in the same part) and then exported to another. When a model's \"universal constants\" appear only in its own fitted formulas and nowhere in independent observation or first-principles derivation, the constants are confessing that the formulas are ad hoc.",
+    "globe_value": "N/A — this is a dome-internal parameter-reuse fingerprint, not a direct globe-value match",
+    "dome_value": "λ = 8,619 km appears identically in H(r) for WIN-010 eclipse FSF and in WIN-053 geomagnetic two-pole formula",
+    "code_evidence": {
+      "file": "scripts/fsf_derivation.py line 6 (H = 8537*exp(-r/8619)) + check_eclipse_fsf.py line 27 + WIN-053 prose in sections.json part6",
+      "detail": "The FSF derivation script defines H(r) = 8537*np.exp(-r/8619). The WIN-053 formula is 62,376*exp(-r_N/8619) + 64,852*exp(-r_S/8619). Same decay length 8,619 km in both. No script or document derives 8,619 km from first principles; it appears only as a literal constant in fitting contexts.",
+      "verified": true
+    },
+    "why_it_matters": "Section 6.8 flags WIN-053 as having three free parameters fitted to known pole strengths. Section 6.7 presents the eclipse prediction as separate. The parameter reuse shows the sections are not independent: the eclipse prediction inherits its characteristic length scale from a formula that was curve-fit in a different domain. Strengthens the broader thesis that the dome's \"zero fitted parameters\" claim is false — the fit done in WIN-053 propagates forward into WIN-010's predictions.",
+    "confidence": 0.8,
+    "newsworthy": "The dome's eclipse prediction secretly inherits a curve-fit from its geomagnetic formula — same 8,619 km, two unrelated physics domains"
+  },
+  "suggested_additions": [
+    {
+      "target": "Section 6.7, Structural problems, new point 5 (after point 4 on wide prediction window)",
+      "text": "<p>5. <strong>The event, the path, and the coverage are all globe outputs.</strong> The date of totality (Aug 12 2026), the shadow path across the 9 INTERMAGNET stations, and the per-station coverage fractions (0.42 to 0.95) all come from NASA's spherical-Earth ephemeris. The dome's own scripts (<code>fsf_derivation.py</code>, <code>monitor.py</code>) accept these values as hardcoded literals with no flat-disc derivation. No repository file computes umbra/penumbra geometry on a 20,015 km disc with a sun at 5,733 km altitude and a moon at 2,534 km altitude. The prediction's entire spatiotemporal structure is imported globe astronomy; the dome adds only a multiplicative Field Strength Factor to a pre-computed magnitude. A genuinely prospective dome prediction would need to first derive when and where eclipses occur from disc geometry — this has never been published.</p>",
+      "rationale": "Complements SEC-4.2 fingerprint-2 (formula shopping) by focusing on the inputs rather than the formula. SEC-6.7 is about whether the prediction is genuine vs pre-fitted; this point makes the import-vs-derive distinction explicit."
+    },
+    {
+      "target": "Section 6.7, inside point 4 (wide prediction window), or as new point 6",
+      "text": "<p>The quiet-time filter (Kp&lt;2) adds another globe dependency. The planetary K-index is computed from 13 observatories at fixed WGS84 coordinates with geomagnetic latitude weights derived from the spherical-harmonic IGRF model. The dome site ships no alternative dome-native activity index; <code>monitor.py</code> simply fetches standard Kp from an external service (line 234). Whether the eclipse window counts as quiet — and thus whether the prediction is testable at all — depends entirely on an index defined in globe geometry.</p>",
+      "rationale": "Addresses the TLDR's open question about the escape clause by showing the filter's dependence on globe infrastructure."
+    }
+  ],
+  "code_search": {
+    "terms_searched": [
+      "eclipse",
+      "coverage",
+      "FSF",
+      "Kp",
+      "besselian",
+      "umbra",
+      "ephemeris",
+      "skyfield",
+      "astropy",
+      "8619",
+      "8537"
+    ],
+    "files_checked": [
+      "scripts/fsf_derivation.py",
+      "check_eclipse_fsf.py",
+      "monitor.py",
+      "docs/eclipse_v12_predictions.txt"
+    ],
+    "key_findings": [
+      "fsf_derivation.py: hardcodes coverage per station with no derivation; hardcodes station latitudes (WGS84)",
+      "check_eclipse_fsf.py: hardcodes r_bou=5715, r_had=3778, r_ebr=5577 — direct globe-to-dome coordinate lookup",
+      "monitor.py line 512: hardcodes coverage=0.95 and FSF=1.672 as literals",
+      "monitor.py line 234 + 562-568: Kp fetched from external service; Kp<2 required for signal; no dome-native alternative",
+      "No script computes umbra/penumbra geometry or eclipse date from dome parameters (a, h_sun, h_moon)",
+      "λ=8619 km appears in both H(r)=8537*exp(-r/8619) for eclipse FSF and in WIN-053 B-field formula — same constant, unrelated domains"
+    ]
+  }
+}

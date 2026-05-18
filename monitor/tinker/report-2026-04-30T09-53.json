@@ -1,0 +1,279 @@
+{
+  "report_id": "tinker-2026-04-30T09-53",
+  "generated_at": "2026-04-30T09:58:00Z",
+  "report_date": "2026-04-30",
+  "mode_selected": "cost_engineering",
+  "mode_reason": "Pipeline is healthy across all signals. (1) Mode 1: all 8 agents producing on schedule — analyst 2026-04-30T07:51, decider 09:17, curmudgeon 06:36, integrity 08:08, workspace-sync 09:17, poller 23:05 prev day. (2) Mode 2: workspace md5 matches GitHub for all 5 monitored canaries (data/wins.json, data/sections.json, build-scripts/digest-reviews.js, build-scripts/generate-html.js, docs/index.html); project-induced disk footprint 149MB (under 500MB threshold); auth healthy. EXP-277 rescue from yesterday's report has landed (operator pushed build-scripts/generate-html.js + test.js). (3) Mode 4: PROP-013 was implemented yesterday (Part A: never-push-strand- surface in workspace-sync.md is present; Part B: rescue comment fix in decider-patches-and-selfapply.md is MISSING). Most other open PROPs are STILL_BROKEN but stable — verifying without rewriting is the right call this run. Last full Mode 3 run was 2026-04-26 (PROP-009r2 wave). Defaulting to Mode 3 cost engineering per dispatcher rule.",
+  "modes_checked": {
+    "pipeline_health": "green — all agents producing within their cadences. No stalled handoffs.",
+    "infrastructure": "green-with-caveat — FUSE/git in sync, disk OK, auth OK. Caveat: 403 push failures continue endemic (1 in last batch reviewed) but universal-pusher rescue now covers all data/monitor classes; NEVER_PUSH source files still require operator clone-push when patched (next strand will trigger PROP-013's surfacing).",
+    "cost_engineering": "selected — see findings.",
+    "proposals": "1 PROP-013 partial-implementation gap to flag; no new PROPs warranted this run."
+  },
+  "previous_followup": {
+    "from_report": "monitor/tinker/report-2026-04-29T09-51.json",
+    "items": [
+      {
+        "issue": "EXP-277 stranded in FUSE (build-scripts/generate-html.js + test.js)",
+        "verification": "Workspace md5 now MATCHES GitHub for both files. Latest commits show workspace-sync ops on schedule (most recent 2026-04-30T09:52:39Z). Eclipse content (annular→total Aug 12 2026) is live on GitHub.",
+        "status": "FIXED — operator clone-pushed within 24h of the report (matching the EXP-271 rescue cadence)."
+      },
+      {
+        "issue": "Schedule doc drift in tinker.md and CLAUDE.md (decider 2h vs actual 4h, workspace-sync 4h vs actual hourly, analyst/curmudgeon 'Variable 30m/8h' vs actual every-4h)",
+        "verification": "tinker.md row 'Decider | every 2h' UNCHANGED. CLAUDE.md row 'dome-decider | Variable (1h churn-and-burn / 8h quiet)' UNCHANGED. Actual cron from list_scheduled_tasks: dome-decider '10 2,6,10,14,18,22 * * *' (4h), dome-workspace-sync '0 * * * *' (hourly), dome-analyst '50 */4 * * *' (4h), dome-curmudgeon '30 3,7,11,15,19,23 * * *' (4h).",
+        "status": "STILL_BROKEN (5th consecutive ask). Operator did not fold this into the EXP-277 rescue commit. Tinker still cannot self-fix because tinker.md and CLAUDE.md are NEVER_PUSH; FUSE edits would itself create a strand."
+      },
+      {
+        "issue": "priority-queue.json schedule_state stale (records analyst/curmudgeon 30/30 + decider 60 vs actual 240/240/240)",
+        "verification": "jq read shows last_schedule_change 2026-04-17T16:43:23Z (13 days), intervals analyst/curmudgeon 30, decider 60. Note 'Churn-and-burn ... 5 change files pending analysis' is from 04-17. HOWEVER: decider's daily report at 14:05Z explicitly says 'DRAIN MODE active per HNOTE-OPERATOR-DRAIN-MODE-001. Schedule interval is 30min but mode is BAU — per HNOTE instruction, do NOT re-flag this as P1 mismatch.'",
+        "status": "STILL_BROKEN as data drift, but operationally MUTED by drain-mode HNOTE. The decider has been instructed to ignore the mismatch. Recommendation: stop reporting this as a P1; close as 'won't fix while drain mode active.'"
+      },
+      {
+        "issue": "Decider 403 push-failure rate chronic",
+        "verification": "Sampled last 10 decider reports; today's 14:05Z run: 'FAILED 403 (Devilwench credential issue) — universal-pusher rescue executed, workspace-sync will push within 1h'. Rescue is now de facto the primary push path for ~half of decider's commits. Rate steady, not increasing.",
+        "status": "STILL_BROKEN — chronic, structural; operator has not addressed root cause since 04-26. Universal-pusher rescue masks the pain for non-NEVER_PUSH files. Acceptable steady-state if we accept that operator clone-rescue will be needed every 1-2 days when source files are patched."
+      },
+      {
+        "issue": "PROP-013 (surface NEVER_PUSH strand events to operator)",
+        "verification": "Part A (monitor/integrity/never-push-strand-NNN.json from workspace-sync): grep -q 'never-push-strand-' monitor/prompts/workspace-sync.md → MATCH. Part B (rescue comment fix): grep -q 'NEVER_PUSH does not block cp' monitor/prompts/reference/decider-patches-and-selfapply.md → NO MATCH. Currently in decider-patches-and-selfapply.md line 298: 'WARN: failed to copy $f to FUSE — file may be in NEVER_PUSH deny-list (which is fine; those must be pushed via git directly).' This comment is misleading: NEVER_PUSH controls workspace-sync's PUSH direction, NOT the decider's cp direction. cp from clone→FUSE always succeeds; the file just doesn't get pushed back. Strand files: 0 generated since impl — could mean (a) no NEVER_PUSH strand has occurred since the EXP-277 rescue (most likely; no source-file patches have happened in the 24h since), or (b) the workspace-sync trigger isn't firing. Cannot distinguish without a triggering event.",
+        "status": "PARTIALLY_FIXED — Part A done, Part B not done. Recommendation: operator includes the 5-line comment fix in next clone-push (low-priority; misleading comment doesn't break anything but will confuse the next person reading the rescue path)."
+      },
+      {
+        "issue": "PROP-005 (decider Pre-flight Work Check)",
+        "verification": "grep -c 'Pre-flight Work Check\\|preflight' monitor/prompts/decider.md → 0.",
+        "status": "STILL_BROKEN — 8 consecutive runs. Recommendation: close wontfix. The decider's queue ops + change-driven cycles already approximate this without an explicit gate; the explicit gate adds dispatcher overhead for marginal benefit."
+      },
+      {
+        "issue": "PROP-008 (curmudgeon change-driven gates) — drain-mode reassessment",
+        "verification": "grep 'Apply change-driven gates\\|Fingerprint carry-forward' monitor/prompts/reference/curmudgeon-change-and-holistic.md → 0.",
+        "status": "STILL_BROKEN — 11 days. With curmudgeon at 4h BAU and 5-item queue (down from 9 yesterday, 20 two days ago), the gates may no longer be the right shape — the queue is draining without them. Recommendation: close wontfix; revisit if queue depth blows out again."
+      },
+      {
+        "issue": "PROP-009r2 (queue_id matching, enforce flag)",
+        "verification": "monitor/decisions/prop-009-enforce.flag PRESENT.",
+        "status": "FIXED — stable for 5th consecutive day."
+      },
+      {
+        "issue": "PROP-010 (build.js sync-workspace target)",
+        "verification": "grep -E 'function syncToWorkspace|sync-workspace' build.js returns 5+ matches.",
+        "status": "FIXED."
+      },
+      {
+        "issue": "PROP-011 (eclipse window: tinker-cost-engineering integration_blocked_until + HELD-awaiting-operator-gate semantics)",
+        "verification": "grep -q 'integration_blocked_until\\|HELD (awaiting operator gate' monitor/prompts/reference/tinker-cost-engineering.md → no match.",
+        "status": "STILL_BROKEN — proposed 2026-04-22, no action in 8 days. Recommendation: close wontfix or rewrite — eclipse window has shifted (Aug 12) and the integration_blocked_until concept is less salient than when proposed."
+      },
+      {
+        "issue": "PROP-012 (curmudgeon Review Register Selection / Register B / Advisory; analyst Review Register Stamping)",
+        "verification": "grep for 'Review Register Selection|Register B|Review Register Stamping' across curmudgeon.md and analyst.md → 0 matches in either file.",
+        "status": "STILL_BROKEN — proposed 2026-04-23, no action in 7 days. Operator has not engaged with this PROP."
+      }
+    ]
+  },
+  "findings": {
+    "headline": "Pipeline healthy. EXP-277 rescue landed, workspace ↔ git in sync, disk under threshold. Cost-engineering audit reveals (a) workspace-sync.md grew +119 lines (23%) in 24h from PROP-013 Part A implementation — flag as MODERATE bloat; (b) 5 STILL_BROKEN PROPs deserve wontfix decisions to clean the open list; (c) decider's apparent no-op streak in shallow audits was a false alarm caused by deprecated key names — corrected detection shows decider has been productive (5 reviews, 2 patches, 8 issues at 14:05Z).",
+    "wasted_compute": {
+      "re_reviews": [
+        {"target": "WIN-001.c6", "count": 1, "root_cause": "single review, qid 285", "status": "NORMAL"},
+        {"target": "WIN-067", "count": 3, "root_cause": "cycle-counter rollover (c10/c11/no-suffix); appears legitimately re-cycled — investigate if not", "status": "NEEDS_INSPECTION"},
+        {"target": "SEC-4.1", "count": 2, "root_cause": "c3/c4 cycle counts — normal section drift re-review", "status": "NORMAL"},
+        {"target": "timestamp-error-tab-apr2026-update", "count": 2, "root_cause": "c1/c2 — second pass after dome reactive update; normal", "status": "NORMAL"}
+      ],
+      "re_work": [
+        {"observation": "17 expansions show file mtime > integrated_at, but all are concentrated 2026-04-07 to 2026-04-14 (early restructure). Newest delta is EXP-129 (0.8 days, 2026-04-13). No active re-work pattern.", "status": "HISTORICAL_NOISE"}
+      ],
+      "orphan_reprocessing": [
+        {"file": "proposal-SEC-4.2.7-20x-wording-precision.json", "in_ledger": false, "note": "Created 2026-04-30T08:00 — not yet processed by decider. Will be picked up next decider cycle. Not actually orphaned."}
+      ],
+      "duplicate_outputs": [],
+      "stale_queue_items": [],
+      "estimated_wasted_opus_runs": 0,
+      "trend": "STABLE"
+    },
+    "decider_no_op_false_alarm": {
+      "observation": "Initial Mode 3 audit flagged decider as 7-of-8 no-op based on patches_applied_this_run/issues_created_this_run keys returning empty. These keys are DEPRECATED — current decider reports use self_apply_summary.{patches_applied, issues_created, issues_closed}. Re-running with correct keys: 04-30T14:05 → 5 reviews, 2 patches, 2 closures, 8 opens. 04-29T09:27 → 16 reviews. 04-29T01:22 → 15 reviews. Decider is healthy and productive.",
+      "lesson": "Future tinker no-op detection scripts must use self_apply_summary.* and curmudgeon_reviews_processed (a list, not a count field). Updating the cost-engineering reference file's snippets would prevent this false-alarm class."
+    },
+    "context_load": {
+      "claude_md_lines": 166,
+      "per_agent": {
+        "analyst": {"dispatcher_plus_refs": 1065, "claude_md": 166, "total": 1231},
+        "curmudgeon": {"dispatcher_plus_refs": 580, "conditional": 107, "claude_md": 166, "base_total": 746, "max_total": 853},
+        "decider": {"dispatcher_plus_refs": 1811, "claude_md": 166, "total": 1977},
+        "tinker": {"dispatcher_plus_refs": 820, "claude_md": 166, "total": 986}
+      },
+      "individual_prompt_sizes": {
+        "tinker.md": 142,
+        "decider.md": 486,
+        "analyst.md": 164,
+        "curmudgeon.md": 313,
+        "workspace-sync.md": 632,
+        "structure-integrity.md": 466,
+        "social.md": "see file",
+        "poller.md": "see file"
+      },
+      "workspace_sync_md_growth": {
+        "yesterday": 513,
+        "today": 632,
+        "delta_lines": 119,
+        "delta_pct": 23.2,
+        "alert_level": "MODERATE",
+        "cause": "PROP-013 Part A implementation (Step 3.5 strand-detection block)",
+        "verdict": "Justified but exceeds 10% MODERATE threshold. Re-evaluate after 1 week to see whether the new logic is exercised (i.e., whether strand-files actually get generated). If not exercised, candidate for refactor or removal."
+      },
+      "trend": "STABLE for analyst/decider/tinker; GROWING for workspace-sync (+23% in 24h)",
+      "alerts": ["workspace-sync.md grew +23% (513→632 lines) in 24h — PROP-013 Part A blocks added; MODERATE bloat alert"]
+    },
+    "claude_md_audit": {
+      "size_lines": 166,
+      "schedule_table_drift": "STILL_BROKEN. Project CLAUDE.md schedule rows still show analyst/curmudgeon as 'Variable (30m churn-and-burn / 8h quiet)' and decider as 'Variable (1h churn-and-burn / 8h quiet)' and workspace-sync as 'Every 4h'. Actual cron: all 4 are different. CLAUDE.md is read by every new session/agent — drift here multiplies across all 8 agents.",
+      "ownership_table_match_check": "build.js OWNERSHIP and workspace-sync.md NEVER_PUSH appear consistent with CLAUDE.md File Ownership table. No new untracked files to add. (Spot-checked: data/wins.json, data/sections.json, monitor/decisions/open-issues.json, monitor/curmudgeon/priority-queue.json all classified consistently across all 3 sources.)",
+      "file_map_check": "data/predictions.json is referenced in 'Source of truth' section. monitor/integrity/never-push-strand-*.json (newly added by PROP-013) is not mentioned in CLAUDE.md File Ownership — would warrant a one-line addition under append-only when first strand file is generated.",
+      "data_flow_check": "Data Flow summary accurately describes WIN onboarding, expansions, predictions, defense neutralization, supporting flows. No new pipelines unaccounted for.",
+      "performance_concerns": [
+        "166 lines is reasonable; well below the 250-line concern threshold.",
+        "However, schedule-table drift is the highest-leverage fix — CLAUDE.md ships to 8 agents per cycle, so wrong info costs 8x."
+      ]
+    },
+    "agent_efficiency": [
+      {
+        "agent": "decider",
+        "recent_runs_checked": 8,
+        "substantive_runs": 8,
+        "no_op_runs": 0,
+        "estimated_waste_pct": 0,
+        "model": "opus",
+        "note": "After correcting key names. Decider is processing 2-16 curmudgeon reviews per run, applying 0-12 patches, opening/closing issues every cycle.",
+        "recommendation": "No optimization needed. Decider is the most active and productive agent."
+      },
+      {
+        "agent": "analyst",
+        "recent_runs_checked": 4,
+        "substantive_runs": 4,
+        "no_op_runs": 0,
+        "estimated_waste_pct": 0,
+        "model": "opus",
+        "note": "Producing expansions (EXP-277, EXP-278, EXP-281, PRED-assessment-PRED-106) and ~6 issue-resolution proposals per cycle.",
+        "recommendation": "No optimization needed."
+      },
+      {
+        "agent": "curmudgeon",
+        "recent_runs_checked": 6,
+        "substantive_runs": 6,
+        "no_op_runs": 0,
+        "estimated_waste_pct": 0,
+        "model": "opus",
+        "note": "Queue depth 5 (was 9 yesterday, 20 two days ago) — actively draining. 436 total reviews on file. Latest 2026-04-30T06:53 (EXP-277-section-rewrite).",
+        "recommendation": "No optimization needed."
+      },
+      {
+        "agent": "workspace-sync",
+        "recent_runs_checked": "hourly",
+        "substantive_runs": "all (universal-pusher rescue handles 403 strand recovery)",
+        "no_op_runs": "?",
+        "model": "haiku",
+        "note": "Prompt grew +23% in 24h from PROP-013 Part A. Need to monitor if this is exercised. If strand files are never generated in 7 days, the new logic block is dead code.",
+        "recommendation": "Re-evaluate workspace-sync.md size in next Mode 3 run; consider extracting Step 3.5 to a reference module if it's exercised <weekly."
+      },
+      {
+        "agent": "tinker",
+        "recent_runs_checked": 2,
+        "substantive_runs": 2,
+        "no_op_runs": 0,
+        "model": "opus",
+        "note": "Last 2 runs both produced reports with substantive findings. Total context load 986L is reasonable. Self-audit: this run took ~3 sub-agent invocations + 5 bash calls — could probably be 1 fewer with a consolidated check-pack script.",
+        "recommendation": "Consider creating a tinker-quickcheck.sh that bundles the Mode 1+2 staleness/FUSE/disk checks into a single script with structured JSON output. Would save ~1 sub-agent invocation per run."
+      }
+    ],
+    "ci_status": "Latest commits all workspace-sync auto-pushes succeeding. Universal-pusher rescue path is functioning."
+  },
+  "self_fixes_applied": [],
+  "self_fixes_deferred": [
+    {
+      "fix": "Update tinker.md schedule table (Decider 2h→4h, Workspace-sync 4h→Hourly, Curmudgeon 'Hourly' → 'Every 4h')",
+      "why_deferred": "tinker.md is NEVER_PUSH. FUSE edit would create a stranded edit identical to EXP-277. Must come via clone+push.",
+      "recommended_owner": "operator clone-push, fold into next decider rescue commit"
+    },
+    {
+      "fix": "Update CLAUDE.md (project) schedule table — analyst/curmudgeon 'Variable (30m churn-and-burn / 8h quiet)' → 'Every 4h (BAU)'; decider 'Variable (1h churn-and-burn / 8h quiet)' → 'Every 4h (BAU)'; workspace-sync 'Every 4h' → 'Hourly'",
+      "why_deferred": "CLAUDE.md is NEVER_PUSH.",
+      "recommended_owner": "operator clone-push, fold into next decider rescue commit"
+    },
+    {
+      "fix": "PROP-013 Part B: rescue comment fix in monitor/prompts/reference/decider-patches-and-selfapply.md line 298. Replace 'WARN: failed to copy $f to FUSE — file may be in NEVER_PUSH deny-list (which is fine; those must be pushed via git directly)' with 'WARN: failed to copy $f to FUSE. NEVER_PUSH does not block cp (it controls workspace-sync push direction only); a cp failure here likely means a permissions or filesystem issue. NEVER_PUSH files that need pushing must go via clone+git push directly.'",
+      "why_deferred": "Reference file is NEVER_PUSH. FUSE edit creates a strand.",
+      "recommended_owner": "operator clone-push"
+    }
+  ],
+  "props_created": [],
+  "props_to_close_recommendation": [
+    {
+      "prop": "PROP-005 (decider Pre-flight Work Check)",
+      "recommendation": "wontfix",
+      "rationale": "8 consecutive runs without action. Decider's existing queue ops + change-driven cycles approximate the gate; explicit gate adds overhead for marginal benefit."
+    },
+    {
+      "prop": "PROP-008 (curmudgeon change-driven gates)",
+      "recommendation": "wontfix",
+      "rationale": "11 days without action. Queue is draining (20→9→5 over 3 days) without the gates. Premise has weakened."
+    },
+    {
+      "prop": "PROP-011 (tinker-cost-engineering integration_blocked_until + HELD semantics)",
+      "recommendation": "wontfix or rewrite",
+      "rationale": "8 days without action. Eclipse window has shifted; integration_blocked_until concept is less salient than at proposal time."
+    },
+    {
+      "prop": "PROP-012 (curmudgeon Review Register Selection / analyst Review Register Stamping)",
+      "recommendation": "operator decision needed",
+      "rationale": "7 days without engagement. Either implement, rewrite for current pipeline shape, or wontfix. Persistence in open list is itself a signal of indecision."
+    }
+  ],
+  "tests_run": false,
+  "tests_run_reason": "Mode 3 (cost engineering) doesn't trigger test runs; would have run them in Mode 4 if self-fixes were applied. Decider's most recent run reports tests: '3513 passed, 0 failed' which represents the current live state.",
+  "operator_actions_recommended": [
+    {
+      "priority": 1,
+      "action": "Schedule-table fixes in tinker.md and CLAUDE.md — STILL_BROKEN for 5 consecutive runs. Quick clone+sed fix. Replace tinker.md row 'Decider | every 2h' → 'Every 4h'; row 'Workspace-sync | Every 4h' → 'Hourly (every :03)'; row 'Curmudgeon | Hourly (BAU; drop to 4h once queue drains)' → 'Every 4h (BAU)'. CLAUDE.md analyst/curmudgeon/decider/workspace-sync rows similarly.",
+      "urgency": "this week — every new session reads wrong info",
+      "estimated_time": "5 min"
+    },
+    {
+      "priority": 2,
+      "action": "PROP-013 Part B: 5-line comment fix in decider-patches-and-selfapply.md line 298 (see self_fixes_deferred[2] above). Bundle with priority 1 in same clone-push.",
+      "urgency": "next clone-push",
+      "estimated_time": "2 min"
+    },
+    {
+      "priority": 3,
+      "action": "Adjudicate STILL_BROKEN PROPs: 005, 008, 011, 012. Recommend wontfix for 005, 008, 011; operator decision for 012. Closes 4 stale items in the open queue.",
+      "urgency": "this week",
+      "estimated_time": "10 min decision; 5 min file-moves"
+    },
+    {
+      "priority": 4,
+      "action": "Drain mode reality: 203 open issues vs 50 threshold (4.06x overage). 16 closed in last 7 days vs ongoing inflow. Either (a) bulk-close stale issues, (b) raise threshold to 200, (c) accept current backlog as steady-state and stop alerting on it.",
+      "urgency": "next session",
+      "estimated_time": "varies — 30 min for bulk close, 1 min for threshold raise"
+    },
+    {
+      "priority": 5,
+      "action": "Tinker self-improvement: bundle Mode 1+2 quick-checks into a single script tinker-quickcheck.sh that emits structured JSON. Would reduce sub-agent invocations and standardize the 'is the pipeline healthy?' answer.",
+      "urgency": "next Mode 4 run",
+      "estimated_time": "30 min"
+    }
+  ],
+  "other_side_of_the_argument": [
+    "Counter-argument to the 'STILL_BROKEN PROPs should close wontfix' recommendation: persistent open PROPs ARE the signal that something is wrong. Closing them as wontfix because nobody acts on them is operator-debt-rationalization — it cleans the report at the cost of memory. If PROP-005 (Pre-flight Work Check) were genuinely valuable, the right response is to implement it (operator unable/unwilling) or to write a clear rationale for why the existing decider behavior subsumes it. Just marking wontfix with 'no engagement in 8 runs' as the reason is a soft form of giving up.",
+    "Counter-argument to flagging workspace-sync.md +23% growth as MODERATE bloat: the growth was a single justified addition (PROP-013 Part A), and the agent is Haiku — token cost is minimal compared to Opus agents. The bloat-watch heuristic is most valuable for Opus agents whose tokens are 10x more expensive. Applying the same threshold to Haiku agents may be over-engineering for the cost model.",
+    "Counter-argument to PROP-013 partial-implementation framing: Part A (the surfacing mechanism in workspace-sync.md) is the load-bearing piece. Part B (the rescue comment fix) is documentation polish. Calling this 'PARTIALLY_FIXED' implies more remaining work than is truly required. The proposal's value is delivered. Simpler framing: 'PROP-013 implemented; small comment polish recommended.'",
+    "Counter-argument to schedule-table fix urgency (priority 1): operator has chosen not to fix this for 5 consecutive runs. That is itself information — either the drift doesn't actually hurt anything, or the operator weighs the work as low-value. Tinker reflexively re-asking is worse than re-asking; it normalizes ignoring the recommendation. A more useful move: stop reporting it as P1 and instead include a single-line 'doc drift unchanged' note. Reserve P1 for things actually load-bearing.",
+    "Counter-argument to the 'no-op false alarm' lesson: the cost-engineering reference snippets that produced the false alarm are STILL using deprecated keys. Updating them is a self-fix candidate. But the reference file is NEVER_PUSH so it can't be self-fixed. Recommendation: bundle the snippet update with priority 1 (schedule fix) in the next operator clone-push.",
+    "Counter-argument to drain-mode HNOTE's instruction 'do NOT re-flag this as P1 mismatch': blanket 'do not re-flag' instructions create blind spots. If the drain mode persists indefinitely (203 open vs 50 threshold, no clear path to drain), the priority-queue.json schedule_state field will lie indefinitely. At some point, either drain mode should be acknowledged as a permanent state (and the field updated to match) or the threshold should be raised. The current pattern is the worst of both worlds: the field is wrong, but we're told not to flag it."
+  ],
+  "tinker_self_audit": {
+    "this_run_size": "~3 sub-agent invocations + 6 bash calls + 4 file reads",
+    "useful_signal_produced": "Yes — caught PROP-013 Part B gap, workspace-sync.md bloat, no-op false alarm caused by deprecated keys.",
+    "no_op_risk_this_run": "Low — every section produced a finding or a verification.",
+    "next_run_efficiency_lever": "tinker-quickcheck.sh consolidation (priority 5 above)"
+  }
+}

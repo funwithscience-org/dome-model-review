@@ -1,0 +1,98 @@
+{
+  "directive_id": "DIRECTIVE-20260510-005",
+  "title": "Tinker missed a 200-item backlog accumulation for weeks: add queue-level trend metrics to Mode 1 pipeline health audit",
+  "filed_by": "operator",
+  "filed_at": "2026-05-10T17:40:00Z",
+  "status": "completed",
+  "priority": "high",
+  "scope_authority": "Design proposal only (PROP-NNN). Operator reviews PROP before implementation. Output: a focused PROP that adds queue-level trend metrics to tinker's Mode 1 audit, with concrete thresholds and findings-generation rules. Not the kitchen sink \u2014 this DIRECTIVE is narrow.",
+  "context": [
+    "On 2026-05-10 the operator surfaced (via a casual read of the decider's daily-report mentioning 'several hundred things still in queue') that open-issues.json had grown to 230+ items, with ~120 of them in the 7-21d age band that PROP-026 was designed to drain. The conversation that followed produced PROP-026 (M1/M2/M3 backlog clearance), PROP-027 (5-action routing matrix), and HNOTE-driven drain of 61 orphans.",
+    "Tinker had run on 2026-05-07, 2026-05-09, and 2026-05-10 (operator-directive mode). All three Mode 1 quick-checks returned 'pipeline GREEN'. The 2026-05-09 report explicitly stated: 'GREEN. All scheduled agent outputs fresh: decider daily-report 78m ago, poller 3.5h, curmudgeon 3.9h, analyst 17h. Last 12 decider runs: ALL substantive. No-op rate \u2248 0%. Curmudgeon priority-queue empty.' Every individual metric tinker checked was healthy.",
+    "Tinker DOES have a Step 4: Audit Open Issues in monitor/prompts/reference/tinker-pipeline-health.md. It checks: Age (Major+ open > 7d), Repeated deferrals, Fixed-but-recurring, Issues without patches. None of these fired for the 230-item backlog because: (a) most items are minor/moderate (Major-only check missed minor accumulation), (b) items weren't 'deferred' \u2014 they were freshly-routed-to-analyst-then-sat, (c) they're not fixed-recurring \u2014 they're never-fixed, (d) they DO have patch hints in description, just no one wrote the patches.",
+    "Operator framing (2026-05-10T17:38Z): 'why didn't tinker notice that we had a 200 item queue that wasn't being burned down in the first place? that's one of its core functions.' Followed (T17:42Z) by: 'tinker never noticed. the system itself did.'",
+    "The legitimate critique: tinker's audit surface measured *liveness* (are agents running, are outputs fresh, no-op rates low) but never *throughput* (is the work-backlog growing or shrinking, week over week). A pipeline can be 100% live and still have a slowly-accumulating queue if inflow > outflow by a small amount over many cycles."
+  ],
+  "operator_intent": "Add queue-level trend metrics to tinker's Mode 1 pipeline health audit. Threshold-triggered findings should fire BEFORE the backlog becomes operator-visible-by-accident. The audit is the entire goal of this DIRECTIVE \u2014 no other behavior changes proposed.",
+  "tasks": [
+    {
+      "task_id": "task_1_define_metrics",
+      "description": "Specify the exact metrics tinker should compute each run and the data sources they come from.",
+      "proposed_metrics": {
+        "open_issues_total": "len(open-issues.json.issues). Single integer.",
+        "open_issues_by_status": "Group by .status field. {open, assigned-analyst, blocked-on-curmudgeon, partially-fixed-pending-verification, pending-human, monitoring}.",
+        "open_issues_age_distribution": "Bucket by age: 0-2d, 2-7d, 7-14d, 14-30d, 30-90d, >90d. Compute from created_at OR found_at. Per-bucket count.",
+        "closed_issues_velocity_7d": "Count of closed-issues.json entries with fixed_at within last 7d. Compute from closed-issues.json + closure-ledger.jsonl.",
+        "new_issues_velocity_7d": "Count of open-issues.json entries with created_at OR found_at within last 7d.",
+        "net_velocity_7d": "closed - new. Negative = backlog growing.",
+        "assigned_analyst_count_and_age": "Subqueue: count + median age in days. Today this would have shown 61\u219283 growth with median ~14d.",
+        "queue_history_jsonl": "Append-only ledger (one line per tinker run) recording all the above metrics. Lives at monitor/tinker/queue-history.jsonl. Tinker reads tail-N entries to compute trend deltas."
+      },
+      "data_sources": [
+        "monitor/decisions/open-issues.json (current state)",
+        "monitor/decisions/closed-issues.json (recent closures)",
+        "monitor/decisions/closure-ledger.jsonl (PROP-026 closure audit trail)",
+        "monitor/tinker/queue-history.jsonl (NEW \u2014 append-only by tinker each run, reads tail-N for trend)"
+      ]
+    },
+    {
+      "task_id": "task_2_define_thresholds_and_findings_severity",
+      "description": "When does tinker emit a finding vs stay quiet? Threshold logic.",
+      "proposed_thresholds": {
+        "info_finding": "open_issues_total grew >5% week-over-week (count this week vs count 7d ago in queue-history.jsonl).",
+        "moderate_finding": "ANY of: total > 200, OR total grew >10% WoW, OR net_velocity_7d < 0 for 2 consecutive runs, OR assigned-analyst count > 50.",
+        "major_finding": "ANY of: total > 300, OR total grew >20% WoW, OR net_velocity_7d < 0 for 4 consecutive runs, OR assigned-analyst count > 100, OR age-bucket >30d count > 50.",
+        "operator_escalation": "ANY of: total > 400, OR negative velocity for 7 consecutive runs (suggests structural problem), OR assigned-analyst >150. Tinker emits a Mode 1 finding tagged 'operator-attention-required' and recommends invoking burndown mode (mode='burndown' in decider-mode.json) OR filing a tinker DIRECTIVE for structural fix."
+      },
+      "where_finding_lands": "In tinker's daily report under findings[], with category='backlog-trend' and severity per thresholds above. Surfaces in Mode 1 quick-check summary even when tinker is otherwise in Mode 3/4. So even when tinker is busy with PROPs, the backlog finding still gets emitted.",
+      "design_note": "These thresholds are first-draft guesses by operator. Tinker should sanity-check against the historical curve (e.g., 'in the 60 days before 2026-05-10, what was the actual open_issues_total range?') and propose calibrated thresholds based on real distribution. Operator wants thresholds that fire on this kind of growth pattern, not noise thresholds that fire on routine fluctuation."
+    },
+    {
+      "task_id": "task_3_specify_implementation",
+      "description": "Concrete prompt edits + new files + behavior in this PROP's scope.",
+      "expected_implementation_files": [
+        "monitor/prompts/tinker.md (small dispatcher addition \u2014 read queue-history.jsonl tail-N + open-issues.json + closed-issues.json at run start)",
+        "monitor/prompts/reference/tinker-pipeline-health.md Step 4 (extend with queue-level metrics + thresholds + findings rules)",
+        "monitor/tinker/queue-history.jsonl (NEW append-only ledger \u2014 tinker is sole writer, one line per run)",
+        "build.js OWNERSHIP table (add queue-history.jsonl as git-owned append-only or workspace-owned; tinker should decide based on read pattern)",
+        "monitor/prompts/workspace-sync.md (if queue-history is workspace-owned, add to iteration; if git-owned, ensure it's in NEVER_PUSH-like classification or sync_glob)"
+      ],
+      "backfill_question": "For the first 7-14 days after this lands, tinker has no historical data to compute WoW from. Should the first runs (a) emit no trend findings until 7+ history entries exist, (b) bootstrap from closure-ledger.jsonl + open-issues.json change-history-via-git-log, (c) just count current state without trend until enough history accumulates? Recommend the cleanest path."
+    },
+    {
+      "task_id": "task_4_calibrate_against_today",
+      "description": "Quick retroactive check: if the proposed metrics + thresholds had been in place over the past 14 days, which findings would have fired and when? This is a sanity-check for whether the design would have actually surfaced the 200-item backlog earlier than the operator noticed it.",
+      "deliverable": "A 'retroactive simulation' section in the PROP showing: 'On 2026-05-03, tinker would have emitted moderate-finding (total = 215). On 2026-05-06, tinker would have emitted moderate-finding for 2nd consecutive run, escalating to recommend burndown mode engagement.' Etc. If the simulation shows findings would have fired only on 2026-05-09 (one run before operator noticed), thresholds may be too loose. Adjust."
+    },
+    {
+      "task_id": "task_5_carve_out_NOT_in_scope",
+      "description": "Explicitly NOT in scope for this DIRECTIVE: (a) automatically engaging burndown mode (that stays operator-authorized); (b) auto-closing stale issues (M1 already does that via decider, not tinker); (c) rewriting Step 1-3 of tinker's audit (only Step 4 + Mode 1 quick-check are extended); (d) any change to how analyst or decider read issues (purely an audit-surface addition, no behavioral change to other agents). The PROP should explicitly say 'NOT IN SCOPE' for each of these to prevent scope-creep.",
+      "deliverable": "Explicit 'NOT in scope' section in the PROP."
+    }
+  ],
+  "constraints": [
+    "PROP-NNN authoring authority only. Tinker proposes; operator reviews; operator (or tinker) applies per PROP scope.",
+    "Respect existing PROP-009r2, PROP-014, PROP-022, PROP-025, PROP-026, PROP-027. The new PROP should fit cleanly.",
+    "Output one PROP file under monitor/tinker/proposals/PROP-NNN-tinker-backlog-trend-monitoring.json or similar.",
+    "After PROP authored, tinker may set this DIRECTIVE's status='completed' with prop_id_authored='PROP-NNN' per PROP-014-amendment-001 Q6 lifecycle convention."
+  ],
+  "expected_output_files": [
+    "monitor/tinker/proposals/PROP-NNN-tinker-backlog-trend-monitoring.json"
+  ],
+  "related_iss_to_retire_on_prop_landing": [],
+  "related_directives": [
+    "DIRECTIVE-20260510-001-open-issues-backlog-clearance.json (PROP-026: the burndown framework this DIRECTIVE's audit metrics will RECOMMEND engaging, but tinker doesn't auto-engage)",
+    "DIRECTIVE-20260510-002-m1-routing-matrix-with-prop025-integration.json (PROP-027: the routing matrix that handles M1 routing decisions tinker will be measuring)",
+    "DIRECTIVE-20260510-003-stale-assessment-overwrite-guard.json (sibling implementation-completeness fix)",
+    "DIRECTIVE-20260510-004-decider-m1-tracker-entry-creation.json (sibling implementation-completeness fix \u2014 relates because expansion-tracker would be another thing tinker should be measuring for orphan-accumulation)"
+  ],
+  "operator_notes_to_tinker": [
+    "Honest framing: operator noticed the 200-item backlog before tinker did. Tinker's three most recent Mode 1 quick-checks all said 'pipeline GREEN' while it was clearly red on throughput. That's the gap this DIRECTIVE closes. Don't sugar-coat this in the PROP \u2014 name the gap, design the fix.",
+    "The 'retroactive simulation' in task_4 is important. The point of this DIRECTIVE is so tinker catches the NEXT silent accumulation before the operator does. Verify your thresholds would have done so this time.",
+    "Be conservative on the operator_escalation threshold (>400 total, etc.). The goal is for tinker to flag at the moderate-finding level BEFORE the operator has to manually engage burndown \u2014 not to be a redundant alarm AFTER everything's on fire. If your simulation shows operator_escalation would have fired AFTER moderate-finding by 2-3 weeks, the design is right.",
+    "Don't fold this into a broader 'tinker self-audit refactor' DIRECTIVE \u2014 it's narrow on purpose. Backlog trend monitoring is the one missing piece. Other tinker self-improvements can land in follow-up directives."
+  ],
+  "completed_at": "2026-05-11T19:54:41.450476Z",
+  "completed_by_run": "operator-applied-tinker-followup-2026-05-11",
+  "prop_id_authored": "PROP-030"
+}

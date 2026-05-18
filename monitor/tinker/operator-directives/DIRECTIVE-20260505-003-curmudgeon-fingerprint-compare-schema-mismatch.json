@@ -1,0 +1,78 @@
+{
+  "directive_id": "DIRECTIVE-20260505-003",
+  "issued_at": "2026-05-05T19:30:00.000Z",
+  "issued_by": "operator (steve via cowork session)",
+  "target_agent": "tinker",
+  "target_mode": "Mode 4 — Proposals & Self-Fixes",
+  "title": "Investigate + propose fix for curmudgeon change-detection fingerprint comparison silently skipping old-schema reviews — deep-tail self-pop starvation",
+  "priority": "medium",
+  "status": "completed",
+  "completed_at": "2026-05-05T19:58:00.000Z",
+  "completed_by_run": "tinker run 2026-05-05T19:38Z (Mode 4 — directive-driven)",
+  "prop_id_authored": "PROP-019",
+  "amendment_file_authored": "monitor/tinker/proposals/PROP-019-curmudgeon-fingerprint-compare-fix.json",
+  "summary": "Operator-side drift audit on 2026-05-05 found 14 WINs at 100-838% drift on detail_verdict (max: WIN-050 838%, WIN-028 837%, WIN-009 638%, WIN-036 636%) whose last curmudgeon review is a c2 dated 2026-04-07/08/09. These items have NEVER been re-reviewed despite massive accumulated drift, while less-drifted items get cycled normally by Priority 3 (change detection). Likely root cause: April-7-era fingerprints lack tldr_evidence_length and tldr_verdict_length fields (older schema, before TLDRs were a thing). When the change-detect drift comparison hits those missing fields, it likely returns NaN or silently skips them, so the overall eligibility check returns 'no significant drift' and the item never gets popped — even though detail_verdict_length grew from ~300 to ~3000 chars. Tinker investigates the actual current behavior, confirms or refutes the diagnosis, and proposes a fix. PROPOSE ONLY.",
+  "context": {
+    "trigger": "Operator drift audit during 2026-05-05 cowork session. Curmudgeon today did 4 reviews (3 self-pop change-detected, 1 priority-queue routed): WIN-021 c3, WIN-017 c3+c4, WIN-045 c4. None of these are in the deep tail. The 14 deep-tail items have stayed at c2 for ~28 days while curmudgeon has done dozens of self-pop reviews on other items in that window. The deep tail is structurally unreachable.",
+    "diagnosis_to_verify": "Operator's hypothesis: curmudgeon-change-and-holistic.md Step 3 says flag if 'any text field length changed by >20%'. If the comparison code does (current_len - old_len) / old_len, and old_len is undefined for tldr_* fields on c2 reviews, the result is NaN. NaN >= 20 evaluates false. If the check is per-field-OR but one field is NaN, behavior depends on implementation — could short-circuit to false, or treat as 0%. Either way, items with growth on detail_verdict_length but missing-old tldr_* fields appear to NOT be triggering. Tinker should empirically verify this by either (a) reading the curmudgeon prompt carefully and tracing the logic, or (b) running a synthetic compare on real WIN-050 fingerprints to see what curmudgeon would output.",
+    "audit_data": {
+      "self_pop_candidates_drift_at_or_above_20pct": 24,
+      "deep_tail_unreviewed_since_april_7_to_9": 14,
+      "deep_tail_ids": ["WIN-050", "WIN-028", "WIN-009", "WIN-036", "WIN-060", "WIN-018", "WIN-059", "WIN-057", "WIN-023", "WIN-048", "WIN-063", "WIN-006", "WIN-043", "WIN-066"],
+      "drift_examples": "WIN-050 detail_verdict_length grew 838% since c2; WIN-028 grew 837%; WIN-009 grew 638%; all from c2 reviews dated 2026-04-07. None re-reviewed despite Priority 3 spec saying 'prefer large text rewrites' first.",
+      "throughput_observed": "~3-4 reviews/day, ~1-2 from change-detect. New decider work adds back ~1-2 candidates/day. Net steady-state, not draining the deep tail."
+    },
+    "scope_of_prop": "Backward-compat fix for fingerprint comparison when older schemas are missing newer fields. NOT a fingerprint-format migration (would force re-fingerprinting all 462 reviews). Operator's lean: handle missing-old-field as a forward-only signal — if a field exists in the current data but not in the old fingerprint, treat it as 'field was added since last review → flag for review'. Or alternatively, when old-fingerprint is missing fields, fall back to comparing only the fields both fingerprints have (so detail_verdict drift still triggers even if tldr_* is missing-old). Tinker argues which is more correct.",
+    "why_now": "The deep-tail items aren't actively breaking anything (the c2 reviews may still be substantively correct, just stale on surface text), but the structural problem WILL re-emerge every time we add a new fingerprint field — any time the schema evolves, every review predating that schema becomes invisible to change-detect. This is a recurring failure mode, not a one-time April-7 issue.",
+    "why_not_just_force_re_review": "Operator considered queueing the 14 deep-tail items via priority-queue as a one-time clear-out. Rejected in favor of structural fix because: (a) the bug class repeats every schema evolution, (b) a queue push is a one-time triage tax, the structural fix is a one-time engineering tax with no recurring cost, (c) the deep-tail items themselves may be fine — what matters is that future schema evolutions don't strand similar tails."
+  },
+  "deliverable_requested": {
+    "output_file": "monitor/tinker/proposals/PROP-NNN-curmudgeon-fingerprint-compare-fix.json (assign next available PROP number after PROP-017)",
+    "structure": {
+      "verification_pass": "Confirm or refute the diagnosis. Trace the change-detection drift comparison through curmudgeon's prompt + reference material. Run a synthetic compare on WIN-050 (current fingerprint vs c2 fingerprint at monitor/curmudgeon/reviews/WIN-050.c2.json) to verify what curmudgeon's logic would output. Report: does it flag for review or silently skip? Show the trace.",
+      "root_cause_classification": "If diagnosis confirms: classify as schema-evolution-stranding (every fingerprint field added in the future leaves all prior reviews invisible to change-detect). If diagnosis refutes: identify the actual reason the deep tail isn't getting popped, and propose a fix for that.",
+      "fix_options_compared": "Lay out at least 3 fix options, with costs and risks: (1) Forward-only treatment: missing-old-field = 'field was added → flag for review' regardless of new value. (2) Reduced-set comparison: when old fingerprint is missing fields, compare only fields both have; if any common field shows >20% drift, flag. (3) Lazy backfill: on first encounter, re-derive old fingerprint from the review's text fields if recorded, else from the WIN's git-blamed state at review-time. Argue which is least likely to cause regression and most likely to handle future schema evolutions. Operator's lean is option 1 or 2; argue.",
+      "implementation_sketch": "For the chosen fix option, sketch the change to monitor/prompts/reference/curmudgeon-change-and-holistic.md (or wherever the comparison is specified). Use prose, not code — curmudgeon executes the comparison in the LLM, not via a script. The fix is a prompt edit that explicitly handles the missing-old-field case.",
+      "deep_tail_disposition": "Once the fix lands, what happens to the 14 deep-tail items? Will they auto-pop on the next change-detect run? If yes, in what order? Estimate the cycles needed to clear them at current 4h cadence. If the fix doesn't auto-pop them (e.g., because the prompt edit only affects future comparisons), specify whether a one-time priority-queue push of the 14 items is needed alongside the fix.",
+      "side_effects": "Will the fix introduce false positives elsewhere? E.g., if every old-schema review now flags as 'fields added → review needed', does change-detect get flooded with 199-some old reviews all flagging at once? How does the fix avoid creating its own version of the stale-loop?",
+      "regression_test": "How would we verify the fix worked? Specify: pre-fix, run change-detect synthetically against the deep-tail 14 + a control of recently-cycled items, confirm the 14 don't pop. Post-fix, re-run, confirm at least the highest-drift items now pop. Define disprove conditions.",
+      "future_schema_evolution_protection": "What changes to the curmudgeon prompt or fingerprint format would prevent the next schema evolution from stranding more reviews? Suggestions: explicit version field on fingerprint, schema migration policy, or a 'compare ONLY common fields' default. Argue."
+    },
+    "propose_only": true,
+    "do_not_implement": "DO NOT modify monitor/prompts/curmudgeon.md, monitor/prompts/reference/curmudgeon-change-and-holistic.md, or any review files. Do NOT push priority-queue entries for the deep tail. Operator reviews PROP and authorizes implementation in a separate step.",
+    "open_design_questions_for_tinker_to_address": [
+      "Should the fix preserve the existing prioritization order (verdict changes > large text rewrites > new items > TLDR-only changes), or does the missing-field case demand a new priority bucket?",
+      "If we choose option 1 (forward-only — missing-field = added → flag), how do we avoid all 199 old-schema reviews popping in a single run when the fix lands? Should the fix include a one-time soak (e.g., process at most 1 deep-tail item per run for the first N runs)?",
+      "Should the fix also write a log/note when it triggers on missing-field-added, so operator can audit the catch rate?",
+      "Curmudgeon's tracker.json — does it carry any state that would interact with this fix? Verify and call out."
+    ]
+  },
+  "non_goals": [
+    "Do NOT propose a full fingerprint-format migration that requires re-fingerprinting all 462 existing reviews.",
+    "Do NOT propose changes to the priority-queue routing logic — that's a separate concern from change-detection eligibility.",
+    "Do NOT propose changes to digest-reviews.js, decider's processing of reviews, or any review consumers — focus is on curmudgeon's eligibility check.",
+    "Do NOT broaden scope to other curmudgeon design issues — focus narrowly on the missing-old-field stranding bug."
+  ],
+  "proposed_fix_spec": {
+    "note_to_tinker": "Operator's lean is option 1 or 2 (forward-only or reduced-set comparison). If you propose a fundamentally different approach, argue for it explicitly. The 14 deep-tail items aren't actively harming the review (their c2 content may still be substantively correct), so the fix can be unhurried — quality of the structural design matters more than speed of clearing the deep tail."
+  },
+  "completion_criteria": {
+    "file_present": "monitor/tinker/proposals/PROP-NNN-curmudgeon-fingerprint-compare-fix.json exists with all 8 deliverable structure sections.",
+    "diagnosis_verified": "Either confirmed or refuted via empirical trace on a real deep-tail item (WIN-050 or similar).",
+    "options_compared": "At least 3 fix options laid out with costs/risks, recommendation argued.",
+    "deep_tail_disposition_specified": "Clear statement on whether the 14 items auto-pop after the fix, and if not, what additional action is needed.",
+    "side_effects_addressed": "Specifically: how does the fix avoid creating a 199-review-flood when it lands?",
+    "future_protection_argued": "Concrete proposal for preventing the next schema-evolution stranding event.",
+    "open_questions_addressed": "All 4 open design questions answered with reasoning, not deferred.",
+    "mark_directive_completed": "Set status:'completed' with completed_at + completed_by_run + prop_id_authored fields appended per DIRECTIVE-LIFECYCLE additive-edit exception."
+  },
+  "cross_references": [
+    "monitor/prompts/curmudgeon.md (Priority 3 dispatcher)",
+    "monitor/prompts/reference/curmudgeon-change-and-holistic.md (the change-detection procedure)",
+    "monitor/curmudgeon/reviews/WIN-050.c2.json (highest-drift deep-tail example)",
+    "monitor/curmudgeon/tracker.json (potential state interactions)",
+    "data/wins.json (current fingerprint source)",
+    "DIRECTIVE-20260422-003-curmudgeon-design-rubric.json (parallel curmudgeon design improvement, in case findings interact)"
+  ],
+  "supersedes": null
+}
