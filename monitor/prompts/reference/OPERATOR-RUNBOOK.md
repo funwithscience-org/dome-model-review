@@ -11,7 +11,7 @@ Each Cowork session gets a unique path like `/sessions/<session-name>/`. The wor
 SESSION=$(pwd | grep -oP '/sessions/[^/]+')
 
 # 2. Clone the repo to the normal filesystem
-git clone https://github.com/funwithscience-org/dome-model-review.git ${SESSION}/dome-review-clean
+git clone --depth 50 https://github.com/funwithscience-org/dome-model-review.git ${SESSION}/dome-review-clean
 cd ${SESSION}/dome-review-clean
 npm install
 
