@@ -1,0 +1,255 @@
+{
+  "id": "PROP-046-amendment-002-third-writer",
+  "parent_prop_id": "PROP-046",
+  "title": "PROP-046 amendment-002 — third attention-inbox writer site (decider.md End-of-Run Step A) gets the same target_mode schema fix amendment-001 applied to the other two writers",
+  "authored_by": "tinker",
+  "authored_by_run": "tinker-2026-05-19T12-43 (scheduled run, DIRECTIVE-20260519-001)",
+  "authored_at": "2026-05-19T12:50:00Z",
+  "status": "design-pending-operator-review",
+  "directive_id": "DIRECTIVE-20260519-001",
+  "related_directives": [
+    "DIRECTIVE-20260517-003 (PROP-046 original)",
+    "DIRECTIVE-20260517-004 (PROP-046 amendment-001 approve)",
+    "DIRECTIVE-20260519-001 (this amendment)"
+  ],
+  "related_props": [
+    "PROP-046-decider-stale-skip-schema-fix (parent design proposal)",
+    "PROP-046-amendment-001-implementation (the existing implementation patch for writers 1 and 2; this amendment extends to writer 3)"
+  ],
+  "scope_disclaimer": "Tinker design-only. Operator + cowork-claude apply. This amendment is mechanically the same shape as amendment-001 (one-line additive schema field on an existing JSON-literal template). It does NOT redesign the inbox dispatcher, the inbox schema architecture, or the resolved/status state machine.",
+  "relationship_to_parent": "Amendment-001 patched two writer sites that emitted attention-inbox items with no status field. The audit task (PROP-046 task_4) explicitly named 'decider-stale-skip writer (STALE-ASSESS)' and 'analyst-mode1-expansions.md PROP029-ORPHAN example' as the scope. A THIRD writer site exists in decider.md End-of-Run Step A — the 'I patched a WIN/section/prediction; analyst please re-verify' template literal — which was NOT enumerated in PROP-046's audit. Two stale items observed 2026-05-19T05:13Z (ATT-2026-05-18T05:24Z, ATT-2026-05-18T09:26Z) came from this writer and lacked any routing field. The operator's in-session schema_fix backfilled the existing items but did not patch the source. This amendment patches the source.",
+  "executive_summary": {
+    "root_cause": "decider.md lines 378-389 contains the ATT-* item template literal (End-of-Run Step A). Unlike the two writers PROP-046 originally covered, this one already has `status: \"pending\"` (good), but it has NO `target_mode` field. The Mode 2b dispatcher in analyst.md filters strictly by `status === 'pending'` so the items WERE visible — but without `target_mode` the inbox-triage code cannot classify them by lane. PROP-046's design-rationale paragraph says: 'Adding `recommended_lane` lets Mode 2b (and any future Mode-N dispatcher) classify the item by lane rather than guess from `id` prefix or `created_by`.' The same lane-classification problem applies to ATT-* items here.",
+    "audit_completeness_this_time": "Performed exhaustive grep across monitor/prompts/, monitor/prompts/reference/, monitor/scripts/, build-scripts/ for: (a) literal 'attention-inbox' references, (b) appendAttentionInbox / inbox.push / fs.appendFileSync(...attention-inbox) write patterns, (c) ATT- ID template strings, (d) 'pushed_by' object literals near attention-inbox context, (e) read-side dispatcher references. Cross-checked archive evidence in attention-inbox-archive.jsonl. Found exactly THREE creator writers (decider-intake.md ~L240, analyst-mode1-expansions.md ~L70, decider.md ~L378-389). No fourth site found. Detailed table in comprehensive_writer_audit section below.",
+    "field_name_divergence_noted": "PROP-046 original (rationale paragraph and amendment-001) inconsistently uses both 'recommended_lane' and 'target_mode'. Amendment-001 patches used `target_mode` consistently in both diffs. The operator's 2026-05-17 in-session backfill of STALE-ASSESS items used `recommended_lane`. The 2026-05-19 in-session backfill of ATT- items used neither (commit 30476fd1 added target_mode + recommended_lane + schema_fix_at + schema_fix_by + schema_fix_note per the directive description). For consistency with amendment-001's actual patch shape (the authoritative implementation pattern), this amendment also uses `target_mode` only — see counter_arguments_addressed Q2 for the alternative-considered rebuttal."
+  },
+  "comprehensive_writer_audit": {
+    "method": "Exhaustive grep + cross-check against attention-inbox-archive.jsonl observed item shapes.",
+    "search_patterns_run": [
+      "grep -rn 'attention-inbox' monitor/prompts/ monitor/prompts/reference/ monitor/scripts/ build-scripts/",
+      "grep -rEn 'appendAttentionInbox|inbox\\.push|fs\\.appendFileSync.*attention-inbox|writeFileSync.*attention-inbox' (all dirs)",
+      "grep -rEn 'ATT-|STALE-ASSESS|PROP029-ORPHAN' (all dirs)",
+      "grep -rEn 'pushed_by:' (all dirs) — cross-checked which point to inbox vs priority-queue",
+      "Cross-reference: 5 most-recent items in monitor/analyst/attention-inbox-archive.jsonl — verified pushed_by values map to identified writer sites"
+    ],
+    "writer_sites_table": [
+      {
+        "writer_id": "W1",
+        "file": "monitor/prompts/reference/decider-intake.md",
+        "site": "Step 1a, fenced ```javascript block, lines ~240-253",
+        "agent": "decider",
+        "item_class": "STALE-ASSESS-PRED-*",
+        "current_fields_emitted": "action_recommended, created_by='decider-stale-skip', created_at, resolved=false",
+        "missing_fields_pre_amendment_001": "status, target_mode",
+        "covered_by": "PROP-046 amendment-001 patch_id=1",
+        "observed_archive_evidence": "STALE-ASSESS-PRED-106-2026-05-17, STALE-ASSESS-PRED-NEW-002-2026-05-17 (operator-direct backfilled)"
+      },
+      {
+        "writer_id": "W2",
+        "file": "monitor/prompts/reference/analyst-mode1-expansions.md",
+        "site": "'Check for Orphaned Issues' section, fenced ```json block, lines ~68-79",
+        "agent": "analyst (Mode 1 PROP-029 safety net)",
+        "item_class": "PROP029-ORPHAN-DETECTED-*",
+        "current_fields_emitted": "id, recommended_recipient='tinker', issue_ids, action_taken_this_run, resolved=false",
+        "missing_fields_pre_amendment_001": "status, target_mode",
+        "covered_by": "PROP-046 amendment-001 patch_id=2",
+        "observed_archive_evidence": "No PROP029-ORPHAN entries in last 5 archive lines (likely none fired recently — PROP-029 safety net is rare-trigger)"
+      },
+      {
+        "writer_id": "W3",
+        "file": "monitor/prompts/decider.md",
+        "site": "End-of-Run Step A, fenced ```json template literal, lines 378-389",
+        "agent": "decider",
+        "item_class": "ATT-<ISO-timestamp>",
+        "current_fields_emitted": "id, status='pending', target_type, target_id, reason, pushed_by='decider', pushed_at, related_issues",
+        "missing_fields_pre_amendment_002": "target_mode (status already present)",
+        "covered_by": "THIS AMENDMENT (PROP-046-amendment-002 patch_id=3)",
+        "observed_archive_evidence": "ATT-2026-05-18T05:24:22.762Z (WIN-057 self-applied-patch verify), ATT-2026-05-18T09:26:17.253Z (Part 6.13 MOND integration verify) — both stuck 24h+ pending in attention-inbox.json until operator-direct in-session schema_fix commit 30476fd1 on 2026-05-19T05:25Z"
+      }
+    ],
+    "sites_inspected_and_excluded": [
+      {
+        "file": "monitor/prompts/decider.md",
+        "line": 594,
+        "shape": "Comment-only: '// Stale-item log-only (attention-inbox write deferred to future PROP).' — NOT a writer; an explicit non-writer marker."
+      },
+      {
+        "file": "monitor/prompts/decider.md",
+        "line": 721,
+        "shape": "priority-queue.json writer (pushed_by:'decider' but target file is curmudgeon/priority-queue.json, NOT attention-inbox.json). NOT a writer site for this PROP."
+      },
+      {
+        "file": "monitor/prompts/reference/decider-intake.md",
+        "lines": "180, 295, 341",
+        "shape": "Three priority-queue.json writers (target_type 'win-new', 'prediction-batch', 'rewrite-proposal'). NOT attention-inbox writers."
+      },
+      {
+        "file": "monitor/prompts/reference/decider-curmudgeon-pq-mechanics.md",
+        "line": 84,
+        "shape": "priority-queue.json writer (decider re-pushes expansion-integrated items for fresh attack). NOT attention-inbox writer."
+      },
+      {
+        "file": "monitor/prompts/analyst.md",
+        "line": 201,
+        "shape": "CONSUMER-side write (Mode 2b resolve flow appends resolved item to attention-inbox-archive.jsonl). NOT a creator writer."
+      },
+      {
+        "file": "monitor/prompts/workspace-sync.md",
+        "lines": "238, 240, 403",
+        "shape": "238/240: smart_copy of attention-inbox.json + archive sibling (sync direction, no item creation). 403: workspace-sync-skips.jsonl writer (unrelated file). NOT attention-inbox creator writers."
+      },
+      {
+        "file": "monitor/scripts/verify-pending-state.js",
+        "line": 218,
+        "shape": "Generic state-file archive-append (config-driven, processes any state file passed in). Used by janitorial pipeline, not a creator writer for attention-inbox."
+      },
+      {
+        "file": "build-scripts/revert-burndown-closures.js",
+        "line": 160,
+        "shape": "closure-ledger.jsonl writer (revert audit trail). NOT attention-inbox writer."
+      }
+    ],
+    "final_count": "3 creator writers total. W1 + W2 covered by amendment-001. W3 covered by THIS amendment-002. No fourth or fifth site."
+  },
+  "operator_decisions_applied": "Amendment-002 inherits Q1/Q2/Q3 decisions from amendment-001 verbatim: Q1 (field name) = `target_mode` (matches existing canonical vocabulary); Q2 (lane value) — see headline_recommendation for W3 = `analyst-mode-2b` because the next-consumer is the attention-inbox triage dispatcher itself (Mode 2b), not a downstream re-analysis lane; Q3 (resolved field) — N/A for W3 because the existing literal already has `status: 'pending'` and doesn't have a redundant `resolved` field to preserve.",
+  "headline_recommendation": {
+    "amendment_or_new_prop": "amendment-002 to PROP-046, NOT new PROP-049",
+    "one_paragraph_rationale": "The audit found exactly one additional writer (decider.md Step A), not 5+, satisfying the operator-stated test for amendment-vs-new-PROP in DIRECTIVE-20260519-001 task_2 ('Amendment is simpler if scope is just one additional writer; new PROP is cleaner if the audit reveals MORE missed sites'). The bug class is identical (schema-omission on an attention-inbox writer literal), the fix shape is identical (additive field on a JSON-literal template), and parent PROP-046 amendment-001 has NOT been applied yet (PROP-046 status STILL_PENDING_OPERATOR_APPLY per tinker-2026-05-19T12-05 followup verification). Bundling amendment-002 means one operator-apply action lands all three patches as a unit. PROP-048 is already claimed by tinker-2026-05-19T12-05 for the decider-win-new dedup work, so a new PROP would be PROP-049 — but creating a separate PROP for a sibling one-line fix multiplies operator review surface unnecessarily.",
+    "target_mode_value_for_W3": "analyst-mode-2b",
+    "target_mode_value_rationale": "W1 (STALE-ASSESS) routes to `analyst-mode-1b` because those items are prediction-reassessment work whose substantive next-consumer is Mode 1b. W2 (PROP029-ORPHAN-DETECTED) routes to `tinker` because those are pipeline diagnostics. W3 (ATT-* from End-of-Run Step A) is heterogeneous — target_type can be 'win', 'section', or 'prediction' — and the substantive next-consumer depends on target_type. The simplest, most-truthful choice is `analyst-mode-2b` because that names the dispatcher gate where the item enters analyst's attention (the inbox-triage mode), and Mode 2b's three-phase processing (OBE / batch / singleton) is precisely the consumer interface for these items. An alternative considered was dynamic target_mode based on target_type (analyst-mode-2 for wins, analyst-mode-1b for predictions, etc.) — rejected because it inflates the patch from 1-line additive to multi-line conditional, exceeds the 'minimal patch' operator preference, and the dispatcher doesn't actually filter on target_mode anyway (it's advisory metadata; see analyst.md line 108 — Mode 2b filters by status only)."
+  },
+  "phase_1_design": {
+    "implementation_amendment": {
+      "patches": [
+        {
+          "patch_id": "3",
+          "file": "monitor/prompts/decider.md",
+          "writer_site": "End-of-Run Step A: Analyst Attention Inbox, fenced ```json template literal, lines 378-389",
+          "edit_type": "Edit tool old_string / new_string",
+          "purpose": "Add `target_mode: 'analyst-mode-2b'` advisory routing field to the ATT-* template literal. The `status: 'pending'` field is already present and is preserved. Aligns W3 with the schema established by amendment-001 for W1 and W2.",
+          "old_string": "```json\n{\n  \"id\": \"ATT-<ISO-timestamp>\",\n  \"status\": \"pending\",\n  \"target_type\": \"win\" | \"section\" | \"prediction\",\n  \"target_id\": \"WIN-NNN\" | \"SEC-X.Y\" | \"PRED-NNN\",\n  \"reason\": \"Brief description of what changed and why the analyst should re-examine\",\n  \"pushed_by\": \"decider\",\n  \"pushed_at\": \"ISO timestamp\",\n  \"related_issues\": [\"ISS-NNN\"]\n}\n```",
+          "new_string": "```json\n{\n  \"id\": \"ATT-<ISO-timestamp>\",\n  \"status\": \"pending\",\n  \"target_mode\": \"analyst-mode-2b\",\n  \"target_type\": \"win\" | \"section\" | \"prediction\",\n  \"target_id\": \"WIN-NNN\" | \"SEC-X.Y\" | \"PRED-NNN\",\n  \"reason\": \"Brief description of what changed and why the analyst should re-examine\",\n  \"pushed_by\": \"decider\",\n  \"pushed_at\": \"ISO timestamp\",\n  \"related_issues\": [\"ISS-NNN\"]\n}\n```",
+          "additions_count": 1,
+          "additions": [
+            "  \"target_mode\": \"analyst-mode-2b\","
+          ],
+          "uniqueness_verification": "grep -c '\"id\": \"ATT-<ISO-timestamp>\"' monitor/prompts/decider.md → 1 (verified 2026-05-19T12:43Z). The 11-line fenced JSON block starting with this id is unique within decider.md.",
+          "post_application_check": "grep -n 'target_mode' monitor/prompts/decider.md → should return exactly one line containing `\"target_mode\": \"analyst-mode-2b\",` within the End-of-Run Step A block (~line 382).",
+          "ordering_note": "target_mode placed immediately after status (line 381→382) to mirror the canonical field order. Schema-wise position is irrelevant (JSON object), but readability matters in a prompt-template."
+        }
+      ],
+      "operator_application_procedure": [
+        "1. Apply amendment-001 patches (1 and 2) FIRST per DIRECTIVE-20260517-004 / amendment-001's application_procedure. This was already authored 2026-05-17 and is still pending apply.",
+        "2. Apply amendment-002 patch (patch 3) — single Edit-tool old_string/new_string on monitor/prompts/decider.md.",
+        "3. Run `node build.js html && node test.js` (decider.md is a prompt file; rebuild not strictly required, but the test suite is fast and catches inadvertent template breakage).",
+        "4. Verify post_application_check: `grep -n 'target_mode' monitor/prompts/decider.md` returns one new line in End-of-Run Step A.",
+        "5. Commit: `git commit -am 'fix: add target_mode field to decider Step A attention-inbox writer (PROP-046-amendment-002, DIRECTIVE-20260519-001)'`",
+        "6. Push.",
+        "7. DIRECTIVE-LIFECYCLE additive-edit on the directive file in FUSE is already performed by tinker as part of this run (status=completed)."
+      ],
+      "verification_pattern": {
+        "check_1_post_apply": "grep -cE '\"target_mode\":\\s*\"analyst-mode-2b\"' monitor/prompts/decider.md should return 1.",
+        "check_2_no_double_apply": "grep -cE '\"target_mode\":\\s*\"analyst-mode-2b\"' monitor/prompts/decider.md should return EXACTLY 1, not 2. Re-running the patch on an already-patched file would Edit-tool-error (old_string no longer unique), so this is a safety net.",
+        "check_3_next_decider_run_fires": "After next decider run that hits Step A (typically when patches affect a WIN/section/prediction), inspect the newly-appended attention-inbox item: it should carry `target_mode: 'analyst-mode-2b'` field. Window: within 1-7 days depending on Step A trigger frequency.",
+        "check_4_no_dispatcher_regression": "Mode 2b dispatcher behavior unchanged — items continue to be filtered by status=='pending' (target_mode is advisory). Verify by inspecting next analyst Mode 2b run's report: pending-count should be normal, no skip-by-unknown-field errors."
+      }
+    }
+  },
+  "regression_check": {
+    "concerns_walked": [
+      {
+        "concern": "Q-OP-Q1: Does the additive field break any current attention-inbox reader?",
+        "rationale": "Readers of attention-inbox.json: analyst.md Mode 2b dispatcher (filters status=='pending'), Phase 1 OBE triage (regex-greps reason for ISS-N / EXP-N), Phase 2 batch (length check on reason), Phase 3 singleton (free-form analysis). None of these readers enumerate object keys with a strict schema check; none would error on encountering an unknown `target_mode` field. Confirmed by reading analyst.md lines 100-210.",
+        "verdict": "SAFE — additive, ignored by existing readers."
+      },
+      {
+        "concern": "Q-OP-Q2: Does this disrupt PROP-022 phase 4 (live = pending+open only, archive = resolved) live/archive partitioning?",
+        "rationale": "PROP-022 phase 4 partitions on status field value; target_mode is orthogonal. Resolve flow (analyst.md lines 192-205) sets status='resolved' and appends the FULL item (target_mode included) to attention-inbox-archive.jsonl, then removes from live. No code path inspects target_mode for routing into live-vs-archive.",
+        "verdict": "SAFE — orthogonal to archive partitioning."
+      },
+      {
+        "concern": "Q-OP-Q3: Does this disrupt the FUSE-canonical write discipline for attention-inbox.json (analyst.md line 148 onward)?",
+        "rationale": "decider.md Step A's writer site is the appender — it does `JSON.parse(...inbox.json) → arr.push(newItem) → fs.writeFileSync(...inbox.json, JSON.stringify(arr, null, 2))` in concept. The new field is part of newItem; the read-modify-write cycle is identical. No change to file-locking, FUSE-vs-clone path resolution, or concurrent-writer race window.",
+        "verdict": "SAFE — write mechanics unchanged."
+      },
+      {
+        "concern": "Q-OP-Q4: Does this disrupt OBE triage's regex matching in Mode 2b Phase 1?",
+        "rationale": "OBE criteria look at `id` regex (ISS-N, EXP-N, WIN-NNN, SEC-X.Y patterns in `reason` field). target_mode field is not inspected. The `created_at` / `created_by` / `priority` fields are also not changed by this amendment.",
+        "verdict": "SAFE — OBE triage logic untouched."
+      },
+      {
+        "concern": "Q-OP-Q5: Does this risk inflating attention-inbox.json file size meaningfully?",
+        "rationale": "Each item gains ~32 bytes (the `target_mode: 'analyst-mode-2b'` string + comma + indent). At current cadence (1-3 ATT- items per active decider day, archive partition keeps live at <30 items), total live-file inflation is <1KB. Negligible vs the file's typical 5-50KB range.",
+        "verdict": "SAFE — overhead negligible."
+      },
+      {
+        "concern": "Q-OP-Q6: Does the operator's 2026-05-19T05:25Z in-session schema_fix conflict with this amendment? (Operator added target_mode + recommended_lane + schema_fix_at + schema_fix_by + schema_fix_note to the 2 stuck items.)",
+        "rationale": "The operator's in-session fix added FIVE fields to existing items in attention-inbox.json. This amendment adds ONE field (target_mode) to the WRITER TEMPLATE in decider.md. The two are orthogonal: this amendment ensures FUTURE items emitted by decider Step A carry target_mode by default; the in-session fix unstuck PAST items. The other 4 fields (recommended_lane, schema_fix_at, schema_fix_by, schema_fix_note) are operator-emergency-backfill metadata that should NOT be in the canonical writer template — they're audit trail for the manual fix event, not steady-state schema. Adding them to the template would inflate every future ATT-* item with debug metadata. SAFE to omit.",
+        "verdict": "SAFE — orthogonal to the unstick event; canonical template stays clean."
+      }
+    ],
+    "regression_summary": "All 6 concerns SAFE. No reader regression, no dispatcher regression, no archive-partition regression, no FUSE-write regression, negligible overhead, no conflict with the operator's emergency unstick."
+  },
+  "counter_arguments_addressed": [
+    {
+      "argument": "Q-CA-1: Is the audit truly comprehensive THIS time? (Operator preference: 'this is the SECOND time we've discovered a missed writer. Tinker should grep more aggressively'.)",
+      "tinker_response": "Yes — see comprehensive_writer_audit.search_patterns_run. Five distinct grep patterns (literal name, write-function patterns, ID prefixes, pushed_by literals, dispatcher reads). Cross-checked against attention-inbox-archive.jsonl observed items (5 most-recent inspected; pushed_by values map to exactly the 3 identified writer sites — no orphan-author entries). The audit also explicitly enumerates 7 sites-inspected-and-excluded with one-line rationale per exclusion. If a fourth writer exists, it would have to be one of: (a) a dynamic template-string-generated inbox item in a node script that uses no literal 'attention-inbox' string (would require base64 / variable-name obfuscation — implausible in this codebase), (b) a writer that bypasses fs.appendFile/writeFileSync entirely (e.g., shell echo append — would still appear in a 'attention-inbox' grep). The only way the audit could miss something is if a writer site does both — that's not credible. Confidence: high.",
+      "residual_risk": "LOW. If a fourth site is later discovered, the bug-class fix is identical (1-line additive); a single amendment-003 would suffice."
+    },
+    {
+      "argument": "Q-CA-2: Should the schema add MORE than just target_mode — e.g., should we also add a `writer_origin` field so future audits can verify each item knows its source?",
+      "tinker_response": "Reject. Three reasons. (1) Operator preference for minimal patches — adding a field per item per writer is non-trivial schema inflation. (2) `writer_origin` would duplicate `pushed_by` (which W1 has via `created_by`, W2 implicitly via `recommended_recipient`, W3 has explicitly via `pushed_by: 'decider'`). The field exists, it's just inconsistently named — see Q-CA-3. (3) The actual future-audit problem isn't 'which writer emitted this' (we can grep prompts), it's 'which writers EXIST that we haven't enumerated' — `writer_origin` doesn't help with that. The real fix for audit-completeness is a periodic tinker audit (Mode 3 task) that re-runs the grep patterns and cross-checks against archive evidence. Recommend filing that as a separate low-priority follow-up rather than schema bloat.",
+      "residual_risk": "NONE for declining writer_origin. The unaddressed-but-flagged audit-completeness re-check should land as an open issue (recommended below in out_of_scope_followups).",
+      "follow_up_recommendation": "File ISS in monitor/decisions/open-issues.json or attention-inbox.json with target_mode='tinker' requesting quarterly writer-audit re-run."
+    },
+    {
+      "argument": "Q-CA-3: The canonical field for 'who wrote this' is inconsistent across the three writers: W1 uses `created_by`, W2 uses `recommended_recipient`, W3 uses `pushed_by`. Should this amendment standardize?",
+      "tinker_response": "Reject for scope reasons. The directive's scope is 'add same schema fix (target_mode field) to the third writer.' Standardizing pushed_by/created_by/recommended_recipient across all 3 writers would be a multi-field, multi-site schema rationalization — larger surface than this amendment. Note the inconsistency in out_of_scope_followups for a future PROP. The current divergence is non-blocking (no reader code branches on these field names).",
+      "residual_risk": "LOW. Schema clarity could be improved later; current state is functional."
+    },
+    {
+      "argument": "Q-CA-4 (steelman the case for NOT shipping this fix at all): The 2 stuck items have already been unstuck by operator-direct commit 30476fd1. There has been ONE observed instance of stuck items in 24h. Why fix the writer when the human can backfill in <5 minutes when it recurs?",
+      "tinker_response": "The argument has weight if-and-only-if recurrence is rare and the cost of each recurrence is low. Counter-evidence: (a) decider Step A fires per-patch-run, which is multiple times per day; (b) ANY substantive patch to a WIN/section/prediction emits an ATT-* item; (c) without the schema fix, every such item is non-routable by dispatcher classification — items work today only because Mode 2b is generous (filter only on status). The schema fix is preventative — it costs 1-line in a prompt and prevents the operator from having to remember the backfill recipe forever. Crucially, this is the SECOND time we've found a missed writer post-PROP-046 — the recurring-pattern test from CLAUDE.md Root Cause Thinking section ('One-time vs. recurring? Recurring → automation') argues for the structural fix, not the manual backfill.",
+      "residual_risk": "LOW for shipping. The opposing argument is a respectable minimalist position; tinker disagrees on the recurrence trend."
+    },
+    {
+      "argument": "Q-CA-5 (steelman the case for picking new PROP-049 instead of amendment-002): A new PROP has a cleaner provenance trail. Future readers grepping 'PROP-049' see a single concern; grepping 'PROP-046' now sees the original + amendment-001 + amendment-002, a three-document thread.",
+      "tinker_response": "Acknowledged. Counter: PROP-049 would carry the same review surface as a new PROP (review the rationale, the patch, the regression check, the counter-arguments) for a 1-line fix that's mechanically identical to amendment-001's patches. The operator's PROP-046-amendment-001 review already accepted the design rationale, schema choice, regression model. Amendment-002 inherits that review verbatim (operator_decisions_applied section). Cost-of-review for amendment-002 is ~5 min (just verify the new old_string/new_string is byte-correct); cost-of-review for new PROP-049 would be ~20-30 min. The provenance argument is real but the cost argument is bigger. If we discovered a fundamentally new bug class, new PROP would be correct; for one more writer of the same bug class, amendment is correct.",
+      "residual_risk": "NONE for amendment choice."
+    },
+    {
+      "argument": "Q-CA-6 (steelman the case for an entirely different approach): Build a centralized helper function (e.g., `appendAttentionInboxItem(item)`) that all three writers call, with the schema enforcement in the helper. Then the three sites become one-line calls.",
+      "tinker_response": "Acknowledged in principle. Counter: (a) These writers live in PROMPT FILES (.md), not source files. The 'function' would be a fenced bash/node template the writers copy. We already have de-facto templates — they're just slightly different across the 3 sites. (b) Extracting a shared template into a reference file (e.g., monitor/prompts/reference/attention-inbox-writer-template.md) and having each writer ' → see reference/attention-inbox-writer-template.md' would work, but it adds an indirection that prompt-authors (Opus agents) might miss when modifying their flow. (c) The operator preference for 'minimal prompt-change surface' explicitly biases against architectural refactors. (d) The current bug (schema-omission) wasn't caused by template divergence — it was caused by the original writers being authored before the canonical schema was established. Centralization wouldn't have prevented it. RECOMMEND: file as an out_of_scope_followup for a future schema-architecture PROP, not block on it here.",
+      "residual_risk": "MEDIUM. The architectural critique is correct; the right time to address it is when we have ≥5 writer sites, not 3."
+    }
+  ],
+  "operator_other_side_considerations": {
+    "scenario_no_fix_lands": "If operator declines the amendment, the next decider patch-affects-WIN/section/prediction emits an ATT-* item without target_mode. Mode 2b dispatcher still processes it (filter is status-only). Inbox-triage console output and any future per-lane filtering can't classify it. Stuck-item observability is also degraded — without target_mode, an item silently lingering in the inbox shows nothing about its intended routing in the metadata. Operator continues to backfill manually if observed. Net cost: ~5min/incident, indefinite recurrence.",
+    "scenario_amendment_002_lands_but_writer_template_drifts_again": "If a future edit to decider.md Step A modifies the template literal in a way that removes target_mode (e.g., a non-tinker agent edits the prompt without reading this amendment), the fix silently regresses. Mitigation: post-application check_2 above ensures the field is present immediately post-apply; a periodic tinker audit (already recommended) would re-grep periodically. RESIDUAL RISK: low if the audit lands, medium if it doesn't.",
+    "scenario_alternative_fix_was_better": "If we had picked centralized-helper-template (Q-CA-6) instead, the schema would be guaranteed-consistent across writers. Trade-off: prompt indirection, one more file to maintain, higher operator review surface. The minimal-patch approach is the right call for ≤3 writers; reconsider at ≥5."
+  },
+  "out_of_scope_followups_listed_for_awareness": [
+    {
+      "item": "Quarterly tinker audit re-running the attention-inbox writer-site grep patterns + cross-check against archive evidence. Catches drift if new writers are added in future.",
+      "rationale": "Q-CA-1 / Q-CA-2 residuals.",
+      "estimated_effort": "1 tinker Mode 3 run, ~30min."
+    },
+    {
+      "item": "Schema-rationalization PROP for cross-writer field-name consistency (pushed_by vs created_by vs recommended_recipient — pick one canonical name).",
+      "rationale": "Q-CA-3 residual.",
+      "estimated_effort": "1 PROP, low-priority, can wait until ≥5 writers."
+    },
+    {
+      "item": "Centralized attention-inbox writer template (single source of truth in reference/, all writers reference it).",
+      "rationale": "Q-CA-6 architectural improvement.",
+      "estimated_effort": "1 PROP + 3 patch sites, defer until ≥5 writers or until next schema break forces it."
+    },
+    {
+      "item": "DATA-SCHEMAS.md §analyst/attention-inbox.json update to enumerate target_mode enum values per writer (analyst-mode-1b, analyst-mode-2b, tinker, etc.). PROP-046 original recommended this; amendment-001 did not include it; this amendment also defers it.",
+      "rationale": "Documentation completeness.",
+      "estimated_effort": "1 Edit to DATA-SCHEMAS.md, ~5min."
+    }
+  ],
+  "expected_application_outcome": "Three writer sites all consistently emit target_mode (analyst-mode-1b for W1, tinker for W2, analyst-mode-2b for W3). Mode 2b dispatcher and any future per-lane filtering can classify items by lane. Operator no longer needs to manually backfill stuck items because the canonical writer template carries the routing field. Recurrence of the 2026-05-18 stuck-items incident is structurally prevented.",
+  "operator_notes_field_blank_for_now": ""
+}

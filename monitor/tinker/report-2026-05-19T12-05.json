@@ -1,0 +1,157 @@
+{
+  "run_id": "tinker-2026-05-19T12-05",
+  "run_at": "2026-05-19T12:05:00.000Z",
+  "mode_selected": "directive-override",
+  "mode_selected_reason": "Pre-flight FUSE scan returned NO PENDING DIRECTIVES (FUSE was stale on operator-directives directory). Mode 1 GREEN and Mode 2 AMBER quick-checks done. Routing toward Mode 4 because previous run flagged self-fixable items. During verification of previous PROP follow-ups, discovered via GitHub commit log that 3 new operator directives had been pushed to git in the past 24-48h but had NOT propagated to FUSE (workspace-sync direction is FUSE→git for operator-directives, no git→FUSE pull). Among them: DIRECTIVE-20260519-002 (HIGH priority, filed 2026-05-19T11:00Z) — decider win-new push dedup, source ISS-2134. Per dispatcher prompt: 'pending directives override Mode 1-4 selection logic; sort by priority descending, take top.' DIRECTIVE-20260519-002 is the highest pending priority and was authored against during this run.",
+  "modes_checked": {
+    "mode_1_health": {
+      "status": "GREEN",
+      "details": {
+        "poller_age_h": 0.9,
+        "curmudgeon_tracker_age_h": 1.3,
+        "analyst_tracker_age_h": 2.6,
+        "open_issues_age_h": 2.6,
+        "decider_latest_age_h": 14.7,
+        "stranded_patches_actionable": 1,
+        "stranded_patches_actionable_detail": "monitor/decisions/stranded-patches-2026-05-17T22-20-15Z.json (PROP-016 generate-html.js stranded by NEVER_PUSH detect), 37h old, NOT tombstoned. Same finding as 2026-05-19T02:40 run. Operator action: pick option_a or option_b and tombstone."
+      }
+    },
+    "mode_2_infra": {
+      "status": "AMBER",
+      "details": {
+        "fuse_stale_files": [
+          "build-scripts/generate-html.js (1-line caption diff — workspace has 'plus 1 analyst-added claim (WIN-070)' in dormant template, GitHub does not. WIN-070 does not exist in current data/wins.json. Workspace-only edit that never propagated to git. Dormant; rendered HTML unaffected. Persistent finding since 2026-05-19T02:40 run."
+        ],
+        "auth_status": "not_checked_this_run",
+        "disk_project_footprint_mb": 741,
+        "disk_root_use_pct": 93,
+        "disk_warning": "project footprint >=500MB threshold fired (WARNING tier)",
+        "cleanable_clones": 0,
+        "cleanable_clones_note": "Only /tmp/dome-*.html files (~500KB total, poller scratch, owned by nobody:nogroup, not removable from tinker session). No /tmp/*-clone directories present."
+      }
+    },
+    "mode_3_cost": {
+      "status": "DEFERRED",
+      "reason": "Directive-override took the run. Mode 3 cost-engineering audit deferred to next run (target 2026-05-20T03:30Z scheduled cron)."
+    },
+    "mode_4_proposals": {
+      "status": "EXECUTED_AS_DIRECTIVE_OVERRIDE",
+      "primary_artifact": "monitor/tinker/proposals/PROP-048-decider-win-new-dedup-check.json"
+    }
+  },
+  "findings": [
+    {
+      "id": "FIND-2026-05-19T12-01",
+      "category": "directive-discovery-gap",
+      "severity": "moderate",
+      "title": "Operator-directives directory has FUSE-staleness: 3 git-only directives invisible to tinker's pre-flight FUSE scan.",
+      "details": "Pre-flight directive scan reads monitor/tinker/operator-directives/ from FUSE. Workspace-sync sync_glob for this directory is FUSE→git only (sync_glob writes to git but does not pull). build.js publish copies git→FUSE only for files classified 'git' in OWNERSHIP; operator-directives are classified 'append_only_glob', not 'git'. Result: directives written directly to git (via curl/PR/operator-direct commit) never reach FUSE. Three currently-pending directives are git-only: DIRECTIVE-20260518-002 (clone-depth, medium), DIRECTIVE-20260519-001 (third-inbox-writer, medium), DIRECTIVE-20260519-002 (decider win-new dedup, HIGH). This run discovered them via GitHub commit log inspection during PROP-046 follow-up verification, then fetched via curl. Next tinker run will face the same blind spot unless either (a) workspace-sync gains git→FUSE sync for operator-directives, OR (b) tinker pre-flight is extended to also check GitHub for newer directive files before falling through to FUSE-only scan.",
+      "recommended_action": "File PROP-049 (next-run candidate) proposing either (a) workspace-sync directional extension for append_only_glob directories, OR (b) tinker pre-flight git-side directive check. Operator preference between (a) and (b) is the open question — (a) is broader infrastructure, (b) is scoped to tinker only.",
+      "evidence": "Pre-flight returned 'NO PENDING DIRECTIVES'; GitHub API listing of monitor/tinker/operator-directives showed 3 new files (DIRECTIVE-20260518-002, DIRECTIVE-20260519-001, DIRECTIVE-20260519-002); FUSE ls confirmed absence."
+    },
+    {
+      "id": "FIND-2026-05-19T12-02",
+      "category": "directive-completion",
+      "severity": "info",
+      "title": "DIRECTIVE-20260519-002 marked completed via DIRECTIVE-LIFECYCLE additive-edit exception.",
+      "details": "Fetched directive body from git via curl, added status='completed', completed_at='2026-05-19T12:12:00.000Z', completed_by_run='tinker-2026-05-19T12-05', prop_id_authored='PROP-048'. Wrote to FUSE. Universal-pusher workspace-sync will push the FUSE version to git on its next hourly cycle (~12:05 UTC tomorrow latest, likely much sooner). The FUSE write fully preserves the original directive body plus appends only the four allowed lifecycle fields per DIRECTIVE-LIFECYCLE additive-edit exception.",
+      "recommended_action": "None — completed as part of this run.",
+      "evidence": "monitor/tinker/operator-directives/DIRECTIVE-20260519-002-decider-win-new-dedup.json now present in FUSE with status='completed'."
+    },
+    {
+      "id": "FIND-2026-05-19T12-03",
+      "category": "backlog-trend",
+      "severity": "info",
+      "title": "Backlog metrics stable post-burndown.",
+      "details": "open_issues_total=26 (vs 28 yesterday, vs 207 baseline pre-burndown). assigned-analyst=1. age_ge_14d=7, age_ge_30d=1 (ISS-708 39d pending-human). Net 7d velocity +4 (20 closed, 16 new). Closure-ledger filter corrected this run to use 'closed_at' field (yesterday's run used same logic; 88-closed-7d figure yesterday was a one-time post-burndown spike). No PROP-030 thresholds fire. Tier: green.",
+      "recommended_action": "None.",
+      "evidence": "queue-history.jsonl row appended this run."
+    },
+    {
+      "id": "FIND-2026-05-19T12-04",
+      "category": "deferred-medium-directives",
+      "severity": "minor",
+      "title": "Two pending medium-priority directives deferred to next run.",
+      "details": "DIRECTIVE-20260518-002 (clone-depth audit, medium, filed 2026-05-18T06:45Z) and DIRECTIVE-20260519-001 (third-inbox-writer audit / PROP-046 amendment-002 OR PROP-049, medium, filed 2026-05-19T05:25Z) both pending. Per dispatcher 'one mode per run' rule, only the highest-priority directive (DIRECTIVE-20260519-002 HIGH) was actioned this run. The two medium directives are next-run candidates. DIRECTIVE-20260519-001 is the more urgent of the two because it documents an ALREADY-OBSERVED bite (2 stale inbox items needed manual unsticking 2026-05-19T05:25Z).",
+      "recommended_action": "Next tinker run: pick up DIRECTIVE-20260519-001 first (more urgent due to observed-bite history), then DIRECTIVE-20260518-002 in a subsequent run. Both are amendment-OR-new-PROP authoring tasks, similar shape to PROP-048."
+    },
+    {
+      "id": "FIND-2026-05-19T12-05",
+      "category": "prop-followup-verification",
+      "severity": "info",
+      "title": "PROP-046/045/047 all unchanged from 2026-05-19T02:40 run.",
+      "details": "PROP-046 (decider-stale-skip schema): STILL_PENDING_OPERATOR_APPLY. Grep for 'recommended_lane' in decider-intake.md and analyst-mode1-expansions.md both return 0 matches. attention-inbox.json empty (no fresh stale-skip emits to verify). PROP-045 (workspace-sync anti-reversion guard): DEFERRED, status operator-approved, no implementation amendment authored. PROP-047 (curmudgeon c-cycle hygiene): NOT_YET_DUE, status design-pending-operator-review.",
+      "recommended_action": "None for tinker. Operator: apply PROP-046+amendment-001 (single prompt edit per check_1/check_2)."
+    },
+    {
+      "id": "FIND-2026-05-19T12-06",
+      "category": "stranded-patch",
+      "severity": "info",
+      "title": "Stranded patch 2026-05-17T22-20 (PROP-016 generate-html.js) at 37h old, still not tombstoned.",
+      "details": "Same finding as 2026-05-19T02:40 run, age increased from 28h to 37h. Operator needs to pick option_a (apply via own clone) or option_b (discard) and tombstone the sentinel.",
+      "recommended_action": "Operator action item carried over."
+    }
+  ],
+  "previous_followup": {
+    "PROP-046": {
+      "status": "STILL_PENDING_OPERATOR_APPLY",
+      "verification_method": "Ran verification_pattern check_1 and check_2 (grep for 'recommended_lane' in both decider-intake.md and analyst-mode1-expansions.md). Both return 0 matches.",
+      "checked_at": "2026-05-19T12:06:00Z"
+    },
+    "PROP-045": {
+      "status": "DEFERRED",
+      "verification_method": "Status field read from JSON. Operator-approved but no implementation amendment authored. PROP-045's targeted failure mode (stale-FUSE-overwrites-newer-git) is the exact pattern that almost bit this run too — the 4 git-only operator-directives discovered by GitHub commit-log inspection are a sibling instance: workspace cannot SEE files that git has but FUSE doesn't, and any in-flight FUSE edit on those files would create a divergence. PROP-045 implementation would mitigate the universal-pusher direction's contribution; the directive-discovery gap (FIND-2026-05-19T12-01) is the orthogonal git→FUSE pull half.",
+      "checked_at": "2026-05-19T12:06:00Z"
+    },
+    "PROP-047": {
+      "status": "NOT_YET_DUE",
+      "verification_method": "Status field read from JSON. Earliest verification window ~2026-05-25 if operator applies in next 48h (curmudgeon needs 1-2 multi-cycle reviews after apply to verify the per-hole verification check landed in c-cycle reviews).",
+      "checked_at": "2026-05-19T12:06:00Z"
+    },
+    "ISS-1285_PROP-048_originally_planned": {
+      "status": "DEFERRED_TO_NEXT_RUN",
+      "note": "2026-05-19T02:40 run's 'next-run candidate' was PROP-048 for ISS-1285 (raw-text staleness). This run's PROP-048 number was taken by DIRECTIVE-20260519-002 (HIGH priority) per dispatcher override. ISS-1285 will become PROP-049 (or later) in a future run; flag carried forward."
+    }
+  },
+  "claude_md_audit": {
+    "status": "DEFERRED",
+    "reason": "Directive override took the run; CLAUDE.md audit is a Mode 3 activity and was deferred per single-mode-per-run rule. Last audit 2026-05-19T02:40 found CLAUDE.md at 197L flat with no edits since 2026-05-17; that finding still holds (no new commits to CLAUDE.md visible in 24h git log)."
+  },
+  "context_load": {
+    "status": "DEFERRED",
+    "reason": "Mode 3 cost-engineering activity. Last measurement 2026-05-19T02:40: analyst 1747L, curmudgeon 1234L, decider 3247L, tinker 1189L, CLAUDE.md 197L (all flat for 3 consecutive runs). No edits to prompts visible in 24h git log."
+  },
+  "operator_action_items": [
+    {
+      "priority": 1,
+      "item": "Review and apply PROP-048 (decider win-new push dedup guard). Small surgical patch to decider-intake.md + decider.md. Operator preference per directive: 'in-session apply after PROP review — small surgical patch, no need for shadow-mode rollout.'",
+      "estimated_apply_time_min": 5
+    },
+    {
+      "priority": 2,
+      "item": "Apply PROP-046 + amendment-001 (decider-stale-skip schema fix). Open since 2026-05-17; verification grep still returns 0 in both target files.",
+      "estimated_apply_time_min": 3
+    },
+    {
+      "priority": 3,
+      "item": "Resolve stranded patch 2026-05-17T22-20 (PROP-016 generate-html.js: pick option_a or option_b, tombstone).",
+      "estimated_apply_time_min": 5
+    },
+    {
+      "priority": 4,
+      "item": "Decide whether to author PROP-049 (directive-discovery gap from FIND-2026-05-19T12-01). Two design options: (a) workspace-sync git→FUSE pull for append_only_glob, (b) tinker pre-flight git-side directive check. (b) is smaller scope.",
+      "estimated_decide_time_min": 5
+    },
+    {
+      "priority": 5,
+      "item": "Optional: file ISS-XXXX or HNOTE about FUSE staleness on operator-directives (currently tracked only in this report)."
+    }
+  ],
+  "next_run_followups": [
+    "Verify PROP-048 application: grep 'PROP-048' in decider-intake.md and decider.md.",
+    "Verify PROP-046 application: re-run check_1 / check_2 grep.",
+    "Pick up DIRECTIVE-20260519-001 (third-inbox-writer audit, medium) — most urgent of the two deferred mediums.",
+    "Pick up DIRECTIVE-20260518-002 (clone-depth audit, medium).",
+    "If WIN-070 re-pushes again (qid >= 387), the dedup guard is not yet applied or not firing — flag escalation."
+  ]
+}
