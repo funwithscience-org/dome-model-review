@@ -1,0 +1,66 @@
+{
+  "directive_id": "DIRECTIVE-20260519-002",
+  "title": "Patch decider win-new push handler to add 2-condition dedup check (wins.json contains WIN-id AND curmudgeon reviews/ contains WIN-id.c*.json → suppress push). Source: ISS-2134 (successor to ISS-2126). Operational MAJOR — decider has re-pushed WIN-070 three consecutive runs with byte-identical content.",
+  "filed_by": "operator-via-cowork-claude",
+  "filed_at": "2026-05-19T11:00:00Z",
+  "issued_at": "2026-05-19T11:00:00Z",
+  "status": "pending",
+  "priority": "high",
+  "scope_authority": "Author PROP-NNN with concrete decider-prompt patch + counter-arguments. Operator + cowork-claude apply. Tinker does NOT self-apply.",
+  "bug_summary": {
+    "pattern": "WIN-070 re-pushed to curmudgeon priority-queue 3 consecutive decider runs (qid 383 / 384 / 386), all byte-identical content (WIN-070 sha256:98872083f395e56c, 16672 bytes; HEAD data/wins.json unchanged since ec5fdff). Each cycle burns ~1 decider-Opus run + ~1 curmudgeon-Opus run on duplicate work.",
+    "predecessor_iss": "ISS-2126 (closed 2026-05-19T05:20Z) had 2 suggested remedies: (a) git rm of monitor/analyst/new-wins/WIN-070.json (cosmetic — the trigger artifact), (b) decider dedup check on existing curmudgeon reviews (structural — the load-bearing fix). Only (a) was applied; (b) was not. Decider promptly invented a new push reason on next run ('Analyst onboarded to wins.json but missed priority queue push') and re-pushed at qid=386.",
+    "successor_iss": "ISS-2134 (filed 2026-05-19T11:00Z) re-opens the concern with explicit reference to ISS-2126 as predecessor.",
+    "curmudgeon_recommended_patch_verbatim": "In the win-new push handler, before pushing target_type:win-new to priority-queue.json, check (1) does data/wins.json already contain a WIN entry with this id? AND (2) does monitor/curmudgeon/reviews/ already contain a WIN-{id}.c{n}.json file? If BOTH are true, do NOT push — instead log 'WIN-{id} already integrated and reviewed; no queue push needed' in the decider summary and continue.",
+    "why_first_fix_failed": "Fix (a) removed the new-wins file (the prior trigger), but decider's win-new push logic appears to evaluate 'is this WIN onboarded?' via signals OTHER than the new-wins file. Whatever ad-hoc reason decider currently believes ('Analyst onboarded but missed priority queue push'), it doesn't key on the actual presence of a curmudgeon review."
+  },
+  "operator_preferences_for_proposal": [
+    "Minimal patch: ~10 lines added to decider's win-new push code path",
+    "Mechanical guard: pure file-existence checks, no judgment calls",
+    "Counter-arguments mandatory: especially (a) what if both conditions are true but the existing review is stale and a fresh look is genuinely warranted? (b) does this break the legitimate case where a WIN is re-onboarded after a verdict-revision?",
+    "Operator preference for in-session apply after PROP review — small surgical patch, no need for shadow-mode rollout"
+  ],
+  "tasks_for_tinker": [
+    {
+      "task_id": "task_1_locate_push_handler",
+      "description": "Find the decider win-new push code in monitor/prompts/decider.md or monitor/prompts/reference/decider-intake.md (Priority 1 — New WIN onboarding). Identify the exact location where push to priority-queue.json with target_type:'win-new' happens.",
+      "deliverable": "exact file + line range in PROP's evidence section."
+    },
+    {
+      "task_id": "task_2_design_dedup_check",
+      "description": "Author the 2-condition dedup check exactly as curmudgeon recommended: (1) wins.json contains WIN-{id} AND (2) curmudgeon/reviews/ contains WIN-{id}.c*.json. Both true → suppress push, log message. Provide concrete old_string/new_string patch for decider's push code.",
+      "deliverable": "phase_1_design.implementation_amendment with exact patch."
+    },
+    {
+      "task_id": "task_3_counter_arguments",
+      "description": "Counter-arguments: (a) what about WINs with verdict revisions that warrant fresh review? (PROP-026 burndown / re-classification flow?) (b) what about WINs whose latest review is >30 days old? (c) what if curmudgeon has reviewed but found no holes — does the dedup still apply, or only if holes_found > 0?",
+      "deliverable": "counter_arguments_addressed section with rebuttals."
+    },
+    {
+      "task_id": "task_4_clearance_check",
+      "description": "After applying the proposed patch, what happens to the existing qid=386 (already pushed, c7 review done)? Confirm the patch only prevents FUTURE pushes — qid=386 will get popped by decider's next-cycle review-processing per normal flow, and the c7 review will be processed by decider intake. Document this in PROP for clarity.",
+      "deliverable": "post-patch behavior section."
+    }
+  ],
+  "in_scope_for_tinker": [
+    "Author one PROP-NNN with concrete patch",
+    "Counter-arguments mandatory",
+    "Explicit confirmation of qid=386 post-patch behavior"
+  ],
+  "out_of_scope_for_tinker": [
+    "Do NOT self-apply",
+    "Do NOT redesign WIN onboarding flow generally — just add the dedup check",
+    "Do NOT touch existing qid=386 or its c7 review — let normal decider flow handle"
+  ],
+  "expected_artifacts": [
+    "monitor/tinker/proposals/PROP-NNN-decider-win-new-dedup-check.json (status: design-pending-operator-review)"
+  ],
+  "related_issues": [
+    "ISS-2126 (predecessor — closed but only fix-a applied)",
+    "ISS-2134 (successor — assigned-tinker)"
+  ],
+  "related_props": [
+    "PROP-026 burndown / verdict reclassification — possible edge case for task_3 counter-arguments"
+  ],
+  "deadline_target": "Next tinker scheduled run (2026-05-20T03:30Z). HIGH priority — every decider cycle continues to burn Opus tokens on the loop until this lands. If operator wants to short-circuit overnight, can manually trigger tinker run."
+}
