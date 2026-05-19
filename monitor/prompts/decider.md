@@ -711,6 +711,13 @@ When you onboard a new WIN (Step 1f), integrate a rewritten section (Step 2a), o
 node -e "
 const fs=require('fs');
 const CLONE='${CLEAN_CLONE}';
+// PROP-048 (2026-05-19): If target_type==='win-new', you MUST first check that
+// the WIN has not already been onboarded-and-reviewed. See decider-intake.md
+// Step 1f Step 3 for the canonical guard. Naked copy-paste of this template
+// for a win-new push will recreate the WIN-070 re-push loop (ISS-2126→ISS-2134).
+// For non-win-new target_types (win-detail-rewrite, section-rewrite, etc.) the
+// dedup-against-reviews check does NOT apply — those types are explicitly for
+// re-reviewing previously-reviewed targets.
 const pq=JSON.parse(fs.readFileSync(CLONE+'/monitor/curmudgeon/priority-queue.json','utf8'));
 pq.queue.push({
   queue_id: pq.next_id++,
