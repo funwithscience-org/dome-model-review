@@ -167,21 +167,39 @@ const t=JSON.parse(fs.readFileSync('monitor/curmudgeon/tracker.json','utf8'));
 t.points.push({id:'WIN-NNN',type:'win',section:'X.X',topic:'Short topic',status:'pending',added_at:new Date().toISOString()});
 t.total_items=t.points.filter(p=>p.type==='win').length;
 fs.writeFileSync('monitor/curmudgeon/tracker.json',JSON.stringify(t,null,2));
-// Priority queue: push for urgent first-review
-const pq=JSON.parse(fs.readFileSync('monitor/curmudgeon/priority-queue.json','utf8'));
-const existing=pq.queue.find(q=>q.target_type==='win-new'&&q.target_id==='WIN-NNN');
-if(!existing){
-  pq.queue.push({
-    queue_id: pq.next_id++,
-    target_type: 'win-new',
-    target_id: 'WIN-NNN',
-    class: 'deep-attack',           // PROP-025: fresh-onboard WINs always singleton; never been reviewed.
-    reason: 'New WIN onboarded from analyst Mode 0',
-    pushed_by: 'decider',
-    pushed_at: new Date().toISOString(),
-    context_hints: {source_file:'monitor/analyst/new-wins/WIN-NNN.json',related_issues:[],human_note:null}
-  });
-  fs.writeFileSync('monitor/curmudgeon/priority-queue.json',JSON.stringify(pq,null,2));
+// PROP-048 (2026-05-19) dedup guard: before pushing 'win-new' to the priority queue,
+// verify the WIN has not ALREADY been onboarded-and-reviewed in a prior cycle. The
+// purpose of a 'win-new' push is 'urgent first-review' — if any curmudgeon review
+// file exists for this id, the urgent-first-review semantic does not apply and the
+// normal tracker.points pending entry above is the correct mechanism for any future
+// re-review. Without this guard, decider re-pushes byte-identical content every
+// onboarding-loop cycle (observed: WIN-070 qid 383/384/386 from 2026-05-18 onward,
+// ISS-2126 → ISS-2134). The check is purely file-existence — no judgement, no schema
+// change. If you genuinely need a fresh review of an already-reviewed WIN, push with
+// target_type:'win-detail-rewrite' (which carries the correct 'this has been reviewed
+// before' semantic) instead of 'win-new'.
+const wins=JSON.parse(fs.readFileSync('data/wins.json','utf8'));
+const winExists=wins.some(w=>w.win_id==='WIN-NNN');
+const reviewExists=fs.readdirSync('monitor/curmudgeon/reviews/').some(f=>(f.startsWith('WIN-NNN.c')||f.startsWith('WIN-NNN.holistic')||f.startsWith('WIN-NNN.verification'))&&f.endsWith('.json'));
+if(winExists&&reviewExists){
+  console.log('WIN-NNN already integrated AND reviewed (review file exists); no priority-queue win-new push needed (PROP-048 dedup guard). Normal tracker rotation will pick it up for BAU re-review.');
+} else {
+  // Priority queue: push for urgent first-review (only reachable for genuinely-new WINs)
+  const pq=JSON.parse(fs.readFileSync('monitor/curmudgeon/priority-queue.json','utf8'));
+  const existing=pq.queue.find(q=>q.target_type==='win-new'&&q.target_id==='WIN-NNN');
+  if(!existing){
+    pq.queue.push({
+      queue_id: pq.next_id++,
+      target_type: 'win-new',
+      target_id: 'WIN-NNN',
+      class: 'deep-attack',           // PROP-025: fresh-onboard WINs always singleton; never been reviewed.
+      reason: 'New WIN onboarded from analyst Mode 0',
+      pushed_by: 'decider',
+      pushed_at: new Date().toISOString(),
+      context_hints: {source_file:'monitor/analyst/new-wins/WIN-NNN.json',related_issues:[],human_note:null}
+    });
+    fs.writeFileSync('monitor/curmudgeon/priority-queue.json',JSON.stringify(pq,null,2));
+  }
 }
 "
 ```
