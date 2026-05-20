@@ -1,0 +1,216 @@
+{
+  "run_id": "tinker-2026-05-20T02-40",
+  "run_at": "2026-05-20T02:40:00.000Z",
+  "mode_selected": "directive-override",
+  "mode_selected_reason": "Pre-flight FUSE scan returned NO PENDING DIRECTIVES. The previous run (2026-05-19T12-43) explicitly carried DIRECTIVE-20260518-002 (clone-depth audit, medium) as 'DEFERRED to next run' in its next_run_followups, and noted that the directive remained git-only due to the persistent FUSE-staleness gap. Reconciled FUSE listing (50 directives) vs GitHub API listing (51 directives) via curl — confirmed DIRECTIVE-20260518-002-clone-depth-audit.json was the missing one. Fetched via curl, wrote to FUSE (DIRECTIVE-LIFECYCLE additive-edit), then ran the audit as primary task. Per dispatcher pattern established by prior 3 runs: pending git-only directives are treated as effectively pending and routed to Mode 4.",
+
+  "modes_checked": {
+    "mode_1_health": {
+      "status": "GREEN",
+      "details": {
+        "poller_age_min": 210,
+        "curmudgeon_tracker_age_min": 474,
+        "decider_latest_age_min": 74,
+        "analyst_tracker_age_min": 315,
+        "status_json_age_min": 159,
+        "baby_summary_age_min": 669,
+        "sloppytoppy_score_age_min": 1,
+        "sloppytoppy_rewrite_age_min": 4717,
+        "baby_summary_note": "11h old but baby is on 2h cadence, so we are between cycles. Latest baby summary (15:31Z 2026-05-19) shows a clean no-op — no pending baby-owned items. Not stalled.",
+        "sloppytoppy_rewrite_note": "3+ days old but rewrite runs every 2 days at 05:00 UTC; today (2026-05-20) is the off-cycle day. Not stalled.",
+        "stranded_patches_actionable": 1,
+        "stranded_patches_actionable_detail": "monitor/decisions/stranded-patches-2026-05-17T22-20-15Z.json (PROP-016 generate-html.js stranded by NEVER_PUSH detect), now 52h old, NOT tombstoned. Same finding carried 4 consecutive runs (2026-05-19T02-40 at 28h, 12-05 at 37h, 12-43 at 38h, this run at 52h). Operator action: pick option_a or option_b and tombstone."
+      }
+    },
+    "mode_2_infra": {
+      "status": "AMBER",
+      "details": {
+        "fuse_stale_files": [
+          "build-scripts/generate-html.js — persistent 1-line caption diff (workspace has 'plus 1 analyst-added claim (WIN-070)'; GitHub does not). Same as prior 3 runs.",
+          "monitor/prompts/curmudgeon.md L52 — FUSE missing --depth 50 flag that GitHub HEAD has",
+          "monitor/prompts/workspace-sync.md L25 — FUSE missing --depth 50 flag",
+          "monitor/prompts/reference/decider-patches-and-selfapply.md L71 — FUSE missing --depth 50 flag",
+          "monitor/prompts/reference/OPERATOR-RUNBOOK.md L14 — FUSE missing --depth 50 flag"
+        ],
+        "fuse_stale_files_note": "The 4 prompt files are STALE because operator-direct edits on 2026-05-18 added --depth 50 to git (per DIRECTIVE-20260518-002 bug_summary) but the git→FUSE pull never happened. workspace-sync NEVER_PUSH's these files (correct — git-owned), so the only sync path is build.js publish — which has not run since. This staleness has been latent for ~46h. It does NOT break agents (they clone fresh from GitHub HEAD and see the patched versions), but it confuses tinker reading from FUSE.",
+        "auth_status": "HTTP 200 (token valid)",
+        "disk_project_footprint_mb": 748,
+        "disk_root_use_pct": 93,
+        "disk_warning": "project footprint >=500MB threshold fired (WARNING tier) — but breakdown is 739MB FUSE workspace + ~3MB other. Same threshold-noise as prior 3 runs. Standing /tmp clone cleanup empowerment had nothing to clean (no /tmp/*-clone directories present). Disk-fill from a mid-run `git clone --depth 100` attempt confirmed the 93% baseline leaves little room for ad-hoc clones.",
+        "cleanable_clones": 0,
+        "cleanable_clones_note": "No /tmp/*-clone present. /tmp has only poller scratch /tmp/dome-*.html (~500KB)."
+      }
+    },
+    "mode_3_cost": {
+      "status": "DEFERRED_4TH_RUN",
+      "reason": "Directive override took the run. Mode 3 (cost engineering + CLAUDE.md audit + context_load measurement) has now been deferred for 4 consecutive runs (2026-05-19T02-40, 12-05, 12-43, this run). Tinker debt is accumulating. Recommend the next run with no pending directive override pick up Mode 3 as primary task."
+    },
+    "mode_4_proposals": {
+      "status": "EXECUTED_AS_DIRECTIVE_OVERRIDE",
+      "primary_artifact": "monitor/tinker/proposals/PROP-049-clone-depth-standardization.json"
+    }
+  },
+
+  "findings": [
+    {
+      "id": "FIND-2026-05-20T02-40-01",
+      "category": "directive-authored",
+      "severity": "info",
+      "title": "DIRECTIVE-20260518-002 (clone-depth audit) completed: PROP-049-clone-depth-standardization authored.",
+      "details": "Performed comprehensive clone-create site audit per directive tasks 1-4. Exhaustive grep across monitor/prompts/, monitor/prompts/reference/, monitor/scripts/, build-scripts/ for 'git clone' literal. Found 8 total prompt-side sites. 7 of 8 already have --depth 50 on GitHub HEAD: 4 from operator-direct 2026-05-18 (curmudgeon.md, workspace-sync.md L25, decider-patches-and-selfapply.md, OPERATOR-RUNBOOK.md — these are STALE in FUSE; see FIND-02) + 3 since-creation per PROPs 038/039/041 (curmudgeon-verify, sloppytoppy-score, sloppytoppy-rewrite). 1 remaining un-patched site is workspace-sync.md L581 (strand-rescue recipe inside JSON template). Plus the baby-clone mystery: analyst.md Step 0a and analyst-baby.md Step 0a only REFRESH existing clones — never create — yet baby's 2026-05-18T05:14Z run reported a 659MB clone existed. Investigated 3 hypotheses (harness pre-clones / session reuse / vestigial code from prior version); H1 (harness) is most likely. PROP recommends 4 patches: P1 fixes the strand-rescue line, P2 adds a defensive clone-create with --depth 50 to analyst.md Step 0a's else-branch (closes the implicit-clone mystery), P3 updates analyst-baby.md inheritance reference, P4 documents --depth 50 as a CLAUDE.md convention.",
+      "recommended_action": "Operator: review PROP-049. Apply via fresh clone (NOT FUSE — would revert the 2026-05-18 patches). Optionally apply P1 alone (4-line surgical) and defer P2/P3/P4 pending harness investigation (operator escape hatch documented in counter_arg Q3). Following apply, run `node build.js publish` to sync FUSE back to canonical state (resolves the 4-file staleness too).",
+      "evidence": "monitor/tinker/proposals/PROP-049-clone-depth-standardization.json (4 patches, 6 counter-arguments, 6 regression-checks, 4 out-of-scope followups). DIRECTIVE-20260518-002 marked status=completed in FUSE (status + completed_at + completed_by_run + prop_id_authored — DIRECTIVE-LIFECYCLE additive-edit)."
+    },
+    {
+      "id": "FIND-2026-05-20T02-40-02",
+      "category": "fuse-staleness-major",
+      "severity": "moderate",
+      "title": "5 monitor/prompts/ files STALE in FUSE — operator-direct 2026-05-18 edits never round-tripped",
+      "details": "Four of the five operator-direct patches from 2026-05-18 (curmudgeon.md L52, workspace-sync.md L25, decider-patches-and-selfapply.md L71, OPERATOR-RUNBOOK.md L14) added --depth 50 to clone commands on GitHub but never propagated back to the FUSE workspace. 46+ hours later FUSE still has the un-patched versions. This is the same direction-asymmetry that PROP-045 (workspace-sync anti-reversion guard) addressed and that DIRECTIVE-20260519-001 + DIRECTIVE-20260518-002 both got stuck on at the directive-discovery layer. The structural fix would be either (a) periodic build.js publish on a scheduled task, (b) workspace-sync gains a git→FUSE pull for OWNED_BY_GIT files. Neither is implemented. The agents are unaffected because they clone fresh from GitHub HEAD, but tinker reading FUSE sees stale prose and any operator file-tools edit would revert the 2026-05-18 patches.",
+      "recommended_action": "After applying PROP-049, run `node build.js publish` to force git→FUSE sync — resolves all 5 stale files in one stroke. Sibling PROP-050 (or PROP-051) for the structural fix is recommended (PROP-049 FU3 references this).",
+      "evidence": "Per-file md5 comparison this run: 4 of 7 spot-checked prompt files STALE; 7 of 8 audit-target files in PROP-049 STALE."
+    },
+    {
+      "id": "FIND-2026-05-20T02-40-03",
+      "category": "fuse-staleness-persistent",
+      "severity": "minor",
+      "title": "build-scripts/generate-html.js: 1-line caption diff persists 4th consecutive run.",
+      "details": "Workspace has caption 'plus 1 analyst-added claim (WIN-070)'; GitHub does not. Cross-checked data/wins.json — there is no analyst_added field and no 'WIN-070' key (wins use bare numeric ids; '070' exists but no analyst-added marker). The workspace caption math (69 + 1 + 2 = 72) matches the actual catalog total (72 wins), while the GitHub-rendered docs/index.html caption (69 + 2 = 71) is OFF BY ONE — a genuine integrity issue in published HTML. Either: (a) docs/index.html needs a fix to add the +1 analyst-added or accept the math discrepancy, or (b) build-scripts/generate-html.js workspace version needs to revert. Recommend integrity agent flag this on next 9 AM run.",
+      "recommended_action": "Defer to integrity agent or next Mode 3 audit. Now a documented integrity finding, not just FUSE noise."
+    },
+    {
+      "id": "FIND-2026-05-20T02-40-04",
+      "category": "stranded-patch",
+      "severity": "info",
+      "title": "Stranded patch 2026-05-17T22-20 (PROP-016 generate-html.js) at 52h old, still not tombstoned.",
+      "details": "Same finding as 2026-05-19T12-43 (38h), 12-05 (37h), 02-40 (28h) runs. WIN-054 methodology reference fix; operator picks option_a (apply alternative WIN cite) or option_b (drop the cite). Once applied via own clone, tombstone the sentinel.",
+      "recommended_action": "Carry over operator action item (priority 4 in operator_action_items list)."
+    },
+    {
+      "id": "FIND-2026-05-20T02-40-05",
+      "category": "backlog-trend",
+      "severity": "info",
+      "title": "Backlog metrics still GREEN; net velocity +5 over 7d.",
+      "details": "open_issues_total=25, open_status_count=0, assigned-analyst=2, age_ge_14d=7, age_ge_30d=1, oldest_open_age_days=0. Closed 20 / new 15 over 7d = net +5. No PROP-030 thresholds fire (all metrics well below moderate tier). baby_drain_count_7d=0 (verified: only 2 items in expansion-tracker.json; neither baby-authored). verify_drain_count_7d=0 (verified: no curmudgeon-verify reviews in reviews/ — the 2 agent_subtype-having files are 'rewrite-verify' class). Queue-history entry appended.",
+      "recommended_action": "None for backlog. Baby/verify drain at 0 may indicate the new agents (PROP-034 baby, PROP-038 curmudgeon-verify) are not seeing eligible work; verify on next cycle that this is starvation-by-design vs starvation-by-bug. Not blocking.",
+      "evidence": "monitor/tinker/queue-history.jsonl row appended this run (tinker_run_id=tinker-2026-05-20T02-40)."
+    },
+    {
+      "id": "FIND-2026-05-20T02-40-06",
+      "category": "tinker-work-routing",
+      "severity": "info",
+      "title": "EXP-425 / ISS-2105 (86 missing EXP IDs in expansion-tracker audit) — routed to tinker via expansion-tracker but not via operator-directives.",
+      "details": "Discovered during pre-flight backlog-metrics computation: expansion-tracker.json has EXP-425 with assigned_to='tinker', source='decider-bau-triage', status='pending', routed_from_iss='ISS-2105'. ISS-2105 is severity=major in open-issues.json. This is a legitimate tinker work item that came in via decider's BAU triage path rather than via operator-directives — a routing path the dispatcher pre-flight does NOT scan. The tinker dispatcher only scans operator-directives/, not expansion-tracker.json filtered by assigned_to='tinker'. Two questions: (1) should the dispatcher also scan expansion-tracker for tinker-assigned items? (2) should EXP-425 be done in a future tinker run? Deferred to next Mode 3 / Mode 4 run.",
+      "recommended_action": "Operator decision: extend dispatcher pre-flight to scan expansion-tracker for assigned_to='tinker' items, OR re-route EXP-425 / ISS-2105 to operator-directives so the existing dispatcher path picks it up. Either way, EXP-425 itself (the 86-EXP-ID gap audit) is genuine work that should be scheduled."
+    },
+    {
+      "id": "FIND-2026-05-20T02-40-07",
+      "category": "previous-followup-progress",
+      "severity": "info",
+      "title": "PROP-048 (decider-win-new dedup guard) APPLIED — verified via grep.",
+      "details": "PROP-048 was authored by 12:05 run. By this run (~14h later), the patch has landed: grep 'PROP-048' in monitor/prompts/reference/decider-intake.md returns 2 matches (the dedup-guard code block at L170 and the check-block at L185), and 1 match in monitor/prompts/decider.md L714. Verification per PROP-048 verification_pattern: PASS. Marked FIXED in previous_followup section.",
+      "recommended_action": "None — verified fixed. Watch for WIN-070 re-pushes on next decider runs; absence confirms guard fires."
+    }
+  ],
+
+  "previous_followup": {
+    "PROP-046": {
+      "status": "STILL_PENDING_OPERATOR_APPLY",
+      "verification_method": "grep -c 'target_mode' monitor/prompts/reference/decider-intake.md (FUSE) → 0; grep -c 'target_mode' monitor/prompts/reference/analyst-mode1-expansions.md (FUSE) → 0. Same status across 4 runs. Note: also checked GitHub HEAD via curl earlier this run — both files un-patched there too, so this is not just FUSE-staleness, the patches have not been applied anywhere.",
+      "note": "Three amendments now stack: parent PROP-046 + amendment-001 + amendment-002. All 3 patches together = 3-line additive edit. Bundle apply recommended.",
+      "checked_at": "2026-05-20T02:53:00Z"
+    },
+    "PROP-046-amendment-001": {
+      "status": "STILL_PENDING_OPERATOR_APPLY",
+      "verification_method": "Inherited check from PROP-046.",
+      "checked_at": "2026-05-20T02:53:00Z"
+    },
+    "PROP-046-amendment-002": {
+      "status": "STILL_PENDING_OPERATOR_APPLY",
+      "verification_method": "grep -c 'target_mode' monitor/prompts/decider.md (FUSE) → 0. Authored 38h ago by tinker-2026-05-19T12-43 (DIRECTIVE-20260519-001). Not applied.",
+      "checked_at": "2026-05-20T02:53:00Z"
+    },
+    "PROP-048": {
+      "status": "FIXED",
+      "verification_method": "grep -c 'PROP-048' monitor/prompts/reference/decider-intake.md → 2; grep -c 'PROP-048' monitor/prompts/decider.md → 1. Patch landed. See FIND-07.",
+      "checked_at": "2026-05-20T02:53:00Z"
+    },
+    "PROP-045": {
+      "status": "DEFERRED",
+      "verification_method": "Field status read from JSON. Same finding across multiple runs. The directive-discovery FUSE gap (this run's FIND-02 expanded to include prompt files now) is the orthogonal git→FUSE half that PROP-045 was supposed to address but was deferred. PROP-049 FU3 re-recommends filing a sibling PROP for it.",
+      "checked_at": "2026-05-20T02:53:00Z"
+    },
+    "PROP-047": {
+      "status": "NOT_YET_DUE_OR_UNKNOWN",
+      "verification_method": "PROP-047 (curmudgeon C-cycle carry-over hygiene) verification not run this cycle. Authored 2026-05-18 16:59, applied date unknown. Deferred to next run.",
+      "checked_at": "2026-05-20T02:53:00Z"
+    },
+    "tinker-2026-05-19T12-43_next_run_followups": {
+      "verify_prop_046_application": "STILL_PENDING_OPERATOR_APPLY (4-run streak).",
+      "verify_prop_048_application": "FIXED this run — see FIND-07.",
+      "pick_up_directive_20260518_002": "DONE this run — PROP-049 authored.",
+      "mode_3_cost_engineering": "DEFERRED_4TH_RUN — see modes_checked.mode_3_cost.reason.",
+      "tinker_md_disk_threshold_selffix": "DEFERRED — same threshold-noise observation persists this run, no self-fix attempted.",
+      "win_070_re_push_check": "NO_RE_PUSH_OBSERVED. Priority-queue grep returns 0 items mentioning '070' or 'WIN-070'. PROP-048 dedup guard now applied, so no new pushes expected."
+    }
+  },
+
+  "claude_md_audit": {
+    "status": "DEFERRED",
+    "reason": "Directive override took the run; Mode 3 audit deferred for 4th consecutive run. Last full audit (tinker-2026-05-19T02-40) found CLAUDE.md at 197L flat — no new commits visible. Will execute next Mode 3 run."
+  },
+
+  "context_load": {
+    "status": "DEFERRED",
+    "reason": "Mode 3 cost-engineering activity. Last measurement (2026-05-19T02-40): analyst 1747L, curmudgeon 1234L, decider 3247L, tinker 1189L, CLAUDE.md 197L (all flat). No edits to those prompts visible in 48h git log (verified this run via API: most-recent analyst.md commit is from 2026-05-18 REPAIR, not a content change)."
+  },
+
+  "cleanup_actions": [],
+
+  "operator_action_items": [
+    {
+      "priority": 1,
+      "item": "Review and apply PROP-049-clone-depth-standardization. Apply via FRESH CLONE (not FUSE — see counter_arg Q5 / fuse_staleness_footnote). 4 patches (P1-P4); operator may apply P1 alone first and defer P2/P3/P4 pending harness investigation. Following apply, run `node build.js publish` to sync the 5+ FUSE-stale files back to canonical state.",
+      "estimated_apply_time_min": 15
+    },
+    {
+      "priority": 2,
+      "item": "Apply PROP-046 + amendment-001 + amendment-002 (3-patch bundle still pending since 2026-05-17). Bundle is a 3-line additive edit across decider-intake.md, analyst-mode1-expansions.md, decider.md.",
+      "estimated_apply_time_min": 5
+    },
+    {
+      "priority": 3,
+      "item": "Decide on EXP-425 / ISS-2105 routing: extend tinker dispatcher pre-flight to scan expansion-tracker for assigned_to='tinker', OR re-route the 86-EXP-ID gap audit to operator-directives. See FIND-06.",
+      "estimated_decide_time_min": 5
+    },
+    {
+      "priority": 4,
+      "item": "Resolve stranded patch 2026-05-17T22-20 (PROP-016 generate-html.js WIN-054 methodology reference) — now 52h old, 4 runs carried.",
+      "estimated_apply_time_min": 5
+    },
+    {
+      "priority": 5,
+      "item": "File sibling PROP-050 (or PROP-051) for the structural FUSE-staleness fix on git-owned files. Two options outlined in PROP-049 FU3: (a) periodic build.js publish scheduled task, (b) workspace-sync git→FUSE pull for OWNED_BY_GIT list. Recommend (a) as smaller scope.",
+      "estimated_decide_time_min": 10
+    },
+    {
+      "priority": 6,
+      "item": "Investigate docs/index.html caption math mismatch: rendered HTML says '72 catalog entries = 69 dome-claimed + 2 sub-claims' which sums to 71 (off by 1). Workspace generate-html.js attempted to fix this with 'plus 1 analyst-added' but the wins.json data has no analyst_added marker. Either fix the docs/index.html to actually sum to 72, or revert workspace generate-html.js. See FIND-03."
+    },
+    {
+      "priority": 7,
+      "item": "Optional: next Mode 3 / Mode 4 run, self-fix tinker.md Mode 2 disk-check threshold to subtract FUSE workspace size before applying 500MB threshold. Same finding 4-run streak."
+    }
+  ],
+
+  "next_run_followups": [
+    "Verify PROP-049 applied: re-run audit_results spot-checks (verification_pattern field of each P1-P4 patch). Expect verification commands to return the expected counts.",
+    "Verify PROP-046 + amendments applied: grep 'target_mode' in all 3 target files — expect ≥1 match per file.",
+    "If the operator chose option (a) for FU3 (periodic build.js publish), verify FUSE-staleness on operator-direct prompt edits has been resolved (the 5 files identified in FIND-02 should now match GitHub HEAD).",
+    "Confirm next analyst-baby run successfully refreshed or created its clone post-P2 apply (RC4).",
+    "Mode 3 cost engineering audit — high priority, 4-run-streak deferral. CLAUDE.md accuracy, per-agent context-load measurement, dispatcher candidate scan, sloppytoppy + verify drain validation.",
+    "Self-fix candidate: tinker.md Mode 2 disk-check threshold — same noise observed 4 consecutive runs. Small scope, consider in-line self-fix.",
+    "EXP-425 / ISS-2105 (86 missing EXP IDs) — operator decision on routing; if operator says 'do it as tinker', schedule it for an upcoming Mode 3 / Mode 4 run.",
+    "Watch baby_drain_count_7d and verify_drain_count_7d metrics — both at 0 this run. May indicate starvation-by-design (no eligible work right now) or starvation-by-bug (filtering logic broken). 2-3 more cycles of data needed before deciding."
+  ]
+}
