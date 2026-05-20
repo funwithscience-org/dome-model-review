@@ -22,7 +22,7 @@ if [ ! -d "$CLONE" ]; then
     echo "ERROR: Could not extract PAT from workspace git remote URL. Aborting."
     exit 1
   fi
-  git clone --depth 50 "https://x-access-token:${PAT}@github.com/funwithscience-org/dome-model-review.git" "$CLONE"
+  git clone "https://x-access-token:${PAT}@github.com/funwithscience-org/dome-model-review.git" "$CLONE"
 fi
 
 cd "$CLONE"
@@ -85,6 +85,10 @@ NEVER_PUSH=(
   # (source code), edited only via git. Not in monitor/prompts/ so the dynamic
   # rule does not cover it — must be listed explicitly here.
   'monitor/scripts/audit-rewrite.js'
+  # PROP-050 (2026-05-20): push-via-api.js is the Git Data API fallback push
+  # script invoked by build.js and decider self-apply when `git push` 403s.
+  # Same source-code classification as audit-rewrite.js.
+  'monitor/scripts/push-via-api.js'
   # All .md files under monitor/prompts/ are operator-edited (dynamic rule
   # in is_never_push() below). Covers monitor/prompts/sloppytoppy-rewrite.md
   # and monitor/prompts/reference/sloppytoppy-rewrite-rubric.md automatically.
@@ -487,6 +491,62 @@ if [ -n "$DATA_STAGED" ]; then
     echo "      The data sync will still commit; the integrity agent will catch any"
     echo "      resulting build drift on its next run (daily 09:08Z). Operator can"
     echo "      manually run 'node build.js publish' from a clone to clear it."
+  fi
+fi
+
+# PROP-050 Design B: mtime-drift backstop for the data-staged regen above.
+# When data files DIDN'T change this cycle (smart_copy found nothing newer)
+# but FUSE's data files are STILL newer than FUSE's docs/index.html, the
+# live site has drifted. Common cause: a prior `build.js publish` push
+# failed; the universal-pusher rescue path handles data files but does NOT
+# regenerate docs/index.html. Without this backstop, drift can persist for
+# days until the next analyst write or operator-triggered rebuild — as
+# happened 2026-05-17..2026-05-20 (WIN-070 caption math, 2+ day drift).
+#
+# This block is idempotent: if Step 3 already staged docs/index.html (data
+# was staged this cycle), we skip; otherwise we regenerate from clone's
+# current data files and stage. The regen is a pure deterministic function
+# of the data, so running it when nothing changed is a diff-level no-op.
+HTML_FUSE_MTIME=$(stat -c %Y "${WORKSPACE}/docs/index.html" 2>/dev/null || echo 0)
+DRIFT_FILES=""
+for f in data/wins.json data/sections.json data/uncounted-failures.json data/predictions.json; do
+  DATA_FUSE_MTIME=$(stat -c %Y "${WORKSPACE}/$f" 2>/dev/null || echo 0)
+  if [ "$DATA_FUSE_MTIME" -gt "$HTML_FUSE_MTIME" ]; then
+    DRIFT_FILES="${DRIFT_FILES}  ${f} (data mtime $(date -u -d @${DATA_FUSE_MTIME} +%FT%TZ) > html mtime $(date -u -d @${HTML_FUSE_MTIME} +%FT%TZ))\n"
+  fi
+done
+
+if [ -n "$DRIFT_FILES" ]; then
+  if git diff --cached --name-only -- docs/index.html | grep -q .; then
+    echo "mtime-drift backstop: docs/index.html already regenerated this cycle (Step 3 staged it); skipping backstop."
+  else
+    echo "mtime-drift backstop: data newer than docs/index.html in FUSE — regenerating:"
+    printf "%b" "$DRIFT_FILES"
+    # Copy FUSE data into clone so the regen reflects the freshest available state.
+    # Skipped if clone's data already matches FUSE (cmp short-circuits).
+    for f in data/wins.json data/sections.json data/uncounted-failures.json data/predictions.json; do
+      if [ -f "${WORKSPACE}/$f" ] && ! cmp -s "${WORKSPACE}/$f" "$f"; then
+        cp "${WORKSPACE}/$f" "$f"
+        git add "$f"
+      fi
+    done
+    if node build.js html 2>&1 | tail -3; then
+      # Sanity guard before staging: regenerated HTML must be non-trivially sized
+      # and start with <!DOCTYPE html>. The current docs/index.html is ~3.6MB so
+      # a <100KB regen is a generator bug. Refuse to stage corrupt output; the
+      # integrity agent will surface the failure on its next daily run.
+      REGEN_SIZE=$(stat -c %s docs/index.html 2>/dev/null || echo 0)
+      if [ "$REGEN_SIZE" -lt 100000 ]; then
+        echo "  WARN: regenerated docs/index.html is suspiciously small (${REGEN_SIZE} bytes). Refusing to stage."
+      elif ! head -1 docs/index.html | grep -qF '<!DOCTYPE html>'; then
+        echo "  WARN: regenerated docs/index.html missing <!DOCTYPE html> on line 1. Refusing to stage."
+      else
+        git add docs/index.html
+        echo "  → Staged regenerated docs/index.html (md5 $(md5sum docs/index.html | cut -c1-8))."
+      fi
+    else
+      echo "  WARN: 'node build.js html' failed during mtime-drift backstop. Continuing without regen."
+    fi
   fi
 fi
 

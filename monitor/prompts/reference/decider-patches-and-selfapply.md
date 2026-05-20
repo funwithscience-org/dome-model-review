@@ -68,7 +68,7 @@ if [ -z "$AUTH_URL" ] || [[ "$AUTH_URL" != *"x-access-token"* ]]; then
   echo "WARNING: No authenticated URL found in workspace. Falling back to unauthenticated clone (push will fail)."
   AUTH_URL="https://github.com/funwithscience-org/dome-model-review.git"
 fi
-git clone --depth 50 "$AUTH_URL" ${CLONE}
+git clone "$AUTH_URL" ${CLONE}
 cd ${CLONE}
 npm install
 
@@ -381,8 +381,40 @@ fi
 # Net change: one push attempt, then either success or rescue. No retry,
 # no sleep, no split-push, no further diagnostics. If push 403s, that is
 # a known transient and we fall through immediately to the rescue path.
+# PROP-050 amendment: between the push and the rescue, we now try the
+# Git Data API path; on API success we set PUSH_RC=0 so the rescue branch
+# below is skipped (the commit is already on origin/main). On API failure
+# we fall through to the universal-pusher rescue as before.
 PUSH_OUT=$(git push origin main 2>&1)
 PUSH_RC=$?
+
+# PROP-050 Design A: if `git push` fails, try the Git Data API path before
+# falling through to universal-pusher rescue. The same PAT that 403s on
+# `git push` succeeds on the REST API (proven 2026-05-20 commit 7126e0fd).
+# When the API path succeeds, set PUSH_RC=0 so the rescue branch below is
+# skipped — the commit is already on origin/main, no further work needed.
+# When the API path also fails, leave PUSH_RC as-is and continue into the
+# universal-pusher block (data files copied to FUSE, workspace-sync rescue
+# within 1h). The fallback is bounded: one attempt, then universal-pusher.
+if [ $PUSH_RC -ne 0 ]; then
+  echo "git push failed — attempting Git Data API fallback (PROP-050)..."
+  CHANGED=$(git diff --name-only origin/main..HEAD 2>/dev/null | paste -sd,)
+  if [ -n "$CHANGED" ]; then
+    LAST_MSG=$(git log -1 --pretty=%B)
+    if node monitor/scripts/push-via-api.js --files "$CHANGED" --message "$LAST_MSG" 2>&1; then
+      # Refresh local origin/main so the post-push verification + workspace-
+      # sync calls below see the new SHA. Failure to fetch is non-fatal:
+      # the commit is on the remote either way.
+      git fetch origin main 2>&1 | tail -1
+      PUSH_RC=0
+      echo "Git Data API fallback succeeded. Push complete via REST API path."
+    else
+      echo "Git Data API fallback ALSO failed. Falling through to universal-pusher rescue."
+    fi
+  else
+    echo "git push failed but no committed-but-unpushed files detected; skipping API fallback."
+  fi
+fi
 
 echo "$PUSH_OUT"
 if [ $PUSH_RC -ne 0 ]; then

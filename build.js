@@ -233,6 +233,51 @@ function runTolerant(cmd, label, tolerateSubstrings) {
   }
 }
 
+// PROP-050 Design A: try `git push origin main` first; on failure fall
+// back to the Git Data API path (`monitor/scripts/push-via-api.js`).
+// The fallback exists because in our scheduled-task environment, certain
+// sessions return 403 on git push despite the PAT having correct
+// contents:write scope. The same PAT succeeds on the REST API path
+// (proven 2026-05-20 commit 7126e0fd). If both paths fail, exit non-zero
+// the same way the prior `run('git push origin main', ...)` did.
+function pushWithFallback() {
+  console.log('\n⏳ Push to GitHub...');
+  try {
+    execSync('git push origin main', { cwd: ROOT, stdio: 'inherit' });
+    console.log('✅ Push to GitHub');
+    return 'git-push';
+  } catch (e) {
+    console.warn('⚠️  git push failed — attempting Git Data API fallback (PROP-050).');
+    let changed;
+    try {
+      changed = execSync('git diff --name-only origin/main..HEAD', { cwd: ROOT, encoding: 'utf8' })
+        .split('\n').map(s => s.trim()).filter(Boolean);
+    } catch (_) {
+      console.error('❌ Could not enumerate changed files for API fallback');
+      process.exit(1);
+    }
+    if (changed.length === 0) {
+      console.error('❌ git push failed AND no committed-but-unpushed files found.');
+      process.exit(1);
+    }
+    const lastMsg = execSync('git log -1 --pretty=%B', { cwd: ROOT, encoding: 'utf8' }).trim();
+    try {
+      execSync(
+        'node monitor/scripts/push-via-api.js --files ' + JSON.stringify(changed.join(',')) +
+        ' --message ' + JSON.stringify(lastMsg),
+        { cwd: ROOT, stdio: 'inherit' }
+      );
+      // After API push, refresh local origin/main so subsequent commands see the new SHA.
+      execSync('git fetch origin main', { cwd: ROOT, stdio: 'inherit' });
+      console.log('✅ Push to GitHub (via Git Data API fallback)');
+      return 'api-fallback';
+    } catch (e2) {
+      console.error('❌ Both git push and Git Data API fallback failed.');
+      process.exit(1);
+    }
+  }
+}
+
 function printTally() {
   const wins = JSON.parse(fs.readFileSync(path.join(ROOT, 'data', 'wins.json'), 'utf8'));
   const tally = {};
@@ -388,7 +433,7 @@ if (target === 'sync-workspace') {
     ['nothing to commit', 'no changes added to commit']
   );
   if (committed) {
-    run('git push origin main', 'Push to GitHub');
+    pushWithFallback();
     // Run git gc --auto after push to prevent pack-file bloat. The --auto flag
     // is cheap when not needed (fast check of loose-object threshold) and only
     // actually repacks when git itself decides it's worth it. Silent by default.
