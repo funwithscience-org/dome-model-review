@@ -1,0 +1,95 @@
+{
+  "directive_id": "DIRECTIVE-20260520-001",
+  "title": "Design publish-path resilience bundle: A (decider Git Data API fallback when push 403s) + B (workspace-sync regen-and-push docs/index.html when data files are newer). Source: chronic PAT-403 from Devilwench identity for ~1 month; PAT cannot be rotated (operator-side unknown auth gap with funwithscience-org). Today's evidence: docs/index.html caption math was off by one ('69 + 2 = 71' vs total 72) for 2+ days because no successful `build.js publish` ran since 2026-05-17. Operator manually rebuilt + pushed via Git Data API today (commit 7126e0fd) confirming the API path works perfectly with the same PAT.",
+  "filed_by": "operator-via-cowork-claude",
+  "filed_at": "2026-05-20T05:35:00Z",
+  "issued_at": "2026-05-20T05:35:00Z",
+  "status": "pending",
+  "priority": "high",
+  "scope_authority": "Author PROP-NNN with concrete patches for BOTH A and B + counter-arguments. Operator + cowork-claude apply. Tinker does NOT self-apply.",
+  "bug_summary": {
+    "pattern": "decider's `node build.js publish` step fails with HTTP 403 on `git push` (identity 'Devilwench' — operator-side SSO/auth gap with funwithscience-org org). Decider's documented recovery is 'copy committed-but-unpushed files to FUSE; workspace-sync's universal-pusher rescues them on next hourly cycle.' This rescue path works for DATA files (wins.json, sections.json, etc. — listed in workspace-sync's universal-pusher allowlist) but NOT for GENERATED files (docs/index.html, docs/dome-review.pdf). Result: data files reach git within ~1h; generated HTML/PDF drift indefinitely until manual rebuild.",
+    "evidence_today": {
+      "incident": "Live docs/index.html line 382 showed '72 catalog entries = 69 dome-claimed wins plus 2 numbered-collision sub-claims' (69+2=71, missing WIN-070's +1). build-scripts/generate-html.js line 500 already had the corrected '${total} = 69 + 1 (WIN-070) + 2 collisions' template. The generator was correct; the deployed HTML was 2+ days stale.",
+      "git_log_signature": "Most recent commits before today were workspace-sync auto-commits ('Workspace sync: ...') for at least 48h. No `build.js publish` commit in that window.",
+      "fix_applied_today": "cowork-claude regenerated docs/index.html locally via /tmp invocation of generate-html.js (output redirected to /tmp/index.html to avoid FUSE write hazards), then pushed via Git Data API (blob → tree → commit → update-ref). Commit 7126e0fd. The same PAT that 403s on `git push` succeeded on every API call.",
+      "prior_recurrence": "ISS-2095 (filed 2026-05-18, closed 2026-05-18 as already-resolved-by-manual-build-237897f) was the same symptom in 2026-05-16/17 window. This is at minimum the 3rd recurrence."
+    },
+    "why_workspace_sync_rescue_doesnt_cover_html": "workspace-sync's universal-pusher mode (added 2026-04-26) lists DATA files only — `data/wins.json`, `data/sections.json`, `monitor/decisions/open-issues.json`, etc. — files where 'newer mtime on FUSE' is a safe signal that decider's clone has fresh content. docs/index.html is a build artifact, not authored content; its FUSE copy is whatever the last successful `build.js publish` left there. workspace-sync deliberately does NOT push build artifacts (they're in NEVER_PUSH). The structural gap: when decider's clone has fresh data files AND a fresh docs/index.html but the push fails, only the data files reach git via the rescue path.",
+    "why_pat_rotation_is_off_table": "Operator-side note (multiple sessions, most recently this morning): the PAT-403 has been chronic for ~1 month. PAT rotation has been attempted; the auth gap appears to be at the org SSO/identity layer (funwithscience-org), not the token itself. Tinker should treat 'fix the PAT' as outside the realistic option space and design around it."
+  },
+  "operator_preferences_for_proposal": [
+    "Both A and B in one PROP, not separate proposals (they're complementary: A is the primary durable fix, B is a safety net for drift cases A doesn't cover)",
+    "Minimal-surface patches: A should ideally be a single new script + a small edit to build.js (or decider.md's publish step); B should ideally be a small addition to workspace-sync.md's existing loop",
+    "Counter-arguments mandatory: see tasks_for_tinker.task_5 for the explicit set",
+    "Operator preference for direct apply after PROP review — no shadow-mode rollout. Today's manual fix proves the Git Data API mechanism works; rollout risk is bounded",
+    "PDF regeneration is OUT OF SCOPE — Playwright is heavy, workspace-sync's environment doesn't have it. docs/dome-review.pdf staleness is a separate problem"
+  ],
+  "tasks_for_tinker": [
+    {
+      "task_id": "task_1_locate_publish_handler",
+      "description": "Find the build.js push step (`run('git push ...', ...)` or equivalent). Identify exactly where the 403 propagates. Cross-check decider.md and decider-patches-and-selfapply.md for any duplicate push paths that would also need patching.",
+      "deliverable": "exact file + line range for the push site(s) in PROP's evidence section."
+    },
+    {
+      "task_id": "task_2_design_a_git_data_api_fallback",
+      "description": "Design A: when build.js push fails (non-zero exit OR stderr contains '403'), fall back to a Git Data API push. The pattern proven this morning: (1) POST /git/blobs for each changed file (base64-encoded), (2) GET HEAD commit, (3) POST /git/trees with base_tree = HEAD's tree + the new blob SHAs at their paths, (4) POST /git/commits with message + tree + parents=[HEAD], (5) PATCH /git/refs/heads/main with new commit SHA. Recommended: extract to a standalone `monitor/scripts/push-via-api.js` script that build.js (or decider) can invoke with `--files <comma-list> --message <msg>`. Handles multi-file commits in one tree.",
+      "deliverable": "phase_1_design.implementation_amendment with: (a) push-via-api.js script contents, (b) old_string/new_string patch for build.js to wire it in as fallback, (c) any decider.md edit needed."
+    },
+    {
+      "task_id": "task_3_design_b_workspace_sync_regen",
+      "description": "Design B: in workspace-sync's hourly loop, after the existing universal-pusher work, check: is any of data/wins.json, data/sections.json, data/uncounted-failures.json, data/predictions.json newer than docs/index.html (mtime comparison, both via FUSE)? If yes, regenerate docs/index.html and push it. Regeneration approach must avoid the FUSE write hazard observed today (writeFileSync to FUSE didn't fully truncate the existing file — partial overwrite). Two options to consider: (b1) generate to /tmp first, then push via Git Data API (same path as A), OR (b2) use the existing clone workspace-sync already creates, generate-html.js writes to clone/docs/index.html (non-FUSE), git add + commit + push via normal git (workspace-sync's identity works for git push — it commits hourly). Recommend b2 if workspace-sync's environment has node + the generate-html.js dependency chain available.",
+      "deliverable": "phase_2_design with: (a) workspace-sync.md edits adding the regen-and-push step, (b) explicit note on which approach (b1 or b2) and why, (c) clarification of node/npm availability in workspace-sync's runtime."
+    },
+    {
+      "task_id": "task_4_pdf_question",
+      "description": "docs/dome-review.pdf is also stale by 2+ days. PDF generation needs Playwright + headless Chromium, which is heavy. Should this PROP address PDF or punt it to a separate PROP? Tinker should note the tradeoff but DEFAULT to punting PDF (operator preference per operator_preferences_for_proposal).",
+      "deliverable": "one-paragraph note in PROP's out_of_scope section."
+    },
+    {
+      "task_id": "task_5_counter_arguments",
+      "description": "Counter-arguments mandatory. At minimum address: (a) What if the Git Data API push ALSO fails (token expired mid-run, org permission removed)? Fallback to what? (b) What if there are merge conflicts — does the Git Data API path detect them? (build.js's normal `git push` is non-fast-forward-safe; the API path uses base_tree from HEAD at fetch time, so a race against another commit between fetch and ref-update gives 422). (c) What if A and B fire on the same revision — does workspace-sync's regen push step on top of decider's API fallback create a double-commit/race? (d) What if regen produces a corrupted HTML (generator bug) — does workspace-sync have a sanity check before pushing? (e) Are there OTHER generated artifacts beyond docs/index.html that also drift (e.g., docs/llms.txt, sitemap.xml)? (f) Does workspace-sync's existing identity have the same SSO scope as Devilwench, or is it on a different PAT that won't run into the same wall? If same PAT, B doesn't actually solve anything; if different PAT, that's the real win.",
+      "deliverable": "counter_arguments_addressed section with rebuttals for each of (a)–(f)."
+    },
+    {
+      "task_id": "task_6_clearance_check",
+      "description": "What happens to existing in-flight stranded patches when A lands? Specifically: there's at least one 52h-old stranded patch (PROP-016 from 2026-05-17T22-20, per tinker's prior summary). Does A retroactively rescue them, or is A only forward-looking? Document expected behavior.",
+      "deliverable": "post-patch behavior section."
+    }
+  ],
+  "in_scope_for_tinker": [
+    "Author one PROP-NNN with concrete patches for both A and B",
+    "Counter-arguments for tasks_for_tinker.task_5 (a)–(f) mandatory",
+    "Document workspace-sync's PAT identity (same as Devilwench or different?) — task_5(f)",
+    "Document expected behavior re: existing stranded patches"
+  ],
+  "out_of_scope_for_tinker": [
+    "Do NOT self-apply — PROP only, operator + cowork-claude apply",
+    "Do NOT redesign build.js publish flow generally — A is a surgical fallback, not a refactor",
+    "Do NOT design PDF regeneration — explicitly punted to a follow-on PROP",
+    "Do NOT attempt to fix the underlying PAT/SSO issue — explicitly out of scope per operator note"
+  ],
+  "expected_artifacts": [
+    "monitor/tinker/proposals/PROP-NNN-publish-path-fallbacks.json (status: design-pending-operator-review)",
+    "Concrete patches for: build.js (or wherever the publish push lives), workspace-sync.md, possibly a new monitor/scripts/push-via-api.js"
+  ],
+  "related_issues": [
+    "ISS-2095 (closed — prior recurrence of stale-docs symptom, 2026-05-17 window)",
+    "Today's incident has no ISS filed (operator chose to file this directive instead of an ISS — the directive IS the structural-fix tracking)"
+  ],
+  "related_props": [
+    "Universal-pusher mode (added 2026-04-26 via HNOTE-OPERATOR-UNIVERSAL-PUSHER-001) — sibling design that solved data-file rescue. A and B are the missing piece for generated artifacts.",
+    "PROP-049 (clone-depth standardization, just authored 2026-05-20T02:40Z) — touches workspace-sync.md L581. Coordinate edits to avoid conflict."
+  ],
+  "related_directives": [
+    "DIRECTIVE-20260518-002 (clone-depth audit, completed via PROP-049) — earlier directive touching the same workspace-sync.md surface."
+  ],
+  "evidence_today": {
+    "commits_applied": [
+      "7126e0fd (2026-05-20T05:31Z, docs/index.html rebuild via Git Data API — proves the API path works with the same PAT that 403s on `git push`)"
+    ],
+    "before_caption_deployed": "72 catalog entries = 69 dome-claimed wins plus 2 numbered-collision sub-claims (69+2=71, off by 1)",
+    "after_caption_deployed": "72 catalog entries = 69 dome-claimed wins, 1 analyst-added claim (WIN-070), plus 2 numbered-collision sub-claims (69+1+2=72, correct)"
+  },
+  "deadline_target": "Next tinker scheduled run (~2026-05-20T10:30Z BAU). HIGH priority — every drift incident silently misleads anyone reading the deployed site between drift and manual rebuild. If operator wants to short-circuit, can manually trigger tinker run."
+}
