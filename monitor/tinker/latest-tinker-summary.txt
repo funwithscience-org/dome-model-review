@@ -1,1 +1,74 @@
-Tinker 2026-05-16T03:00Z: DIRECTIVE-20260515-001 executed — integrity→decider handoff failure investigated. Root cause CONFIRMED: decider-intake.md Step 1d only creates ISSs for severity='moderate' findings; critical/major/minor fall through. 8 consecutive decider runs (2026-05-13 → 2026-05-16) produced 0 integrity-derived ISSs despite tracked_under:null findings on every report. Hypothesis A (code regression) ruled out — Step 1d unchanged since ec95134 on 2026-05-06. Hypothesis B (model-class) NOT primary — even Opus runs missed findings identically. Hypothesis C (filter too narrow) is the structural bug. Authored PROP-037-decider-integrity-intake-handoff (status=design-pending-operator-review, ~37KB, full counter-argument pass, 4 design-questions answered, 4 open-questions surfaced). Recommendation: generalize Step 1d to iterate every integrity finding and trigger ISS creation on tracked_under==null regardless of severity; respect integrity's already-emitted dedup signal; same-run self-apply for mechanical critical/major fixes. Backlog metrics HEALTHY (open=57, assigned-analyst=44, net_velocity_7d=+141 — burndown working). No thresholds fired. DIRECTIVE-20260514-002 (curmudgeon split, medium) deferred for next tinker run; DIRECTIVE-20260514-001 already in PROP-036 from previous run. Self-apply NONE — operator reviews PROP-037 before any prompt edit lands.
+=== Tinker run 2026-05-20T05:55Z ===
+Mode: directive-override (DIRECTIVE-20260520-001, HIGH priority, publish-path-fallbacks)
+Reason: pending operator directive picked up at pre-flight. Mode 1/2/3 deferred.
+
+PRIMARY OUTPUT
+  monitor/tinker/proposals/PROP-050-publish-path-fallbacks.json
+  (48.6 KB, status=design-pending-operator-review, 6 patches across 4 files + 1 new file)
+
+WHAT THE PROP DOES
+  Design A (primary durable fix): Git Data API push fallback for build.js and
+  decider self-apply. Same PAT that 403s on `git push` succeeds on the REST
+  API path (proven 2026-05-20 commit 7126e0fd via cowork-claude). Extracts to
+  a standalone monitor/scripts/push-via-api.js so both push sites can share it.
+
+  Design B (complementary safety net): workspace-sync.md Step 3 adds an
+  mtime-drift backstop — if FUSE data files are newer than FUSE
+  docs/index.html, regenerate (with sanity guards) and push via workspace-
+  sync's normal git path (which empirically has been working). Idempotent
+  no-op when Step 3 already staged docs/index.html.
+
+EVIDENCE / TASK COVERAGE
+  task_1 (locate push handler): PROP §evidence.push_sites_identified
+    - build.js L391 (publish branch)
+    - decider-patches-and-selfapply.md L384 (self-apply push)
+    - workspace-sync.md L548/782/857 (NOT a target — already working)
+  task_2 (Design A): patches A1 (new push-via-api.js) + A2 (build.js helper +
+    call swap) + A3 (decider md edit) + A4 (NEVER_PUSH list) + A5 (CLAUDE.md doc)
+  task_3 (Design B): patch B1 (workspace-sync.md mtime backstop in Step 3)
+    + approach_choice (b2 — existing clone + normal git push, simpler) +
+    runtime_dependencies (node + generate-html.js confirmed available, already
+    invoked by current Step 3 line 482)
+  task_4 (PDF): PUNTED per operator preference; documented in §out_of_scope
+  task_5 (counter-args a-f): all rebutted with mechanism details
+  task_6 (clearance): existing stranded-patches NOT retroactively pushed by A;
+    operator's apply-then-tombstone workflow unchanged
+
+PAT IDENTITY FINDING (task_5f)
+  decider AND workspace-sync use the SAME PAT (both extract from workspace's
+  git remote URL). The asymmetry in push success is per-session/IP, NOT
+  per-PAT. Design A bypasses git's HTTPS push code path entirely (REST API);
+  Design B works because workspace-sync's session/IP empirically has been
+  off the 403 list.
+
+PRE-FLIGHT BACKLOG-TREND (PROP-030, every run)
+  open=26  status=open:3  assigned-analyst:1  age>=14d:7  age>=30d:1
+  new_7d=16  closed_7d=20  net_7d=+4  baby_drain_7d=0  verify_drain_7d=0
+  tier=info (no threshold fires; closures outpacing new arrivals)
+
+DIRECTIVE LIFECYCLE
+  DIRECTIVE-20260520-001 marked status=completed with completed_at +
+  completed_by_run + prop_id_authored=PROP-050 (additive edit per
+  DIRECTIVE-LIFECYCLE rule in CLAUDE.md).
+
+NEXT STEPS (operator)
+  1. Review PROP-050.
+  2. Apply patches A1-A5 + B1 (regression_check.test_plan_for_operator has
+     step-by-step verification).
+  3. Verify next decider run that 403s recovers via API fallback (look for
+     "Git Data API fallback succeeded" in decider report).
+  4. Verify workspace-sync's next cycle either no-ops (no drift) or
+     regenerates docs/index.html cleanly (look for "mtime-drift backstop"
+     in workspace-sync-runs/run-*.json).
+
+OUT OF SCOPE (intentional, per directive)
+  - docs/dome-review.pdf staleness (Playwright too heavy for workspace-sync)
+  - PAT/SSO rotation (operator-side; not addressable from agent surface)
+  - General build.js publish refactor (A is surgical fallback only)
+
+NO TINKER SELF-APPLY per directive.scope_authority — operator + cowork-claude apply.
+
+MODES 1/2/3 DEFERRED
+  Next BAU tinker run will re-evaluate pipeline health, FUSE freshness,
+  stranded-patches aging, and cost engineering. None of those were checked
+  this cycle because directive override consumed the full run.
