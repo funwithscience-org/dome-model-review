@@ -666,3 +666,78 @@ Tinker now owns pipeline efficiency: identifies wasted no-op runs, proposes Haik
 - Chapman 1933 DOI wrong in WIN-068 (curmudgeon finding — needs fix)
 - Social discoverability baseline stale for some fields
 - Prompt sizes: analyst (598 lines), decider (577 lines), tinker (443 lines) all exceed 250-line target
+
+---
+
+## 16. Context Windows 15+ — Pipeline Maturation, PROP Backlog, 2026-05-21 Disaster (2026-04-08 → 2026-05-21)
+
+The pipeline matured dramatically across this six-week stretch: agents added, structural patterns hardened, and one catastrophic incident. CW15 onward is captured as a digest (not full per-window writeups) because there are ~40 PROPs and dozens of HNOTEs that would otherwise inflate this section past usefulness. Authoritative state for each item lives in `monitor/tinker/proposals/PROP-NNN.json` and `monitor/tinker/operator-directives/DIRECTIVE-YYYYMMDD-NNN.json`. CLAUDE.md is the canonical day-to-day reference; this section is the narrative.
+
+### Agent fleet expansion (CW15–22)
+
+- **analyst-baby** (PROP-034 Phase 1, 2026-05-13): Sonnet, 12h cadence. Narrow-scope drain agent for verification-class consolidations and minor/moderate orphan ISSs. Designed to keep analyst (Opus, expensive) focused on the deep-attack/holistic work it's actually good at. Reads `monitor/prompts/analyst-baby.md`.
+- **curmudgeon-verify** (PROP-038 Phase 1, 2026-05-14): Sonnet, 4h cadence offset 1h from main curmudgeon. Class='verification' items only — ≤2 minor prior holes, applied-patches present. 5-check rubric (terminology, sed-seam artifacts, patches_verified, carry-forward audit, single-paragraph adversarial). Escalates major/critical back to main curmudgeon. Reads `monitor/prompts/curmudgeon-verify.md`.
+- **sloppytoppy-score** (PROP-039 Phase 1, 2026-05-15): Sonnet, daily 03:30 UTC. Two-axis readability rubric (length + understandability) for flat-earth-level reader. Scores ~50 surfaces per run. Reads `monitor/prompts/sloppytoppy-score.md`.
+- **sloppytoppy-rewrite** (PROP-041 Phase 2, 2026-05-16): Opus, every 2 days at 05:00 UTC. Drafts RW-NNN.json proposals for below-floor surfaces with first-class content-preservation audit. Propose-only; decider integrates after audit-script + curmudgeon-on-rewrite verification (priority-queue class='rewrite-verify'). Reads `monitor/prompts/sloppytoppy-rewrite.md`. Currently disabled (PROP-041 Phase 2 needs further work).
+
+### State-file archive split (PROP-022, four phases through 2026-04-30)
+
+All multi-writer state files split into `<name>.json` (live, small, fast for dispatchers) + `<name>-archive.jsonl` (append-only, JSONL, audit-only). Pattern documented in `monitor/prompts/reference/state-file-archives.md`. Affects: `priority-queue.json`, four `human-notes.json` (analyst/decider/curmudgeon/social), `closed-issues.json`. Eliminated the "live state grows unbounded" problem and made grep + tail -1 the canonical lookup. Phases 5 and 6 (further file conversions) were planned but never required.
+
+### Universal-pusher rescue mechanism (HNOTE-OPERATOR-UNIVERSAL-PUSHER-001/002, 2026-04-26)
+
+Originally a one-line response to "decider's git push 403 keeps making operator rescue-push by hand": workspace-sync (which has a different session/IP and pushes successfully) now picks up decider's committed-but-unpushed files from FUSE and pushes them ~1h later. Followed by HNOTE-OPERATOR-UNIVERSAL-PUSHER-002 (regen `docs/index.html` from staged data files in the same workspace-sync cycle, so the live site doesn't lag the data). Both load-bearing. The rescue mechanism is the reason today's disaster was loss-free — FUSE held the full file set even when origin/main was wiped.
+
+### Chronic PAT-403 (Devilwench identity, ~1 month, unresolved)
+
+Decider's `git push origin main` returns 403 from the scheduled-task session/IP, but the same PAT pushes fine from the operator's cowork session. Originally diagnosed as a per-session/IP gate at the GitHub auth layer (not per-PAT). Multiple unsuccessful fix attempts (commit-author-as-steve workaround, PAT rotation). Operator treats it as a known transient and routes via universal-pusher rescue. Tinker's task_5(f) analysis (PROP-050) confirmed the same PAT auths as `Devilwench` for both decider and workspace-sync — the difference is per-session/IP, not per-PAT — but later evidence (2026-05-20 decider's API fallback also 403'd) hints at a deeper auth-layer block we don't fully understand. See `monitor/prompts/reference/decider-patches-and-selfapply.md` for the operator-side runbook + ruled-out hypotheses; see CLAUDE.md "Operator-side Git Data API escape hatch" for the working bypass.
+
+### PROP backlog highlights (2026-04-08 → 2026-05-21)
+
+This is non-exhaustive — there are gaps because not every PROP needs narrative context. Critical ones for understanding current pipeline state:
+
+| PROP | Title | Status | Notes |
+|---|---|---|---|
+| PROP-009 / 009r2 | Strict queue_id matching + enforce mode | Integrated | PROP-045 added anti-reversion guard on top |
+| PROP-014 + amendments | State verification (Mech 2 verify-on-read + Mech 3 narrative-cite discipline) | Integrated | Mech 3 produces the `monitor/integrity/narrative-cite-audit-*.json` files (~1.7 MB each) that nearly capsized us today |
+| PROP-022 | State-file archive split | Phase 4 complete | See above |
+| PROP-026 | Burndown mode for open-issues | Phase 1 integrated | Auto-closure with closure-ledger audit trail |
+| PROP-034 | Analyst-baby for orphan ISS drain | Phase 1 integrated | Sonnet drain agent |
+| PROP-038 | Curmudgeon discovery/verify split | Phase 1 integrated | Spawned curmudgeon-verify agent |
+| PROP-039 | Sloppytoppy score | Phase 1 integrated | Spawned sloppytoppy-score agent |
+| PROP-041 | Sloppytoppy rewrite (with content audit) | Phase 2 integrated | Spawned sloppytoppy-rewrite agent (now disabled) |
+| PROP-045 | Anti-reversion guard | Integrated (enforce mode) | workspace-sync sha1-vs-history check |
+| PROP-046 + amendments | Decider-stale-skip schema fix | Pending apply | 3-line bundle, still operator-pending |
+| PROP-047 | Curmudgeon c-cycle hygiene | Design-pending-operator-review | Staleness re-grep check |
+| PROP-048 | Decider win-new dedup check | Integrated (2026-05-19) | Stopped the WIN-070 re-push loop; FUSE artifact later cleared via `allow_cowork_file_delete` |
+| PROP-049 | Clone-depth standardization (--depth 50) | Design-pending-operator-review | Partial earlier rollback by force-reset; reapplied in PROP-051 B1 |
+| PROP-050 | Publish-path fallbacks A+B (Git Data API push) | Integrated (2026-05-20) | A is dead-code for decider (same-identity 403); B works (workspace-sync identity OK); push-via-api.js script proven repeatedly |
+| PROP-051 | Workspace-sync disaster fix (A safety + B clone hygiene + C integrity pruning) | Design-pending-operator-review | **Blocks unpause of all dome agents.** 14-step operator unpause checklist included |
+
+### 2026-05-21 workspace-sync mass-delete incident (commit ea785c49)
+
+Under disk pressure, workspace-sync's Haiku LLM improvised a "no-checkout clone + mtime-only guard" fallback that interpreted unchecked-out files as deletions. Single commit `ea785c49` wiped 4,733 of 4,755 tree entries from origin/main (+274 / -14,904,949 lines). 36 partial-recovery commits over the next 15 minutes restored ~3,309 entries but left 194 critical files behind. Operator + cowork-claude force-reset to pre-disaster `1d256277` + re-pushed 2 genuinely-new files at commit `1488170d` — all 4,757 entries restored.
+
+The improvised fallback path was NOT in workspace-sync.md (tinker verified with grep). This reframed the structural fix: the prompt needs explicit prohibitions against LLM improvisation, plus mechanical gates (df pre-flight, post-clone working-tree-size check, pre-push delete-sanity gate) that catch anything that gets through. PROP-051 builds four independent chokepoints across these dimensions.
+
+Recovery would not have been possible without FUSE holding the full file set independently of git — the dual-storage architecture proved itself in production. Workspace-sync stayed paused after recovery. CLAUDE.md was updated with the incident summary + operator escape-hatch documentation (Git Data API push, `allow_cowork_file_delete`).
+
+### 2026-05-21 audit-file round-trip discovery (DIRECTIVE-20260521-002)
+
+While pruning the `narrative-cite-audit-*.json` bloat from `monitor/integrity/` (~720 MB across 422 files), operator noticed FUSE had 338 files while git had 422. The 84-file gap (5/17 night through 5/20) was content the audit script wrote into scheduled-task clones and pushed to git, but workspace-sync never restored to FUSE. Implication: agent-generated artifacts in `monitor/integrity/` (and possibly other categories) don't round-trip — operator's FUSE-side view of state is structurally incomplete. Filed DIRECTIVE-20260521-002 (medium) for tinker to audit other categories and propose a structural fix (either make round-trip work, or classify these files as clone-only and document).
+
+### Current state at end of CW (2026-05-21)
+
+- **All 11 dome scheduled tasks DISABLED.** Manual operator action required to unpause. PROP-051's 14-step checklist must be completed first.
+- **Repo health:** `origin/main` at `e0f40f97` (CLAUDE.md update); 4,757 tree entries; ~685 MB of bloat pruned today; force-reset removed 36 garbage commits but reflog preserves them for 30 days if needed.
+- **Disk:** VM `/` at ~700 MB free (95% used). Long-term constraint is `/var/log/journal` accumulating 1+ GB across past VM lifetimes — sandbox-level config issue (no `journald` rotation policy in the VM bundle image). Needs platform-side fix.
+- **Outstanding PROPs:** 046 (+amendments), 047, 049, 050 partial-applied, 051 (load-bearing for unpause). And the round-trip-audit-files PROP that tinker will author from DIRECTIVE-20260521-002.
+- **Outstanding directives:** DIRECTIVE-20260521-001 + 002 both completed (tinker authored PROP-051 + the audit-files round-trip PROP pending).
+
+### Lessons codified (in order of severity)
+
+1. **Agent prompts must prohibit LLM improvisation explicitly when the fallback path is dangerous.** Trusting the LLM to "do something sensible" under pressure produced ea785c49. Tinker's PROP-051 A1 codifies this with a top-of-prompt "Degraded-mode prohibitions (fail-closed)" block.
+2. **Mechanical sanity gates are belt-and-suspenders for LLM judgement.** PROP-051's A2/A3/A4 are df-, tree-size-, and delete-count-based gates that catch any improvisation that slipped past A1.
+3. **The dual-storage architecture (FUSE + git) is the reason disasters are recoverable.** Both git's reflog and FUSE's can't-unlink keep state alive when one or the other fails.
+4. **The Git Data API push works when normal git push doesn't.** Now documented as canonical escape hatch. The `monitor/scripts/push-via-api.js` script (PROP-050) is the agent-layer automation; the manual REST sequence in CLAUDE.md is the operator-layer fallback.
+5. **`allow_cowork_file_delete` breaks FUSE restore loops.** Use when an artifact in FUSE needs to be permanently removed (decider git rm + workspace-sync would otherwise re-resurrect it indefinitely).
