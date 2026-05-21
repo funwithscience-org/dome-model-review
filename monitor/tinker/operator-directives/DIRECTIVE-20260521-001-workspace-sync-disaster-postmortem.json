@@ -1,0 +1,96 @@
+{
+  "directive_id": "DIRECTIVE-20260521-001",
+  "title": "POSTMORTEM + STRUCTURAL FIX: workspace-sync catastrophic delete incident ea785c49 (2026-05-21T02:11:18Z). Under disk pressure (sessions FS 100%, root FS 95%), workspace-sync switched to a 'no-checkout clone + mtime-only guard' fallback that interpreted unchecked-out files as deletions, producing a single commit with +274 / -14,904,949 lines that wiped 4,733 of 4,755 tree entries from origin/main. 36 recovery-batch commits over the next ~15 minutes partially restored ~3,309 entries but left 194 files (including build.js, CLAUDE.md, all build-scripts/, .gitignore, README.md, .github/, web fonts, kill-shots.json) and 104 modified-differently files behind. Operator+cowork-claude force-reset main to 1d256277 (pre-disaster) at commit 1488170d (2026-05-21T05:13Z) restoring all 4,757 entries. Two corollary findings flagged by operator during recovery: (i) /tmp held a ~491MB workspace-sync clone (/tmp/ws-sync-2) and another ~72MB (/tmp/dome-sync-clone) — possibly recovery-triggered, but worth verifying whether normal operation makes full vs shallow clones and whether cleanup happens; (ii) monitor/integrity/ is the largest workspace-FS consumer at 606MB (more than 10× the next biggest monitor/ subdir) — needs a pruning policy.",
+  "filed_by": "operator-via-cowork-claude",
+  "filed_at": "2026-05-21T05:25:00Z",
+  "issued_at": "2026-05-21T05:25:00Z",
+  "status": "pending",
+  "priority": "high",
+  "scope_authority": "Author one PROP-NNN with concrete patches for workstreams A + B + C and a written incident postmortem. Operator + cowork-claude apply. Tinker does NOT self-apply. Tinker SHOULD NOT make full clones during this run — diagnose against FUSE + GitHub API only — to avoid re-creating the same disk-pressure condition.",
+  "bug_summary": {
+    "disaster_commit_message_verbatim": "Workspace sync: 2026-05-21T02:11:18Z\n\nAuto-committed workspace-only files from FUSE mount.\nFiles from: analyst, curmudgeon, poller, decider, integrity, data (universal-pusher).\n\nNote: disk space constrained this run (sessions FS 100% full, root FS 95%).\nUsed no-checkout clone + mtime-only guard. monitor/integrity/ workspace-sync-runs\nand verify-pending-run files skipped (606MB dir, only new run report synced).\ndocs/index.html not regenerated (node not available without checkout).",
+    "root_cause_hypothesis": "workspace-sync.md's degraded-mode fallback ('no-checkout clone + mtime-only guard') is structurally unsafe. A no-checkout clone has no working-tree files. The mtime-only guard then sees 'FUSE has file X, working-tree does not' and infers 'FUSE wants X deleted from git' — exactly inverted from the correct semantic ('working-tree just hasn't been populated yet'). The 4,733-entry delete is what you get when the fallback runs against a FUSE that has the full file set.",
+    "what_actually_happened": "1. Disk pressure detected (sessions FS 100%, root FS 95%). 2. workspace-sync chose the no-checkout-clone fallback to save disk. 3. The mtime-only guard ran the delete-direction comparison. 4. Single commit ea785c49: +274 lines (new run report only), -14,904,949 lines (everything else). 5. Push succeeded (workspace-sync's identity isn't on the 403 list). 6. 36 recovery batches (b1..b15-final + several 'Workspace sync (...)' commits) ran 04:12–04:27Z attempting partial restoration via subsequent workspace-sync invocations after disk freed up; restored ~3,309 of 4,755 entries but missed 194 critical files (top-level + build infra + web fonts + repo metadata) and modified another 104. 7. Operator detected the incident, paused workspace-sync, asked cowork-claude to triage + recover. 8. Force-reset to 1d256277 + re-push of 2 genuinely-new files (chg-20260520-2309-001.json, WIN-012.c10.json) restored all 4,757 entries at commit 1488170d.",
+    "blast_radius": "Loss-free outcome because (a) the disaster commit was the parent + 36 children — all undone in one force-reset, (b) the 2 genuinely-new files between 1d256277 and ea785c49 were still in FUSE and re-pushed manually, (c) anything written to FUSE between 23:06Z 5/20 and now (analyst/decider/poller/curmudgeon work) is still in FUSE and will re-sync via universal-pusher once workspace-sync is re-enabled. Timestamps may be skewed (originally-committed-then-orphaned content gets new commit timestamps when re-rescued) but no content is lost. If we had NOT had FUSE as a persistent off-git copy, the recovery would not have been possible.",
+    "remaining_disk_evidence": {
+      "tmp_ws_sync_2_size": "491MB (workspace-sync clone, full not shallow, ~25 minutes old at directive-file time)",
+      "tmp_dome_sync_clone_size": "72MB (looks like a normal --depth 50 clone)",
+      "monitor_integrity_size": "606MB on FUSE (vs next biggest monitor/curmudgeon at 13MB — 46× the average)",
+      "root_fs_now": "100% full per df -h /",
+      "sessions_fs_now": "80% used per df -h /sessions"
+    }
+  },
+  "operator_preferences_for_proposal": [
+    "One PROP covering all three workstreams (A: workspace-sync degraded-mode safety, B: clone hygiene + cleanup audit, C: monitor/integrity pruning policy)",
+    "Treat 'fix the PAT' as still off the table — the workspace-sync identity didn't 403, decider's still does — but disaster recovery should not depend on either",
+    "A is the load-bearing safety fix and MUST land before workspace-sync is re-enabled. B and C can ship in the same PROP but can be sequenced later if operator decides",
+    "Strong preference for FAIL-CLOSED safety on A: if workspace-sync can't verify what to delete via a real working-tree comparison, it should ABORT THE RUN, not improvise. The cost of a missed sync cycle is ~1h of drift. The cost of getting it wrong is what we just had.",
+    "Counter-arguments mandatory: see tasks_for_tinker.task_4"
+  ],
+  "tasks_for_tinker": [
+    {
+      "task_id": "task_1_post_mortem_writeup",
+      "description": "Write the formal incident post-mortem in the PROP itself. Include: timeline, disk-pressure trigger, exact code path in workspace-sync.md that selected the no-checkout-clone fallback, why the mtime-only guard inverted the semantic, why it landed instead of being caught by an integrity gate, why the 36 recovery batches only partially restored, why force-reset was the right move. Cross-reference HNOTE-OPERATOR-UNIVERSAL-PUSHER-001 (the original universal-pusher design that didn't anticipate degraded-mode operation).",
+      "deliverable": "post_mortem section in PROP, ~300 words."
+    },
+    {
+      "task_id": "task_2_design_a_workspace_sync_safety",
+      "description": "Design A: structural fix for workspace-sync.md degraded-mode safety. Concrete patch options to consider: (a) require a real checkout-with-working-tree before EVER running the delete-direction comparison; if disk is too tight to support that, ABORT the run with a loud log line, do not improvise; (b) add a per-run sanity gate: if the proposed commit would delete more than N files OR more than M% of the current tree entry count, ABORT and write a sentinel file the operator can see; (c) explicit removal of the 'no-checkout clone + mtime-only guard' fallback code path entirely. Recommend (a) + (b) belt-and-suspenders. (c) only if reachability analysis shows the fallback is the SOLE source of risk. Patches MUST include the exact workspace-sync.md old_string/new_string for the relevant blocks.",
+      "deliverable": "phase_1_design.implementation_amendment with: (a) workspace-sync.md edits, (b) any companion edits to CLAUDE.md or build.js, (c) explicit reachability argument for why a degraded-mode commit can no longer mass-delete after the patch."
+    },
+    {
+      "task_id": "task_3_clone_hygiene_audit_and_integrity_pruning",
+      "description": "Workstream B + C. (B) Audit workspace-sync.md: is the clone full or --depth-N? If full, why? Add --depth 50 or similar if not already present (cross-reference PROP-049 which standardized clone-depth across other prompts). Verify cleanup-on-exit: rm -rf /tmp/ws-sync-* trap at end of run. Today's leftover /tmp/ws-sync-2 (491MB) suggests cleanup is either missing or skipped on abort. (C) monitor/integrity/ is 606MB. Subdirs to audit: workspace-sync-runs (per-run reports), report-*.json (daily integrity reports), and any other accumulating per-run artifacts. Propose pruning policy: keep last N runs of each type, archive or delete older. Reference state-file-archives.md for the existing append-only-with-archive pattern. The 606MB number is what TRIGGERED workspace-sync to fall back to no-checkout mode — if monitor/integrity had been pruned, the disaster may never have happened.",
+      "deliverable": "phase_2_design (clone hygiene) + phase_3_design (integrity pruning) with concrete patches for each."
+    },
+    {
+      "task_id": "task_4_counter_arguments",
+      "description": "At minimum address: (a) What if the no-checkout fallback was the ONLY path that worked under disk pressure, and removing it leaves workspace-sync unable to run at all when disk is tight — is that acceptable? (Operator default: YES. A skipped cycle is recoverable; a mass-delete is not.) (b) Does the per-run delete sanity gate (task_2 option b) risk false-positives that would block legitimate large refactors? Consider: legitimate decider PR can plausibly delete dozens of files (e.g., a section restructure); how does the gate distinguish? (c) Does adding --depth 50 to workspace-sync's clone break anything that depends on full history (e.g., the closure-ledger replay scripts)? (d) Does pruning monitor/integrity/ break the tinker audit-trail it depends on? What's the minimum retention window? (e) Today's RECOVERY succeeded BECAUSE workspace-sync's identity could push fine. The disaster commit (ea785c49) also pushed fine via that identity. Doesn't that prove the per-identity-403 model is partial — some unknown shifts the auth state mid-day? If so, A is the only line of defense we control.",
+      "deliverable": "counter_arguments_addressed section with rebuttals for (a)-(e)."
+    },
+    {
+      "task_id": "task_5_unpause_checklist",
+      "description": "Produce a step-by-step checklist the operator should run before re-enabling workspace-sync. At minimum: (1) Verify disk has > N MB free on both /tmp and /sessions. (2) Verify the workspace-sync.md degraded-mode fallback patch is in place (grep for sentinel marker). (3) Verify the per-run delete sanity gate is in place. (4) Single trial run with the integrity-side audit script tail -f-ing. (5) Verify the trial commit's stats show non-catastrophic numbers. Only then unpause.",
+      "deliverable": "operator_unpause_checklist section."
+    }
+  ],
+  "in_scope_for_tinker": [
+    "Author one PROP with workstreams A + B + C, all four required deliverables, and the post-mortem writeup",
+    "Counter-arguments mandatory",
+    "Operator unpause checklist mandatory"
+  ],
+  "out_of_scope_for_tinker": [
+    "Do NOT self-apply",
+    "Do NOT make full clones during this diagnostic run — work from FUSE + GitHub API only (disk is already 100% on /). Per-task notes assume FUSE-and-API-only diagnosis.",
+    "Do NOT design PAT-rotation or per-identity-403 fixes — those are separate, see DIRECTIVE-20260520-001",
+    "Do NOT design a 'auto-recovery from disaster' — the right answer is 'don't have a disaster.' Recovery via force-reset is the operator's tool"
+  ],
+  "expected_artifacts": [
+    "monitor/tinker/proposals/PROP-NNN-workspace-sync-disaster-fix.json (status: design-pending-operator-review)",
+    "Concrete patches for: monitor/prompts/workspace-sync.md (mandatory), possibly CLAUDE.md File Ownership note about the new safety gate, possibly state-file-archives.md (monitor/integrity pruning)"
+  ],
+  "evidence": {
+    "disaster_commit": "ea785c49fc8a7b3db64253d2a7a8eeeef8f19fe4 (2026-05-21T02:11:18Z, parent 1d256277a82c4e0bd27f1f239fbd10cf9e901b8d, stats +274/-14904949)",
+    "recovery_force_reset_commit": "1488170d (2026-05-21T05:13Z, restored 4,757 entries on top of 1d256277)",
+    "recovery_method": "Git Data API force-reset via PATCH /git/refs/heads/main with sha=1d256277 force=true, then 2-file re-push of the genuinely-new files from FUSE",
+    "tree_size_at_each_step": {
+      "pre_disaster_1d256277": 4755,
+      "disaster_ea785c49": 22,
+      "recovery_batches_fb6661f5": 3309,
+      "force_reset_1d256277": 4755,
+      "final_recovery_1488170d": 4757
+    }
+  },
+  "related_issues": [
+    "(no ISS filed for the disaster itself — the directive IS the structural-fix tracking)"
+  ],
+  "related_props": [
+    "PROP-049 (clone-depth standardization) — touches workspace-sync.md L581; coordinate edits to avoid conflict",
+    "PROP-050 (publish-path fallbacks) — A is dead code under this incident's lessons (same identity that disasters is the one we rely on for B); explicit acknowledgment requested in this PROP's counter_arguments (e)"
+  ],
+  "related_directives": [
+    "DIRECTIVE-20260520-001 (publish-path fallbacks → PROP-050; both ws-sync identities involved are 'steve' but the disaster identity attribution shows 'steve' was the committer for ea785c49 too)",
+    "DIRECTIVE-20260518-002 (clone-depth audit → PROP-049)"
+  ],
+  "deadline_target": "BEFORE workspace-sync is unpaused. HIGH priority — workspace-sync remains paused until the structural fix lands. Every hour paused is ~1h of decider/poller/analyst-baby writes accumulating in FUSE waiting for rescue. Pipeline is degraded but safe. Re-enabling without the fix risks another disaster."
+}
