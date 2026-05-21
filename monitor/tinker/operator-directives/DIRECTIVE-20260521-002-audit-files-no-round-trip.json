@@ -1,0 +1,84 @@
+{
+  "directive_id": "DIRECTIVE-20260521-002",
+  "title": "BUG: monitor/integrity/narrative-cite-audit-*.json files write to git but don't round-trip to FUSE. Discovered during 2026-05-21 disaster cleanup: FUSE had 338 audit files (5/2–5/17); git had 422 (5/2–5/20). The 84-file gap (5/18–5/20) was content the audit script wrote into scheduled-task clones and pushed to git, but workspace-sync never restored to FUSE. Same mismatch likely affects other agent-generated artifacts. The mismatch is upstream of the bloat that triggered the ea785c49 disaster — agents pushing content to git that operator can't see in FUSE means operator's mental model is stale, and the auto-cleanup tool (build-scripts/archive-old-reports.js) operates on FUSE-visible state only.",
+  "filed_by": "operator-via-cowork-claude",
+  "filed_at": "2026-05-21T05:35:00Z",
+  "issued_at": "2026-05-21T05:35:00Z",
+  "status": "pending",
+  "priority": "medium",
+  "scope_authority": "Author one PROP-NNN with diagnostic findings + concrete fix patches + counter-arguments. Operator + cowork-claude apply. Tinker does NOT self-apply.",
+  "bug_summary": {
+    "observed_during_disaster_cleanup": "On 2026-05-21 the operator pruned narrative-cite-audit-*.json from FUSE+git after the disaster. FUSE listing showed 338 files (5/2T0753Z → 5/17T1405Z). After pushing 315 deletes to git, the git contents API showed 107 still remaining (5/17T0006Z → 5/20T2205Z). Date-range gap: 5/17 night through 5/20 night = 84 files that were on git but NOT on FUSE.",
+    "what_this_means": "audit-narrative-citations.js (PROP-014 Mech 3, runs from decider's clone per state-verification.md) WRITES into <clone>/monitor/integrity/narrative-cite-audit-<ISO>.json. The git push of decider's clone (or workspace-sync's rescue of decider's FUSE copy) carries these to origin/main. But these files apparently do NOT make it back DOWN from git to FUSE via workspace-sync's pull path. Workspace-sync's NEVER_PUSH governs the FUSE→git direction; the git→FUSE direction for append-only-like artifacts isn't restoring them.",
+    "blast_radius": {
+      "operator_blind_spot": "Operator viewing FUSE doesn't see the post-5/17 audit files. The 84-file accumulation was invisible from operator's normal vantage point. Equivalent bugs in OTHER file categories could similarly hide.",
+      "cleanup_tool_blind_spot": "build-scripts/archive-old-reports.js operates from a CLONE; works on filesystem state of the clone. Likely captures git-side state correctly. But it never ran on a cadence. A FUSE-only `ls` (operator's instinct) misses the full picture.",
+      "audit_chain_integrity": "PROP-014 Mech 3 audit chain depends on these files being readable later for verify-on-read. If decider's clone discards them post-run (clone is rm-rf'd) and FUSE doesn't have them, only git does — but does any reader actually fetch from git? Worth verifying.",
+      "disaster_amplification": "Today's disaster's disk-pressure trigger came from the size of git-side monitor/integrity (each scheduled-task clone pulls all 720MB). FUSE-only operator view showed 606MB on FUSE, but git was actually 720MB. Operator-side cleanup of FUSE wouldn't have prevented the disaster — git-side cleanup was the load-bearing fix."
+    },
+    "evidence": {
+      "fuse_listing_count": "338 files (5/2T0753Z → 5/17T1405Z)",
+      "git_listing_count": "422 files (5/2T0753Z → 5/20T2205Z)",
+      "gap_files": "84 files dated 5/17T*+1 through 5/20T2205Z",
+      "writer_script": "monitor/scripts/audit-narrative-citations.js",
+      "writer_writes_to": "monitor/integrity/narrative-cite-audit-<ISO>.json (per script lines 400+, output_path computed dynamically)",
+      "invoker": "decider Step 5 self-apply (PROP-014 Mech 3, see decider-patches-and-selfapply.md and state-verification.md)",
+      "sync_path_responsible_for_round_trip": "workspace-sync.md — but per CLAUDE.md monitor/integrity/ is classified 'append_only' which means workspace-sync writes NEW files from FUSE→git but doesn't appear to restore git→FUSE for individual files"
+    }
+  },
+  "operator_preferences_for_proposal": [
+    "Diagnose first, then fix. Don't assume a fix without confirming the round-trip mechanism is actually broken — could be that FUSE just had stale ls output, or that the files DID exist on FUSE but in a path I didn't check. Verify before patching.",
+    "If confirmed broken, the right fix is the SIMPLER one: either (a) make the round-trip work properly so FUSE has parity with git, OR (b) classify these files as 'clone-only, never-on-FUSE' and remove them from the FUSE workspace expectation entirely. Don't add a third state.",
+    "Audit other agent-generated artifacts for the same mismatch — narrative-cite-audit isn't necessarily the only category. monitor/integrity/report-*.json, monitor/tinker/report-*.json, monitor/decisions/daily-report-*.json are similar shapes; check whether they round-trip.",
+    "Cross-reference with DIRECTIVE-20260521-001 workstream C (monitor/integrity pruning policy). The pruning fix and the round-trip fix probably belong in the same PROP if they touch the same files."
+  ],
+  "tasks_for_tinker": [
+    {
+      "task_id": "task_1_confirm_mismatch",
+      "description": "Reproduce the observation. Fetch git contents API listing of monitor/integrity/ filtered to narrative-cite-audit-*. Compare to FUSE listing on a known-good FUSE workspace (post-disaster cleanup state, ~23 files). If git shows more than FUSE for any date range, mismatch confirmed. Same diagnostic for monitor/integrity/report-*.json, monitor/tinker/report-*.json, monitor/decisions/daily-report-*.json, monitor/decisions/applied-patches/. Each gives a yes/no datapoint.",
+      "deliverable": "evidence section in PROP with the per-category FUSE-vs-git counts."
+    },
+    {
+      "task_id": "task_2_trace_the_round_trip_mechanism",
+      "description": "Walk through workspace-sync.md and decider-patches-and-selfapply.md to identify exactly when audit files are: (a) written by decider's clone, (b) committed by decider's clone, (c) pushed to git by decider's clone OR rescued via FUSE→git universal-pusher, (d) cleaned up at decider's clone teardown, (e) restored to FUSE on workspace-sync's git→FUSE pull direction (IF such direction exists; verify). Identify which step is missing or broken for the audit-file category specifically.",
+      "deliverable": "round_trip_diagnostic section in PROP."
+    },
+    {
+      "task_id": "task_3_choose_fix_direction",
+      "description": "Based on task_1+task_2 findings, propose A or B (not both): (A) Make round-trip work — workspace-sync's git→FUSE pull restores audit files so FUSE has parity. Requires identifying which workspace-sync step should pull them and possibly adding a sync_glob entry. (B) Make audit files clone-only — they live in decider's clone for the run, never sync to FUSE, and either (b1) get committed to git as historical record or (b2) get stored in a separate, prune-friendly location entirely. Default recommendation per operator preference: whichever is SIMPLER to implement reliably.",
+      "deliverable": "phase_1_design section with the chosen approach, concrete workspace-sync.md / audit-narrative-citations.js patches as needed."
+    },
+    {
+      "task_id": "task_4_counter_arguments",
+      "description": "At minimum address: (a) What if FUSE-vs-git audit count is intentional — i.e., the audit script INTENDS to write to clone-only and any git copies are a bug elsewhere? (b) What if the round-trip already works and operator's FUSE listing was just stale (caching, FUSE bug)? Verify with fresh `ls` after a known sync cycle. (c) If we add a sync_glob entry to restore audit files to FUSE, do we re-create the 720MB bloat that just blew up the system? (Hint: yes — make sure the pruning fix from DIRECTIVE-20260521-001 workstream C lands FIRST, then this round-trip fix.) (d) Are there other audit-file categories that we don't even know exist on git but not FUSE? `git ls-tree -r HEAD monitor/integrity/` and diff against `ls monitor/integrity/` on FUSE for the full picture.",
+      "deliverable": "counter_arguments_addressed section."
+    },
+    {
+      "task_id": "task_5_dependency_check",
+      "description": "Sequence with DIRECTIVE-20260521-001 explicitly. Workspace-sync remains PAUSED; whichever directive (this or 001) lands first must not assume the other's patches are already in place. Specifically: don't propose a workspace-sync.md edit that conflicts with 001's safety gate. If both end up touching workspace-sync.md Step 3, coordinate the edits.",
+      "deliverable": "sequencing_with_other_directives section."
+    }
+  ],
+  "in_scope_for_tinker": [
+    "Author one PROP-NNN with all 5 deliverables",
+    "Counter-arguments mandatory",
+    "Confirm-or-deny verification of the mismatch (don't assume it's real without checking)"
+  ],
+  "out_of_scope_for_tinker": [
+    "Do NOT self-apply",
+    "Do NOT make full clones during this diagnostic run (disk still recovering from disaster)",
+    "Do NOT redesign the audit-narrative-citations.js script's WHAT — only the WHERE-it-writes if needed",
+    "Do NOT touch workspace-sync.md edits that conflict with DIRECTIVE-20260521-001 workstream C — coordinate"
+  ],
+  "expected_artifacts": [
+    "monitor/tinker/proposals/PROP-NNN-audit-files-round-trip.json (status: design-pending-operator-review)"
+  ],
+  "related_directives": [
+    "DIRECTIVE-20260521-001 (workspace-sync disaster postmortem) — workstream C touches the same monitor/integrity dir for pruning; coordinate"
+  ],
+  "related_props": [
+    "PROP-014 + Mech 3 — the original verify-on-read / narrative-cite audit design. This bug is downstream of that design's clone-only-write semantic.",
+    "PROP-017 (workspace-sync smart_copy gap audit, 2026-05-05) — may have identified similar mismatches at the time; if its findings missed audit files, that's a known gap"
+  ],
+  "deadline_target": "Next tinker scheduled run (BUT scheduled tasks are PAUSED — operator will manually invoke tinker after DIRECTIVE-20260521-001 PROP is authored). Medium priority. The 84-file accumulation has been cleaned up today; this directive prevents recurrence."
+}
