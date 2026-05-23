@@ -741,3 +741,137 @@ While pruning the `narrative-cite-audit-*.json` bloat from `monitor/integrity/` 
 3. **The dual-storage architecture (FUSE + git) is the reason disasters are recoverable.** Both git's reflog and FUSE's can't-unlink keep state alive when one or the other fails.
 4. **The Git Data API push works when normal git push doesn't.** Now documented as canonical escape hatch. The `monitor/scripts/push-via-api.js` script (PROP-050) is the agent-layer automation; the manual REST sequence in CLAUDE.md is the operator-layer fallback.
 5. **`allow_cowork_file_delete` breaks FUSE restore loops.** Use when an artifact in FUSE needs to be permanently removed (decider git rm + workspace-sync would otherwise re-resurrect it indefinitely).
+
+
+## 17. Context Window 16+ — PROP-051 Apply, PAT-Rotation, Option C (2026-05-23)
+
+After a multi-day operator break, this session implemented PROP-051 end-to-end and diagnosed the chronic "Devilwench" PAT-403 problem at structural depth. Workspace-sync re-enabled by end of session; all 11 dome agents now have the PROP-051 Option C PAT-source enforcement block in their prompts.
+
+### PROP-051 implementation (Chunks 1–3)
+
+**Chunk 1 — `monitor/prompts/workspace-sync.md` safety patches A1–A4 + clone hygiene B1–B3 (commit `ceab1e5b`).** Seven patches applied in PROP-defined order with verified-unique old-string anchors:
+
+- **A1** — `## CRITICAL: Degraded-mode prohibitions (fail-closed)` section inserted right after the opening paragraph. Prompt-level prohibitions against the four specific improvisations the 2026-05-21 disaster involved (`--no-checkout` clone, mtime-only diff substitution, skipping post-clone working-tree check, committing without delete-sanity gate). Each prohibition is bolded; the section ends with "If you find yourself thinking 'I'll use a no-checkout clone to save space': STOP."
+- **A2** — Pre-clone disk-pressure gate. `df -m` checks on `$CLONE`'s filesystem (≥200 MB) and root (≥100 MB). Below threshold, writes `monitor/integrity/workspace-sync-abort-<ts>.json` sentinel and `exit 0` cleanly.
+- **A3** — Post-clone working-tree population check. After `git clone` returns, count `git ls-files` and refuse if <100 tracked files. Catches `--no-checkout` clones and interrupted checkouts.
+- **A4** — New Step 3.7 pre-push delete-sanity gate. Computes `git diff --cached --name-status | awk '$1=="D"{c++}'` and refuses if deletes exceed `min(50, 10% of tree)`. Writes `workspace-sync-delete-gate-<ts>.json` sentinel listing the proposed deletes for operator inspection.
+- **B1** — `git clone --depth 50` (matches PROP-049's depth standard).
+- **B2** — `trap 'rm -rf "$CLONE" 2>/dev/null' EXIT INT TERM` at top of script. Guarantees cleanup regardless of exit path; addresses the 491MB `/tmp/ws-sync-2` leftover from the disaster cleanup.
+- **B3** — Start-of-run sweep `find /tmp -maxdepth 1 -type d \( -name 'ws-sync-*' -o -name 'dome-sync-*' \) -mmin +60 -exec rm -rf {} \;`. Self-cleaning across runs.
+
+**Chunk 2 — `CLAUDE.md` companion note (commit `24600c5c`).** One-paragraph note inserted between the workspace-owned bullets and the append-only header, documenting the four A-gates and the new sentinel-file pattern so other agents (tinker, integrity) know to scan for `workspace-sync-abort-*.json` and `workspace-sync-delete-gate-*.json` files.
+
+**Chunk 3 — `monitor/scripts/prune-integrity.js` + `workspace-sync.md` NEVER_PUSH entry (commits `a073ae72` + `1b771807`).** New 223-line Node script implementing PROP-051 Workstream C's per-category retention policies:
+
+- `workspace-sync-runs/run-*.json`: keep 30 days → `workspace-sync-runs-archive.jsonl`
+- `verify-pending-run-*.json`: keep 14 days → `verify-pending-runs-archive.jsonl`
+- `narrative-cite-audit-*.json`: keep last 7 → `narrative-cite-audit-archive.jsonl`
+- `push-failure-*.json`: keep 14 days → `push-failure-archive.jsonl`
+- `report-YYYY-MM-DD*.json`: keep 90 days → `report-archive.jsonl`
+
+Defaults to dry-run; `--apply` actually archives + deletes. Loss-safe (archive-then-delete order with rollback on archive failure; idempotency via append-only JSONLs that tolerate duplicates). Classified git-owned source code via NEVER_PUSH entry.
+
+**Cowork-side: `dome-prune-integrity` scheduled task created** (daily 09:05 local, `cronExpression: '0 9 * * *'`). Inline-full-prompt SKILL.md mirroring PROP-051 safety pattern: pre-flight disk check, shallow clone with `--depth 50`, working-tree population check, per-run delete cap at 500, EXIT trap, run report into `monitor/integrity/prune-integrity-runs/`.
+
+### First validation cycle (everything worked)
+
+- **First `prune-integrity` run (commit `74a51c14`):** 13 narrative-cite-audit files archived → ~22 MB reclaimed. Author `steve <russelst@melrosecastle.com>`, plain `git push` (no API fallback), delete-gate passed (13 << 500).
+- **First `workspace-sync` trial run (commit `cb02b241`):** 59 files committed (25 modified + 34 added, **0 removed**), 30 skips (29 mtime-guard + 1 anti-reversion). Major files rescued from FUSE→git: PROP-051 itself, PROP-052, 23 stale narrative-cite-audit files from 2026-05-17 that had been git-missing post-disaster. Run report in `monitor/integrity/workspace-sync-runs/run-2026-05-23T18-20-58Z.json` confirmed `agent_notes: "Routine sync... Deploy clean."`
+
+### The PAT-rotation saga and Devilwench breakthrough
+
+The chronic ~1-month "Devilwench" 403 problem was misdiagnosed for weeks as a per-identity routing issue at GitHub's side. Today's session traced the actual root cause:
+
+**The hypothesis chain:**
+
+1. Initial PAT update to workspace `.git/config` (operator-provided new dome-scoped PAT, in-place sed replacement). Persisted across a Claude app restart — proof that Cowork doesn't clobber on remount.
+2. `prune-integrity` and `workspace-sync` agents picked up the new PAT and pushed cleanly. Hypothesis "PAT extraction from workspace `.git/config` works for all agents" formed.
+3. `decider` agent's first run STILL got 403 "Devilwench" even with workspace `.git/config` updated. Hypothesis falsified.
+4. The decider agent revealed the actual source: `/var/folders/8n/brf4n55526n04_nyc_g0fc6r0000gr/T/claude-hostloop-plugins/cc688b809cd3f1c7/CLAUDE.md` — a host-level CLAUDE.md auto-loaded into every Cowork agent session. It contained the OLD KEV-scoped PAT (`github_pat_11AQFYCRA0vYzgp62F...`) inline.
+5. **The real story:** the KEV project deliberately stores its PAT in CLAUDE.md (its public-repo design constraint). Cowork's session-bootstrap auto-loads the host CLAUDE.md into every agent's context — including dome agents. The dome decider's LLM saw the inline PAT in its context and used it, bypassing the documented `git -C ${WORKSPACE} remote get-url origin` extraction. The KEV PAT has no scope on `funwithscience-org/dome-model-review` → GitHub returns 403 ("Resource not accessible by personal access token"), which the agent labeled "Devilwench" because the PAT's auth-identity reported as that account.
+
+Workspace-sync and prune-integrity escaped this trap because their prompts have hard-abort-on-failure for PAT extraction, AND their procedure is short enough that the LLM stayed on-script. Decider's prompt is longer and more open-ended; the LLM paraphrased the script and "remembered" a PAT from its context.
+
+### Option C — scope-verify pattern (the structural fix)
+
+Three forward paths considered: (A) multi-scope PAT covering both dome and KEV, (B) find-and-stop the cross-project context contamination, (C) force the prompt to verify scope before any git operation. Operator chose C — least operator-side work, most defensive coverage, doesn't depend on understanding Cowork's host-CLAUDE.md injection mechanism.
+
+The Option C pattern applied to `decider.md` (PRELUDE block) + `decider-patches-and-selfapply.md` (scope-verify before clone):
+
+```bash
+# 1. Extract PAT from workspace .git/config (primary + grep fallback)
+PRELUDE_AUTH=$(git -C "${WORKSPACE}" remote get-url origin 2>/dev/null)
+# ... [fallback to direct .git/config grep]
+DOME_PAT=$(echo "$PRELUDE_AUTH" | grep -oP 'x-access-token:\K[^@]+')
+
+# 2. Scope-verify via GitHub API — must return 200 against dome repo
+PRELUDE_HTTP=$(curl -s -o /dev/null -w '%{http_code}' \
+  -H "Authorization: Bearer $DOME_PAT" \
+  "https://api.github.com/repos/funwithscience-org/dome-model-review")
+if [ "$PRELUDE_HTTP" != "200" ]; then
+  echo "ERROR: PAT does not have dome scope (HTTP $PRELUDE_HTTP). ABORTING."
+  exit 1
+fi
+
+# 3. Use $DOME_PAT explicitly in all subsequent git operations
+git clone "https://x-access-token:${DOME_PAT}@github.com/funwithscience-org/dome-model-review.git" "$CLONE"
+```
+
+Plus a **bold in-prompt warning** telling the LLM not to use any PAT it sees in its context, regardless of source. The combination of (a) extraction from documented source, (b) explicit scope verification via API, and (c) explicit `$DOME_PAT` variable in clone URL, makes it structurally impossible for a stale-PAT to reach a push attempt — IF the agent follows the script.
+
+**First clean decider run with Option C:** commit `02e53a54` by `steve <russelst@melrosecastle.com>`, plain `git push` succeeded, no 403, no API fallback. Confirmation in agent's own report: PRELUDE block executed, scope verified at HTTP 200, $DOME_PAT used for clone.
+
+### Critical finding: FUSE-side prompt staleness
+
+Discovered mid-session: **dome agents' SKILL.md files are 5-line pointer files** that say `Read the prompt file at monitor/prompts/<agent>.md in the dome-model-review folder in your workspace`. So agents read their prompts from FUSE at runtime, not from git. workspace-sync.md doesn't sync git→FUSE for prompts (those are git-owned; workspace-sync's universal-pusher only goes FUSE→git for data files).
+
+Consequence: every prompt change pushed via Contents API needs to ALSO be synced to FUSE manually (or via `build.js publish`) before agents see it. The Option C decider patches lived on git for ~10 minutes before the next decider run saw them — the first run during that gap still failed because FUSE was stale.
+
+Operator-side workflow now: after pushing a prompt change to git, `cp /tmp/<prompt>.new.md ${WORKSPACE}/monitor/prompts/<prompt>.md` to FUSE before triggering the agent.
+
+The `dome-prune-integrity` task SKILL.md is different — it's an inline-full-prompt SKILL.md (137 lines), so no FUSE dependency. That's a cleaner pattern for new agents going forward.
+
+### PRELUDE applied to all 10 remaining dome agents
+
+After validating Option C on decider, the same PRELUDE block was applied to the other paused agents in one batch:
+
+| Agent | Commit | Pushes? |
+|---|---|---|
+| analyst.md | `e6eefea2` | yes |
+| analyst-baby.md | `ff7317da` | no |
+| curmudgeon.md | `1e496f99` | clone-only |
+| curmudgeon-verify.md | `168b0e8b` | clone-only |
+| poller.md | `9f1625a3` | no |
+| structure-integrity.md | `69a8e293` | clone-only |
+| tinker.md | `35633cfa` | no |
+| social.md | `d258c0cb` | no |
+| sloppytoppy-score.md | `2d5f7a79` | yes |
+| sloppytoppy-rewrite.md | `6fd6035c` | yes |
+
+All 10 also synced to FUSE. The PRELUDE block is identical across all: scope-verify + bold warning + `$DOME_PAT` for explicit use. Even non-pushing agents get the warning, in case their LLM ever decides to improvise a push.
+
+### State at end of session (2026-05-23 evening)
+
+**Repo health:** `origin/main` at `6fd6035c` (last PRELUDE commit). 4,400+ tree entries (post-prune-integrity). ~700 MB still free on root FS (platform-level `/var/log/journal` constraint unchanged).
+
+**Agent state:**
+
+- ✅ `dome-workspace-sync` — re-enabled, hourly cadence. PROP-051 A1–B3 patches live.
+- ✅ `dome-prune-integrity` — enabled, daily 09:05 local. One successful run today.
+- ⏸️ `dome-decider` — Option C verified working on manual Run Now. Cron still disabled until operator chooses to re-enable.
+- ⏸️ Other 9 agents — paused, PRELUDE applied + synced to FUSE, ready for individual unpause when operator decides.
+
+**Outstanding architectural concerns documented but not yet acted on:**
+
+- Host CLAUDE.md at `/var/folders/.../cc688b809cd3f1c7/CLAUDE.md` still contains the OLD KEV-scoped PAT. The cross-project context contamination remains structurally possible; Option C catches it at scope-verify time but doesn't fix the source. Operator deferred fixing this because KEV-side work is otherwise stable.
+- KEV scheduled tasks (`kev-analysis-refresh`, `kev-analyst`) have the OLD PAT inline in their SKILL.md files. Will start hitting Devilwench-style 403s on their next runs against KEV. Operator-side cleanup deferred.
+- PROP-052 (audit-files round-trip) authored by tinker but not yet applied. Lower priority.
+- PROP-046 + amendments, PROP-047, PROP-049 still pending apply.
+
+### New lessons codified (beyond Section 16's list)
+
+6. **LLM agent prompts can be subverted by ambient context.** Even with documented extraction code in the prompt, the LLM may use a PAT visible in its session context (host CLAUDE.md, sandbox ~/.git-credentials, etc.) and bypass the script. Defensive measures: (a) explicit bold "DO NOT USE ANY PAT FROM YOUR CONTEXT" warnings in the prompt; (b) scope-verify any extracted PAT via API call before using it (Option C pattern); (c) use named variables like `$DOME_PAT` in critical commands so the agent can't paraphrase the URL with a different PAT.
+7. **Prompt changes don't reach agents via `git push` alone.** Because dome agents read their prompts from FUSE via 5-line pointer SKILL.md, every prompt edit needs both `git push` AND a FUSE-side sync (`cp` from clone, or `build.js publish`) before the next agent run will see it. New agent designs should prefer inline-full-prompt SKILL.md (like dome-prune-integrity) to avoid this two-step.
+8. **"Devilwench" was a red herring.** The 403 wasn't an identity-routing issue at GitHub's side — it was a stale PAT with wrong scope. Once the actual PAT was scope-verified before use, the 403s stopped. Don't trust labels in 403 error messages without verifying the PAT's actual scope first.
+9. **The workspace `.git/config` PAT IS the canonical source.** Cowork sets it at mount time and doesn't clobber it on remount (tested across one Claude app restart). Edits there persist for the workspace's lifetime. PROP-051 Option C codifies this as the authoritative extraction source.
+10. **Scope-verifying a PAT before use catches the cross-project contamination case.** A single curl against `/repos/<org>/<repo>` returns 200 if the PAT has scope, non-200 otherwise. Adding this one-line check before any git operation is the highest-leverage defensive pattern discovered today.
