@@ -62,11 +62,30 @@ The authenticated remote URL is available from the workspace's existing git conf
 SESSION=$(pwd | grep -oP '/sessions/[^/]+')
 WORKSPACE="${SESSION}/mnt/dome-model-review"
 CLONE="${SESSION}/dome-review-clean"
-# Extract the authenticated remote URL from the workspace .git/config
+# Extract the authenticated remote URL from the workspace .git/config.
+# PROP-051 follow-up (2026-05-23, post-PAT-rotation): hardened path with a
+# defensive direct grep fallback in case `git -C` fails to recognize the
+# workspace as a repo (FUSE deadlock or other transient issue), and a HARD
+# ABORT if no PAT is found instead of silently falling back to a bare URL.
+# The old soft-fallback was the proximate cause of decider's 2026-05-23
+# 'Devilwench' 403 — the agent fell through to bare URL, tried to push, got
+# 403, and asked the operator for the PAT. With this hardening, the run
+# aborts loudly instead of silently producing an unauthenticated clone.
 AUTH_URL=$(git -C "${WORKSPACE}" remote get-url origin 2>/dev/null)
 if [ -z "$AUTH_URL" ] || [[ "$AUTH_URL" != *"x-access-token"* ]]; then
-  echo "WARNING: No authenticated URL found in workspace. Falling back to unauthenticated clone (push will fail)."
-  AUTH_URL="https://github.com/funwithscience-org/dome-model-review.git"
+  # Defensive secondary: direct grep of .git/config (in case git -C failed)
+  AUTH_URL=$(grep -oP 'url = \Khttps://x-access-token:[^[:space:]]+' "${WORKSPACE}/.git/config" 2>/dev/null | head -1)
+fi
+if [ -z "$AUTH_URL" ] || [[ "$AUTH_URL" != *"x-access-token"* ]]; then
+  echo "ERROR: Could not extract authenticated PAT from workspace remote URL."
+  echo "  Tried: git -C ${WORKSPACE} remote get-url origin"
+  echo "  Tried: grep ${WORKSPACE}/.git/config directly"
+  echo "  The workspace's .git/config should contain a line like:"
+  echo "    url = https://x-access-token:<PAT>@github.com/funwithscience-org/dome-model-review.git"
+  echo "  Either FUSE is unhealthy, or Cowork failed to inject the PAT."
+  echo "  ABORTING — do NOT fall back to unauthenticated clone (the old behavior caused"
+  echo "  the 2026-05-23 'Devilwench' 403 diagnostic chain)."
+  exit 1
 fi
 git clone "$AUTH_URL" ${CLONE}
 cd ${CLONE}
