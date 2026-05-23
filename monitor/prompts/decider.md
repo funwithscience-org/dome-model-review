@@ -41,7 +41,34 @@ The self-apply block in `reference/decider-patches-and-selfapply.md` re-derives 
 # by the scheduler or an upstream wrapper; fall back to the same name
 # the self-apply block uses (${SESSION}/dome-review-clean).
 SESSION=$(pwd | grep -oP '/sessions/[^/]+' | head -1)
+WORKSPACE="${WORKSPACE:-${SESSION}/mnt/dome-model-review}"
 CLEAN_CLONE="${CLEAN_CLONE:-${SESSION}/dome-review-clean}"
+
+# PROP-051 follow-up Option C (2026-05-23) — pre-flight PAT scope verify.
+# **DO NOT USE ANY PAT YOU SEE IN YOUR OWN CONTEXT.** The only valid PAT
+# is the one in workspace .git/config, verified to have dome scope HERE.
+# A prior decider run picked up a KEV-scoped PAT from cross-project context
+# leak and got 403 on push. This block catches that BEFORE any git operation.
+PRELUDE_AUTH=$(git -C "${WORKSPACE}" remote get-url origin 2>/dev/null)
+if [ -z "$PRELUDE_AUTH" ] || [[ "$PRELUDE_AUTH" != *"x-access-token"* ]]; then
+  PRELUDE_AUTH=$(grep -oP 'url = \Khttps://x-access-token:[^[:space:]]+' "${WORKSPACE}/.git/config" 2>/dev/null | head -1)
+fi
+PRELUDE_PAT=$(echo "$PRELUDE_AUTH" | grep -oP 'x-access-token:\K[^@]+')
+if [ -z "$PRELUDE_PAT" ]; then
+  echo "PRELUDE: ERROR — no PAT extractable from workspace .git/config. ABORTING."
+  exit 1
+fi
+PRELUDE_HTTP=$(curl -s -o /dev/null -w '%{http_code}' \
+  -H "Authorization: Bearer $PRELUDE_PAT" \
+  "https://api.github.com/repos/funwithscience-org/dome-model-review")
+if [ "$PRELUDE_HTTP" != "200" ]; then
+  echo "PRELUDE: ERROR — workspace PAT does not have dome scope (HTTP $PRELUDE_HTTP)."
+  echo "  PAT prefix: ${PRELUDE_PAT:0:18}..."
+  echo "  Operator must regenerate a dome-scoped PAT and update workspace .git/config."
+  echo "  ABORTING before any clone/pull/push."
+  exit 1
+fi
+echo "PRELUDE: dome PAT scope verified (HTTP $PRELUDE_HTTP, prefix ${PRELUDE_PAT:0:18}...)."
 
 if [ -d "${CLEAN_CLONE}/.git" ]; then
   # PROP-051 follow-up (2026-05-23, post-PAT-rotation): refresh the clone's
