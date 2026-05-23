@@ -183,6 +183,12 @@ NEVER_PUSH=(
   # script invoked by build.js and decider self-apply when `git push` 403s.
   # Same source-code classification as audit-rewrite.js.
   'monitor/scripts/push-via-api.js'
+  # PROP-051 Workstream C (2026-05-23): prune-integrity.js is the monitor/integrity/
+  # retention manager (workspace-sync-runs 30d, verify-pending-run 14d, narrative-
+  # cite-audit keep-last-7, push-failure 14d, report-daily 90d). Invoked from a
+  # dedicated scheduled task; not called from workspace-sync's hot path. Same
+  # source-code classification as audit-rewrite.js and push-via-api.js.
+  'monitor/scripts/prune-integrity.js'
   # All .md files under monitor/prompts/ are operator-edited (dynamic rule
   # in is_never_push() below). Covers monitor/prompts/sloppytoppy-rewrite.md
   # and monitor/prompts/reference/sloppytoppy-rewrite-rubric.md automatically.
