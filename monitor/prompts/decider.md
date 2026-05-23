@@ -44,6 +44,21 @@ SESSION=$(pwd | grep -oP '/sessions/[^/]+' | head -1)
 CLEAN_CLONE="${CLEAN_CLONE:-${SESSION}/dome-review-clean}"
 
 if [ -d "${CLEAN_CLONE}/.git" ]; then
+  # PROP-051 follow-up (2026-05-23, post-PAT-rotation): refresh the clone's
+  # embedded remote URL from the workspace .git/config BEFORE git fetch/pull.
+  # An existing clone keeps the PAT-of-the-day from its initial clone time —
+  # if the operator rotates the PAT (via editing workspace .git/config),
+  # the existing clone would otherwise keep using the OLD PAT until re-cloned.
+  # This sync makes PAT rotation transparent to running clones.
+  CURRENT_AUTH=$(git -C "${WORKSPACE}" remote get-url origin 2>/dev/null)
+  if [ -z "$CURRENT_AUTH" ] || [[ "$CURRENT_AUTH" != *"x-access-token"* ]]; then
+    # Defensive secondary: direct grep of .git/config
+    CURRENT_AUTH=$(grep -oP 'url = \Khttps://x-access-token:[^[:space:]]+' "${WORKSPACE}/.git/config" 2>/dev/null | head -1)
+  fi
+  if [ -n "$CURRENT_AUTH" ] && [[ "$CURRENT_AUTH" == *"x-access-token"* ]]; then
+    git -C "${CLEAN_CLONE}" remote set-url origin "$CURRENT_AUTH"
+  fi
+
   if ! (cd "${CLEAN_CLONE}" && git fetch origin main --quiet && git pull --rebase origin main); then
     echo "PRELUDE: git pull --rebase failed in ${CLEAN_CLONE}. Clone is in a conflicted state."
     echo "PRELUDE: STOP and escalate to tinker/human — do NOT continue with shared-writer reads."
