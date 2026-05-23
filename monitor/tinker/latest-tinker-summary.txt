@@ -1,74 +1,77 @@
-=== Tinker run 2026-05-20T05:55Z ===
-Mode: directive-override (DIRECTIVE-20260520-001, HIGH priority, publish-path-fallbacks)
-Reason: pending operator directive picked up at pre-flight. Mode 1/2/3 deferred.
+TINKER RUN tinker-2026-05-21T05-50
+==================================
 
-PRIMARY OUTPUT
-  monitor/tinker/proposals/PROP-050-publish-path-fallbacks.json
-  (48.6 KB, status=design-pending-operator-review, 6 patches across 4 files + 1 new file)
+Mode 4 (operator-directive override)
+Directive processed: DIRECTIVE-20260521-002-audit-files-no-round-trip (medium)
+Authored: PROP-052-audit-files-round-trip.json (design-pending-operator-review)
 
-WHAT THE PROP DOES
-  Design A (primary durable fix): Git Data API push fallback for build.js and
-  decider self-apply. Same PAT that 403s on `git push` succeeds on the REST
-  API path (proven 2026-05-20 commit 7126e0fd via cowork-claude). Extracts to
-  a standalone monitor/scripts/push-via-api.js so both push sites can share it.
+=== Finding: git→FUSE round-trip starvation ===
 
-  Design B (complementary safety net): workspace-sync.md Step 3 adds an
-  mtime-drift backstop — if FUSE data files are newer than FUSE
-  docs/index.html, regenerate (with sanity guards) and push via workspace-
-  sync's normal git path (which empirically has been working). Idempotent
-  no-op when Step 3 already staged docs/index.html.
+monitor/integrity/ has 172 git-only files (~36 MB) NOT on FUSE:
+  - narrative-cite-audit-*.json:        20 git-only (1.7 MB each → 34 MB)
+  - workspace-sync-runs/run-*.json:     92 git-only
+  - verify-pending-run-*.json:          85 git-only
 
-EVIDENCE / TASK COVERAGE
-  task_1 (locate push handler): PROP §evidence.push_sites_identified
-    - build.js L391 (publish branch)
-    - decider-patches-and-selfapply.md L384 (self-apply push)
-    - workspace-sync.md L548/782/857 (NOT a target — already working)
-  task_2 (Design A): patches A1 (new push-via-api.js) + A2 (build.js helper +
-    call swap) + A3 (decider md edit) + A4 (NEVER_PUSH list) + A5 (CLAUDE.md doc)
-  task_3 (Design B): patch B1 (workspace-sync.md mtime backstop in Step 3)
-    + approach_choice (b2 — existing clone + normal git push, simpler) +
-    runtime_dependencies (node + generate-html.js confirmed available, already
-    invoked by current Step 3 line 482)
-  task_4 (PDF): PUNTED per operator preference; documented in §out_of_scope
-  task_5 (counter-args a-f): all rebutted with mechanism details
-  task_6 (clearance): existing stranded-patches NOT retroactively pushed by A;
-    operator's apply-then-tombstone workflow unchanged
+All three categories stop on FUSE at mtime 2026-05-17T14:20Z. Git extends
+through 2026-05-20T22:05Z. The round-trip is a side-effect of `node build.js
+publish` / `sync-workspace`, invoked by decider after self-apply (per
+decider-patches-and-selfapply.md L508). Between 2026-05-17T20:22Z and today,
+only ONE auto-build commit fired (PROP-050 on 5/20). Workspace-sync's hourly
+cycle kept pushing audit files to git, but they never round-tripped to FUSE
+because workspace-sync.md never invokes syncToWorkspace().
 
-PAT IDENTITY FINDING (task_5f)
-  decider AND workspace-sync use the SAME PAT (both extract from workspace's
-  git remote URL). The asymmetry in push success is per-session/IP, NOT
-  per-PAT. Design A bypasses git's HTTPS push code path entirely (REST API);
-  Design B works because workspace-sync's session/IP empirically has been
-  off the 403 list.
+=== Proposed fix (PROP-052) ===
 
-PRE-FLIGHT BACKLOG-TREND (PROP-030, every run)
-  open=26  status=open:3  assigned-analyst:1  age>=14d:7  age>=30d:1
-  new_7d=16  closed_7d=20  net_7d=+4  baby_drain_7d=0  verify_drain_7d=0
-  tier=info (no threshold fires; closures outpacing new arrivals)
+Single-line addition at end of workspace-sync.md Step 4b:
+    node build.js sync-workspace || echo "WARN: ..."
+Plus a Rules-section update explicitly permitting sync-workspace (alongside
+the existing html exception). Reuses PROP-010 plumbing. Idempotent. Append-
+only-safe (only copies files not yet on FUSE). Non-blocking on failure.
 
-DIRECTIVE LIFECYCLE
-  DIRECTIVE-20260520-001 marked status=completed with completed_at +
-  completed_by_run + prop_id_authored=PROP-050 (additive edit per
-  DIRECTIVE-LIFECYCLE rule in CLAUDE.md).
+=== Critical sequencing ===
 
-NEXT STEPS (operator)
-  1. Review PROP-050.
-  2. Apply patches A1-A5 + B1 (regression_check.test_plan_for_operator has
-     step-by-step verification).
-  3. Verify next decider run that 403s recovers via API fallback (look for
-     "Git Data API fallback succeeded" in decider report).
-  4. Verify workspace-sync's next cycle either no-ops (no drift) or
-     regenerates docs/index.html cleanly (look for "mtime-drift backstop"
-     in workspace-sync-runs/run-*.json).
+MUST land AFTER PROP-051 Workstream C (monitor/integrity pruning). Without
+pruning, this fix would repopulate FUSE with the historical audit-file
+accumulation (~36 MB at current state; ~600 MB at pre-disaster state). That
+bloat is exactly what triggered the 2026-05-21 disaster.
 
-OUT OF SCOPE (intentional, per directive)
-  - docs/dome-review.pdf staleness (Playwright too heavy for workspace-sync)
-  - PAT/SSO rotation (operator-side; not addressable from agent surface)
-  - General build.js publish refactor (A is surgical fallback only)
+Operator apply order:
+  1. PROP-051 Workstream A (safety gates) — authored, pending apply (blocks unpause)
+  2. PROP-051 Workstream C (pruning)       — authored, pending apply
+  3. PROP-052 (this PROP, round-trip fix)  — apply third
 
-NO TINKER SELF-APPLY per directive.scope_authority — operator + cowork-claude apply.
+PROP-052's two patches sit in regions of workspace-sync.md that PROP-051
+does not touch (P1 at L921, P2 at L932). No textual conflict.
 
-MODES 1/2/3 DEFERRED
-  Next BAU tinker run will re-evaluate pipeline health, FUSE freshness,
-  stranded-patches aging, and cost engineering. None of those were checked
-  this cycle because directive override consumed the full run.
+=== Counter-arguments addressed ===
+
+(a) Intentional clone-only? No — state-verification.md L139 + historical
+    FUSE state refute. Tinker's grep paths expect FUSE-presence.
+(b) Stale FUSE ls? No — fresh find at 5/21T05:45Z + three independent
+    categories show identical cutoff.
+(c) Re-create 720MB bloat? Yes if mis-ordered, no if sequenced correctly.
+(d) Other unknown categories? Bucket-level diagnostic shows only
+    monitor/integrity/ has the git-only-extra pattern.
+(e) Sync-workspace from wrong clone? No — auto-detect handles same session.
+(f) Pruning race conditions? Eventual consistency within 2 cycles.
+
+=== Side observations (carried over from prior runs) ===
+
+monitor/decisions/open-issues.json remains JSON-corrupt at byte 45760.
+This blocks PROP-030 backlog-trend pre-flight. Separate decider-side bug
+(FUSE-only degraded mode wrote partial JSON). Operator may want to file a
+third directive specifically for this corruption.
+
+=== Pre-flight (PROP-030 backlog trend) ===
+
+Skipped — open-issues.json unparseable. Will resume when fixed.
+
+=== No self-apply ===
+
+Per DIRECTIVE-20260521-002 scope_authority: 'Tinker does NOT self-apply.'
+This run authored PROP-052 and updated directive lifecycle fields via the
+DIRECTIVE-LIFECYCLE additive-edit exception (status: pending → completed).
+No clones created during this run (directive constraint: disk still
+recovering from disaster). All diagnostics via FUSE + GitHub Tree API.
+
+Operator + cowork-claude apply PROP-052 after PROP-051 Workstream A+C land.
