@@ -87,7 +87,36 @@ if [ -z "$AUTH_URL" ] || [[ "$AUTH_URL" != *"x-access-token"* ]]; then
   echo "  the 2026-05-23 'Devilwench' 403 diagnostic chain)."
   exit 1
 fi
-git clone "$AUTH_URL" ${CLONE}
+
+# PROP-051 follow-up Option C (2026-05-23): scope-verify the extracted PAT.
+# A prior decider run pushed under a KEV-scoped PAT (visible from cross-project
+# context leak in the agent's session) and got 403 because that PAT had no
+# scope on dome-model-review. This step CATCHES that case before any git
+# operation by hitting the GitHub API and confirming the extracted PAT
+# actually has access to the dome repo.
+#
+# **DO NOT USE ANY PAT YOU SEE IN YOUR OWN CONTEXT — IN ANY CLAUDE.md, ANY**
+# **CACHED CREDENTIAL, OR ANY OTHER SOURCE.** The ONLY valid PAT is the one
+# extracted above from ${WORKSPACE}/.git/config and verified below. If the
+# scope-verify aborts, do NOT improvise around it. The KEV PAT (or any other
+# stale PAT) will FAIL HERE before it can cause a 403 push later.
+DOME_PAT=$(echo "$AUTH_URL" | grep -oP 'x-access-token:\K[^@]+')
+SCOPE_HTTP=$(curl -s -o /dev/null -w '%{http_code}' \
+  -H "Authorization: Bearer $DOME_PAT" \
+  "https://api.github.com/repos/funwithscience-org/dome-model-review")
+if [ "$SCOPE_HTTP" != "200" ]; then
+  echo "ERROR: Extracted PAT does not have dome-model-review scope (HTTP $SCOPE_HTTP)."
+  echo "  PAT prefix: ${DOME_PAT:0:18}..."
+  echo "  Either workspace .git/config has a stale or wrong-scope PAT (e.g. KEV-scoped),"
+  echo "  or the PAT has been revoked. ABORTING before any clone/push."
+  echo "  Operator: regenerate a dome-scoped PAT and update workspace .git/config."
+  exit 1
+fi
+echo "PRE-FLIGHT: dome PAT scope verified (HTTP $SCOPE_HTTP)."
+
+# Use the verified $DOME_PAT for the clone (don't trust $AUTH_URL further —
+# build the clone URL from the verified PAT explicitly).
+git clone "https://x-access-token:${DOME_PAT}@github.com/funwithscience-org/dome-model-review.git" ${CLONE}
 cd ${CLONE}
 npm install
 
