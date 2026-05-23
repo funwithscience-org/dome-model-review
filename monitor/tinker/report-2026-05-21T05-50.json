@@ -1,0 +1,74 @@
+{
+  "run_id": "tinker-2026-05-21T05-50",
+  "run_at": "2026-05-21T05:50:00Z",
+  "mode_selected": "Mode 4 (operator-directive override)",
+  "mode_selection_reason": "DIRECTIVE-20260521-002-audit-files-no-round-trip.json pending → dispatched per pre-flight operator-directive discovery. Directive scope is PROP authorship; routes to Mode 4 mechanics.",
+  "modes_checked": {
+    "mode_1_pipeline_health": "not run (operator directive override)",
+    "mode_2_infrastructure_fuse": "not run (operator directive override; also directive constraint: 'Do NOT make full clones during this diagnostic run (disk still recovering from disaster)')",
+    "mode_3_cost_engineering": "not run (operator directive override)",
+    "mode_4_proposals_and_fixes": "selected per operator directive"
+  },
+  "preflight_backlog_trend": {
+    "status": "skipped",
+    "reason": "monitor/decisions/open-issues.json remains JSON-corrupt at byte 45760 (carried over from tinker-2026-05-21T02-45 and tinker-2026-05-21T05-40 observations). PROP-030 metrics_specification cannot run cleanly without parseable open-issues.json. Operator should consider filing a separate directive for this corruption — note that it is a decider-side bug (FUSE-only degraded mode wrote partial JSON during the disaster window). PROP-051 side_observations notes this; PROP-052 does as well."
+  },
+  "operator_directive_processed": {
+    "directive_id": "DIRECTIVE-20260521-002-audit-files-no-round-trip",
+    "priority": "medium",
+    "target_mode": "Mode 4 (PROP authorship)",
+    "deliverable_required": "monitor/tinker/proposals/PROP-NNN-audit-files-round-trip.json with diagnostic findings + concrete fix patches + counter-arguments",
+    "all_five_tasks_completed": true,
+    "tasks_summary": {
+      "task_1_confirm_mismatch": "Confirmed. GitHub Tree API vs FUSE recursive listing shows: monitor/integrity has 172 git-only files (narrative-cite-audit + verify-pending-run + workspace-sync-runs combined). All other monitor/ subdirs are balanced or have small FUSE-only excesses (different bug class — pending workspace-sync push). The cutoff on FUSE is precisely 2026-05-17T14:20Z (consistent FUSE mtime across all three affected categories).",
+      "task_2_trace_round_trip": "Identified. Writers (audit-narrative-citations.js, verify-pending-state.js, workspace-sync inline run-report block) all write cwd-relative inside workspace-sync's clone. Files get pushed to git via workspace-sync's commit. Clone is rm-rf'd in Step 5. The reverse direction (git → FUSE) is the build.js syncToWorkspace() walker (PROP-010), invoked by decider after self-apply (decider-patches-and-selfapply.md line 508) or by operator-direct build.js publish. Workspace-sync.md explicitly never invokes it. When decider's publish cadence drops (e.g., revision-routed work, low patch volume), the round-trip starves.",
+      "task_3_choose_fix": "Chose Option A (make round-trip work). Single-line addition at end of workspace-sync.md Step 4b invokes existing PROP-010 syncToWorkspace() walker via `node build.js sync-workspace`. Rejected Option B (clone-only files) because three writers would need modification, race conditions with workspace-sync's existing Step 2, and existing PROP-010 plumbing already correctly handles the case.",
+      "task_4_counter_arguments": "Addressed (a) intentional clone-only: refuted by state-verification.md line 139 + historical FUSE state. (b) Stale FUSE ls: refuted by fresh find + 3 independent categories showing same cutoff. (c) Re-create 720MB bloat: YES if applied before PROP-051 Workstream C pruning, NO if sequenced correctly. (d) Other unknown categories: ran bucket-level diagnostic showing only monitor/integrity/ has the git-only-extra pattern; everything else either matches or has FUSE-only-extra (inverse direction). Plus two additional counter-arguments added during diagnostic: (e) sync-workspace from wrong clone, (f) pruning race conditions.",
+      "task_5_sequencing": "Documented. PROP-052 patches sit in regions of workspace-sync.md that PROP-051 does not touch (P1 in Step 4b at line ~921, P2 in Rules at line ~932). No textual conflicts. Operational sequencing: PROP-051 Workstream A first (safety), then PROP-051 Workstream C (pruning), then PROP-052 (round-trip). If PROP-052 lands before pruning, FUSE balloons by 36MB at current git size, much more at historical sizes."
+    }
+  },
+  "findings": [
+    {
+      "id": "fnd-052-1",
+      "category": "round-trip-bug",
+      "severity": "moderate",
+      "title": "Git→FUSE round-trip starvation for clone-resident audit artifacts",
+      "evidence": {
+        "fuse_vs_git_diff": "monitor/integrity git-only: 172 files (~36MB) not on FUSE. Affected categories: narrative-cite-audit (20 git-only at 1.7MB each), workspace-sync-runs (92 git-only), verify-pending-run (85 git-only).",
+        "fuse_cutoff": "All three categories stop precisely at 2026-05-17T14:20Z mtime. Git extends to 2026-05-20T22:05Z (the last workspace-sync push before today's disaster).",
+        "last_publish_commit": "2026-05-17T20:22:08Z 'Update review (auto-build 2026-05-17)'. Next was 2026-05-20T06:04Z for PROP-050. So ~3 days with zero publish cycles."
+      },
+      "root_cause": "There is no dedicated git→FUSE refresh mechanism. The existing one (syncToWorkspace() in build.js) is invoked only by `build.js publish` or `build.js sync-workspace`, neither of which is in workspace-sync.md's procedure. The round-trip is a side-effect of decider's post-self-apply cleanup. When decider's cadence drops, the round-trip starves.",
+      "fix_proposed": "PROP-052 (this run) — add `node build.js sync-workspace || echo WARN` at end of workspace-sync.md Step 4b. Reuses existing PROP-010 plumbing. Idempotent. Append-only-safe. Non-blocking on failure.",
+      "blocked_by": "PROP-051 Workstream C (monitor/integrity pruning) — must land first to avoid FUSE bloat."
+    },
+    {
+      "id": "fnd-052-2",
+      "category": "data-integrity",
+      "severity": "moderate",
+      "title": "open-issues.json continues JSON-corrupt; blocks tinker PROP-030 backlog-trend pre-flight",
+      "evidence": "Node.js JSON.parse fails at byte 45760 ('Unexpected token ] before ISS-2172' pattern, per tinker-2026-05-21T02-45 and -05-40 prior observations). Tinker's PROP-030 backlog-trend computation cannot proceed cleanly without parseable open-issues.json.",
+      "out_of_scope_note": "Not addressed in PROP-052 — separate decider-side bug from the FUSE-only degraded mode. Operator may want to file a third directive specifically for this. Tinker reaffirms the prior runs' observation.",
+      "recommended_followup": "Inspect open-issues.json structure manually, restore from a recent known-good commit (1d256277 pre-disaster was clean per PROP-051's force-reset target), or hand-fix the stray closing bracket. Workspace-sync's PROP-024 json-validity gate would have refused the original write but didn't fire because decider's clone wrote it directly via FUSE-only degraded mode (which itself was a degraded-mode improvisation similar to the disaster's no-checkout clone)."
+    }
+  ],
+  "claude_md_audit": {
+    "performed": false,
+    "reason": "Mode 4 operator-directive run, claude_md_audit reserved for Mode 3."
+  },
+  "context_load": {
+    "performed": false,
+    "reason": "Mode 4 operator-directive run, context_load reserved for Mode 3."
+  },
+  "previous_followup": {
+    "tinker-2026-05-21T05-40 (DIRECTIVE-20260521-001)": "Authored PROP-051-workspace-sync-disaster-fix. Status: design-pending-operator-review. PROP-051 contains Workstream A (safety gates), Workstream B (clone hygiene), Workstream C (integrity pruning). This run (PROP-052) is sequenced to land AFTER PROP-051 Workstream A and C; the three PROPs together close the disaster + the round-trip gap.",
+    "tinker-2026-05-21T02-45": "Per its report, also surfaced the open-issues.json corruption. Carries over."
+  },
+  "writes_this_run": [
+    "monitor/tinker/proposals/PROP-052-audit-files-round-trip.json (design-pending-operator-review)",
+    "monitor/tinker/operator-directives/DIRECTIVE-20260521-002-audit-files-no-round-trip.json (additive edit: status pending → completed, completed_at, completed_by_run, prop_id_authored)",
+    "monitor/tinker/report-2026-05-21T05-50.json (this file)",
+    "monitor/tinker/latest-tinker-summary.txt (overwritten)"
+  ],
+  "no_self_apply": "Per DIRECTIVE-20260521-002 scope_authority: 'Tinker does NOT self-apply.' Tinker authored the PROP and updated lifecycle status fields per the DIRECTIVE-LIFECYCLE additive-edit exception. No edits to workspace-sync.md, CLAUDE.md, build.js, or any other agent-mechanical file. Operator + cowork-claude apply PROP-052 (after PROP-051 Workstream A+C have landed)."
+}

@@ -2,6 +2,16 @@
   "description": "Notes from the human editor for the decider to factor into triage and patching. Read at the start of every run. Mark notes as consumed after acting on them.",
   "notes": [
     {
+      "id": "HNOTE-DECIDER-MASS-DELETE-RECOVERY-001",
+      "filed_by": "decider",
+      "filed_at": "2026-05-21T06:05:00.000Z",
+      "status": "pending",
+      "severity": "critical",
+      "title": "GIT MASS DELETE: ea785c49 wiped most of repo — operator must revert IMMEDIATELY",
+      "body": "workspace-sync commit ea785c49 (2026-05-21T02:11Z) deleted almost the entire git repo due to disk-full conditions. Only ~14 files survive in git HEAD; FUSE workspace has everything intact. Tinker filed P0 criticals at 02:45Z. This decider run (2026-05-21T06:05Z) is operating in FUSE-only degraded mode for the SECOND consecutive run.\n\nRECOVERY STEPS (operator must do from a working clone):\n1. Clone fresh: git clone https://x-access-token:<PAT>@github.com/funwithscience-org/dome-model-review.git /tmp/recovery-clone\n2. Revert the mass-delete: git -C /tmp/recovery-clone revert ea785c49 --no-edit\n3. This will restore all files from the parent of ea785c49 into the repo.\n4. BUT: the FUSE workspace has content changes since the mass-delete (this decider's patches and the previous decider run's patches). These need to be cherry-picked on top of the revert. Specific files changed since the mass-delete:\n   - data/wins.json (WIN-012 c9 patches + WIN-021 c4 patches)\n   - data/predictions.json (PRED-106 tacit_withdrawal)\n   - data/uncounted-failures.json (FAIL-018 updated)\n   - monitor/curmudgeon/priority-queue.json (qids 394-395 popped)\n   - monitor/curmudgeon/priority-queue-archive.jsonl (qids 394-395 appended)\n   - monitor/curmudgeon/reviews/WIN-012.c9.json (popped_by_queue_id set)\n   - monitor/curmudgeon/reviews/WIN-012.c10.json (popped_by_queue_id set, also created by curmudgeon after mass-delete)\n   - monitor/decisions/open-issues.json (ISS-2169-2172 added, several closed)\n   - monitor/decisions/closure-ledger.jsonl (entries from both FUSE runs)\n   - monitor/decisions/latest-decider-summary.txt (updated)\n5. Copy these files from FUSE workspace to the recovery clone before pushing.\n6. git -C /tmp/recovery-clone add -A && git -C /tmp/recovery-clone commit -m 'Recover from ea785c49 mass-delete + apply FUSE-only patches'\n7. git -C /tmp/recovery-clone push origin main\n8. ALSO: fix workspace-sync disk-full behavior so it does NOT run no-checkout-clone mode. The workspace-sync prompt must abort if disk usage > 90% rather than running in degraded mode that mass-deletes.\n\nSECONDARY: The bash sandbox (sessions root) is STILL disk-full (100%). This is the third consecutive run that cannot execute bash. Fix by: docker prune / clearing /tmp/* clones / restarting sessions environment.",
+      "run_id": "decider-2026-05-21-06-05"
+    },
+    {
       "id": "HNOTE-OPERATOR-PAT-AUTH-403-001",
       "filed_by": "tinker",
       "filed_at": "2026-05-11T05:12:00Z",

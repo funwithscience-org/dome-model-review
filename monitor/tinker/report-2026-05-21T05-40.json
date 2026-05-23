@@ -1,0 +1,106 @@
+{
+  "run_id": "tinker-2026-05-21T05-40",
+  "timestamp": "2026-05-21T05:40:00Z",
+  "mode_selected": "directive-override (DIRECTIVE-20260521-001, priority: high)",
+  "mode_selected_rationale": "Pre-flight operator-directive discovery found 2 pending directives; highest-priority is DIRECTIVE-20260521-001-workspace-sync-disaster-postmortem (high). Per dispatcher rules, pending directives override Mode 1-4 selection. Directive scope: author PROP-NNN with workstreams A (workspace-sync safety) + B (clone hygiene) + C (integrity pruning), post-mortem, counter-arguments, and unpause checklist. Constraint: FUSE+API only, no clones.",
+  "modes_checked": {
+    "mode_1_pipeline_health": "skipped (directive override)",
+    "mode_2_infrastructure": "skipped (directive override); note: directive itself cites disk pressure as root cause",
+    "mode_3_cost_engineering": "skipped (directive override)",
+    "mode_4_proposals_and_fixes": "absorbed (directive's deliverable IS a PROP)"
+  },
+  "directive_handled": {
+    "directive_id": "DIRECTIVE-20260521-001",
+    "title_short": "POSTMORTEM + STRUCTURAL FIX: workspace-sync catastrophic delete incident ea785c49",
+    "priority": "high",
+    "status_transition": "pending → completed",
+    "completed_at": "2026-05-21T05:48:00Z",
+    "deliverable": "monitor/tinker/proposals/PROP-051-workspace-sync-disaster-fix.json"
+  },
+  "previous_followup": {
+    "method": "Spot-checked previous tinker run (tinker-2026-05-21T02-45) which documented the disaster as a P0. That run's recommendation aligns with the directive's now-issued scope; no separate previous-finding fix needed beyond authoring PROP-051.",
+    "open_issues_json_corruption": "Same JSON-parse error at byte 45760 observed today as in the 02-45 run. NOT in scope for PROP-051 (see PROP-051 counter_arguments_addressed.q_f). Decider-side bug, awaiting separate fix.",
+    "prop_lifecycle_verification": "skipped this run — directive scope is forward-looking PROP authorship, not verification of past PROPs. Resumes next run."
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "category": "incident-response",
+      "severity": "major",
+      "title": "Workspace-sync mass-delete disaster ea785c49 — PROP-051 authored per operator directive",
+      "evidence": {
+        "disaster_commit_sha": "ea785c49fc8a7b3db64253d2a7a8eeeef8f19fe4",
+        "disaster_commit_stats": "+274 / -14,904,949 lines; deleted 4,733 of 4,755 tree entries",
+        "recovery_final_sha": "1488170d at 2026-05-21T05:13Z (force-reset + 2-file re-push)",
+        "current_tree_entries_via_api": 4357,
+        "current_blob_count_via_api": 4315,
+        "recovery_status": "complete; loss-free"
+      },
+      "root_cause_one_line": "Haiku LLM improvised a `git clone --no-checkout` + mtime-only diff path under disk pressure. That code path is NOT in workspace-sync.md (verified by grep). It was a model invention.",
+      "action_taken_this_run": "Authored PROP-051 with 7 patches across 3 workstreams + 6-counter-argument rebuttal + 14-step operator unpause checklist.",
+      "patches_in_prop_051": [
+        "A1: Degraded-mode prohibitions section (prompt-level fail-closed)",
+        "A2: Pre-clone disk-pressure gate (200MB/100MB thresholds)",
+        "A3: Post-clone working-tree-size check (100-file floor)",
+        "A4: Pre-push delete-sanity gate (50-delete cap, 10%-of-tree alt ceiling)",
+        "B1: --depth 50 on workspace-sync clone (line 25)",
+        "B2: EXIT/INT/TERM trap for clone cleanup",
+        "B3: Start-of-run stale-clone sweep (/tmp/ws-sync-* and /tmp/dome-sync-* >60min)",
+        "C: monitor/scripts/prune-integrity.js + 5 per-prefix retention policies"
+      ],
+      "operator_actions_required": [
+        "Review PROP-051",
+        "Apply patches via /tmp/edit-clone or equivalent",
+        "Execute operator_unpause_checklist (14 steps)",
+        "Re-enable workspace-sync"
+      ]
+    },
+    {
+      "id": "F-002",
+      "category": "data-integrity",
+      "severity": "moderate",
+      "title": "monitor/decisions/open-issues.json unparseable (corruption persists across runs)",
+      "evidence": {
+        "first_observed_run": "tinker-2026-05-21T02-45",
+        "current_run_observation": "Same JSON-parse error at byte 45760: closing array `]` followed by `{` opening new object outside the array. Affects ISS-2172 onward.",
+        "blast_radius": "Any agent that JSON-parses open-issues.json (decider, integrity, tinker backlog-trend) cannot read it without manual repair. PROP-030 backlog-trend metrics SKIPPED this run for this reason."
+      },
+      "not_in_scope_for_this_run": "PROP-051 is the directive's mandate; open-issues.json corruption is a separate decider-side bug. Recommended: separate decider-targeted PROP or operator-direct repair.",
+      "recommendation": "Operator should hand-repair the closing `]` to a `,` (or remove the stray `]` and rely on the existing comma after the previous object) to restore JSON validity. Then a future tinker run resumes PROP-030 backlog-trend computation."
+    },
+    {
+      "id": "F-003",
+      "category": "documentation-drift",
+      "severity": "info",
+      "title": "PROP-049's audit asserts --depth 50 already on workspace-sync.md line 25 of HEAD, but raw.githubusercontent.com shows un-flagged clone command",
+      "evidence": "GET https://raw.githubusercontent.com/funwithscience-org/dome-model-review/main/monitor/prompts/workspace-sync.md at 2026-05-21T05:35Z → line 25 contains the un-flagged clone. PROP-049 status is design-pending-operator-review and its audit_results.S2 fuse_status='STALE' but applied_by claims 'operator-direct 2026-05-18 per DIRECTIVE-20260518-002 bug_summary'. Either the operator-direct edit was rolled back by the disaster-recovery force-reset (1d256277 predates the alleged 2026-05-18 edit by some duration; needs verification) or the assertion was inaccurate to start with.",
+      "recommendation": "When applying PROP-051 patch B1, this finding is moot — B1 explicitly adds --depth 50 with conflict_check note that PROP-049's B1 patch line is different (line 581 strand-rescue text). Coordinate the edits regardless. Tinker note: PROP-049 status field should be re-verified by next tinker run."
+    }
+  ],
+  "claude_md_audit": {
+    "skipped_this_run": true,
+    "reason": "Directive-override mode; CLAUDE.md audit is a Mode 3 deliverable. Resumes next non-directive run.",
+    "preview_for_next_run": "When PROP-051 lands, CLAUDE.md needs the addition described in PROP-051.phase_1_design_workspace_sync_safety.companion_edits.claude_md_addition (note about the four fail-closed gates and their sentinel-file pattern under monitor/integrity/)."
+  },
+  "context_load": {
+    "skipped_this_run": true,
+    "reason": "Directive-override mode; per-agent context-load measurement is a Mode 3 task. Resumes next non-directive run."
+  },
+  "cleanup_actions": [],
+  "disk_state_at_end_of_run": {
+    "root_fs_used_pct": 96,
+    "sessions_fs_used_pct": 80,
+    "tmp_dome_sync_clone_mb": 72,
+    "tmp_ws_sync_2_status": "not present (was cited as 491MB in directive evidence; appears to have been cleaned up during recovery)",
+    "monitor_integrity_fuse_mb": 43,
+    "note": "Disk is still tight (/ at 96%). PROP-051's Workstream A2 disk-pressure pre-flight would CURRENTLY abort the workspace-sync cycle at the 200MB-on-/tmp threshold (current /tmp has 396MB free on /; sessions has 2.0GB free). When the operator applies PROP-051 and unpauses, the first cycle may abort cleanly — that is the gate working, not a failure. Workstream C (integrity pruning) freeing ~25MB will not by itself rescue /; root-fs pressure is primarily system-image baseline per the Mode 2 doctrine."
+  },
+  "pending_directives_remaining": [
+    "DIRECTIVE-20260521-002-audit-files-no-round-trip (priority: medium) — defers to next tinker run"
+  ],
+  "diagnostic_constraints_honored": {
+    "no_full_clones_made_this_run": true,
+    "fuse_plus_github_api_only": true,
+    "rationale": "DIRECTIVE-20260521-001 scope_authority explicitly forbade full clones during this diagnostic run to avoid recreating the disk-pressure condition that caused the disaster."
+  }
+}

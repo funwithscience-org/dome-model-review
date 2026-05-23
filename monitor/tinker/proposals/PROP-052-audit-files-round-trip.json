@@ -1,0 +1,303 @@
+{
+  "id": "PROP-052-audit-files-round-trip",
+  "title": "Fix git→FUSE round-trip starvation for clone-resident agent artifacts (narrative-cite-audit, verify-pending-run, workspace-sync-runs). Add `node build.js sync-workspace` to workspace-sync's end-of-cycle. Sequenced AFTER PROP-051 Workstream C pruning.",
+  "authored_by": "tinker",
+  "authored_by_run": "tinker-2026-05-21T05-50 (scheduled run, DIRECTIVE-20260521-002)",
+  "authored_at": "2026-05-21T05:50:00Z",
+  "status": "design-pending-operator-review",
+  "priority": "medium",
+  "directive_id": "DIRECTIVE-20260521-002",
+  "blocked_by_prop": "PROP-051-workspace-sync-disaster-fix (Workstream C pruning MUST land first; see sequencing section)",
+  "related_directives": [
+    "DIRECTIVE-20260521-001 (workspace-sync disaster postmortem → PROP-051); Workstream C overlaps the same files."
+  ],
+  "related_props": [
+    "PROP-014 (verify-on-read mechanisms; Mech 1 verify-pending-state.js and Mech 3 audit-narrative-citations.js — both write into clone, never to FUSE).",
+    "PROP-017 (workspace-sync smart_copy gap audit, 2026-05-05) — fixed FUSE→git omissions. This PROP fixes the inverse: git→FUSE omissions for files agents write inside the clone.",
+    "PROP-010 (build.js sync-workspace target, lightweight git→FUSE copier). Reused as the fix here.",
+    "PROP-051 (disaster fix). Workstream C pruning is a prerequisite — without pruning, restoring git→FUSE re-creates the bloat that triggered the disaster."
+  ],
+  "scope_disclaimer": "Tinker design-only per DIRECTIVE-20260521-002 scope_authority. Operator + cowork-claude apply. No clones were created during this diagnostic — FUSE + GitHub API only, per directive constraint (disk still recovering from disaster).",
+
+  "executive_summary": {
+    "what_the_bug_is": "Files written by agents running inside a git clone (`monitor/integrity/narrative-cite-audit-*.json`, `monitor/integrity/verify-pending-run-*.json`, `monitor/integrity/workspace-sync-runs/run-*.json`) reach git via the writer's commit-and-push, but never reach FUSE. The result: tinker reads from FUSE expecting fresh audit artifacts and finds them stuck at 2026-05-17T14:20Z mtime, four days stale.",
+    "why_it_was_invisible": "The round-trip exists as a side-effect of `node build.js publish` and `node build.js sync-workspace`, which decider invokes after a successful self-apply. When decider has no patches to publish, the round-trip starves. Workspace-sync's hourly cycle pushes new audit files to git but is explicitly prohibited from running publish (workspace-sync.md Rules line 932). So as long as decider runs at its 4h cadence with non-trivial patches, files round-trip; when decider goes quiet, they don't.",
+    "root_cause_one_line": "There is no dedicated mechanism for git→FUSE refresh. It is an opportunistic side-effect of decider's post-self-apply book-keeping, and that side-effect starved for ~4 days between 2026-05-17T20:22Z and 2026-05-21T05:13Z (only one `Update review (auto-build)` commit in that window, on 2026-05-20 for PROP-050).",
+    "the_fix_one_line": "Add a single line at the end of workspace-sync.md Step 4b — `node build.js sync-workspace || echo 'WARN: ...'` — so the existing syncToWorkspace() walker fires every hour, restoring git→FUSE parity for all append-only categories. Reuses PROP-010 plumbing. Single-line change. Idempotent (only copies files that don't already exist on FUSE).",
+    "sequencing_critical": "Must land AFTER PROP-051 Workstream C (pruning). Without pruning, this fix repopulates FUSE with ~36MB of historic audit artifacts (35MB of which is narrative-cite-audit at 1.7MB/file × 20 files), and growth resumes at the same pre-prune rate that triggered the disaster."
+  },
+
+  "evidence": {
+    "diagnostic_method": "GitHub Tree API recursive listing vs FUSE find/glob; no clones created.",
+    "per_category_fuse_vs_git_counts_at_2026_05_21T05_45Z": {
+      "narrative_cite_audit": {
+        "fuse_count": 23,
+        "git_count": 20,
+        "intersection": 0,
+        "interpretation": "Zero overlap because the operator pruned today (2026-05-21T05:23Z + 05:25Z, two prune commits). FUSE-only set is 5/17T0006Z..5/17T1405Z; git-only set is 5/20T0005Z..5/20T2205Z. The original directive's '338 FUSE, 422 git, 84-file gap' was pre-prune state; current state shows the same root cause from the other angle."
+      },
+      "workspace_sync_runs": {
+        "fuse_count": 465,
+        "git_count": 556,
+        "git_only": 92,
+        "fuse_range": "monitor/integrity/workspace-sync-runs/run-2026-04-26T17-05-12Z.json → run-2026-05-17T14-05-49Z.json",
+        "git_range": "monitor/integrity/workspace-sync-runs/run-2026-04-26T17-05-12Z.json → run-2026-05-20T22-06-13Z.json",
+        "interpretation": "FUSE stops cold at 2026-05-17T14:05Z. Git continues through 2026-05-20T22:05Z. 92 files written by workspace-sync's run-report block (workspace-sync.md line 909, written to cwd=clone), pushed to git, never round-tripped."
+      },
+      "verify_pending_run": {
+        "fuse_count": 338,
+        "git_count": 423,
+        "git_only": 85,
+        "fuse_range": "monitor/integrity/verify-pending-run-2026-05-02T0813Z.json → verify-pending-run-2026-05-17T1405Z.json",
+        "git_range": "monitor/integrity/verify-pending-run-2026-05-02T0813Z.json → verify-pending-run-2026-05-20T2205Z.json",
+        "interpretation": "Same cutoff (5/17T14:05Z). Same pattern. Same root cause."
+      },
+      "control_categories_that_DO_round_trip": {
+        "push_failure": "FUSE 94 / Git 94 — match",
+        "applied_patches": "FUSE 256 / Git 256 — match",
+        "curmudgeon_reviews": "FUSE 592 / Git 592 — match",
+        "changes": "FUSE 119 / Git 119 — match",
+        "interpretation": "These files are written by agents directly to FUSE (poller writes to ${WORKSPACE}/monitor/changes/, decider writes applied-patches to ${WORKSPACE}/monitor/decisions/applied-patches/, curmudgeon writes reviews to FUSE). FUSE→git is the writer-side default and workspace-sync hourly cycle covers it. The bug only affects files written cwd-relative inside a clone."
+      }
+    },
+    "git_size_at_diagnostic": {
+      "monitor_integrity_total_mb": 38.6,
+      "breakdown_mb": {
+        "narrative_cite_audit": 35.2,
+        "verify_pending_run": 0.5,
+        "workspace_sync_runs": 0.3,
+        "report_daily": 0.6,
+        "push_failure": 0.1,
+        "other": 2.0
+      },
+      "narrative_cite_audit_per_file_mb": 1.76,
+      "narrative_cite_audit_size_observation": "Each audit dumps the full citation table — large per-file footprint. PROP-051 Workstream C's pruning policy keeps the last 7 files at full fidelity (12.3MB) and archives the rest to a JSONL of diffs (much smaller). Restoring git→FUSE after the prune lands gets us ~13MB on FUSE for this category. Without the prune first, we'd restore 35MB and resume hourly growth at 1.7MB × 24 files/day = 40MB/day, which is the trajectory that produced the 606MB pre-disaster size."
+    },
+    "cutoff_anchor_2026_05_17T14_20Z": {
+      "fuse_mtime_distribution": "All FUSE audit files in this category have mtime in a narrow band: 13:18Z (single batch sync) and 14:20Z (second batch sync). No FUSE writes happened to these directories after 14:20Z.",
+      "commit_log_around_cutoff": [
+        "2026-05-17T14:05:49Z — workspace-sync push (audit-1405Z, verify-1405Z, ws-runs-1405Z all to git)",
+        "2026-05-17T14:16:22Z — operator-direct: 'PROP-045 applied: workspace-sync anti-reversion guard'",
+        "2026-05-17T14:20:51Z — operator-direct: 'Tombstone 26 OBE escalate-to-analyst-* files'",
+        "2026-05-17T14:35:48Z — workspace-sync push (audit-1435Z to git, NOT to FUSE)"
+      ],
+      "interpretation": "The 14:20 batch of FUSE writes is consistent with an operator-direct `build.js publish` or `build.js sync-workspace` invocation around the PROP-045 apply or the tombstone commit (both operator-direct, run from operator's clone). After 14:20:51Z, no operator-direct commit ran sync-workspace, and decider's auto-build commits became infrequent (only 2 between 5/17 and 5/21). The result: 4 days of audit files stuck on git only."
+    },
+    "decider_publish_cadence_evidence": {
+      "auto_build_commits_since_2026_05_17": 2,
+      "commits": [
+        "2026-05-17T20:22:08Z (last decider build.js publish before the bug window)",
+        "2026-05-20T06:04:51Z (PROP-050 implementation by operator-direct + decider; not a routine publish)"
+      ],
+      "average_cadence_pre_bug": "Daily-or-better historically; the auto-build commits were the round-trip pump.",
+      "why_it_starved_specifically_this_window": "Decider was busy with revision-routed closures (status='blocked-on-curmudgeon') and self-apply through workspace-sync rather than build.js publish. The PROP-050 publish-path fallback work briefly engaged build.js publish (5/20) which restored a few hours of FUSE state. Then nothing again. Then disaster (5/21T02:11Z) → force-reset (5/21T05:13Z) → operator prune (5/21T05:23/25Z)."
+    }
+  },
+
+  "round_trip_diagnostic": {
+    "writers_of_the_affected_files": {
+      "narrative_cite_audit": {
+        "writer": "monitor/scripts/audit-narrative-citations.js",
+        "invoked_from": "workspace-sync.md Step 3.6b (line 729-735) — `node monitor/scripts/audit-narrative-citations.js`",
+        "writer_cwd": "workspace-sync's clone (${SESSION}/dome-sync-clone)",
+        "writer_path_logic": "Script line 401: `const reportPath = path.join('monitor/integrity', reportName);` — RELATIVE path, resolves against cwd. So it writes to `<clone>/monitor/integrity/narrative-cite-audit-*.json`.",
+        "fuse_visibility_path": "None directly. The file lands in clone. workspace-sync's Step 3.6 then does `git add monitor/integrity/` (line 732), commits in Step 4, pushes in Step 4b's second push. Push lands on origin/main. Clone is rm-rf'd in Step 5 (line 944). FUSE never receives a copy unless syncToWorkspace() runs subsequently."
+      },
+      "verify_pending_run": {
+        "writer": "monitor/scripts/verify-pending-state.js",
+        "invoked_from": "workspace-sync.md Step 3.6a (line 716-725)",
+        "writer_cwd": "workspace-sync's clone (same)",
+        "writer_path_logic": "Same pattern — relative path to monitor/integrity/. Same fate.",
+        "secondary_writer": "PROP-014 Mech 1 verifier is ALSO invoked from decider's clone in some flows per state-verification.md. Decider's clone DOES end with build.js publish (or sync-workspace via decider-patches-and-selfapply.md line 508), which IS the round-trip path. But when decider's flow ends without invoking that step (e.g., revision-routed, no patches applied), the file is stuck."
+      },
+      "workspace_sync_runs_report": {
+        "writer": "workspace-sync.md Step 4b inline node script (line 895-911) writing to `monitor/integrity/workspace-sync-runs/run-<ts>.json`",
+        "invoked_from": "Inside workspace-sync's clone, same shell",
+        "writer_path_logic": "Inline node: `fs.writeFileSync(out, ...)` where out=`monitor/integrity/workspace-sync-runs/run-...json` (relative). Same fate."
+      }
+    },
+    "actual_round_trip_mechanism": {
+      "name": "build.js syncToWorkspace() (PROP-010)",
+      "invocation_paths": [
+        "decider-patches-and-selfapply.md line 508: `node build.js sync-workspace || echo \"WARN: ...\"` — invoked after successful self-apply push, AFTER decider has done git pull → git push.",
+        "build.js publish (target) — invoked from operator-direct sessions when applying PROPs or bulk operator-side cleanup. Runs at end of publish flow (build.js line 445).",
+        "Manual operator invocation — `cd /tmp/edit-clone && node build.js sync-workspace`."
+      ],
+      "what_it_does": "Walks OWNERSHIP table in build.js. For category='append_only', calls walkAppendOnly(dir, '.json') which recursively walks <clone>/<dir>/ and copies any .json file that doesn't already exist on FUSE (line 377: `if (fs.existsSync(dst)) continue;`). monitor/integrity/ is classified 'append_only' (build.js line 177), so all the affected files ARE covered by this walker.",
+      "why_it_doesnt_fire_from_workspace_sync": "workspace-sync.md Rules line 932: 'Do NOT run `node build.js publish`, `node build.js pdf`, or `node test.js`.' (sync-workspace is NOT explicitly prohibited, but workspace-sync.md never invokes it.) The Rules section was written when sync-workspace was conceived as decider's post-push routine, not workspace-sync's. The bug surfaces when decider's cadence drops.",
+      "why_the_walker_only_copies_new_files": "Append-only safety: never overwrite an existing FUSE file. This is correct for the use case — once a file is on FUSE, it stays. Files that are PRUNED from git but still on FUSE keep their old content. (PROP-051 Workstream C pruning needs to delete from both sides to clean up; that's separate concern.)",
+      "step_by_step_for_the_typical_failing_audit_file": [
+        "T+0: workspace-sync runs hourly. Step 3.6b invokes audit script. Audit writes audit-2026-05-19T1405Z.json to clone.",
+        "T+1: workspace-sync commits and pushes (Step 4 + 4b). origin/main has the new file.",
+        "T+2: workspace-sync rm-rf's its clone (Step 5).",
+        "T+3..T+7200: no agent runs build.js publish OR build.js sync-workspace because decider is busy with revision-routed work that doesn't trigger publish.",
+        "T+7201: tinker runs, looks for fresh audit files on FUSE, finds the last one is 5/17T14:05Z. Stale by N days."
+      ]
+    }
+  },
+
+  "phase_1_design_the_fix": {
+    "objective": "Restore git→FUSE round-trip for clone-resident agent artifacts so tinker, integrity, and other FUSE-readers see fresh state within one workspace-sync cycle (≤1h) instead of relying on decider's publish cadence.",
+    "approach_chosen": "A — make the round-trip work by invoking the existing syncToWorkspace() walker at the end of every workspace-sync cycle.",
+    "approach_rejected": "B — change writer scripts to write directly to FUSE instead of clone. Rejected because: (1) three writers to change (audit-narrative-citations.js, verify-pending-state.js, workspace-sync.md inline run-report block), (2) introduces race conditions with workspace-sync's own FUSE→clone iteration in Step 2 (if a writer writes to FUSE mid-cycle, smart_copy might pick up a half-written file), (3) couples writer plumbing to a FUSE path that isn't always trivially available from a script's cwd, (4) the existing syncToWorkspace() walker already exists and is correct.",
+
+    "patch_p1_invoke_sync_workspace_at_end_of_workspace_sync": {
+      "purpose": "Hourly git→FUSE refresh, using the existing build.js sync-workspace target. Idempotent; only copies new files; respects OWNERSHIP table.",
+      "target_file": "monitor/prompts/workspace-sync.md",
+      "patch_location": "Inside Step 4b, immediately after the `rm -f \"$SKIP_LOG\"` line (currently line 921) and before the closing ``` of the code block.",
+      "old_string": "# Now safe to clean up the skip-log tmpfile (replaces the EXIT trap that was\n# removed because it fired across LLM bash sessions; see Operational Notes).\nrm -f \"$SKIP_LOG\"\n```\n\n### Step 5: Report",
+      "new_string": "# Now safe to clean up the skip-log tmpfile (replaces the EXIT trap that was\n# removed because it fired across LLM bash sessions; see Operational Notes).\nrm -f \"$SKIP_LOG\"\n\n# PROP-052 (2026-05-21): git→FUSE round-trip for clone-resident artifacts.\n#\n# Files written by scripts invoked from this clone (narrative-cite-audit-*,\n# verify-pending-run-*, workspace-sync-runs/run-*) reach git via the push\n# above, but they never reach FUSE unless another agent later runs\n# `node build.js publish` or `node build.js sync-workspace`. Historically\n# that was decider's post-self-apply routine (decider-patches-and-selfapply.md\n# line 508), but decider's cadence is variable: in low-publish windows, the\n# round-trip starves and FUSE goes stale.\n#\n# Observed gap: 2026-05-17T14:20Z → 2026-05-21T05:13Z (~4 days). 92 missing\n# workspace-sync-runs files, 85 missing verify-pending-run files, 20 missing\n# narrative-cite-audit files on FUSE. Tinker's soft-complaints grep reads\n# from FUSE and saw stale state for the whole window.\n#\n# Fix: invoke build.js sync-workspace here. Reuses PROP-010 plumbing.\n# Idempotent — the walker only copies files that don't already exist on\n# FUSE (build.js line 377: `if (fs.existsSync(dst)) continue;`). Non-blocking:\n# a failure here does NOT undo the push that just succeeded; logs a WARN and\n# proceeds. Sync-workspace is NOT a build, push, or test — it's a file-copy\n# walker, consistent with workspace-sync's read-only/file-mover charter.\n#\n# Prerequisite: PROP-051 Workstream C (monitor/integrity pruning) must land\n# first or concurrently. Without pruning, this fix repopulates FUSE with the\n# historical audit-file accumulation (~36MB at current state, growing at\n# ~40MB/day) — exactly the bloat that triggered the 2026-05-21 disaster.\n# With pruning in place, FUSE restores to the (small) pruned-git state and\n# stays there.\nif [ -f build.js ]; then\n  node build.js sync-workspace 2>&1 | tail -5 || echo \"[workspace-sync] WARN: build.js sync-workspace failed; tinker may not see fresh audit files until next decider publish.\"\nfi\n```\n\n### Step 5: Report",
+      "verification_pattern": "grep -q 'PROP-052 (2026-05-21): git→FUSE round-trip' monitor/prompts/workspace-sync.md && grep -q 'node build.js sync-workspace' monitor/prompts/workspace-sync.md",
+      "reachability_argument": "The patch sits inside Step 4b's code block, AFTER `rm -f \"$SKIP_LOG\"`. By the time we reach it, all PROP-051 safety gates have already fired or passed: disk-pressure pre-flight (A2) already gated the clone, working-tree size check (A3) already gated smart_copy, delete-sanity gate (A4) already gated the main commit. The push has already happened. We're at the cleanup phase. The new `node build.js sync-workspace` invocation is read-only against git (no commit, no push) and write-only against FUSE (via the walker). Failure modes: (1) build.js absent (script wraps in `[ -f build.js ]` test), (2) syncToWorkspace fails to find workspace (warns, exits 0), (3) walker errors out mid-walk (caught by `|| echo WARN`). None of these break workspace-sync's commit-and-push that already succeeded."
+    },
+
+    "patch_p2_update_workspace_sync_rules_to_allow_sync_workspace": {
+      "purpose": "Update Rules section to explicitly permit `node build.js sync-workspace` (in addition to the existing `node build.js html`). The current Rules text only prohibits publish/pdf/test — sync-workspace was never explicitly addressed. Adding clarity prevents future LLM confusion about whether the new step is permitted.",
+      "target_file": "monitor/prompts/workspace-sync.md",
+      "patch_location": "Inside the Rules section, replace the existing exception clause for `node build.js html` with a slightly expanded version that also covers sync-workspace.",
+      "old_string": "- **Do NOT run `node build.js publish`, `node build.js pdf`, or `node test.js`.** Those are reserved for the decider. You MAY run `node build.js html` when source data has been staged (see Step 3) — that target only regenerates `docs/index.html` from the data files, no git ops, no PDF, no tests, no commits.",
+      "new_string": "- **Do NOT run `node build.js publish`, `node build.js pdf`, or `node test.js`.** Those are reserved for the decider. You MAY run `node build.js html` when source data has been staged (see Step 3) — that target only regenerates `docs/index.html` from the data files, no git ops, no PDF, no tests, no commits. You MAY also run `node build.js sync-workspace` at end-of-cycle (Step 4b) — that target only copies files from clone to FUSE per the OWNERSHIP table, no git ops, no build, no commits (PROP-052, 2026-05-21).",
+      "verification_pattern": "grep -q 'You MAY also run .node build.js sync-workspace' monitor/prompts/workspace-sync.md"
+    },
+
+    "companion_edits": {
+      "claude_md_addition": {
+        "target_file": "CLAUDE.md",
+        "patch_location": "Add a note under the File Ownership Rules section explaining the round-trip refresh mechanism. Suggested text: 'workspace-sync.md (workspace-sync agent prompt) invokes `node build.js sync-workspace` at end of every hourly cycle (PROP-052, 2026-05-21). This calls syncToWorkspace() in build.js which walks the OWNERSHIP table and copies any clone-only files (notably monitor/integrity/narrative-cite-audit-*, verify-pending-run-*, workspace-sync-runs/run-*) into FUSE. The walker is append-only-safe (never overwrites existing FUSE files). Failures are non-blocking and logged as WARN.'",
+        "rationale": "Captures the round-trip semantic in the canonical project doc so future agents and operator can find it. The existing universal-pusher note explains FUSE→git; this note explains the reciprocal git→FUSE."
+      },
+      "build_js_no_changes": "No build.js changes needed. syncToWorkspace() is the existing PROP-010 target; we are reusing it without modification."
+    },
+
+    "no_changes_to_writer_scripts": "Per directive constraint ('Do NOT redesign the audit-narrative-citations.js script's WHAT'), audit-narrative-citations.js, verify-pending-state.js, and workspace-sync.md's inline run-report block all keep their cwd-relative write paths. The fix is exclusively at the syncToWorkspace() invocation site."
+  },
+
+  "sequencing_with_other_directives": {
+    "summary": "PROP-051 Workstream A must land before workspace-sync is unpaused at all. PROP-051 Workstream C (pruning) must land before this PROP-052 is applied (or concurrently in the same operator-push). If applied in the wrong order, this PROP would balloon FUSE with historical audit-file accumulation and re-create the disk-pressure conditions that caused the disaster.",
+    "step_by_step_safe_ordering": [
+      "Step 1: Apply PROP-051 Workstream A patches (workspace-sync.md safety gates A1-A4 + B1-B3). Run PROP-051's operator unpause checklist. Workspace-sync is now safe to unpause but still paused.",
+      "Step 2: Apply PROP-051 Workstream C (monitor/integrity pruning script + first prune run). monitor/integrity drops to ~13MB (from current 38.6MB).",
+      "Step 3: Apply PROP-052 patches P1 and P2 (this proposal). workspace-sync.md now invokes `node build.js sync-workspace` at end of every cycle.",
+      "Step 4: Unpause workspace-sync. First post-unpause cycle: workspace-sync pulls fresh, pushes any FUSE-pending writes, runs sync-workspace at end. FUSE receives the pruned-state audit files (~13MB total, 7 narrative-cite-audit + 168 verify-pending-run + 360 workspace-sync-runs + 90 report-daily — small footprint).",
+      "Step 5: Subsequent cycles: workspace-sync pushes new audit files, sync-workspace round-trips them. FUSE stays current within 1h of any new git state. Tinker's soft-complaints grep sees fresh artifacts."
+    ],
+    "what_could_go_wrong_if_sequenced_incorrectly": {
+      "case_apply_p052_before_p051_workstream_a": "Workspace-sync would still be vulnerable to the no-checkout-clone disaster. PROP-052's syncToWorkspace() at end-of-cycle would not fire because the disaster commit precedes Step 4b. Operator would see continued mass-delete risk with no benefit from PROP-052. Don't do this.",
+      "case_apply_p052_before_p051_workstream_c_pruning": "FUSE balloons. At current git state (38.6MB monitor/integrity), restoring all to FUSE adds ~36MB to FUSE working-tree size in one cycle. At pre-disaster git state (~606MB cited), restoring would balloon FUSE by ~600MB — exactly the size class that triggered the original disaster's no-checkout improvisation. The pruning fix MUST land first.",
+      "case_apply_both_concurrently": "Acceptable. If PROP-051 Workstream C and PROP-052 are in the same operator-push, the prune script runs first (or at least before workspace-sync's next cycle), then sync-workspace pulls from pruned-git, FUSE restores to the small pruned state. Equivalent to sequential apply with one fewer wait."
+    },
+    "explicit_non_conflicts_with_prop_051": [
+      "PROP-051 Patch A1 (Degraded-mode prohibitions, ~line 5) — adds a new section before Step 1. PROP-052 patches edit Step 4b (~line 921) and Rules (~line 932). Non-overlapping line ranges.",
+      "PROP-051 Patch A2 (disk-pressure pre-flight, ~line 18) — inside Step 1 setup. Different line range.",
+      "PROP-051 Patch A3 (working-tree size check, ~line 28) — inside Step 1 after cd \"$CLONE\". Different line range.",
+      "PROP-051 Patch A4 (delete-sanity gate, ~line 826) — new Step 3.7 inside Step 3.6 cleanup. Different line range; PROP-052 Step 4b sits AFTER A4 in the procedure flow.",
+      "PROP-051 Patches B1/B2/B3 — all in Step 1 setup. Different line range.",
+      "PROP-051 Workstream C — adds NEW file monitor/scripts/prune-integrity.js plus a separate scheduled task or daily invocation. Does NOT edit workspace-sync.md at all. Zero conflict.",
+      "Conclusion: PROP-052's two patches (P1 and P2) sit in regions of workspace-sync.md that PROP-051 does not touch. The two PROPs can be applied in either order with no merge conflict on workspace-sync.md content. The sequencing concern is operational (don't restore FUSE before pruning git), not textual."
+    ]
+  },
+
+  "counter_arguments_addressed": {
+    "q_a_intentional_clone_only": {
+      "the_objection": "What if FUSE-vs-git audit count is intentional — i.e., the audit script INTENDS to write to clone-only and any git copies are a bug elsewhere?",
+      "the_response": "Disproven by two independent lines of evidence: (1) state-verification.md line 139 explicitly says `audit-narrative-citations.js` 'Writes monitor/integrity/narrative-cite-audit-<ts>.json with per-file pass/fail counts' — the file is the script's intended persistent output and pretty obviously meant to be on git (it's append-only artifact for trend analysis). (2) Historically the file DID round-trip to FUSE pre-2026-05-17T14:20Z — the FUSE working directory contained ~338 audit files spanning 5/2 → 5/17 before today's operator prune (per the original directive). The intentional state is 'on both git and FUSE,' with workspace-sync.md's cleanup of the clone meaning git is the persistent home and FUSE is the local-readable cache.",
+      "additional_consideration": "Tinker's soft-complaints grep (per tinker-infrastructure.md lines 77 and 86) explicitly reads from FUSE paths `monitor/integrity/workspace-sync-runs/*.json` and `monitor/integrity/report-*.json`. Tinker expects FUSE-presence. If FUSE-presence were not intentional, tinker's reading pattern itself is a documented bug — which it isn't."
+    },
+    "q_b_round_trip_already_works_stale_fuse_ls": {
+      "the_objection": "What if the round-trip already works and operator's FUSE listing was just stale (caching, FUSE bug)?",
+      "the_response": "Refuted by fresh measurement at 2026-05-21T05:45Z: 23 narrative-cite-audit files on FUSE (all 2026-05-17 dates), 20 on git (all 2026-05-20 dates), ZERO overlap. Fresh `find monitor/integrity -name 'narrative-cite-audit-*.json'` shows the same. FUSE mtime distribution clusters at 14:20Z (May 17 batch sync) — every file in the class has that mtime. The cutoff is real, not a caching artifact.",
+      "stronger_evidence": "workspace-sync-runs and verify-pending-run categories show the same cutoff (last FUSE entry 2026-05-17T14:05Z, git extends to 2026-05-20T22:05Z). Three independently-written file classes all stop at the same FUSE timestamp. That's not stale ls — that's the syncToWorkspace() walker not firing."
+    },
+    "q_c_recreate_720mb_bloat": {
+      "the_objection": "If we add a sync_glob entry to restore audit files to FUSE, do we re-create the 720MB bloat that just blew up the system?",
+      "the_response": "YES if applied before pruning. NO if applied after. The fix is explicitly sequenced: PROP-051 Workstream C pruning lands first, then PROP-052 syncs the post-prune (small) git state to FUSE. Per PROP-051's phase_3_design_integrity_pruning section, post-prune monitor/integrity total estimated at ~18MB (down from peak 606MB). Restoring 18MB to FUSE is fine; restoring 606MB is the disaster.",
+      "operational_safeguard": "The fix includes an explicit `[ -f build.js ]` guard so if PROP-051 / PROP-052 are applied in an order that breaks build.js, the sync-workspace step quietly no-ops instead of erroring out. The `|| echo WARN` suffix on the node invocation ensures failure is non-blocking. The push that just succeeded is not rolled back.",
+      "additional_safeguard_inherent_to_syncToWorkspace": "The walker uses `if (fs.existsSync(dst)) continue;` (build.js line 377). So if pruning ever races (git drops a file before FUSE catches up), the walker doesn't restore it from a stale clone state. The clone reflects current git tree (just pulled in Step 1), so what's in clone IS the current authoritative state. If the file's not in clone, walker doesn't push it to FUSE."
+    },
+    "q_d_other_unknown_categories": {
+      "the_objection": "Are there other audit-file categories that we don't even know exist on git but not FUSE?",
+      "the_response": "Diagnostic broadened to all monitor/ subdirectories. Bucket-level FUSE vs git comparison (all .json files recursively):",
+      "diagnostic_table": {
+        "monitor/integrity": "FUSE 975 / Git 1147 / git-only +172 (worst — narrative-cite-audit + workspace-sync-runs + verify-pending-run combined)",
+        "monitor/integrity/workspace-sync-runs": "FUSE 465 / Git 556 / git-only +91 (within the +172 above)",
+        "monitor/tinker": "FUSE 218 / Git 214 / FUSE-only +4 (FUSE has 4 unpushed; will be pushed by next workspace-sync FUSE→git cycle — different bug class)",
+        "monitor/decisions": "FUSE 866 / Git 860 / FUSE-only +6 (same)",
+        "monitor/decisions/applied-patches": "FUSE 262 / Git 256 / FUSE-only +6 (same — decider just wrote these to FUSE, awaiting next workspace-sync push)",
+        "monitor/analyst": "FUSE 1162 / Git 1141 / FUSE-only +21 (same — analyst-baby writes pending)",
+        "monitor/curmudgeon": "FUSE 597 / Git 596 / FUSE-only +1",
+        "monitor/changes": "FUSE 122 / Git 122 / match",
+        "monitor/social": "FUSE 54 / Git 54 / match",
+        "monitor/sloppytoppy": "FUSE 11 / Git 11 / match",
+        "monitor/tinker/operator-directives": "FUSE 54 / Git 54 / match"
+      },
+      "the_finding": "The git→FUSE bug is concentrated in monitor/integrity/ (specifically workspace-sync-runs and verify-pending-run subdirs, plus narrative-cite-audit). All other monitor/ subdirs are either balanced or have small FUSE-only excesses (the inverse direction — file just written by FUSE-side agent, waiting for next workspace-sync push to git). No other category exhibits the git-only-then-FUSE-empty pattern.",
+      "why_those_three_and_not_others": "Those three categories are the ONLY ones whose writers run from inside a clone (workspace-sync's clone) AND don't have a matching round-trip mechanism in the same clone's exit path. Files written by curmudgeon (from its own clone) get round-tripped by decider's downstream `build.js sync-workspace` after curmudgeon-triggered patches. Files written by decider get either committed via build.js publish (which runs syncToWorkspace inline) or via direct git ops with explicit `build.js sync-workspace` follow-up. The workspace-sync-resident writers are the orphaned class because workspace-sync.md never invoked syncToWorkspace. This PROP fixes precisely that orphan path."
+    },
+    "q_e_sync_workspace_invoked_from_wrong_clone": {
+      "the_objection_added_during_diagnostic": "build.js syncToWorkspace() auto-detects the FUSE workspace by parsing `process.cwd()` for `/sessions/<session>/`. Workspace-sync runs from its own clone (`${SESSION}/dome-sync-clone`). Will syncToWorkspace correctly find the right `${SESSION}/mnt/dome-model-review` workspace?",
+      "the_response": "Yes. workspace-sync's clone path is constructed as `${SESSION}/dome-sync-clone` where `SESSION=$(pwd | grep -oP '/sessions/[^/]+')`. So `cwd` during workspace-sync's clone-side execution always matches `/sessions/<the-same-session>/.+`. build.js syncToWorkspace() at line 333 does `(process.cwd().match(/\\/sessions\\/([^/]+)/) || [])[1]` — extracts the same `<session>`. Then constructs `/sessions/<session>/mnt/dome-model-review` as workspace. If that exists, it's used. The current FUSE workspace is exactly that path. Verified by inspection.",
+      "fallback_path": "If the primary match fails (unlikely), build.js falls back to scanning `/sessions/*/mnt/dome-model-review` for any accessible path (build.js line 339-345). Robust under session changes."
+    },
+    "q_f_what_about_pruning_concurrent_with_sync_workspace": {
+      "the_objection_added_during_diagnostic": "If PROP-051 Workstream C prune-integrity.js runs concurrently with workspace-sync's new sync-workspace step (both modify monitor/integrity/), what happens?",
+      "the_response": "Two scenarios. (1) prune-integrity.js runs as a separate scheduled task at a fixed time (e.g., 09:00 UTC per PROP-051 phase_3 implementation.invocation recommendation). If workspace-sync's hourly run lands at 09:00, there's a possible overlap. Pruning runs in its own clone and deletes from there. workspace-sync runs in its own clone and adds. The two clones are independent; their pushes will race on origin/main and one will get `git push` rejected with 'non-fast-forward,' then rebase, then succeed. After both succeed, origin/main has the union (workspace-sync's adds) minus (pruning's deletes). The sync-workspace walker on workspace-sync's side then copies whatever's in its post-rebase clone to FUSE. (2) If both happen to push something concurrently, the second to push has to pull-rebase first, which means it sees the other's changes. In all cases, eventual consistency: FUSE will reflect the post-prune post-add state within at most 2 hourly cycles.",
+      "no_acute_failure_mode": "Even worst-case race results in FUSE being one cycle stale — the same drift tolerance the operator already accepts for workspace-sync's 1h cadence. No data is corrupted. No file is incorrectly deleted."
+    }
+  },
+
+  "operator_apply_steps": {
+    "summary": "Two patches to monitor/prompts/workspace-sync.md plus one optional CLAUDE.md note. ~10 minutes total work in an operator-side clone with direct push.",
+    "ordering_with_prop_051": "Apply PROP-051 Workstream A first, then PROP-051 Workstream C (or wait for first prune-integrity.js run), THEN apply this PROP-052.",
+    "steps": [
+      {
+        "step": 1,
+        "label": "Apply patch P1 (invoke sync-workspace at end of workspace-sync)",
+        "command": "Edit monitor/prompts/workspace-sync.md per the old_string/new_string in phase_1_design.patch_p1_invoke_sync_workspace_at_end_of_workspace_sync above.",
+        "verify": "grep -q 'PROP-052 (2026-05-21): git→FUSE round-trip' monitor/prompts/workspace-sync.md"
+      },
+      {
+        "step": 2,
+        "label": "Apply patch P2 (update Rules section)",
+        "command": "Edit monitor/prompts/workspace-sync.md per the old_string/new_string in phase_1_design.patch_p2_update_workspace_sync_rules_to_allow_sync_workspace above.",
+        "verify": "grep -q 'You MAY also run .node build.js sync-workspace' monitor/prompts/workspace-sync.md"
+      },
+      {
+        "step": 3,
+        "label": "Optional: add CLAUDE.md note (companion_edits.claude_md_addition)",
+        "command": "Edit CLAUDE.md per the patch_location and suggested text above.",
+        "verify": "grep -q 'PROP-052' CLAUDE.md"
+      },
+      {
+        "step": 4,
+        "label": "Commit and push",
+        "command": "git add monitor/prompts/workspace-sync.md CLAUDE.md && git commit -m 'Apply PROP-052: git→FUSE round-trip for clone-resident audit artifacts' && git push origin main",
+        "verify": "git log -1 --stat shows the two files modified"
+      },
+      {
+        "step": 5,
+        "label": "Wait for first post-PROP-052 workspace-sync cycle",
+        "command": "Within 1h of unpause, workspace-sync runs. Tail its run report: ls -lat monitor/integrity/workspace-sync-runs/ | head",
+        "pass_condition": "First post-patch run-*.json shows the run completed normally. agent_notes does not contain 'sync-workspace failed' or 'WARN'."
+      },
+      {
+        "step": 6,
+        "label": "Verify round-trip is working",
+        "command": "Find a new audit file on git (per GitHub web UI, e.g. last 'workspace-sync run report' commit). Then on FUSE: ls monitor/integrity/narrative-cite-audit-*.json | tail -3",
+        "pass_condition": "FUSE listing contains audit files dated AFTER the patch landed. No more 5/17 cutoff."
+      }
+    ]
+  },
+
+  "no_self_apply_disclaimer": {
+    "text": "Per DIRECTIVE-20260521-002 scope_authority: 'Tinker does NOT self-apply.' This PROP is design-only. Operator + cowork-claude review and apply.",
+    "additional_note": "Tinker did NOT make a git clone during this diagnostic run, per directive constraint ('Do NOT make full clones during this diagnostic run (disk still recovering from disaster)'). All evidence was gathered via GitHub Tree API + FUSE listings."
+  },
+
+  "side_observations_not_in_scope": [
+    "DIRECTIVE-20260521-001 / PROP-051 already addresses workspace-sync.md mass-delete safety. PROP-052 sits orthogonally — different code section, different concern. Both can apply.",
+    "monitor/decisions/open-issues.json continues to be JSON-corrupt at byte 45760 per the PROP-051 side_observations_not_in_scope notes. This blocks tinker's PROP-030 backlog-trend pre-flight from running cleanly. The corruption is a separate decider-side bug (FUSE-only degraded mode wrote partial JSON), not relevant to this PROP. Operator may want to file a third directive specifically for this.",
+    "Tinker pre-flight backlog-trend computation (PROP-030) skipped this run for the same reason as PROP-051's note — open-issues.json unparseable.",
+    "After PROP-051+PROP-052 both apply, the round-trip refresh becomes hourly (workspace-sync's cadence) instead of irregular (decider's cadence). This is strictly an improvement for FUSE-readers' freshness expectations. No FUSE-reader currently depends on the irregular cadence as a feature.",
+    "If sync-workspace ever fails persistently (network, FUSE mount drop, build.js bug), the fallback is unchanged from today: decider's post-self-apply sync-workspace call still works. The PROP adds a backup invocation; it doesn't replace the existing one."
+  ]
+}
