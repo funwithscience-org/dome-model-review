@@ -1,0 +1,62 @@
+{
+  "directive_id": "DIRECTIVE-20260524-001",
+  "title": "Fix prune-integrity.js retention_days policies: filename-timestamp parse instead of file mtime (mtime = clone time in fresh-clone execution). Today's evidence: 570 workspace-sync-runs + 433 verify-pending-run + 94 push-failure + 52 report-daily files all report eligible=0 in 2026-05-24 09:05 scheduled run despite many being 14-30+ days old by filename.",
+  "filed_by": "operator-via-cowork-claude",
+  "filed_at": "2026-05-24T08:15:00Z",
+  "issued_at": "2026-05-24T08:15:00Z",
+  "status": "pending",
+  "priority": "medium",
+  "scope_authority": "Author PROP-NNN with concrete patch + counter-arguments. Operator + cowork-claude apply. Tinker does NOT self-apply (consistent with DIRECTIVE-20260520-001 pattern).",
+  "bug_summary": {
+    "pattern": "monitor/scripts/prune-integrity.js uses fs.statSync().mtimeMs to determine which files are eligible for the retention_days policy. The script runs from a fresh `git clone` (the scheduled task path), and `git checkout` sets every checked-out file's mtime to the clone time. Result: every file looks 0 seconds old to the script, so retention_days never expires anything. Only the keep_last_n policy (narrative-cite-audit) works because it doesn't depend on mtime.",
+    "evidence_today": {
+      "scheduled_run": "dome-prune-integrity 2026-05-24 09:05 UTC (commit d5df4f9, 'prune-integrity: archive+delete 2026-05-24 — 33 sources removed, archives appended')",
+      "what_pruned": "33 narrative-cite-audit files (~56 MB git history saved) via keep_last_n=7 policy",
+      "what_DIDN'T_prune": "570 workspace-sync-runs files (retention_days=30, oldest at 2026-04-26 = 28 days old by filename), 433 verify-pending-run files (retention_days=14, oldest at 2026-05-02 = 22 days), 94 push-failure files (retention_days=14), 52 report-daily files (retention_days=90, may legitimately be 0 if project history is <90 days)",
+      "expected_eligible_count_if_fix_lands": "~700 of the ~1149 retention-policy files (estimate; depends on exact age distribution)",
+      "direct_mtime_proof": "$ stat -c '%y %n' monitor/integrity/verify-pending-run-2026-05-02T0813Z.json monitor/integrity/verify-pending-run-2026-05-23T2306Z.json — both show identical mtime '2026-05-24 07:12:08' (the clone time). Filename embeds the real timestamp; mtime is meaningless in a fresh clone."
+    },
+    "why_not_caught_earlier": "prune-integrity.js was authored 2026-05-23 as part of PROP-051 Workstream C and ran for the first time same day. The kickoff run (2026-05-23 17:53 UTC) pruned narrative-cite-audit (the keep_last_n policy working correctly) and the operator interpreted the 'pruned 33 sources' message as healthy execution. The mtime-vs-filename bug only becomes visible when you re-run dry-run from the cwd and observe matched>>eligible for the retention_days policies."
+  },
+  "operator_preferences_for_proposal": [
+    "Single PROP — this is one focused bug fix, not a multi-workstream redesign",
+    "Counter-arguments mandatory (see tasks_for_tinker.task_4)",
+    "Phased rollout in the PROP itself: dry-run with current logic → dry-run with fixed logic → apply with --max-archive-per-policy <N> safety cap → full apply. A bulk prune of ~700 files in one commit would write large archive jsonls; the safety cap prevents an unbounded blast radius if the new logic has an edge case the dry-run didn't surface",
+    "Add a `keep_last_n` belt-and-suspenders to every retention_days policy (e.g., 'retention_days=30 OR keep_last_n=20, whichever keeps MORE files'). This means even if the timestamp parse fails or returns a garbage value, you can't prune below a sane floor. Saves us from a future variant of the workspace-sync mass-delete failure mode",
+    "Operator preference for direct apply after PROP review — no shadow-mode rollout. Today's manual dry-run-comparison proves the bug is mechanical; rollout risk is bounded by the safety cap + keep_last_n floor"
+  ],
+  "tasks_for_tinker": [
+    {
+      "task_id": "task_1_locate_eligibility_function",
+      "description": "Find the eligibility computation in monitor/scripts/prune-integrity.js. Identify exactly where retention_days converts mtime to age. Confirm the keep_last_n branch is independent (so the fix doesn't touch it).",
+      "deliverable": "exact file + line range for the eligibility filter (current code is around lines 118-133 based on read this session: `st = fs.statSync(full); out.push({ name, full, mtimeMs: st.mtimeMs, ... }); ... if (policy.retention_days != null) { const cutoff = NOW - policy.retention_days * DAY_MS; return matches.filter(m => m.mtimeMs < cutoff); }`)"
+    },
+    {
+      "task_id": "task_2_design_filename_timestamp_parser",
+      "description": "Design a small parseFilenameTimestamp(name) helper that extracts the embedded ISO timestamp from filenames matching any of the 5 known patterns. Patterns observed today: `run-2026-04-26T17-05-12Z.json` (workspace-sync-runs), `verify-pending-run-2026-05-02T0813Z.json`, `narrative-cite-audit-2026-05-24T0605Z.json`, `push-failure-2026-05-19T2124Z.json` or `push-failure-20260510T105625.json` (mixed: both dashed and undashed exist in monitor/integrity/ today — handle both), `report-2026-05-24T05-45.json`. Fall back to mtime if no parse match. Make the fallback explicit and log-friendly (verbose flag should print the parse path used).",
+      "deliverable": "phase_1_design.helper_function with: (a) the parseFilenameTimestamp(name) function body, (b) test inputs covering all 5 patterns plus the dashed/undashed push-failure variant, (c) a single-line change to use parsed_ts || st.mtimeMs in the eligibility check"
+    },
+    {
+      "task_id": "task_3_design_safety_floor",
+      "description": "Add `keep_last_n` as a belt-and-suspenders floor on every policy. Existing keep_last_n=7 stays; new floors: workspace-sync-runs keep_last_n=50, verify-pending-run keep_last_n=20, push-failure keep_last_n=20, report-daily keep_last_n=30. Logic: a file is eligible for prune ONLY IF (retention_days expired AND it's not in the newest keep_last_n by parsed_timestamp). This guarantees the policy never prunes below a sane floor regardless of bugs upstream.",
+      "deliverable": "phase_2_design with the updated policies block and the modified eligibility predicate"
+    },
+    {
+      "task_id": "task_4_counter_arguments",
+      "description": "Mandatory adversarial analysis. At minimum address: (a) what if the filename parse picks up a non-timestamp ISO-looking string (e.g. EXP-NNN inside a filename) — the regex needs to be anchored to the agent-name prefix to avoid false matches; (b) what if the parsed timestamp is FUTURE (clock skew or test data) — the eligibility check treats future as 'not yet eligible' which is correct, but worth confirming; (c) why not just preserve mtime at clone-time via git config core.fileMode or a post-checkout hook — discuss why filename parse is more robust (clones are transient, hooks are per-clone config, filenames are durable); (d) is there a deeper issue that the script should write the archive at a known atomic boundary (e.g. fsync the archive jsonl before deleting sources) — addressed today by the existing 'archive first, then delete' code path but worth a one-paragraph confirmation",
+      "deliverable": "phase_3_design.counterarguments block with these 4 points addressed"
+    },
+    {
+      "task_id": "task_5_disk_impact_estimate",
+      "description": "Estimate the disk-pressure relief after the fix lands and the first full prune runs. Use the current file counts (570 + 433 + 94 + 52 from today's dry-run) and the keep_last_n floors. Express both in (a) file count removed and (b) approx MB reclaimed.",
+      "deliverable": "phase_4_design.impact_estimate with explicit numbers"
+    }
+  ],
+  "related_proposals": ["PROP-051"],
+  "related_props_authored_today": ["PROP-053"],
+  "out_of_scope": [
+    "Replacing the entire prune pipeline with a different mechanism (e.g., a separate archive repo, or git filter-branch on the integrity dir). The current pattern is correct; just the eligibility logic is broken.",
+    "Adding a workspace-sync-side cleanup of /sessions/.../mnt/dome-model-review/monitor/integrity/ on FUSE. FUSE doesn't allow unlink(), and the git path is the canonical writer here."
+  ],
+  "operator_notes": "This was identified during the 2026-05-24 morning audit when prune-integrity's scheduled run (commit d5df4f9, 08:07 UTC) reported 'matched=570 eligible=0' for workspace-sync-runs and similar for the other retention_days policies. The 56 MB savings today were entirely from narrative-cite-audit (keep_last_n=7 policy, which works correctly). The bug is well-bounded and the fix is mechanical."
+}
