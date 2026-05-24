@@ -1,0 +1,228 @@
+{
+  "id": "PROP-054",
+  "title": "prune-integrity.js: parse filename-embedded timestamps instead of fs.statSync().mtimeMs (clone-time mtime defeats every retention_days policy); add keep_last_n safety floor to all policies",
+  "authored_by": "tinker",
+  "authored_by_run": "tinker-2026-05-24T08-26",
+  "authored_at": "2026-05-24T08:26:00Z",
+  "status": "pending-operator-review",
+  "priority": "medium",
+  "directive_id": "DIRECTIVE-20260524-001",
+  "scope_authority": "Per directive: Author PROP-NNN with concrete patch + counter-arguments. Operator + cowork-claude apply. Tinker does NOT self-apply (consistent with DIRECTIVE-20260520-001 pattern).",
+  "related_directives": {
+    "DIRECTIVE-20260524-001": "this PROP's source directive — prune-integrity.js retention_days policies report eligible=0 because mtime=clone-time in fresh-clone execution"
+  },
+  "related_props": {
+    "PROP-051": "Workstream C of PROP-051 authored prune-integrity.js on 2026-05-23 with the mtime-based eligibility logic; this PROP corrects the eligibility predicate without changing any other PROP-051 design decision (archive format, policy categories, archive-before-delete order, single-writer model all unchanged).",
+    "PROP-052": "audit-files round-trip — unrelated, but the recurring theme is 'cron jobs that run from a fresh clone need to be filename-aware, not mtime-aware' — this PROP is a concrete instance of that pattern."
+  },
+  "executive_summary": {
+    "problem_one_line": "prune-integrity.js calls fs.statSync(file).mtimeMs to compute age, but the script runs from a fresh `git clone`, which sets every checked-out file's mtime to the clone time. Result: every file appears 0 seconds old, every `retention_days` policy is effectively `retention_days=infinity`, and 1,149+ files in monitor/integrity/ accumulate forever.",
+    "fix_one_line": "Add a `parseFilenameTimestamp(name)` helper that extracts the embedded ISO timestamp from filenames (5 known patterns, with falls-back-to-mtime sentinel). Use parsed_ts in the eligibility predicate. Add a `keep_last_n` safety floor to every retention_days policy as belt-and-suspenders against future parse regressions.",
+    "blast_radius_one_line": "Today: ~249 files eligible after the fix (175 verify-pending-run, 74 push-failure; ~0.22 MB reclaimable on this first apply). Steady-state: workspace-sync-runs starts pruning ~2 days from now as the oldest crosses the 30-day threshold; report-daily starts ~42 days from now. The first apply is small; the ongoing prune is what keeps the directory bounded.",
+    "directive_estimate_reconciliation": "The directive's '~700 eligible after fix' figure was a generous estimate. Empirical re-measurement against the actual file ages (this PROP) gives ~249 today. The discrepancy: the directive assumed all 570 workspace-sync-runs files were past the 30-day cutoff, but the oldest is only 27.6 days. Two days from now, ~570 workspace-sync-runs files will enter the eligible set as their parsed timestamps cross retention_days=30, and the daily prune will hit steady state. The directional finding (today's eligible >> 0) is correct; the magnitude was overestimated."
+  },
+  "problem_detail": {
+    "code_location": "monitor/scripts/prune-integrity.js, lines 110-117 (`listMatches`) and 119-128 (`eligibleForArchive`). `listMatches` records `mtimeMs: st.mtimeMs`. `eligibleForArchive` filters: `return matches.filter(m => m.mtimeMs < cutoff);` where `cutoff = NOW - retention_days * DAY_MS`.",
+    "root_cause": "When the scheduled task runs `git clone` followed by `node monitor/scripts/prune-integrity.js --apply`, every checked-out file's mtime is the clone time (git's checkout default). `st.mtimeMs` therefore equals NOW for every file, so `NOW - st.mtimeMs ≈ 0` and the retention_days predicate is always false.",
+    "direct_evidence": {
+      "stat_output_workspace_sync_runs_oldest_and_newest": "2026-05-24 06:12:08.138 monitor/integrity/workspace-sync-runs/run-2026-04-26T17-05-12Z.json (filename says 2026-04-26)\n2026-05-24 06:12:08.144 monitor/integrity/workspace-sync-runs/run-2026-05-24T06-06-29Z.json (filename says 2026-05-24)\nBoth mtimes are identical (the clone time). Filenames embed the real timestamps and differ by ~28 days.",
+      "scheduled_run_evidence": "dome-prune-integrity 2026-05-24T09:05Z run (commit d5df4f9) output: '[workspace-sync-runs] matched=570 eligible=0' / '[verify-pending-run] matched=433 eligible=0' / '[push-failure] matched=94 eligible=0' / '[report-daily] matched=52 eligible=0'. Only narrative-cite-audit (keep_last_n=7 policy, mtime-independent) actually pruned (33 files / ~56 MB)."
+    },
+    "why_not_caught_earlier": "prune-integrity.js was authored 2026-05-23 as part of PROP-051 Workstream C and first ran the same day. The initial run reported '33 sources removed' (narrative-cite-audit) which is correct for the keep_last_n path. The mtime defect is invisible from the success line — you have to compare `matched` vs `eligible` per category to notice that 4 of 5 categories never advance. The 2026-05-24 morning audit by operator-via-cowork-claude caught it on the second scheduled run.",
+    "current_file_inventory_2026_05_24T08_30Z": {
+      "workspace-sync-runs": {"count": 570, "oldest_filename": "run-2026-04-26T17-05-12Z.json", "oldest_age_days": 27.6, "retention_days": 30, "eligible_today": 0, "eligible_in_2_days_estimate": 570},
+      "verify-pending-run": {"count": 433, "oldest_filename": "verify-pending-run-2026-05-02T0813Z.json", "oldest_age_days": 22.0, "retention_days": 14, "eligible_today": 175},
+      "push-failure": {"count": 94, "oldest_filename": "push-failure-2026-04-25T17-28.json", "oldest_age_days": 28.6, "retention_days": 14, "eligible_today": 74},
+      "report-daily": {"count": 52, "oldest_filename": "report-2026-04-06.json", "oldest_age_days": 48.4, "retention_days": 90, "eligible_today": 0, "eligible_in_42_days_estimate": 52},
+      "narrative-cite-audit": {"count": 7, "policy": "keep_last_n=7 (working correctly today)", "eligible_today": 0}
+    }
+  },
+  "phase_1_design": {
+    "task_ref": "task_2_design_filename_timestamp_parser",
+    "objective": "Extract embedded ISO timestamp from any filename in the 5 known categories (workspace-sync-runs / verify-pending-run / narrative-cite-audit / push-failure / report-daily). Fall back to mtime when no pattern matches, with a verbose-log marker that explicitly states the fallback path so future audits can see when the parser missed a filename shape.",
+    "helper_function": {
+      "language": "JavaScript (Node.js, no new dependencies)",
+      "location": "monitor/scripts/prune-integrity.js (top-of-file helper, before policies block)",
+      "code": "function parseFilenameTimestamp(name) {\n  // Try patterns from most-specific to most-general. Each pattern is anchored to a\n  // '-' boundary on the left (the agent-name prefix ends with '-'), preventing\n  // mid-name false-positives like 'EXP-300.json'. Returns Date.parse() ms, or null\n  // if no pattern matches. NaN results (from invalid date components) also return null.\n  const tryParse = (Y, M, D, h, m, s) => {\n    const t = Date.parse(`${Y}-${M}-${D}T${h}:${m}:${s || '00'}Z`);\n    return isNaN(t) ? null : t;\n  };\n  let m;\n  // A: -YYYY-MM-DDTHH-MM-SSZ (workspace-sync-runs; dashed time-of-day + Z; tolerates '-final'/'-abort' suffix)\n  if ((m = name.match(/-(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2})-(\\d{2})-(\\d{2})Z/))) return tryParse(m[1],m[2],m[3],m[4],m[5],m[6]);\n  // B: -YYYY-MM-DDTHH:MM:SSZ (push-failure colon variant — 2 files today)\n  if ((m = name.match(/-(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})Z/))) return tryParse(m[1],m[2],m[3],m[4],m[5],m[6]);\n  // C: -YYYY-MM-DDTHH--MM--SSZ (push-failure double-dash variant — 1 file today)\n  if ((m = name.match(/-(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2})--(\\d{2})--(\\d{2})Z/))) return tryParse(m[1],m[2],m[3],m[4],m[5],m[6]);\n  // D: -YYYY-MM-DDTHHMMSSZ (push-failure undashed-seconds + Z)\n  if ((m = name.match(/-(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2})(\\d{2})(\\d{2})Z/))) return tryParse(m[1],m[2],m[3],m[4],m[5],m[6]);\n  // E: -YYYY-MM-DDTHHMMZ (verify-pending-run, narrative-cite-audit; HHmm + Z)\n  if ((m = name.match(/-(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2})(\\d{2})Z/))) return tryParse(m[1],m[2],m[3],m[4],m[5]);\n  // F: -YYYY-MM-DDTHH-MMZ (push-failure dashed HH-MM with Z, no seconds)\n  if ((m = name.match(/-(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2})-(\\d{2})Z/))) return tryParse(m[1],m[2],m[3],m[4],m[5]);\n  // G: -YYYY-MM-DDTHH-MM (push-failure dashed HH-MM no Z; also matches report-daily 'T-HH-MM'). Negative-lookahead\n  //    prevents matching workspace-sync-runs HH-MM-SS (Pattern A handled those above).\n  if ((m = name.match(/-(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2})-(\\d{2})(?!\\d)/))) return tryParse(m[1],m[2],m[3],m[4],m[5]);\n  // H: -YYYYMMDDTHHMMSS (push-failure undashed legacy — 2 files today)\n  if ((m = name.match(/-(\\d{4})(\\d{2})(\\d{2})T(\\d{2})(\\d{2})(\\d{2})/))) return tryParse(m[1],m[2],m[3],m[4],m[5],m[6]);\n  // I: -YYYY-MM-DD.json (report-daily date-only). Anchored to .json EOF so it can't match mid-name.\n  if ((m = name.match(/-(\\d{4})-(\\d{2})-(\\d{2})\\.json$/))) return tryParse(m[1],m[2],m[3],'00','00','00');\n  return null;\n}",
+      "test_inputs_coverage": [
+        {"input": "run-2026-04-26T17-05-12Z.json", "pattern": "A", "expected": "2026-04-26T17:05:12Z"},
+        {"input": "run-2026-05-23T18-06-55Z-abort.json", "pattern": "A", "expected": "2026-05-23T18:06:55Z (handles -abort suffix)"},
+        {"input": "run-2026-05-18T12-07-05Z-final.json", "pattern": "A", "expected": "2026-05-18T12:07:05Z (handles -final suffix)"},
+        {"input": "verify-pending-run-2026-05-02T0813Z.json", "pattern": "E", "expected": "2026-05-02T08:13:00Z"},
+        {"input": "narrative-cite-audit-2026-05-23T2206Z.json", "pattern": "E", "expected": "2026-05-23T22:06:00Z"},
+        {"input": "push-failure-2026-04-25T17-28.json", "pattern": "G", "expected": "2026-04-25T17:28:00Z (no Z)"},
+        {"input": "push-failure-20260503T012232.json", "pattern": "H", "expected": "2026-05-03T01:22:32Z (undashed)"},
+        {"input": "push-failure-2026-05-06T13:21:02Z.json", "pattern": "B", "expected": "2026-05-06T13:21:02Z (colon variant)"},
+        {"input": "push-failure-2026-05-06T01--20--33Z.json", "pattern": "C", "expected": "2026-05-06T01:20:33Z (double-dash variant)"},
+        {"input": "push-failure-2026-05-12T21-17Z.json", "pattern": "F", "expected": "2026-05-12T21:17:00Z (HH-MM with Z)"},
+        {"input": "report-2026-04-06.json", "pattern": "I", "expected": "2026-04-06T00:00:00Z (date-only)"},
+        {"input": "report-2026-05-24T05-45.json", "pattern": "G", "expected": "2026-05-24T05:45:00Z (HH-MM no Z)"}
+      ],
+      "false_positive_test_inputs": [
+        {"input": "EXP-2105.json", "expected": "null (no date in name)"},
+        {"input": "PROP-2026-05-24-foo.json", "expected": "null (Pattern I requires .json directly after date)"},
+        {"input": "random-2026-13-99T99-99-99Z.json", "expected": "null (Date.parse returns NaN; tryParse converts to null)"},
+        {"input": "2026-05-24T05-45.json", "expected": "null (no leading '-' boundary)"},
+        {"input": "check-2026-05-24-foo.json", "expected": "null (Pattern I requires .json EOF)"}
+      ],
+      "coverage_against_actual_files_2026_05_24": {
+        "workspace-sync-runs": "570/570 (100%)",
+        "verify-pending-run": "433/433 (100%)",
+        "push-failure": "94/94 (100%)",
+        "report-daily": "52/52 (100%)",
+        "narrative-cite-audit": "7/7 (100%)",
+        "TOTAL": "1,156/1,156 (100%)"
+      }
+    },
+    "eligibility_change": {
+      "before": "function eligibleForArchive(policy, matches) {\n  if (policy.keep_last_n != null) return matches.slice(policy.keep_last_n);\n  if (policy.retention_days != null) {\n    const cutoff = NOW - policy.retention_days * DAY_MS;\n    return matches.filter(m => m.mtimeMs < cutoff);   // BUG: mtimeMs = clone time\n  }\n  return [];\n}",
+      "after": "function eligibleForArchive(policy, matches) {\n  // Newest-first sort uses parsed timestamp when available, falls back to mtime.\n  // This keeps keep_last_n correct (it would otherwise sort by clone-time and pick arbitrary files).\n  matches.sort((a, b) => (b.parsedTs || b.mtimeMs) - (a.parsedTs || a.mtimeMs));\n  // Floor: never prune the newest keep_last_n files, regardless of retention_days.\n  const floor = policy.keep_last_n != null ? new Set(matches.slice(0, policy.keep_last_n).map(m => m.name)) : new Set();\n  if (policy.retention_days != null) {\n    const cutoff = NOW - policy.retention_days * DAY_MS;\n    return matches.filter(m => {\n      if (floor.has(m.name)) return false;\n      const effTs = m.parsedTs || m.mtimeMs;   // FIX: prefer parsed timestamp\n      return effTs < cutoff;\n    });\n  }\n  // keep_last_n-only policy (no retention_days): everything outside the floor is eligible.\n  if (policy.keep_last_n != null) return matches.filter(m => !floor.has(m.name));\n  return [];\n}",
+      "listMatches_change": "function listMatches(policy) {\n  if (!fs.existsSync(policy.dir)) return [];\n  const out = [];\n  for (const name of fs.readdirSync(policy.dir)) {\n    if (!policy.pattern.test(name)) continue;\n    const full = path.join(policy.dir, name);\n    let st;\n    try { st = fs.statSync(full); } catch { continue; }\n    if (!st.isFile()) continue;\n    const parsedTs = parseFilenameTimestamp(name);   // ADDED\n    if (VERBOSE && parsedTs == null) console.log(`  [parse-fallback] ${name} — using mtime`);   // ADDED\n    out.push({ name, full, mtimeMs: st.mtimeMs, parsedTs, size: st.size });   // CHANGED: + parsedTs\n  }\n  out.sort((a, b) => (b.parsedTs || b.mtimeMs) - (a.parsedTs || a.mtimeMs));   // CHANGED: sort by parsedTs\n  return out;\n}"
+    }
+  },
+  "phase_2_design": {
+    "task_ref": "task_3_design_safety_floor",
+    "objective": "Add `keep_last_n` as a belt-and-suspenders floor on every retention_days policy. Today's narrative-cite-audit `keep_last_n=7` policy is unchanged. The new floors guarantee a sane minimum even if a future parse regression returns NaN/null for every filename — the script can no longer prune below the floor.",
+    "updated_policies_block": {
+      "code": "const policies = [\n  {\n    name: 'workspace-sync-runs',\n    dir: WS_SYNC_RUNS_DIR,\n    pattern: /^run-.*\\.json$/,\n    retention_days: 30,\n    keep_last_n: 50,                  // NEW floor — was null\n    archive: path.join(INTEGRITY_DIR, 'workspace-sync-runs-archive.jsonl')\n  },\n  {\n    name: 'verify-pending-run',\n    dir: INTEGRITY_DIR,\n    pattern: /^verify-pending-run-.*\\.json$/,\n    retention_days: 14,\n    keep_last_n: 20,                  // NEW floor — was null\n    archive: path.join(INTEGRITY_DIR, 'verify-pending-runs-archive.jsonl')\n  },\n  {\n    name: 'narrative-cite-audit',\n    dir: INTEGRITY_DIR,\n    pattern: /^narrative-cite-audit-.*\\.json$/,\n    retention_days: null,\n    keep_last_n: 7,                   // UNCHANGED — already working\n    archive: path.join(INTEGRITY_DIR, 'narrative-cite-audit-archive.jsonl')\n  },\n  {\n    name: 'push-failure',\n    dir: INTEGRITY_DIR,\n    pattern: /^push-failure-.*\\.json$/,\n    retention_days: 14,\n    keep_last_n: 20,                  // NEW floor — was null\n    archive: path.join(INTEGRITY_DIR, 'push-failure-archive.jsonl')\n  },\n  {\n    name: 'report-daily',\n    dir: INTEGRITY_DIR,\n    pattern: /^report-\\d{4}-\\d{2}-\\d{2}.*\\.json$/,\n    retention_days: 90,\n    keep_last_n: 30,                  // NEW floor — was null\n    archive: path.join(INTEGRITY_DIR, 'report-archive.jsonl')\n  }\n];"
+    },
+    "eligibility_predicate": "A file is eligible for prune ONLY IF: (1) it is NOT in the newest keep_last_n by parsed_timestamp (or mtime fallback), AND (2) its parsed_timestamp (or mtime fallback) is older than retention_days. The floor is enforced FIRST, so even if every parsed_ts is null and every effective_ts is clone-time (defeating the retention check anyway), the floor still preserves the newest keep_last_n. Conversely, even if the retention_days predicate becomes overly aggressive due to a future parse bug, the floor caps the damage.",
+    "rationale_for_floor_sizes": {
+      "workspace-sync-runs_keep_50": "Hourly cadence × ~2 days = 48 files. 50 keeps a clean ~2-day window even if parse breaks.",
+      "verify-pending-run_keep_20": "Variable cadence but typically 6-8 runs/day. 20 ≈ 2-3 days of forensic depth.",
+      "push-failure_keep_20": "Push-failures are sparse (~3-5/day during chronic 403 periods, 0/day when healthy). 20 covers worst-case ~1 week.",
+      "report-daily_keep_30": "Daily cadence. 30 = ~1 month of post-mortem depth.",
+      "narrative-cite-audit_keep_7_unchanged": "Hourly cadence; only the newest is operationally useful. 7 = ~1 day."
+    }
+  },
+  "phase_3_design": {
+    "task_ref": "task_4_counter_arguments",
+    "counterarguments": {
+      "a_regex_false_positive_anchoring": {
+        "concern": "What if the filename parse picks up a non-timestamp ISO-looking string (e.g., 'EXP-300' inside a filename matches the year pattern)?",
+        "mitigation": "All 9 patterns are anchored to a `-` boundary on the left, meaning the matched timestamp must follow an agent-name prefix that ends with '-'. EXP-300 / PROP-2026 / similar artifacts don't match because they lack the '-YYYY-MM-DD' prefix shape. Additionally, the patterns require either Z, --, ., or a non-digit terminator after the time component, preventing partial matches against longer numeric strings.",
+        "secondary_mitigation": "The category `pattern` regex in each policy (e.g., `/^run-.*\\.json$/`) is the gatekeeper: parseFilenameTimestamp is only called on filenames that already match a category. So even if a hypothetical 'EXP-300-related-to-2026-05-24.json' file existed, it wouldn't enter the workspace-sync-runs or any other category's match set in the first place. The two-layer filter (category pattern → timestamp parser) makes false-positive parses on the wrong category mechanically impossible.",
+        "verification": "False-positive test cases in phase_1_design.helper_function.false_positive_test_inputs cover the anchoring guarantees."
+      },
+      "b_future_timestamp_safety": {
+        "concern": "What if the parsed timestamp is in the FUTURE (clock skew, test fixtures, or a malformed filename like '2027-...' written to disk by a buggy script)?",
+        "mitigation": "The eligibility predicate is `effTs < cutoff` where `cutoff = NOW - retention_days * DAY_MS`. A future parsed_ts produces effTs > NOW > cutoff, so the file is NOT eligible. Future timestamps are treated as 'not yet eligible', which is the safe default. (If the future timestamp were significantly far in the future, the file would never become eligible — but that's a feature, not a bug, because a far-future timestamp indicates an upstream defect that warrants operator inspection.) No code change required to enforce this — it falls out of the comparison direction.",
+        "secondary_check": "If we wanted defense-in-depth, we could add `effTs > NOW && console.warn('future timestamp in', name)` to the verbose log so future timestamps surface in audit. Recommended but not strictly required."
+      },
+      "c_why_filename_parse_vs_mtime_preservation": {
+        "concern": "Why not just preserve mtime at clone-time via `git config core.fileMode` or a post-checkout hook? Wouldn't that be simpler than parsing 9 regex patterns?",
+        "mitigation": "Three reasons filename parse is more robust:\n  (1) Clones are transient (the scheduled task clones, prunes, pushes, deletes the clone). Any per-clone hook config has to be re-applied each run — it's not actually simpler than a parse function, it's just relocated.\n  (2) Git does not have a built-in option to preserve commit-time as the working-tree mtime. The closest workarounds (`git-restore-mtime` from git-tools, custom checkout hooks, post-merge hooks) are all external dependencies that would have to be installed and maintained in the scheduled-task harness, which would be new attack/break surface for marginal benefit.\n  (3) Filenames are durable across clones, restores, archival, and any future move of these files to S3 or similar object storage. The parse-based age computation works in any execution context; the mtime-based one is brittle to anything that touches the file (chmod, git checkout, rsync, container restart).",
+        "trade_off_accepted": "Yes, the parser has 9 patterns and grew during this audit (we added Pattern B colon-variant, Pattern C double-dash variant, Pattern H undashed-legacy after finding edge-case files). The cost is real but bounded: the patterns are exhaustive against the current corpus (100% parse rate) and any new pattern that the writer scripts introduce becomes visible in the VERBOSE `[parse-fallback]` log line. Future contributors who add a new file shape see the fallback warning and can extend the parser."
+      },
+      "d_archive_atomicity": {
+        "concern": "Is there a deeper issue that the script should write the archive at a known atomic boundary (e.g., fsync the archive JSONL before deleting sources)?",
+        "mitigation": "The current code already follows the right order: `fs.appendFileSync(archive, line)` succeeds before `fs.unlinkSync(file)` is even attempted. If appendFileSync throws, the `continue` short-circuit ensures the delete is skipped. The only window where partial work could occur is between the appendFileSync return and the unlinkSync call — but appendFileSync on Linux already flushes the kernel buffer to the FS layer before returning, so a crash in that window leaves the archive line on disk and the source file untouched. On the next run, the source file is re-encountered and re-archived (creating a duplicate line), and then unlinked. The archive format tolerates duplicates by design (PROP-051 phase_3_design.pruning_policy explicitly notes this).",
+        "no_change_required": "The atomicity is fine; this PROP does not modify the archive→delete order or add fsync. The 'archive first, then delete; on failure, skip the delete' invariant in the existing code is the right design."
+      }
+    }
+  },
+  "phase_4_design": {
+    "task_ref": "task_5_disk_impact_estimate",
+    "impact_estimate": {
+      "first_apply_after_fix": {
+        "measured_at": "2026-05-24T08:30:00Z",
+        "method": "Ran the proposed parseFilenameTimestamp + keep_last_n predicate against the live clone (commit 075e090) and counted eligible files + their bytes.",
+        "per_category": {
+          "workspace-sync-runs": {"eligible": 0, "bytes": 0, "note": "Oldest is 27.6d, retention is 30d. Becomes non-zero in ~2 days."},
+          "verify-pending-run": {"eligible": 175, "bytes_kb": 162.7},
+          "push-failure": {"eligible": 74, "bytes_kb": 61.2},
+          "report-daily": {"eligible": 0, "bytes": 0, "note": "Oldest is 48.4d, retention is 90d. Becomes non-zero in ~42 days."}
+        },
+        "total_files": 249,
+        "total_bytes_mb": 0.22,
+        "note": "Small because verify-pending-run + push-failure JSON files are tiny (~700-900 bytes each). The disk-pressure relief is mainly forward-looking, not immediate."
+      },
+      "steady_state_estimate": {
+        "in_2_days": "When workspace-sync-runs' oldest crosses 30d (~2026-05-26), an additional ~570 files become eligible on first apply (each ~3.5 KB → ~2 MB). After that, ~24 files/day enter the eligible set, matching the hourly cadence.",
+        "in_42_days": "When report-daily's oldest crosses 90d (~2026-07-05), ~50 report-daily files become eligible (each ~5-20 KB).",
+        "stable_directory_size_after_~60_days": "monitor/integrity/ stabilizes around: 50 workspace-sync-runs + 20 verify-pending + 7 narrative-cite + 20 push-failure + 30 report-daily = ~127 file working set + ~5 archive JSONLs. Approximate size: ~3-5 MB live + archives growing at ~1-2 MB/month.",
+        "comparison_to_PROP_051_606MB_trigger": "The original disaster trigger was monitor/integrity/ at 606 MB. The combined fix (PROP-051 pruning policy + this PROP's eligibility correction) keeps the live working set under 10 MB and the per-month archive growth bounded. The 606 MB regime cannot recur as long as the prune actually runs (which is what this PROP guarantees)."
+      },
+      "directive_estimate_reconciliation": "The directive cited '~700 eligible after fix' as a rough estimate. Today's empirical figure is 249. The difference is entirely workspace-sync-runs: the directive assumed all 570 were already past 30d, but the oldest is only 27.6d. Within 2-3 days, the directive's estimate becomes accurate. This is a timing offset, not a flaw in the fix."
+    }
+  },
+  "phase_5_rollout": {
+    "objective": "Phased rollout per directive: dry-run with current logic → dry-run with fixed logic → apply with --max-archive-per-policy <N> safety cap → full apply. Bound the blast radius on first execution.",
+    "step_1_dry_run_current_logic": {
+      "command": "node monitor/scripts/prune-integrity.js",
+      "expected_output": "All 4 retention_days categories report 'eligible=0'. narrative-cite-audit reports 'keep_last_n' working. This is the baseline that confirms the bug.",
+      "operator_action": "Compare against today's scheduled run output to confirm reproducibility."
+    },
+    "step_2_apply_patch_and_dry_run_with_fix": {
+      "command": "node monitor/scripts/prune-integrity.js  (after the parseFilenameTimestamp + keep_last_n changes land)",
+      "expected_output": "[workspace-sync-runs] matched=570 eligible=0 (oldest 27.6d < 30d)\n[verify-pending-run] matched=433 eligible=175\n[push-failure] matched=94 eligible=74\n[report-daily] matched=52 eligible=0 (oldest 48.4d < 90d)\n[narrative-cite-audit] matched=7 eligible=0 (already at floor=7)\nTOTAL WOULD-archive: 249 files, ~0.22 MB",
+      "operator_action": "Verify the eligible counts match this PROP's phase_4 numbers within reasonable drift (a few hours of new files arriving)."
+    },
+    "step_3_apply_with_safety_cap": {
+      "new_cli_flag": "--max-archive-per-policy <N>",
+      "default_when_unset": "no cap",
+      "rollout_value": "100 (first apply only)",
+      "command": "node monitor/scripts/prune-integrity.js --apply --max-archive-per-policy 100",
+      "rationale": "Even though the dry-run estimate (249 files) is small and the keep_last_n floor protects against catastrophic over-prune, the safety cap bounds blast radius if the parse predicate has a corner case the dry-run didn't surface. The cap takes the OLDEST N eligible files per category (after the keep_last_n floor) so retention is incremental and verifiable.",
+      "expected_output": "Same as step 2 dry-run but with archive + delete actually performed, capped at 100 per category. With today's eligible counts (175, 74), this would archive 100 + 74 + 0 + 0 = 174 files on first apply.",
+      "operator_action": "After apply succeeds, confirm: (a) commit history shows a clean 'prune-integrity: archive+delete' commit with appended archive JSONL files, (b) `ls monitor/integrity/ | wc -l` decreased by the expected count, (c) no errors in the run log."
+    },
+    "step_4_full_apply": {
+      "command": "node monitor/scripts/prune-integrity.js --apply",
+      "rollout_timing": "After step 3 has produced clean results in ≥1 scheduled run.",
+      "rationale": "Once the safety-cap apply has demonstrated correct behavior in a real run, drop the cap. The keep_last_n floor remains permanently as the production safety net."
+    },
+    "step_5_monitor": {
+      "what_to_watch": [
+        "monitor/tinker/queue-history.jsonl — no regression in net velocity",
+        "monitor/integrity/ file count — should trend monotonically toward the steady-state working set (~127 files)",
+        "Verify the daily prune-integrity scheduled-task log line: should show 'eligible=N' where N > 0 for retention_days categories on most runs"
+      ],
+      "regression_signal": "If 'eligible=0' across all retention_days categories returns on subsequent runs after the fix lands, the parse function has a regression and the script should be rolled back to the keep_last_n-only logic."
+    }
+  },
+  "operator_preferences_honored": {
+    "single_focused_prop": "✓ This is one PROP fixing one bug; no multi-workstream redesign.",
+    "counter_arguments_mandatory": "✓ phase_3_design.counterarguments has the 4 directive-mandated points (a, b, c, d).",
+    "phased_rollout_in_prop": "✓ phase_5_rollout: dry-run current → dry-run fixed → cap-apply → full apply.",
+    "keep_last_n_belt_and_suspenders": "✓ phase_2_design adds floors to all retention_days policies; narrative-cite-audit's existing floor unchanged.",
+    "direct_apply_after_review": "✓ Operator preference noted; no shadow-mode. The keep_last_n floor + safety cap on first apply provide bounded blast radius."
+  },
+  "files_to_modify": [
+    {
+      "path": "monitor/scripts/prune-integrity.js",
+      "changes": [
+        "Add parseFilenameTimestamp(name) helper (top-of-file, before --- CLI --- block)",
+        "Modify listMatches() to populate `parsedTs` and sort by parsedTs || mtimeMs",
+        "Modify eligibleForArchive() to enforce keep_last_n floor FIRST, then retention_days against parsedTs || mtimeMs",
+        "Add keep_last_n values to workspace-sync-runs (50), verify-pending-run (20), push-failure (20), report-daily (30); narrative-cite-audit unchanged",
+        "Add --max-archive-per-policy <N> CLI flag and apply it after eligibility filter, before the per-eligible loop",
+        "Add VERBOSE-mode log line for parse-fallback cases ([parse-fallback] <name>)"
+      ]
+    }
+  ],
+  "files_to_create": [],
+  "files_to_delete": [],
+  "out_of_scope_per_directive": [
+    "Replacing the entire prune pipeline with a different mechanism — current pattern is correct",
+    "Adding workspace-sync-side cleanup of FUSE monitor/integrity/ — FUSE doesn't support unlink()"
+  ],
+  "requires_human_judgment": true,
+  "why_human_needed": "Operator must approve: (a) the patch as written (or revise), (b) the keep_last_n floor values per category, (c) the --max-archive-per-policy 100 cap on first apply. The directive specifies 'tinker does NOT self-apply' — so this PROP is review-only. Once approved, operator or cowork-claude applies the patch via clone+push or Git Data API.",
+  "verification_pattern": "grep -q 'parseFilenameTimestamp' monitor/scripts/prune-integrity.js && grep -q 'keep_last_n: 50' monitor/scripts/prune-integrity.js && grep -q 'max-archive-per-policy' monitor/scripts/prune-integrity.js && echo FIXED || echo STILL_BROKEN",
+  "recommended_next_steps_for_operator": [
+    "Review phase_1 / phase_2 / phase_3 / phase_4 / phase_5 of this PROP.",
+    "Approve, request revision, or reject. Approval sets `status: approved` with `operator_decision` block (same shape as PROP-053).",
+    "On approval: apply the patch via /tmp/edit-clone or via push-via-api.js. The patch is small (~60 LOC net add).",
+    "After step 3 (capped apply) succeeds in ≥1 scheduled run, drop the cap (step 4) — either via a follow-up small commit or by setting --max-archive-per-policy implicitly to infinity.",
+    "Mark DIRECTIVE-20260524-001 as `status: completed` per the operator-directive lifecycle (additive-edit exception in CLAUDE.md File Ownership Rules)."
+  ],
+  "tinker_diagnostic_note": "This PROP took ~one Opus tinker run-cycle. The mtime-vs-filename pattern (cron + fresh clone) is the same anti-pattern that produced PROP-052 (audit-files round-trip) — both are cases of cron-job scripts being insufficiently aware of their execution context. Future similar scripts should reach for filename-embedded timestamps as the default age signal whenever the script runs from a fresh clone.",
+  "verification_against_directive_tasks": {
+    "task_1_locate_eligibility_function": "DONE — see problem_detail.code_location: monitor/scripts/prune-integrity.js lines 110-117 (listMatches) and 119-128 (eligibleForArchive).",
+    "task_2_design_filename_timestamp_parser": "DONE — phase_1_design.helper_function with code, 12 positive test inputs (covering all 5 known patterns + the dashed/undashed/colon/double-dash push-failure variants + -final/-abort suffixes on workspace-sync-runs), 5 false-positive test inputs, and a single-line change to use parsed_ts || mtimeMs.",
+    "task_3_design_safety_floor": "DONE — phase_2_design with updated policies block (keep_last_n: 50/20/7/20/30) and the modified eligibility predicate (floor enforced FIRST, retention check SECOND).",
+    "task_4_counter_arguments": "DONE — phase_3_design.counterarguments covers (a) regex false-positive anchoring, (b) future timestamp safety, (c) why filename parse over mtime preservation, (d) archive atomicity.",
+    "task_5_disk_impact_estimate": "DONE — phase_4_design.impact_estimate with first-apply numbers (249 files / 0.22 MB), 2-day projection (570 workspace-sync-runs), 42-day projection (52 report-daily), and steady-state directory size estimate (~127 files / ~3-5 MB)."
+  }
+}
