@@ -116,8 +116,8 @@ const policies = [
     name: 'workspace-sync-runs',
     dir: WS_SYNC_RUNS_DIR,
     pattern: /^run-.*\.json$/,
-    retention_days: 30,
-    keep_last_n: 50,                 // PROP-054: belt-and-suspenders floor (~2 days hourly)
+    retention_days: 7,               // operator tweak 2026-05-24: most forensic value is in last week
+    keep_last_n: 20,                 // operator tweak 2026-05-24: ~20 hours hourly cadence
     archive: path.join(INTEGRITY_DIR, 'workspace-sync-runs-archive.jsonl')
   },
   {
