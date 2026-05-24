@@ -1,0 +1,62 @@
+{
+  "id": "PROP-053",
+  "created_at": "2026-05-24T05:50:00Z",
+  "created_by_run": "tinker-2026-05-24T05-44",
+  "status": "proposed",
+  "priority": "low",
+  "category": "workflow_redesign",
+  "target": "monitor/analyst/expansion-tracker.json + analyst-mode0-onboarding.md + analyst-mode34-procedures.md (the writers of new EXP IDs)",
+  "title": "expansion-tracker gap audit (ISS-2105 / EXP-425): 94 missing EXP IDs are dominated by bulk-reservation drift, not lost work — close ISS-2105 as documented; add minimum-discipline check to writers to prevent recurrence",
+  "problem": "ISS-2105 (2026-05-18, integrity major) flagged 86 missing EXP IDs across 12 gap ranges in monitor/analyst/expansion-tracker.json + expansion-tracker-archive.jsonl. EXP-425 was filed against it. ISS-2175 (2026-05-23, integrity moderate) was filed when EXP-425 sat pending >5 days. Decider routed both to tinker on 2026-05-24T05:36. This PROP is tinker's response.\n\nAudit run from clean clone at HEAD 667e568 (live tracker next_id=431, so 1..430 in scope):\n\n  Live entries:                2\n  Archive entries:           350 (342 distinct IDs)\n  Combined distinct IDs:    344\n  Total slots (1..430):     430\n  Missing IDs:               94 (count grew from ISS-2105's 86, because next_id has advanced)\n\nMissing IDs grouped by trace evidence:\n  - 7 IDs: orphan files in monitor/analyst/expansions/ but no tracker entry. (Real gaps — work happened but tracker write was skipped.) IDs: 300, 330, 381, 382, 389, 390, 404.\n  - 44 IDs: referenced in tracker/data/issues but no file. (Mostly tracker entries pointing to integrated work whose expansion file was archived or rolled into a batch.) Examples: 302–307, 319, 326, 329, 337, ...\n  - 2 IDs: mentioned only in patches/issues, no file, no tracker entry. (Light traces — probably superseded mid-flight.) IDs: 52, 324.\n  - 41 IDs: no trace anywhere in the repo. Of these, 8 surface in monitor/decisions or curmudgeon/reviews on a wider search. The remaining 33 IDs are pure phantom gaps — never allocated to any artifact.\n\nThe 33 pure-phantom IDs cluster as expected if next_id was incremented in bulk during fast multi-EXP analyst runs and the incremented IDs were never written back: examples include 312–316, 320–321, 325, 327–328, 331–335, 351–383 ranges.\n\nThe two large ranges in the missing list (EXP-324–348, 25 IDs; EXP-350–383, 34 IDs; total 59 of 94) sit between EXP-323 (created 2026-05-13T12:04) and EXP-349 (created 2026-05-12T05:12), and between EXP-349 (2026-05-12) and EXP-384 (2026-05-14T20:07). The fact that EXP-323 has a LATER timestamp than EXP-349 confirms the cause: an analyst run advanced next_id to ~384 in one transaction, then a separate concurrent run claimed lower IDs (323, 349) without backfilling the intermediate slots. This is a write-ordering artifact of the multi-writer tracker — not lost analyst work.\n\nDiagnostic conclusion: 86 of 94 missing IDs are benign bulk-reservation drift. 7 IDs are real orphan-file gaps. ISS-2105 ('86 missing IDs') is over-stated relative to the actual harm. The tracker is still usable as an audit trail with the caveat that gap-density is not evidence of lost work.",
+  "proposed_fix": {
+    "summary": "Two-part fix: (a) write a small, repeatable audit script that prints the gap-and-trace breakdown so future integrity runs can re-classify gaps without an Opus tinker session, and (b) document the bulk-reservation behavior in the tracker schema so future readers don't misread gaps as lost work. Do NOT attempt to backfill the 86 benign IDs — that would be cosmetic make-work and would not protect against future drift. For the 7 real orphan-file gaps, route to analyst-baby for one-shot tracker backfill (low priority, no urgency).",
+    "files_to_create": [
+      {
+        "path": "build-scripts/audit-exp-tracker-gaps.js",
+        "purpose": "Repeatable script that integrity (or any agent) can run to re-classify the current set of tracker gaps. Outputs JSON to stdout and an optional human-readable summary. Replaces the need for an Opus tinker run to do the same analysis.",
+        "content_outline": "Inputs: monitor/analyst/expansion-tracker.json (next_id, items[]), monitor/analyst/expansion-tracker-archive.jsonl, monitor/analyst/expansions/*, monitor/decisions/*, monitor/curmudgeon/reviews/*. Output schema: { total_slots, present, missing_total, missing_ranges:[{start,end,size}], by_category:{orphan_file:[ids], referenced_only:[ids], no_trace:[ids]}, summary:'X of Y are bulk-reservation drift; Z are orphan files needing backfill' }. Algorithm mirrors the audit code in this PROP's problem section."
+      },
+      {
+        "path": "monitor/prompts/reference/expansion-tracker-gap-semantics.md",
+        "purpose": "Short reference doc that defines what a gap means and when it indicates real work loss vs benign reservation drift. Linked from analyst-mode0-onboarding.md, analyst-mode34-procedures.md, and the tracker JSON schema docs.",
+        "content_outline": "Sections: (1) The tracker is multi-writer (analyst, analyst-baby, decider); next_id is advanced when an agent claims an ID. (2) Gaps form when an agent advances next_id but never writes the corresponding item back (aborted run, race, write skipped). (3) Gap density alone is NOT evidence of lost work; cross-check against monitor/analyst/expansions/ before flagging. (4) Integrity should report 'X orphan-file gaps + Y benign reservation gaps' instead of 'X missing IDs'. (5) The audit-exp-tracker-gaps.js script is the canonical re-classifier."
+      }
+    ],
+    "files_to_modify": [
+      {
+        "path": "monitor/prompts/structure-integrity.md",
+        "find": "(integrity prompt block where it counts missing EXP IDs and reports as MAJOR severity)",
+        "replace": "Replace the raw missing-IDs count with the audit-exp-tracker-gaps.js by_category output. Report severity as MODERATE when orphan_file gaps > 5, otherwise INFO. Pure bulk-reservation drift is not a structural integrity issue.",
+        "explanation": "Stops integrity from re-emitting MAJOR findings every cycle for what is mostly benign drift. Integrity already runs the right cross-check; this just packages it."
+      }
+    ],
+    "files_to_delete": []
+  },
+  "tradeoffs": "Pro: closes a long-running issue with a documented audit rather than make-work backfill; gives future agents a script-based check that doesn't need Opus. Con: requires accepting that the tracker is a best-effort audit trail with gaps — some operators may want lossless guarantees. If lossless is the requirement, the right fix is a different one (e.g. atomic claim+write via a single transaction wrapper around next_id increment, or replacing the tracker with an append-only log indexed by claim time). That's a larger redesign; this PROP narrows the immediate ISS without precluding the larger fix later.\n\nThe other side to consider: maybe the 33 'no trace' IDs really ARE lost work that I just couldn't find. I searched docs/, monitor/curmudgeon/reviews/, monitor/tinker/proposals/, monitor/decisions/, monitor/analyst/expansions/, data/sections.json, data/wins.json, monitor/decisions/closed-issues.json, monitor/decisions/open-issues.json, monitor/analyst/expansion-tracker.json, and applied-patches/*. If they exist outside these, I'd miss them. But the timestamp pattern (323→349 reverse-time, 349→384 forward-time) is the smoking gun for bulk-reservation drift, not lost work. Confidence: high.",
+  "estimated_impact": "Replaces a recurring MAJOR integrity finding (re-emitted every run that sees the gaps) with a one-time MODERATE finding for the 7 real orphan-file gaps + ongoing INFO-tier audit. Saves: ~1 integrity Haiku run cycle of noise per day, ~1 decider triage decision per occurrence, ~1 Opus tinker run every time the issue is re-routed (this run was ~$1.5 of Opus time). Long-run: future gap drift gets classified by script, not by Opus.",
+  "requires_human_judgment": true,
+  "why_human_needed": "Operator must decide: (a) accept the 'best-effort audit trail with gaps' framing and ship this PROP as-is, OR (b) reject and demand a true lossless tracker redesign (larger PROP, ~3–5 days work). The right answer depends on whether the tracker is being used as a billing record or as a project-pulse signal; current usage suggests project-pulse, where gaps are tolerable.",
+  "related_issues": ["ISS-2105", "ISS-2175"],
+  "related_exps": ["EXP-425"],
+  "audit_artifacts": {
+    "missing_ids_total": 94,
+    "missing_ranges_count": 11,
+    "by_category": {
+      "orphan_file": {"count": 7, "ids": [300, 330, 381, 382, 389, 390, 404], "interpretation": "Real gaps — analyst wrote the expansion file but skipped the tracker entry. Recommend backfill."},
+      "tracker_referenced_no_file": {"count": 44, "interpretation": "Tracker entry exists in some form (data/issues/patches reference) but no expansion file. Likely rolled into a batch EXP or superseded. Benign."},
+      "mentioned_only": {"count": 2, "ids": [52, 324], "interpretation": "Light trace in patches/issues but no file. Probably superseded mid-flight."},
+      "no_trace": {"count": 41, "interpretation": "No artifact found in any searched directory. 8 surface in decisions/reviews on wider grep. 33 are pure phantom — never allocated. Bulk-reservation drift."}
+    },
+    "two_dominant_gaps": [
+      {"range": "EXP-324–348", "size": 25, "preceding_ts": "2026-05-13T12:04Z (EXP-323)", "following_ts": "2026-05-12T05:12Z (EXP-349)", "note": "Reverse-time confirms bulk reservation drift."},
+      {"range": "EXP-350–383", "size": 34, "preceding_ts": "2026-05-12T05:12Z (EXP-349)", "following_ts": "2026-05-14T20:07Z (EXP-384)", "note": "Two-day jump in next_id without intermediate writes."}
+    ]
+  },
+  "verification_pattern": "test -f build-scripts/audit-exp-tracker-gaps.js && test -f monitor/prompts/reference/expansion-tracker-gap-semantics.md && echo FIXED || echo STILL_BROKEN",
+  "recommended_next_steps_for_decider": [
+    "Close ISS-2105 with reference to this PROP's audit findings (94 missing IDs decomposed: 7 orphan-file, 44 tracker-referenced, 2 mentioned-only, 41 no-trace including 33 pure bulk-reservation drift).",
+    "Close ISS-2175 as duplicate of ISS-2105 closure path.",
+    "If PROP approved: assign the script + reference-doc creation to a follow-up EXP for analyst-baby to write (it's mechanical, doesn't need Opus).",
+    "Optionally route the 7 orphan-file backfills to analyst-baby as a single low-priority consolidation."
+  ]
+}

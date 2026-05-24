@@ -1,77 +1,67 @@
-TINKER RUN tinker-2026-05-21T05-50
-==================================
+TINKER RUN SUMMARY
+Run: tinker-2026-05-24T05-44 | Mode: 4 (Proposals & Self-Fixes)
+═══════════════════════════════════════════════════════
 
-Mode 4 (operator-directive override)
-Directive processed: DIRECTIVE-20260521-002-audit-files-no-round-trip (medium)
-Authored: PROP-052-audit-files-round-trip.json (design-pending-operator-review)
+PRIMARY WORK: Cleared all 3 tinker-assigned ISSs.
 
-=== Finding: git→FUSE round-trip starvation ===
+  ISS-2105 / ISS-2175 / EXP-425 (86 missing EXP IDs)
+    Audit: 94 missing IDs decompose as
+      7  real orphan-file gaps (analyst wrote file, skipped tracker)
+      44 tracker-referenced but no file (rolled into batches)
+      2  light-trace / superseded
+      41 no trace anywhere — of which 33 are pure bulk-reservation drift
+    Smoking gun: EXP-323 timestamped LATER than EXP-349.
+      next_id was bulk-advanced past 349 in one transaction; intermediate
+      slots 324–348 were never written. Same pattern 350–383.
+    Conclusion: 86 of 94 are benign drift, not lost work.
+    Filed: PROP-053 (audit script + reference doc to prevent recurrence).
 
-monitor/integrity/ has 172 git-only files (~36 MB) NOT on FUSE:
-  - narrative-cite-audit-*.json:        20 git-only (1.7 MB each → 34 MB)
-  - workspace-sync-runs/run-*.json:     92 git-only
-  - verify-pending-run-*.json:          85 git-only
+  ISS-2134 (WIN-070 re-push loop) — FIXED already
+    PROP-048 dedup guard landed 2026-05-19.
+    decider-intake.md Step 1f Step 3 has the check.
+    Zero WIN-070 win-new pushes since 2026-05-19.
+    Issue still OPEN only because no closure event ran.
+    → Decider: close referencing PROP-048.
 
-All three categories stop on FUSE at mtime 2026-05-17T14:20Z. Git extends
-through 2026-05-20T22:05Z. The round-trip is a side-effect of `node build.js
-publish` / `sync-workspace`, invoked by decider after self-apply (per
-decider-patches-and-selfapply.md L508). Between 2026-05-17T20:22Z and today,
-only ONE auto-build commit fired (PROP-050 on 5/20). Workspace-sync's hourly
-cycle kept pushing audit files to git, but they never round-tripped to FUSE
-because workspace-sync.md never invokes syncToWorkspace().
+  ISS-1285 (raw-text/02-wins.txt stale) — still real
+    File still says "EXTRACTED: 2026-03-12, 39 confirmed"
+    Dome now has 69 WINs — gap of 30.
+    No refresh mechanism in build-scripts/ or scripts/.
+    Recommended: 5-line addition to poller.md, route to analyst-baby.
 
-=== Proposed fix (PROP-052) ===
+PIPELINE STATE: mostly healthy.
+  Git truth (not FUSE mtimes — FUSE lags by one sync round-trip):
+    poller, decider, integrity:      0–2h fresh ✓
+    analyst, analyst-baby, curmudgeon: 2h fresh ✓
+    sloppytoppy-score, sloppytoppy-rewrite: 2h files but tasks DISABLED
+  Auth: PAT scope verified (200 OK).
+  Disk: root 96% used / 418MB free; project footprint 352MB (below 500MB cleanup threshold).
+  Backlog: 33 open issues, 0 unrouted. Net velocity −7 (2nd consecutive run);
+           expected to flip positive within 2–3 runs as 5-21 disaster lag clears.
 
-Single-line addition at end of workspace-sync.md Step 4b:
-    node build.js sync-workspace || echo "WARN: ..."
-Plus a Rules-section update explicitly permitting sync-workspace (alongside
-the existing html exception). Reuses PROP-010 plumbing. Idempotent. Append-
-only-safe (only copies files not yet on FUSE). Non-blocking on failure.
+OTHER FINDINGS (see report findings[]):
+  FND-04 — dome-social hasn't run since 5-21 (missed 3 daily slots) despite enabled.
+  FND-05 — sloppytoppy-score and sloppytoppy-rewrite remain disabled.
+  FND-07 — tree-entry count 4374 vs post-recovery 4757 (delta −383). Unaccounted.
+           Operator with full clone can run `git diff --name-status 1488170d..HEAD | grep ^D` to enumerate.
 
-=== Critical sequencing ===
+INTEGRITY BUILD-DRIFT (today 05:45Z): decider committed PRED-073 data
+  changes without running build.js — docs/index.html still has stale prose.
+  Decider's responsibility, not tinker's. Will surface on next decider run.
 
-MUST land AFTER PROP-051 Workstream C (monitor/integrity pruning). Without
-pruning, this fix would repopulate FUSE with the historical audit-file
-accumulation (~36 MB at current state; ~600 MB at pre-disaster state). That
-bloat is exactly what triggered the 2026-05-21 disaster.
+CLAUDE.MD UPDATE NEEDED (next Mode 3 run):
+  CLAUDE.md says "all 11 tasks DISABLED until PROP-051 lands."
+  Actual scheduler state: 10/12 dome-* tasks ENABLED and producing fresh output.
+  Only sloppytoppy-score and sloppytoppy-rewrite remain disabled.
 
-Operator apply order:
-  1. PROP-051 Workstream A (safety gates) — authored, pending apply (blocks unpause)
-  2. PROP-051 Workstream C (pruning)       — authored, pending apply
-  3. PROP-052 (this PROP, round-trip fix)  — apply third
+OPERATOR ACTIONS (7):
+  1. [Decider] Close ISS-2105 + ISS-2175 referencing PROP-053.
+  2. [Decider] Close ISS-2134 referencing PROP-048.
+  3. [Operator] Approve/reject PROP-053.
+  4. [Operator] Re-check dome-social schedule (3 missed runs).
+  5. [Operator] Re-enable or document sloppytoppy-* as intentionally paused.
+  6. [Operator] Update CLAUDE.md "11 tasks paused" claim.
+  7. [Decider] Rebuild docs/index.html — PRED-073 build drift.
 
-PROP-052's two patches sit in regions of workspace-sync.md that PROP-051
-does not touch (P1 at L921, P2 at L932). No textual conflict.
-
-=== Counter-arguments addressed ===
-
-(a) Intentional clone-only? No — state-verification.md L139 + historical
-    FUSE state refute. Tinker's grep paths expect FUSE-presence.
-(b) Stale FUSE ls? No — fresh find at 5/21T05:45Z + three independent
-    categories show identical cutoff.
-(c) Re-create 720MB bloat? Yes if mis-ordered, no if sequenced correctly.
-(d) Other unknown categories? Bucket-level diagnostic shows only
-    monitor/integrity/ has the git-only-extra pattern.
-(e) Sync-workspace from wrong clone? No — auto-detect handles same session.
-(f) Pruning race conditions? Eventual consistency within 2 cycles.
-
-=== Side observations (carried over from prior runs) ===
-
-monitor/decisions/open-issues.json remains JSON-corrupt at byte 45760.
-This blocks PROP-030 backlog-trend pre-flight. Separate decider-side bug
-(FUSE-only degraded mode wrote partial JSON). Operator may want to file a
-third directive specifically for this corruption.
-
-=== Pre-flight (PROP-030 backlog trend) ===
-
-Skipped — open-issues.json unparseable. Will resume when fixed.
-
-=== No self-apply ===
-
-Per DIRECTIVE-20260521-002 scope_authority: 'Tinker does NOT self-apply.'
-This run authored PROP-052 and updated directive lifecycle fields via the
-DIRECTIVE-LIFECYCLE additive-edit exception (status: pending → completed).
-No clones created during this run (directive constraint: disk still
-recovering from disaster). All diagnostics via FUSE + GitHub Tree API.
-
-Operator + cowork-claude apply PROP-052 after PROP-051 Workstream A+C land.
+NEXT TINKER RUN: Mode 3 (cost engineering) — context-load audit,
+  CLAUDE.md performance + accuracy pass, sloppytoppy re-enable readiness.
