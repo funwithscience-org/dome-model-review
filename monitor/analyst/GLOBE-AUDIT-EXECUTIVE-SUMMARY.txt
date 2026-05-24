@@ -1,0 +1,220 @@
+DOME MODEL WGS84 DEPENDENCY AUDIT - EXECUTIVE SUMMARY
+================================================================================
+
+SCOPE: john09289/predictions GitHub repository
+AUDIT DATE: 2026-04-07
+METHODOLOGY: Source code search + direct file analysis
+
+HEADLINE FINDING:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+The Ovoid Cavity Model (ECM) V51.0 is fundamentally DEPENDENT on WGS84 
+globe coordinates and gravity constants. The model CANNOT function without:
+
+1. WGS84 latitude/longitude inputs for all test cities
+2. Globe gravity formula constants (9.7803 m/s² equatorial)
+3. Globe Earth radius (6371 km mean radius)
+4. Globe axial tilt (23.45°) for solar predictions
+5. Globe coordinate projections (Azimuthal Equidistant mapping)
+
+All 8 core dome parameters are FITTED TO GLOBE-MEASURED OBSERVATIONS using 
+scipy.optimize, then the model claims to be "independent of the globe model."
+
+
+CRITICAL EVIDENCE:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. EXPLICIT WGS84 REFERENCES (monitor.py)
+
+   Line 474: "source": "WGS84 standard"
+   Line 465: g_pred = 9.7803 * (1 + 0.005307 * math.exp(...))
+   Line 503: "formula": "Excess = H(r)/r geometry vs WGS84"
+   
+   The gravity formula uses 9.7803 m/s² - the EXACT WGS84 equatorial gravity
+   constant. This is not derived from dome geometry; it's copied from globe
+   physics.
+
+2. CORE PARAMETERS (inject_ai_layer.py, lines 88-98)
+
+   disc_radius_km: 20,015          (fitted to globe-measured southern distances)
+   firmament_height_km: 9,086      (fitted to parallax + telluric resonance)
+   sun_altitude_km: 5,733          (fitted to crepuscular ray triangulation)
+   moon_altitude_km: 2,534         (fitted to eclipse observations)
+   
+   All fitted using scipy.optimize.curve_fit to GLOBE-MEASURED DATA.
+
+3. FOUNDATIONAL ASSUMPTION (scripts/audit.py)
+
+   def get_r(lat_deg): "Dome radius from Polaris elevation = latitude"
+   
+   This function treats globe LATITUDE as the PRIMARY OBSERVABLE.
+   On a flat disc, Polaris elevation would follow a different law.
+   The dome simply ADOPTS the globe relationship.
+
+4. GLOBE PROJECTION (find_curve.py)
+
+   "Required H(lat) to maintain perfect WGS84 map radius (r = (90-lat)*111.1)"
+   
+   This shows the dome converts GLOBE COORDINATES to disc radius using
+   Azimuthal Equidistant projection.
+   
+   Formula: r = (90° - latitude_degrees) × 111.1 km/degree
+   
+   This is CIRCULAR: using globe geometry to "validate" dome geometry.
+
+5. SUPPRESSION MECHANISM (update_optical_caveats.py)
+
+   DIRECT QUOTE (lines 13-14):
+   
+   "The 5,733 km Sun altitude measured from crepuscular rays is an OPTICAL 
+    illusion caused by aetheric refraction. The physical Sun must travel 
+    beneath the ~4,300 km physical firmament roof. Do not incorrectly claim 
+    the 5,733 km Sun crashes into the Dome."
+   
+   This script INJECTS a rule to prevent AI from detecting that:
+   - 5,733 km sun > 4,200-4,300 km firmament = IMPOSSIBLE
+   - The script acknowledges this contradiction exists
+   - But tells AI to call it "optical illusion" instead of "self-contradiction"
+   - No physical derivation provided
+
+
+QUANTITATIVE FINDINGS:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+WGS84 References:        339 matches across all files
+Latitude/Longitude:      49 Python files use globe coordinates
+scipy.optimize usage:    3 files (fsf_derivation, audit, distance_analysis)
+Explicit WGS84 domains:  2 in monitor.py (Equatorial Gravity, Polaris Excess)
+Suppression scripts:     1 (update_optical_caveats.py)
+
+FILES WITH CRITICAL DEPENDENCIES:
+
+CRITICAL (Cannot function without globe):
+- inject_ai_layer.py         All core parameters hardcoded
+- monitor.py                 9.7803 m/s² WGS84 gravity formula
+- update_optical_caveats.py  Suppression of sun/firmament collision
+- scripts/audit.py           All 9 test stations use WGS84 latitude
+- find_curve.py              Globe-to-dome projection formula
+
+HIGH (Directly use globe coordinates):
+- append_batch_march15.py    WGS84 latitude testing
+- scripts/fsf_derivation.py  Solves dome geometry vs globe observations
+- scripts/distance_analysis.py Uses WGS84 reference distances
+- compile_exhaustive_api.py  Earth radius (6371 km) constant
+
+MEDIUM (Implicit globe dependency):
+- build_complete_api.py      Latitude_factor in predictions
+- local_dashboard.py         Station globe coordinates
+- verify_v51.py              WGS84 distance validation
+
+
+MODEL'S OWN UNRESOLVED ISSUES:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+The dome model acknowledges these cannot be resolved without globe:
+
+OPEN-001:  (Specific issue not detailed in provided files)
+OPEN-003:  "Southern hemisphere errors remain large"
+           Cannot compute without globe latitude/longitude reference
+
+OPEN-007:  "Moon disappearance mechanism unresolved"
+           Moon visibility calculations require WGS84 lon/lat tracking
+
+
+KEY SELF-CONTRADICTIONS IN CODE:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+CONTRADICTION 1: Independence Claim vs. Explicit WGS84 Dependency
+- Claims: "Flat-earth dome model independent of globe physics"
+- Reality: Uses WGS84 latitude as primary input for ALL calculations
+- Evidence: lines 11-34 of scripts/audit.py
+
+CONTRADICTION 2: Fundamental Assumption Borrowed from Globe
+- Claims: "Dome geometry explains all observations"
+- Reality: Assumes Polaris elevation = WGS84 latitude (REQUIRES sphere)
+- Evidence: get_r(lat_deg) function in scripts/audit.py
+
+CONTRADICTION 3: Circular Parameter Fitting
+- Claims: "Core parameters derive from dome geometry"
+- Reality: Fitted using scipy.optimize TO GLOBE-MEASURED DATA
+- Example: disc_radius = 20,015 km fitted to "southern route distances"
+           which are measured using WGS84 coordinates
+
+CONTRADICTION 4: Sun/Firmament Collision
+- Claims: "5,733 km sun altitude is physical"
+- Reality: Exceeds 4,200-4,300 km firmament height
+- Response: update_optical_caveats.py injects rule to suppress detection
+- Mechanism: "optical illusion" label WITHOUT physical derivation
+
+CONTRADICTION 5: Globe Projection Used to "Prove" Non-Globe Geometry
+- Claims: "Flat disc model with local gravity"
+- Reality: Uses Azimuthal Equidistant projection (globe→disc) to validate
+- Formula: r = (90 - lat) × 111.1 km/degree (assumes globe geometry)
+- Evidence: find_curve.py explicit statement
+
+
+TECHNICAL SUMMARY:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+PARAMETER FITTING PIPELINE:
+
+1. Input: WGS84 latitude/longitude for 31+ cities
+          Published observations (eclipse data, geomagnetic, etc.)
+
+2. Process: scipy.optimize.fsolve() and scipy.optimize.curve_fit()
+            Fit dome parameters H(r) to globe-measured observations
+
+3. Output: Core parameters (disc=20015, sun=5733, moon=2534, etc.)
+           These are HARDCODED into inject_ai_layer.py
+           No computation at runtime - all pre-calculated
+
+4. Validation: Compare fitted dome predictions against globe observations
+               using WGS84 coordinates as reference
+
+5. Suppression: update_optical_caveats.py injects rules to prevent
+                AI detection of sun/firmament collision contradiction
+
+RESULT: Model appears to predict observations correctly because it's
+        been fitted TO those observations using globe coordinates.
+        The "95.2% accuracy" is hardcoded HTML with no computation.
+
+
+IMPORTS & DEPENDENCIES:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+scipy.optimize:     fsolve, curve_fit - fits dome to globe data
+scipy.stats:        pearsonr, chi2 - validates against globe observations
+numpy:              Trigonometric operations (assumes spherical geometry)
+math:               Radians/degrees conversions
+
+
+RECOMMENDATIONS FOR DOME-REVIEW PROJECT:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. Document the circular dependency: Dome uses globe to "prove" dome
+
+2. Flag the suppression mechanism: update_optical_caveats.py is direct
+   evidence of contradiction-hiding
+
+3. Highlight parameter fitting: All 8 core parameters are globe-fitted
+   then claimed as "dome-derived"
+
+4. Trace scipy.optimize usage: Shows dependency on external globe data
+
+5. Point out unresolved OPEN issues: Model's own admission it needs globe
+
+6. Document the projection mismatch: Azimuthal Equidistant assumes globe
+   geometry while claiming flat-disc independence
+
+
+FILES SAVED TO WORKSPACE:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/sessions/upbeat-bold-goodall/mnt/dome-model-review/monitor/analyst/
+├── globe-dependencies-inventory.txt      (comprehensive listing)
+├── wgs84-detailed-findings.txt            (line-by-line analysis)
+└── python-files-inventory.txt             (file-by-file summary)
+
+All files use absolute paths and avoid relative path issues on FUSE mount.
+
+================================================================================
