@@ -39,6 +39,15 @@ const VERBOSE = args.includes('--verbose') || args.includes('-v');
 let rootArg = null;
 const rootIdx = args.indexOf('--root');
 if (rootIdx >= 0 && args[rootIdx + 1]) rootArg = args[rootIdx + 1];
+// PROP-054: --max-archive-per-policy <N> caps the per-category blast radius on
+// first apply. When unset, no cap. Eligibility filter runs first; cap takes
+// the OLDEST N eligible per category so prune is incremental + verifiable.
+let MAX_PER_POLICY = null;
+const maxIdx = args.indexOf('--max-archive-per-policy');
+if (maxIdx >= 0 && args[maxIdx + 1]) {
+  const n = parseInt(args[maxIdx + 1], 10);
+  if (Number.isFinite(n) && n >= 0) MAX_PER_POLICY = n;
+}
 
 // --- Locate repo root ----------------------------------------------------
 
@@ -58,6 +67,45 @@ if (!REPO_ROOT) {
 const INTEGRITY_DIR = path.join(REPO_ROOT, 'monitor', 'integrity');
 const WS_SYNC_RUNS_DIR = path.join(INTEGRITY_DIR, 'workspace-sync-runs');
 
+// --- Filename-embedded timestamp parser (PROP-054) -----------------------
+//
+// Fresh-clone execution sets every checked-out file's mtime to the clone time,
+// so fs.statSync().mtimeMs is meaningless for age computation. All file
+// categories embed an ISO timestamp in the filename; parse it instead.
+//
+// Patterns are anchored to a '-' boundary on the left (the agent-name prefix
+// ends with '-'). Tried most-specific to most-general. Returns ms since epoch,
+// or null if no pattern matches (eligibility falls back to mtime + verbose
+// '[parse-fallback]' log).
+
+function parseFilenameTimestamp(name) {
+  const tryParse = (Y, M, D, h, m, s) => {
+    const t = Date.parse(`${Y}-${M}-${D}T${h}:${m}:${s || '00'}Z`);
+    return isNaN(t) ? null : t;
+  };
+  let m;
+  // A: -YYYY-MM-DDTHH-MM-SSZ (workspace-sync-runs; dashed time + Z; tolerates -final/-abort suffix)
+  if ((m = name.match(/-(\d{4})-(\d{2})-(\d{2})T(\d{2})-(\d{2})-(\d{2})Z/))) return tryParse(m[1],m[2],m[3],m[4],m[5],m[6]);
+  // B: -YYYY-MM-DDTHH:MM:SSZ (push-failure colon variant)
+  if ((m = name.match(/-(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})Z/))) return tryParse(m[1],m[2],m[3],m[4],m[5],m[6]);
+  // C: -YYYY-MM-DDTHH--MM--SSZ (push-failure double-dash variant)
+  if ((m = name.match(/-(\d{4})-(\d{2})-(\d{2})T(\d{2})--(\d{2})--(\d{2})Z/))) return tryParse(m[1],m[2],m[3],m[4],m[5],m[6]);
+  // D: -YYYY-MM-DDTHHMMSSZ (push-failure undashed-seconds + Z)
+  if ((m = name.match(/-(\d{4})-(\d{2})-(\d{2})T(\d{2})(\d{2})(\d{2})Z/))) return tryParse(m[1],m[2],m[3],m[4],m[5],m[6]);
+  // E: -YYYY-MM-DDTHHMMZ (verify-pending-run, narrative-cite-audit; HHmm + Z)
+  if ((m = name.match(/-(\d{4})-(\d{2})-(\d{2})T(\d{2})(\d{2})Z/))) return tryParse(m[1],m[2],m[3],m[4],m[5]);
+  // F: -YYYY-MM-DDTHH-MMZ (push-failure dashed HH-MM with Z, no seconds)
+  if ((m = name.match(/-(\d{4})-(\d{2})-(\d{2})T(\d{2})-(\d{2})Z/))) return tryParse(m[1],m[2],m[3],m[4],m[5]);
+  // G: -YYYY-MM-DDTHH-MM (push-failure dashed HH-MM no Z; report-daily 'T-HH-MM'). Negative lookahead
+  //    prevents matching Pattern A's HH-MM-SS (handled above).
+  if ((m = name.match(/-(\d{4})-(\d{2})-(\d{2})T(\d{2})-(\d{2})(?!\d)/))) return tryParse(m[1],m[2],m[3],m[4],m[5]);
+  // H: -YYYYMMDDTHHMMSS (push-failure undashed legacy)
+  if ((m = name.match(/-(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})/))) return tryParse(m[1],m[2],m[3],m[4],m[5],m[6]);
+  // I: -YYYY-MM-DD.json (report-daily date-only). Anchored to .json EOF.
+  if ((m = name.match(/-(\d{4})-(\d{2})-(\d{2})\.json$/))) return tryParse(m[1],m[2],m[3],'00','00','00');
+  return null;
+}
+
 // --- Policies ------------------------------------------------------------
 
 const NOW = Date.now();
@@ -69,7 +117,7 @@ const policies = [
     dir: WS_SYNC_RUNS_DIR,
     pattern: /^run-.*\.json$/,
     retention_days: 30,
-    keep_last_n: null,
+    keep_last_n: 50,                 // PROP-054: belt-and-suspenders floor (~2 days hourly)
     archive: path.join(INTEGRITY_DIR, 'workspace-sync-runs-archive.jsonl')
   },
   {
@@ -77,7 +125,7 @@ const policies = [
     dir: INTEGRITY_DIR,
     pattern: /^verify-pending-run-.*\.json$/,
     retention_days: 14,
-    keep_last_n: null,
+    keep_last_n: 20,                 // PROP-054: ~2-3 days at 6-8 runs/day
     archive: path.join(INTEGRITY_DIR, 'verify-pending-runs-archive.jsonl')
   },
   {
@@ -85,7 +133,7 @@ const policies = [
     dir: INTEGRITY_DIR,
     pattern: /^narrative-cite-audit-.*\.json$/,
     retention_days: null,
-    keep_last_n: 7,    // keep newest 7 at full fidelity, archive older
+    keep_last_n: 7,    // unchanged (already-working policy)
     archive: path.join(INTEGRITY_DIR, 'narrative-cite-audit-archive.jsonl')
   },
   {
@@ -93,7 +141,7 @@ const policies = [
     dir: INTEGRITY_DIR,
     pattern: /^push-failure-.*\.json$/,
     retention_days: 14,
-    keep_last_n: null,
+    keep_last_n: 20,                 // PROP-054: covers ~1 week worst case
     archive: path.join(INTEGRITY_DIR, 'push-failure-archive.jsonl')
   },
   {
@@ -101,7 +149,7 @@ const policies = [
     dir: INTEGRITY_DIR,
     pattern: /^report-\d{4}-\d{2}-\d{2}.*\.json$/,
     retention_days: 90,
-    keep_last_n: null,
+    keep_last_n: 30,                 // PROP-054: ~1 month post-mortem depth
     archive: path.join(INTEGRITY_DIR, 'report-archive.jsonl')
   }
 ];
@@ -117,33 +165,55 @@ function listMatches(policy) {
     let st;
     try { st = fs.statSync(full); } catch { continue; }
     if (!st.isFile()) continue;
-    out.push({ name, full, mtimeMs: st.mtimeMs, size: st.size });
+    const parsedTs = parseFilenameTimestamp(name);   // PROP-054: prefer filename
+    if (VERBOSE && parsedTs == null) console.log(`  [parse-fallback] ${name} — using mtime`);
+    out.push({ name, full, mtimeMs: st.mtimeMs, parsedTs, size: st.size });
   }
-  // Newest first so keep_last_n is straightforward.
-  out.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  // Newest first (by parsed timestamp; fall back to mtime). Stable for keep_last_n.
+  out.sort((a, b) => (b.parsedTs || b.mtimeMs) - (a.parsedTs || a.mtimeMs));
   return out;
 }
 
 function eligibleForArchive(policy, matches) {
-  if (policy.keep_last_n != null) {
-    return matches.slice(policy.keep_last_n);
-  }
+  // PROP-054: floor enforced FIRST. Even if every parsed_ts is null and every
+  // effective_ts equals clone-time (defeating retention_days), the floor still
+  // preserves the newest keep_last_n. Belt-and-suspenders against future
+  // parse regressions.
+  const floor = policy.keep_last_n != null
+    ? new Set(matches.slice(0, policy.keep_last_n).map(m => m.name))
+    : new Set();
   if (policy.retention_days != null) {
     const cutoff = NOW - policy.retention_days * DAY_MS;
-    return matches.filter(m => m.mtimeMs < cutoff);
+    return matches.filter(m => {
+      if (floor.has(m.name)) return false;
+      const effTs = m.parsedTs || m.mtimeMs;
+      return effTs < cutoff;
+    });
   }
+  // keep_last_n-only policy (no retention_days): everything outside the floor is eligible.
+  if (policy.keep_last_n != null) return matches.filter(m => !floor.has(m.name));
   return [];
 }
 
 function runPolicy(policy) {
   const matches = listMatches(policy);
-  const eligible = eligibleForArchive(policy, matches);
+  let eligible = eligibleForArchive(policy, matches);
   if (matches.length === 0) {
     console.log(`[${policy.name}] no files matched (dir absent or empty).`);
-    return { policy: policy.name, matched: 0, eligible: 0, archived: 0, deleted: 0, bytes_reclaimed: 0 };
+    return { policy: policy.name, matched: 0, eligible: 0, archived: 0, deleted: 0, bytes_reclaimed: 0, capped: 0 };
   }
-  console.log(`[${policy.name}] matched=${matches.length} eligible=${eligible.length}` +
-              ` (policy: ${policy.keep_last_n != null ? 'keep_last_n=' + policy.keep_last_n : 'retention_days=' + policy.retention_days})`);
+  // PROP-054 safety cap: if --max-archive-per-policy is set, take the OLDEST N
+  // eligible (eligible is currently sorted newest-first by parsedTs/mtime, so
+  // we slice from the tail). Keeps prune incremental and verifiable on first
+  // apply.
+  let capped = 0;
+  if (MAX_PER_POLICY != null && eligible.length > MAX_PER_POLICY) {
+    capped = eligible.length - MAX_PER_POLICY;
+    eligible = eligible.slice(-MAX_PER_POLICY);
+  }
+  console.log(`[${policy.name}] matched=${matches.length} eligible=${eligible.length + capped}` +
+              (capped > 0 ? ` (capped to ${eligible.length} via --max-archive-per-policy)` : '') +
+              ` (policy: retention_days=${policy.retention_days} keep_last_n=${policy.keep_last_n})`);
 
   let archived = 0;
   let deleted = 0;
@@ -196,7 +266,7 @@ function runPolicy(policy) {
               ` bytes_reclaimed=${(bytes_reclaimed/1024/1024).toFixed(2)}MB` +
               ` archive=${path.relative(REPO_ROOT, policy.archive)}`);
 
-  return { policy: policy.name, matched: matches.length, eligible: eligible.length, archived, deleted, bytes_reclaimed };
+  return { policy: policy.name, matched: matches.length, eligible: eligible.length + capped, archived, deleted, bytes_reclaimed, capped };
 }
 
 // --- Main ----------------------------------------------------------------
