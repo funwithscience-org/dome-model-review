@@ -149,7 +149,7 @@ const policies = [
     dir: INTEGRITY_DIR,
     pattern: /^report-\d{4}-\d{2}-\d{2}.*\.json$/,
     retention_days: 90,
-    keep_last_n: 30,                 // PROP-054: ~1 month post-mortem depth
+    keep_last_n: 20,                 // PROP-054: ~20 days post-mortem depth (operator-tweaked 2026-05-24 from initial 30)
     archive: path.join(INTEGRITY_DIR, 'report-archive.jsonl')
   }
 ];
