@@ -134,7 +134,10 @@ const policies = [
     pattern: /^narrative-cite-audit-.*\.json$/,
     retention_days: null,
     keep_last_n: 7,    // unchanged (already-working policy)
-    archive: path.join(INTEGRITY_DIR, 'narrative-cite-audit-archive.jsonl')
+    archive: path.join(INTEGRITY_DIR, 'narrative-cite-audit-archive.jsonl'),
+    archive_body: false              // operator tweak 2026-05-24: narrative bodies are 1-2MB each;
+                                     // archive only {file, mtime, size} to actually save disk.
+                                     // Default for other policies is true (bodies tiny enough).
   },
   {
     name: 'push-failure',
@@ -151,6 +154,17 @@ const policies = [
     retention_days: 90,
     keep_last_n: 20,                 // PROP-054: ~20 days post-mortem depth (operator-tweaked 2026-05-24 from initial 30)
     archive: path.join(INTEGRITY_DIR, 'report-archive.jsonl')
+  },
+  {
+    // operator tweak 2026-05-24: PROP-051 safety-gate sentinel files at top of
+    // monitor/integrity/. One per aborted workspace-sync cycle. Low volume but
+    // uncategorized otherwise.
+    name: 'workspace-sync-abort',
+    dir: INTEGRITY_DIR,
+    pattern: /^workspace-sync-abort-.*\.json$/,
+    retention_days: 30,
+    keep_last_n: 10,
+    archive: path.join(INTEGRITY_DIR, 'workspace-sync-abort-archive.jsonl')
   }
 ];
 
@@ -219,21 +233,28 @@ function runPolicy(policy) {
   let deleted = 0;
   let bytes_reclaimed = 0;
 
+  // operator tweak 2026-05-24: default archive_body=true preserves the file's
+  // full content as a JSONL record. Set archive_body=false on a policy to
+  // archive metadata only (file/mtime/size), which is what actually saves disk
+  // for categories where the source files are large (narrative-cite-audit
+  // bodies were ~1.8MB each — preserving them turned a 96MB file count into
+  // a 96MB JSONL, net-zero disk savings).
+  const ARCHIVE_BODY = policy.archive_body !== false;
+
   for (const m of eligible) {
-    let body;
-    try {
-      const raw = fs.readFileSync(m.full, 'utf8');
-      try { body = JSON.parse(raw); } catch { body = { _raw_text: raw }; }
-    } catch (e) {
-      console.warn(`  [skip] could not read ${m.name}: ${e.message}`);
-      continue;
+    let body = null;
+    if (ARCHIVE_BODY) {
+      try {
+        const raw = fs.readFileSync(m.full, 'utf8');
+        try { body = JSON.parse(raw); } catch { body = { _raw_text: raw }; }
+      } catch (e) {
+        console.warn(`  [skip] could not read ${m.name}: ${e.message}`);
+        continue;
+      }
     }
-    const record = {
-      file: m.name,
-      mtime: new Date(m.mtimeMs).toISOString(),
-      size: m.size,
-      body
-    };
+    const record = ARCHIVE_BODY
+      ? { file: m.name, mtime: new Date(m.mtimeMs).toISOString(), size: m.size, body }
+      : { file: m.name, mtime: new Date(m.mtimeMs).toISOString(), size: m.size };
     const line = JSON.stringify(record) + '\n';
     if (APPLY) {
       try {
