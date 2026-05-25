@@ -1,0 +1,154 @@
+{
+  "prop_id": "PROP-057",
+  "title": "CLAUDE.md Monitoring Pipeline table accuracy correction (schedule rot + missing prune-integrity entry + agent count)",
+  "status": "proposed",
+  "priority": "medium",
+  "author": "tinker (Mode 3 audit, run tinker-2026-05-25T06-55)",
+  "authored_at": "2026-05-25T06:55:00Z",
+  "source_finding": "FND-01-tinker-2026-05-25T06-55 (expanded scope of FND-06 from 2026-05-25T02-48 and FND-03 from 2026-05-25T06-08, which were narrowly about analyst-baby cadence only — this audit found the rot is broader)",
+  "summary": "The Monitoring Pipeline table in CLAUDE.md (lines 155-172) is materially out of sync with the actual scheduled-task crons. Five of twelve listed agents have inaccurate schedule descriptions; one agent (dome-prune-integrity) is missing from the table entirely; the prose count 'Eleven scheduled agents' is wrong (currently 13 task definitions: 11 enabled + 2 DISABLED sloppytoppy variants, of which 12 are listed in the table); and two listed agents (dome-sloppytoppy-score, dome-sloppytoppy-rewrite) are DISABLED per CLAUDE.md's own narrative (workspace-sync disaster section) but appear without that marker. Every new session and every agent reads this table; the inaccuracy compounds across all agents.",
+  "problem": {
+    "evidence": {
+      "source_of_truth": "list_scheduled_tasks tool output (captured at run tinker-2026-05-25T06-55)",
+      "discrepancies": [
+        {
+          "agent": "dome-analyst",
+          "claude_md_says": "Variable (30m churn-and-burn / 8h quiet)",
+          "actual_cron": "50 0,4,8,12,16,20 * * *",
+          "actual_description": "4-hour cadence (BAU restored 2026-05-18 AM after weekend burndown). Offset :50 maintains analyst → decider(:10, +80min) → curmudgeon(:30, +80min) routing flow. Hours 0/4/8/12/16/20.",
+          "fix": "Every 4h (`50 0,4,8,12,16,20 * * *`); BAU; can bump to 30m under load"
+        },
+        {
+          "agent": "dome-analyst-baby",
+          "claude_md_says": "Every 2h (`20 */2 * * *`)",
+          "actual_cron": "20 4,16 * * *",
+          "actual_description": "12-hour cadence (BAU restored 2026-05-18 AM — 4:20 AM + 4:20 PM local, off-peak). Mode 1 BAU tracker drain ONLY. Bump back to 1h or 4h if assigned-analyst grows past 5 again.",
+          "fix": "Twice daily (`20 4,16 * * *`); 04:20 and 16:20 local; bump to 1h/4h if assigned-analyst > 5"
+        },
+        {
+          "agent": "dome-curmudgeon",
+          "claude_md_says": "Variable (30m churn-and-burn / 4h quiet)",
+          "actual_cron": "30 3,7,11,15,19,23 * * *",
+          "actual_description": "4-hour cadence (BAU restored 2026-05-18 AM after weekend burndown). Offset :30 sits +80min after decider (:10). Hours 3/7/11/15/19/23.",
+          "fix": "Every 4h (`30 3,7,11,15,19,23 * * *`); BAU; can bump to 30m under load"
+        },
+        {
+          "agent": "dome-decider",
+          "claude_md_says": "Variable (1h churn-and-burn / 4h quiet)",
+          "actual_cron": "10 2,6,10,14,18,22 * * *",
+          "actual_description": "4-hour cadence (BAU restored 2026-05-18 AM after weekend burndown). Offset :10 sits +80min after analyst (:50). Hours 2/6/10/14/18/22.",
+          "fix": "Every 4h (`10 2,6,10,14,18,22 * * *`); BAU; can bump to 1h under load"
+        },
+        {
+          "agent": "dome-integrity",
+          "claude_md_says": "Daily 9 AM",
+          "actual_cron": "0 2 * * *",
+          "actual_description": "Daily 02:08 AM",
+          "fix": "Daily 02:00 (`0 2 * * *`)"
+        },
+        {
+          "agent": "dome-tinker",
+          "claude_md_says": "Daily 10:30 AM",
+          "actual_cron": "30 3 * * *",
+          "actual_description": "Daily 03:39 AM",
+          "fix": "Daily 03:30 (`30 3 * * *`)"
+        },
+        {
+          "agent": "dome-social",
+          "claude_md_says": "Daily 11 AM",
+          "actual_cron": "30 4 * * *",
+          "actual_description": "Daily 04:36 AM",
+          "fix": "Daily 04:30 (`30 4 * * *`)"
+        },
+        {
+          "agent": "dome-prune-integrity",
+          "claude_md_says": "MISSING from table",
+          "actual_cron": "0 9 * * *",
+          "actual_description": "PROP-051 Workstream C — daily prune of monitor/integrity/ retention windows. Archives older per-run artifacts to JSONL and deletes sources. Created 2026-05-23 after workspace-sync mass-delete disaster.",
+          "fix": "Add a new row: | dome-prune-integrity | Daily 09:00 (`0 9 * * *`) | Haiku | (no prompt file — script-only via SKILL.md) | PROP-051 Workstream C — archive monitor/integrity/ per-run artifacts to JSONL on retention windows |"
+        },
+        {
+          "agent": "dome-sloppytoppy-score",
+          "claude_md_says": "(listed without DISABLED marker)",
+          "actual_state": "enabled=false (DISABLED). Per CLAUDE.md narrative line 110-ish (workspace-sync disaster section): 'dome-sloppytoppy-score + dome-sloppytoppy-rewrite remain DISABLED pending operator decision.' The narrative and the table are inconsistent.",
+          "fix": "Append ' (DISABLED — pending operator decision)' to the schedule column. OR leave in the table with a footnote referencing the disaster-recovery section."
+        },
+        {
+          "agent": "dome-sloppytoppy-rewrite",
+          "claude_md_says": "(listed without DISABLED marker)",
+          "actual_state": "enabled=false (DISABLED)",
+          "fix": "Same as sloppytoppy-score"
+        }
+      ],
+      "agent_count_prose": {
+        "claude_md_says_line_157": "Eleven scheduled agents run continuously",
+        "actual_enabled_count": 11,
+        "actual_table_row_count": 12,
+        "actual_task_definition_count": 13,
+        "fix": "Update to a self-consistent count. Recommendation: 'Twelve scheduled agents are listed below (eleven currently enabled; two DISABLED — see workspace-sync disaster section).' OR add prune-integrity to the table (per fix above) and change to 'Thirteen scheduled agents are listed below (twelve currently enabled; one DISABLED).' OR compute on first read: 'See the table below; current enabled count is N (query via list_scheduled_tasks).' The first option is simplest given how rarely the table changes."
+      }
+    },
+    "why_this_matters": [
+      "CLAUDE.md auto-loads into every new Cowork session. Wrong schedule descriptions mislead any agent reasoning about cadence (e.g., 'is X stale? expected every 30m...' → 'no, expected every 4h, it's fine').",
+      "Missing prune-integrity entry means any agent doing a 'is the integrity directory growing unbounded?' check won't know there's a pruner.",
+      "Disabled sloppytoppy entries shown as active misleads anyone wondering why no recent score-summary.txt updates (FYI: 100h-202h stale, but DISABLED is the expected state — not a finding).",
+      "Tinker has itself misread these (Mode 1 freshness check uses '2x its schedule' as the staleness threshold; baseline schedules need to be right)."
+    ]
+  },
+  "proposed_change": {
+    "file": "CLAUDE.md",
+    "section": "## Monitoring Pipeline (lines 155-172)",
+    "operations": [
+      {
+        "op": "replace",
+        "find": "Eleven scheduled agents run continuously. All prompts live in `monitor/prompts/*.md` — edit the markdown to change agent behavior.",
+        "replace_with": "Twelve scheduled agents handle the monitoring pipeline (ten currently enabled + dome-prune-integrity + workspace-sync, total eleven enabled; two DISABLED — see workspace-sync disaster section under 2026-05-21). All prompts live in `monitor/prompts/*.md` — edit the markdown to change agent behavior. The current enabled count can be queried at any time via the `list_scheduled_tasks` tool."
+      },
+      {
+        "op": "replace_table",
+        "find": "the existing 12-row | Agent | Schedule | Model | Prompt File | Purpose | table at lines 159-172",
+        "replace_with_table": [
+          "| Agent | Schedule | Model | Prompt File | Purpose |",
+          "|-------|----------|-------|-------------|--------|",
+          "| dome-poller | Every 12h (`0 */12 * * *`) | Sonnet | `poller.md` | Detect changes on dome site, track prediction test windows |",
+          "| dome-analyst | Every 4h (`50 0,4,8,12,16,20 * * *`); BAU, can bump to 30m | Opus | `analyst.md` | New WIN onboarding, deep-attack/holistic expansions, defense neutralization, fingerprints |",
+          "| dome-analyst-baby | Twice daily (`20 4,16 * * *`); 04:20/16:20 local | Sonnet | `analyst-baby.md` | Mode 1 BAU tracker drain — verification-class consolidations (PROP-034 Phase 1) |",
+          "| dome-curmudgeon | Every 4h (`30 3,7,11,15,19,23 * * *`); BAU, can bump to 30m | Opus | `curmudgeon.md` | Adversarial self-review; change-driven + holistic reviews; discovery-mode (PROP-038) |",
+          "| dome-curmudgeon-verify | Every 4h (`30 4,8,12,16,20,0 * * *`) | Sonnet | `curmudgeon-verify.md` | Narrow verification of patched reviews (PROP-038 Phase 1) — class='verification' items with ≤2 minor prior holes |",
+          "| dome-sloppytoppy-score | Daily 03:30 (`30 3 * * *`) — **DISABLED** (pending operator decision after 2026-05-21 disaster) | Sonnet | `sloppytoppy-score.md` | Readability scoring (PROP-039 Phase 1) — two-axis rubric (length + understandability) for flat-earth-level reader |",
+          "| dome-sloppytoppy-rewrite | Every 2 days 05:00 (`0 5 */2 * *`) — **DISABLED** (pending operator decision after 2026-05-21 disaster) | Opus | `sloppytoppy-rewrite.md` | Readability rewriter (PROP-041 Phase 2) — drafts RW-NNN.json proposals for below-floor surfaces with first-class content-preservation audit |",
+          "| dome-decider | Every 4h (`10 2,6,10,14,18,22 * * *`); BAU, can bump to 1h | Opus | `decider.md` | Triage, patches, new WIN commits, expansion integration |",
+          "| dome-integrity | Daily 02:00 (`0 2 * * *`) | Haiku | `structure-integrity.md` | Site health: links, tabs, build drift, data-prose consistency |",
+          "| dome-tinker | Daily 03:30 (`30 3 * * *`) | Opus | `tinker.md` | Pipeline ops: audit, trace handoffs, cost engineering |",
+          "| dome-social | Daily 04:30 (`30 4 * * *`) | Sonnet | `social.md` | Machine-readable layer, discoverability, search rankings |",
+          "| dome-prune-integrity | Daily 09:00 (`0 9 * * *`) | Haiku | (script-only via SKILL.md; see `monitor/scripts/prune-integrity.js`) | PROP-051 Workstream C — archive monitor/integrity/ per-run artifacts to JSONL on retention windows; runs from a fresh shallow clone |",
+          "| dome-workspace-sync | Hourly (`0 * * * *`) | Haiku | `workspace-sync.md` | Commits workspace-only files to git |"
+        ]
+      }
+    ],
+    "estimated_diff_size": "~18-line replacement block (similar shape to existing table). Pure documentation edit, no code or data file touched."
+  },
+  "implementation_path": {
+    "option_a_operator_manual": "Operator edits CLAUDE.md in a clone, commits, pushes. Simplest path. CLAUDE.md is git-owned so FUSE edit won't reach agents; clone-push is required.",
+    "option_b_decider_self_apply": "Decider's self-apply flow already handles CLAUDE.md edits (it touched lines from prior runs). Operator can route this PROP as a 'doc patch' through the normal decider intake — but that requires creating an issue to wrap it, which is overkill for a 18-line table replacement.",
+    "option_c_tinker_direct": "Tinker is empowered for 'Conservative self-fixes — stale URLs, wrong paths, missing fields.' This qualifies, but tinker has not previously pushed CLAUDE.md changes from a clone in any recent run. Adding that capability mid-run is risky on this scheduled invocation (the 2026-05-21 workspace-sync disaster taught the same lesson: agent improvisation under disk/auth pressure compounds). Operator-applied is safer.",
+    "recommendation": "Option A. Operator can apply this in ~2 minutes via `git -C /tmp/edit-clone` followed by the standard publish flow. PROP serves as the spec for what to change."
+  },
+  "verification_pattern": "grep -q 'Twelve scheduled agents handle the monitoring pipeline' CLAUDE.md && grep -q 'dome-prune-integrity' CLAUDE.md && grep -q 'Twice daily (`20 4,16' CLAUDE.md && grep -q 'Daily 03:30 (`30 3 \\* \\* \\*`)' CLAUDE.md && echo FIXED || echo STILL_BROKEN",
+  "blast_radius": "Documentation only. No code change, no script change, no schema change, no data file touched. CLAUDE.md is loaded by every session/agent on read so the fix propagates immediately. No agent decision logic actually keys off the exact prose strings; the inaccuracy is informational, not behavioral.",
+  "rejection_criteria": [
+    "If the operator plans to re-enable sloppytoppy soon (within days), the DISABLED markers in the table will become stale immediately — better to defer this PROP until that decision lands. (Mitigation: keep the markers but link to the disaster-recovery section that explains the gating decision.)",
+    "If schedule descriptions in CLAUDE.md are deliberately fuzzy ('Variable') to give the operator latitude to swap between churn-and-burn and BAU without touching docs, then this PROP over-specifies. (Counter-argument: the current text mixes specificity styles — some rows have cron expressions, some say 'Variable' — and the actual cron is the ground truth either way; the table should match it.)"
+  ],
+  "linked_findings": [
+    "FND-01-tinker-2026-05-25T06-55 (this run, primary)",
+    "FND-03-tinker-2026-05-25T06-08 (narrow scope, analyst-baby only — superseded by this PROP)",
+    "FND-06-tinker-2026-05-25T02-48 (narrow scope, analyst-baby only — superseded by this PROP)"
+  ],
+  "operator_action_required": [
+    "1. Apply the operations above to CLAUDE.md in a clone.",
+    "2. Commit + push via the standard clone path (`git -C /tmp/edit-clone commit -am 'PROP-057: CLAUDE.md monitoring pipeline schedule accuracy fix'` then `git push`).",
+    "3. workspace-sync's git→FUSE direction (which fires on every publish or hourly) will then propagate to FUSE; agents read updated CLAUDE.md on next invocation.",
+    "4. Optional: leave this PROP as `proposed`. The next tinker run will see verification_pattern returns FIXED and update PROP-057 status to `implemented` per the lifecycle rule."
+  ]
+}

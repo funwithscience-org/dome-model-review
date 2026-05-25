@@ -1,0 +1,89 @@
+{
+  "point_id": "WIN-067",
+  "topic": "Antarctic gravity hole — c12 patch verification (verify-mode, class=verification)",
+  "queue_id": 402,
+  "queue_pushed_at": "2026-05-25T05:20:45.926Z",
+  "reviewed_at": "2026-05-25T06:44:34.663Z",
+  "cycle": 13,
+  "current_verdict_holds": true,
+  "confidence": 0.92,
+  "trigger": "priority-queue-win-rewrite",
+  "change_summary": "Verify c12 minor-patch closure: commit ec7a22c (LLSVP+equation rewrite, kappa cross-ref). class=verification, batchable in principle but only 1 item in queue. Net result: 3 of 4 c12 holes closed cleanly; H3 (monitoring-tag carry-over) procedurally OBE via ISS-2187/EXP-432 but substantively unaddressed — code_analysis.monitoring still \"none\" despite direct monitor.py fetch confirming Domain 6 Equatorial Gravity is hardcoded.",
+  "our_argument_summary": "WIN-067 argues the dome's own H(r) = 8,537*exp(-r/8,619) km predicts a 90% gravity drop at the Antarctic rim under any monotonic g↔H(r) coupling (38% even under H^(1/5)), yielding a 170-1,430× error vs measured 0.53% pole-equator variation. The Domain 4 g(r)=9.7803*(1+0.005307*exp(-r/8619)) formula is shown to be a WGS84 tautology that violates its own 0.1%-error falsification threshold by 4.1-4.8× at the Antarctic rim. The Mascon↔SAA r=0.92 correlation (Domain 19) is reframed as shared regional geology, not a dome-specific prediction. Verdict Self-Contradicted.",
+  "dome_code_analysis": {
+    "relevant_files": [
+      "raw-text/08-live-power.txt",
+      "raw-text/05-model.txt",
+      "raw-text/02-wins.txt",
+      "monitor.py (direct fetch — raw-text/ snapshot still missing, ISS-2187/EXP-432)"
+    ],
+    "calculation_pipeline": "Domain 6 in monitor.py (lines 464-475) computes g_pred = 9.7803*(1+0.005307*math.exp(0/LAMBDA_G)) with LAMBDA_G=8619.0 (line 213). Because exp(0/X)=1 unconditionally, the formula degenerates to 9.7803*1.005307 ≈ 9.83217 m/s² at the only evaluated point r=0. Observed value g_obs=9.8322 is hardcoded on line 466. err_g compared against tolerance 0.1%; pass=True.",
+    "hardcoded_vs_computed": "Hardcoded comparator. monitor.py Domain 6 hardcodes BOTH the formula coefficients (9.7803, 0.005307, LAMBDA_G=8619) and the observed value (9.8322); the comparison is between a value the formula returns at r=0 and a hand-typed observed value matching it to within rounding. There is no API call producing g_obs and no non-r=0 evaluation. This is a textbook hardcoded check.",
+    "data_sources_used": [
+      "none — Domain 6 has no API/URL fetch; source field reads \"WGS84 standard\""
+    ],
+    "escape_clauses": "Tolerance set to 0.1% on a comparison that is structurally tautological (formula collapses to its calibration value at the only evaluated point). The exponential decay only matters off r=0 (e.g., the r=20,015 km evaluation WIN-067 forces), and at those points the formula deviates by 0.476% → violates own 0.1% threshold by 4.76×. The monitor.py implementation never evaluates off r=0, so the violation never surfaces in the dashboard.",
+    "our_code_claims_accurate": true,
+    "code_discrepancies": "None substantive. The current detail_evidence text \"identical formula in V51.1 monitor.py\" is verified by direct fetch (monitor.py lines 464-475 match the formula and coefficients quoted). One nit: monitor.py labels the entry \"Equatorial Gravity\" (not \"Gravity Anomaly\"); the detail_evidence and detail_extra references to \"Domain 4 gravity-anomaly entry\" / \"Domain 4 normal gravity\" correctly track the live-power.txt labeling (Domain 4 there) rather than the monitor.py labeling (Domain 6 there). The numbering mismatch between monitor.py domain order and live-power.txt domain order is a known dome-side housekeeping quirk and not a flaw in our review."
+  },
+  "code_analysis_tags": {
+    "monitoring": "hardcoded",
+    "monitoring_evidence": "DIRECT FETCH OF monitor.py 2026-05-25 (raw.githubusercontent.com/john09289/predictions/main/monitor.py, HTTP 200): Domain 6 \"Equatorial Gravity\" lines 464-475 hardcodes g_pred formula coefficients, LAMBDA_G constant, g_obs=9.8322, and tolerance 0.1%. No API call. THIS DIFFERS FROM THE CURRENT wins.json TAG \"none\" — see holes_found[0] below; ISS-1516 was closed-fixed but the tag update never landed.",
+    "relabels_standard": true,
+    "relabels_standard_evidence": "Domain 6 source field reads \"WGS84 standard\"; the formula coefficients are WGS84 (9.7803 = equatorial normal gravity; 0.005307 = gravity flattening; output at r=0 = WGS84 polar 9.8322). This is the globe's answer in dome notation, exactly as detail_evidence argues.",
+    "post_hoc": true,
+    "post_hoc_evidence": "GRACE/GRACE-FO L2 gravity products have been continuously archived since 2002; Pappa et al. 2019 (DOI 10.1029/2019JB017997), Ferraccioli et al. 2011 (Nature), Whitehouse et al. 2012 (GJI) all pre-date dome monitor commit. detail_verdict_text already documents this; no change.",
+    "derives_from_dome": false,
+    "derives_from_dome_evidence": "Confirmed false: the gravity-anomaly numerical prediction is adopted from WGS84 constants and only superficially dressed in dome notation. There is no published derivation path from dome geometry (DISC_R, H0, KAPPA, LAMBDA_G — all locked constants per monitor.py line 211-220) to the Antarctic-rim gravity value.",
+    "reviewed": true
+  },
+  "holes_found": [
+    {
+      "severity": "minor",
+      "description": "CARRY-OVER from c10 H5 / ISS-1516 / c11 H4 / c12 H3. code_analysis.monitoring tag in data/wins.json is still \"none\". Direct fetch of monitor.py 2026-05-25 confirms Domain 6 \"Equatorial Gravity\" (lines 464-475) hardcodes both the formula coefficients and g_obs=9.8322, with no API call — textbook \"hardcoded\". The c12 decider closed this as \"OBE via EXP-432,\" but EXP-432 verified Domain 16 (Telluric Resonance, WIN-008/009) not Domain 6, and the procedural ISS-2187 (raw-text/monitor.py absent from clone) was closed without doing the substantive tag update Hole 3 actually asked for. ISS-1516 (originally raised in c10 H5 with the same content) is also marked closed-fixed but the tag update never landed in wins.json. This is a four-cycle phantom-closure pattern. Severity is minor because no scientific argument depends on the tag; detail_evidence text is correct as-is.",
+      "recommendation": "Decider self-apply: patch data/wins.json WIN-067.code_analysis.monitoring from \"none\" to \"hardcoded\" and add monitoring_evidence (current wins.json record has no evidence field — schema-wise that's OK but inconsistent with the code_analysis_tags template; consider migrating to the tagged-evidence form on this WIN). Re-open ISS-1516 (or open a new tracking issue if reopen is awkward) so the closure ledger reflects that the c10-c13 carry-over was real and the substantive fix landed in c13."
+    },
+    {
+      "severity": "minor",
+      "description": "In the rewritten Mascon↔SAA paragraph, two near-redundant \"downstream consequence\" sentences sit one after another with slightly inconsistent framing. Sentence A (new, from c12-H0+H1 patch): \"The spatial near-coincidence is a downstream consequence of two distinct heterogeneity systems, not a shared cause — and the dome supplies no equation linking dome geometry to either anomaly field.\" Sentence B (pre-existing, preserved): \"The co-location of the two fields is a downstream consequence of shared regional geology, not a novel forecast.\" A defender will quote Sentence B in isolation: \"you concede shared regional geology — that IS the dome's Sub-terrestrial structure.\" Sentence A's \"two distinct heterogeneity systems\" frames the same fact more crisply. The redundancy is cosmetic, not contradictory (regional geology ≠ shared physical cause), but the second \"downstream consequence\" appearing inside two sentences signals filler.",
+      "recommendation": "Decider self-apply candidate (text-only, no source change). Either delete Sentence B entirely (Sentence A already does the work) or rewrite Sentence B to \"so the dome's relabeling of this co-location as 'Sub-terrestrial structure' is a name applied to existing geology, not a novel forecast\" — which preserves the relabel-not-forecast move without re-asserting the downstream-consequence framing. Either fix kills the skim attack on Sentence B alone."
+    }
+  ],
+  "unresolved_prior_cycle": [
+    {
+      "iss_id": "ISS-1516",
+      "prior_cycle": 10,
+      "holes_index": 0
+    }
+  ],
+  "stronger_arguments": [],
+  "kernel_of_truth": {
+    "description": "The c12 patches landed cleanly: the LLSVP framing is now a clean two-chain attribution (CMB-side LLSVP → SAA reverse-flux; sub-lithospheric plume → East Antarctic gravity low) per the recommendation in WIN-067.c12.json:holes_found[0].recommendation; the \"equation for neither\" / \"no equation linking dome geometry to either anomaly field\" rewrite kills the skim-attack against the Domain 4 derivation paragraph; the κ-mediated framework reference now carries a cross-WIN pointer \"(the κ chain attacked in WIN-012–014)\" anchoring the symbol to its definition. The decider's closure rationale on ISS-2192/ISS-2193/ISS-2194 (monitor/decisions/closed-issues.json) accurately describes what landed.",
+    "why_it_doesnt_save_claim": "The verification still surfaces one phantom-closure: ISS-1516 (closed-fixed since c10 era per monitor/decisions/closed-issues.json) and ISS-2187 (closed via EXP-432) both nominally cover the monitoring-tag question, but the underlying data/wins.json code_analysis.monitoring field is still \"none\" four cycles after the first flag. The verify-mode review for c13 catches this exact pattern (decider OBE closure without substantive tag patch), which is the failure mode verify-mode is designed to catch. The other c12 hole closures are good; the monitoring tag is the one remaining substantive gap and is a minor / cosmetic fix."
+  },
+  "recommended_action": "minor_edit",
+  "text_fingerprint": {
+    "claim_length": 22,
+    "finding_length": 283,
+    "detail_evidence_length": 11528,
+    "detail_verdict_length": 1807,
+    "detail_extra_length": 7091,
+    "tldr_evidence_length": 927,
+    "tldr_verdict_length": 433,
+    "verdict": "Self-Contradicted"
+  },
+  "deeper_analysis": "The class=verification batchability gate (curmudgeon.md Step 8a) is moot here: the priority-queue has only one item (qid=402). Anti-staleness check (gate 4): WIN-067 last singleton-deep review = c12 (2026-05-25T02:45Z, 4 hours before this run) — fresh, no force-singleton. Pre-write Step 5 staleness check: git pull --rebase ran clean (no new commits since clone). Confidence 0.92 reflects: high confidence in patch quality verification (direct diff inspection + monitor.py direct fetch), moderate confidence in the monitoring-tag carry-over diagnosis (the EXP-432 / ISS-2187 procedural closure rationale is sound on its face but conflates Domain 16 verification with Domain 6 tag-update need). Verify-mode handoff gate (PROP-038): item.class=\"verification\" → eligible for curmudgeon-verify if c12 holes_found.length≤2, but c12 had 4 holes → fails gate (b) → stays in main curmudgeon scope per Step 0b Phase 1. Correct handling.",
+  "citation_check": {
+    "citations_verified": [
+      "monitor.py direct fetch (raw.githubusercontent.com/john09289/predictions/main/monitor.py, HTTP 200, 2026-05-25): Domain 6 lines 464-475 match detail_evidence formula citation",
+      "EXP-432-baby-batch-1.json: confirms ISS-2187 was scoped to Domain 16 / WIN-008/009 only (target field explicitly: \"ISS-2187: verify whether raw-text/monitor.py is absent intentionally or by pipeline gap; confirm Domain 16 hardcoding claim remains valid\") — does NOT cover Domain 6 / WIN-067 substantive tag update"
+    ],
+    "citations_failed": [],
+    "citations_unchecked": [
+      "Pappa et al. 2019 (DOI 10.1029/2019JB017997) — left unchecked this cycle; verified in earlier cycles c5/c11 per their citation_check arrays",
+      "Tarduno et al. 2015 (DOI 10.1038/ncomms8865) — same, verified in c11",
+      "Finlay et al. 2020 CHAOS-7 (DOI 10.1186/s40623-020-01252-9) — same, verified in c11"
+    ]
+  },
+  "summary_for_decider": "C12 patches (ISS-2192/2193/2194) all landed cleanly per their resolutions. One residual carry-over: ISS-1516 / c11-H4 / c12-H3 about code_analysis.monitoring tag was closed twice (ISS-1516 as fixed without the tag actually being updated; ISS-2187 closed via EXP-432 which verified the WRONG domain — Domain 16 for WIN-008/009, not Domain 6 for WIN-067). Direct monitor.py fetch this run confirms Domain 6 IS hardcoded — the tag SHOULD be \"hardcoded\". Recommend: (a) self-apply patch wins.json[WIN-067].code_analysis.monitoring = \"hardcoded\", (b) open or re-open an ISS to track this c10-c13 phantom-closure pattern so the closure ledger reflects reality, (c) minor cosmetic tightening of the Mascon↔SAA paragraph to remove the two-redundant-downstream-consequence sentences. Carry-over signaling: unresolved_prior_cycle points to ISS-1516; decider should treat as MUST-process per PROP-026 Phase 2 M3 carry-over rule. No verdict change (Self-Contradicted holds and is well-supported). No new substantive science holes. queue_id 402, queue_pushed_at 2026-05-25T05:20:45.926Z asserted set."
+}
