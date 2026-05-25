@@ -1,0 +1,49 @@
+{
+  "id": "DIRECTIVE-20260525-003",
+  "filed_by": "operator-cowork-session",
+  "filed_at": "2026-05-25T17:15:00Z",
+  "status": "pending",
+  "priority": "low",
+  "title": "Design how operator-/decider-/integrity-routed tinker work actually reaches tinker (currently structurally invisible)",
+  "background": "Today's session exposed a structural gap in tinker's work-intake: items routed to tinker via `assigned_to: 'tinker'` on expansion-tracker.json entries (EXP-425), or via `status: 'assigned-tinker'` on open-issues.json entries (ISS-2134, ISS-2175, ISS-1285), are NEVER picked up by tinker's dispatcher. Tinker's only inbound work signals are:\n  (a) `monitor/tinker/operator-directives/*.json` with `status: 'pending'` (operator-filed)\n  (b) Self-initiated Mode 1–4 work based on pipeline-health signals\n\nThe `assigned_to: 'tinker'` and `status: 'assigned-tinker'` fields are written by other agents (analyst, decider, integrity) as routing hints, but they have no consumer on tinker's side. Items sit indefinitely. Today: EXP-425 sat for >48h before operator caught it; ISS-2134 (WIN-070 re-push loop) sat 6+ days even though the root cause was fixed by PROP-048 days ago; ISS-1285 (raw-text staleness) sat ~4 weeks.\n\nThis is the same defect class as: (i) the `assigned_to: 'tinker'` no-op the analyst correctly diagnosed for EXP-425, (ii) the action-typed HNOTE handler that lost the PROP-053 closure HNOTE for 23h until operator added a `close_iss_batch` action verb. Different agents, same pattern: routing fields with no automated consumer.\n\nThe quick fixes today were operator-direct (file a directive, do the work in-session). That doesn't scale.",
+  "evidence": {
+    "tinker_dispatcher_actual_consumers": [
+      "monitor/tinker/operator-directives/*.json filtered by status='pending' (tinker.md Dispatcher Mode Selection)",
+      "monitor/changes/latest-poll-summary.txt + monitor/curmudgeon/tracker.json + monitor/decisions/daily-report-*.json + monitor/analyst/expansion-tracker.json (Mode 1 staleness-check via mtime only — no item iteration)",
+      "monitor/tinker/queue-history.jsonl (PROP-030 backlog-trend metrics, computed not consumed)"
+    ],
+    "tinker_dispatcher_does_NOT_read": [
+      "expansion-tracker.json items where assigned_to='tinker' — tinker.md only computes baby_drain_count_7d metric from tracker, never iterates assigned_to",
+      "open-issues.json items where status='assigned-tinker' — no tinker reader for this field at all",
+      "open-issues.json items where category='integrity_finding' AND assigned_to=tinker — no consumer"
+    ],
+    "examples_observed_today_2026_05_25": [
+      {"id": "EXP-425", "where": "expansion-tracker.json", "field": "assigned_to=tinker, status=pending", "stuck_for": "48+ hours", "resolution": "operator-direct audit run + orphan-backfill (commit pending)"},
+      {"id": "ISS-2134", "where": "open-issues.json", "field": "status=assigned-tinker, severity=major", "stuck_for": "6+ days", "actual_state": "root cause (WIN-070 re-push loop) fixed by PROP-048 dedup guard 2026-05-19; zero re-push events since per tinker FND-03 of run 2026-05-24T05-44; ISS just never closed"},
+      {"id": "ISS-2175", "where": "open-issues.json", "field": "status=assigned-tinker, severity=moderate", "stuck_for": "5+ days", "resolution": "operator-direct close as duplicate of ISS-2105 + PROP-053 completion (commit pending)"},
+      {"id": "ISS-1285", "where": "open-issues.json", "field": "status=assigned-tinker, severity=minor", "stuck_for": "~28 days", "topic": "WIN-012.c5 H8 raw-text staleness — minor, has been on the backlog since 2026-04-27 and is still there"}
+    ],
+    "structural_relationship_to_HNOTE_action_typed_handler": "The decider's HNOTE handler is action-typed: it only processes notes with known action verbs (set_curmudgeon_mode, approve_burndown_batch, cancel_burndown, approve_exp_integration, close_iss_batch). A narrative HNOTE without a known verb is invisible. Same defect class: routing field present, no consumer wired up.",
+    "current_workaround_that_does_not_scale": "Operator manually scans open-issues + tracker each day, files an operator-directive for tinker work, OR does the work operator-direct in a cowork session. Cost: high. Latency: high. Coverage: incomplete (28-day-old ISS-1285 is proof)."
+  },
+  "requested_work": [
+    "Step 1 — Design options analysis: Survey at least 3 design alternatives for surfacing assigned-to-tinker work and recommend one. Three obvious candidates:\n  (a) Add a 'Mode 0: assigned-to-tinker scan' to tinker.md that polls expansion-tracker + open-issues for assigned_to/status=tinker items at pre-flight and elevates them to directive-equivalent priority.\n  (b) Forbid `assigned_to: 'tinker'` and `status: 'assigned-tinker'` on tracker/issue entries; instead require routing agents (analyst, decider, integrity) to write a tinker DIRECTIVE file. Same destination, different writer path.\n  (c) Hybrid: keep the routing fields (they're useful display signals for the operator) but add a periodic 'graveyard' sweep — items with assigned_to/status=tinker older than N days auto-promote to a directive file with status='pending'. Closes the gap without requiring writer-side changes.\n\nThe analyst's diagnosis of EXP-425 favored option (a)-ish ('dispatcher should respect assigned_to semantically'). Both writer-side and reader-side fixes are defensible. Consider the operator-load cost (option a is mechanical, option b requires every routing agent to learn a new prompt, option c is the smallest possible change).",
+    "Step 2 — Recommended fix as a PROP: Author PROP-060 (or whatever's next) implementing the recommended option. Include: prompt edits, script if needed, idempotency contract, edge cases (what if both a tracker entry AND an operator directive exist for the same target? what about already-closed-but-not-removed items?).",
+    "Step 3 — Drain audit: Survey CURRENT open-issues.json + expansion-tracker.json for any items with assigned_to=tinker or status=assigned-tinker that should NOT just sit indefinitely. ISS-1285 is the canonical 28-day case. For each, recommend either (a) close as OBE/already-resolved with reasoning, (b) author an operator directive, or (c) leave for the structural fix.",
+    "Step 4 — Optional follow-up: Consider whether the same defect class affects other agents (curmudgeon, social, integrity). Do any of THEM have routing fields written by others that they don't consume? If yes, the PROP could be generalized."
+  ],
+  "non_goals": [
+    "Do NOT implement any of the design options unilaterally — author a PROP and let operator pick.",
+    "Do NOT modify the action-typed HNOTE handler — that's a separate decider-side defect that PROP-058 follow-up could address.",
+    "Do NOT batch-close all assigned-to-tinker items — Step 3 produces recommendations, operator applies."
+  ],
+  "context_pointers": {
+    "directive_filed_alongside": "DIRECTIVE-20260525-001 (PROP-016 NEVER_PUSH audit, status=completed) and DIRECTIVE-20260525-002 (queue dispatcher discipline, status=completed). DIRECTIVE-003 is the meta-pattern follow-up.",
+    "today_PROPs_applied": ["PROP-055", "PROP-056", "PROP-057", "PROP-058", "PROP-059"],
+    "today_PROPs_authored_pending": ["PROP-058 implementation completed", "PROP-059 implementation completed"],
+    "anchor_in_claude_md": "File Ownership Rules > priority-queue.json mentions structured assigned_to fields; consider whether to add a writer-side discipline note there or in DATA-SCHEMAS.md."
+  },
+  "expected_output": "Tinker run report covers: (Step 1) design options + recommendation, (Step 2) PROP file authored at monitor/tinker/proposals/PROP-NNN.json, (Step 3) drain-audit findings for current assigned-to-tinker items with per-item recommendation, (Step 4 optional) generalization analysis.",
+  "estimated_effort": "Mode 4 PROP-authoring + Mode 1 audit. ~20 min Opus.",
+  "priority_note": "Filed as LOW priority because the immediate operator-direct workarounds work. Structural fix is preferred but not urgent. Tinker may schedule this behind any pending operator-priority items."
+}
