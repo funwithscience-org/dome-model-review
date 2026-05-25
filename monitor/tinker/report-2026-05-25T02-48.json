@@ -1,0 +1,230 @@
+{
+  "run_id": "tinker-2026-05-25T02-48",
+  "run_at": "2026-05-25T02:48:08Z",
+  "mode_selected": "mode_1_pipeline_health",
+  "mode_selection_reason": "Quick-check Mode 1 triggered by stranded-patches sentinel >24h (stranded-patches-2026-05-17T22-20-15Z.json, age 172h, not tombstoned). Mode 2 quick-check is mostly green (only 1 stale FUSE file: monitor/decisions/closed-issues.json — non-critical, workspace-sync will rescue next cycle). Mode 3/4 deferred — Mode 1 deep work yielded two structural decider-side bugs (FND-02, FND-03) and one false-closure (FND-01) that warrant their own Mode 4 PROPs in subsequent runs.",
+  "preflight": {
+    "pat_source_enforcement": {
+      "status": "ok",
+      "verified_http": 200,
+      "pat_prefix": "github_pat_11AQFYC...",
+      "source": "workspace .git/config (PROP-051 Option C)"
+    },
+    "operator_directive_scan": {
+      "directory": "monitor/tinker/operator-directives/",
+      "pending_count": 0,
+      "selected": null,
+      "note": "No pending directives. DIRECTIVE-20260524-001 was completed by the 2026-05-24T08-26 run and PROP-054 was applied by the operator at commit d075f36."
+    },
+    "backlog_trend_metrics": {
+      "open_issues_total": 35,
+      "open_status_count": 1,
+      "assigned_analyst_count": 2,
+      "age_ge_14d_count": 9,
+      "age_ge_30d_count": 3,
+      "oldest_open_age_days": 44.3,
+      "new_issues_velocity_7d": 14,
+      "closed_issues_velocity_7d_ledger": 2,
+      "closed_issues_velocity_7d_truth": 12,
+      "net_velocity_7d_per_ledger": -12,
+      "net_velocity_7d_true": -2,
+      "baby_drain_count_7d": 0,
+      "verify_drain_count_7d": 1,
+      "consecutive_negative_runs": 3,
+      "consecutive_history": "2026-05-21 net=-7, 2026-05-24 net=-7, 2026-05-25 net=-12",
+      "threshold_tier_fired": "moderate",
+      "trigger": "net_velocity_7d < 0 for 2+ consecutive runs",
+      "caveat": "metric is contaminated by closure-ledger write gap (FND-03); 10 of 12 actual 2026-05-24 closures missing from ledger. True net velocity -2. Also distorted by post-disaster agent pause 2026-05-21 to 2026-05-23. Tier is real per the threshold table but root-cause is metric source + transient pause, not a runaway queue."
+    }
+  },
+  "modes_checked": {
+    "mode_1_pipeline_health": {
+      "status": "AMBER",
+      "details": {
+        "agent_staleness_h": {
+          "poller_age_h": 3,
+          "curmudgeon_tracker_age_h": 3,
+          "analyst_expansion_tracker_age_h": 1,
+          "decider_latest_summary_age_h": 1,
+          "baby_summary_age_h": 11,
+          "baby_cadence_note": "baby is on 12h cadence (cron '20 4,16 * * *'), so 11h age is within-window. CLAUDE.md still says '2h' cadence — see FND-06."
+        },
+        "stranded_patches_actionable": 1,
+        "stranded_patches_detail": "monitor/decisions/stranded-patches-2026-05-17T22-20-15Z.json, age 172h, not tombstoned. ISS-2094 is recorded as fixed in open-issues.json but EMPIRICALLY UNFIXED — see FND-01."
+      }
+    },
+    "mode_2_infra": {
+      "status": "AMBER",
+      "details": {
+        "fuse_stale_files_count": 1,
+        "fuse_stale_files": [
+          {
+            "path": "monitor/decisions/closed-issues.json",
+            "note": "FUSE older than git. Universal-pusher rescue path applies — workspace-sync should round-trip next cycle. Non-critical."
+          }
+        ],
+        "auth_status": "verified — dome PAT scope ok (HTTP 200, PROP-051 Option C prelude)",
+        "disk": {
+          "root_use_pct": 96,
+          "project_footprint_mb": 382,
+          "warning_tier": "none (project footprint < 500MB)",
+          "root_partition_note": "/dev/nvme0n1p1 at 96% (477M free). System-image baseline plus /tmp/edit-clone (173MB). Only /tmp/edit-clone exists; canonical working clone, age <2h — protected by empowerment exclusion. No cleanup eligible this run."
+        }
+      }
+    },
+    "mode_3_cost": {
+      "status": "DEFERRED",
+      "reason": "Mode 1 produced 3 substantive findings + 2 PROP candidates. CLAUDE.md performance audit deferred. Last full audit 2026-05-19T02-40."
+    },
+    "mode_4_proposals": {
+      "status": "DEFERRED_RECOMMENDED",
+      "reason": "Two PROP-worthy bugs surfaced this run (FND-02, FND-03). Recommend next tinker run takes Mode 4 to author them. They are not single-line fixes — both involve decider-prompt edits and possibly closure-ledger schema documentation."
+    }
+  },
+  "findings": [
+    {
+      "id": "FND-01-tinker-2026-05-25T02-48",
+      "category": "false-closure",
+      "severity": "major",
+      "title": "ISS-2094 marked closed with detailed fix_description, but the fix was never actually applied — generate-html.js still references WIN-054",
+      "details": "ISS-2094 in monitor/decisions/open-issues.json has status='closed', closed_at='2026-05-18T02:23:43.000Z', fixed_by='decider-self-apply-stranded-patch', and fix_description='Applied Option A from stranded-patches-2026-05-17T22-20-15Z.json: replaced WIN-054 with WIN-011 in generate-html.js methodology description. Rebuilt + tests pass.' Empirical verification this run: (a) FUSE build-scripts/generate-html.js line 1726 contains the original 'WIN-054 (El Gordo) is the reference case for this distinction' string verbatim; (b) git raw same line, same string (md5 match between FUSE and GH); (c) git log for build-scripts/generate-html.js since 2026-05-15 shows only 3 commits — 2d643571 (EXP-377 line 1521 region, NOT line 1726), 11ec702a (stranded patches ISS-1646/1707/1648, NOT ISS-2094), and the 075e090 REPAIR (mass-restore, no semantic changes); (d) the stranded-patches sentinel file is still on disk at 172h, not tombstoned. Conclusion: the decider's self-apply mechanism either silently failed for this NEVER_PUSH file or never ran, but the closure machinery proceeded as if it had. The stranded-patches mechanism (PROP-016 Mech A) was specifically designed so the decider does NOT self-apply NEVER_PUSH files; here the decider both wrote a stranded-patch sentinel AND marked the ISS closed with a self-apply fix_description — internally contradictory. The docs/index.html public site still carries the WIN-054 reference despite WIN-054 having been reclassified to Self-Contradicted in c3/EXP-295.",
+      "evidence": [
+        "Empirical grep of generate-html.js line 1726 (FUSE + GH raw + clone HEAD): all three show original WIN-054 string.",
+        "GitHub commits API for build-scripts/generate-html.js since 2026-05-15: no commit references ISS-2094 or contains the WIN-011 string near line 1726.",
+        "monitor/decisions/stranded-patches-2026-05-17T22-20-15Z.json: still present, 172h old, tombstone_status absent."
+      ],
+      "recommended_action": "Re-open ISS-2094 (decider step). Apply stranded-patch Option A by either: (a) operator manual apply via own-clone-with-direct-push, then tombstone the sentinel; or (b) extract the affected paragraph from generate-html.js into data/sections.json so future edits route via the normal decider self-apply path (the prose belongs in sections.json per CLAUDE.md Step 7 cross-check 'patches target correct files'). HNOTE-OPERATOR-ISS-2094-FALSE-CLOSURE-001 filed this run to surface the false-closure for operator review."
+    },
+    {
+      "id": "FND-02-tinker-2026-05-25T02-48",
+      "category": "decider-workflow-bug",
+      "severity": "moderate",
+      "title": "Open-issues.json to closed-issues.json migration gap — 11 issues marked status='closed' in open-issues.json have no matching entry in closed-issues.json",
+      "details": "Walking open-issues.json this run: 11 entries have status='closed' but their id is NOT present in closed-issues.json. List: ISS-2094, ISS-2095, ISS-2096, ISS-2098, ISS-2099, ISS-2101, ISS-2102, ISS-2158, ISS-2162, ISS-2163, ISS-2168. Their closed_at timestamps cluster between 2026-05-17T22 and 2026-05-21T06. The decider has run many times since (commits 5ab70a1, 6e00066, cb1a9c3, 308cdd1, ec227bd, 3c071b4 all touched open-issues.json) but none migrated these entries. Either the migration step in decider's workflow is broken, or the close-in-place mechanism (used at least for FND-01's ISS-2094 self-apply path) bypasses the migrate-on-close step. Side effects: (1) inflates open_issues_total (35 reported vs 24 if migrated); (2) Mode 1 oldest-open audit returns ghost-old entries (the closure-cluster includes ISS-2094 at 7d+ status='closed'); (3) any consumer that filters open-issues.json by status!='closed' is mostly OK but consumers using simple length checks get noise.",
+      "evidence": [
+        "node script: 11 status='closed' entries in open-issues.json, all NOT-in-closed-issues.json.",
+        "Decider commits 5ab70a1 through 3c071b4 touched open-issues.json but did not remove these 11 stale entries.",
+        "Closure dates cluster 2026-05-17 to 2026-05-21, predating the workspace-sync disaster window."
+      ],
+      "recommended_action": "Mode 4 candidate (next run): author PROP for decider closure-step to either (a) physically migrate entries with status='closed' from open-issues.json to closed-issues.json at close-time, OR (b) document that status='closed' entries remain in open-issues.json until a sweep step migrates them, and create the sweep step. The 11 currently-stranded entries can be cleared by either operator-direct migration or a one-time decider-burndown run in 'sweep' mode."
+    },
+    {
+      "id": "FND-03-tinker-2026-05-25T02-48",
+      "category": "metric-source-bug",
+      "severity": "moderate",
+      "title": "Closure-ledger.jsonl write gap — 11 closures committed to closed-issues.json on 2026-05-24 are NOT in the ledger; PROP-030 net_velocity metric is depressed by 6x",
+      "details": "Closed-issues.json gained 11 entries on 2026-05-24T09:24:01Z (ISS-2176 through ISS-2186) and 1 entry on 2026-05-18T06:25Z (ISS-2104, closure_reason='fuse-sync-gap-restored'). Closure-ledger.jsonl gained only 2 entries in the same 7-day window (ISS-2189 and ISS-2187). Net: 12 actual closures, 2 ledger entries, gap = 10. The 11 closures from commit 5ab70a1 ('Decider: patch WIN-019 (4 holes), WIN-009 (1 hole), PRED-073 (5 holes), fix build drift') were patch-mechanism closures (action_taken='patch', closed_by_mechanism='self-apply') — exactly the mechanism that DID land in the ledger in prior runs (e.g. ISS-2083/2084/2085 on 2026-05-17). Something regressed between 2026-05-17 and 2026-05-24. The closure-ledger.jsonl is supposed to be the canonical audit trail for PROP-026 burndown rollback and the source-of-truth for PROP-030 closed_issues_velocity_7d. Both downstream consumers are now seeing a falsely-low closure rate. This run, that bias caused PROP-030's net_velocity_7d to read -12 (moderate tier fires) when the true number is -2 (info tier at most).",
+      "evidence": [
+        "closed-issues.json entries 2026-05-18..2026-05-25 cross-checked against closure-ledger.jsonl iss_id set: 10/12 missing.",
+        "Pre-regression sample: ISS-2083, ISS-2084, ISS-2085 (closed 2026-05-17T20:20:01.532Z, action_taken='patch', closed_by_mechanism='self-apply') ARE in the ledger. Same mechanism, recent vintage, post-regression: missing.",
+        "Commit 5ab70a1 diff: touches closed-issues.json but does NOT touch closure-ledger.jsonl (same-window commit 075e090 is the only one that touches the ledger in this window, and it is the PROP-054 apply, not a closure)."
+      ],
+      "recommended_action": "Mode 4 candidate (next run): author PROP for decider self-apply path to call the ledger-append helper alongside the closed-issues.json write. Likely fix is a 5-10 line addition to decider-patches-and-selfapply.md and/or the decider Mode 1m closure-on-success step. Recommend the PROP also retroactively backfill ledger entries for ISS-2104 + ISS-2176-2186 from their closed-issues.json metadata (preserving original closed_at) so PROP-026 burndown rollback works for them."
+    },
+    {
+      "id": "FND-04-tinker-2026-05-25T02-48",
+      "category": "backlog-trend",
+      "severity": "moderate",
+      "title": "Net velocity 7d = -12 (third consecutive negative run); moderate tier fires per PROP-030",
+      "details": "open_issues_total=35, new=14, closed-per-ledger=2 -> net=-12. True closed-per-closed-issues.json=12 -> true net=-2. Tier 'moderate' fires under the 'net_velocity_7d < 0 for 2+ consecutive runs' clause (last 3 runs with computable net: 2026-05-21=-7, 2026-05-24=-7, 2026-05-25=-12). Recommendation is calibrated by FND-03: the metric source is broken AND the post-disaster pause window (2026-05-21 through 2026-05-23) artificially halved the closure cadence. With ledger fixed and another week of normal cadence, net velocity should return positive. operator_escalation tier (negative for 7 consecutive runs) is NOT firing — that would require 4 more consecutive negative runs, which is unlikely given the transient causes.",
+      "evidence": [
+        "queue-history.jsonl tail-3 net values: -7, -7, -12.",
+        "PROP-030 threshold table: 'net_velocity_7d < 0 for 2 consecutive runs' triggers 'moderate'."
+      ],
+      "recommended_action": "No new action (covered by FND-03's recommended PROP plus natural recovery from the post-disaster pause). Continue monitoring; if next 2 runs are still net-negative AFTER FND-03 is fixed, escalate to a deeper backlog audit."
+    },
+    {
+      "id": "FND-05-tinker-2026-05-25T02-48",
+      "category": "persistent-carryover",
+      "severity": "info",
+      "title": "Persistent items unchanged this run",
+      "details": "(a) sloppytoppy-score and sloppytoppy-rewrite remain DISABLED in scheduled tasks (per CLAUDE.md, pending operator decision). (b) ISS-708 (44d, pending-human, kill-shots.json render). (c) ISS-1285 (33d, assigned-tinker, raw-text/02-wins.txt staleness — same as 2026-05-24 prior run). (d) ISS-1351 (33d, blocked-on-curmudgeon, design-refresh Phase A Item 4). (e) closed-issues.json FUSE-stale (workspace-sync should rescue next cycle). None require this run to act.",
+      "recommended_action": "None this run."
+    },
+    {
+      "id": "FND-06-tinker-2026-05-25T02-48",
+      "category": "claude-md-drift",
+      "severity": "minor",
+      "title": "CLAUDE.md Monitoring Pipeline table says analyst-baby runs 'Every 2h (20 */2 * * *)'; actual cron is '20 4,16 * * *' (12h)",
+      "details": "CLAUDE.md Monitoring Pipeline table lists 'dome-analyst-baby | Every 2h (20 */2 * * *) | Sonnet'. Actual cron from list_scheduled_tasks: '20 4,16 * * *' (twice daily, off-peak). The mtime-based staleness threshold in tinker-pipeline-health.md ('older than 4h = 2x interval') is also out of date — 4h is 0.33x the actual 12h interval. This run did NOT false-flag baby because I cross-checked the cron, but the CLAUDE.md text is wrong and a future tinker run that trusts CLAUDE.md naively will fire a spurious 'baby stalled' finding. The mismatch dates from the BAU-restoration text in the scheduled task description: 'BAU restored 2026-05-18 AM — 4:20 AM + 4:20 PM local, off-peak'.",
+      "evidence": [
+        "CLAUDE.md (host-level): 'dome-analyst-baby | Every 2h (20 */2 * * *) | Sonnet'.",
+        "list_scheduled_tasks response: cronExpression='20 4,16 * * *'.",
+        "tinker-pipeline-health.md PROP-034 Phase 1 section: '4h (2x interval)'."
+      ],
+      "recommended_action": "Trivial single-line edit to CLAUDE.md + a minor edit to tinker-pipeline-health.md. Either bundle with FND-02/FND-03 PROP next run, or operator self-edit. Low priority."
+    }
+  ],
+  "previous_followup": {
+    "checked_against_report": "monitor/tinker/report-2026-05-24T08-26.json AND 2026-05-24T05-44.json",
+    "DIRECTIVE_20260524_001_PROP_054": {
+      "status": "FIXED",
+      "verification_method": "Walked git log since 2026-05-24: commit d075f36 'PROP-054 apply: prune-integrity filename-timestamp fix + safety cap + first prune' is present; subsequent prune-integrity runs (70ecacf, df4f22f, 62feef6) used the fix and archived 273+75 files. The directive is properly marked completed in operator-directives/. PROP-054 is operator-applied; no further tinker action.",
+      "checked_at": "2026-05-25T02:48Z"
+    },
+    "FND_2026_05_24_04_dome_social": {
+      "status": "FIXED",
+      "verification_method": "dome-social lastRunAt=2026-05-24T05:47:13Z; monitor/social/latest-summary.txt is fresh ('Day 37 of dome manual-commit drought' — 2026-05-24 run). The 73h gap described in the prior report self-resolved on 2026-05-24 when agents were re-enabled per CLAUDE.md.",
+      "checked_at": "2026-05-25T02:48Z"
+    },
+    "FND_2026_05_24_07_tree_entry_drop": {
+      "status": "MONITORING",
+      "verification_method": "Not re-counted this run (depth-50 clone). The 2026-05-24 finding noted 4757 -> 4314 entries — likely benign deletion-via-prune-integrity cadence. PROP-054 apply on 2026-05-24 explicitly increased prune-integrity throughput; further entry-count drops in coming days are expected and benign as long as prune-integrity stays within its retention windows.",
+      "checked_at": "2026-05-25T02:48Z"
+    },
+    "FND_2026_05_24_06_negative_velocity": {
+      "status": "STILL_BROKEN_AND_WORSE",
+      "verification_method": "Per FND-04 this run: net=-12 (vs -7 prior). However, the metric source is contaminated by FND-03 (closure-ledger write gap). The PROP-030 recommended-actions block in this run's FND-03 covers the fix.",
+      "checked_at": "2026-05-25T02:48Z"
+    },
+    "FND_2026_05_24_05_sloppytoppy_disabled": {
+      "status": "UNCHANGED_BY_DESIGN",
+      "verification_method": "list_scheduled_tasks confirms dome-sloppytoppy-score and dome-sloppytoppy-rewrite both enabled=false. CLAUDE.md (host-level codebase block, 2026-05-24 'Re-enable status' line) explicitly states they 'remain DISABLED pending operator decision'.",
+      "checked_at": "2026-05-25T02:48Z"
+    },
+    "FND_2026_05_24_02_ISS_1285": {
+      "status": "STILL_BROKEN",
+      "verification_method": "ISS-1285 still status='assigned-tinker' in open-issues.json (age 33.8d). raw-text/02-wins.txt staleness has not been re-touched. No new evidence this run; carry-over.",
+      "checked_at": "2026-05-25T02:48Z"
+    },
+    "stranded_patch_ISS_2094": {
+      "status": "ESCALATED_TO_FND_01",
+      "verification_method": "Stranded patch is now part of a confirmed false-closure (FND-01 this run). Operator action item materially escalated; see FND-01 recommended_action and HNOTE-OPERATOR-ISS-2094-FALSE-CLOSURE-001."
+    }
+  },
+  "props_authored_this_run": [],
+  "props_recommended_for_next_run": [
+    {
+      "tentative_id": "PROP-055 (next available)",
+      "tentative_title": "decider: append closure-ledger.jsonl entry on every self-apply patch close (close FND-03 gap)",
+      "scope": "Edit monitor/prompts/decider-patches-and-selfapply.md (or wherever the self-apply close-on-success step lives) to call the ledger-append helper. Retroactively backfill ISS-2104 + ISS-2176-2186 from closed-issues.json metadata."
+    },
+    {
+      "tentative_id": "PROP-056 (next available)",
+      "tentative_title": "decider: migrate status='closed' open-issues.json entries to closed-issues.json on close (close FND-02 gap)",
+      "scope": "Either (a) move-on-close at the patch-step, or (b) periodic sweep. One-time burndown for the 11 currently-stuck entries."
+    }
+  ],
+  "cleanup_actions": [],
+  "hnotes_filed_this_run": [
+    {
+      "id": "HNOTE-OPERATOR-ISS-2094-FALSE-CLOSURE-001",
+      "severity": "moderate",
+      "purpose": "Surface the FND-01 false-closure so operator can re-open + apply (or extract prose to sections.json)."
+    }
+  ],
+  "claude_md_audit": {
+    "status": "minor-finding-only",
+    "summary": "Did not run a full accuracy/performance audit this run (Mode 1 took the run). FND-06 documents one concrete drift (analyst-baby cadence in the Monitoring Pipeline table). Full CLAUDE.md audit deferred to next Mode 3 run."
+  },
+  "context_load": {
+    "status": "not-recomputed-this-run",
+    "reason": "Mode 1 ran; per-agent context load measurement is a Mode 3 activity. Last measurement 2026-05-24T05-44 (see that report)."
+  },
+  "operator_action_summary": [
+    "PRIMARY: Read FND-01. Re-open ISS-2094 (decider step on next run). Either apply stranded-patches-2026-05-17T22-20-15Z.json Option A via own-clone-with-direct-push and tombstone the sentinel, OR extract the affected paragraph from build-scripts/generate-html.js into data/sections.json so future edits can route via the normal self-apply path. The public docs/index.html still shows WIN-054 as the false-dilemma reference case, which is the textual symptom.",
+    "SECONDARY: Read FND-03. Closure-ledger.jsonl is missing 10 entries from 2026-05-18 to 2026-05-25. PROP-030 metrics are unreliable until fixed. Next tinker run is recommended to take Mode 4 and author PROP-055 (ledger-append fix + backfill).",
+    "TERTIARY: Read FND-02. 11 stale status='closed' entries in open-issues.json. PROP-056 candidate.",
+    "Nice-to-have: FND-06 trivial CLAUDE.md edit (analyst-baby cadence: '2h' to '12h')."
+  ]
+}

@@ -1,70 +1,46 @@
-TINKER RUN SUMMARY
-Run: tinker-2026-05-24T08-26 | Mode: directive-override (DIRECTIVE-20260524-001)
-═══════════════════════════════════════════════════════
+tinker run summary — 2026-05-25T02:48Z (run_id tinker-2026-05-25T02-48)
 
-PRIMARY WORK: PROP-054 authored — prune-integrity.js filename-timestamp fix.
+Mode: 1 (pipeline health) — AMBER
 
-THE BUG (confirmed empirically):
-  prune-integrity.js uses fs.statSync(file).mtimeMs to decide which files
-  are past retention_days. But the script runs from a fresh `git clone`
-  every scheduled run, and `git checkout` sets mtime = clone-time on
-  every checked-out file. So st.mtimeMs ≈ NOW for every file,
-  retention_days never matures, and 1,149+ files accumulate forever.
+HEADLINE (major): ISS-2094 is a FALSE CLOSURE.
+  - open-issues.json says "fix applied 2026-05-18, rebuilt + tests pass"
+  - Empirical: build-scripts/generate-html.js line 1726 STILL says WIN-054, both on FUSE and git
+  - Git log for the file: no commit touched that line since 2026-05-15
+  - Stranded patch sentinel from 2026-05-17 is still on disk (172h), not tombstoned
+  - Public site docs/index.html still shows WIN-054 as the false-dilemma reference case
+  - HNOTE-OPERATOR-ISS-2094-FALSE-CLOSURE-001 filed (see monitor/decisions/human-notes.json)
+  - Operator: re-open + apply stranded patch via own-clone, OR extract paragraph to sections.json
 
-  Direct proof: every file in monitor/integrity/ today has mtime
-  2026-05-24T06:12:08Z (the clone time), including files whose filename
-  embeds 2026-04-26 (28 days old). Today's scheduled run output:
-    [workspace-sync-runs] matched=570 eligible=0
-    [verify-pending-run]  matched=433 eligible=0
-    [push-failure]        matched= 94 eligible=0
-    [report-daily]        matched= 52 eligible=0
-  Only narrative-cite-audit (keep_last_n=7, mtime-independent) pruned.
+SECONDARY (moderate): closure-ledger.jsonl WRITE GAP
+  - 11 closures landed in closed-issues.json on 2026-05-24 but NOT in closure-ledger.jsonl
+  - Decider self-apply path lost its ledger append between 2026-05-17 (works) and 2026-05-24 (broken)
+  - PROP-030 net_velocity metric is depressed ~6x as a result (-12 reported, -2 actual)
+  - PROP-055 (next available) recommended for next Mode 4 run
 
-THE FIX (in PROP-054):
-  • parseFilenameTimestamp(name) helper: 9 regex patterns covering the
-    5 known filename shapes plus their edge variants (-final/-abort
-    suffix, colon-separated time, double-dash, undashed legacy).
-    Anchored to '-' boundary on the left → no mid-name false positives.
-    100% coverage of the 1,156 actual files in monitor/integrity/.
-  • listMatches() now records parsedTs; sorts by parsedTs || mtimeMs.
-  • eligibleForArchive() enforces keep_last_n floor FIRST, then
-    retention_days against effective ts.
-  • New keep_last_n safety floors (belt-and-suspenders per operator pref):
-    workspace-sync-runs=50, verify-pending-run=20, push-failure=20,
-    report-daily=30. narrative-cite-audit=7 unchanged.
-  • New --max-archive-per-policy <N> CLI flag for capped first apply.
+TERTIARY (moderate): open-issues -> closed-issues MIGRATION GAP
+  - 11 entries in open-issues.json have status='closed' but no matching closed-issues.json entry
+  - Cluster 2026-05-17 to 2026-05-21, never migrated
+  - Inflates open_issues_total (35 reported vs 24 if migrated)
+  - PROP-056 (next available) recommended for next Mode 4 run
 
-IMPACT (measured against live clone, commit 075e090):
-  First apply today:    249 files eligible / ~0.22 MB reclaimable
-    workspace-sync-runs   0   (oldest 27.6d, retention 30d — 2 days away)
-    verify-pending-run  175
-    push-failure         74
-    report-daily          0   (oldest 48.4d, retention 90d — 42 days away)
-  Steady state (~60d):  ~127 file working set, ~3-5 MB live, archive
-                        grows ~1-2 MB/month. 606 MB regime cannot recur.
+BACKLOG (moderate, transient): net_velocity_7d = -12 (third consecutive negative)
+  - True net = -2 once FND-03 ledger gap is corrected
+  - Post-disaster pause 2026-05-21 to 2026-05-23 + ledger gap explain the rest
+  - Not escalating to operator_escalation tier (would need 7 consecutive negative)
 
-NOTE ON DIRECTIVE ESTIMATE:
-  Directive estimated ~700 eligible after fix. Measured: 249 today.
-  Reconciliation: workspace-sync-runs oldest is 27.6d (not >30d yet).
-  Within 2-3 days the directive's number becomes accurate. Documented
-  transparently in PROP-054 executive_summary and phase_4_design.
+MINOR (info): persistent items unchanged
+  - sloppytoppy-score + sloppytoppy-rewrite still DISABLED (operator decision)
+  - ISS-708 44d / ISS-1285 33d / ISS-1351 33d — same as prior runs
+  - closed-issues.json FUSE-stale (workspace-sync rescue next cycle)
 
-OPERATOR ACTIONS (3):
-  1. Review PROP-054 (single PROP, 4 counter-args, phased rollout,
-     keep_last_n floor, all directive operator_preferences honored).
-  2. If approved: apply patch to monitor/scripts/prune-integrity.js
-     per phase_1 + phase_2 code blocks. Run phase_5_rollout:
-     dry-run-current → dry-run-fixed → cap-apply (--max=100) → full.
-  3. DIRECTIVE-20260524-001 already marked status:completed by this run
-     (additive edit per CLAUDE.md operator-directive lifecycle rule).
-     No further directive housekeeping needed.
+MINOR (claude-md-drift): CLAUDE.md says analyst-baby '2h' cadence; actual is '12h' (cron 20 4,16 * * *)
 
-PIPELINE STATE (incidental, not formally audited this run):
-  Pre-flight backlog metrics: 33 open issues, 0 unrouted, age_ge_30d=3.
-  No threshold tier fires. Earlier 2026-05-24T05-44 run found pipeline
-  GREEN with the one build-drift finding (PRED-073) already resolved
-  at commit 14a55f5.
+Previous-run follow-up:
+  - DIRECTIVE-20260524-001 / PROP-054: FIXED (operator applied at d075f36; prune-integrity using filename timestamps)
+  - dome-social 73h gap: FIXED (self-resolved on agent re-enable)
+  - Tree-entry drop: MONITORING (benign prune-integrity cadence)
+  - Negative velocity: STILL_BROKEN (per FND-04, escalated to FND-03 metric-source root cause)
 
-NEXT TINKER RUN: resume normal Mode 1-4 dispatcher logic. Mode 3 (cost
-  engineering) is overdue — CLAUDE.md accuracy/performance audit was
-  skipped this run due to directive-override priority.
+No PROPs authored this run (Mode 1). Two PROPs recommended for next Mode 4 run.
+No cleanup actions (only /tmp/edit-clone exists, age <2h, exempt).
+Full report: monitor/tinker/report-2026-05-25T02-48.json
