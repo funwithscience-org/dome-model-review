@@ -1,0 +1,102 @@
+{
+  "id": "PROP-055",
+  "title": "decider self-apply close-issues step: append closure-ledger.jsonl entry alongside the closed-issues.json write; backfill 12 missing entries from 2026-05-18..2026-05-24",
+  "authored_by": "tinker",
+  "authored_by_run": "tinker-2026-05-25T06-08",
+  "authored_at": "2026-05-25T06:13:22Z",
+  "status": "proposed",
+  "priority": "medium",
+  "category": "workflow_redesign",
+  "target": "monitor/prompts/reference/decider-patches-and-selfapply.md (Step 1 close-issues script)",
+  "related_findings": [
+    "FND-03 in monitor/tinker/report-2026-05-25T02-48.json (closure-ledger write gap)",
+    "FND-04 in monitor/tinker/report-2026-05-25T02-48.json (PROP-030 net_velocity_7d falsely-low because ledger is the metric source)"
+  ],
+  "executive_summary": {
+    "problem_one_line": "When the decider self-apply patch path closes an issue (moves it from open-issues.json to closed-issues.json with status='fixed-pending-verification' or 'closed'), it writes ONLY to closed-issues.json. It does NOT also append to closure-ledger.jsonl. The M1 sweep path, the BAU triage path, and the M3 carry-over self-test all write ledger lines; the self-apply close path does not.",
+    "fix_one_line": "Add a fs.appendFileSync('monitor/decisions/closure-ledger.jsonl', ...) call inside the per-issue close loop in monitor/prompts/reference/decider-patches-and-selfapply.md Step 1 — emitting one ledger line per closed ISS with closed_by_mechanism='self-apply' and action_taken='patch'. Plus a one-time backfill script for the 12 missing entries from 2026-05-18 through 2026-05-25.",
+    "blast_radius_one_line": "Low: a 5-line addition to one bash node block. Backfill is mechanical (read closed-issues.json, filter the 12 missing ids, append synthesized ledger lines preserving original closed_at)."
+  },
+  "problem_detail": {
+    "code_location": "monitor/prompts/reference/decider-patches-and-selfapply.md, Step 1 (line ~588-617). The bash block reads open-issues.json and closed-issues.json, moves matching ISSs from open to closed with status='fixed-pending-verification', and writes both files back. There is no fs.appendFileSync to closure-ledger.jsonl anywhere in this block.",
+    "comparison_to_other_close_paths": {
+      "M1_sweep": "monitor/prompts/decider.md line 280-294 writes ledger line BEFORE flipping status. Mechanism='M1'. Working correctly — last 5 ledger entries include ISS-2083/2084/2085 from M1 path on 2026-05-17.",
+      "BAU_triage": "monitor/prompts/decider.md line 195 self-test enforces every status='open' ≥12h item must have a ledger line with closed_by_mechanism='BAU'. Working correctly — ISS-2189 BAU entry from 2026-05-24T17-20 is in the ledger.",
+      "M3_carry_over": "monitor/prompts/reference/decider-patches-and-selfapply.md line 255-287 self-test enforces every unresolved_prior_cycle entry has a ledger line with closed_by_mechanism='M3'. Working correctly when fired.",
+      "self_apply": "monitor/prompts/reference/decider-patches-and-selfapply.md line 588-617 (THIS BUG): writes closed-issues.json only, no ledger append. Mechanism intended would be 'self-apply' but it never gets recorded."
+    },
+    "direct_evidence": {
+      "ledger_query_last_7d": "node script run 2026-05-25T06:09:46Z: 1 ledger entry in last 7d (ISS-2189). 12 closed-issues.json entries in last 7d. Gap = 11. (ISS-2104 also missing — that one is a 2026-05-18 FUSE-sync-gap closure, separate path, also bypasses ledger.)",
+      "missing_ids": [
+        "ISS-2104 (2026-05-18T06:25Z, fixed_by='operator-direct-fuse-restore', closure_reason='fuse-sync-gap-restored')",
+        "ISS-2176 (2026-05-24T09:24:01Z, fixed_by='decider-self-apply-decider-2026-05-24T09-24')",
+        "ISS-2177 (same run/timestamp)",
+        "ISS-2178 (same run/timestamp)",
+        "ISS-2179 (same run/timestamp)",
+        "ISS-2180 (same run/timestamp)",
+        "ISS-2181 (same run/timestamp)",
+        "ISS-2182 (same run/timestamp)",
+        "ISS-2183 (same run/timestamp)",
+        "ISS-2184 (same run/timestamp)",
+        "ISS-2185 (same run/timestamp)",
+        "ISS-2186 (same run/timestamp)"
+      ],
+      "commit_evidence": "Commit 5ab70a1 (2026-05-24T09:24Z) 'Decider: patch WIN-019 (4 holes), WIN-009 (1 hole), PRED-073 (5 holes), fix build drift' touched closed-issues.json (11 new entries) but did NOT touch closure-ledger.jsonl. The next ledger-touching commit is 2 days later (the ISS-2189 BAU closure).",
+      "pre_regression_baseline": "ISS-2083, ISS-2084, ISS-2085 (closed 2026-05-17T20:20Z by run decider-2026-05-17T20-14Z, closed_by_mechanism='self-apply', action_taken='patch') ARE in the ledger. Same self-apply path, one week before the regression. This proves an earlier version of the close-issues block (or its predecessor M1-path corrective line) was writing the ledger and the 2026-05-24 LLM either improvised a different close script or the documentation no longer reflects what works."
+    },
+    "downstream_impact": {
+      "PROP_030_net_velocity_7d": "Current run reads net=-12 (moderate tier fires) because closed_issues_velocity_7d sources from the ledger. True net_velocity_7d_truth (from closed-issues.json) is -2 (would be info tier at most). Threshold tier escalation is artifactual.",
+      "PROP_026_burndown_rollback": "build-scripts/revert-burndown-closures.js reads ledger entries by run_id/iss/since to revert. If the operator needed to revert one of the 12 missing closures, it cannot be done via the script — would require hand-patching closed-issues.json and open-issues.json. (Low practical risk — these are minor/moderate patches, unlikely to need rollback, but the audit trail invariant is broken.)",
+      "tinker_mode_1_audit": "Every Mode 1 audit going forward will see falsely-low closure velocity until ledger and closed-issues.json reconcile. The PROP-030 history table is now contaminated for runs 2026-05-21, -24, -25."
+    }
+  },
+  "proposed_fix": {
+    "summary": "Two changes: (1) add a per-issue ledger-append inside the existing close-issues node block in decider-patches-and-selfapply.md Step 1; (2) one-time backfill script for the 12 missing entries.",
+    "files_to_modify": [
+      {
+        "path": "monitor/prompts/reference/decider-patches-and-selfapply.md",
+        "find": "toClose.forEach(t=>{\n  const idx=o.issues.findIndex(i=>i.id===t.id);\n  if(idx>=0){\n    const issue=o.issues.splice(idx,1)[0];\n    issue.status='fixed-pending-verification';\n    issue.fixed_at=now;\n    issue.fixed_by='decider-self-apply';\n    // Mech 1a verification_pattern: shell command, exit 0 = patch landed\n    const escaped=t.fingerprint.replace(/'/g,\\\"'\\\\\\\\''\\\");  // shell-escape any single quotes\n    issue.verification_pattern=\\`git show origin/main:\\${t.file} | grep -qF '\\${escaped}'\\`;\n    issue.verification_target_file=t.file;\n    c.issues.push(issue);\n  }\n});",
+        "replace": "const ledgerPath='monitor/decisions/closure-ledger.jsonl';\ntoClose.forEach(t=>{\n  const idx=o.issues.findIndex(i=>i.id===t.id);\n  if(idx>=0){\n    const issue=o.issues.splice(idx,1)[0];\n    const priorStatus=issue.status;\n    issue.status='fixed-pending-verification';\n    issue.fixed_at=now;\n    issue.fixed_by='decider-self-apply';\n    // Mech 1a verification_pattern: shell command, exit 0 = patch landed\n    const escaped=t.fingerprint.replace(/'/g,\\\"'\\\\\\\\''\\\");  // shell-escape any single quotes\n    issue.verification_pattern=\\`git show origin/main:\\${t.file} | grep -qF '\\${escaped}'\\`;\n    issue.verification_target_file=t.file;\n    c.issues.push(issue);\n    // PROP-055: append closure-ledger line so PROP-030 metrics + PROP-026 revert work\n    const ledgerLine={\n      closed_at: now,\n      closed_by_run: process.env.RUN_ID || 'decider-unknown',\n      closed_by_mechanism: 'self-apply',\n      iss_id: t.id,\n      prior_status: priorStatus,\n      closure_reason: 'Self-applied patch landed; status=fixed-pending-verification awaiting push verification',\n      action_taken: 'patch',\n      closure_evidence: {\n        target_file: t.file,\n        fingerprint_excerpt: t.fingerprint.slice(0,60),\n        severity: issue.severity || 'minor'\n      },\n      can_revert: true,\n      dryrun: false\n    };\n    fs.appendFileSync(ledgerPath, JSON.stringify(ledgerLine)+'\\\\n');\n  }\n});",
+        "explanation": "Adds a per-issue ledger-append inside the existing close loop. Captures prior_status before mutation, builds a self-apply mechanism ledger line, appends synchronously. Same shape as M1 sweep ledger writes in monitor/prompts/decider.md line 282-294."
+      }
+    ],
+    "files_to_create": [
+      {
+        "path": "build-scripts/backfill-closure-ledger-2026-05.js",
+        "content": "#!/usr/bin/env node\n// PROP-055 one-time backfill: append closure-ledger.jsonl entries for the 12 ISSs closed\n// between 2026-05-18 and 2026-05-25 whose close path bypassed the ledger.\n// Read each ISS from closed-issues.json, synthesize a ledger line preserving original closed_at,\n// closed_by_mechanism='self-apply-backfill' (so the audit trail shows this is a retro-write).\n// Idempotent: skips IDs already in the ledger.\n//\n// Usage:\n//   node build-scripts/backfill-closure-ledger-2026-05.js --dry-run   # report what would be appended\n//   node build-scripts/backfill-closure-ledger-2026-05.js --apply     # actually append\n\nconst fs = require('fs');\nconst APPLY = process.argv.includes('--apply');\nconst DRY = process.argv.includes('--dry-run') || !APPLY;\n\nconst LEDGER = 'monitor/decisions/closure-ledger.jsonl';\nconst CLOSED = 'monitor/decisions/closed-issues.json';\n\nconst TARGET_IDS = [\n  'ISS-2104', 'ISS-2176', 'ISS-2177', 'ISS-2178', 'ISS-2179', 'ISS-2180',\n  'ISS-2181', 'ISS-2182', 'ISS-2183', 'ISS-2184', 'ISS-2185', 'ISS-2186'\n];\n\nconst existingIds = new Set();\nif (fs.existsSync(LEDGER)) {\n  for (const line of fs.readFileSync(LEDGER, 'utf8').split('\\n')) {\n    if (!line.trim()) continue;\n    try { existingIds.add(JSON.parse(line).iss_id); } catch {}\n  }\n}\n\nconst ci = JSON.parse(fs.readFileSync(CLOSED, 'utf8'));\nconst toBackfill = [];\nfor (const id of TARGET_IDS) {\n  if (existingIds.has(id)) {\n    console.log('SKIP', id, '(already in ledger)');\n    continue;\n  }\n  const issue = ci.issues.find(i => i.id === id);\n  if (!issue) {\n    console.log('MISS', id, '(not in closed-issues.json)');\n    continue;\n  }\n  const ledgerLine = {\n    closed_at: issue.closed_at || issue.fixed_at,\n    closed_by_run: (issue.fixed_by || '').replace(/^decider-self-apply-/, '').replace(/^.*?(decider-\\d{4}-\\d{2}-\\d{2}T\\d{2}-\\d{2}).*$/, '$1') || 'unknown',\n    closed_by_mechanism: 'self-apply-backfill',\n    iss_id: id,\n    prior_status: 'open',\n    closure_reason: issue.closure_reason || issue.notes || issue.fix_description || 'PROP-055 backfill: original closure bypassed ledger',\n    action_taken: 'patch',\n    closure_evidence: {\n      severity: issue.severity || 'unknown',\n      target: issue.target || issue.location || null,\n      description_excerpt: String(issue.description || issue.title || '').slice(0, 120),\n      backfill_source: 'closed-issues.json',\n      backfill_authored_at: new Date().toISOString(),\n      backfill_prop: 'PROP-055'\n    },\n    can_revert: false,\n    dryrun: false\n  };\n  toBackfill.push(ledgerLine);\n  console.log(DRY ? 'WOULD APPEND' : 'APPEND', id, ledgerLine.closed_at);\n}\n\nif (toBackfill.length === 0) {\n  console.log('Nothing to backfill.');\n  process.exit(0);\n}\n\nif (APPLY) {\n  for (const line of toBackfill) {\n    fs.appendFileSync(LEDGER, JSON.stringify(line) + '\\n');\n  }\n  console.log('Appended', toBackfill.length, 'lines to', LEDGER);\n} else {\n  console.log('\\n(DRY RUN) Would append', toBackfill.length, 'lines. Re-run with --apply to commit.');\n}\n",
+        "purpose": "One-time backfill of the 12 missing ledger entries. Idempotent (checks existingIds set). Preserves original closed_at so PROP-030 metrics tally to the right 7-day window. Marks closed_by_mechanism='self-apply-backfill' so audit grep can distinguish retro-writes from canonical ones."
+      }
+    ],
+    "files_to_delete": []
+  },
+  "tradeoffs": {
+    "what_we_gain": "PROP-030 net_velocity metric accurate. PROP-026 burndown rollback works for self-apply closures. Audit trail invariant (every closure has a ledger entry) restored. Tinker Mode 1 no longer reports false-low closure velocity.",
+    "what_we_might_lose": "Five extra lines per self-apply close path. Marginally larger ledger file (closure-ledger.jsonl is ~50 KB today; grows by one line per closure, no compaction concern at current cadence). No semantic risk to the close-on-success state machine because the ledger-append is additive — failure of fs.appendFileSync would throw and abort the run, which is the correct fail-loud behavior; partial writes are not possible since each line is atomic in append mode.",
+    "edge_cases": {
+      "RUN_ID_not_set": "Defaults to 'decider-unknown' in the ledger line. Acceptable — the audit grep still finds the ISS by iss_id, just loses the run-id correlation. Decider already requires RUN_ID for M1 and M3 self-tests, so the env var being absent here would be a pre-existing decider configuration bug not caused by this PROP.",
+      "duplicate_closes_same_run": "If for some reason the same ISS is closed twice in one run, two ledger lines would result. PROP-026 revert script handles duplicates by treating the latest (or first, depending on flag) — not a correctness concern.",
+      "ledger_corruption_mid_append": "fs.appendFileSync is atomic per line on POSIX filesystems. A crash between two iterations of the forEach loop would leave a complete prior line and no partial line. The N+1 close lines in closed-issues.json without their N+1 ledger lines would be the worst case — same status quo as today, recoverable by the backfill script using the same TARGET_IDS pattern."
+    }
+  },
+  "verification_pattern": "grep -q 'PROP-055: append closure-ledger line' monitor/prompts/reference/decider-patches-and-selfapply.md && test -f build-scripts/backfill-closure-ledger-2026-05.js && echo FIXED || echo STILL_BROKEN",
+  "verification_pattern_post_backfill": "node -e \"const fs=require('fs');const ledger=fs.readFileSync('monitor/decisions/closure-ledger.jsonl','utf8').split('\\n').filter(Boolean);const ids=new Set(ledger.map(l=>{try{return JSON.parse(l).iss_id}catch{return null}}));const targets=['ISS-2104','ISS-2176','ISS-2177','ISS-2178','ISS-2179','ISS-2180','ISS-2181','ISS-2182','ISS-2183','ISS-2184','ISS-2185','ISS-2186'];const missing=targets.filter(t=>!ids.has(t));console.log(missing.length===0?'FIXED':'STILL_BROKEN: missing '+missing.join(','));\"",
+  "requires_human_judgment": true,
+  "why_human_needed": "Two questions for the operator: (a) should the backfill use closed_by_mechanism='self-apply' (cleaner) or 'self-apply-backfill' (transparent that this is retro-written)? PROP defaults to the latter for audit honesty. (b) Should the ISS-2104 entry (which is an operator-direct FUSE-restore closure, not a decider self-apply) be backfilled under the same mechanism or a distinct 'operator-direct-restore' mechanism enum? PROP defaults to 'self-apply-backfill' for both (the backfill marker carries the distinction in the closure_evidence.description_excerpt). If you prefer a richer enum, edit the backfill script's mechanism field before applying.",
+  "estimated_impact": {
+    "tokens": "~0 — prompt edit adds 14 lines (~250 tokens), but decider doesn't read this file every run, only when patches need to land.",
+    "metric_correctness": "Restores PROP-030 net_velocity accuracy from currently-depressed-by-83% to truthful. The current run's net=-12 would have been net=-1 with the fix in place this cycle.",
+    "risk_reduction": "Audit trail completeness restored. Any operator-driven rollback of self-apply closures becomes possible again (currently impossible for the 12 missing entries — need hand-patching of closed-issues.json directly)."
+  },
+  "rollout_plan": [
+    "1. Operator (or future tinker Mode 4 run with self-apply empowerment) edits monitor/prompts/reference/decider-patches-and-selfapply.md per files_to_modify above.",
+    "2. Operator (or tinker) creates build-scripts/backfill-closure-ledger-2026-05.js with the content above.",
+    "3. Run `node build-scripts/backfill-closure-ledger-2026-05.js --dry-run` from a clean clone. Confirm 12 'WOULD APPEND' lines.",
+    "4. Run `node build-scripts/backfill-closure-ledger-2026-05.js --apply`. Confirm 12 lines appended.",
+    "5. Commit + push from clean clone with message: 'PROP-055 apply: ledger-append in decider self-apply + backfill 12 entries from 2026-05-18..05-24'.",
+    "6. Verify next decider self-apply run writes a fresh ledger line. Verify next tinker run's PROP-030 net_velocity_7d reads close to net_velocity_7d_truth.",
+    "7. Update this PROP's status to 'implemented' once steps 1-6 land.",
+    "8. The backfill script can be archived or kept for future reference; it is idempotent and safe to re-run."
+  ],
+  "operator_action_required": true,
+  "scope_authority": "Tinker authors PROP. Operator applies (consistent with PROP-051/PROP-054 pattern of tinker-proposes / operator-applies for decider-prompt edits)."
+}
