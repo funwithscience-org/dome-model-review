@@ -596,10 +596,12 @@ const toClose=[
   {id:'ISS-NNN', file:'data/wins.json', fingerprint:'<unique-substring-from-replace>'}
 ];
 const now=new Date().toISOString();
+const ledgerPath='monitor/decisions/closure-ledger.jsonl';
 toClose.forEach(t=>{
   const idx=o.issues.findIndex(i=>i.id===t.id);
   if(idx>=0){
     const issue=o.issues.splice(idx,1)[0];
+    const priorStatus=issue.status;
     issue.status='fixed-pending-verification';
     issue.fixed_at=now;
     issue.fixed_by='decider-self-apply';
@@ -608,6 +610,24 @@ toClose.forEach(t=>{
     issue.verification_pattern=\`git show origin/main:\${t.file} | grep -qF '\${escaped}'\`;
     issue.verification_target_file=t.file;
     c.issues.push(issue);
+    // PROP-055: append closure-ledger line so PROP-030 metrics + PROP-026 revert work
+    const ledgerLine={
+      closed_at: now,
+      closed_by_run: process.env.RUN_ID || 'decider-unknown',
+      closed_by_mechanism: 'self-apply',
+      iss_id: t.id,
+      prior_status: priorStatus,
+      closure_reason: 'Self-applied patch landed; status=fixed-pending-verification awaiting push verification',
+      action_taken: 'patch',
+      closure_evidence: {
+        target_file: t.file,
+        fingerprint_excerpt: t.fingerprint.slice(0,60),
+        severity: issue.severity || 'minor'
+      },
+      can_revert: true,
+      dryrun: false
+    };
+    fs.appendFileSync(ledgerPath, JSON.stringify(ledgerLine)+'\\n');
   }
 });
 o.last_updated=now;
