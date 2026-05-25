@@ -155,9 +155,13 @@ Update `monitor/decisions/open-issues.json`:
 }
 ```
 
-## Step 5b: Archive Closed Issues
+## Step 5b: Archive Closed Issues (PROP-056-updated, 2026-05-25)
 
-If open-issues.json has >50 entries with status "fixed" or "wontfix" older than 7 days, move them to closed-issues.json (append). Keep only open + recently-closed in active file.
+End-of-Run Step A0 (in decider.md) handles the in-run normalization of `status='closed'` residue. Step 5b remains as a periodic compaction step for older fixed/wontfix entries:
+
+If open-issues.json has >50 entries with status "fixed", "wontfix", or "fixed-pending-verification" older than 7 days, move them to closed-issues.json (append). Keep only open + recently-closed in active file.
+
+**The status='closed' enum is no longer permitted in open-issues.json after Step A0 runs** — any residue is a sweep failure and should be loud-failed at run-end (see decider.md Step A0 self-test). Canonical statuses for closed-issues.json entries are: `fixed`, `fixed-pending-verification`, `wontfix`, `superseded`. For open-issues.json entries: `open`, `blocked-on-curmudgeon`, `assigned-analyst`, `pending-human`, `pending`.
 
 ## Step 6b: Breaking News Suggestions
 

@@ -413,6 +413,91 @@ After processing, always:
 → Read `monitor/prompts/reference/decider-patches-and-selfapply.md` for patch format and self-apply procedure.
 → Read `monitor/prompts/reference/decider-reporting.md` for report schema, issue management, and the latest-run summary file.
 
+## End-of-Run Step A0: status='closed' Normalization Sweep (PROP-056, added 2026-05-25)
+
+Before the attention inbox step, walk `open-issues.json` for any entries with `status === 'closed'`. These are the residue of improvised close sites (BAU-wontfix, already-resolved, superseded, stranded-patch self-apply) that wrote `iss.status='closed'` but did NOT move the entry to `closed-issues.json`. The canonical close path is documented in `decider-curmudgeon-pq-mechanics.md` Step 8 and `decider-patches-and-selfapply.md` Step 1 — those set status='fixed' or 'fixed-pending-verification' and migrate. This sweep is the safety net for any close site that bypassed the canonical path.
+
+```bash
+node -e "
+const fs=require('fs');
+const RUN_ID=process.env.RUN_ID || 'decider-unknown';
+const oi=JSON.parse(fs.readFileSync('monitor/decisions/open-issues.json','utf8'));
+const ci=JSON.parse(fs.readFileSync('monitor/decisions/closed-issues.json','utf8'));
+const closedIds=new Set(ci.issues.map(i=>i.id));
+
+// Walk for status='closed' residue
+const stranded=oi.issues.filter(i=>i.status==='closed');
+if(stranded.length===0){ console.log('Step A0 sweep: no status=closed residue'); process.exit(0); }
+
+// Canonical status mapping: anything containing 'wontfix' or 'superseded' or 'already-resolved' -> 'wontfix';
+// anything else (genuine patch closures) -> 'fixed'.
+function canonicalStatus(iss){
+  const fb=String(iss.fixed_by||iss.closed_by||'').toLowerCase();
+  if(/wontfix|superseded|already-resolved|fuse-sync-gap/.test(fb)) return 'wontfix';
+  return 'fixed';
+}
+
+// Also check the ledger so we don't duplicate-append on idempotent re-run
+const ledgerPath='monitor/decisions/closure-ledger.jsonl';
+const existingLedger=new Set();
+if(fs.existsSync(ledgerPath)){
+  for(const line of fs.readFileSync(ledgerPath,'utf8').split('\\n')){
+    if(!line.trim())continue;
+    try{existingLedger.add(JSON.parse(line).iss_id);}catch{}
+  }
+}
+
+let migrated=0, dupSkipped=0;
+for(const iss of stranded){
+  if(closedIds.has(iss.id)){
+    // Already in closed-issues.json (someone migrated but forgot to remove from open) — drop the dupe
+    dupSkipped++;
+    continue;
+  }
+  const canonical=canonicalStatus(iss);
+  const now=new Date().toISOString();
+  iss.status=canonical;
+  iss.migrated_at=now;
+  iss.migrated_by_run=RUN_ID;
+  iss.migrated_by_mechanism='step-a0-sweep-PROP-056';
+  ci.issues.push(iss);
+  // Append ledger line if missing
+  if(!existingLedger.has(iss.id)){
+    const ledgerLine={
+      closed_at: iss.closed_at || iss.fixed_at || now,
+      closed_by_run: iss.closed_by_run || iss.migrated_by_run,
+      closed_by_mechanism: 'step-a0-sweep',
+      iss_id: iss.id,
+      prior_status: 'closed-in-open-issues',
+      closure_reason: 'PROP-056 normalization sweep: original close site bypassed migration; canonical status='+canonical,
+      action_taken: canonical==='wontfix' ? 'wontfix' : 'patch',
+      closure_evidence: {
+        original_fixed_by: iss.fixed_by || iss.closed_by || null,
+        severity: iss.severity || 'unknown',
+        description_excerpt: String(iss.description||iss.title||'').slice(0,120)
+      },
+      can_revert: false,
+      dryrun: false
+    };
+    fs.appendFileSync(ledgerPath, JSON.stringify(ledgerLine)+'\\n');
+  }
+  migrated++;
+}
+
+// Remove migrated entries from open-issues.json
+oi.issues = oi.issues.filter(i=>i.status!=='closed' || !ci.issues.find(c=>c.id===i.id));
+oi.last_updated=new Date().toISOString();
+
+fs.writeFileSync('monitor/decisions/open-issues.json',JSON.stringify(oi,null,2));
+fs.writeFileSync('monitor/decisions/closed-issues.json',JSON.stringify(ci,null,2));
+console.log('Step A0 sweep: migrated='+migrated+', dup-dropped='+dupSkipped+'. open='+oi.issues.length+', closed='+ci.issues.length);
+"
+```
+
+**Self-test:** at run-end, verify `oi.issues.filter(i=>i.status==='closed').length === 0`. If non-zero, the sweep failed (likely a JSON write error). Fail-loud and abort commit.
+
+**Why a sweep instead of fixing every close site individually:** the improvised close sites are LLM-generated (BAU-wontfix-already-fixed, superseded-by-X, etc.) — they appear ad-hoc inside the decider's reasoning context, not in the documented prompt. We could try to enumerate and prohibit them, but a future LLM run will invent new sites. A single end-of-run sweep is the robust answer: any close site that forgot to migrate gets cleaned up at run-end, regardless of which improvised mechanism wrote the status. This is the same pattern as the M1 BAU self-test (decider.md line 195) — let close sites be informal, enforce canonicality at run-end.
+
 ## End-of-Run Step A: Analyst Attention Inbox
 
 **After** self-applying patches but **before** queue management, check whether any of your patches this run affect content the analyst previously analyzed. If you patched a WIN's evidence or verdict text, or modified a section the analyst wrote an expansion for, append an item to `monitor/analyst/attention-inbox.json`:
