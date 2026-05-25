@@ -1,0 +1,167 @@
+{
+  "run_id": "tinker-2026-05-25T16-57",
+  "run_ts": "2026-05-25T16:57Z",
+  "run_completed_ts": "2026-05-25T17:10Z",
+  "mode_selected": "mode_2_infrastructure_and_fuse",
+  "mode_selection_reason": "Mode 1 quick-check showed 1 stranded-patches file as actionable >24h AND broader FUSE-vs-git md5 audit found 7 stale files in workspace (CLAUDE.md, build-scripts/generate-html.js, open-issues.json, closed-issues.json, closure-ledger.jsonl, pending-digest.json, stranded-patches-2026-05-17). Both findings traced to the same root cause: operator direct-pushes today (commits 0b9f6c01 / 35e5be71 / 9e47d500) bypassed build.js publish, and workspace-sync is FUSE→git only with no git→FUSE pull path. Mode 2 procedure applied: backfill FUSE from git canonical for all 7 files, then write report. Disk audit was secondary trigger (project footprint 389MB <500MB threshold; root partition 95% but that is sandbox baseline per project-relative measurement rule).",
+  "modes_checked": {
+    "mode_1_pipeline_health": {
+      "agents_producing": "all enabled agents have lastRunAt within expected window per list_scheduled_tasks; freshest output 1h (analyst-baby), oldest material output 19h (integrity, daily at 02:00 UTC)",
+      "stranded_patches_actionable_pre_backfill": 1,
+      "stranded_patches_actionable_post_backfill": 0,
+      "stranded_detail": "stranded-patches-2026-05-17T22-20-15Z.json was 186h old with no tombstone_status visible in FUSE. Git canonical has tombstone_status='applied' (set by operator commit 0b9f6c01 at 07:33Z today). FUSE was stale — false positive. Backfilled.",
+      "result": "yellow → green after backfill"
+    },
+    "mode_2_infrastructure_and_fuse": {
+      "fuse_staleness_count": 7,
+      "stale_files": [
+        "CLAUDE.md",
+        "build-scripts/generate-html.js",
+        "monitor/decisions/open-issues.json",
+        "monitor/decisions/closed-issues.json",
+        "monitor/decisions/closure-ledger.jsonl",
+        "monitor/curmudgeon/pending-digest.json",
+        "monitor/decisions/stranded-patches-2026-05-17T22-20-15Z.json"
+      ],
+      "root_cause": "operator direct-pushes via Git Data API (commits 0b9f6c01 07:33Z, 35e5be71 13:09Z, 9e47d500 16:59Z) AND decider commit 4e79507c at 13:23Z. workspace-sync hourly cycles 08-16 did not pull these into FUSE because workspace-sync is FUSE→git universal-pusher only — there is no git→FUSE pull step for files modified externally to the FUSE workspace. build.js publish DOES copy git-owned files to FUSE when decider runs it, but the operator's Git Data API path skips build.js entirely; decider's 13:13Z run did execute build.js publish but apparently did not refresh build-scripts/generate-html.js to FUSE either (worth a follow-up investigation).",
+      "auth_check": "PRELUDE PAT scope verified HTTP 200",
+      "disk": {
+        "root_partition_pct": 95,
+        "root_partition_free_mb": 576,
+        "project_induced_mb": 389,
+        "threshold_state": "below 500MB warning per project-relative rule; no /tmp clone leak triggered cleanup empowerment"
+      },
+      "result": "yellow before backfill, green after"
+    },
+    "mode_3_cost_engineering": "deferred — Mode 2 work consumed the run",
+    "mode_4_proposals_and_fixes": "no new PROPs authored; recommended one as Mode 4 follow-up (see findings)"
+  },
+  "previous_followup": {
+    "PROP-058_decider_blocked_on_curmudgeon_burndown_sweep": "FIXED — operator applied via commit 9e47d500 at 16:59Z. 4 zombies closed (ISS-1351, ISS-1552, ISS-1553, ISS-1599) per closed-issues.json delta +84 in commit 0b9f6c01 + further +104 in 9e47d500. burndown-blocked-on-curmudgeon-zombies-2026-05.js script added. structure-integrity.md Mech-A-bypass audit added.",
+    "PROP-059_mandatory_pending_verification_on_self_apply_closures": "FIXED — operator applied via commit 35e5be71 at 13:09Z (3 one-liners) and refined in 9e47d500 (+structure-integrity audit). decider.md +113, decider-patches-and-selfapply.md +51 then +7, analyst-baby.md +6, analyst.md +7 assigned_to guard.",
+    "DIRECTIVE-20260525-002_one_liners": "FIXED — all 3 one-line operator fixes from previous tinker run applied in 35e5be71 (Step 7 verify-push push subsection, archive dual-write, analyst assigned_to guard)."
+  },
+  "findings": [
+    {
+      "id": "FND-01",
+      "category": "infrastructure",
+      "severity": "moderate",
+      "title": "FUSE-vs-git divergence on operator direct-push pattern (recurring)",
+      "evidence": "Today: 7 files diverged between FUSE workspace and git main HEAD. Same files were authored by 4 commits in the last ~10h: 0b9f6c01 (07:33Z operator close ISS-2094/2112/708), 4e79507c (13:23Z decider c5 patches), 35e5be71 (13:09Z operator DIRECTIVE-20260525-002 one-liners), 9e47d500 (16:59Z operator PROP-058+059 apply). Workspace-sync ran hourly through this window (08, 10, 11, 12, 13, 14, 15, 16) and pushed cleanly FUSE→git via universal-pusher mtime-guard, but never pulled git→FUSE for these paths.",
+      "root_cause": "workspace-sync is one-direction (FUSE→git) by design. build.js publish handles the inverse path (git→FUSE for git-owned files) only when decider/agents call it from a fresh clone. Operator Git Data API pushes (push-via-api.js) skip build.js, so changes never propagate to FUSE. Decider's 4e79507c at 13:23Z DID run build.js publish but somehow did not refresh generate-html.js — possibly a publish-flow gap worth investigating.",
+      "impact_assessed": "moderate — agents that clone fresh (decider, curmudgeon, analyst, analyst-baby, workspace-sync, prune-integrity) are unaffected because they always read git canonical. Tinker's Mode 1 stranded-patches check reads FUSE directly and produced a false positive today (1 file misreported as actionable). New Cowork sessions that auto-load FUSE CLAUDE.md as project context inherit the stale agent-table prose. Mode 1 false-positives are the main observable harm; the rest is consistency drift.",
+      "remediation_applied_this_run": "Backfilled all 7 files from raw.githubusercontent.com canonical content. Verified md5 match post-write. Cleaned up 7 .tinker-backfill-bak safety backups via mcp__cowork__allow_cowork_file_delete operator grant.",
+      "recommended_structural_fix_as_prop": "Add a git→FUSE pull step at the start of each workspace-sync run for paths NOT in the workspace-owned authoritative set. Pseudo: `for path in git_changed_since_last_sync; do if not is_workspace_authoritative(path): cp clone/$path FUSE/$path; done`. Already-existing fresh-clone Step 2 has the content; just need to add the reverse copy where workspace-owned guard is false. Smaller version: at minimum, sync stranded-patches-*.json tombstones git→FUSE so tinker Mode 1 stops producing false positives; the bigger fix is general.",
+      "prop_priority": "medium — non-blocking but recurring; symptoms compound silently",
+      "related_prop_history": "PROP-013 (NEVER_PUSH strand tracking) covered the FUSE→git stuck direction; this is the symmetric git→FUSE stuck direction. PROP-045 anti-reversion check is unrelated but in the same code path."
+    },
+    {
+      "id": "FND-02",
+      "category": "agent_workload",
+      "severity": "minor",
+      "title": "3 issues aged on assigned-tinker queue",
+      "evidence": "ISS-1285 (minor, 34d): raw-text/02-wins.txt poller-refresh hygiene. ISS-2134 (major, 6d): WIN-070 re-push loop fix (b) — decider dedup check before win-new push, only fix (a) git rm was applied per ISS-2126. ISS-2175 (moderate, 2d): EXP-425 stale pending >48h, linked to ISS-2105 86-EXP-gap audit (assigned-analyst).",
+      "impact_assessed": "ISS-2134 is the most actionable — implementing the dedup check in decider's win-new push handler is a prompt-level change. The previous re-push loop happened 3 times pre-fix-(a); since fix-(a) we have not observed a recurrence, but the load-bearing prevention (dedup check) remains absent. ISS-1285 is genuinely low-priority hygiene. ISS-2175 is blocked on ISS-2105 progress.",
+      "recommendation": "Schedule ISS-2134 (decider dedup-check) into a future Mode 4 tinker run when bandwidth permits. ISS-2175 should be re-routed to analyst if ISS-2105 has any progress, otherwise marked deferred. ISS-1285 can be closed as deferred-hygiene if poller raw-text refresh schedule won't change in the foreseeable future.",
+      "no_action_this_run": true
+    },
+    {
+      "id": "FND-03",
+      "category": "backlog-trend",
+      "severity": "info",
+      "title": "PROP-030 backlog metrics GREEN, all thresholds clear",
+      "evidence": "open_issues_total=15 (down from 20 last run, down from 24 morning-canonical, down 58% WoW from 36 on 2026-05-18). open_status_count=0 (no fresh untouched issues). assigned_analyst_count=1 (well below moderate threshold of 50). age_ge_30d_count=1 (well below major threshold of 50). new_issues_velocity_7d=7, closed_issues_velocity_7d=27, net_velocity_7d=+20 — strong positive burndown momentum, second consecutive positive-velocity run after PROP-055/056 closure-ledger repair.",
+      "no_action_this_run": true
+    }
+  ],
+  "actions_taken": [
+    {
+      "type": "fuse_backfill",
+      "files": [
+        "CLAUDE.md",
+        "build-scripts/generate-html.js",
+        "monitor/decisions/open-issues.json",
+        "monitor/decisions/closed-issues.json",
+        "monitor/decisions/closure-ledger.jsonl",
+        "monitor/curmudgeon/pending-digest.json",
+        "monitor/decisions/stranded-patches-2026-05-17T22-20-15Z.json"
+      ],
+      "method": "curl raw.githubusercontent.com → cp into FUSE; cp -s verified",
+      "result": "all 7 md5-match git canonical post-backfill",
+      "safety": "workspace-sync smart_copy will see FUSE==git on next run, no push, no strand"
+    },
+    {
+      "type": "scratch_cleanup",
+      "files_deleted": [
+        "CLAUDE.md.tinker-backfill-bak",
+        "build-scripts/generate-html.js.tinker-backfill-bak",
+        "monitor/decisions/open-issues.json.tinker-backfill-bak",
+        "monitor/decisions/closed-issues.json.tinker-backfill-bak",
+        "monitor/decisions/closure-ledger.jsonl.tinker-backfill-bak",
+        "monitor/decisions/stranded-patches-2026-05-17T22-20-15Z.json.tinker-backfill-bak",
+        "monitor/curmudgeon/pending-digest.json.tinker-backfill-bak"
+      ],
+      "method": "operator granted mcp__cowork__allow_cowork_file_delete in-session",
+      "result": "all 7 .bak files removed from FUSE"
+    },
+    {
+      "type": "metrics_append",
+      "file": "monitor/tinker/queue-history.jsonl",
+      "rows_added": 1
+    }
+  ],
+  "cleanup_actions": [],
+  "pre_existing_clone_observations": {
+    "tmp_edit_clone_owner": "nobody:nogroup (not festive-hopeful-newton:festive-hopeful-newton)",
+    "tmp_edit_clone_age_h": 0,
+    "tmp_edit_clone_size_implication": "occupies ~290MB; partial cause of root partition 95% used / 576MB free state",
+    "tinker_could_not_remove": "different uid permissions blocked rm; not in tinker's clone-cleanup empowerment because mtime <2h excludes /tmp/edit-clone special case",
+    "recommendation": "operator may want to investigate why /tmp/edit-clone is being created with uid nobody — likely a stale leftover from a previous scheduled agent that ran without proper umask/uid setup. Likely candidates: workspace-sync, prune-integrity, or one of the curmudgeon variants. If it persists, an operator-side rm at session boundary would clear it."
+  },
+  "claude_md_audit": {
+    "size_lines": 269,
+    "size_bytes_post_backfill": 34235,
+    "agent_table_accuracy": "Now matches list_scheduled_tasks output: 13 configured (11 enabled, 2 disabled — sloppytoppy-score and sloppytoppy-rewrite pending operator decision per 2026-05-21 disaster). Cron expressions in CLAUDE.md table cross-checked against actual scheduler.",
+    "outstanding_discrepancies": "none surfaced this run; PROP-057 fixes (2026-05-25 commit 8ce58e0) remained applied in canonical."
+  },
+  "context_load": {
+    "tinker_prompt_size_lines": 315,
+    "no_trend_alert": true,
+    "note": "Did not run the per-agent prompt-size sweep this run because Mode 2 work consumed the budget; defer to next Mode 3 run."
+  },
+  "next_run_hint": "Mode 3 cost-engineering eligible if pipeline remains green; otherwise revisit FND-02 (ISS-2134 dedup-check) as Mode 4 work. Recommended: file a PROP for the FND-01 git→FUSE pull recommendation when next Mode 4 budget opens up.",
+  "late_breaking_events": {
+    "during_run_window_17_07_to_17_15Z": [
+      {
+        "ts": "2026-05-25T17:07Z",
+        "event": "workspace-sync hourly cycle ran normally (commits c34edbfd + a1f89167)",
+        "impact_on_tinker": "none"
+      },
+      {
+        "ts": "2026-05-25T17:09Z",
+        "commit": "25c6de8c",
+        "event": "PROP-053 completion landed: orphan-EXP backfill (50 entries) + EXP-425 integrated + ISS-2105 + ISS-2175 closed",
+        "impact_on_tinker": "ISS-2105 (assigned-analyst, 86-EXP-gap audit) and ISS-2175 (assigned-tinker, EXP-425 stale) are NOW closed — FND-02 entry partially stale by ~5 min. Tinker re-backfilled FUSE for open-issues/closed-issues/closure-ledger.jsonl to keep FUSE consistent with post-25c6de8c HEAD."
+      },
+      {
+        "ts": "2026-05-25T17:15Z",
+        "event": "DIRECTIVE-20260525-003 filed: 'Design how operator-/decider-/integrity-routed tinker work actually reaches tinker (currently structurally invisible)'",
+        "priority": "low",
+        "status": "pending",
+        "impact_on_tinker": "Deferred to NEXT tinker run per one-mode-per-invocation rule. This directive validates FND-02 above as a real structural gap, not just an aging-queue artifact. Recommended next-run treatment: pick it up via the pre-flight dispatcher operator-directive scan (will be the highest-priority pending item since no other directives are pending)."
+      }
+    ],
+    "second_round_backfill": {
+      "files": ["monitor/decisions/open-issues.json", "monitor/decisions/closed-issues.json", "monitor/decisions/closure-ledger.jsonl"],
+      "trigger": "Commit 25c6de8c at 17:09Z moved git HEAD forward for these 3 files AFTER the first backfill (17:04Z). Without a second pass, FUSE would have been stale again within minutes of completing the first pass.",
+      "outcome": "All 7 originally-stale files now match git HEAD as of 17:13Z. Demonstrates FND-01 in real-time: with no git→FUSE pull path, any commit that lands while a tinker run is in flight leaves FUSE behind."
+    },
+    "post_late_breaking_metrics_row": {
+      "ts": "2026-05-25T17:14:59.570Z",
+      "open_issues_total": 13,
+      "net_velocity_7d": 23,
+      "assigned_tinker_remaining": ["ISS-1285", "ISS-2134"],
+      "source": "git-canonical-via-raw-post-25c6de8c"
+    }
+  }
+}
