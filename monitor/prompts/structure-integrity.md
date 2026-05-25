@@ -503,6 +503,24 @@ fi
 
 **What does NOT change**: curmudgeon's Priority 3 review procedure (Steps 5-10 in the dispatcher) is unchanged. The fingerprint comparison rule (PROP-019 reduced-set, common fields only) is unchanged. The drift-magnitude tiebreak (commit 71be960) is unchanged. This step is purely a precomputation artifact — curmudgeon's review output is identical to what it would produce with the old in-prompt scan.
 
+### 7h. Mech-A-Bypass False-Closure Audit (PROP-059, added 2026-05-25)
+
+PROP-016 Mechanism A intercepts decider commits that would push NEVER_PUSH files via the rescue path, but it only catches modifications that actually appear in `git status --porcelain`. The 2026-05-18 false closures (ISS-2094, ISS-2102, ISS-2106) bypassed Mech A by hallucinating `fix_description` claims without invoking any tool to modify a file — `git status` was empty, Mech A had nothing to flag, the close proceeded. PROP-059 makes `fixed-pending-verification` + a non-empty `verification_pattern` mandatory for every `decider-self-apply*` close. This audit catches any close that escapes that discipline.
+
+**Scan:** read `monitor/decisions/closed-issues.json`. For each entry where ALL of:
+
+- `status === 'fixed'` (terminal, not `fixed-pending-verification`)
+- `fixed_by` starts with `'decider-'` (any decider-driven close — `decider-self-apply`, `decider-self-apply-stranded-patch`, `decider-self-apply-generate-html`, etc.)
+- `verification_pattern` is `null`, empty, or missing
+- `closed_by_mechanism` is NOT `'operator-direct'`, NOT `'one-time-burndown'`, NOT `'step-a0-sweep'`, NOT `'step-a0b-sweep'`
+- `closed_at` is on or after the PROP-059 deployment cutoff `2026-05-25T15:00Z` (entries closed before this cutoff are grandfathered — they predate the discipline)
+
+…flag as a **Mech-A-bypass false-closure candidate** at severity **CRITICAL**. Append to the integrity report with `id`, `closed_at`, `fixed_by`, `fix_description` excerpt (first 120 chars), and recommended action ("Re-verify target file against fix_description; if not present, reopen ISS with `false_closure_audit` block and route to operator").
+
+**Grandfather note:** ISS-2094, ISS-2102, ISS-2106 (the canonical examples) have `closed_at` before the cutoff and are already corrected (commits 0b9f6c0 / d5685b4). They will NOT be flagged. Pre-cutoff entries are out of scope; the audit only fires on going-forward closes.
+
+**Self-test:** if the scan flags ≥1 entry, write a corresponding ISS in `monitor/decisions/open-issues.json` AND log a CRITICAL finding. The 2026-05-18 false closure batch is the failure mode this audit is designed to catch; recurrence should be loud.
+
 ### 8. Project Documentation — Mechanical Checks
 
 `CLAUDE.md` and `SESSION-CONTEXT.md` are the first things new AI sessions read. Check the mechanical facts:

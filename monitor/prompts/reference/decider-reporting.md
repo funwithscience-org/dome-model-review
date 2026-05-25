@@ -163,6 +163,8 @@ If open-issues.json has >50 entries with status "fixed", "wontfix", or "fixed-pe
 
 **The status='closed' enum is no longer permitted in open-issues.json after Step A0 runs** — any residue is a sweep failure and should be loud-failed at run-end (see decider.md Step A0 self-test). Canonical statuses for closed-issues.json entries are: `fixed`, `fixed-pending-verification`, `wontfix`, `superseded`. For open-issues.json entries: `open`, `blocked-on-curmudgeon`, `assigned-analyst`, `pending-human`, `pending`.
 
+**PROP-058 update (2026-05-25):** The `status='blocked-on-curmudgeon'` enum remains valid for genuine current blocks but is auto-resolved by Step A0b sweep when the underlying EXP integrates or the blocker ISS closes. After Step A0b runs, any remaining `status='blocked-on-curmudgeon'` entries represent genuine open work — the EXP is still pending review or the blocker is still open. Audit-side consumers can treat post-Step-A0b `status='blocked-on-curmudgeon'` entries as canonical signals.
+
 ## Step 6b: Breaking News Suggestions
 
 The overview page has a "Latest Findings" section (reverse-chronological, 3–5 items, slightly clickbait-y). **Adding items is a human decision** — your job is to surface candidates.
