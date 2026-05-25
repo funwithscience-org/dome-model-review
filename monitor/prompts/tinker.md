@@ -105,6 +105,75 @@ else{console.log('PENDING DIRECTIVE:',candidates[0].file);console.log('  priorit
 
 **Why this exists:** the operator-directives directory has been used since 2026-04-18 to record asks, but no dispatcher step ever read it — directives sat orphaned. This step bridges that gap. The 8 pre-existing directives remain `status: open` (legacy) and are filtered out by default. Operator can promote any of them to `status: pending` when ready to activate.
 
+### Pre-flight: Mode 0 — Assigned-To-Tinker Scan (PROP-060, added 2026-05-25)
+
+After operator-directive discovery, before Mode 1–4 trigger evaluation, scan two routing sources for work explicitly directed to tinker. Mirrors the analyst's `assigned-analyst` reader pattern (analyst.md + analyst-baby.md). Closes the structural gap where `assigned_to: 'tinker'` (on expansion-tracker.json) and `status: 'assigned-tinker'` (on open-issues.json) had no automated consumer — items sat indefinitely (canonical 28-day case: ISS-1285).
+
+```bash
+node -e "
+const fs=require('fs');
+let items=[];
+
+// Source 1: open-issues.json with status='assigned-tinker' (decider/integrity writes)
+try{
+  const oi=JSON.parse(fs.readFileSync('monitor/decisions/open-issues.json','utf8'));
+  for(const i of oi.issues){
+    if(i.status==='assigned-tinker'){
+      items.push({source:'open-issues',id:i.id,severity:i.severity||'minor',age_days:i.found_at?Math.floor((Date.now()-Date.parse(i.found_at))/86400000):null,class_hint:i.class_hint||null,title:(i.description||'').substring(0,200),raw:i});
+    }
+  }
+}catch(e){}
+
+// Source 2: expansion-tracker.json with assigned_to='tinker' (analyst/decider writes)
+try{
+  const t=JSON.parse(fs.readFileSync('monitor/analyst/expansion-tracker.json','utf8'));
+  const arr=t.items||(Array.isArray(t)?t:Object.values(t));
+  for(const i of arr){
+    if(i.assigned_to==='tinker'&&['complete','integrated','archived'].indexOf(i.status)<0){
+      items.push({source:'expansion-tracker',id:i.id,severity:i.priority||'medium',age_days:i.created_at?Math.floor((Date.now()-Date.parse(i.created_at))/86400000):null,class_hint:i.category||null,title:(i.target||'').substring(0,200),raw:i});
+    }
+  }
+}catch(e){}
+
+// Sort: severity desc (major>moderate>minor>info), then age desc (oldest first)
+const sev={critical:5,major:4,moderate:3,minor:2,info:1};
+items.sort((a,b)=>(sev[b.severity]||0)-(sev[a.severity]||0)||((b.age_days||0)-(a.age_days||0)));
+
+if(!items.length){console.log('MODE 0: no assigned-to-tinker items pending');process.exit(0);}
+console.log('MODE 0:',items.length,'assigned-to-tinker items pending');
+for(const it of items.slice(0,5)){console.log(' -',it.source,'/',it.id,'| sev:',it.severity,'| age:',it.age_days+'d','| class:',it.class_hint,'|',it.title.substring(0,100));}
+console.log('TOP-PICK:',items[0].source,'/',items[0].id);
+"
+```
+
+**Priority order (canonical):**
+
+1. **Pending operator-directive** — preempts everything. If a pending directive exists, Mode 0 items wait for next run.
+2. **Mode 0 top-pick** — preempts Mode 1–4. Take the top-sorted item (severity desc, then age desc).
+3. **Mode 1–4** — only if both (1) and (2) are empty.
+
+**Per-run cap:** 1 item. Maintains the "one mode, deep work" discipline.
+
+**Dispatch per `class_hint`:**
+
+- `class_hint ∈ {verification, hygiene, ops-close, integrity_finding}` → **Mode 1** (mechanical close — verify the underlying state, write closure HNOTE)
+- `class_hint ∈ {structural, design, deep-attack, operational}` → **Mode 4** (PROP authoring)
+- `class_hint == null` or opaque → **tinker discretion**. Default to Mode 1 OBE-verify; if not actionable, escalate to operator via `latest-tinker-summary.txt`.
+
+**Four valid Mode 0 outcomes per item:**
+
+(a) **Close-as-OBE via HNOTE** — item already resolved by other work. Write to `monitor/decisions/human-notes.json` with `action: 'close_iss_batch'`, `iss_ids: [<id>]`, `note_text: <closure reasoning>`. Decider closes on next run.
+
+(b) **Author PROP via Mode 4** — structural fix needed. Author `monitor/tinker/proposals/PROP-NNN.json`. Leave the ISS open (it gets closed when the PROP applies).
+
+(c) **Escalate-to-operator** — item requires operator judgment or external info. Write reasoning to `latest-tinker-summary.txt`, leave ISS open.
+
+(d) **Defer** — item depends on another active item. Note in summary, leave ISS open.
+
+**Closure responsibility (HNOTE-based, per PROP-060):** Tinker does NOT directly mutate open-issues.json (that's the decider's write-domain). For close paths, tinker writes an HNOTE; the decider's HNOTE handler (action-typed: see PROP-058 follow-up note on `close_iss_batch`) actions it on next decider run. Dual-write the HNOTE to both FUSE and clone per CLAUDE.md "Human Notes Rule".
+
+**Why this exists (PROP-060):** Without Mode 0, `assigned_to: 'tinker'` and `status: 'assigned-tinker'` were write-only signals — no consumer. Items aged indefinitely (ISS-1285 sat 34 days; ISS-2134 sat 6 days even though root cause was fixed by PROP-048; EXP-425 sat 48h before operator caught it). Same defect class as the action-typed HNOTE handler that lost the PROP-053 closure HNOTE for 23h. Mode 0 closes the loop.
+
 ### Pre-flight: Backlog-Trend Computation (PROP-030, every run, landed 2026-05-11)
 
 Compute queue-level metrics from open-issues.json + closed-issues.json + closure-ledger.jsonl at every tinker run, regardless of which Mode is selected. Append one row to `monitor/tinker/queue-history.jsonl`. If any threshold fires, emit a `backlog-trend` finding into the run report — even when running Mode 2/3/4, this finding lands.

@@ -1,17 +1,14 @@
 {
   "prop_id": "PROP-060",
   "title": "Tinker Mode 0: pre-flight scan for assigned-to-tinker work routed via expansion-tracker (assigned_to='tinker') and open-issues (status='assigned-tinker'), mirroring the existing assigned-analyst reader pattern. Closes the structural gap where routing fields written by analyst/decider/integrity for tinker have no automated consumer and items sit indefinitely (ISS-1285 34d+, ISS-2134 6d, EXP-425 48h before operator-direct rescue).",
-  "status": "proposed",
+  "status": "implemented",
   "priority": "medium",
   "author": "tinker",
   "authored_at": "2026-05-25T17:25:00Z",
   "authored_by_run": "tinker-2026-05-25T17-19",
-  "source_finding": "DIRECTIVE-20260525-003 (tinker work-surfacing design). Tinker dispatcher consumes (1) operator-directives/*.json status='pending' and (2) mtime-staleness check + queue-history metrics. It DOES NOT iterate assigned_to/status routing fields. Three real items currently invisible to tinker: ISS-1285 (34d, infra, minor — raw-text staleness, OBE per EXP-306), ISS-2134 (6d, operational, major — WIN-070 re-push loop already root-caused by PROP-048), EXP-425 (48h, integrity_finding — operator-direct rescued 2026-05-25 via orphan-backfill).",
-
-  "summary": "Add a pre-flight 'Mode 0: Assigned-Tinker Scan' to monitor/prompts/tinker.md, placed AFTER the existing operator-directive discovery step and BEFORE the Mode 1–4 trigger evaluation. The scan reads both routing fields (open-issues.json status='assigned-tinker' and expansion-tracker.json assigned_to='tinker' AND status NOT in {complete, integrated, archived}). If items found, elevate the top item (severity-then-age) to the run's primary task and route via class_hint to Mode 1 (mechanical close) or Mode 4 (PROP authoring). Per-run cap of 1 item maintains the existing 'one mode, deep work' discipline. Closure path: tinker writes HNOTE action='close_iss_batch' to decider after action ships, decider closes the ISS on its next run.",
-
-  "problem": "Three agents (analyst, decider, integrity) write routing-to-tinker fields with the implicit expectation that tinker picks the items up. But tinker has no reader for these fields. The asymmetry is most visible against the parallel `assigned-analyst` path, which has TWO working readers (analyst.md line 168 dispatcher filter + analyst-baby.md line 115 PROP-029 orphan safety net). Items routed to tinker sit invisibly:\n\n  - ISS-1285 (raw-text/02-wins.txt staleness): routed 2026-05-11, sat 14+ days even though the routing_reason itself notes it as OBE.\n  - ISS-2134 (WIN-070 re-push loop): routed 2026-05-19, root cause fixed by PROP-048 same day, but ISS sits because no tinker scan closes it.\n  - EXP-425 (expansion-tracker gap audit): routed 2026-05-18, sat 48h until 2026-05-25 operator-direct rescue.\n\nThe defect class is `routing field written, no consumer wired up`. Same shape as the decider's action-typed HNOTE handler losing narrative HNOTEs (DIRECTIVE-20260525-003 cross-reference) — different agent, same bug.",
-
+  "source_finding": "DIRECTIVE-20260525-003 (tinker work-surfacing design). Tinker dispatcher consumes (1) operator-directives/*.json status='pending' and (2) mtime-staleness check + queue-history metrics. It DOES NOT iterate assigned_to/status routing fields. Three real items currently invisible to tinker: ISS-1285 (34d, infra, minor \u2014 raw-text staleness, OBE per EXP-306), ISS-2134 (6d, operational, major \u2014 WIN-070 re-push loop already root-caused by PROP-048), EXP-425 (48h, integrity_finding \u2014 operator-direct rescued 2026-05-25 via orphan-backfill).",
+  "summary": "Add a pre-flight 'Mode 0: Assigned-Tinker Scan' to monitor/prompts/tinker.md, placed AFTER the existing operator-directive discovery step and BEFORE the Mode 1\u20134 trigger evaluation. The scan reads both routing fields (open-issues.json status='assigned-tinker' and expansion-tracker.json assigned_to='tinker' AND status NOT in {complete, integrated, archived}). If items found, elevate the top item (severity-then-age) to the run's primary task and route via class_hint to Mode 1 (mechanical close) or Mode 4 (PROP authoring). Per-run cap of 1 item maintains the existing 'one mode, deep work' discipline. Closure path: tinker writes HNOTE action='close_iss_batch' to decider after action ships, decider closes the ISS on its next run.",
+  "problem": "Three agents (analyst, decider, integrity) write routing-to-tinker fields with the implicit expectation that tinker picks the items up. But tinker has no reader for these fields. The asymmetry is most visible against the parallel `assigned-analyst` path, which has TWO working readers (analyst.md line 168 dispatcher filter + analyst-baby.md line 115 PROP-029 orphan safety net). Items routed to tinker sit invisibly:\n\n  - ISS-1285 (raw-text/02-wins.txt staleness): routed 2026-05-11, sat 14+ days even though the routing_reason itself notes it as OBE.\n  - ISS-2134 (WIN-070 re-push loop): routed 2026-05-19, root cause fixed by PROP-048 same day, but ISS sits because no tinker scan closes it.\n  - EXP-425 (expansion-tracker gap audit): routed 2026-05-18, sat 48h until 2026-05-25 operator-direct rescue.\n\nThe defect class is `routing field written, no consumer wired up`. Same shape as the decider's action-typed HNOTE handler losing narrative HNOTEs (DIRECTIVE-20260525-003 cross-reference) \u2014 different agent, same bug.",
   "alternatives_considered": [
     {
       "id": "option_a",
@@ -41,7 +38,7 @@
         "Three writer prompts to update + ongoing coordination. Each future agent that wants to route work to tinker must learn the directive pattern.",
         "Loses parity with assigned-analyst, which is field-based and works fine. Inconsistent two-protocol design.",
         "Loses the operator's at-a-glance routing visibility in open-issues.json (an ISS routed to tinker would no longer appear as assigned-tinker; only the directive would exist, in a separate directory).",
-        "Higher operator-load — operator currently uses status='assigned-tinker' as a triage signal when scanning open-issues; would have to also scan operator-directives/ for AUTO-prefixed entries.",
+        "Higher operator-load \u2014 operator currently uses status='assigned-tinker' as a triage signal when scanning open-issues; would have to also scan operator-directives/ for AUTO-prefixed entries.",
         "Migrating existing assigned-tinker items requires a one-time conversion script + careful timing."
       ]
     },
@@ -51,14 +48,14 @@
       "summary": "Tinker pre-flight scans for assigned-to-tinker items older than 7d and auto-creates DIRECTIVE-AUTO-<ISS-ID>.json with status='pending'. Items aged <7d sit untouched.",
       "pros": [
         "Smallest possible writer-side change (none).",
-        "Items can never be lost — guaranteed surfacing after 7d.",
+        "Items can never be lost \u2014 guaranteed surfacing after 7d.",
         "Preserves both routing-field visibility AND directive-driven processing."
       ],
       "cons": [
         "7-day latency for normal items even when the queue is empty.",
         "Directive proliferation: every routed item eventually becomes a directive file. Operator-directives/ directory grows.",
         "Doubles bookkeeping (ISS + directive for the same target). Risk of divergence if one is updated but not the other.",
-        "Doesn't solve the immediate-surfacing problem — only the never-lost problem."
+        "Doesn't solve the immediate-surfacing problem \u2014 only the never-lost problem."
       ]
     },
     {
@@ -76,22 +73,20 @@
       ]
     }
   ],
-
   "recommended_option": "option_a",
-  "recommendation_rationale": "Option (a) is the smallest, most consistent change that solves the immediate problem. It mirrors the analyst's working reader pattern, requires no writer-side coordination, preserves operator visibility, and keeps tinker's prompt structure intact. The only real concern (queue grows unboundedly) is addressed by the per-run cap, and is empirically not a problem today (queue depth = 2 items). If the cap-overflow case ever materializes, option_d can be layered on top via a script — but building it now is premature.",
-
+  "recommendation_rationale": "Option (a) is the smallest, most consistent change that solves the immediate problem. It mirrors the analyst's working reader pattern, requires no writer-side coordination, preserves operator visibility, and keeps tinker's prompt structure intact. The only real concern (queue grows unboundedly) is addressed by the per-run cap, and is empirically not a problem today (queue depth = 2 items). If the cap-overflow case ever materializes, option_d can be layered on top via a script \u2014 but building it now is premature.",
   "counter_considerations": [
     {
       "concern": "Tinker now has TWO inboxes (operator-directives + assigned-to-tinker scan). Could confuse priority.",
       "resolution": "Priority order is fixed and documented: (1) pending operator-directives first (operator's explicit asks), (2) assigned-to-tinker scan items second (agent-routed work). If both have items, tinker processes the directive that run and the scan items next run. Per-run cap of 1 prevents inbox blending."
     },
     {
-      "concern": "Closure responsibility ambiguity — if tinker actions an ISS, who closes it?",
+      "concern": "Closure responsibility ambiguity \u2014 if tinker actions an ISS, who closes it?",
       "resolution": "Tinker writes monitor/decisions/human-notes.json HNOTE with action='close_iss_batch' and iss_ids=[<id>] after action ships. Decider's existing HNOTE handler (close_iss_batch verb is already wired up per CLAUDE.md) closes the ISS on its next run. Same pattern the operator already uses today."
     },
     {
       "concern": "Mode 0 might force tinker to author a PROP when the item is operator-judgment only.",
-      "resolution": "Mode 0 dispatch is class-hint-aware. ISS records carry a class_hint field; if present and == 'verification' → Mode 1 mechanical close. If class is opaque or operator-judgment is clearly needed (e.g., 'should we re-enable sloppytoppy'), tinker writes an operator-attention summary line to latest-tinker-summary.txt and leaves the ISS open (no false PROP). This is an explicit Mode 0 outcome: 'operator-decision-needed, escalated to summary'."
+      "resolution": "Mode 0 dispatch is class-hint-aware. ISS records carry a class_hint field; if present and == 'verification' \u2192 Mode 1 mechanical close. If class is opaque or operator-judgment is clearly needed (e.g., 'should we re-enable sloppytoppy'), tinker writes an operator-attention summary line to latest-tinker-summary.txt and leaves the ISS open (no false PROP). This is an explicit Mode 0 outcome: 'operator-decision-needed, escalated to summary'."
     },
     {
       "concern": "What if both a directive AND an assigned-tinker ISS exist for the same target (ISS-2134 + DIRECTIVE-20260519-002)?",
@@ -103,20 +98,19 @@
     },
     {
       "concern": "If tinker mis-classifies an item, no curmudgeon-equivalent review.",
-      "resolution": "Mode 0 actions emit a finding into the run report with category='mode-0-action'. Findings are auditable. If a Mode 0 action turns out wrong, operator can file a directive reversing it. Same accountability pattern as Mode 1–4 mechanical fixes."
+      "resolution": "Mode 0 actions emit a finding into the run report with category='mode-0-action'. Findings are auditable. If a Mode 0 action turns out wrong, operator can file a directive reversing it. Same accountability pattern as Mode 1\u20134 mechanical fixes."
     }
   ],
-
   "implementation_steps": [
     {
       "step": 1,
       "file": "monitor/prompts/tinker.md",
-      "change": "After the 'Pre-flight: Operator Directive Discovery' section and BEFORE 'Pre-flight: Backlog-Trend Computation', insert a new section 'Pre-flight: Mode 0 — Assigned-To-Tinker Scan' with the bash + node block (see implementation_pseudocode)."
+      "change": "After the 'Pre-flight: Operator Directive Discovery' section and BEFORE 'Pre-flight: Backlog-Trend Computation', insert a new section 'Pre-flight: Mode 0 \u2014 Assigned-To-Tinker Scan' with the bash + node block (see implementation_pseudocode)."
     },
     {
       "step": 2,
       "file": "monitor/prompts/tinker.md",
-      "change": "Add 'Mode 0' definition to the Dispatcher section between operator-directives and Mode 1, with priority order: (i) pending operator-directive — preempts everything, (ii) Mode 0 scan items — preempts Mode 1–4, (iii) Mode 1–4 — fall through if neither has work."
+      "change": "Add 'Mode 0' definition to the Dispatcher section between operator-directives and Mode 1, with priority order: (i) pending operator-directive \u2014 preempts everything, (ii) Mode 0 scan items \u2014 preempts Mode 1\u20134, (iii) Mode 1\u20134 \u2014 fall through if neither has work."
     },
     {
       "step": 3,
@@ -129,9 +123,7 @@
       "change": "Document the four valid Mode 0 outcomes per item: (a) close-as-OBE via HNOTE (item already resolved by other work), (b) author PROP via Mode 4 (structural fix needed), (c) escalate-to-operator via latest-tinker-summary.txt + leave ISS open (operator-judgment-needed), (d) defer via report finding (work needed but blocked; ISS stays open with note)."
     }
   ],
-
-  "implementation_pseudocode": "# Pre-flight: Mode 0 — Assigned-To-Tinker Scan (placed AFTER operator-directive discovery)\n# Runs once per tinker invocation, before Backlog-Trend computation.\n\nnode -e \"\nconst fs=require('fs');\nlet items=[];\n\n// Source 1: open-issues.json with status='assigned-tinker' (decider/integrity writes)\ntry{\n  const oi=JSON.parse(fs.readFileSync('monitor/decisions/open-issues.json','utf8'));\n  for(const i of oi.issues){\n    if(i.status==='assigned-tinker'){\n      items.push({source:'open-issues',id:i.id,severity:i.severity||'minor',age_days:i.found_at?Math.floor((Date.now()-Date.parse(i.found_at))/86400000):null,class_hint:i.class_hint||null,title:(i.description||'').substring(0,200),raw:i});\n    }\n  }\n}catch(e){}\n\n// Source 2: expansion-tracker.json with assigned_to='tinker' (analyst/decider writes)\ntry{\n  const t=JSON.parse(fs.readFileSync('monitor/analyst/expansion-tracker.json','utf8'));\n  const arr=t.items||(Array.isArray(t)?t:Object.values(t));\n  for(const i of arr){\n    if(i.assigned_to==='tinker'&&['complete','integrated','archived'].indexOf(i.status)<0){\n      items.push({source:'expansion-tracker',id:i.id,severity:i.priority||'medium',age_days:i.created_at?Math.floor((Date.now()-Date.parse(i.created_at))/86400000):null,class_hint:i.category||null,title:(i.target||'').substring(0,200),raw:i});\n    }\n  }\n}catch(e){}\n\n// Sort: severity desc (major>moderate>minor>info), then age desc (oldest first)\nconst sev={critical:5,major:4,moderate:3,minor:2,info:1};\nitems.sort((a,b)=>(sev[b.severity]||0)-(sev[a.severity]||0)||((b.age_days||0)-(a.age_days||0)));\n\nif(!items.length){console.log('MODE 0: no assigned-to-tinker items pending');process.exit(0);}\nconsole.log('MODE 0:',items.length,'assigned-to-tinker items pending');\nfor(const it of items.slice(0,5)){console.log(' -',it.source,'/',it.id,'| sev:',it.severity,'| age:',it.age_days+'d','| class:',it.class_hint,'|',it.title.substring(0,100));}\nconsole.log('TOP-PICK:',items[0].source,'/',items[0].id);\n\"\n\n# If a pending operator-directive exists, this run handles the directive; Mode 0 items wait for next run.\n# Otherwise: load top item, dispatch per class_hint:\n#   - class_hint in {verification, hygiene, ops-close, integrity_finding} -> Mode 1 (mechanical action + HNOTE close)\n#   - class_hint in {structural, design, deep-attack, operational} -> Mode 4 (PROP-authoring)\n#   - class_hint == null/opaque -> tinker discretion (default Mode 1 OBE-verify, escalate to operator if not actionable)",
-
+  "implementation_pseudocode": "# Pre-flight: Mode 0 \u2014 Assigned-To-Tinker Scan (placed AFTER operator-directive discovery)\n# Runs once per tinker invocation, before Backlog-Trend computation.\n\nnode -e \"\nconst fs=require('fs');\nlet items=[];\n\n// Source 1: open-issues.json with status='assigned-tinker' (decider/integrity writes)\ntry{\n  const oi=JSON.parse(fs.readFileSync('monitor/decisions/open-issues.json','utf8'));\n  for(const i of oi.issues){\n    if(i.status==='assigned-tinker'){\n      items.push({source:'open-issues',id:i.id,severity:i.severity||'minor',age_days:i.found_at?Math.floor((Date.now()-Date.parse(i.found_at))/86400000):null,class_hint:i.class_hint||null,title:(i.description||'').substring(0,200),raw:i});\n    }\n  }\n}catch(e){}\n\n// Source 2: expansion-tracker.json with assigned_to='tinker' (analyst/decider writes)\ntry{\n  const t=JSON.parse(fs.readFileSync('monitor/analyst/expansion-tracker.json','utf8'));\n  const arr=t.items||(Array.isArray(t)?t:Object.values(t));\n  for(const i of arr){\n    if(i.assigned_to==='tinker'&&['complete','integrated','archived'].indexOf(i.status)<0){\n      items.push({source:'expansion-tracker',id:i.id,severity:i.priority||'medium',age_days:i.created_at?Math.floor((Date.now()-Date.parse(i.created_at))/86400000):null,class_hint:i.category||null,title:(i.target||'').substring(0,200),raw:i});\n    }\n  }\n}catch(e){}\n\n// Sort: severity desc (major>moderate>minor>info), then age desc (oldest first)\nconst sev={critical:5,major:4,moderate:3,minor:2,info:1};\nitems.sort((a,b)=>(sev[b.severity]||0)-(sev[a.severity]||0)||((b.age_days||0)-(a.age_days||0)));\n\nif(!items.length){console.log('MODE 0: no assigned-to-tinker items pending');process.exit(0);}\nconsole.log('MODE 0:',items.length,'assigned-to-tinker items pending');\nfor(const it of items.slice(0,5)){console.log(' -',it.source,'/',it.id,'| sev:',it.severity,'| age:',it.age_days+'d','| class:',it.class_hint,'|',it.title.substring(0,100));}\nconsole.log('TOP-PICK:',items[0].source,'/',items[0].id);\n\"\n\n# If a pending operator-directive exists, this run handles the directive; Mode 0 items wait for next run.\n# Otherwise: load top item, dispatch per class_hint:\n#   - class_hint in {verification, hygiene, ops-close, integrity_finding} -> Mode 1 (mechanical action + HNOTE close)\n#   - class_hint in {structural, design, deep-attack, operational} -> Mode 4 (PROP-authoring)\n#   - class_hint == null/opaque -> tinker discretion (default Mode 1 OBE-verify, escalate to operator if not actionable)",
   "edge_cases": [
     {
       "case": "Item exists in BOTH open-issues (status='assigned-tinker') AND has a paired operator-directive (e.g., DIRECTIVE-20260519-002 + ISS-2134).",
@@ -151,7 +143,7 @@
     },
     {
       "case": "Mode 0 cap-overflow (>10 unhandled items accumulating).",
-      "handling": "Per PROP-030 backlog-trend pattern: emit a finding with category='mode-0-backlog' severity=moderate when item count >5, severity=major when >10. Operator escalation triggers if >20. (Not implementing graveyard auto-promote in this PROP — option_d layered separately if needed.)"
+      "handling": "Per PROP-030 backlog-trend pattern: emit a finding with category='mode-0-backlog' severity=moderate when item count >5, severity=major when >10. Operator escalation triggers if >20. (Not implementing graveyard auto-promote in this PROP \u2014 option_d layered separately if needed.)"
     },
     {
       "case": "Tinker action turns out wrong (e.g., closed an ISS that shouldn't have been).",
@@ -162,20 +154,20 @@
       "handling": "Tinker's pre-flight always reads from the clone (which workspace-sync rescues every hour). Pre-flight runs after the clone is fresh from PRELUDE_AUTH-verified clone. No FUSE read in Mode 0."
     }
   ],
-
-  "idempotency_contract": "Mode 0 is read-mostly; the only writes are (1) HNOTE creation when closing an ISS — idempotent because HNOTEs are uniquely identified by note_id + the closure path checks the ISS isn't already closed before writing; (2) operator-attention summary line in latest-tinker-summary.txt — overwritten every tinker run anyway, not idempotency-sensitive; (3) PROP file creation when routing to Mode 4 — same idempotency as today's PROP authoring. If a single ISS is picked up by Mode 0 in two consecutive runs (because the close HNOTE hasn't been consumed yet), the second run sees the closure HNOTE in human-notes.json status='pending' and skips re-actioning the same ISS.",
-
+  "idempotency_contract": "Mode 0 is read-mostly; the only writes are (1) HNOTE creation when closing an ISS \u2014 idempotent because HNOTEs are uniquely identified by note_id + the closure path checks the ISS isn't already closed before writing; (2) operator-attention summary line in latest-tinker-summary.txt \u2014 overwritten every tinker run anyway, not idempotency-sensitive; (3) PROP file creation when routing to Mode 4 \u2014 same idempotency as today's PROP authoring. If a single ISS is picked up by Mode 0 in two consecutive runs (because the close HNOTE hasn't been consumed yet), the second run sees the closure HNOTE in human-notes.json status='pending' and skips re-actioning the same ISS.",
   "verification_pattern": "After PROP-060 ships:\n  1. Within 24h, ISS-1285 and ISS-2134 should both be closed-as-OBE (tinker writes HNOTE, decider closes).\n  2. Within 7 days, queue of assigned-to-tinker items should drain to <=1 steady-state.\n  3. tinker run reports should contain a `mode_0_scan` section showing items considered + top-pick + action taken.\n  4. No new EXP-425-style 48h+ sittings of routed items.\n\nRollback signal: if Mode 0 emits >2 'mode-0-action-reverted' findings in a 7-day window (operator reversing tinker actions), revisit the dispatch logic. Likely fix: tighter class_hint requirements before Mode 4 dispatch.",
-
   "blast_radius": "Tinker prompt only. No data file schema changes. No other agent prompt edits. workspace-sync.md unchanged (no new file ownership). build.js unchanged. CLAUDE.md gets a one-line File Ownership table note: 'Tinker also reads assigned_to=tinker and status=assigned-tinker from these files (per PROP-060 Mode 0).'",
-
-  "operator_action_required": "Operator review of recommended option (option_a). If approved, tinker can self-apply per the existing self-fix discipline (modifying its own prompt is within scope per tinker.md's 'Conservative self-fixes' rule — though prompt edits to one's own dispatcher are at the upper edge of that scope, so HNOTE-first then operator-greenlight is the safer flow).",
-
+  "operator_action_required": "Operator review of recommended option (option_a). If approved, tinker can self-apply per the existing self-fix discipline (modifying its own prompt is within scope per tinker.md's 'Conservative self-fixes' rule \u2014 though prompt edits to one's own dispatcher are at the upper edge of that scope, so HNOTE-first then operator-greenlight is the safer flow).",
   "rejection_criteria": "Reject if: (a) operator prefers a different option from the four listed, or (b) operator wants the writer-side ban (option_b) to enforce a single inbox, or (c) operator wants tinker to remain pull-only and prefers the directive-creation-by-other-agents path. In any rejection case, the directive-aligned drain audit in Step 3 of DIRECTIVE-20260525-003 (this run's findings) still stands and the two open assigned-tinker items can be closed manually.",
-
-  "related_props": ["PROP-029 (analyst orphan safety-net — pattern to mirror)", "PROP-030 (backlog-trend metrics — Mode 0 hooks into this)", "PROP-048 (decider win-new dedup — resolved ISS-2134 root cause)", "PROP-026 (burndown — drained open-issues backlog; queue now small enough for Mode 0 to keep pace)"],
-
+  "related_props": [
+    "PROP-029 (analyst orphan safety-net \u2014 pattern to mirror)",
+    "PROP-030 (backlog-trend metrics \u2014 Mode 0 hooks into this)",
+    "PROP-048 (decider win-new dedup \u2014 resolved ISS-2134 root cause)",
+    "PROP-026 (burndown \u2014 drained open-issues backlog; queue now small enough for Mode 0 to keep pace)"
+  ],
   "directive_reference": "DIRECTIVE-20260525-003 (tinker work-surfacing design)",
-
-  "estimated_implementation_effort": "30-45 min Opus tinker run for self-apply (prompt edit ~80 lines, verification test by running Mode 0 against current ISS-1285 and ISS-2134). Or operator-direct cowork-session if operator wants to review the prompt edit before commit."
+  "estimated_implementation_effort": "30-45 min Opus tinker run for self-apply (prompt edit ~80 lines, verification test by running Mode 0 against current ISS-1285 and ISS-2134). Or operator-direct cowork-session if operator wants to review the prompt edit before commit.",
+  "implemented_at": "2026-05-25T17:35:00Z",
+  "implemented_by": "operator-cowork-session-2026-05-25",
+  "implementation_note": "PROP-060 option_a applied: Mode 0 \u2014 Assigned-To-Tinker Scan section inserted in monitor/prompts/tinker.md between Pre-flight Operator Directive Discovery and Pre-flight Backlog-Trend Computation. ISS-1285 + ISS-2134 closed via operator-direct PROP-060 drain audit (tinker recommendation). Verified by tests 3692/0."
 }
