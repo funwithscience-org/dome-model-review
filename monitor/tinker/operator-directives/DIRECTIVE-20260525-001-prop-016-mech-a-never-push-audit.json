@@ -1,0 +1,45 @@
+{
+  "id": "DIRECTIVE-20260525-001",
+  "filed_by": "operator-cowork-session",
+  "filed_at": "2026-05-25T08:25:00Z",
+  "status": "pending",
+  "priority": "medium",
+  "title": "Verify PROP-016 Mechanism A blocks decider-self-apply against NEVER_PUSH files; audit recent closures for the false-closure recurrence pattern",
+  "background": "Today's audit of the 2026-05-18 closure batch (commit 0b9f6c0, d5685b4, and the ISS-2112 fix in 0b9f6c0) uncovered 3 confirmed false closures from a single decider session: ISS-2094, ISS-2102, ISS-2106. All three share a structural marker: decider self-apply against build-scripts/generate-html.js, which is a NEVER_PUSH file. The LLM imagined it had patched the file, wrote a fix_description claiming success, but the actual write was either blocked by infrastructure or never attempted. The false fix_descriptions were specific and verifiable (e.g. 'updated line 500 from 69 dome-claimed wins to N'), making them appear legitimate at intake. PROP-016 Mechanism A (NEVER_PUSH pre-commit detect in decider, integrated via task #64 in this session log) was supposed to close this hole by routing such patches to stranded-patches/ instead of allowing a 'fixed' status. The 2026-05-18 closures may pre-date Mech A's deployment, or Mech A may have a gap.",
+  "evidence": {
+    "false_closures_today_corrected": [
+      {"iss_id": "ISS-2094", "target": "build-scripts/generate-html.js:~1726", "fixed_by_claim": "decider-self-apply-stranded-patch", "actual_state_2026-05-25": "WIN-054 reference still present until operator commit 0b9f6c0", "corrective_commit": "0b9f6c0"},
+      {"iss_id": "ISS-2102", "target": "build-scripts/generate-html.js (sub_rationale rendering claim)", "fixed_by_claim": "decider-self-apply-generate-html", "actual_state_2026-05-25": "0 sub_rationale references in generate-html.js, 0 audit-trail-only filter signal in docs/index.html", "corrective_commit": "d5685b4"},
+      {"iss_id": "ISS-2106", "target": "build-scripts/generate-html.js:500", "fixed_by_claim": "Self-applied: updated line 500 from 69 dome-claim... to N", "actual_state_2026-05-25": "Line 500 still read '69 dome-claimed wins' until operator commit 0b9f6c0 (via ISS-2112 fix)", "corrective_commit": "0b9f6c0"}
+    ],
+    "pattern_marker": "decider-self-apply-* claim against a NEVER_PUSH target file with no corresponding stranded-patches sentinel and no rebuild/test/push evidence",
+    "verified_legitimate_closures_from_same_batch": [
+      {"iss_id": "ISS-2107/2108", "target": "data/wins.json (WIN-057 c5 H1/H2)", "outcome": "Fix concepts present in WIN-057 prose with paraphrased wording — legitimate"},
+      {"iss_id": "ISS-2120/2121/2122", "target": "data/wins.json (WIN-063 c4 H1/H2/H3)", "outcome": "All substantive concepts present in WIN-063 prose — legitimate (initial audit's verbatim-marker check produced false alarm)"},
+      {"iss_id": "ISS-2103", "target": "EXP-295 routing", "outcome": "EXP-295 file exists — legitimate"},
+      {"iss_id": "ISS-2109/2111", "target": "docs/llms.txt 71 -> 72", "outcome": "docs/llms.txt currently reads '72 WIN entries' — legitimate"}
+    ],
+    "structural_insight": "False closures only occur when target is NEVER_PUSH. Closures targeting non-NEVER_PUSH files (data/wins.json, docs/llms.txt) landed correctly — sometimes with editorial paraphrasing, but always with substance present."
+  },
+  "requested_work": [
+    "Step 1: Confirm PROP-016 Mechanism A is currently wired into monitor/prompts/reference/decider-patches-and-selfapply.md. Grep for the NEVER_PUSH check and verify it precedes the close-issue write. Report the active code path.",
+    "Step 2: If Mech A IS wired up: explain how the 2026-05-18 closures slipped through. Was Mech A deployed after that date? Was the NEVER_PUSH list incomplete then? Was the check bypassed via some other code path?",
+    "Step 3: If Mech A is NOT wired up: propose a PROP to wire it correctly. Reference the original PROP-016 design.",
+    "Step 4: Audit the last 7 days (2026-05-18 through 2026-05-25) of closed-issues.json for the recurrence pattern: WHERE fixed_by LIKE 'decider-self-apply%' AND fix_description references a NEVER_PUSH target (build-scripts/*, build.js, test.js, CLAUDE.md, monitor/prompts/*.md, docs/*) AND no stranded-patches sentinel exists for the corresponding date. List any matches.",
+    "Step 5: For each match in Step 4, perform the same verification check used by today's audit (curl raw file from origin, grep for expected fix marker). Report verified-false-closure list.",
+    "Step 6: If any false closures found in Step 5, file ISSs per finding so they get corrected the same way ISS-2094/2102/2106 were today."
+  ],
+  "non_goals": [
+    "Do NOT attempt to backfill the 2026-05-18 batch any further — all 3 known false closures are already corrected (commits 0b9f6c0, d5685b4).",
+    "Do NOT modify PROP-016 Mechanism A's intended behavior — verification only, propose changes via PROP if needed.",
+    "Do NOT include the burndown-migrated entries (ISS-2095/2096/2098/2099/2101/2102/2158/2162/2163/2168) in the audit — those are already in closed-issues.json with operator-direct or one-time-burndown mechanisms; they're separately accounted for in commit da63f27f."
+  ],
+  "context_pointers": {
+    "today_corrective_commits": ["0b9f6c0", "d5685b4"],
+    "claude_md_section": "File Ownership Rules (Phase 1) > NEVER_PUSH list",
+    "session_log_references": ["task #64: Implement PROP-016 Mechanism A — NEVER_PUSH pre-commit detect in decider"],
+    "false_closure_audit_pattern": "monitor/decisions/closed-issues.json entries with false_closure_audit block (today: ISS-2094, ISS-2102)"
+  },
+  "expected_output": "Tinker run report covers: (a) PROP-016 Mech A wiring status, (b) explanation of 2026-05-18 slip OR proposal to wire/fix, (c) audit results for last 7 days, (d) ISS list if false closures found.",
+  "estimated_effort": "Mode 1 audit work, no new code. ~15 min Opus."
+}
