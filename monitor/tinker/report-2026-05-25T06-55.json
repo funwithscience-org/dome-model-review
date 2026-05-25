@@ -121,12 +121,13 @@
     {
       "id": "FND-01-tinker-2026-05-25T06-55",
       "category": "claude_md_accuracy",
-      "severity": "moderate",
+      "severity": "info",
       "title": "CLAUDE.md Monitoring Pipeline table is materially out of sync with actual scheduled-task crons",
       "summary": "Per `list_scheduled_tasks` ground truth: dome-analyst-baby, dome-analyst, dome-curmudgeon, dome-decider, dome-integrity, dome-tinker, dome-social all have inaccurate schedule descriptions; dome-prune-integrity (added 2026-05-23) is missing from the table; the prose count 'Eleven scheduled agents' is wrong (12 listed, 13 task definitions, 11 enabled). sloppytoppy-score and sloppytoppy-rewrite are listed without the DISABLED marker that CLAUDE.md's own disaster-recovery narrative says applies.",
       "evidence_file": "monitor/tinker/proposals/PROP-057-claude-md-monitoring-pipeline-schedule-correction.json (problem.evidence.discrepancies)",
       "fix": "PROP-057 (authored this run, status=proposed)",
-      "blast_radius": "Documentation only. CLAUDE.md is auto-loaded into every session/agent — fix propagates immediately on commit."
+      "blast_radius": "Documentation only. CLAUDE.md is auto-loaded into every session/agent — fix propagates immediately on commit.",
+      "resolution_note": "PARTIALLY RESOLVED by parallel tinker run tinker-2026-05-25T06-24 (commit d2288fc, 06:30 UTC) which applied 6 of 11 fact-corrections. This run applied the remaining 5 schedule-description corrections directly (commit pending). PROP-057 marked superseded-by-self-fix. All 11 fact-corrections now landed."
     },
     {
       "id": "FND-02-tinker-2026-05-25T06-55",
@@ -180,7 +181,7 @@
             "references_lines": 1180,
             "total_with_claude_md": 1799,
             "baseline_total": 1747,
-            "total_delta_pct": 3.0,
+            "total_delta_pct": 3,
             "alert_tier": "info",
             "what_grew": "dispatcher (mtime 2026-05-24 21:22, bulk workspace-sync resync)"
           },
@@ -227,6 +228,15 @@
       "title": "No active re-work patterns detected",
       "summary": "Stale 'complete' tracker items: 0. Orphan proposals: 0 (518 on-disk == 518 in-ledger). Duplicate new-wins: 0. Curmudgeon re-reviews per target: max 8-10 reviews on cross-cutting SEC-* targets (intentional iteration, not re-review). All re-work guardrails holding.",
       "decider_no_op_rate_7d": "4 of 6 recent decider daily-reports were 0 reviews/0 patches/0 wins (~67% no-op). Within expected range for 4h cadence on a system that hands work off to analyst-baby + curmudgeon-verify gates. Not flagging — same posture as prior runs."
+    },
+    {
+      "id": "FND-06-tinker-2026-05-25T06-55",
+      "category": "agent_self_concurrency",
+      "severity": "moderate",
+      "title": "Two tinker sessions ran within 30 minutes and did overlapping work; FUSE staleness made the overlap invisible to the second",
+      "summary": "tinker-2026-05-25T06-24 (manual operator-triggered) committed 6 CLAUDE.md fact-fixes at 06:30 UTC. tinker-2026-05-25T06-55 (this run, also manual) began at 06:55 UTC reading FUSE workspace CLAUDE.md (mtime 2026-05-24 21:22, last refreshed before either run). This run did not see the 06-24 commits until after authoring PROP-057. The race was benign here (both runs aligned on the right fix), but exposes a systematic gap: tinker reads FUSE for CLAUDE.md but the git→FUSE direction lags. Without mitigation, future overlapping runs could produce conflicting fixes or duplicate work.",
+      "fix": "Candidate for next Mode 3: (a) tinker pre-flight pulls latest into a fresh clone and uses clone CLAUDE.md, (b) cross-check FUSE md5 vs GitHub raw at start of run.",
+      "blast_radius": "Process-engineering — affects how tinker observes shared state. No data integrity risk in the benign-overlap case (this one); in adversarial-overlap could produce churn or conflict."
     }
   ],
   "claude_md_audit": {
@@ -320,5 +330,6 @@
     "If PROP-053 files are still missing on next run (3rd consecutive STILL_BROKEN despite approved status), escalate as moderate finding with a note that the approval-without-implementation gap is widening.",
     "Next Mode 3 should audit the File Ownership Rules section of CLAUDE.md (deferred this run).",
     "Carryover: ISS-2094 stranded patch — operator action required, no tinker action."
-  ]
+  ],
+  "race_condition_note": "During this run, a parallel tinker session (tinker-2026-05-25T06-24, commit d2288fc at 06:30 UTC + report c8fcb7a at 06:32 UTC) landed before this run completed. That parallel run independently did the same CLAUDE.md accuracy audit and applied 6 of 11 fact-corrections directly as self-fixes. This run was reading the FUSE workspace CLAUDE.md (mtime 2026-05-24 21:22, stale relative to the 06-24 git commits) and did not detect the parallel work until after PROP-057 was authored and pushed. On detecting the overlap (during post-push clone inspection), this run: (a) updated PROP-057 status to superseded-by-self-fix, (b) applied the remaining 5 fact-corrections directly in the same self-fix style, (c) annotated FND-01 below. Net result: all 11 fact-corrections landed. The parallel-session race exposes the same FUSE-staleness problem that has motivated multiple PROPs (047/051/052/053) — the FUSE workspace is not refreshed git→FUSE after every commit, only on workspace-sync hourly pulls or build.js publish flows. A scheduled tinker reading FUSE will systematically lag git commits within the same hour. Mitigation candidates: (a) tinker pre-flight should pull latest from git into a fresh clone and read CLAUDE.md from there; (b) tinker pre-flight should cross-check FUSE CLAUDE.md md5 against GitHub raw and warn if stale. Neither is implemented; flagging here as a FND-06 candidate for next Mode 3."
 }
