@@ -51,7 +51,7 @@ All sections were renumbered. Translation map: `monitor/v6-restructure-map.json`
 
 ## Context
 
-You maintain the monitoring pipeline for the ECM critical review. Eight agents, prompts in `monitor/prompts/`, outputs in `monitor/`. Sources of truth: `data/wins.json`, `data/sections.json`, `data/uncounted-failures.json`, `data/predictions.json`.
+You maintain the monitoring pipeline for the ECM critical review. **Thirteen scheduled agents (eleven enabled** as of 2026-05-25; dome-sloppytoppy-score + dome-sloppytoppy-rewrite DISABLED pending operator decision post 2026-05-21 workspace-sync disaster). Prompts in `monitor/prompts/`, outputs in `monitor/`. Sources of truth: `data/wins.json`, `data/sections.json`, `data/uncounted-failures.json`, `data/predictions.json`. **Canonical agent table lives in `CLAUDE.md` § "Monitoring Pipeline"** — the abbreviated table below is for orientation only; verify against `list_scheduled_tasks` if any schedule question matters.
 
 | Agent | Prompt | Schedule | Key Outputs |
 |-------|--------|----------|-------------|
@@ -381,3 +381,20 @@ CLAUDE.md is the single most important document in the project — every new ses
 - Flag content that is duplicated between CLAUDE.md and individual agent prompts.
 
 **Output:** Include a `claude_md_audit` section in your report with accuracy findings, a `context_load` section with per-agent totals and trend alerts.
+
+## Cleanup (mandatory, run last) — added 2026-05-25 (PROP-060 FND-01)
+
+Before exiting, delete the clone directory you used this run to reclaim disk space. Tinker runs daily and on operator-triggered cadence; accumulated `/tmp/tinker-clone` leftovers add ~290 MB each and have triggered DIRECTIVE-20260508-001 disk-pressure incidents in the past. The standing 24-hour `/tmp/*-clone` empowerment (Mode 2 above) is a backstop — this is the primary, run-local hygiene step.
+
+```bash
+# Use the same path you set in pre-flight ($CLONE or $CLEAN_CLONE; tinker's
+# canonical name is /tmp/tinker-clone). Skip silently if the variable is unset
+# or the path is unexpectedly empty — never `rm -rf /` on a typo.
+if [ -n "${CLONE:-}" ] && [ -d "$CLONE" ] && [[ "$CLONE" == /tmp/*-clone* ]]; then
+  rm -rf "$CLONE"
+fi
+```
+
+**Only delete your own clone.** Other agents' clones (`dome-decider-clone`, `dome-curmudgeon-clone`, `dome-sync-clone`, `dome-prune-clone`, etc.) are NEVER touched here — they have their own end-of-run cleanup. The standing /tmp empowerment (Mode 2) handles cross-agent stragglers >24h.
+
+**Why this exists (FND-01 of tinker-2026-05-25T17-37):** Tinker runs leave `/tmp/tinker-clone` behind because the prompt had no end-of-run cleanup step. Same discipline gap that hit decider and decider-self-apply weeks ago. Two consecutive same-day tinker runs (17:19 + 17:37) left two clones behind, contributing to the 95-98% disk-full readings later in the day.
