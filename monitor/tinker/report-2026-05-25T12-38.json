@@ -1,0 +1,202 @@
+{
+  "run_id": "tinker-2026-05-25T12-38",
+  "generated_at": "2026-05-25T12:55:00Z",
+  "mode_selected": "operator_directive_override",
+  "directive_id": "DIRECTIVE-20260525-002",
+  "directive_title": "Decider verify-push gap + queue archive-on-pop gap + analyst-baby dispatcher filter discipline + 4 zombie blocked-on-curmudgeon ISSs",
+  "directive_priority": "medium",
+  "modes_checked": {
+    "mode_1_pipeline_health": "skipped — operator directive present (would have run; backlog metrics show all-green)",
+    "mode_2_infrastructure": "skipped — directive override; partial Mode 2 checks done as pre-flight (disk at 94%, no STALE FUSE files except queue archive case investigated as Step 2)",
+    "mode_3_cost_engineering": "skipped — directive override",
+    "mode_4_proposals_and_fixes": "skipped — directive override (though PROP-058 authored as part of directive Step 4)"
+  },
+  "backlog_trend": {
+    "ts": "2026-05-25T12:40:03.000Z",
+    "open_issues_total": 20,
+    "open_status_count": 1,
+    "assigned_analyst_count": 1,
+    "age_ge_14d_count": 8,
+    "age_ge_30d_count": 2,
+    "oldest_open_age_days": 0.5,
+    "new_issues_velocity_7d": 8,
+    "closed_issues_velocity_7d": 22,
+    "net_velocity_7d": 14,
+    "baby_drain_count_7d": 0,
+    "verify_drain_count_7d": 1,
+    "thresholds_firing": "none",
+    "wow_compare": {"prev_total": 36, "prev_ts": "2026-05-18T16:51Z", "delta_pct": -44.4},
+    "note": "Backlog down 44% WoW; net velocity +14 (closed 22, new 8). PROP-055/056 landings this morning compressed the metric from yesterday's MAJOR-tier 34 to today's 20. Both PROPs achieved their stated metric_correctness goal."
+  },
+  "directive_response": {
+    "step_1_decider_verify_push_gap": {
+      "case": "decider-2026-05-25T09-20 popped WIN-067 qid=402, self-applied 2 minor patches (code_analysis.monitoring tag + Mascon redundancy), queue depth returned to 0. No follow-up qid=403 was pushed for WIN-067 c14 verification.",
+      "rule_location": [
+        "monitor/prompts/decider.md L378 (M1 PATCH/NARROW-PATCH path)",
+        "monitor/prompts/reference/decider-curmudgeon-pq-mechanics.md L221 (M3 carry-over path action_a)",
+        "monitor/prompts/reference/routing-matrix.md L36 (decision table Step 5 self-apply column)"
+      ],
+      "diagnosis": "MISSING-BY-OMISSION (not missing-by-condition). All three prompt locations REFERENCE the rule ('when Step 5 self-apply pushes the patched target for re-review, set class:verification per PROP-025') but no concrete procedure exists in monitor/prompts/reference/decider-patches-and-selfapply.md for actually constructing the verify-class queue push. The 'Self-Apply procedure' (Step 6b, lines 55+) walks through clone setup, patch application, close-with-pending-verification, and cleanup — but stops before any queue push. The LLM is expected to remember to do the push from its own knowledge of decider.md L378, with the shape from decider.md L840+ ('How to push items onto the queue'). The rule has no procedural anchor and is consequently easy to miss.",
+      "review_meta_for_WIN_067_c13": {
+        "queue_id": 402,
+        "recommended_action": "minor_edit",
+        "current_verdict_holds": true,
+        "holes_count": 2,
+        "all_holes_severity": "minor",
+        "fits_PROP_038_phase_1_gate": "yes (≤2 minor holes, both fixed by self-apply, current_verdict_holds=true) — verify-class push would be the right action per the eligibility criteria, so this is a pure missed-push, not a conditional skip"
+      },
+      "proposed_fix": {
+        "scope": "Add an explicit 'Step 7: Push verify-class re-review onto priority queue' subsection to decider-patches-and-selfapply.md, AFTER the cleanup section. Insert a code template that constructs the push using the patched target's metadata. Mirror the existing 'How to push items onto the queue' template at decider.md L840+.",
+        "shape": "```bash\nnode -e \"\nconst fs=require('fs');\nconst CLONE='${CLEAN_CLONE}';\nconst pq=JSON.parse(fs.readFileSync(CLONE+'/monitor/curmudgeon/priority-queue.json','utf8'));\nfor(const tgt of PATCHED_TARGETS){  // [{target_type, target_id, cycle, related_issues}]\n  pq.queue.push({\n    queue_id: pq.next_id++,\n    target_type: tgt.target_type,  // e.g. 'win-detail-rewrite', 'section-rewrite', 'prediction-batch'\n    target_id: tgt.target_id,\n    class: 'verification',         // PROP-025: this is a 'did the patch land cleanly' cycle\n    reason: 'Decider self-apply re-review cycle c' + tgt.cycle + ' (per decider-' + RUN_ID + ')',\n    pushed_by: 'decider',\n    pushed_at: new Date().toISOString(),\n    context_hints: {\n      source_run: 'decider-' + RUN_ID,\n      patched_targets: tgt.related_issues,\n      human_note: null\n    }\n  });\n}\nfs.writeFileSync(CLONE+'/monitor/curmudgeon/priority-queue.json',JSON.stringify(pq,null,2));\n\"\n```",
+        "blast_radius": "Minimal — adds explicit code that the LLM was expected to construct from memory. Removes a 'phantom-step' pattern.",
+        "operator_decision": "Tinker recommends operator-side apply (one-line prompt edit) rather than a full PROP since the procedural code already exists in decider.md L840+ and the fix is to lift+paste with the verify-class default. Operator may choose to author a small PROP-059 if a formal review is preferred."
+      },
+      "operator_one_line_action": "Insert a 'Step 7: Verify-class re-review push' subsection in monitor/prompts/reference/decider-patches-and-selfapply.md immediately before the '## Cleanup (mandatory, run last)' section, using the code shape above. After insertion, the verify-push becomes a documented procedure step rather than an LLM-remembered abstraction."
+    },
+    "step_2_queue_archive_on_pop_gap": {
+      "operator_observed_state": "FUSE workspace ${WORKSPACE}/monitor/curmudgeon/priority-queue-archive.jsonl ended at qid=395 popped 2026-05-21T06:05:00Z. qids 396-402 missing.",
+      "tinker_verification": "git canonical (origin/main HEAD = 442f5a7) priority-queue-archive.jsonl HAS qids 396-402, all present, all with strict_queue_id pop_reason and claimed_review_file fields. FUSE was stale by 7 entries (276 vs 269 lines).",
+      "diagnosis": "NOT a decider pop-procedure gap. The pop→archive append in monitor/prompts/decider.md L766 (`fs.appendFileSync(historyArchivePath, lines)`) is working correctly — qids 396-402 are in git canonical. The gap is FUSE staleness: priority-queue-archive.jsonl is classified `git`-owned (build.js OWNERSHIP L95-area, see workspace-sync.md L413 `smart_copy ${WORKSPACE}/monitor/curmudgeon/priority-queue-archive.jsonl monitor/curmudgeon/priority-queue-archive.jsonl`). workspace-sync's smart_copy is FUSE→git direction-aware with an mtime guard — when git is newer than FUSE (decider pushed direct), the guard skips the copy. The git→FUSE direction is supposed to be handled by `build.js publish`, but the decider doesn't run build.js publish after committing the queue archive — it just commits and pushes. So FUSE accumulates lag every time decider pops without a subsequent build.js publish.",
+      "fuse_backfill_action_taken": "Tinker appended the 7 missing entries (qids 396-402) from git canonical to FUSE this run. md5 hashes now match: 7cf349eca4f4c56ec8f6b79d455e8dbf for both. Operator-side FUSE view of priority-queue-archive.jsonl now reflects truth.",
+      "structural_fix_consideration": "Two options: (a) Add priority-queue-archive.jsonl to a git→FUSE one-shot copy in workspace-sync's startup (it would lift the latest git copy and replace FUSE when git is newer); (b) Have decider call a one-line 'cp clone/.../priority-queue-archive.jsonl WORKSPACE/.../' after the appendFileSync. Option (a) is closer to the workspace-sync philosophy ('round-trip safety'); option (b) is closer to the decider's universal-pusher pattern ('write to both sides'). Tinker recommends (b) — same pattern decider already uses for data/wins.json etc. — and notes this should be a small PROP if pursued.",
+      "operator_one_line_action": "If you want this to self-heal going forward without a PROP, the simplest patch is: in monitor/prompts/decider.md, immediately after the line `fs.appendFileSync(historyArchivePath, lines);` (~L766), add `try{ fs.appendFileSync('${WORKSPACE}/monitor/curmudgeon/priority-queue-archive.jsonl', lines); }catch(_){}` so the decider writes to both git and FUSE simultaneously. This mirrors the dual-write pattern already used for human-notes.json (see CLAUDE.md 'Human Notes Rule').",
+      "tinker_followup": "FUSE backfilled this run (md5 match). Will re-verify on next run."
+    },
+    "step_3_analyst_baby_dispatcher": {
+      "audit_scope": "Both analyst-baby (monitor/prompts/analyst-baby.md L94-103) and main analyst (monitor/prompts/analyst.md L143-154) dispatcher filters.",
+      "exp_425_actual_state": {
+        "id": "EXP-425",
+        "status": "pending",
+        "assigned_to": "tinker",
+        "source": "decider-bau-triage",
+        "review_class": "(absent)",
+        "claimed_by": "(undefined)"
+      },
+      "exp_431_actual_state": {
+        "id": "EXP-431",
+        "status": "consolidated-into-EXP-432",
+        "claimed_by": null,
+        "review_class": "verification",
+        "source": "decider-bau-route"
+      },
+      "filter_trace_baby": {
+        "filter": "i.status === 'pending' && !i.blocked_on && babyOwns(i) && i.claimed_by !== 'analyst'",
+        "EXP_425_evaluation": "status='pending' ✓, !blocked_on ✓, claimed_by !== 'analyst' ✓ (undefined). babyOwns(): review_class undefined (skip 'deep-attack/holistic' check), review_class undefined (skip 'verification' check), review_class null+source='decider-bau-triage' NOT in babyOwnedSources {'decider-bau-route','decider-m1-route','decider-m3-carry-over'} → babyOwns returns false. ITEM CORRECTLY EXCLUDED.",
+        "EXP_431_evaluation": "status='consolidated-into-EXP-432' (NOT 'pending') → ITEM CORRECTLY EXCLUDED.",
+        "conclusion_baby": "Both items are CORRECTLY excluded by the existing analyst-baby filter. No bug in baby's dispatcher for these specific cases."
+      },
+      "filter_trace_main_analyst": {
+        "filter": "i.status === 'pending' && !i.blocked_on && i.claimed_by !== 'analyst-baby' && !babyOwns(i)",
+        "EXP_425_evaluation": "status='pending' ✓, !blocked_on ✓, claimed_by !== 'analyst-baby' ✓ (undefined), !babyOwns(EXP-425) → !false → true ✓. ITEM MATCHES — gets surfaced to Opus analyst every run.",
+        "EXP_431_evaluation": "status='consolidated-into-EXP-432' (NOT 'pending') → CORRECTLY EXCLUDED.",
+        "conclusion_main": "**BUG CONFIRMED in main analyst dispatcher for EXP-425.** The filter has NO assigned_to guard. EXP-425 with assigned_to='tinker' should not be surfaced to the analyst (Opus) but is. This is the cause of the 3-consecutive-run Opus no-op on EXP-425."
+      },
+      "fix_proposal": {
+        "summary": "Add `(i.assigned_to == null || i.assigned_to === 'analyst' || i.assigned_to === 'analyst-baby')` guard to BOTH dispatcher filters (defense-in-depth — baby's filter doesn't bite today but would if a tinker-assigned item ever had review_class='verification', and the guard makes intent explicit).",
+        "main_analyst_patch": {
+          "file": "monitor/prompts/analyst.md",
+          "find": "const p=t.items.filter(i =>\\n  i.status==='pending' && !i.blocked_on &&\\n  i.claimed_by !== 'analyst-baby' &&\\n  !babyOwns(i)\\n);",
+          "replace": "const p=t.items.filter(i =>\\n  i.status==='pending' && !i.blocked_on &&\\n  (i.assigned_to == null || i.assigned_to === 'analyst' || i.assigned_to === 'analyst-baby') &&\\n  i.claimed_by !== 'analyst-baby' &&\\n  !babyOwns(i)\\n);",
+          "rationale": "One-line addition. Excludes items where decider explicitly assigned to a non-analyst owner (e.g. 'tinker'). Conservative: items with no assigned_to (typical case) still pass; explicit analyst/analyst-baby assignments still pass."
+        },
+        "baby_patch_optional_defense_in_depth": {
+          "file": "monitor/prompts/analyst-baby.md",
+          "find": "const pendingForBaby = t.items.filter(i =>\\n  i.status === 'pending' && !i.blocked_on && babyOwns(i) &&\\n  i.claimed_by !== 'analyst'\\n);",
+          "replace": "const pendingForBaby = t.items.filter(i =>\\n  i.status === 'pending' && !i.blocked_on && babyOwns(i) &&\\n  (i.assigned_to == null || i.assigned_to === 'analyst' || i.assigned_to === 'analyst-baby') &&\\n  i.claimed_by !== 'analyst'\\n);",
+          "rationale": "Defensive: prevents future tinker/social/integrity-assigned items from being picked up by baby if review_class somehow matched."
+        }
+      },
+      "secondary_observation": "EXP-431 currently has the correct exclusion (status='consolidated-into-EXP-432'). However, the dispatcher logic could be more robust by also checking for status prefix 'consolidated-into-' explicitly, since the 'pending' check is the ONLY thing keeping consolidated items out. If a future close site accidentally writes status='pending' on a consolidated item, both dispatchers would surface it. Tinker recommends a follow-up PROP that adds an explicit `!/^consolidated-into-/.test(item.status)` defensive guard, but this is not urgent — current behavior is correct."
+    },
+    "step_4_zombie_iss_sweep_PROP_authored": {
+      "prop_id": "PROP-058",
+      "prop_file": "monitor/tinker/proposals/PROP-058-decider-blocked-on-curmudgeon-burndown-sweep.json",
+      "title": "decider end-of-run sweep: close status='blocked-on-curmudgeon' issues whose underlying EXP is integrated OR whose blocker ISS is closed; one-time burndown of 4 zombie entries",
+      "design_pattern": "Mirrors PROP-056 Step A0 structure. New Step A0b sweep walks open-issues.json for status='blocked-on-curmudgeon', resolves each via (a) extractExpId() + expIntegrated map lookup (closes via 'exp-integrated-burndown'), OR (b) extractBlockerIss() + closedSet lookup (closes via 'blocker-iss-closed-burndown'). Idempotent, ledger-deduped, fail-loud self-test.",
+      "burndown_targets": ["ISS-1351 (EXP-211 integrated 2026-04-25)", "ISS-1552 (EXP-255→EXP-261 integrated 2026-04-27)", "ISS-1553 (EXP-256 integrated 2026-04-27)", "ISS-1599 (blocker ISS-1605 closed 2026-04-27 — operator caveat re: WCAG contrast)"],
+      "operator_caveats_called_out": "ISS-1599 has substantive WCAG-AA contrast concern. Burndown script defaults to INCLUDE but PROP recommends operator manually verify dark-mode contrast on live site before close, or re-open as fresh ISS if contrast still fails.",
+      "follow_up_recommendation": "Consider authoring a small follow-up PROP that adds `blocker_iss_id: 'ISS-NNNN'` as a structured field whenever decider creates a blocked-on-curmudgeon ISS pointing at another ISS. Would replace the fragile free-text 'blocked on ISS-NNNN' regex with structured lookup and enable forward-walk at ISS-closure time."
+    },
+    "step_5_verify_push_recurrence_audit": {
+      "audit_window": "2026-05-12 (14d) through 2026-05-25",
+      "method": "Scanned monitor/decisions/daily-report-decider-*.json for patches_applied non-empty, extracted target_ids (handling 3 different shape conventions: {win, pred, target_id, file+pred, target:'data/x.json:Y.field'}). For each target, scanned priority-queue-archive.jsonl for any pop with target_id match AND popped_at within +1h..+7d of the patch-run timestamp.",
+      "result": "3 decider runs with patches in window. 2 of 3 have NO follow-up verify-class pop within 7d — pattern is recurring.",
+      "table": [
+        {
+          "run": "2026-05-13T01-22 (PRED-106 + WIN-028 + WIN-017)",
+          "patches": 4,
+          "unique_targets": ["WIN-028", "WIN-017", "PRED-106"],
+          "follow_up_pops_within_7d": {
+            "WIN-028": "qid=342 popped 2026-05-13T05:26:08 (WIN-028.c9.json)",
+            "WIN-017": "qid=343 popped 2026-05-13T05:26:08 (WIN-017.c8.json)",
+            "PRED-106": "NONE"
+          },
+          "status": "PARTIAL (2/3) — WIN edits got verify-pushed, PRED-106 did not"
+        },
+        {
+          "run": "2026-05-24T17-20 (PRED-073)",
+          "patches": 3,
+          "unique_targets": ["PRED-073"],
+          "follow_up_pops_within_7d": {
+            "PRED-073": "NONE"
+          },
+          "status": "MISS (0/1)"
+        },
+        {
+          "run": "2026-05-25T09-20 (WIN-067)",
+          "patches": 2,
+          "unique_targets": ["WIN-067"],
+          "follow_up_pops_within_7d": {
+            "WIN-067": "NONE"
+          },
+          "status": "MISS (0/1) — the trigger case for this directive"
+        }
+      ],
+      "summary": "3 runs with patches; 0 full-hit runs, 1 partial-hit, 2 full misses. PRED-target patches in particular have a 0/2 hit rate (PRED-106 on 5/13, PRED-073 on 5/24); WIN-target patches have a 3/4 hit rate (WIN-028 and WIN-017 5/13 hit; WIN-067 5/25 miss). The 'WIN gets verify-pushed sometimes; PRED never' pattern is suggestive but n is too small to draw causal conclusions. The aggregate signal — 2 of last 3 runs missing — confirms the discipline gap is real and recurring, not a one-off.",
+      "recommendation": "Apply the Step 1 procedural fix (insert explicit 'Step 7: Verify-class re-review push' subsection in decider-patches-and-selfapply.md). Re-audit after 1 week of decider runs to confirm the procedural anchor closes the gap."
+    }
+  },
+  "previous_followup": {
+    "PROP-055_decider_self_apply_ledger_append_fix": "FIXED — closure-ledger.jsonl has 22 entries in last 7d (vs. yesterday's 1-2). Aligned with closure-evidence ground truth (12 closures yesterday). Status: implemented.",
+    "PROP-056_decider_status_closed_migration_sweep": "FIXED — open-issues.json status='closed' count is 0 today (was 11 yesterday). open_issues_total dropped 34→24→20 across the morning's PROP-055 + PROP-056 + burndown landings. Status: implemented.",
+    "PROP-057_claude_md_monitoring_pipeline_schedule_correction": "FIXED — applied (commit 8ce58e0 'PROP-057 apply (with modification)'). Status: implemented."
+  },
+  "findings": [
+    {
+      "id": "FND-01",
+      "category": "directive-execution",
+      "severity": "info",
+      "summary": "DIRECTIVE-20260525-002 executed. All 5 substantive steps completed. PROP-058 authored. 1 one-line operator fix recommended for Step 1; 1 one-line operator fix recommended for Step 2; 1-2 one-line operator fixes recommended for Step 3; PROP-058 for Step 4; audit results for Step 5.",
+      "evidence": "This report sections directive_response.step_1 through directive_response.step_5."
+    },
+    {
+      "id": "FND-02",
+      "category": "fuse-staleness-mechanical",
+      "severity": "minor",
+      "summary": "FUSE workspace was stale on priority-queue-archive.jsonl by 7 entries (qids 396-402). Tinker backfilled this run; md5 matches git canonical now. Underlying cause: git-owned append-only file with no git→FUSE sync path. See directive_response.step_2 for structural fix options.",
+      "evidence": "FUSE wc -l = 269, git wc -l = 276; both md5sum now match 7cf349eca4f4c56ec8f6b79d455e8dbf after backfill."
+    },
+    {
+      "id": "FND-03",
+      "category": "backlog-trend",
+      "severity": "info",
+      "summary": "Backlog metrics all-green. open_issues_total=20 (-44% WoW vs 36 on 2026-05-18), net_velocity_7d=+14, no threshold tier fires.",
+      "evidence": "monitor/tinker/queue-history.jsonl row appended 2026-05-25T12:40:03Z. Compare to 2026-05-25T07:30:58Z post-PROP-056 row (open_issues_total=24)."
+    }
+  ],
+  "claude_md_audit": {
+    "skipped": "Directive override — no Mode 3 run. CLAUDE.md accuracy was audited as part of PROP-057 yesterday (schedule corrections). No new findings to flag this run."
+  },
+  "context_load": {
+    "skipped": "Directive override — no Mode 3 run."
+  },
+  "cleanup_actions": [],
+  "next_recommended_actions": [
+    "Operator: apply directive_response.step_1.operator_one_line_action (insert Step 7 verify-class re-review push in decider-patches-and-selfapply.md).",
+    "Operator: apply directive_response.step_2.operator_one_line_action (dual-write priority-queue-archive.jsonl in decider.md so FUSE stays current).",
+    "Operator: apply directive_response.step_3.fix_proposal (one-line assigned_to guard on main analyst dispatcher, optional defense-in-depth on baby).",
+    "Operator: review and apply PROP-058 per its rollout_plan. Decide ISS-1599 burndown inclusion per operator caveat.",
+    "Operator: optional — author follow-up PROP for structured `blocker_iss_id` field on ISS schema (replace fragile 'blocked on ISS-NNNN' regex)."
+  ],
+  "summary_one_paragraph": "Operator directive DIRECTIVE-20260525-002 executed. Step 1 (decider verify-push gap): diagnosed as missing-by-omission — three prompts reference the rule but no procedural code anchors it; recommended one-line operator fix to insert 'Step 7: Verify-class re-review push' subsection in decider-patches-and-selfapply.md. Step 2 (queue archive gap): NOT a decider bug — git canonical has all 7 missing qids; FUSE was 7 entries stale (git-owned file, workspace-sync only handles FUSE→git); tinker backfilled FUSE this run; recommended one-line dual-write fix in decider.md so FUSE stays current going forward. Step 3 (analyst-baby dispatcher): confirmed bug in MAIN ANALYST dispatcher (not baby) — no assigned_to guard, so EXP-425 (assigned_to:'tinker') keeps surfacing to Opus; one-line filter addition fixes. Step 4: PROP-058 authored — Step A0b sweep mirroring PROP-056 Step A0, plus one-time burndown of 4 zombies (ISS-1351, ISS-1552, ISS-1553, ISS-1599); operator caveat on ISS-1599 (substantive WCAG contrast concern needs separate verification). Step 5 (recurrence audit): 14d window — 3 decider runs with patches, 0 full-hit, 1 partial-hit, 2 full misses. Verify-push discipline gap is real and recurring; Step 1 fix would close it."
+}

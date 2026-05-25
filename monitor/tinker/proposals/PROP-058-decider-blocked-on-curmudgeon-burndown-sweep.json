@@ -1,0 +1,152 @@
+{
+  "id": "PROP-058",
+  "title": "decider end-of-run sweep: close status='blocked-on-curmudgeon' issues whose underlying EXP is integrated OR whose blocker ISS is closed; one-time burndown of 4 zombie entries from late April 2026",
+  "authored_by": "tinker",
+  "authored_by_run": "tinker-2026-05-25T12-38",
+  "authored_at": "2026-05-25T12:50:00Z",
+  "status": "proposed",
+  "priority": "medium",
+  "category": "workflow_redesign",
+  "target": "monitor/prompts/decider.md (end-of-run section A0, sibling to PROP-056 status='closed' sweep), monitor/prompts/reference/decider-reporting.md (Step 5b notes), one-time burndown script in build-scripts/",
+  "related_findings": [
+    "DIRECTIVE-20260525-002 Step 4 (operator-filed): 4 zombie ISSs (ISS-1351 EXP-211 integrated 2026-04-25; ISS-1552 EXP-255→EXP-261 integrated 2026-04-27; ISS-1553 EXP-256 integrated 2026-04-27; ISS-1599 blocker ISS-1605 closed 2026-04-27)"
+  ],
+  "executive_summary": {
+    "problem_one_line": "When a decider integrates an EXP that resolves a blocked-on-curmudgeon ISS (or the ISS was blocked on another ISS that has since closed), there is no close-site that walks back to update the dependent ISS — it remains forever in status='blocked-on-curmudgeon' even though the work is done. Same structural shape as PROP-056's status='closed' residue: the canonical close-on-integration path exists, but improvised routing-to-curmudgeon close sites bypass it.",
+    "fix_one_line": "Add a second end-of-run sweep (Step A0b, immediately after PROP-056's Step A0) that walks open-issues.json for status='blocked-on-curmudgeon' entries, resolves each by (a) checking expansion-tracker.json/archive for the referenced source_exp/exp_id integrated=true, OR (b) checking closed-issues.json for the blocker ISS (parsed from blocked_reason like 'blocked on ISS-NNNN'), and migrates matches to closed-issues.json with closed_by_mechanism='exp-integrated-burndown' or 'blocker-iss-closed-burndown'. Plus a one-time burndown of the 4 known zombies.",
+    "blast_radius_one_line": "Low: ~40-line addition to the decider end-of-run section, mirrors PROP-056's Step A0 pattern. Idempotent. Burndown is mechanical (4 known IDs)."
+  },
+  "problem_detail": {
+    "code_location": "Two missing close-sites: (1) decider's EXP-integration path (e.g., decider-curmudgeon-pq-mechanics.md Step 8 or decider-patches-and-selfapply.md Step 1 equivalents that handle EXP integration) does NOT walk open-issues.json for related blocked-on-curmudgeon ISSs to close them at integration time; (2) decider's blocker-iss-closure path (when ISS-1605 was closed) does NOT walk forward to dependent ISSs (ISS-1599 listed ISS-1605 as its blocker) to unblock and potentially close them. The blocked_reason field is free-text human-readable ('blocked on ISS-1605 (generate-html.js integration drift): ...'), which makes parsing fragile but tractable for known formats.",
+    "structural_relationship_to_PROP_056": "PROP-056 mechanizes the status='closed' residue case (improvised close sites that mark in-place without migrating). PROP-058 mechanizes the status='blocked-on-curmudgeon' zombie case (close sites that route to a downstream queue/EXP and forget to walk back). Both are the same defect class: the canonical close path exists but bypass paths leave residue. The Step A0 sweep is the answer; this PROP adds a second sweep at the same architectural slot.",
+    "direct_evidence": {
+      "zombie_count_2026_05_25T12_38Z": 4,
+      "zombie_list": [
+        {
+          "iss": "ISS-1351",
+          "severity": "major",
+          "blocked_at": "2026-04-25T11:27:03Z",
+          "days_zombie_at_audit": 30,
+          "blocked_reason_excerpt": "EXP-211-redesign-v2 complete (proposal-EXP-211-redesign-v2-draft-ready.json). Pushed to curmudgeon queue for re-review. Integration auto-proceeds on clean re-review per HNOTE...",
+          "underlying_exp": "EXP-211 (redesign-v2)",
+          "exp_integrated_at": "2026-04-25T17:27:34.408Z",
+          "integration_mode": "self-apply-by-decider",
+          "expected_close_mechanism": "exp-integrated-burndown",
+          "expected_canonical_status": "fixed"
+        },
+        {
+          "iss": "ISS-1552",
+          "severity": "moderate",
+          "blocked_at": "2026-04-26T03:24:28.360Z",
+          "days_zombie_at_audit": 29,
+          "blocked_reason_excerpt": "awaiting curmudgeon review of EXP-255 per proposal recommended_action",
+          "underlying_exp": "EXP-255 → superseded by EXP-261",
+          "exp_integrated_at": "2026-04-27T03:27:59Z",
+          "integration_mode": "decider-self-apply (EXP-261, the bounce-back rework)",
+          "expected_close_mechanism": "exp-integrated-burndown",
+          "expected_canonical_status": "fixed",
+          "note": "EXP-255 status='complete' integration_mode='superseded' superseded_by='EXP-261'; EXP-261 status='complete' integrated=true. Either traceback path resolves to the same outcome."
+        },
+        {
+          "iss": "ISS-1553",
+          "severity": "moderate",
+          "blocked_at": "2026-04-26T03:24:28.360Z",
+          "days_zombie_at_audit": 29,
+          "blocked_reason_excerpt": "awaiting curmudgeon review of EXP-256 per proposal recommended_action",
+          "underlying_exp": "EXP-256",
+          "exp_integrated_at": "2026-04-27T03:27:59Z",
+          "integration_mode": "decider-self-apply",
+          "expected_close_mechanism": "exp-integrated-burndown",
+          "expected_canonical_status": "fixed"
+        },
+        {
+          "iss": "ISS-1599",
+          "severity": "moderate",
+          "blocked_at": "2026-04-27T05:28:56.136Z",
+          "days_zombie_at_audit": 28,
+          "blocked_reason_excerpt": "blocked on ISS-1605 (generate-html.js integration drift): EXP-256 not yet applied to generate-html.js; these holes are in the unintegrated EXP. Will reopen when drift is resolved.",
+          "blocker_iss": "ISS-1605",
+          "blocker_iss_status": "closed",
+          "blocker_iss_closed_at": "2026-04-27T18:35:00Z",
+          "expected_close_mechanism": "blocker-iss-closed-burndown",
+          "expected_canonical_status": "fixed",
+          "note": "The blocker ISS-1605 (EXP-256 generate-html.js integration drift) closed within ~13h of ISS-1599 being blocked. EXP-256 is integrated. The downstream contrast-fix concern (the substance of ISS-1599) was either rolled into the EXP-256 integration patches with ds- prefix per integration_note, or remains as a residual a11y issue. Operator should disambiguate before close — if the WCAG-AA contrast gap is still present in the live site, ISS-1599 should re-open as a fresh ISS rather than close-as-fixed."
+        }
+      ],
+      "search_query_used": "node -e \"const fs=require('fs');const oi=JSON.parse(fs.readFileSync('monitor/decisions/open-issues.json','utf8'));const z=oi.issues.filter(i=>i.status==='blocked-on-curmudgeon');console.log(z.length+' status=blocked-on-curmudgeon');z.forEach(i=>console.log(' ',i.id,'sev='+i.severity,'blocked_at='+i.blocked_at,'exp='+(i.exp_id||'?')));\"",
+      "current_zombie_set_at_audit": "ISS-1351, ISS-1552, ISS-1553, ISS-1599 (no others — checked exhaustively 2026-05-25T12:38Z)"
+    },
+    "downstream_impact": {
+      "open_issues_total_inflation": "open_issues_total currently reads 20; 4 of those (20%) are zombies. Real backlog is 16. After PROP-056 already cleaned the status='closed' residue today (commit da63f27f), PROP-058 is the next-tier compression for the same structural defect.",
+      "age_metric_distortion": "age_ge_30d_count and age_ge_14d_count are inflated by the zombies. ISS-1351 found_at='2026-04-22' is 33 days old today — it's the dominant contributor to oldest_open_age_days and age_ge_30d_count.",
+      "operator_confusion": "Operator search for 'blocked-on-curmudgeon' returned 4 hits — operator could not immediately tell which were genuine current blocks vs. zombies. Adding the sweep removes the manual disambiguation step."
+    }
+  },
+  "proposed_fix": {
+    "summary": "Three changes: (1) add a Step A0b sweep to decider end-of-run, sibling to PROP-056's Step A0; (2) document the blocker-iss-closed pattern in decider-reporting.md; (3) one-time burndown script for the 4 zombies, with operator confirmation for ISS-1599 (which has a substantive WCAG-AA contrast concern that may or may not still apply).",
+    "files_to_modify": [
+      {
+        "path": "monitor/prompts/decider.md",
+        "find_anchor_hint": "Look for the end of PROP-056's Step A0 sweep (the closing ``` of the code block + the 'Self-test before you finalize' line). Insert Step A0b AFTER that self-test, BEFORE '## End-of-Run Step A: Analyst Attention Inbox'.",
+        "replace_summary": "Insert Step A0b: blocked-on-curmudgeon residue sweep. The sweep (a) walks open-issues.json for status='blocked-on-curmudgeon' entries; (b) for each entry, attempts two resolution paths: (b1) parse `exp_id` field or extract 'EXP-NNN' from blocked_reason, look up in expansion-tracker.json and expansion-tracker-archive.jsonl, if integrated=true OR status='complete' AND integration_mode is set, mark this ISS as fixed via 'exp-integrated-burndown'; (b2) parse 'blocked on ISS-NNNN' from blocked_reason, look up in closed-issues.json, if found, mark this ISS as fixed via 'blocker-iss-closed-burndown'; (c) migrates resolved ISSs to closed-issues.json with canonical status='fixed', writes ledger lines, removes from open-issues.json. Unresolved blocked-on-curmudgeon entries (e.g., genuine pending blocks) stay open.",
+        "explanation": "Mirrors PROP-056's Step A0 mechanism. Same defensive pattern (idempotent, ledger-dedup, fail-loud self-test).",
+        "approximate_code_to_insert": "## End-of-Run Step A0b: blocked-on-curmudgeon Residue Sweep (PROP-058, added 2026-05-25, sibling to PROP-056 Step A0)\\n\\nImmediately after Step A0 (status='closed' normalization), walk `open-issues.json` for entries with `status === 'blocked-on-curmudgeon'`. These are the residue of routing-to-curmudgeon close sites that pushed work onto the curmudgeon priority-queue (or referenced a blocker ISS) and never walked back to close the dependent ISS when the underlying EXP integrated or the blocker resolved.\\n\\n```bash\\nnode -e \\\"\\nconst fs=require('fs');\\nconst RUN_ID=process.env.RUN_ID || 'decider-unknown';\\nconst oi=JSON.parse(fs.readFileSync('monitor/decisions/open-issues.json','utf8'));\\nconst ci=JSON.parse(fs.readFileSync('monitor/decisions/closed-issues.json','utf8'));\\nconst tracker=JSON.parse(fs.readFileSync('monitor/analyst/expansion-tracker.json','utf8'));\\n\\n// Build EXP integration index: any EXP that is integrated=true (live) or in tracker-archive with integrated=true.\\nconst expIntegrated=new Map();\\nfor(const e of (tracker.items||[])){\\n  if(e.integrated===true || (e.status==='complete' && e.integration_mode)) expIntegrated.set(e.id, {at:e.integrated_at||e.completed_at, mode:e.integration_mode});\\n}\\ntry{\\n  for(const line of fs.readFileSync('monitor/analyst/expansion-tracker-archive.jsonl','utf8').split('\\\\\\\\n')){\\n    if(!line.trim())continue;\\n    try{\\n      const e=JSON.parse(line);\\n      if((e.integrated===true || (e.status==='complete' && e.integration_mode)) && !expIntegrated.has(e.id))\\n        expIntegrated.set(e.id, {at:e.integrated_at||e.completed_at, mode:e.integration_mode});\\n    }catch{}\\n  }\\n}catch{}\\n\\n// Closed-iss index for blocker lookup\\nconst closedSet=new Set(ci.issues.map(i=>i.id));\\n\\n// Walk blocked-on-curmudgeon residue\\nconst zombies=oi.issues.filter(i=>i.status==='blocked-on-curmudgeon');\\nif(zombies.length===0){ console.log('Step A0b sweep: no blocked-on-curmudgeon residue'); process.exit(0); }\\n\\n// Ledger dedup\\nconst ledgerPath='monitor/decisions/closure-ledger.jsonl';\\nconst existingLedger=new Set();\\ntry{\\n  for(const l of fs.readFileSync(ledgerPath,'utf8').split('\\\\\\\\n')){\\n    if(!l.trim())continue;\\n    try{existingLedger.add(JSON.parse(l).iss_id);}catch{}\\n  }\\n}catch{}\\n\\nfunction extractExpId(iss){\\n  if(iss.exp_id && /^EXP-\\\\\\\\d+$/.test(iss.exp_id)) return iss.exp_id;\\n  const txt=String(iss.blocked_reason||'')+' '+String(iss.description||'');\\n  const m=txt.match(/\\\\\\\\bEXP-\\\\\\\\d+\\\\\\\\b/g);\\n  return m && m[0] || null;\\n}\\nfunction extractBlockerIss(iss){\\n  const txt=String(iss.blocked_reason||'');\\n  const m=txt.match(/\\\\\\\\bblocked on (ISS-\\\\\\\\d+)\\\\\\\\b/i);\\n  return m && m[1] || null;\\n}\\n\\nconst now=new Date().toISOString();\\nconst migrated=[], skipped=[];\\nfor(const iss of zombies){\\n  const expId=extractExpId(iss);\\n  const blockerIss=extractBlockerIss(iss);\\n  let resolveMech=null, resolveEvidence={};\\n  if(expId && expIntegrated.has(expId)){\\n    const meta=expIntegrated.get(expId);\\n    resolveMech='exp-integrated-burndown';\\n    resolveEvidence={exp_id:expId, exp_integrated_at:meta.at, exp_integration_mode:meta.mode};\\n  }else if(blockerIss && closedSet.has(blockerIss)){\\n    const blocker=ci.issues.find(c=>c.id===blockerIss);\\n    resolveMech='blocker-iss-closed-burndown';\\n    resolveEvidence={blocker_iss:blockerIss, blocker_closed_at:blocker.closed_at||blocker.fixed_at};\\n  }else{\\n    skipped.push({id:iss.id, reason:'no integrated EXP or closed blocker found; genuine block remains'});\\n    continue;\\n  }\\n  // Migrate to closed-issues.json\\n  iss.status='fixed';\\n  iss.fixed_at=now;\\n  iss.fixed_by=resolveMech;\\n  iss.migrated_at=now;\\n  iss.migrated_by_run=RUN_ID;\\n  iss.migrated_by_mechanism='step-a0b-sweep-PROP-058';\\n  iss.closure_evidence=resolveEvidence;\\n  ci.issues.push(iss);\\n  if(!existingLedger.has(iss.id)){\\n    fs.appendFileSync(ledgerPath, JSON.stringify({\\n      closed_at: now, closed_by_run: RUN_ID, closed_by_mechanism: 'step-a0b-sweep',\\n      iss_id: iss.id, prior_status: 'blocked-on-curmudgeon',\\n      closure_reason: 'PROP-058 sweep: dependency resolved (' + resolveMech + ')',\\n      action_taken: 'patch',\\n      closure_evidence: Object.assign({severity:iss.severity||'unknown', description_excerpt:String(iss.description||'').slice(0,120)}, resolveEvidence),\\n      can_revert: false, dryrun: false\\n    })+'\\\\\\\\n');\\n  }\\n  migrated.push({id:iss.id, mech:resolveMech, evidence:resolveEvidence});\\n}\\n\\n// Remove migrated entries from open-issues.json\\nconst migratedIds=new Set(migrated.map(m=>m.id));\\noi.issues = oi.issues.filter(i=>!migratedIds.has(i.id));\\noi.last_updated=now;\\nfs.writeFileSync('monitor/decisions/open-issues.json',JSON.stringify(oi,null,2));\\nfs.writeFileSync('monitor/decisions/closed-issues.json',JSON.stringify(ci,null,2));\\nconsole.log('Step A0b sweep: migrated='+migrated.length+', genuine-blocks-kept='+skipped.length);\\nmigrated.forEach(m=>console.log('  closed', m.id, 'via', m.mech, JSON.stringify(m.evidence)));\\nskipped.forEach(s=>console.log('  kept-open', s.id, '-', s.reason));\\n\\\"\\n```\\n\\n**Self-test:** after the sweep, verify that every status='blocked-on-curmudgeon' entry in open-issues.json has either (a) no extractable exp_id AND no extractable blocker_iss, OR (b) an exp_id whose tracker entry is NOT yet integrated, OR (c) a blocker_iss that is NOT yet closed. If any zombie remains (integrated EXP / closed blocker), the sweep failed — fail-loud and abort commit.\\n\\n**Why a sweep (mirroring PROP-056's reasoning):** the dependent-ISS close-back step is fragile to add at every integration site (the decider would have to walk open-issues.json on every EXP integration and on every iss closure, both of which already do plenty). A single end-of-run sweep is the robust answer: any close site that forgot to walk back gets cleaned up at run-end, regardless of which close mechanism triggered it.",
+        "alternative_consideration": "An alternative is to add the walk-back logic at every integration point (EXP integration, ISS closure). The tradeoff: per-site is more 'correct' (immediate consistency) but requires modifying ~5-10 close sites and is brittle to new sites. The sweep is eventually-consistent (one decider cycle latency, ~4h BAU) and robust to new sites. Tinker recommends the sweep, consistent with PROP-056."
+      },
+      {
+        "path": "monitor/prompts/reference/decider-reporting.md",
+        "find_anchor_hint": "After the PROP-056 update to Step 5b. Append a note about the new blocked-on-curmudgeon vocabulary.",
+        "replace_summary": "Append: 'The status=\"blocked-on-curmudgeon\" enum remains valid for genuine current blocks but is auto-resolved by Step A0b sweep when the underlying EXP integrates or the blocker ISS closes. After Step A0b runs, any remaining status=\"blocked-on-curmudgeon\" entries represent genuine open work — the EXP is still pending review or the blocker is still open. Audit-side consumers can treat post-Step-A0b status=\"blocked-on-curmudgeon\" entries as canonical signals.'"
+      }
+    ],
+    "files_to_create": [
+      {
+        "path": "build-scripts/burndown-blocked-on-curmudgeon-zombies-2026-05.js",
+        "purpose": "One-time burndown for the 4 currently-known zombies (ISS-1351, ISS-1552, ISS-1553, ISS-1599). Idempotent: re-running on a clean tree skips everything. Safe to run before or after the Step A0b sweep is deployed.",
+        "content_summary": "Same logic as Step A0b but explicitly targeted by ID list (TARGET_IDS = ['ISS-1351','ISS-1552','ISS-1553','ISS-1599']) so the burndown can run cleanly even if Step A0b isn't yet deployed. Uses identical extractExpId/extractBlockerIss helpers and the same expIntegrated map construction. --dry-run and --apply flags per PROP-056 burndown convention.",
+        "operator_caveats": "ISS-1599 has a substantive WCAG-AA contrast claim ('fm-status-num red and fm-status-sub gray compute to ~4.23-4.43:1 vs 4.5:1 minimum'). The blocker (ISS-1605) closed, but the contrast issue may or may not be present in the integrated EXP-256. Recommend operator runs the burndown with ISS-1599 EXCLUDED from TARGET_IDS, then SEPARATELY manually verifies the contrast on the live site (https://funwithscience.net/dome-model-review/, dark mode, Overview → Falsifiability Module). If contrast is fixed, close ISS-1599 manually as 'fixed-by-EXP-256-integration-with-ds-prefix'. If contrast is NOT fixed, re-open as a fresh ISS (the closure should not bury the substantive concern). Default TARGET_IDS in the burndown script SHOULD include ISS-1599 with a comment-out marker the operator can toggle."
+      }
+    ],
+    "files_to_delete": []
+  },
+  "tradeoffs": {
+    "what_we_gain": "open_issues_total reflects real backlog post-PROP-056 AND post-PROP-058 (drops from 20 to ~16 today). PROP-030 age metrics no longer carry zombies. Status enum disambiguates 'genuine block' from 'forgotten close-back'. Closure-ledger gets canonical entries for the 4 burned-down ISSs, restoring audit completeness back to 2026-04-25.",
+    "what_we_might_lose": "~40-line addition to decider.md end-of-run section (Step A0b mirrors A0 in shape). Step A0b runs every decider invocation (~6×/day) but is a near-no-op when there's no blocked-on-curmudgeon residue (single filter + zero-length branch). Token cost negligible. The blocked_reason free-text parsing for blocker ISS ('blocked on ISS-NNNN' regex) is fragile to new phrasings — mitigation: the sweep is conservative (no match → keep open). Future close sites should write a structured `blocker_iss_id: 'ISS-NNNN'` field instead of free-text; the sweep already prefers structured exp_id over free-text 'EXP-NNN' for exactly this reason.",
+    "edge_cases": {
+      "EXP_in_tracker_archive_only": "expIntegrated map is built from BOTH live tracker.items AND tracker-archive.jsonl. EXP-211 today lives only in archive (completed_at 2026-04-21 + revised through 2026-04-25); sweep correctly picks it up.",
+      "superseded_chain": "ISS-1552 references EXP-255, which has integration_mode='superseded' superseded_by='EXP-261'. Sweep checks (integrated===true OR integration_mode is set), so superseded counts as resolved. Alternative interpretation: follow the superseded_by chain. Tinker recommends the current 'integration_mode set' approach — superseded means the work was rolled to a different EXP that itself integrated, which is functionally resolved.",
+      "blocker_iss_in_open_issues": "If the blocker ISS is also in open-issues.json (still open), extractBlockerIss returns the ID but closedSet.has() returns false, so the dependent stays blocked. Correct.",
+      "no_extractable_dependency": "If neither exp_id nor blocker_iss extracts, the sweep skips with reason='no integrated EXP or closed blocker found; genuine block remains'. The ISS stays open. This is the safe default — false negatives (zombie stays open) are recoverable next sweep; false positives (close a genuine block) are not.",
+      "ISS_1599_contrast_question": "See operator_caveats in files_to_create. The substantive concern (WCAG-AA contrast on live site) is orthogonal to the closure mechanism — closing ISS-1599 as 'blocker-iss-closed-burndown' does NOT verify the contrast is fixed; it only verifies the blocking dependency cleared. The operator should manually verify the contrast before final close, or accept that the closure represents 'blocker cleared, downstream concern absorbed into EXP-256 integration with ds- prefix'.",
+      "interaction_with_PROP_055": "PROP-055's ledger-append happens at canonical close-time. PROP-056's Step A0 ledger-append happens at end-of-run for status='closed' residue. PROP-058's Step A0b ledger-append happens at end-of-run for status='blocked-on-curmudgeon' residue. All three check existingLedger before writing, so they don't double-append.",
+      "interaction_with_PROP_056_run_order": "Step A0 (PROP-056) runs first, normalizes status='closed' residue. Step A0b (PROP-058) runs immediately after, handles status='blocked-on-curmudgeon' residue. The two sweeps operate on disjoint status sets; no ordering hazard. If both sweeps modify open-issues.json, they should each pull-fresh-read before writing (already standard pattern) OR be merged into a single combined sweep for one-shot file IO. Tinker recommends keeping them as separate steps for clarity and audit traceability; the small IO cost (~10ms each) is negligible."
+    }
+  },
+  "verification_pattern": "grep -q 'Step A0b: blocked-on-curmudgeon' monitor/prompts/decider.md && test -f build-scripts/burndown-blocked-on-curmudgeon-zombies-2026-05.js && echo FIXED || echo STILL_BROKEN",
+  "verification_pattern_post_burndown": "node -e \"const fs=require('fs');const oi=JSON.parse(fs.readFileSync('monitor/decisions/open-issues.json','utf8'));const ci=JSON.parse(fs.readFileSync('monitor/decisions/closed-issues.json','utf8'));const tgt=['ISS-1351','ISS-1552','ISS-1553','ISS-1599'];const stillOpen=tgt.filter(id=>{const i=oi.issues.find(x=>x.id===id);return i&&i.status==='blocked-on-curmudgeon';});const inClosed=tgt.filter(id=>ci.issues.find(x=>x.id===id));console.log('stillOpen:'+stillOpen.join(',')+' inClosed:'+inClosed.join(','));console.log(stillOpen.length===0&&inClosed.length>=3?'FIXED (ISS-1599 may legitimately remain pending per operator caveat)':'STILL_BROKEN');\"",
+  "requires_human_judgment": true,
+  "why_human_needed": "Three questions: (a) ISS-1599 — should it be auto-closed as 'blocker-iss-closed' or held back pending manual contrast verification? PROP defaults to operator-toggle in the burndown script; default is INCLUDE (with caveat). (b) Should Step A0b be merged into Step A0 as one combined sweep for IO efficiency, or kept separate for audit clarity? PROP recommends separate. (c) Should the blocked_reason free-text 'blocked on ISS-NNNN' phrasing be deprecated in favor of a structured blocker_iss_id field on the ISS schema? PROP recommends YES as a follow-up — Step A0b's regex is fragile and a structured field would also enable forward-walk at ISS-closure time (currently impossible without parsing every other ISS's blocked_reason).",
+  "operator_action_required": {
+    "primary": "Apply files_to_modify + files_to_create from a clean clone.",
+    "ISS_1599_decision": "Decide whether to include ISS-1599 in the burndown's TARGET_IDS (default INCLUDE with note) or exclude pending manual contrast verification.",
+    "verification_after_apply": "Run the verification_pattern_post_burndown snippet. Expected output: 'FIXED' (with ISS-1599 possibly remaining if excluded).",
+    "tinker_followup": "On next tinker run, the directive-issued verification audit will mark DIRECTIVE-20260525-002 Step 4 as fixed. PROP-030 age_ge_30d_count drops from 2 to 0 (ISS-1351 at 33d was the dominant contributor). PROP-030 oldest_open_age_days drops dramatically.",
+    "structured_blocker_field_followup": "Consider authoring a small PROP that adds `blocker_iss_id: 'ISS-NNNN'` as a structured field whenever decider creates a blocked-on-curmudgeon ISS that points at another ISS. This would replace the fragile free-text regex with structured lookup and would enable forward-walk at ISS-closure time."
+  },
+  "estimated_impact": {
+    "tokens": "~40 lines added to decider.md end-of-run section (Step A0b mirrors A0 shape). Negligible per-run.",
+    "metric_correctness": "open_issues_total drops from 20 to 16 today (or 17 if ISS-1599 excluded). PROP-030 oldest_open_age_days drops from 33d (ISS-1351) to whatever the next-oldest open ISS is. age_ge_30d_count drops from 2 to 0 (likely).",
+    "risk_reduction": "Eliminates a confusing non-canonical state ('blocked-on-curmudgeon' that's actually integrated) from the open-issues.json schema. Future contributors and operator queries see real-state results."
+  },
+  "rollout_plan": [
+    "1. Operator (or future tinker Mode 4 with self-apply empowerment) edits monitor/prompts/decider.md and monitor/prompts/reference/decider-reporting.md per files_to_modify (insert Step A0b after Step A0 and before End-of-Run Step A).",
+    "2. Operator creates build-scripts/burndown-blocked-on-curmudgeon-zombies-2026-05.js per files_to_create. Edit TARGET_IDS as needed per ISS_1599_decision.",
+    "3. From clean clone: `node build-scripts/burndown-blocked-on-curmudgeon-zombies-2026-05.js --dry-run`. Verify expected migration list.",
+    "4. `node build-scripts/burndown-blocked-on-curmudgeon-zombies-2026-05.js --apply`. Verify verification_pattern_post_burndown returns 'FIXED'.",
+    "5. Commit + push from clean clone with message: 'PROP-058 apply: blocked-on-curmudgeon residue sweep + burndown 4 zombies'.",
+    "6. Verify next decider run's Step A0b reports 'no blocked-on-curmudgeon residue' (or correctly skips remaining genuine blocks).",
+    "7. Verify next tinker run reports open_issues_total ≈ 16 and age_ge_30d_count ≈ 0.",
+    "8. Update this PROP's status to 'implemented'."
+  ],
+  "scope_authority": "Tinker authors PROP. Operator applies (consistent with PROP-051/PROP-054/PROP-055/PROP-056 pattern)."
+}
