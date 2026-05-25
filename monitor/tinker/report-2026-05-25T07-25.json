@@ -1,0 +1,185 @@
+{
+  "run_id": "tinker-2026-05-25T07-25",
+  "started_at": "2026-05-25T07:25:00Z",
+  "finished_at": "2026-05-25T07:32:00Z",
+  "mode_selected": "mode_1_pipeline_health",
+  "mode_selected_reason": "Pre-flight discovered PROP-055 + PROP-056 both landed in the last 60 min (commits 9153e57 / da63f27). Mode 3 just executed at 06-55; Mode 4 has no new fix-able items beyond what PROP-051/052/053 already cover. Best use of this slot: verify the PROP-055/056 application took effect (closure-ledger writes resumed, open_issues drained 34->24, net_velocity flipped -12 -> +8) and surface the unchanged carryover items.",
+  "modes_checked": {
+    "mode_1_pipeline_health": "amber-carryover (stranded patch 177h ISS-2094 untombstoned; rest GREEN)",
+    "mode_2_infrastructure": "green (1 stale FUSE: docs/index.html — auto-rescues via workspace-sync; PROJ disk 216MB <500MB; auth OK)",
+    "mode_3_cost_engineering": "deferred (executed at 06-55, 30 min ago — fresh CLAUDE.md accuracy + perf audit landed)",
+    "mode_4_proposals_and_fixes": "no new write-actions (PROP-055/056 just applied; PROP-051/052 design-pending; PROP-053 STILL_BROKEN 4th run — already escalated last run)"
+  },
+  "findings": [
+    {
+      "category": "prop_lifecycle",
+      "severity": "info",
+      "id": "FND-01",
+      "title": "PROP-055 + PROP-056 both APPLIED in the 30-minute gap between tinker runs",
+      "evidence": [
+        "commit 9153e57 (2026-05-25T07:11:31Z): PROP-055 apply — decider self-apply close path appends closure-ledger entry + 12-id backfill",
+        "commit 3f8a006 (2026-05-25T07:12:38Z): PROP-055 status -> implemented",
+        "commit da63f27 (2026-05-25T07:26:29Z): PROP-056 apply — status='closed' migration sweep + burndown 10 stranded entries",
+        "commit e028e25 (2026-05-25T07:26:59Z): PROP-056 status -> implemented",
+        "verification_pattern checks pass for both: PROP-055 (decider-patches-and-selfapply.md has marker + backfill script exists), PROP-056 (decider.md has 'Step A0: status' + burndown script exists)"
+      ],
+      "impact": "Closure-ledger now writes on every self-apply close (forward-going metric integrity restored). Plus 22 ledger entries appended via PROP-055 backfill + PROP-056 burndown.",
+      "operator_action": "none — already applied"
+    },
+    {
+      "category": "backlog-trend",
+      "severity": "info",
+      "id": "FND-02",
+      "title": "Backlog metrics flipped MAJOR-tier -> info-tier mid-run",
+      "evidence": [
+        "Pre-flight (FUSE-source, 07:25): open_issues_total=34, net_velocity_7d=-12, MODERATE/MAJOR firing (4 consecutive negative runs)",
+        "Canonical recompute (git-source, 07:30, post-PROP-056): open_issues_total=24, new_issues_velocity_7d=9, closed_issues_velocity_7d=17, net_velocity_7d=+8",
+        "Status breakdown post-burndown: fixed=10, blocked-on-curmudgeon=4, pending-human=3, assigned-tinker=3, partially-fixed-pending-verification=1, fixed-pending-operator-approval=1, assigned-analyst=1, open=1",
+        "Both queue-history.jsonl rows preserved per append-only convention (pre-flight + canonical) so downstream consumers see the transition"
+      ],
+      "impact": "PROP-030 threshold no longer trips. The MAJOR-tier finding that motivated PROP-055/056 is resolved by their application. Note: the +17 closures are mostly post-hoc ledger backfill (real close dates 2026-05-17..2026-05-24) and burndown migration, not a sustainable forward closure rate — next 7-day window will return to baseline once the catch-up rolls out of the trailing window.",
+      "operator_action": "none — informational. Mode-1 baseline restored."
+    },
+    {
+      "category": "prop_lifecycle",
+      "severity": "moderate",
+      "id": "FND-03",
+      "title": "PROP-053 STILL_BROKEN 4th consecutive tinker run (approved 2026-05-19; files never created)",
+      "evidence": [
+        "PROP-053 status from git: 'approved'",
+        "verification_pattern: test -f build-scripts/audit-exp-tracker-gaps.js && test -f monitor/prompts/reference/expansion-tracker-gap-semantics.md",
+        "raw.githubusercontent.com for both files: HTTP 404",
+        "Verified STILL_BROKEN at: 2026-05-24T05-44, 2026-05-24T08-26, 2026-05-25T02-48, 2026-05-25T06-08, 2026-05-25T06-55, this run (07-25). That's 6 consecutive runs flagging the same gap.",
+        "PROP-053 is approved by operator — implementation gap, not approval gap"
+      ],
+      "impact": "Recurring noise in tinker reports. Either the approval was premature, or the implementation step was dropped between approval and self-apply. Operator should either (a) implement the two files, (b) downgrade PROP-053 to design-pending-operator-review, or (c) mark superseded if no longer needed.",
+      "operator_action": "Decide PROP-053's fate (apply / downgrade / supersede). Recurring 6+ runs suggests something is structurally stuck."
+    },
+    {
+      "category": "stranded_patch",
+      "severity": "moderate",
+      "id": "FND-04",
+      "title": "Stranded patch sentinel ISS-2094 still untombstoned at 177h (PROP-056 burndown explicitly skipped it)",
+      "evidence": [
+        "monitor/decisions/stranded-patches-2026-05-17T22-20-15Z.json: tombstone_status=(none), iss_ids=[ISS-2094], created_at=2026-05-17T22:20:15Z",
+        "ISS-2094 in git open-issues.json: status='pending-human'",
+        "PROP-056 apply commit message: 'ISS-2094 reopened separately, skipped' — operator deliberately deferred",
+        "Carry-over from 06-55, 06-08, 02-48 runs"
+      ],
+      "impact": "Original ISS-2094 patch (generate-html.js mod) was never re-applied via the own-clone-with-direct-push path. The sentinel was preserved (correctly per operator instruction) so the loop is still open; tinker will keep flagging it until the patch lands AND the sentinel is tombstoned.",
+      "operator_action": "Two-step: (1) re-apply the patch via own-clone-with-direct-push, (2) set tombstone_status='applied' on the sentinel JSON. Both via /tmp/edit-clone + Git Data API push (PROP-050)."
+    },
+    {
+      "category": "prop_lifecycle",
+      "severity": "info",
+      "id": "FND-05",
+      "title": "PROP-057 verification_pattern is stale; implementation diverged from proposal",
+      "evidence": [
+        "PROP-057 status: superseded-by-self-fix (parallel tinker run tinker-2026-05-25T06-24 landed a different fix first)",
+        "verification_pattern checks for 'Twelve scheduled agents handle the monitoring pipeline' (0 matches)",
+        "Actual prose in current CLAUDE.md: 'Thirteen scheduled agents are configured (eleven enabled; dome-sloppytoppy-score and dome-sloppytoppy-rewrite disabled since 2026-05-21)' — more accurate than the PROP-57 proposed phrasing",
+        "Other 3 patterns match (dome-prune-integrity present, schedule cells correct)"
+      ],
+      "impact": "Verification pattern mechanically reports STILL_BROKEN, but functionally CLAUDE.md is correct. PROP-057's status 'superseded-by-self-fix' already captures this — verification_pattern doesn't matter for superseded PROPs. Documenting so future tinker runs don't redundantly flag.",
+      "operator_action": "none — the patch already landed via the parallel run with better wording."
+    },
+    {
+      "category": "prop_lifecycle",
+      "severity": "info",
+      "id": "FND-06",
+      "title": "PROP-051 + PROP-052 sitting at design-pending-operator-review for 4 days",
+      "evidence": [
+        "PROP-051 (workspace-sync disaster fix) status: design-pending-operator-review — proposed 2026-05-21",
+        "PROP-052 (audit-files round-trip) status: design-pending-operator-review — proposed 2026-05-21",
+        "Carried in prior tinker reports without action"
+      ],
+      "impact": "Not blocking pipeline. PROP-051's safety gates (A1-A4) are already in workspace-sync.md per the 2026-05-23 immediate response; PROP-051 itself is the formal write-up. PROP-052 is the related medium-priority audit-files round-trip directive.",
+      "operator_action": "Review and approve/reject. No urgency — current safety gates are in place via informal 2026-05-23 patches."
+    },
+    {
+      "category": "agent_health",
+      "severity": "info",
+      "id": "FND-07",
+      "title": "Agent freshness check: all enabled agents healthy",
+      "evidence": [
+        "poller latest-poll-summary.txt: 8h ago (within 12h schedule)",
+        "curmudgeon tracker.json: 40m ago",
+        "analyst expansion-tracker.json: 2h ago",
+        "decider latest-decider-summary.txt: 2h ago",
+        "analyst-baby latest-baby-summary.txt: 3h ago",
+        "tinker latest-tinker-summary.txt: 18m ago (06-55 run)",
+        "sloppytoppy-score / -rewrite: DISABLED since 2026-05-21 (expected stale; not actionable)",
+        "integrity: ran 2026-05-24T05-46 (daily ~5 AM cadence; today's run hasn't fired yet — 07:30 < expected 5 AM UTC tomorrow window)"
+      ],
+      "impact": "Pipeline cadence on rails.",
+      "operator_action": "none"
+    }
+  ],
+  "previous_followup": {
+    "from_run": "tinker-2026-05-25T06-55",
+    "operator_actions_completed": [
+      {
+        "item": "Apply PROP-055 (decider self-apply ledger append + 12-id backfill)",
+        "status": "DONE",
+        "evidence": "commits 9153e57 + 3f8a006 at 07:11/07:12 UTC; verification_pattern returns FIXED"
+      },
+      {
+        "item": "Apply PROP-056 (status='closed' migration sweep + burndown)",
+        "status": "DONE",
+        "evidence": "commits da63f27 + e028e25 at 07:26 UTC; verification_pattern returns FIXED; open-issues 34->24"
+      },
+      {
+        "item": "PROP-057 self-fix landed via parallel run",
+        "status": "DONE",
+        "evidence": "commit d2288fc (06:30 UTC) + b0a2462 (07:10 UTC); CLAUDE.md schedule table corrected"
+      }
+    ],
+    "operator_actions_pending": [
+      {
+        "item": "Re-apply ISS-2094 stranded patch + tombstone sentinel",
+        "status": "STILL_PENDING",
+        "age": "177h",
+        "see": "FND-04"
+      },
+      {
+        "item": "Implement or supersede PROP-053 (audit-exp-tracker-gaps.js + expansion-tracker-gap-semantics.md)",
+        "status": "STILL_PENDING (6th consecutive run)",
+        "see": "FND-03"
+      },
+      {
+        "item": "Review PROP-051 + PROP-052 (design-pending 4 days)",
+        "status": "STILL_PENDING (low urgency — informal safety gates already in workspace-sync.md)",
+        "see": "FND-06"
+      }
+    ]
+  },
+  "metrics_snapshot": {
+    "open_issues_total_canonical": 24,
+    "open_issues_total_preflight_fuse": 34,
+    "open_status_count": 1,
+    "assigned_analyst_count": 1,
+    "age_ge_14d_count": 9,
+    "age_ge_30d_count": 3,
+    "new_issues_velocity_7d_canonical": 9,
+    "closed_issues_velocity_7d_canonical": 17,
+    "net_velocity_7d_canonical": 8,
+    "thresholds_firing": "info (none)",
+    "status_breakdown_canonical": {
+      "fixed": 10,
+      "blocked-on-curmudgeon": 4,
+      "pending-human": 3,
+      "assigned-tinker": 3,
+      "partially-fixed-pending-verification": 1,
+      "fixed-pending-operator-approval": 1,
+      "assigned-analyst": 1,
+      "open": 1
+    }
+  },
+  "cleanup_actions": [],
+  "pre_flight": {
+    "pat_scope_verified": true,
+    "pending_operator_directives": 0,
+    "queue_history_appended": 2,
+    "queue_history_note": "Pre-flight FUSE-source row preserved (open_issues=34, net=-12); canonical git-source row appended after PROP-056 push (open_issues=24, net=+8). Both retained for trend continuity."
+  }
+}
