@@ -766,6 +766,12 @@ console.log('PROP-009 review read: fuse='+sourceCounts.fuse+' clone='+sourceCoun
 if(historyAppend.length>0){
   const lines=historyAppend.map(h=>JSON.stringify(h)).join('\n')+'\n';
   fs.appendFileSync(historyArchivePath, lines);
+  // DIRECTIVE-20260525-002 Step 2 fix (2026-05-25): dual-write to FUSE so
+  // workspace stays current. priority-queue-archive.jsonl is git-owned, but
+  // workspace-sync has no git→FUSE path for it, so FUSE accumulates lag every
+  // time decider pops without a subsequent build.js publish. Mirror the
+  // human-notes.json dual-write pattern (CLAUDE.md 'Human Notes Rule').
+  try{ fs.appendFileSync(WORKSPACE+'/monitor/curmudgeon/priority-queue-archive.jsonl', lines); }catch(_){}
 }
 const after=pq.queue.length;
 fs.writeFileSync(CLONE+'/monitor/curmudgeon/priority-queue.json',JSON.stringify(pq,null,2));

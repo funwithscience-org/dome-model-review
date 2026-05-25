@@ -148,8 +148,15 @@ function babyOwns(item){
 }
 
 // Items YOU own: pending, not blocked, not claimed by baby, not baby-owned by rule.
+// DIRECTIVE-20260525-002 Step 3 fix (2026-05-25): added assigned_to guard.
+// EXP-425 (assigned_to='tinker') was surfacing to Opus every run because the
+// filter had no assigned_to check; 3 consecutive no-ops by analyst before the
+// gap was caught. Filter now excludes items explicitly assigned to non-analyst
+// owners (tinker, social, integrity, etc.). Items with no assigned_to still
+// pass (typical case); explicit analyst/analyst-baby assignments still pass.
 const p=t.items.filter(i =>
   i.status==='pending' && !i.blocked_on &&
+  (i.assigned_to == null || i.assigned_to === 'analyst' || i.assigned_to === 'analyst-baby') &&
   i.claimed_by !== 'analyst-baby' &&
   !babyOwns(i)
 );

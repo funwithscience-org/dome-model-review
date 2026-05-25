@@ -682,6 +682,57 @@ mv /path/to/suggested-patches-YYYY-MM-DDTHH-MM.json monitor/decisions/applied-pa
 - If `git push` is **rejected** (non-fast-forward), someone pushed while you were working — do ONE `git pull --rebase origin main` and retry. If that also fails, stop and leave for human.
 - If `git push` returns **403** (permission denied / "Resource not accessible by personal access token"), wait 30s and retry ONCE — this is a transient/environmental hiccup, not a PAT scope problem. The wrapped retry block above does this automatically. If 403 persists after retry, the universal-pusher rescue block (added 2026-04-26 per `HNOTE-OPERATOR-UNIVERSAL-PUSHER-001`) automatically copies committed-but-unpushed files to FUSE; workspace-sync rescue-pushes them within 1h, no operator intervention needed. Do NOT diagnose 403 as a missing contents:write scope (verified 2026-04-25 — see `HNOTE-OPERATOR-PAT-DIAGNOSIS-CORRECTION-001`).
 
+### 7. Push Verify-Class Re-Review onto Priority Queue
+
+**Per `decider.md` L378, `decider-curmudgeon-pq-mechanics.md` L221, and `routing-matrix.md` L36:** when Step 6b self-applies patches against a curmudgeon-flagged target, you MUST push the patched target onto the priority queue as a `class: 'verification'` re-review cycle. This anchors the rule into an executable procedure rather than leaving it as an LLM-remembered abstraction. **Added 2026-05-25 after DIRECTIVE-20260525-002 Step 1 audit found 2 of 3 recent eligible self-apply runs missed this push (2026-05-24T17-20 PRED-073, 2026-05-25T09-20 WIN-067).**
+
+For every target you self-applied patches against in Step 6b — i.e., one item per unique `target_id` whose patches landed cleanly and resulted in either close-with-pending-verification or close-with-fixed — append a verify-class queue item. Use this template (mirrors `decider.md` L840+ "How to push items onto the queue", with `class: 'verification'` default per PROP-025):
+
+```bash
+node -e "
+const fs = require('fs');
+const CLONE = process.env.CLONE;
+const RUN_ID = process.env.RUN_ID;
+const pq = JSON.parse(fs.readFileSync(CLONE + '/monitor/curmudgeon/priority-queue.json','utf8'));
+
+// PATCHED_TARGETS array: one entry per unique target_id self-applied this run.
+// Build from the closed_by/applied-patches set in Step 6b before cleanup.
+//   target_type: 'win-detail-rewrite' | 'section-rewrite' | 'prediction-batch' | …
+//   target_id: e.g. 'WIN-067', 'SEC-6.13-mond-grouping', 'PRED-073'
+//   cycle: next curmudgeon cycle number after this patch lands (e.g. c13 → c14)
+//   related_issues: [\"ISS-NNN\", …] — issues closed by these patches
+const PATCHED_TARGETS = [ /* fill in from Step 6b state */ ];
+
+for (const tgt of PATCHED_TARGETS) {
+  pq.queue.push({
+    queue_id: pq.next_id++,
+    target_type: tgt.target_type,
+    target_id: tgt.target_id,
+    class: 'verification',
+    reason: 'Decider self-apply re-review cycle c' + tgt.cycle + ' (per decider-' + RUN_ID + ')',
+    pushed_by: 'decider',
+    pushed_at: new Date().toISOString(),
+    context_hints: {
+      source_run: 'decider-' + RUN_ID,
+      patched_targets: tgt.related_issues,
+      human_note: null
+    }
+  });
+}
+fs.writeFileSync(CLONE + '/monitor/curmudgeon/priority-queue.json', JSON.stringify(pq, null, 2));
+console.log('Pushed ' + PATCHED_TARGETS.length + ' verify-class items to priority-queue');
+"
+```
+
+Then commit + push priority-queue.json with the same identity discipline as the close-issues commit. The pop→archive append at L766 will move these entries into `priority-queue-archive.jsonl` when curmudgeon/curmudgeon-verify pops them on the next eligible run.
+
+**When this step does NOT apply** (no push needed):
+- The target was already at `current_verdict_holds: false` and the patch is a verdict change — that goes through a different path (operator escalation).
+- All Step 6b patches FAILED to apply (stayed open) — there's nothing to verify.
+- The decider review was a `no_op_confirmation` (analyst confirmed nothing to integrate) — covered by `decider-curmudgeon-pq-mechanics.md` Step 2.
+
+**If you forget this step**, the priority queue empties, both main curmudgeon and curmudgeon-verify fall back to drift-audit Priority 3 picks, and the patch you just landed never gets the "did it stick" cycle.
+
 ## Cleanup (mandatory, run last)
 
 Before exiting, delete your clone directory to reclaim disk space. At churn-and-burn frequency these accumulate fast and can fill the disk.

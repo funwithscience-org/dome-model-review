@@ -98,8 +98,14 @@ function babyOwns(item){
   return false;
 }
 
+// DIRECTIVE-20260525-002 Step 3 fix (2026-05-25): added assigned_to guard.
+// Defense-in-depth. Baby's babyOwns() filter already excludes tinker-assigned
+// items today (via source not in babyOwnedSources), but this explicit
+// assigned_to guard makes the intent legible and protects against future
+// changes that might let a tinker/social/integrity-assigned item through.
 const pendingForBaby = t.items.filter(i =>
   i.status === 'pending' && !i.blocked_on && babyOwns(i) &&
+  (i.assigned_to == null || i.assigned_to === 'analyst' || i.assigned_to === 'analyst-baby') &&
   i.claimed_by !== 'analyst'  // claimed-by-Opus-analyst means hands-off
 );
 
