@@ -154,23 +154,23 @@ Every file that crosses the workspace↔git boundary has exactly one authoritati
 
 ## Monitoring Pipeline
 
-Thirteen scheduled agents are configured (eleven enabled; dome-sloppytoppy-score and dome-sloppytoppy-rewrite disabled since 2026-05-21). All prompts live in `monitor/prompts/*.md` — edit the markdown to change agent behavior.
+Thirteen scheduled agents are configured (eleven enabled; dome-sloppytoppy-score and dome-sloppytoppy-rewrite DISABLED since 2026-05-21 pending operator decision — see workspace-sync disaster section). All prompts live in `monitor/prompts/*.md` — edit the markdown to change agent behavior. The current enabled count and exact cron schedules can be queried at any time via the `list_scheduled_tasks` tool; the table below is a snapshot for orientation.
 
 | Agent | Schedule | Model | Prompt File | Purpose |
 |-------|----------|-------|-------------|--------|
-| dome-poller | Every 12h | Sonnet | `poller.md` | Detect changes on dome site, track prediction test windows |
-| dome-analyst | Every 4h (BAU; bumped under load) | Opus | `analyst.md` | New WIN onboarding, deep-attack/holistic expansions, defense neutralization, fingerprints |
-| dome-analyst-baby | Twice daily (`20 4,16 * * *`) | Sonnet | `analyst-baby.md` | Mode 1 BAU tracker drain — verification-class consolidations (PROP-034 Phase 1) |
+| dome-poller | Every 12h (`0 */12 * * *`) | Sonnet | `poller.md` | Detect changes on dome site, track prediction test windows |
+| dome-analyst | Every 4h (`50 0,4,8,12,16,20 * * *`); BAU, can bump to 30m | Opus | `analyst.md` | New WIN onboarding, deep-attack/holistic expansions, defense neutralization, fingerprints |
+| dome-analyst-baby | Twice daily (`20 4,16 * * *`); 04:20/16:20 UTC | Sonnet | `analyst-baby.md` | Mode 1 BAU tracker drain — verification-class consolidations (PROP-034 Phase 1) |
 | dome-curmudgeon | Every 4h (`30 3,7,11,15,19,23 * * *`); BAU, can bump to 30m | Opus | `curmudgeon.md` | Adversarial self-review; change-driven + holistic reviews; discovery-mode (PROP-038) |
 | dome-curmudgeon-verify | Every 4h (`30 4,8,12,16,20,0 * * *`) | Sonnet | `curmudgeon-verify.md` | Narrow verification of patched reviews (PROP-038 Phase 1) — class='verification' items with ≤2 minor prior holes |
-| dome-sloppytoppy-score | Daily 03:30 UTC [DISABLED 2026-05-21] | Sonnet | `sloppytoppy-score.md` | Readability scoring (PROP-039 Phase 1) — two-axis rubric (length + understandability) for flat-earth-level reader. |
-| dome-sloppytoppy-rewrite | Every 2 days at 05:00 UTC (`0 5 */2 * *`) [DISABLED 2026-05-21] | Opus | `sloppytoppy-rewrite.md` | Readability rewriter (PROP-041 Phase 2) — drafts RW-NNN.json proposals for below-floor surfaces with first-class content-preservation audit. Propose-only; decider integrates after audit-script + curmudgeon-on-rewrite verification (class='rewrite-verify'). |
+| dome-sloppytoppy-score | Daily 03:30 (`30 3 * * *`) — **DISABLED** (pending operator decision after 2026-05-21 disaster) | Sonnet | `sloppytoppy-score.md` | Readability scoring (PROP-039 Phase 1) — two-axis rubric (length + understandability) for flat-earth-level reader |
+| dome-sloppytoppy-rewrite | Every 2 days 05:00 (`0 5 */2 * *`) — **DISABLED** (pending operator decision after 2026-05-21 disaster) | Opus | `sloppytoppy-rewrite.md` | Readability rewriter (PROP-041 Phase 2) — drafts RW-NNN.json proposals for below-floor surfaces with first-class content-preservation audit. Propose-only; decider integrates after audit-script + curmudgeon-on-rewrite verification (class='rewrite-verify') |
 | dome-decider | Every 4h (`10 2,6,10,14,18,22 * * *`); BAU, can bump to 1h | Opus | `decider.md` | Triage, patches, new WIN commits, expansion integration |
 | dome-integrity | Daily 02:00 (`0 2 * * *`) | Haiku | `structure-integrity.md` | Site health: links, tabs, build drift, data-prose consistency |
 | dome-tinker | Daily 03:30 (`30 3 * * *`) | Opus | `tinker.md` | Pipeline ops: audit, trace handoffs, cost engineering |
 | dome-social | Daily 04:30 (`30 4 * * *`) | Sonnet | `social.md` | Machine-readable layer, discoverability, search rankings |
-| dome-workspace-sync | Hourly | Haiku | `workspace-sync.md` | Commits workspace-only files to git |
-| dome-prune-integrity | Daily 09:05 UTC | Haiku | (one-shot script) | PROP-051 Workstream C — daily prune of `monitor/integrity/` retention windows. Archives older per-run artifacts to JSONL and deletes sources. Created 2026-05-23 after the workspace-sync mass-delete disaster. |
+| dome-prune-integrity | Daily 09:00 (`0 9 * * *`) | Haiku | (script-only via SKILL.md; see `monitor/scripts/prune-integrity.js`) | PROP-051 Workstream C — archive `monitor/integrity/` per-run artifacts to JSONL on retention windows; runs from a fresh shallow clone. Created 2026-05-23 after the workspace-sync mass-delete disaster |
+| dome-workspace-sync | Hourly (`0 * * * *`) | Haiku | `workspace-sync.md` | Commits workspace-only files to git |
 
 ### Data Flow (summary)
 
