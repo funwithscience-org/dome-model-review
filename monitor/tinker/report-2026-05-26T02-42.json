@@ -1,0 +1,108 @@
+{
+  "run_id": "tinker-2026-05-26T02-42",
+  "run_at": "2026-05-26T02:42:00Z",
+  "mode_selected": "mode_2_infrastructure_fuse",
+  "mode_selection_reason": "Pre-flight Operator-Directive Discovery returned DIRECTIVE-20260525-003 as pending IN FUSE workspace — but cross-check against git shows it was already completed at 17:30 by the 17-19 tinker run, and PROP-060 was both authored AND applied (commit ba6cac4 at 17:40Z). The 'pending' state is a FUSE staleness artifact. Mode 2 selected because the dominant findings this run are infrastructure issues (FUSE git→workspace propagation gap, root-disk pressure at 97%, orphan clone unremovable) rather than directive or queue work.",
+  "preflight": {
+    "pat_source_verified": true,
+    "pat_prefix": "github_pat_11AQFYC...",
+    "pat_http_check": 200,
+    "clone_path": "/tmp/tinker-clone-fresh",
+    "clone_depth": 20,
+    "clone_note": "Had to clone to a new path because /tmp/tinker-clone from previous tinker run was owned by nobody:nogroup (uid 65534 prior sandbox session) and unremovable by current uid 4136. See FND-02."
+  },
+  "directive_discovery": {
+    "fuse_scan_picked": "DIRECTIVE-20260525-003-tinker-work-surfacing-design.json (status=pending in FUSE)",
+    "git_canonical_state": "status=completed at 2026-05-25T17:30:00Z by tinker-2026-05-25T17-19",
+    "disposition": "NO-OP — directive already completed. PROP-060 authored AND applied (Mode 0 lives in git tinker.md). FUSE staleness means I was reading the 314-line pre-PROP-060 tinker.md, so I could not perform Mode 0 work even if I wanted to. Next operator-direct build.js publish or sufficient workspace-sync universal-pusher coverage will resolve the FUSE staleness."
+  },
+  "modes_checked": {
+    "mode_1_pipeline_health": {
+      "verdict": "GREEN",
+      "evidence": "All scheduled agents firing on cadence per list_scheduled_tasks: workspace-sync lastRunAt=2026-05-26T02:04:08Z (38min ago), decider lastRunAt=2026-05-26T01:14:04Z, curmudgeon lastRunAt=2026-05-26T02:35:54Z, integrity lastRunAt=2026-05-26T01:08:34Z, analyst lastRunAt=2026-05-25T23:58:37Z, poller lastRunAt=2026-05-25T23:05:47Z. Recent git commits confirm: workspace-sync 02:07Z, decider 01:22Z (WIN-063 patches + EXP-433 defense neutralization), poller 23:11Z (5th consecutive QUIET). No stalled agents. No stranded-patches >24h not tombstoned.",
+      "false_alarm_avoided": "Initial check ran against stale /tmp/tinker-clone (depth-50 clone from previous tinker run, fetch failed due to permission error on FETCH_HEAD) and showed last commit at 17:27 UTC suggesting a 9.5h workspace-sync stall. Re-clone to /tmp/tinker-clone-fresh + GitHub API direct check confirmed pipeline is HEALTHY."
+    },
+    "mode_2_infrastructure_fuse": {
+      "verdict": "YELLOW — two real issues",
+      "issue_1_root_disk_pressure": {
+        "df_root_pct": 97,
+        "df_root_avail_mb": 327,
+        "project_footprint_mb": 381,
+        "footprint_breakdown": {
+          "/tmp/tinker-clone (orphan, nobody:nogroup, mtime 2026-05-25T17:28)": "182 MB",
+          "/tmp/tinker-clone-fresh (current run)": "199 MB"
+        },
+        "below_24h_gate": "The orphan clone is 9.3h old, below the 24h standing-empowerment threshold for tinker self-removal. Even if it were 24h+, current uid 4136 cannot rm files owned by uid 65534 (no sudo)."
+      },
+      "issue_2_fuse_staleness_on_git_owned_files": {
+        "affected_files_observed": [
+          "monitor/prompts/tinker.md — FUSE has 314 lines (pre-PROP-060), git has 400 lines (PROP-060 Mode 0 + FND-01/02 cleanup section)",
+          "monitor/tinker/operator-directives/DIRECTIVE-20260525-003-*.json — FUSE has status=pending, git has status=completed + completed_at + prop_id_authored"
+        ],
+        "pattern": "Operator-direct commits to git-owned files (PROP-060 apply commit ba6cac4 at 17:40Z, FND-01/02 commit a77d02d at 17:49Z) push to GitHub but do NOT round-trip to FUSE. Build.js publish would copy git→FUSE; workspace-sync's universal-pusher mode only handles the FUSE→git rescue direction for runtime data files. There is no symmetric git→FUSE pusher for tinker.md or operator-directive edits.",
+        "impact": "This run's directive-discovery scan picked up a phantom 'pending' directive; this run is reading an old version of tinker.md without Mode 0. If operator-direct edits to git-owned files persist without a build.js publish, scheduled agents keep working from stale FUSE copies."
+      }
+    },
+    "mode_3_cost_engineering": {
+      "verdict": "deferred — Mode 2 is the dominant signal this run."
+    },
+    "mode_4_proposals_self_fixes": {
+      "verdict": "deferred — directive work already complete, no self-fixable mechanical issues identified."
+    }
+  },
+  "previous_followup": {
+    "DIRECTIVE-20260525-003": "FIXED (completed by 17-19 run; PROP-060 applied as commit ba6cac4 at 2026-05-25T17:40Z; Mode 0 now lives at tinker.md line 108 in git). FUSE workspace has not yet received the updated tinker.md — see FND-03 below.",
+    "ISS-1285 (raw-text/02-wins.txt staleness, was 34d assigned-tinker)": "Status checked — still in assigned-tinker per FUSE open-issues.json. The PROP-060 apply commit ba6cac4 mentions 'drain audit closure (ISS-1285)' in its title, so it may have been closed git-side; verifying separately is operator-side work.",
+    "ISS-2134 (WIN-070 re-push loop)": "Still open in FUSE. Per FND-02 of previous tinker run: root cause fixed by PROP-048 dedup guard 2026-05-19, recommended closure via HNOTE close_iss_batch. No new evidence to add."
+  },
+  "findings": [
+    {
+      "id": "FND-2026-05-26T02-42-01",
+      "severity": "info",
+      "category": "backlog-trend",
+      "summary": "Backlog trend GREEN — open_issues_total=13 (well below all PROP-030 tiers), net_velocity_7d=+23 (29 closed / 6 opened), no thresholds firing.",
+      "evidence": "PROP-030 metrics computed from monitor/decisions/open-issues.json (git canonical) and closure-ledger.jsonl. assigned_tinker_count=2 (ISS-1285 + ISS-2134, both with prior-run recommendations awaiting operator HNOTE), assigned_analyst_count=0, age_ge_14d=4, age_ge_30d=1, oldest open age unknown (no found_at on issues with status=open per current data). PROP-026 burndown automation continues to perform.",
+      "recommended_action": "Continue monitoring. No PROP needed."
+    },
+    {
+      "id": "FND-2026-05-26T02-42-02",
+      "severity": "moderate",
+      "category": "infrastructure-disk",
+      "summary": "Root disk at 97% used (327 MB available); /tmp/tinker-clone from previous tinker run is orphan (nobody:nogroup uid 65534) and unremovable by current uid 4136.",
+      "evidence": "df -h / reports 9.2G/9.6G used. Stale clone at /tmp/tinker-clone occupies 182MB; mtime is 2026-05-25T17:28Z (~9.3h ago, below the 24h tinker self-cleanup empowerment threshold). Even with the empowerment, current uid 4136 cannot rm files owned by uid 65534 (no sudo in sandbox). Current run cloned to /tmp/tinker-clone-fresh as a workaround.",
+      "recommended_action": "Operator: run 'rm -rf /tmp/tinker-clone' from a session with appropriate permissions, OR ignore — at next sandbox restart the /tmp/* contents will clear. If the sandbox is long-lived and this orphan pattern recurs across multiple sessions, consider adjusting the tinker post-run cleanup (or a new SKILL.md prelude) to chown/remove its own clones before exit. Filing as moderate because 327MB free is enough for this run but risk increases as more orphans accumulate."
+    },
+    {
+      "id": "FND-2026-05-26T02-42-03",
+      "severity": "moderate",
+      "category": "infrastructure-fuse-propagation",
+      "summary": "Operator-direct commits to git-owned files (monitor/prompts/*.md, monitor/tinker/operator-directives/*.json edits) do not propagate to FUSE workspace. Symptoms observed: FUSE tinker.md is 314 lines (pre-PROP-060), git is 400 lines (PROP-060 Mode 0 landed via commit ba6cac4 at 17:40Z); FUSE DIRECTIVE-20260525-003 has status=pending while git has status=completed since 17:30Z.",
+      "evidence": "Per File Ownership Rules in CLAUDE.md, monitor/prompts/*.md is git-owned. The flow git→workspace is supposed to happen via build.js publish. The 17:40 PROP-060 apply commit (ba6cac4) and 17:49 FND-01/02 commit (a77d02d) were operator-direct via clone — they pushed to GitHub but neither invoked build.js publish nor were they covered by workspace-sync's universal-pusher mode (which is FUSE→git rescue, not git→FUSE propagation). The operator-directive additive-edit completion fields written by tinker-2026-05-25T17-19 (status, completed_at, completed_by_run, prop_id_authored) live in git but never made it back to FUSE for the same reason. workspace-sync.md line 461 declares 'sync_glob monitor/tinker/operator-directives *.json' but that glob appears to be FUSE→git direction only.",
+      "impact_observed_this_run": "(1) My directive-discovery scan reading FUSE picked up DIRECTIVE-003 as 'pending' when it was already completed in git. (2) If I had followed Mode 0 / PROP-060 instructions, my prompt was the OLD tinker.md without Mode 0. Scheduled agents reading FUSE for git-owned config files keep working from stale copies until operator triggers build.js publish or restarts.",
+      "recommended_action": "Author PROP-061 (next run) proposing one of: (a) extend workspace-sync to push git→FUSE for git-owned files when remote sha != local sha — bidirectional sync, mirrors the universal-pusher pattern but in the reverse direction; (b) require every operator-direct commit to git-owned files to be followed by a build.js publish from the same clone — discipline rule, not automation; (c) keep current architecture but add a tinker pre-flight gate: cross-check FUSE vs git for the files my prompt depends on (tinker.md, operator-directives) and abort with a clear error if they diverge, forcing operator to publish. Recommendation leans toward (a) for the same reason the universal-pusher landed: FUSE→git rescue solved one direction of the same defect class; the symmetric path is cheap to add and removes a class of phantom-state bugs. Filed at moderate because it caused real wasted compute this run but is not blocking the pipeline."
+    },
+    {
+      "id": "FND-2026-05-26T02-42-04",
+      "severity": "info",
+      "category": "directive-completion",
+      "summary": "DIRECTIVE-20260525-003 already completed by previous tinker run. No new work performed against it this run.",
+      "evidence": "Git side: status=completed, completed_at=2026-05-25T17:30:00Z, completed_by_run=tinker-2026-05-25T17-19, prop_id_authored=PROP-060. PROP-060 status=implemented (apply commit ba6cac4 at 17:40Z, applied operator-direct after tinker authored it as 'proposed'). PROP-060 implementation landed Mode 0 'Assigned-To-Tinker Scan' at tinker.md line 108 + drain-audit closures for ISS-1285 and ISS-2134 referenced in the commit message. Directive's expected_output (design options + PROP + drain audit + optional generalization) all satisfied per report-2026-05-25T17-19.json findings FND-01..FND-05.",
+      "recommended_action": "No action."
+    }
+  ],
+  "cleanup_actions": [
+    {
+      "considered": "/tmp/tinker-clone (182 MB, orphan from previous tinker run, owned nobody:nogroup)",
+      "performed": false,
+      "reason": "Below 24h standing-empowerment threshold (mtime ~9.3h ago) AND ownership mismatch (uid 65534 vs current uid 4136) — rm would fail. Flagged in FND-02 instead."
+    },
+    {
+      "considered": "/tmp/tinker-clone-fresh (199 MB, current run)",
+      "performed": "deferred-to-run-end",
+      "reason": "Active working clone. Operator-side discipline (tinker prelude) does not require ephemeral cleanup at run end, but I will rm this clone before exiting so the next tinker run cleanly clones."
+    }
+  ],
+  "metrics_appended": {
+    "queue_history_jsonl_row": "appended at monitor/tinker/queue-history.jsonl with run_id=tinker-2026-05-26T02-42"
+  }
+}
