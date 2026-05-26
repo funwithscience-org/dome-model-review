@@ -215,7 +215,18 @@ Analyst picks these up in Mode 3. Tag `category: "defense"` so analyst applies n
 
 ## Issue Closure
 
-When patches self-apply and pass tests: move from open-issues.json to closed-issues.json with `status: "fixed"`, `fixed_by: "decider-self-apply"`. For verdict-change patches: mark `status: "pending-human"`.
+**For Priority 3 / Priority 3b self-apply closures: use the PROP-059 canonical close-path** documented in `monitor/prompts/reference/decider-patches-and-selfapply.md` Step 1 (lines 594-642). That file owns the full code template; this section summarizes the contract so this prompt and that one agree:
+
+- For each successfully-applied patch (a `✅` line from apply-patches.js), capture a unique fingerprint string — a ~30–60 character contiguous substring of the patch's `replace` text that did NOT exist in the target file before the patch and is unlikely to recur by coincidence.
+- Move the issue from `open-issues.json` to `closed-issues.json` with `status: "fixed-pending-verification"` (NOT `"fixed"`), `fixed_by: "decider-self-apply"` (or the timestamped run-ID), and a `verification_pattern` field of the form `git show origin/main:<target-file> | grep -qF '<fingerprint>'`.
+- **Run the immediate self-check** before pushing the close-issues commit: `bash -c "<verification_pattern>"` against the working tree (the clone, not origin/main). If it exits ≠0, the LLM hallucinated — write a `monitor/decisions/stranded-patches-<TIMESTAMP>.json` sentinel and leave the ISS open. Do NOT push the close.
+- After the close-issues commit pushes, workspace-sync's `verify-pending-state.js` will flip `fixed-pending-verification → fixed` automatically within ~1h. Optionally you may self-verify-and-flip in a second commit; that is optional optimization, not required.
+
+**Direct writes of `status: "fixed"` from a Priority 3 / Priority 3b self-apply run are FORBIDDEN.** They bypass the Mech-A-bypass audit (PROP-059) and will be flagged CRITICAL by the integrity agent's structure-integrity.md Step 7h scan (deployed 2026-05-25, schema-corrected 2026-05-26). This is the prompt-level rule the 2026-05-18 false closures (ISS-2094, ISS-2102, ISS-2106) and the 2026-05-25 silent-regression (decider stopped writing `verification_pattern` because this line previously said the shortcut was OK) were designed to prevent. See `decider-patches-and-selfapply.md` L577–L592 for the full discipline statement and `state-verification.md` Discipline 1a for the underlying contract.
+
+**Two explicit exceptions** where direct `status: "fixed"` writes ARE correct:
+- **EXP-integration closures** (`decider-curmudgeon-pq-mechanics.md` Step 8): when an integrated EXP is the close trigger, write `status: "fixed"` with `fixed_by: "expansion-integration"`. The verification is the queue-push to curmudgeon (Step 7), not a per-patch fingerprint — there is no single fingerprint substring for a multi-paragraph integration.
+- **Verdict-change patches**: do not close at all. Mark `status: "pending-human"` and route to human review. PROP-059 doesn't apply because the issue isn't being closed by this run.
 
 **Moving issues:** Append to closed-issues.json, remove from open-issues.json. Verify removal.
 
