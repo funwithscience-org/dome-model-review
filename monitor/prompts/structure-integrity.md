@@ -503,23 +503,27 @@ fi
 
 **What does NOT change**: curmudgeon's Priority 3 review procedure (Steps 5-10 in the dispatcher) is unchanged. The fingerprint comparison rule (PROP-019 reduced-set, common fields only) is unchanged. The drift-magnitude tiebreak (commit 71be960) is unchanged. This step is purely a precomputation artifact — curmudgeon's review output is identical to what it would produce with the old in-prompt scan.
 
-### 7h. Mech-A-Bypass False-Closure Audit (PROP-059, added 2026-05-25)
+### 7h. Mech-A-Bypass False-Closure Audit (PROP-059, added 2026-05-25, schema-corrected 2026-05-26)
 
-PROP-016 Mechanism A intercepts decider commits that would push NEVER_PUSH files via the rescue path, but it only catches modifications that actually appear in `git status --porcelain`. The 2026-05-18 false closures (ISS-2094, ISS-2102, ISS-2106) bypassed Mech A by hallucinating `fix_description` claims without invoking any tool to modify a file — `git status` was empty, Mech A had nothing to flag, the close proceeded. PROP-059 makes `fixed-pending-verification` + a non-empty `verification_pattern` mandatory for every `decider-self-apply*` close. This audit catches any close that escapes that discipline.
+PROP-016 Mechanism A intercepts decider commits that would push NEVER_PUSH files via the rescue path, but it only catches modifications that actually appear in `git status --porcelain`. The 2026-05-18 false closures (ISS-2094, ISS-2102, ISS-2106) bypassed Mech A by hallucinating `closure_reason` claims without invoking any tool to modify a file — `git status` was empty, Mech A had nothing to flag, the close proceeded. PROP-059 makes `fixed-pending-verification` + a non-empty `verification_pattern` mandatory for every `decider-self-apply*` close. This audit catches any close that escapes that discipline.
+
+**Schema note (2026-05-26 correction):** the original 2026-05-25 audit text used field names that don't exist on `monitor/decisions/closed-issues.json` entries, so the scan silently matched zero entries. The actual top-level fields are: `id`, `title`, `description`, `location`, `category`, `severity`, `status`, `source`, `win_id`, `created_at`, `created_by`, `fixed_at`, `fixed_by`, `closure_reason`, and (when PROP-059 is followed) `verification_pattern`. There is **no `closed_at`** (use `fixed_at`) and **no `closed_by_mechanism`** field — the mechanism is embedded as a substring inside `fixed_by`, e.g. `'decider-self-apply'`, `'decider-2026-05-26T01-20'`, `'operator-direct-PROP-053-completion'`, `'exp-integrated-burndown'`, `'wontfix-OBE-tinker-PROP-060-drain-audit'`. The audit below uses the corrected field names.
 
 **Scan:** read `monitor/decisions/closed-issues.json`. For each entry where ALL of:
 
 - `status === 'fixed'` (terminal, not `fixed-pending-verification`)
-- `fixed_by` starts with `'decider-'` (any decider-driven close — `decider-self-apply`, `decider-self-apply-stranded-patch`, `decider-self-apply-generate-html`, etc.)
-- `verification_pattern` is `null`, empty, or missing
-- `closed_by_mechanism` is NOT `'operator-direct'`, NOT `'one-time-burndown'`, NOT `'step-a0-sweep'`, NOT `'step-a0b-sweep'`
-- `closed_at` is on or after the PROP-059 deployment cutoff `2026-05-25T15:00Z` (entries closed before this cutoff are grandfathered — they predate the discipline)
+- `fixed_by` starts with `'decider-'` (any decider-driven close — `decider-self-apply`, `decider-self-apply-stranded-patch`, `decider-self-apply-generate-html`, and timestamped `decider-2026-...` run-IDs)
+- `fixed_by` does **NOT** contain any of these mechanism substrings: `'operator-direct'`, `'burndown'`, `'sweep'`, `'wontfix'`, `'-OBE-'`, `'EXP-integrated'`, `'exp-integrated'` (these are operator-direct / migration / integration paths, not decider self-applies, and don't require a verification_pattern)
+- `verification_pattern` is `null`, empty, or missing (absent → decider closed without writing the fingerprint, which is the exact hallucination shape PROP-059 catches)
+- `fixed_at` is on or after the PROP-059 deployment cutoff `2026-05-25T15:00Z` (entries closed before this cutoff are grandfathered — they predate the discipline)
 
-…flag as a **Mech-A-bypass false-closure candidate** at severity **CRITICAL**. Append to the integrity report with `id`, `closed_at`, `fixed_by`, `fix_description` excerpt (first 120 chars), and recommended action ("Re-verify target file against fix_description; if not present, reopen ISS with `false_closure_audit` block and route to operator").
+…flag as a **Mech-A-bypass false-closure candidate** at severity **CRITICAL**. Append to the integrity report with `id`, `fixed_at`, `fixed_by`, `closure_reason` excerpt (first 120 chars), and recommended action ("Re-verify target file against `closure_reason`; if not present, reopen ISS with `false_closure_audit` block and route to operator").
 
-**Grandfather note:** ISS-2094, ISS-2102, ISS-2106 (the canonical examples) have `closed_at` before the cutoff and are already corrected (commits 0b9f6c0 / d5685b4). They will NOT be flagged. Pre-cutoff entries are out of scope; the audit only fires on going-forward closes.
+**Grandfather note:** ISS-2094, ISS-2102, ISS-2106 (the canonical examples) have `fixed_at` before the cutoff and are already corrected (commits 0b9f6c0 / d5685b4). They will NOT be flagged. Pre-cutoff entries are out of scope; the audit only fires on going-forward closes.
 
 **Self-test:** if the scan flags ≥1 entry, write a corresponding ISS in `monitor/decisions/open-issues.json` AND log a CRITICAL finding. The 2026-05-18 false closure batch is the failure mode this audit is designed to catch; recurrence should be loud.
+
+**Expected first-fire (2026-05-26 onward):** when this audit goes live, it is likely to flag the recent decider self-applies on or after 2026-05-25T15:00Z that closed with `status='fixed'` but no `verification_pattern` (e.g. ISS-2200/2201/2202/2203 from decider-2026-05-25T17-17, ISS-2200/2201 from decider-2026-05-26T01-20). These are not necessarily hallucinations — they may be a separate gap where the PROP-059 close-issues code template isn't actually being invoked by Priority 3 self-apply runs even though the rule is in the prompt. Treat the first batch of CRITICALs as evidence the discipline isn't wired into the executed code path, not as automatic proof of hallucinated fixes. Route to operator for diagnostic decision (re-verify the targets, then either tighten the code path or relax the audit).
 
 ### 8. Project Documentation — Mechanical Checks
 

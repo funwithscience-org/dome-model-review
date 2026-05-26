@@ -1,0 +1,63 @@
+{
+  "id": "DIRECTIVE-20260526-001",
+  "filed_by": "operator-cowork-session",
+  "filed_at": "2026-05-26T05:30:00Z",
+  "status": "pending",
+  "priority": "low",
+  "title": "Author PROP-061 — git→FUSE propagation for operator-direct commits (closes the recurring FND-01/FND-03 pattern)",
+  "background": "Tinker has now flagged the same structural gap on three consecutive runs:\n  (a) 2026-05-25T16-57 run: FND-01 — 7 FUSE files stale relative to git after 4 operator-direct commits in 10h. Tinker manually backfilled all 7 from raw.githubusercontent.com.\n  (b) 2026-05-25T17-19 + 17-37 runs: same finding restated — no git→FUSE pull path for operator-direct commits.\n  (c) 2026-05-26T02-42 run: FND-03 — FUSE tinker.md is 314 lines (pre-PROP-060) vs git 400 lines. Caused tinker's pre-flight directive-discovery to phantom-pickup DIRECTIVE-003 as 'pending' even though git has it 'completed' since 2026-05-25T17:30Z. Tinker had to clone fresh to confirm the real state and detect that DIRECTIVE-003 was already done.\n\nThe root cause is structural: workspace-sync is FUSE→git only. Any operator-side commit (operator-direct via clone, cowork session API push, decider self-apply that doesn't also dual-write FUSE, scheduled-agent push from a clone) that touches a file FUSE was holding becomes invisible to the next FUSE-reading agent until either: (i) build.js publish runs (which sync_glob-copies a curated subset of files git→FUSE), (ii) the operator manually `cp`s the file, or (iii) tinker does a backfill from raw.githubusercontent.com. All three are reactive, not preventative.",
+  "evidence": {
+    "tinker_recommended_options_2026_05_26": [
+      {
+        "option": "a",
+        "summary": "Workspace-sync extension: hourly workspace-sync runs ALSO do a git→FUSE pull step for changed files (after the FUSE→git push). Diff origin/main against the FUSE working copy, copy any files where git is newer.",
+        "tradeoffs": "Pros: mechanical, no agent changes needed. Cons: workspace-sync is Haiku and was the agent that hit the mass-delete disaster on 2026-05-21; expanding its scope adds risk surface. Would need careful additive design and a fail-closed gate equivalent to the existing PROP-051 A1-A4 gates."
+      },
+      {
+        "option": "b",
+        "summary": "Discipline rule: any operator-direct commit to a git-owned file MUST also be dual-written to FUSE (cp from clone to FUSE after push). Add this to CLAUDE.md's git-owned file table and to any operator-session workflow.",
+        "tradeoffs": "Pros: zero new code. Cons: pure discipline, scales poorly — the 'human-notes dual-write rule' (already in CLAUDE.md) has been violated multiple times this month. Same defect class as the action-typed HNOTE handler — discipline isn't enforcement."
+      },
+      {
+        "option": "c",
+        "summary": "Pre-flight divergence gate on each agent: before any agent uses a FUSE-side file as authoritative, it must check that file's git canonical content (via raw.githubusercontent.com or fresh clone) and either match-or-fail-loud. Tinker already does some of this; generalize across agents.",
+        "tradeoffs": "Pros: localized defense (each agent owns its own check). Cons: distributed; every agent prompt needs a touch; some agents would need to introduce HTTP fetch capability they don't currently use; doesn't FIX the staleness, just detects it."
+      }
+    ],
+    "incidents_caused_by_this_gap_last_72h": [
+      {"date": "2026-05-25", "incident": "tinker FND-01: 7 stale FUSE files. Operator-direct commits 0b9f6c01/35e5be71/9e47d500/4e79507c authored files that didn't propagate to FUSE. Tinker backfilled."},
+      {"date": "2026-05-25", "incident": "tinker observed PROP-053 completion (commit 25c6de8c at 17:09Z) leaving FUSE behind within 5 min of being written."},
+      {"date": "2026-05-26", "incident": "tinker FND-03: FUSE tinker.md 86 lines behind git; phantom DIRECTIVE-003 pickup."}
+    ],
+    "structural_relation_to_other_gaps": "This is the same defect class as: (a) the assigned-to-tinker no-op fixed by PROP-060 (writer field, no automated consumer), (b) the action-typed HNOTE handler (writer field, narrow consumer), (c) the close-issues verification_pattern field (writer rule, no enforcement — observed as pending bug from 2026-05-26 cowork-session audit). The general pattern: write-side discipline without read-side enforcement decays into nothing."
+  },
+  "requested_work": [
+    "Step 1 — Pick one option and justify: After re-reading the three options above and considering operator-session cost vs structural soundness, recommend (a), (b), or (c). If you want to recommend a hybrid (e.g. (a) for prompts + (c) for data files), describe the split clearly.",
+    "Step 2 — Author PROP-061: write `monitor/tinker/proposals/PROP-061-NNN.json` implementing the recommended option. Include: prompt edits or script (whichever applies), file ownership impact (does it touch build.js OWNERSHIP or workspace-sync.md NEVER_PUSH?), idempotency contract, edge cases (what if FUSE has unstaged local changes? what if origin/main has a force-pushed reset like the 2026-05-21 disaster recovery? what if the file is binary or huge?).",
+    "Step 3 — Phase plan: if option (a), break into Phase 1 (read-only divergence detector, alarms only) and Phase 2 (auto-pull). If option (b), describe the CLAUDE.md edit plus enforcement test. If option (c), list the agents that need the pre-flight check and which file each one reads from FUSE-side authoritatively.",
+    "Step 4 — Operator-cost estimate: how many minutes of operator-session attention does the implementation require, and how many minutes of operator attention does the structural fix save per week if it works? (Today: tinker spent ~5 min backfilling 7 files; cowork sessions repeatedly notice FUSE-vs-git divergence; agents do ad-hoc backfills. Rough current cost: ~30 min/week of operator-or-tinker time on this.)"
+  ],
+  "non_goals": [
+    "Do NOT implement the chosen option unilaterally — author the PROP only.",
+    "Do NOT modify workspace-sync's existing FUSE→git push behavior (that direction works fine).",
+    "Do NOT touch the PROP-051 safety gates (A1-A4) — those are independent of direction and must be preserved.",
+    "Do NOT propose extending workspace-sync's deletion authority — only additions/updates to FUSE from git."
+  ],
+  "context_pointers": {
+    "related_findings": [
+      "monitor/tinker/run-2026-05-25T16-57 (FND-01 verbatim text in latest-tinker-summary.txt at the time)",
+      "monitor/tinker/report-2026-05-26T02-42.json (FND-03 with phantom-pickup evidence)"
+    ],
+    "related_directive": "DIRECTIVE-20260525-003 (tinker work-surfacing — completed via PROP-060; the same writer/no-consumer defect class)",
+    "related_prop": "PROP-060 (tinker Mode 0 scan — applied 2026-05-25T17:40Z — added the read-side consumer for the writer field)",
+    "claude_md_relevant_sections": [
+      "FUSE Staleness Warning (existing, just says agents must cross-check, doesn't fix anything)",
+      "Two-Repo Architecture / How it works (describes the FUSE↔git boundary)",
+      "File Ownership Rules (where ownership decisions live)",
+      "Universal-pusher mode (2026-04-26) — the closest existing FUSE→git rescue; the inverse (git→FUSE) has no analogue"
+    ]
+  },
+  "expected_output": "monitor/tinker/proposals/PROP-061-git-to-fuse-propagation.json with: option chosen + justification, implementation sketch, phase plan if applicable, operator-cost estimate, edge cases enumerated.",
+  "estimated_effort": "Mode 4 PROP-authoring run. ~25 min Opus.",
+  "priority_note": "Filed as LOW priority because reactive backfill still works. The pattern is annoying and operator-visible but not pipeline-breaking. Tinker may schedule this behind any other pending operator-priority items."
+}

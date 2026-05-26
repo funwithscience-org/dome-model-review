@@ -1,0 +1,51 @@
+{
+  "id": "DIRECTIVE-20260526-002",
+  "filed_by": "operator-cowork-session",
+  "filed_at": "2026-05-26T05:31:00Z",
+  "status": "pending",
+  "priority": "low",
+  "title": "Investigate 4 pre-existing pending-verification problem entries and propose disposition (and possibly PROP-062 to fix the class)",
+  "background": "Workspace-sync's verify-pending-state.js has been reporting the same 4 problematic entries on every hourly run for at least the last 6 cycles (2026-05-26 00:07Z through 05:07Z and likely much earlier). They're not new — they predate today's overnight cycle — but they've been sitting unaddressed and are mixed-in with the legitimate pending-verification queue, making it harder for the operator to see when a NEW problem appears.\n\nThe 4 entries break into two classes:\n  Class A — verification_pattern_failed (fingerprint doesn't match origin/main): ISS-2033, ISS-2036. The pattern was written, but `git show origin/main:<file> | grep -qF '<fingerprint>'` exits non-zero. Possible causes: (a) hallucinated closure (decider wrote a fingerprint for text it never actually inserted), (b) legitimate content drift (the file was edited after the close and the fingerprint substring was overwritten), (c) wrong target file (fingerprint lives in a different file than verification_pattern points to — same defect as the ISS-1801..1806 'revision-routed' case).\n  Class B — verification_pattern_missing_or_malformed: ISS-WIN062C6-H2, ISS-2122. The pattern field exists but is empty, syntactically broken, or shaped in a way the verifier can't parse. Possible causes: (a) decider wrote partial JSON during a degraded run, (b) older entries from before the verification_pattern format stabilized, (c) the ISS ID itself is non-standard (ISS-WIN062C6-H2 doesn't match the ISS-NNNN pattern — looks like a hand-crafted ID).",
+  "evidence": {
+    "verify_pending_run_summary_repeated": {
+      "checked": 4,
+      "flipped": 0,
+      "still_pending": 2,
+      "errors": 2,
+      "archived": 0,
+      "observation": "These counts have been identical across at least 6 consecutive hourly runs (2026-05-26T00:07Z through 05:07Z). No new entries have come in, none have been resolved. They're a steady-state noise floor."
+    },
+    "class_a_still_pending": [
+      {"id": "ISS-2033", "reason": "verification_pattern_failed"},
+      {"id": "ISS-2036", "reason": "verification_pattern_failed"}
+    ],
+    "class_b_errors": [
+      {"id": "ISS-WIN062C6-H2", "reason": "verification_pattern_missing_or_malformed", "note": "Non-standard ID — suggests this was inserted manually or by a script that didn't follow the ISS-NNNN convention. Could be a quasi-orphan."},
+      {"id": "ISS-2122", "reason": "verification_pattern_missing_or_malformed"}
+    ],
+    "where_to_look": [
+      "monitor/decisions/closed-issues.json — search for each ID, inspect the verification_pattern field and the target file referenced inside it.",
+      "git log -p -- monitor/decisions/closed-issues.json | grep -A 30 'ISS-2033' (and 2036, etc.) — see what was written at close time vs now.",
+      "For Class A, run `git show origin/main:<target-file> | grep -F '<fingerprint>'` and `git log --all -- <target-file> | head` to see whether the fingerprint EVER existed in the file."
+    ]
+  },
+  "requested_work": [
+    "Step 1 — Per-entry diagnosis: For each of the 4 entries, determine:\n  (a) What is the verification_pattern (raw string)?\n  (b) What file does it target?\n  (c) Did the fingerprint EVER exist in origin/main for that file (search git history)?\n  (d) Does origin/main currently contain it?\n  (e) Classify each entry as: H = hallucinated close (fingerprint never existed in target file, decider lied), D = content drift (fingerprint existed at close time but was overwritten by a later edit), R = revision-routed (fingerprint lives in a different file than the pattern points at), M = malformed (pattern is unparseable), O = OBE/orphan (entry is a non-standard ID with no canonical target).",
+    "Step 2 — Per-entry recommendation: For each entry, recommend disposition:\n  (a) For H entries — reopen ISS, route to operator for re-fix.\n  (b) For D entries — update verification_pattern with current substring (additive edit acceptable, document in closure_reason), then flip status to fixed.\n  (c) For R entries — repoint verification_pattern to the correct file (additive edit), then flip.\n  (d) For M entries — either repair the pattern (if recoverable) or strip the pattern and flip to fixed with an 'audit-pattern-removed' note.\n  (e) For O entries — close as `wontfix-OBE-non-standard-id` and document.\n  Note: Operator applies the recommendations; do NOT batch-execute.",
+    "Step 3 — Class generalization: Are there OTHER entries in closed-issues.json with similar shapes that we haven't yet noticed because the verifier hasn't crashed on them? E.g. entries with verification_pattern null but status='fixed' (so the verifier skips them entirely)? If yes, count them and report the population — this could be the same class as the post-2026-05-25T05:20Z decider gap that the cowork-session caller is separately investigating.",
+    "Step 4 — Optional PROP-062: If the diagnoses suggest a structural pattern (e.g. all 4 entries share a root cause), author a brief PROP outlining the fix. If they're each one-off, just produce per-entry recommendations in the run report."
+  ],
+  "non_goals": [
+    "Do NOT batch-apply dispositions — operator decides each one after reviewing your diagnoses.",
+    "Do NOT modify the verify-pending-state.js script — its current behavior (continuing to report instead of auto-fixing) is the correct fail-safe default.",
+    "Do NOT touch the active verify-pending pipeline — these entries have been pending long enough that one more day of latency is fine."
+  ],
+  "context_pointers": {
+    "verifier_script": "monitor/scripts/verify-pending-state.js",
+    "verifier_run_outputs": "monitor/integrity/verify-pending-run-2026-05-26T*.json",
+    "related_to_separate_investigation": "Operator separately observed that decider self-applies stopped writing verification_pattern at all after 2026-05-25T05:20Z (a different defect class — PROP-059 prose discipline not wired into Priority-3 self-apply code path). That investigation is deferred but related; if Step 3 above finds the same population, please cross-reference."
+  },
+  "expected_output": "Run report covering: per-entry diagnosis table (Step 1), per-entry recommendations (Step 2), class generalization counts (Step 3), optional PROP-062 if applicable (Step 4).",
+  "estimated_effort": "Mode 1 audit + light PROP-authoring if Step 4 fires. ~15-20 min Opus.",
+  "priority_note": "Filed as LOW priority. The 4 entries are a steady-state noise floor, not a fire. Their main cost is making it harder to spot a new problem; resolving them improves signal-to-noise on the verify-pending dashboard."
+}
