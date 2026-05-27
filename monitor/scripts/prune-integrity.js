@@ -165,6 +165,40 @@ const policies = [
     retention_days: 30,
     keep_last_n: 10,
     archive: path.join(INTEGRITY_DIR, 'workspace-sync-abort-archive.jsonl')
+  },
+  {
+    // PROP-061 (2026-05-27): git→FUSE divergence reports written by workspace-sync
+    // Step 4c whenever local HEAD differs from origin/main after the push. One per
+    // divergent cycle. Used for audit + tinker visibility into how often the
+    // git→FUSE path triggers.
+    name: 'git-to-fuse-divergence',
+    dir: INTEGRITY_DIR,
+    pattern: /^git-to-fuse-divergence-.*\.json$/,
+    retention_days: 14,
+    keep_last_n: 20,
+    archive: path.join(INTEGRITY_DIR, 'git-to-fuse-divergence-archive.jsonl')
+  },
+  {
+    // PROP-061 (2026-05-27): sync-workspace run reports written by workspace-sync
+    // Step 4c when the FF-only merge + sync-workspace path executes. Records
+    // how many files were copied into FUSE per cycle.
+    name: 'sync-workspace-runs',
+    dir: INTEGRITY_DIR,
+    pattern: /^sync-workspace-runs-.*\.json$/,
+    retention_days: 14,
+    keep_last_n: 20,
+    archive: path.join(INTEGRITY_DIR, 'sync-workspace-runs-archive.jsonl')
+  },
+  {
+    // PROP-061 (2026-05-27): non-fast-forward abort sentinels. Should be RARE
+    // (only fires when origin/main was force-pushed or rebased). Long retention
+    // because each one is operator-significant and worth post-mortem review.
+    name: 'sync-workspace-non-ff-abort',
+    dir: INTEGRITY_DIR,
+    pattern: /^sync-workspace-non-ff-abort-.*\.json$/,
+    retention_days: 90,
+    keep_last_n: 10,
+    archive: path.join(INTEGRITY_DIR, 'sync-workspace-non-ff-abort-archive.jsonl')
   }
 ];
 

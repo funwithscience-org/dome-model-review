@@ -1075,6 +1075,109 @@ git push origin main 2>&1 | tail -1
 rm -f "$SKIP_LOG"
 ```
 
+### Step 4c: PROP-061 git→FUSE propagation (divergence detect + auto-sync via build.js)
+
+After the FUSE→git push and run report commit succeed, propagate any divergence in the OPPOSITE direction (git→FUSE). This is needed because operator-direct commits (via clone or GitHub Git Data API), scheduled-agent pushes from clones, and decider self-applies that don't run `build.js publish` leave FUSE permanently stale for git-owned files. The fix mechanism already exists in `build.js` as the `sync-workspace` target (PROP-010) — this step is the missing caller.
+
+**Safety architecture:**
+- Read-only divergence detection ALWAYS writes a report file to `monitor/integrity/git-to-fuse-divergence-<ts>.json` (for operator audit).
+- Auto-sync ONLY runs if `git merge-base --is-ancestor HEAD origin/main` is true (origin moved forward, no force-push).
+- If origin is non-fast-forward (rewritten, force-pushed, reset), write `monitor/integrity/sync-workspace-non-ff-abort-<ts>.json` sentinel and SKIP the sync. Operator inspects before recovery.
+- `node build.js sync-workspace` is idempotent: it copies according to the OWNERSHIP table whitelist, has NO delete logic, and re-running produces no different result.
+- This step does NOT touch git history (no commits other than the sentinel-file follow-up). Push has already completed.
+
+```bash
+# Re-fetch to learn whether any commits landed between our push and now,
+# OR whether origin had unmerged commits relative to our local HEAD all along.
+# (The git pull --rebase at Step 1 + push at Step 4 normally keep us caught up,
+# but operator-direct API pushes can race this whole flow.)
+git fetch origin main 2>&1 | tail -3
+LOCAL_SHA=$(git rev-parse HEAD)
+REMOTE_SHA=$(git rev-parse origin/main)
+TS_PROP061=$(date -u +%Y-%m-%dT%H-%M-%SZ)
+
+if [ "$LOCAL_SHA" = "$REMOTE_SHA" ]; then
+  echo "[PROP-061] HEAD matches origin/main; no git→FUSE sync needed this run."
+else
+  if git merge-base --is-ancestor HEAD origin/main; then WOULD_FF=true; else WOULD_FF=false; fi
+  DIVERGENT_FILES=$(git diff --name-only HEAD origin/main | sort -u)
+  DIVERGENT_COUNT=$(echo "$DIVERGENT_FILES" | grep -c .)
+
+  # Always write divergence report (Phase 1 behavior — preserved as audit trail).
+  DIV_REPORT="monitor/integrity/git-to-fuse-divergence-${TS_PROP061}.json"
+  mkdir -p monitor/integrity
+  DIVERGENT_FILES="$DIVERGENT_FILES" LOCAL_SHA="$LOCAL_SHA" REMOTE_SHA="$REMOTE_SHA" \
+  TS_PROP061="$TS_PROP061" WOULD_FF="$WOULD_FF" DIVERGENT_COUNT="$DIVERGENT_COUNT" \
+  DIV_REPORT="$DIV_REPORT" node -e "
+const fs=require('fs');
+const files=(process.env.DIVERGENT_FILES||'').trim().split('\n').filter(Boolean);
+fs.writeFileSync(process.env.DIV_REPORT, JSON.stringify({
+  event:'git-to-fuse-divergence',
+  timestamp: process.env.TS_PROP061,
+  local_sha: process.env.LOCAL_SHA,
+  remote_sha: process.env.REMOTE_SHA,
+  divergent_files: files,
+  divergent_count: parseInt(process.env.DIVERGENT_COUNT||'0',10),
+  would_ff: process.env.WOULD_FF==='true',
+  action: process.env.WOULD_FF==='true' ? 'auto-sync' : 'abort-non-ff'
+}, null, 2));
+console.log('[PROP-061] divergence report:', process.env.DIV_REPORT);
+"
+
+  if [ "$WOULD_FF" = "true" ]; then
+    # Phase 2: fast-forward and sync.
+    git merge --ff-only origin/main 2>&1 | tail -3 || {
+      echo "[PROP-061] ff merge failed unexpectedly; skipping sync, leaving divergence report for tinker"
+    }
+    SYNC_OUT=$(node build.js sync-workspace 2>&1)
+    SYNC_EXIT=$?
+    SYNC_COPIED=$(echo "$SYNC_OUT" | grep -oE '[0-9]+ git-owned files copied' | grep -oE '^[0-9]+' || echo 0)
+    SYNC_NEW=$(echo "$SYNC_OUT" | grep -oE '[0-9]+ new append-only files' | grep -oE '^[0-9]+' || echo 0)
+    SYNC_REPORT="monitor/integrity/sync-workspace-runs-${TS_PROP061}.json"
+    SYNC_OUT="$SYNC_OUT" SYNC_EXIT="$SYNC_EXIT" SYNC_COPIED="$SYNC_COPIED" SYNC_NEW="$SYNC_NEW" \
+    TS_PROP061="$TS_PROP061" DIVERGENT_COUNT="$DIVERGENT_COUNT" SYNC_REPORT="$SYNC_REPORT" \
+    node -e "
+const fs=require('fs');
+const out=process.env.SYNC_OUT||'';
+fs.writeFileSync(process.env.SYNC_REPORT, JSON.stringify({
+  event:'sync-workspace-run',
+  timestamp: process.env.TS_PROP061,
+  divergent_count: parseInt(process.env.DIVERGENT_COUNT||'0',10),
+  files_copied: parseInt(process.env.SYNC_COPIED||'0',10),
+  new_files: parseInt(process.env.SYNC_NEW||'0',10),
+  sync_exit_code: parseInt(process.env.SYNC_EXIT||'0',10),
+  output_tail: out.split('\n').slice(-20).join('\n')
+}, null, 2));
+console.log('[PROP-061] sync-workspace report:', process.env.SYNC_REPORT, 'copied='+process.env.SYNC_COPIED, 'new='+process.env.SYNC_NEW);
+"
+  else
+    # Non-FF — origin has been force-pushed or rebased. Refuse to sync. Operator-only recovery.
+    ABORT_SENTINEL="monitor/integrity/sync-workspace-non-ff-abort-${TS_PROP061}.json"
+    LOCAL_SHA="$LOCAL_SHA" REMOTE_SHA="$REMOTE_SHA" DIVERGENT_COUNT="$DIVERGENT_COUNT" \
+    TS_PROP061="$TS_PROP061" ABORT_SENTINEL="$ABORT_SENTINEL" node -e "
+const fs=require('fs');
+fs.writeFileSync(process.env.ABORT_SENTINEL, JSON.stringify({
+  event:'sync-workspace-non-ff-abort',
+  timestamp: process.env.TS_PROP061,
+  local_sha: process.env.LOCAL_SHA,
+  remote_sha: process.env.REMOTE_SHA,
+  divergent_count: parseInt(process.env.DIVERGENT_COUNT||'0',10),
+  reason: 'origin/main is not a fast-forward of our HEAD; refusing to sync until operator inspects',
+  action_recommended: 'investigate whether origin was force-pushed (operator recovery), rebased, or this is a concurrent-push race; if recovery, operator runs node build.js sync-workspace manually after verifying canonical state'
+}, null, 2));
+console.log('[PROP-061] NON-FF ABORT:', process.env.ABORT_SENTINEL);
+"
+  fi
+
+  # Commit the new sentinel/report files (mirror Step 4b's commit-and-push pattern).
+  git add monitor/integrity/git-to-fuse-divergence-*.json monitor/integrity/sync-workspace-runs-*.json monitor/integrity/sync-workspace-non-ff-abort-*.json 2>/dev/null || true
+  if ! git diff --cached --quiet 2>/dev/null; then
+    git commit -m "PROP-061 git→FUSE detect+sync: $(date -u +%Y-%m-%dT%H:%M:%SZ)" 2>&1 | tail -1
+    git push origin main 2>&1 | tail -1
+  fi
+fi
+```
+
 ### Step 5: Report
 
 Output a one-line summary: how many files were new, how many modified, or "Nothing to sync."
@@ -1083,9 +1186,10 @@ Output a one-line summary: how many files were new, how many modified, or "Nothi
 
 - **Do NOT modify any file content.** Copy only. (Exception: regenerating `docs/index.html` from current data via `node build.js html` is permitted under universal-pusher follow-up — see Step 3. The output is a deterministic function of `data/wins.json` + `data/sections.json`, not a content edit.)
 - **Do NOT analyze or review files.** You are a file mover, not a reviewer.
-- **Do NOT run `node build.js publish`, `node build.js pdf`, or `node test.js`.** Those are reserved for the decider. You MAY run `node build.js html` when source data has been staged (see Step 3) — that target only regenerates `docs/index.html` from the data files, no git ops, no PDF, no tests, no commits.
+- **Do NOT run `node build.js publish`, `node build.js pdf`, or `node test.js`.** Those are reserved for the decider. You MAY run `node build.js html` when source data has been staged (see Step 3) — that target only regenerates `docs/index.html` from the data files, no git ops, no PDF, no tests, no commits. You MAY also run `node build.js sync-workspace` as part of Step 4c (PROP-061 git→FUSE propagation) — that target only copies clone files into FUSE per the OWNERSHIP whitelist, has no delete logic, and is idempotent. The narrow `sync-workspace` exception is wired into Step 4c specifically; do not invoke it from any other step.
 - **Never revert git.** Always use `smart_copy` instead of raw `cp`. The helper refuses to overwrite a clone file whose last git commit is newer than the workspace file's mtime — this protects direct-to-git commits from being silently undone. If you find yourself wanting to force-overwrite a skipped file, stop and escalate to tinker or a human instead.
 - **Universal-pusher mode (2026-04-26):** runtime data files (data/, decision state, applied-patches) ARE eligible to push when FUSE has newer content. This is the rescue path for decider 403 push failures. Generated/source files (docs/, build-scripts/, build.js, prompts) remain in the NEVER_PUSH deny-list — those must never round-trip from FUSE. The one exception: when source data is being pushed, this agent regenerates `docs/index.html` itself in the clone (Step 3) so the live site doesn't drift.
+- **Bidirectional sync (PROP-061, 2026-05-27):** workspace-sync is now bidirectional. The Universal-pusher mode above covers FUSE→git rescue; Step 4c covers git→FUSE propagation for any commit that lands on origin/main via a path other than `build.js publish` (operator-direct API push, scheduled-agent push from a clone, decider self-apply that didn't publish). The git→FUSE direction uses `node build.js sync-workspace` (an idempotent OWNERSHIP-whitelist copy with no delete logic) and is gated by a fast-forward-only check that aborts via sentinel on a force-pushed/rebased origin. Together, the two directions close the recurring FND-01/FND-03 staleness gap that motivated PROP-061.
 - **Anti-reversion guard (PROP-045, enforce 2026-05-17):** `smart_copy` adds a content-hash check after the mtime guard. Even when FUSE mtime > git commit time, if the FUSE content sha1 matches any of the last 20 historic commits' versions on that path, the copy is SKIPPED with reason `anti-reversion; FUSE matches historic commit <sha>`. This catches the 2026-05-17T13:00Z failure mode where workspace-sync reverted analyst-baby's EXP-415..420 orphan-batch commit by pushing a pre-commit stale FUSE copy that had been updated mtime-wise but contained pre-baby content. Affects multi-writer files (`expansion-tracker.json`, `attention-inbox.json`, `curmudgeon/tracker.json`) where read-modify-write races between agents are common. Rescue path preserved: decider's committed-but-unpushed content is a never-pushed state with a content hash that won't match any historic commit, so it proceeds normally. Tinker's soft-complaints grep should flag any run where `anti_reversion` count > 0 (sustained >0 indicates a writer-side bug worth fixing at source).
 - If git pull --rebase fails with merge conflicts, do NOT attempt to resolve. Output the error and stop. A human or the tinker agent will fix it.
 - Use your own clone directory (`dome-sync-clone`), never touch `dome-review-clean`.
