@@ -1,0 +1,104 @@
+{
+  "run_id": "tinker-2026-05-27T05-32",
+  "timestamp": "2026-05-27T05:32:00Z",
+  "mode_selected": "operator_directive_override (Mode 4)",
+  "mode_selected_reason": "Pre-flight directive discovery found 3 pending directives; highest priority is DIRECTIVE-20260526-001 (HIGH, bumped from LOW on 2026-05-26T20:30Z). Directive requests authorship of PROP-061 (git→FUSE propagation). Per dispatcher rules, directive overrides Mode 1–4 selection.",
+  "modes_checked": {
+    "mode_1_pipeline_health": "GREEN (open_issues_total=3, all <1d old; net_velocity_7d=+31; no stranded patches >24h)",
+    "mode_2_infrastructure": "AMBER. Disk: root 96% (412MB free) at start of run, 97% (316MB) after fresh tinker-clone. Project footprint ~180MB (tinker-clone only; /tmp/edit-clone is uid=65534 from a prior session, can't delete from this user). FUSE: confirmed STALE on multiple prompts: tinker.md (FUSE 314 / git 400 lines), decider.md (FUSE 833 / git 1037), structure-integrity.md (FUSE 624 / git 647). Auth: OK (PRELUDE HTTP 200, dome-scoped PAT). This is the EXACT failure mode PROP-061 closes.",
+    "mode_3_cost_engineering": "Not run (directive priority).",
+    "mode_4_proposals_fixes": "ACTIVE (this directive's authorship)."
+  },
+  "previous_followup": {
+    "from_report": "tinker-2026-05-27T02-43 (3h ago)",
+    "findings_status": [
+      {
+        "finding_id": "FND-01-RECUR",
+        "title": "Phantom directive pickup recurrence (FUSE-stale tinker.md)",
+        "status": "ADDRESSED by this run authoring PROP-061. Closure occurs when PROP-061 ships and FUSE catches up.",
+        "verification_pattern": "After PROP-061 Phase 2 deploys, tinker should not phantom-pickup a directive marked completed in git."
+      },
+      {
+        "finding_id": "FND-02",
+        "title": "Disk pressure (root 97%)",
+        "status": "STILL_PRESENT. Tinker-clone ~180MB added; root now 96-97% used (316-412MB free). /tmp/edit-clone (170MB, uid=65534) cannot be removed by this session's user. Recommendation: operator manually `sudo rm -rf /tmp/edit-clone` from a session with appropriate uid, OR wait for the 24h auto-cleanup empowerment to kick in for stale clones.",
+        "verification_pattern": "df -h / shows root >5% free."
+      },
+      {
+        "finding_id": "FND-03",
+        "title": "Two true-pending directives remain",
+        "status": "PARTIALLY_ADDRESSED. DIRECTIVE-20260526-001 completed by this run (PROP-061 authored, status: pending -> completed). DIRECTIVE-20260526-002 (pending-verification problem entries) and DIRECTIVE-20260525-003-tinker-work-surfacing (low priority, possibly redundant given PROP-060 already shipped) remain pending. Next tinker run should pick up DIRECTIVE-20260526-002 or fall through to Mode 1-4 if those directives' priorities are LOW."
+      }
+    ]
+  },
+  "primary_work": {
+    "directive_processed": "DIRECTIVE-20260526-001-git-to-fuse-propagation-gap.json",
+    "deliverable": "monitor/tinker/proposals/PROP-061-git-to-fuse-propagation.json (37.8 KB)",
+    "deliverable_summary": "Recommends option (a) workspace-sync extension via existing build.js sync-workspace (PROP-010 mechanism). Two-phase rollout: Phase 1 read-only divergence detector for 1 week of observation, Phase 2 auto-sync gated by non-FF abort sentinel. Implementation cost ~75 min total Opus + ~50 min operator review across both phases. Expected savings ~25 min/week human/Opus time + ~$10-50/week wasted phantom-pickup Opus runs. Payback ~3 weeks. Idempotent, structurally cannot mass-delete (no delete logic in copy path), backward-compatible with PROP-051 safety gates.",
+    "alternatives_evaluated": 5,
+    "edge_cases_documented": 9,
+    "counter_considerations": 7,
+    "directive_lifecycle_update": "DIRECTIVE-001 marked status='completed', completed_at='2026-05-27T05:55Z' (commit timestamp), completed_by_run='tinker-2026-05-27T05-32', prop_id_authored='PROP-061' — additive-edit per CLAUDE.md DIRECTIVE-LIFECYCLE exception. Dual-written to FUSE so next tinker run sees real status."
+  },
+  "findings": [
+    {
+      "finding_id": "FND-01",
+      "category": "backlog-trend",
+      "severity": "info",
+      "summary": "Pipeline GREEN. open_issues_total=3, all <1d old, oldest 0.6d. net_velocity_7d=+31 (heavy drain via closure-ledger). No backlog-trend threshold fires. baby_drain_count_7d=0, verify_drain_count_7d=1.",
+      "metric_snapshot": {
+        "open_issues_total": 3,
+        "open_status_count": 3,
+        "assigned_analyst_count": 0,
+        "assigned_tinker_count": 0,
+        "age_ge_14d_count": 0,
+        "age_ge_30d_count": 0,
+        "oldest_open_age_days": 0.6,
+        "new_issues_velocity_7d": 3,
+        "closed_issues_velocity_7d": 34,
+        "net_velocity_7d": 31,
+        "baby_drain_count_7d": 0,
+        "verify_drain_count_7d": 1
+      }
+    },
+    {
+      "finding_id": "FND-02",
+      "category": "fuse-divergence",
+      "severity": "moderate",
+      "summary": "FUSE confirmed stale on 3 prompt files at PROP-061 authoring time. md5 diff: monitor/prompts/tinker.md (FUSE 314 lines / git 400, md5 4a9f3298 vs 0d906adb); monitor/prompts/decider.md (FUSE 833 / git 1037, md5 f329875f vs 3222c7b0); monitor/prompts/structure-integrity.md (FUSE 624 / git 647, md5 7477d9bb vs 38f5f06e). CLAUDE.md and build.js are MATCH (recently synced via decider publish). This is the directive's source evidence, freshly reproduced.",
+      "recommended_action": "Operator OR future tinker run can one-shot bootstrap by running `cd /tmp/tinker-clone && node build.js sync-workspace` to catch up FUSE. After PROP-061 Phase 2 ships, this becomes hourly-automatic."
+    },
+    {
+      "finding_id": "FND-03",
+      "category": "disk-pressure",
+      "severity": "moderate",
+      "summary": "Root partition 96% used at start of run, dropping to 316MB free after tinker-clone. /tmp/edit-clone (170MB, owner uid=65534) cannot be removed from this user session. tinker-clone (~180MB) will be cleaned at end of run, returning root to 95-96% used. The standing empowerment (tinker may rm -rf stale /tmp/*-clone older than 24h on disk pressure) doesn't apply: edit-clone is owned by a different uid, not deleteable by this session.",
+      "cleanup_actions": [
+        {
+          "path": "/tmp/tinker-clone",
+          "age_hours": "in-progress",
+          "size_mb": 180,
+          "reason": "end-of-run hygiene (this session's clone)",
+          "status": "queued for cleanup at run end"
+        }
+      ],
+      "recommended_action": "Operator with appropriate uid (root or uid=65534) can `sudo rm -rf /tmp/edit-clone` to reclaim 170MB. Alternative: wait for next operator-session to re-create edit-clone, which would reset ownership."
+    },
+    {
+      "finding_id": "FND-04",
+      "category": "directive-pipeline",
+      "severity": "info",
+      "summary": "Two true-pending directives remain after this run: DIRECTIVE-20260526-002 (low priority — pending-verification problem entries investigation) and DIRECTIVE-20260525-003 (low priority — tinker work-surfacing design; likely redundant given PROP-060 already shipped). Next tinker run picks up DIRECTIVE-20260526-002 by default ordering (most recent at low priority)."
+    }
+  ],
+  "agent_metrics": {
+    "self_audit": {
+      "context_load_estimate_chars": 75000,
+      "prompt_file_size_lines": 314,
+      "fuse_vs_git_self_check": "FUSE tinker.md is 314 lines (this session reads it); git tinker.md is 400 lines. This run executed the FUSE version, missing the PROP-060 Mode 0 scan additions. No-op risk: low — directive override took priority anyway. Recommendation: same as FND-02; PROP-061 closes this self-staleness."
+    }
+  },
+  "next_run_priority": "DIRECTIVE-20260526-002 (pending-verification problem entries investigation, LOW priority). If operator promotes any directive to MEDIUM/HIGH before then, that takes priority. Otherwise fall through to Mode 3 cost-engineering work.",
+  "queue_history_appended": true,
+  "queue_history_entry_ts": "2026-05-27T05:34:20.995Z"
+}
