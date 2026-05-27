@@ -1,0 +1,331 @@
+{
+  "prop_id": "PROP-061",
+  "title": "Git→FUSE propagation for operator-direct and scheduled-agent commits: extend workspace-sync to invoke build.js sync-workspace after each push cycle, closing the recurring FUSE-stale-prompts failure class observed in FND-01 (2026-05-25) and FND-03 (2026-05-26).",
+  "status": "design-pending-operator-review",
+  "priority": "high",
+  "author": "tinker",
+  "authored_at": "2026-05-27T05:40:00Z",
+  "authored_by_run": "tinker-2026-05-27T05-32",
+  "source_directive": "DIRECTIVE-20260526-001 (operator-bumped to HIGH 2026-05-26T20:30Z after three consecutive tinker runs flagged the same gap).",
+  "executive_summary": "The hourly workspace-sync agent is FUSE→git only. Any commit that lands on origin/main from a path OTHER than 'node build.js publish' (operator-direct via clone, GitHub Git Data API push, scheduled-agent push from a clone, decider self-apply that skips publish) leaves FUSE permanently stale relative to git for the affected files. The defect is most visible on prompt files: monitor/prompts/tinker.md (FUSE 314 lines vs git 400), monitor/prompts/decider.md (FUSE 833 vs git 1037), monitor/prompts/structure-integrity.md (FUSE 624 vs git 647) measured at the time of this PROP. The agents read prompts from FUSE, so they execute pre-update logic. The fix mechanism ALREADY EXISTS in build.js (function syncToWorkspace, target 'sync-workspace', PROP-010) — it iterates OWNERSHIP entries with category='git' plus the monitor/prompts/*.md dynamic rule and copies clone→workspace. The gap is that nothing INVOKES sync-workspace except 'build.js publish'. This PROP extends workspace-sync.md to invoke 'node build.js sync-workspace' after the FUSE→git push completes, in two phases (Phase 1 read-only divergence detector for 1 week of observation; Phase 2 auto-sync). Non-fast-forward (force-pushed reset) aborts via a new sentinel-file gate, mirroring the PROP-051 A4 gate pattern.",
+  "problem": {
+    "observed_incidents_72h": [
+      {
+        "date": "2026-05-25",
+        "tinker_run": "tinker-2026-05-25T16-57",
+        "finding": "FND-01 — 7 stale FUSE files after 4 operator-direct commits in 10h. Tinker manually backfilled all 7 from raw.githubusercontent.com. Cost: ~5 min Opus."
+      },
+      {
+        "date": "2026-05-25",
+        "tinker_run": "tinker-2026-05-25T17-19 + 17-37",
+        "finding": "Same defect restated across two consecutive runs. No git→FUSE pull path exists for operator-direct commits."
+      },
+      {
+        "date": "2026-05-26",
+        "tinker_run": "tinker-2026-05-26T02-42",
+        "finding": "FND-03 — FUSE tinker.md is 314 lines (pre-PROP-060) vs git 400 lines. Caused tinker's pre-flight directive-discovery to phantom-pickup DIRECTIVE-20260525-003 as 'pending' even though git has it 'completed' since 2026-05-25T17:30Z."
+      },
+      {
+        "date": "2026-05-27",
+        "tinker_run": "tinker-2026-05-27T02-43",
+        "finding": "FND-01-RECUR — phantom directive pickup recurred a SECOND time. ~$2 Opus burn. FUSE tinker.md still pre-PROP-060."
+      },
+      {
+        "date": "2026-05-27",
+        "tinker_run": "tinker-2026-05-27T05-32 (this run)",
+        "finding": "Confirmed via direct md5 comparison: tinker.md, decider.md, structure-integrity.md ALL stale in FUSE relative to git. decider.md gap is 204 lines (FUSE 833 vs git 1037) — substantial drift."
+      }
+    ],
+    "root_cause": "workspace-sync is direction-asymmetric. It pushes FUSE→git (with universal-pusher rescue, anti-reversion guard, and PROP-051 A1–A4 safety gates) but does NOT pull git→FUSE. The only existing git→FUSE path is the syncToWorkspace() function inside build.js, which only runs when 'node build.js publish' is invoked (decider self-apply path). Three publish-bypassing write paths exist and accumulate FUSE-stale state: (1) Operator-direct: cd /tmp/edit-clone && git push (frequent — used for prompt edits, CLAUDE.md edits, ad-hoc commits); (2) GitHub Git Data API push (PROP-050) — bypasses build.js entirely; (3) Scheduled-agent push from a clone WITHOUT calling build.js publish (poller, analyst-baby, sloppytoppy-score, sloppytoppy-rewrite, workspace-sync, prune-integrity all push via their own clones for their own data files). The asymmetry compounds: the operator's habit is to use option-1 because /tmp/edit-clone + git push is faster than the publish cycle. Every such commit makes FUSE staler.",
+    "defect_class": "Write-side discipline without read-side enforcement. Same shape as the writer-no-consumer defects PROP-060 just closed (assigned-to-tinker fields written by analyst/decider/integrity with no tinker reader) and the still-open action-typed HNOTE handler (narrow consumer for narrative HNOTEs). The general pattern: a write path exists, but the read path is incidental or absent. workspace-sync is the obvious reader-side actor for git→FUSE because it already owns FUSE↔git boundary work and runs hourly."
+  },
+  "alternatives_considered": [
+    {
+      "id": "option_a",
+      "name": "Workspace-sync extension (this PROP's recommendation)",
+      "summary": "After each FUSE→git push cycle, workspace-sync (a) does 'git fetch origin main && git merge --ff-only', (b) invokes 'node build.js sync-workspace' which is the existing PROP-010 mechanism, (c) if --ff-only fails (force-pushed reset), aborts with a sentinel mirroring the PROP-051 A4 delete-gate pattern. Phased: Phase 1 read-only divergence detector for 1 week, Phase 2 auto-sync.",
+      "pros": [
+        "Mechanism already exists (build.js syncToWorkspace function + 'sync-workspace' target, PROP-010). Zero new file-copy logic. The only addition is a workspace-sync.md invocation block.",
+        "Single source of truth for what gets synced: build.js OWNERSHIP table. No drift risk between workspace-sync's deny-list and build.js's allow-list.",
+        "Hourly cadence — much faster than the current 'wait for next decider publish' implicit cadence, which is now ~6/day in BAU but can drop to once-per-day in burndown mode.",
+        "Composable with PROP-051 safety gates — git→FUSE is purely additive (copyFileSync, no deletes), so the disaster vector (mass-delete) is structurally impossible. The non-FF reset abort handles the only failure mode worth aborting on.",
+        "Mirrors the universal-pusher addition (2026-04-26): same agent, same hourly cycle, additional direction. Conceptually clean."
+      ],
+      "cons": [
+        "Workspace-sync is Haiku and was the agent that hit the 2026-05-21 mass-delete disaster. Expanding its scope adds risk surface even though the new direction is structurally safer than the deletion-capable FUSE→git direction.",
+        "Adds one explicit exception to the existing prompt rule 'Do NOT run node build.js publish, node build.js pdf, or node test.js' — the new exception is 'sync-workspace target only, never publish'. The prompt must clearly enumerate the allowed target.",
+        "Phase 2 makes FUSE downstream of origin/main on hourly cadence. If a bad commit lands on main, FUSE inherits within ≤1h. Mitigation: workspace-sync's existing JSON-validity gate operates on the FUSE→git direction (catches FUSE-bad-JSON before it commits); the inverse direction is git→FUSE where git is already-committed and assumed-valid.",
+        "Force-pushed reset (e.g. 2026-05-21 disaster recovery) needs an abort path. Without it, a reset that mass-deletes git would propagate to FUSE via the same mechanism. The proposed non-FF abort gate handles this — but it is new logic the operator must verify."
+      ]
+    },
+    {
+      "id": "option_b",
+      "name": "Discipline rule: operator-direct commits dual-write FUSE",
+      "summary": "Add to CLAUDE.md's File Ownership Rules: 'When operator-direct-committing to a git-owned file, also cp the file from the clone to FUSE before pushing.' Plus an integrity check (no enforcement).",
+      "pros": [
+        "Zero new code. Zero new prompt edits beyond CLAUDE.md."
+      ],
+      "cons": [
+        "Pure discipline. The human-notes dual-write rule (already in CLAUDE.md, same shape) has been violated multiple times this month, including by the operator and by multiple scheduled agents.",
+        "Doesn't cover scheduled-agent pushes from clones (poller, analyst-baby, sloppytoppy-*, etc.) — they would all need the same touch.",
+        "Doesn't cover PROP-050 Git Data API pushes (operator escape hatch when git push 403s).",
+        "Same defect class as the directive's source finding (writer/consumer asymmetry) — adding more writer-side discipline without any consumer is exactly the antipattern we're fixing."
+      ]
+    },
+    {
+      "id": "option_c",
+      "name": "Per-agent pre-flight divergence gate",
+      "summary": "Each agent that reads from FUSE adds a pre-flight check: for each file it depends on (its own prompt, the data files it consumes), it fetches the corresponding raw.githubusercontent.com version and either matches-or-aborts. Tinker already does some of this; generalize across all agents.",
+      "pros": [
+        "Localized defense at point of read. Each agent owns its own check.",
+        "Detects in addition to fixing — if the gate fires, we learn about staleness even if Phase 2 of option_a doesn't ship."
+      ],
+      "cons": [
+        "Distributed change: every agent prompt needs the touch. 11 agents currently active; not all have HTTP fetch capability (Haiku poller, workspace-sync) without prompt edits.",
+        "Doesn't FIX staleness — just detects it. Agents would fail-or-warn but the prompt would still be stale next run.",
+        "Adds 2-5s of latency per agent run (the GitHub raw fetch) and a small but nonzero risk of pre-flight false positives (GitHub raw cache TTL is ~5 min; fresh commits aren't immediately visible).",
+        "Doesn't address the operator's pain point: cowork sessions repeatedly noticing FUSE-vs-git divergence and needing to manually reconcile."
+      ]
+    },
+    {
+      "id": "option_d",
+      "name": "Hybrid: option_a for prompts + scripts, option_c for data files",
+      "summary": "workspace-sync invokes sync-workspace for monitor/prompts/*.md + build-scripts/* + build.js + test.js + CLAUDE.md only. Data files (wins.json, sections.json, predictions.json, decision state) stay on the current 'build.js publish syncs them when decider self-applies' path.",
+      "pros": [
+        "Narrow blast radius. The observed pain is entirely prompts; this targets that exactly.",
+        "Data files are already well-handled by build.js publish + the universal-pusher rescue."
+      ],
+      "cons": [
+        "Two parallel sync paths to maintain. Operator must remember which files use which path.",
+        "build.js sync-workspace already does both in one call. Splitting it requires either a new build.js target or a workspace-sync-side filter loop. Either way, more code.",
+        "The data file staleness has been ZERO recently because the decider publishes ~6×/day. But it could regress (e.g. burndown mode lowers decider cadence). Belt-and-suspenders is cheaper than re-debugging that regression later."
+      ]
+    },
+    {
+      "id": "option_e",
+      "name": "Standalone scheduled task: dome-fuse-pull every 30 min",
+      "summary": "New scheduled task (Haiku, narrow prompt) whose only job is 'git fetch + sync-workspace'. workspace-sync stays unchanged.",
+      "pros": [
+        "Cleanest separation of concerns. workspace-sync remains FUSE→git only."
+      ],
+      "cons": [
+        "Adds a 12th scheduled task to a pipeline the operator is already pruning (sloppytoppy-* DISABLED, dome-tinker burndown mode discussions).",
+        "Doubles the disk-pressure surface — two ephemeral clones instead of one, both subject to disk-fill leaks.",
+        "Coordination latency: if dome-fuse-pull runs 5 min after a workspace-sync push, agents see a 5-min window of FUSE-stale state. Co-located in workspace-sync, the window is 0.",
+        "More expensive in tokens for the same work."
+      ]
+    }
+  ],
+  "recommended_option": "option_a",
+  "recommendation_rationale": "Option (a) is the smallest change that uses the existing build.js sync-workspace mechanism. The implementation is one block of bash in workspace-sync.md, gated by a non-FF abort and split into Phase 1 (detector) and Phase 2 (action) so the operator gets a week of observation before any FUSE writes happen. Option (b) is rejected by the directive's own tradeoff analysis (discipline without enforcement). Option (c) is useful as belt-and-suspenders but doesn't FIX the gap. Option (d) is option (a) with an unnecessary narrow-scope filter — the build.js OWNERSHIP table already declares what's git-owned; respecting that contract is cheaper than re-litigating which subset to sync. Option (e) is more expensive for the same outcome.",
+  "counter_considerations": [
+    {
+      "concern": "Workspace-sync was the agent that caused the 2026-05-21 mass-delete disaster. Expanding its scope adds risk to the agent we know can fail catastrophically.",
+      "resolution": "The 2026-05-21 failure was on the FUSE→git direction with a Haiku LLM improvising a no-checkout clone fallback. The git→FUSE direction is structurally different: it only does copyFileSync from a checked-out clone to FUSE. It cannot delete FUSE files (build.js syncToWorkspace has no delete logic). It cannot delete git files (it doesn't touch git after the fetch+merge). The remaining risk vector is 'clobber a FUSE file that has unpushed FUSE-only content' — but workspace-sync's own FUSE→git push ran FIRST in the cycle, so any FUSE-newer content has already been pushed to git. Anything left in FUSE that disagrees with origin/main after the push is, by construction, stale FUSE content."
+    },
+    {
+      "concern": "What if FUSE has unstaged local changes when sync-workspace runs?",
+      "resolution": "FUSE doesn't have 'staged' vs 'unstaged' state — every write to FUSE is an agent write, and the next workspace-sync FUSE→git push moves it to git. The race window is: agent A writes FUSE-X at T, agent B commits FUSE-X to git at T+2min via clone, workspace-sync runs at T+5min. The FUSE→git step picks up A's FUSE-X (via universal-pusher rescue with anti-reversion guard, which catches this exact pattern — see workspace-sync.md PROP-045). Then the git→FUSE step picks up the latest origin/main and copies FUSE-X back. If A's content is the same as B's (typical for hourly cadence races), this is a no-op. If they differ, FUSE-X ends up with origin/main's content — which is the correct outcome because the next agent that reads FUSE-X should see git's canonical state."
+    },
+    {
+      "concern": "What if origin/main has been force-pushed (2026-05-21 disaster recovery, or any future operator-initiated rewrite)?",
+      "resolution": "Non-FF abort gate. After 'git fetch origin main', workspace-sync checks if the local HEAD is an ancestor of origin/main (git merge-base --is-ancestor HEAD origin/main). If NOT (which means origin has been rewritten), workspace-sync writes monitor/integrity/sync-workspace-non-ff-abort-<ts>.json with {reason, local_sha, remote_sha, fetch_log} and exits the git→FUSE step (the FUSE→git push has already succeeded, so no data loss). Operator inspects the sentinel, decides whether to force-reset the clone or take other action. This mirrors the PROP-051 A1–A4 fail-closed gate pattern. Importantly: in a force-push-recovery scenario like 2026-05-21, FUSE may contain the pre-disaster CORRECT state (because the disaster was the git delete, not a FUSE delete) — in which case we EXPLICITLY do not want to overwrite FUSE with the post-disaster reset. The abort gate preserves FUSE in this scenario, which is the right call."
+    },
+    {
+      "concern": "What if the file is binary or huge (e.g. docs/assets/*.svg, future docs/assets/*.png)?",
+      "resolution": "fs.copyFileSync handles arbitrary sizes and binary content. The OWNERSHIP table is curated and explicit; no surprise files. Phase 1's read-only divergence detector outputs the would-copy file list so any unexpected file appears in the sentinel before Phase 2 ships."
+    },
+    {
+      "concern": "What if 'node build.js sync-workspace' fails (e.g. node missing, build.js corrupt, OWNERSHIP table parse error)?",
+      "resolution": "workspace-sync catches the non-zero exit code, logs to its run report under agent_notes 'fallback: sync-workspace exit code N', and continues. The FUSE→git push has already succeeded. Tinker's existing soft-complaints grep (which scans workspace-sync-runs/*.json for 'fallback', 'warning', etc.) surfaces it on the next tinker run."
+    },
+    {
+      "concern": "Tinker's phantom-pickup of completed directives is the canary that drove this PROP. If Phase 2 ships and the gap closes, tinker loses that detection mechanism — how do we know the fix is still working in 6 months?",
+      "resolution": "Two ways: (1) the new monitor/integrity/sync-workspace-runs-<ts>.json sentinel emitted by Phase 2 records each git→FUSE copy event with file count + run timestamp. Tinker's existing soft-complaints grep can scan these for prolonged absence (>24h with no sync-workspace sentinel = mechanism broken). (2) The Phase 1 divergence detector remains in place after Phase 2 ships — if Phase 2 is working, the detector should report ZERO divergence post-sync. Any non-zero post-sync divergence is a regression."
+    },
+    {
+      "concern": "Doesn't this just push the problem to the next layer? What if workspace-sync itself is broken (disk pressure, PAT 403, etc.) — FUSE diverges again.",
+      "resolution": "True. But the failure mode is now self-healing rather than progressive: when workspace-sync is healthy again, it pulls everything up to date in the next cycle. Today, the failure mode is progressive — every operator-direct commit makes FUSE staler, and there's no automatic catch-up. Even a 24h workspace-sync outage with PROP-061 leaves at most a 1h tail of staleness after recovery. Today's 24h workspace-sync outage leaves a permanent diff until tinker manually backfills."
+    }
+  ],
+  "phase_plan": {
+    "phase_1_readonly_detector": {
+      "scope": "After successful FUSE→git push, workspace-sync does 'git fetch origin main' (no merge), computes 'git diff --name-only HEAD origin/main', and if non-empty writes monitor/integrity/git-to-fuse-divergence-<ts>.json with {timestamp, local_sha, remote_sha, divergent_files: [path...], divergent_count, would_abort_for_non_ff: boolean}. No file copies. No FUSE writes.",
+      "duration": "1 week of observation. Operator reviews the divergence reports daily to confirm the file list matches expectations (prompts, scripts, CLAUDE.md, data files when an operator-direct commit lands).",
+      "exit_criteria": "Operator approves Phase 2 promotion. Tinker writes a 7-day summary report from monitor/integrity/git-to-fuse-divergence-*.json: total divergence events, mean files-per-event, max files-per-event, any non-FF events.",
+      "rollback": "Trivially reversible by removing the new block from workspace-sync.md. No persistent state changed.",
+      "implementation_pseudocode": "After Step 4 (commit + push) in workspace-sync.md:\n\ngit fetch origin main 2>&1 | tail -3\nLOCAL_SHA=$(git rev-parse HEAD)\nREMOTE_SHA=$(git rev-parse origin/main)\nif [ \"$LOCAL_SHA\" != \"$REMOTE_SHA\" ]; then\n  if git merge-base --is-ancestor HEAD origin/main; then WOULD_FF=true; else WOULD_FF=false; fi\n  DIVERGENT_FILES=$(git diff --name-only HEAD origin/main | sort -u)\n  DIVERGENT_COUNT=$(echo \"$DIVERGENT_FILES\" | grep -c .)\n  TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)\n  OUT=\"${WORKSPACE}/monitor/integrity/git-to-fuse-divergence-${TS}.json\"\n  WOULD_FF=\"$WOULD_FF\" LOCAL_SHA=\"$LOCAL_SHA\" REMOTE_SHA=\"$REMOTE_SHA\" \\\n  DIVERGENT_FILES=\"$DIVERGENT_FILES\" DIVERGENT_COUNT=\"$DIVERGENT_COUNT\" \\\n  TS=\"$TS\" OUT=\"$OUT\" node -e '<emit JSON>'\nfi\n# DO NOT merge. DO NOT call sync-workspace. Phase 1 is read-only."
+    },
+    "phase_2_auto_sync": {
+      "scope": "Same fetch as Phase 1, plus: if would_ff=true, run 'git merge --ff-only origin/main' then 'node build.js sync-workspace'. If would_ff=false, write monitor/integrity/sync-workspace-non-ff-abort-<ts>.json (sentinel) and skip the merge+sync without erroring (FUSE→git push has already succeeded).",
+      "trigger_for_promotion": "Phase 1 has run 7 days clean (no non-FF aborts other than known operator-driven resets). Divergence-event file list matches expectations. Operator explicitly approves Phase 2 via HNOTE or directive.",
+      "rollback": "Remove the merge + sync-workspace lines from workspace-sync.md; Phase 1 detector remains. No persistent state changed (sync-workspace is idempotent — re-running it produces no different result).",
+      "implementation_pseudocode": "After Phase 1's divergence detection block, if DIVERGENT_COUNT > 0:\n\nif [ \"$WOULD_FF\" = \"true\" ]; then\n  git merge --ff-only origin/main 2>&1 | tail -3 || { echo skip; exit_ok; }\n  node build.js sync-workspace 2>&1 | tail -10\n  SYNC_EXIT=$?\n  # Emit run sentinel monitor/integrity/sync-workspace-runs-${TS}.json with copied_paths and exit_code\nelse\n  # Non-FF: origin rewritten. Emit non-ff abort sentinel and skip.\nfi"
+    },
+    "phase_3_deferred": {
+      "scope": "Optional belt-and-suspenders: pre-flight divergence check in each agent (option_c equivalent). Only consider if Phase 2 misses real-world drift cases. Not in scope of this PROP.",
+      "trigger_for_consideration": "Phase 2 observed drift event where workspace-sync was healthy but an agent still read stale FUSE state for a file it depends on."
+    }
+  },
+  "implementation_steps_phase_1": [
+    {
+      "step": 1,
+      "what": "Edit monitor/prompts/workspace-sync.md to add a new 'Step 4c: Phase 1 git→FUSE divergence detector (PROP-061, read-only)' block between the existing Step 4b (run report) and Step 5 (cleanup).",
+      "guard": "The block runs ONLY if the prior 'git push origin main' succeeded (check exit code). On push failure, skip the detector — we don't have a fresh clone state to compare from."
+    },
+    {
+      "step": 2,
+      "what": "Add a one-paragraph entry to workspace-sync.md's 'Rules' section: '- Phase 1 git→FUSE detector (PROP-061, read-only): After the FUSE→git push, this agent does git fetch origin main and writes a divergence report to monitor/integrity/git-to-fuse-divergence-<ts>.json if local HEAD differs from origin/main. NO FUSE writes in Phase 1. Phase 2 (auto-sync) ships after operator approval of 7 days of Phase 1 logs.'"
+    },
+    {
+      "step": 3,
+      "what": "Add monitor/integrity/git-to-fuse-divergence-*.json to the prune-integrity.js retention windows (suggest 14d retention, matching the verify-pending-run window)."
+    },
+    {
+      "step": 4,
+      "what": "No build.js changes in Phase 1. No CLAUDE.md changes in Phase 1 (the file ownership table still describes the correct ownership; the new sentinel files are append-only per-run reports under monitor/integrity/, already classified)."
+    }
+  ],
+  "implementation_steps_phase_2": [
+    {
+      "step": 1,
+      "what": "Extend the workspace-sync.md Step 4c block: after the divergence detector logs the report, if DIVERGENT_COUNT > 0 AND WOULD_FF=true, run 'git merge --ff-only origin/main' then 'node build.js sync-workspace'. Emit monitor/integrity/sync-workspace-runs-<ts>.json sentinel."
+    },
+    {
+      "step": 2,
+      "what": "Add non-FF abort path: if WOULD_FF=false, emit monitor/integrity/sync-workspace-non-ff-abort-<ts>.json sentinel and skip the merge+sync."
+    },
+    {
+      "step": 3,
+      "what": "Update the 'CRITICAL: Degraded-mode prohibitions' section to ALLOW 'node build.js sync-workspace' as an explicit exception to the 'Do NOT run node build.js publish/pdf/test.js' rule. The exception is narrow: sync-workspace ONLY, never publish, pdf, or other targets."
+    },
+    {
+      "step": 4,
+      "what": "Add monitor/integrity/sync-workspace-runs-*.json and monitor/integrity/sync-workspace-non-ff-abort-*.json to prune-integrity.js retention windows (suggest 14d for runs, 90d for non-FF aborts — the latter are rare and operator-significant)."
+    },
+    {
+      "step": 5,
+      "what": "Update CLAUDE.md's 'FUSE Staleness Warning' section to add: 'As of PROP-061 Phase 2 (date), workspace-sync runs a git→FUSE auto-sync after each FUSE→git push using node build.js sync-workspace. Operator-direct commits, GitHub Git Data API pushes, and scheduled-agent-clone pushes now propagate to FUSE within ≤1h. Force-pushed resets abort the sync via the non-FF gate; operator inspects monitor/integrity/sync-workspace-non-ff-abort-*.json sentinels.'"
+    },
+    {
+      "step": 6,
+      "what": "Update the Universal-pusher mode paragraph (which describes the FUSE→git direction) to cross-reference the new git→FUSE direction added by this PROP: 'workspace-sync is now bidirectional: universal-pusher (2026-04-26) for FUSE→git rescue + PROP-061 (this date) for git→FUSE propagation.'"
+    }
+  ],
+  "file_ownership_impact": {
+    "build_js_OWNERSHIP_changes": "None. The mechanism uses the existing OWNERSHIP table as-is; no new entries.",
+    "workspace_sync_md_NEVER_PUSH_changes": "None. The new sentinel files live under monitor/integrity/ which is append_only — they don't round-trip via workspace-sync (workspace-sync writes them in the clone and pushes them as part of its own commit).",
+    "new_classified_files": [
+      {
+        "path": "monitor/integrity/git-to-fuse-divergence-*.json",
+        "class": "append_only (covered by existing monitor/integrity/ classification)",
+        "purpose": "Phase 1 read-only divergence report."
+      },
+      {
+        "path": "monitor/integrity/sync-workspace-runs-*.json",
+        "class": "append_only (covered by existing classification)",
+        "purpose": "Phase 2 per-run sync sentinel."
+      },
+      {
+        "path": "monitor/integrity/sync-workspace-non-ff-abort-*.json",
+        "class": "append_only (covered by existing classification)",
+        "purpose": "Phase 2 fail-closed gate sentinel for force-pushed resets."
+      }
+    ]
+  },
+  "idempotency_contract": {
+    "phase_1": "Re-running the divergence detector with no new commits produces an empty divergent_files list — written either as a no-op (skip the file write if DIVERGENT_COUNT=0) or as a zero-count report (decide at implementation time; prefer skip for noise reduction). Either way, no FUSE state changes.",
+    "phase_2": "Re-running sync-workspace on an already-synced FUSE is structurally idempotent. build.js syncToWorkspace uses fs.copyFileSync which overwrites if dst exists; if dst content matches src, the operation is logically a no-op (the byte content doesn't change, only mtime). The append_only walker skips files that already exist in FUSE. Multiple runs in the same hour produce identical FUSE state.",
+    "atomicity": "fs.copyFileSync is atomic at the OS level (rename pattern). No partial-write FUSE state. The Phase 2 sentinel write is also atomic (Node fs.writeFileSync uses open+write+close)."
+  },
+  "edge_cases": [
+    {
+      "case": "FUSE has unstaged local changes when sync-workspace runs",
+      "behavior": "Step 1-3 of workspace-sync ran FIRST and pushed any FUSE-newer content to git via universal-pusher (with mtime guard and anti-reversion guard). Any FUSE state remaining at Phase 2's sync-workspace step is, by construction, stale relative to git. copyFileSync overwrites — correct behavior."
+    },
+    {
+      "case": "origin/main is force-pushed (e.g. 2026-05-21 disaster recovery)",
+      "behavior": "git merge-base --is-ancestor HEAD origin/main returns false. WOULD_FF=false. Phase 1: divergence report records the non-FF state; tinker sees it. Phase 2: non-FF abort path writes the sentinel and SKIPS the merge + sync-workspace; FUSE is preserved. Operator inspects the sentinel and decides whether to force-reset the local clone for the next cycle."
+    },
+    {
+      "case": "File added in git but not in FUSE (typical: new agent prompt or new build script)",
+      "behavior": "build.js syncToWorkspace's copyIfExists creates FUSE-side dirs as needed (fs.mkdirSync with recursive:true) and copies the file. FUSE gets the new file."
+    },
+    {
+      "case": "File deleted in git (extremely rare for OWNERSHIP entries)",
+      "behavior": "build.js syncToWorkspace does NOT delete FUSE files — its loop only copies src→dst if src exists. FUSE retains the deleted file. This is a minor known limitation; in practice OWNERSHIP entries are never deleted (only re-classified). If a file IS removed from OWNERSHIP, FUSE retains the orphan until manual cleanup. Acceptable tradeoff — orphans are inert."
+    },
+    {
+      "case": "Binary or huge file (e.g. future docs/assets/*.png)",
+      "behavior": "fs.copyFileSync handles arbitrary file sizes and binary content efficiently. No special handling needed."
+    },
+    {
+      "case": "build.js sync-workspace crashes (node missing, build.js corrupt, OWNERSHIP parse error)",
+      "behavior": "workspace-sync captures the non-zero exit code, logs to agent_notes 'fallback: sync-workspace exit code N', and continues. The FUSE→git push has already succeeded. Tinker's existing soft-complaints grep scans run reports for 'fallback' on the next tinker run and surfaces the issue."
+    },
+    {
+      "case": "Disk pressure prevents git fetch (no space for new objects)",
+      "behavior": "git fetch fails. Phase 1: skip the detector for this cycle, log to agent_notes. Phase 2: ditto, no sync-workspace this cycle. Next cycle retries. Same model as the existing PROP-051 A2 disk-pressure gate."
+    },
+    {
+      "case": "Concurrent push race: between our fetch and our merge --ff-only, another commit lands on origin/main",
+      "behavior": "git merge --ff-only fails with 'Not possible to fast-forward'. We log and skip sync-workspace this cycle. The leftover content gets picked up next cycle. No FUSE writes happen. (This race window is ~2 seconds; rare but possible.)"
+    },
+    {
+      "case": "Agent reads FUSE between Phase 2 merge and sync-workspace step",
+      "behavior": "FUSE is in pre-sync state; agent sees old content. Window is ~5 seconds. Same characteristic as the existing FUSE staleness — Phase 2 narrows but doesn't eliminate the window. Phase 3 (option_c per-agent pre-flight checks) would close this, but is out of scope."
+    },
+    {
+      "case": "PROP-061 itself ships to git and FUSE workspace-sync.md is stale (chicken-and-egg)",
+      "behavior": "Operator-side or decider-side commit applies PROP-061 to monitor/prompts/workspace-sync.md in git. FUSE workspace-sync.md remains stale until the NEXT workspace-sync run. That run uses the OLD prompt (no PROP-061 logic). The run after (assuming the operator manually cp'd the new workspace-sync.md to FUSE OR ran 'node build.js sync-workspace' once OR pushed via 'node build.js publish' which auto-syncs) uses the NEW prompt. So PROP-061 needs ONE manual catalyst event (one `node build.js sync-workspace` invocation, or one `cp` from clone to FUSE) to bootstrap. After that, it self-sustains."
+    }
+  ],
+  "verification_pattern": {
+    "phase_1": "After implementation, verify by: (1) operator-direct edit a prompt file: cd /tmp/edit-clone && git pull && echo 'test' >> monitor/prompts/tinker.md && git commit -am 'test' && git push. (2) Wait for next hourly workspace-sync run (or trigger manually). (3) Read monitor/integrity/ — expect a git-to-fuse-divergence-<ts>.json file listing monitor/prompts/tinker.md. (4) FUSE state: monitor/prompts/tinker.md MUST still be unchanged (Phase 1 is read-only). (5) Revert the test edit before Phase 2 ships.",
+    "phase_2": "Same as Phase 1, but step 4 changes: FUSE state monitor/prompts/tinker.md MUST now match git. Plus: monitor/integrity/sync-workspace-runs-<ts>.json sentinel exists with copied_paths listing tinker.md.",
+    "regression_canary": "Tinker's pre-flight directive-discovery (in tinker.md, the part that grep'd PENDING DIRECTIVE candidates) reads from FUSE. If Phase 2 is working, tinker should NEVER again phantom-pickup a directive that's marked completed in git. The phantom-pickup FND from previous tinker runs is the canary; it should disappear from tinker reports after Phase 2.",
+    "negative_canary": "monitor/integrity/sync-workspace-non-ff-abort-<ts>.json sentinels should only appear during operator-initiated force-pushes. Spurious non-FF aborts indicate a bug in the merge-base check or a concurrent-push race."
+  },
+  "blast_radius": {
+    "phase_1": "Single new bash block in monitor/prompts/workspace-sync.md. Single new file pattern under monitor/integrity/. No build.js changes. No CLAUDE.md changes beyond a one-paragraph note. Zero FUSE writes. Trivially reversible.",
+    "phase_2": "Same block extended with git merge + sync-workspace + sentinel writes. FUSE-side writes are governed by the existing build.js syncToWorkspace function (already-tested mechanism). Reversible by reverting the workspace-sync.md edit. No data migrations.",
+    "agents_affected": [
+      "workspace-sync (extended)",
+      "tinker (consumes new sentinel files for soft-complaints grep and phantom-pickup-elimination canary)",
+      "all FUSE-reading agents (benefit from synced FUSE state)"
+    ],
+    "operator_workflow_changes": "None for Phase 1. For Phase 2, operator-direct commits no longer need manual 'cp from clone to FUSE' or 'node build.js sync-workspace' invocation — the next hourly workspace-sync handles it. The operator's existing /tmp/edit-clone workflow is unchanged."
+  },
+  "operator_cost_estimate": {
+    "implementation_cost": {
+      "phase_1": "~30 min Opus to edit workspace-sync.md + ~15 min operator review of the prompt diff before deployment.",
+      "phase_2": "After 7 days of Phase 1 logs: ~20 min Opus to extend the block + ~15 min operator review + ~10 min operator approval based on Phase 1 data."
+    },
+    "current_cost_per_week": "~30 min/week per the directive's evidence section. Composition: tinker manual backfills (~5 min/week × 2-4 events), cowork sessions noticing divergence and re-cloning (~10 min/week), agents executing wasted runs on stale prompts (~10 min/week of unproductive Opus token spend). Plus the phantom-pickup-cost ~$2/Opus run × ~6 runs/day × 4-day gap-open phases ≈ ~$48 per recurrence, observed at least once in this 7-day window.",
+    "expected_savings_per_week_after_phase_2": "~25 min/week of human/Opus time + ~$10-50/week in wasted phantom-pickup Opus runs. Payback period for the ~75 min implementation cost: ~3 weeks.",
+    "ongoing_maintenance_cost": "Near-zero. The mechanism uses the existing build.js OWNERSHIP table as its source-of-truth, so adding/removing git-owned files automatically updates the sync set. Sentinel files are auto-pruned by prune-integrity.js. The only ongoing operator attention is: review the per-cycle sync-workspace-runs sentinel if it shows unexpected file lists (rare) and respond to non-FF abort sentinels (rare, operator-driven anyway)."
+  },
+  "rejection_criteria": [
+    "If operator decides discipline-only (option_b) is acceptable and is willing to enforce the dual-write rule via a structure-integrity gate that fails the build when a git-owned file diverges between FUSE and git. (Tinker recommends against this — see counter_considerations.)",
+    "If Phase 1 logs show <3 divergence events per week for 4 consecutive weeks, the implementation cost may not be worth the savings. In that case, the operator should manually cp + sync-workspace as a habit (return to option_b implicitly).",
+    "If the non-FF abort gate fires spuriously (>1 false positive per month), Phase 2 should be paused while the merge-base logic is re-examined."
+  ],
+  "non_goals": [
+    "Does not modify workspace-sync's existing FUSE→git push behavior (PROP-051 safety gates A1-A4 preserved).",
+    "Does not extend workspace-sync's deletion authority. Phase 2 only ADDS to FUSE via copyFileSync; never deletes FUSE files.",
+    "Does not change build.js publish behavior. The existing 'publish' path continues to invoke syncToWorkspace at the end of its cycle as it always has.",
+    "Does not change the existing CLAUDE.md File Ownership Rules. The new sentinel files fit under existing classifications.",
+    "Does not add per-agent pre-flight divergence checks (option_c). Reserved for Phase 3 if Phase 2 proves insufficient.",
+    "Does not modify the PROP-051 fail-closed safety gates (A1-A4)."
+  ],
+  "related_props": [
+    "PROP-010 (extracted sync-to-workspace logic — the mechanism this PROP invokes)",
+    "PROP-051 (workspace-sync safety gates A1-A4 — non-FF abort mirrors the A4 delete-gate pattern)",
+    "PROP-050 (Git Data API push fallback — one of the 'publish-bypassing' write paths that causes FUSE staleness)",
+    "PROP-045 (anti-reversion guard — same agent, smart_copy mtime+content-hash logic; conceptually related)",
+    "PROP-060 (tinker Mode 0 assigned-tinker scan — same defect class: writer field without consumer)",
+    "PROP-026 Phase 1 (decider BAU/burndown mode toggle — burndown lowers decider cadence which makes the FUSE-stale window longer; PROP-061 makes that less painful)"
+  ],
+  "directive_reference": "DIRECTIVE-20260526-001 (filed 2026-05-26T05:30Z low, bumped to HIGH 2026-05-26T20:30Z after observable staleness in multiple prompt files including tinker.md, decider.md, structure-integrity.md).",
+  "estimated_implementation_effort": "Phase 1: ~30 min Opus + ~15 min operator review = ~45 min total. Phase 2: ~30 min Opus + ~25 min operator review + 7-day observation gap between phases. Total wall-clock from PROP approval to Phase 2 deployed: ~7-10 days, with ≤2 hours of human time."
+}
