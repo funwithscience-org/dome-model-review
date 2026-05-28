@@ -1,0 +1,43 @@
+{
+  "id": "DIRECTIVE-20260528-001",
+  "filed_by": "operator-cowork-session",
+  "filed_at": "2026-05-28T05:30:00Z",
+  "status": "pending",
+  "priority": "low",
+  "title": "Author PROP-063 — closed-issues.json ID-collision class (29 duplicate IDs) and decider next-ID intake hardening",
+  "background": "Tinker's PROP-062 generalization scan (Step 3) surfaced 29 duplicate IDs in monitor/decisions/closed-issues.json. ISS-2120, ISS-2121, ISS-2122, and ISS-2123 each have 3 entries; 25 other IDs have 2 entries each. The cluster centers on the 2026-05-18 REPAIR cycle that recovered from the workspace-sync mass-delete disaster — IDs were probably reissued by decider's next-ID allocator without checking the rescued history, then merged after the rescue completed. ISS-2122 specifically is the canonical example tinker dug into: the 3 entries describe DIFFERENT bug-reports but share an ID, and entry 1's closure_reason describes entry 2's patch — a misrouted closure. Underlying entry-1 bug (live-state cleanup pipeline) may be unfixed. Manual investigation per-collision is high-cost; structural fix is preferred.",
+  "evidence": {
+    "tinker_step_3_generalization_findings": [
+      "1,589 status=fixed entries with no verification_pattern (silent-skip by verifier — known pre-PROP-059 legacy population, going-forward defect rate is rare per separate audit)",
+      "29 duplicate IDs in closed-issues.json: 4 IDs (ISS-2120/2121/2122/2123) have 3 entries each, 25 others have 2 entries each",
+      "Cluster centered on 2026-05-18 REPAIR cycle commit (disaster recovery)"
+    ],
+    "iss_2122_canonical_example": {
+      "entry_1": "live-state cleanup pipeline bug, closure_reason describes entry 2's patch (misrouted)",
+      "entry_2": "docs/llms.txt patch (the patch closure_reason was misrouted to entry 1)",
+      "entry_3": "third distinct bug-report sharing the same ID",
+      "operator_disposition_pending": "PROP-062 noted operator must investigate EXP-426 downstream history to choose: (a1) reopen entry 1, (a2) repoint entry 1's closure_reason, or (a3) mark closed-duplicate. Operator deferred to PROP-063 timeline rather than touching entry-by-entry."
+    },
+    "structural_root_cause_hypothesis": "Decider's next-ID allocator (see decider-intake.md Step 5 / next_id convention) probably reads only open-issues.json for the next-ID candidate, not closed-issues.json. When the 2026-05-18 mass-delete happened, the open-issues snapshot got rewound but closed-issues was repopulated post-rescue with the original IDs. Next decider run's intake allocator re-issued some of those IDs because it didn't see them in open-issues (which was rolled back) and didn't cross-check closed-issues."
+  },
+  "requested_work": [
+    "Step 1 — Per-collision class diagnosis: For each of the 29 IDs, enumerate the entries, identify whether they describe (a) the SAME underlying bug (legit retroactive duplicate, candidate for dedup), (b) DIFFERENT bugs sharing an ID (true collision, needs ID-rewrite), or (c) misrouted closures (closure_reason describes a different entry's patch). ISS-2122 is the entry-c example.",
+    "Step 2 — Structural fix design: Author the next-ID intake hardening. Should likely read both open-issues.json AND closed-issues.json AND the closure-ledger.jsonl when computing next_id. Consider an integrity-side audit that runs daily and flags any duplicate-ID condition (similar to the Mech-A-bypass audit pattern).",
+    "Step 3 — Retroactive dedup recommendation: For the 25 simple 2-entry duplicates, recommend dedup-or-rewrite per-ID. For the 4 3-entry IDs (especially ISS-2122), produce per-entry disposition options like PROP-062 did for the 4 verifier-stuck entries.",
+    "Step 4 — Operator-cost vs benefit analysis: Estimate operator time to apply per-collision dispositions vs the structural fix. If structural fix is cheap (~30 min prompt edit + integrity audit) and dedup is mechanical, recommend doing both in PROP-063."
+  ],
+  "non_goals": [
+    "Do NOT batch-execute any collision fixes — operator applies after reviewing your per-entry recommendations.",
+    "Do NOT modify closed-issues.json directly in this run — author the PROP only.",
+    "Do NOT extend the next-ID allocator to read from random other sources (curmudgeon reviews, expansion-tracker) — only the canonical issue files."
+  ],
+  "context_pointers": {
+    "related_directive": "DIRECTIVE-20260526-002 (verifier-stuck entries) — completed via PROP-062. PROP-063 is the natural follow-up tinker recommended in its 02:46Z 2026-05-28 summary.",
+    "related_prop": "PROP-062 (legacy pending-verification + HTML-tag-split rule) — implemented 2026-05-28 alongside this directive's filing.",
+    "decider_intake_next_id_location": "monitor/prompts/reference/decider-intake.md Step 5 (next_id convention)",
+    "iss_id_format": "Standard format is ISS-NNNN (4-digit). Non-standard IDs like ISS-WIN062C6-H2 also exist and should be classified separately if encountered."
+  },
+  "expected_output": "monitor/tinker/proposals/PROP-063-iss-id-collision-class.json with: per-collision class diagnosis (Step 1 table), structural fix design (Step 2 prompt/audit edits), retroactive dedup recommendations (Step 3 per-ID table), operator-cost analysis (Step 4).",
+  "estimated_effort": "Mode 4 PROP-authoring run with significant data analysis. ~40-50 min Opus.",
+  "priority_note": "Filed as LOW priority. The 29 duplicate IDs are not actively breaking anything — verifier audits, integrity audits, and routine pipeline operations all work despite the duplicates. The cost is (a) closed-issues queries returning multiple matches for the same ID (operator-confusing), (b) at least one verified misrouted closure (ISS-2122 entry 1) where an underlying bug may be unfixed. Worth a Mode 4 design pass but not urgent."
+}
