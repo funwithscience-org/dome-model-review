@@ -1,0 +1,132 @@
+{
+  "prop_id": "PROP-062",
+  "title": "Fingerprint construction gotchas (inline-HTML split, deletion-inverse, legacy-pending sweep) — close the residual verification_pattern defects PROP-059 didn't anticipate",
+  "status": "proposed",
+  "priority": "low",
+  "author": "tinker (DIRECTIVE-20260526-002 execution, run tinker-2026-05-28T02-46)",
+  "authored_at": "2026-05-28T02:46:00Z",
+  "directive_reference": "DIRECTIVE-20260526-002 — Investigate 4 pre-existing pending-verification problem entries and propose disposition (and possibly PROP-062 to fix the class).",
+  "source_finding": "Per-entry diagnosis of ISS-2033, ISS-2036, ISS-WIN062C6-H2, ISS-2122 — all 4 legacy (pre-PROP-059) pending-verification entries that the hourly verify-pending-state.js run has been re-reporting as still_pending or errors for ≥6 consecutive cycles. PROP-059 (2026-05-25) made verification_pattern mandatory but: (a) it didn't fully document the inline-HTML-tag-split gotcha, (b) it didn't include a one-shot retroactive sweep for legacy entries closed before its deployment, (c) it didn't address the orthogonal ISS-ID-collision class exposed by ISS-2122's three-distinct-bugs-sharing-one-ID.",
+  "summary": "Four entries surface the same root-class issue from two angles: the verify-pending-state.js (PROP-014 Mechanism 1a) verifier behaves correctly — it reports still_pending or error when the verification_pattern doesn't match the post-state — but the fingerprints written into those entries by the pre-PROP-059 decider were defective for three reasons not covered by PROP-059. (1) ISS-2033: the patch was a deletion (replace=''), and the pattern uses `grep -qF` for the deleted substring — i.e. asserts the substring should STILL be present. After successful deletion the pattern correctly fails, falsely indicating a missed patch when the patch actually landed. PROP-059's fingerprint_requirement does call out the inverse form for deletion-only patches but legacy entries closed before PROP-059 deployment got the un-inverted form. (2) ISS-2036: the patch ADDED text containing `<code>registry_integrity_notes</code> entries — one covering ...`. The fingerprint `registry_integrity_notes entries — one covering` doesn't account for the inline `</code>` tag interpolation — in the file the substring is `registry_integrity_notes</code> entries — one covering`, so `grep -qF` doesn't match. The patch landed correctly; the fingerprint just crosses an HTML tag boundary. PROP-059 doesn't flag this gotcha. (3) ISS-WIN062C6-H2: non-canonical ID (matches no ISS-NNNN pattern); verification_pattern is undefined. PROP-059's mandatory-pattern rule applies only to closes after its deployment; this entry predates it (closed 2026-05-19T01:22Z). The underlying patch ('at least three' → 'three' in WIN-058 detail) IS landed in origin/main:data/wins.json — verified by grep — so the closure was real even though the bookkeeping form is non-standard. (4) ISS-2122: three SEPARATE bug-reports share the same `id` field — entry 0 (WIN-063 c4 H3, longitudinal-symmetry), entry 1 (live-state cleanup pipeline bug, currently fixed-pending-verification with no pattern AND closure_reason describing the llms.txt patch which belongs to entry 2), entry 2 (docs/llms.txt WIN count stale). This is an ID-collision in the decider's next-ID generator, not a verification-pattern defect — and the misrouted closure_reason on entry 1 means the genuine 'live-state cleanup pipeline bug' may have been falsely closed. Same root cause shape was previously observed for ISS-2120 (3 entries), ISS-2121 (3 entries), ISS-2123 (3 entries) — all centered on the 2026-05-18 REPAIR cycle. Step-3 class-generalization scan found 1,589 status='fixed' closed-issues entries with NO verification_pattern (silent-skip by verifier); only 1 of those 1,589 was closed after PROP-059 deployment (2026-05-25T05:20Z), confirming PROP-059 is working for new closures and the residue is dominated by legacy pre-PROP-059 entries.",
+  "problem": {
+    "failure_pattern_a_deletion_inverse_un_inverted_legacy": {
+      "exemplar": "ISS-2033",
+      "verification_pattern_at_close": "git show origin/main:data/sections.json | grep -qF \"live.html footer\"",
+      "patch_shape": "DELETE — find='<tr><td><strong>live.html footer: \"67 confirmed\"</strong></td>...</tr>', replace=''",
+      "actual_origin_state_now": "grep -qF \"live.html footer\" against current data/sections.json returns 1 (substring absent — patch landed correctly)",
+      "verifier_decision": "still_pending, reason=verification_pattern_failed (correct verifier behavior — pattern asserts presence; post-patch absence makes pattern fail)",
+      "root_cause": "Pre-PROP-059 decider self-apply path wrote the deletion fingerprint using the same presence-grep form as additive patches, instead of the inverse `! grep -qF`."
+    },
+    "failure_pattern_b_inline_html_tag_split_fingerprint": {
+      "exemplar": "ISS-2036",
+      "verification_pattern_at_close": "git show origin/main:data/sections.json | grep -qF \"registry_integrity_notes entries — one covering\"",
+      "patch_shape": "ADD — replace text includes `publishes two <code>registry_integrity_notes</code> entries — one covering the two WIN-058 claim keys ...`",
+      "actual_origin_state_now": "Substring `registry_integrity_notes</code> entries — one covering` IS present; substring `registry_integrity_notes entries — one covering` (no `</code>`) is NOT present.",
+      "verifier_decision": "still_pending, reason=verification_pattern_failed",
+      "root_cause": "Fingerprint extraction took the 'inline visible text' view of the replace block instead of the JSON-encoded HTML view. Inline-tag interpolation breaks `grep -qF` literal matching. Not documented in PROP-059's fingerprint_requirement."
+    },
+    "failure_pattern_c_missing_pattern_legacy": {
+      "exemplars": ["ISS-WIN062C6-H2", "ISS-2122 entry 1"],
+      "verification_pattern_at_close": "undefined",
+      "patch_shape": "Various — for ISS-WIN062C6-H2 the patch DID land (WIN-058 text matches expected post-state); for ISS-2122 entry 1 the closure_reason is misrouted from entry 2 so the underlying 'live-state cleanup pipeline' bug is in an unverifiable state.",
+      "verifier_decision": "error, reason=verification_pattern_missing_or_malformed",
+      "root_cause": "Pre-PROP-059 close paths permitted status=fixed-pending-verification without a verification_pattern. PROP-059 forbids this going forward but leaves legacy entries in a permanent-error loop."
+    },
+    "failure_pattern_d_iss_id_collision_separate_class": {
+      "exemplar": "ISS-2122",
+      "observation": "3 separate bug reports with disjoint titles, locations, and creation timestamps share `id: ISS-2122`. Same pattern visible on ISS-2120 (3 entries), ISS-2121 (3 entries), ISS-2123 (3 entries), and 25 other 2-duplicate IDs (29 total duplicate-ID entries in closed-issues.json).",
+      "consequence": "Closure-reason routing is ambiguous — the decider applies a closure to the first entry matching `id===X` rather than the one whose description matches the closure_reason. ISS-2122 entry 1's closure_reason ('Patched docs/llms.txt: 71 WIN entries -> 72 WIN entries') belongs to entry 2's bug (docs/llms.txt count stale). The genuine 'live-state cleanup pipeline' bug is misrouted/falsely-closed.",
+      "out_of_scope_for_this_prop": "ID-collision is a separate defect class in the decider's next-ID intake (probably driven by partial-run state on 2026-05-18 REPAIR cycle when multiple decider runs touched closed-issues.json near-simultaneously). Recommend separate PROP-063 if operator wants a systemic fix; this PROP only flags the issue and recommends per-entry disposition."
+    },
+    "class_generalization_finding": {
+      "total_closed_issues_entries": 2112,
+      "status_fixed_total": 1765,
+      "status_fixed_with_verification_pattern": 176,
+      "status_fixed_no_pattern_silent_skip": 1589,
+      "of_silent_skip_population_closed_after_2026_05_25T05_20Z": 1,
+      "interpretation": "PROP-059's mandatory-pattern rule is working — only 1 self-apply close in the past ~3 days slipped through without a pattern. The 1,589 silent-skip population is overwhelmingly pre-PROP-059 historical residue. The 4 still-pending entries from this directive are the ONLY ones that ALSO carry the `fixed-pending-verification` suffix (i.e. trapped in the verifier's checked-but-erroring queue); the 1,589 with status=fixed are not in that queue and don't generate hourly noise."
+    }
+  },
+  "proposal": {
+    "change_1_per_entry_disposition_recommendations_for_the_4_legacy_entries": {
+      "purpose": "Operator-applied (not batch-executed) per directive's non_goals. These are the recommendations the directive asked for.",
+      "iss_2033": {
+        "classification": "D-deletion-inverse (pattern not inverted)",
+        "patch_landed": true,
+        "recommendation": "(b) per directive — update verification_pattern with the inverted form. Replace `git show origin/main:data/sections.json | grep -qF \"live.html footer\"` with `! git show origin/main:data/sections.json | grep -qF \"live.html footer\"`. Document closure_reason addendum: 'verification_pattern inverted post-hoc; deletion patch verified absent.' Next verifier run will flip status → fixed.",
+        "alternative": "Pick a different fingerprint from surrounding-context preserved by the patch (e.g. the row immediately above the deleted one). Less recommended — adds noise; the inverse form is the canonical fix."
+      },
+      "iss_2036": {
+        "classification": "D-html-tag-split (fingerprint crosses inline `</code>` boundary)",
+        "patch_landed": true,
+        "recommendation": "(c) per directive — repoint pattern to a substring that doesn't cross HTML tag boundaries. Suggested: `git show origin/main:data/sections.json | grep -qF \"one covering the two WIN-058 claim keys\"` or `git show origin/main:data/sections.json | grep -qF \"two separate claim keys both map to WIN-058\"`. Both are verified present in origin/main and entirely inside the patch's added text. Update closure_reason addendum: 'verification_pattern repointed post-hoc; original fingerprint crossed inline `</code>` tag.'"
+      },
+      "iss_win062c6_h2": {
+        "classification": "O-non-standard-id with M-missing-pattern",
+        "patch_landed": true,
+        "verification_evidence": "git show origin/main:data/wins.json | grep -c 'at least three instances in commit 6e06efb' returns 0; the post-state matches `three instances in commit 6e06efb` consistently across WIN-058/058b/062.",
+        "recommendation": "(d) per directive (lighter option) OR (e) per directive. Two valid paths: (d) strip the verification_pattern requirement, write an additive `audit-pattern-removed` closure_reason note, flip status → fixed; OR (e) close as `wontfix-OBE-non-standard-id` documenting that the ID format is non-canonical and the patch is independently verifiable via the data/wins.json grep above. (d) is preferred because the underlying work IS done — the entry is real, only its bookkeeping form is non-standard. (e) is acceptable if operator wants to preserve the audit trail of 'this ID convention was a one-off'."
+      },
+      "iss_2122": {
+        "classification": "D-id-collision + D-misrouted-closure (orthogonal to verification_pattern defects)",
+        "patch_status_per_entry": {
+          "entry_0_win063_longitudinal_symmetry": "Status fixed, closed 2026-05-18T13:20Z, closure_reason matches description — legitimate close, no action needed.",
+          "entry_1_live_state_cleanup_pipeline_bug": "Status fixed-pending-verification, closure_reason says 'Patched docs/llms.txt: 71→72' which describes entry 2's bug, not entry 1's. The underlying 'live-state cleanup pipeline' bug (assigned_to: tinker, EXP-426) was NOT actually closed by this closure — the closure was misrouted.",
+          "entry_2_docs_llms_txt_count_stale": "Status fixed, closed 2026-05-19T05:20Z — legitimate close (docs/llms.txt was updated 71→72 in origin/main)."
+        },
+        "recommendation": "(a)-flavored per directive — reopen entry 1 OR retract entry 1's misrouted closure_reason. Operator decides: (a1) Strip entry 1's closure_reason + status, restore to `status: assigned-tinker` (its original assigned_to) so the live-state cleanup pipeline bug returns to the tinker queue; (a2) Investigate whether EXP-426's diagnosed bug ACTUALLY got fixed via a different ISS (perhaps merged into PROP-022 / PROP-026 work) — if so, close entry 1 with a non-misrouted closure_reason citing the actual fix commit; (a3) Mark entry 1 as `closed-duplicate` of a downstream PROP that handled the underlying pipeline-integrity bug. Recommend (a2) — operator should grep EXP-426 against closed-issues to find a legitimate downstream close.",
+        "additional_note": "ISS-2120, ISS-2121, ISS-2123 should be inspected in the same operator pass — they all carry 3-duplicate entries and may also have misrouted closure_reasons."
+      }
+    },
+    "change_2_documentation_addition_to_decider_self_apply_md": {
+      "location": "monitor/prompts/reference/decider-patches-and-selfapply.md (the file PROP-059 edited)",
+      "purpose": "Document the inline-HTML-tag-split gotcha as an explicit rule so future decider runs don't reintroduce the ISS-2036 defect.",
+      "proposed_change": "Add a bullet under PROP-059's fingerprint_requirement subsection: 'When the replace text contains inline HTML markup (`<code>`, `<strong>`, `<em>`, `<a href=...>`, etc.), choose a fingerprint substring that lies ENTIRELY between two tag boundaries — do not span across a tag. The verifier`s `grep -qF` matches the raw JSON-encoded HTML, where tag markup is literal characters embedded in the substring. A fingerprint of \"foo bar\" that visually appears across `<code>foo</code> bar` will fail because the literal file contains `<code>foo</code> bar`, not `foo bar`. Pick fingerprints that are either (a) entirely inside one HTML element`s text content, or (b) entirely outside any HTML element, or (c) include the tag markup verbatim in the fingerprint string.'",
+      "estimated_change_size": "~150 words / 5 lines added under the existing fingerprint_requirement subsection."
+    },
+    "change_3_optional_one_shot_legacy_sweep_script": {
+      "location": "monitor/scripts/sweep-legacy-pending-verification.js (new, one-shot)",
+      "purpose": "Find any OTHER pre-PROP-059 entries still in `fixed-pending-verification` status (currently 4 — the 4 directive entries). Produces a per-entry report with same per-entry recommendations as change_1. Operator applies each individually.",
+      "scope_caveat": "Do NOT extend to the 1,589 status='fixed' silent-skip population — those are not in the verifier's queue and don't generate hourly noise. Going retroactively after them would multiply false-positive risk without proportional benefit.",
+      "estimated_effort": "~30 lines of node; operator can write it on-demand without a PROP if the only known cases are the 4 directive entries."
+    },
+    "non_goal": "Do NOT modify verify-pending-state.js. Its current behavior — continuing to report instead of auto-fixing — is the correct fail-safe default per directive's non_goals."
+  },
+  "alternatives_considered": [
+    {
+      "alt": "Auto-flip all 4 entries to fixed without operator review",
+      "rejected_because": "Directive explicitly forbids batch-execution. Each entry has distinct classification and disposition; the audit trail value comes from per-entry operator review."
+    },
+    {
+      "alt": "Extend verify-pending-state.js to detect deletion-inverse and HTML-tag-split fingerprints and auto-repair",
+      "rejected_because": "Directive's non_goals: 'Do NOT modify the verify-pending-state.js script — its current behavior (continuing to report instead of auto-fixing) is the correct fail-safe default.' Auto-repair would also mask future hallucinated closures."
+    },
+    {
+      "alt": "Skip change_2 entirely — the HTML-tag-split case may be a one-off",
+      "rejected_because": "The ISS-2036 patch was generated by a routine decider self-apply on a data/sections.json HTML-bearing block. Same shape will recur. Documenting the rule once in decider-patches-and-selfapply.md is cheap insurance."
+    },
+    {
+      "alt": "Include ID-collision (failure_pattern_d) fix in this PROP",
+      "rejected_because": "ID-collision is a separate defect class in the decider's next-ID intake. Including it would expand scope materially. Flag it here, defer to PROP-063 if operator wants a systemic fix."
+    }
+  ],
+  "implementation_steps": [
+    "Step 1: Operator reviews change_1 per-entry recommendations (4 entries). For each, decide which disposition path (b/c/d/e/a) to apply, then edit the entry in monitor/decisions/closed-issues.json. Do not batch-apply.",
+    "Step 2: Optionally apply change_2 (add HTML-tag-split bullet to decider-patches-and-selfapply.md). This is a ~5-line prompt edit. After applying, next decider run inherits the rule automatically.",
+    "Step 3 (deferred): If operator wants the legacy sweep script (change_3), write it; otherwise skip — the 4 known entries are the only known cases.",
+    "Step 4 (out of scope): Separately, operator may want to file PROP-063 for the ISS-ID-collision class (ISS-2120/2121/2122/2123 and 25 other 2-duplicate IDs)."
+  ],
+  "verification_pattern": "node -e \"const fs=require('fs'); const ci=JSON.parse(fs.readFileSync('monitor/decisions/closed-issues.json','utf8')); const arr=ci.issues||ci; const targets=['ISS-2033','ISS-2036','ISS-WIN062C6-H2','ISS-2122']; const pendingCount=arr.filter(e=>targets.includes(e.id) && e.status==='fixed-pending-verification').length; process.exit(pendingCount===0 ? 0 : 1);\"",
+  "verification_target_file": "monitor/decisions/closed-issues.json",
+  "estimated_implementation_effort": "Per-entry review: ~5-10 min per entry × 4 = ~30 min operator time. change_2 prompt edit: ~5 min. Total: ~35 min if operator does all changes in one pass.",
+  "counter_considerations": {
+    "what_if_the_operator_disagrees_with_the_diagnosis_on_an_entry": "Each diagnosis is evidence-cited (git show, grep counts, history walk). Operator can rerun the diagnostic commands and confirm. If operator concludes a different disposition fits better than the recommendation, fine — the PROP frames a menu, not a directive.",
+    "what_if_more_legacy_pending_verification_entries_surface_later": "change_3's optional sweep script can be regenerated at any time. The verify-pending-state.js will continue to report new pendings on its hourly cycle.",
+    "interaction_with_prop_059": "PROP-059 is the going-forward rule. PROP-062 is the legacy-cleanup. They don't conflict. After PROP-062's change_2 lands, PROP-059's documentation gains an HTML-tag-split sub-bullet; PROP-059's own implementation status remains 'implemented'."
+  },
+  "related_props": [
+    "PROP-059 (mandatory fixed-pending-verification on self-apply closures — this PROP cleans up the legacy entries it didn't sweep)",
+    "PROP-014 (Mech 1a verification_pattern vocabulary — this PROP exposes the gaps in pre-PROP-014 fingerprint construction)",
+    "PROP-022 (closed-issues archive — orthogonal; the 4 entries don't get archived until they flip to terminal)"
+  ]
+}
