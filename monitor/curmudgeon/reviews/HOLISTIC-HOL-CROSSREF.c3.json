@@ -1,0 +1,143 @@
+{
+  "point_id": "HOL-CROSSREF",
+  "topic": "Cross-reference integrity — do all section cross-references still say what they claim?",
+  "trigger": "holistic",
+  "reviewed_at": "2026-05-29T11:15:27.614Z",
+  "cycle": 3,
+  "scope": "Whole-document cross-reference audit on the built docs/index.html. Verified all href=\"#anchor\" targets resolve to live anchors, semantic match between link-text Section-number and target heading, partN-anchor showTab() consistency with V6 tab map, and incidence of imprecise part-level fallback hrefs where a specific subsection anchor exists.",
+  "confidence": 0.95,
+  "methodology": "Built two reference sets from docs/index.html: 336 distinct id+name anchors and 874 #-prefixed hrefs. Cross-checked: (1) every href resolves to a live anchor (0 dangling); (2) anchor→tab assignments per the V6 tab map (part1/1b→model, part2/2b→selftest, part3→wins, part4→pages, part5→killshots, part6→predictions, part7→falsify, part8/8b/9→ai, part10→refs); (3) semantic match of Section-N.M link text against the nearest following heading at the target anchor; (4) incidence of href=#partN with link-text claiming a specific subsection when more-specific p<N>-<M><K> or section-<N>-<M> anchors exist. Reproduction commands recorded inline so the decider can re-run.",
+  "holes_found": [
+    {
+      "severity": "major",
+      "description": "Tab-switch mismatch in the OTS/Timestamp cross-reference in part1 (model tab): `<a href=\"#part6\" onclick=\"showTab('timestamp');return false\">Timestamp Error analysis</a>`. The onclick correctly switches to the 'timestamp' tab but the href anchor `#part6` lives in the 'predictions' tab DOM, not the 'timestamp' tab. Result: reader lands on the timestamp tab and the browser tries to scroll to #part6 which is not visible in that tab — the page either doesn't scroll or scrolls to a hidden block. The intended target is the Timestamp Error tab content, which has an anchor `#timestamp-error` (resolves; exists in the built HTML). The defect is hidden when the user is already on the predictions tab (then #part6 scroll works fine and the showTab call is a no-op). Found at character offset 79891 of docs/index.html. Context: '...documented in our [LINK]Timestamp Error analysis[/LINK]'.",
+      "recommendation": "In data/sections.json:part1.html, change `href=\"#part6\"` to `href=\"#timestamp-error\"` for the link with text 'Timestamp Error analysis'. The showTab('timestamp') argument is correct and should be kept."
+    },
+    {
+      "severity": "major",
+      "description": "Tab-switch mismatch in part1's overview wrap-up (model tab): `<a href=\"#part2b\" onclick=\"showTab('pages');return false;\">Part 2b</a>`. The onclick switches to the 'pages' tab (which is Part 4: Live Power Dashboard per the V6 tab map), but #part2b lives in the 'selftest' tab. Result: reader clicks 'Part 2b' expecting the Code Analysis section and is dropped on the Live Power Dashboard tab with no Part 2b content visible. The full sentence is: 'Part 2 catalogs the full set of self-contradictions. [LINK]Part 2b[/LINK] shows that the gravity predictions themselves are hardcoded or post-hoc, never derived from dome geometry.' The two surrounding links (#part2→showTab('selftest') and #part7→showTab('falsify')) are correct. The middle link's onclick was mis-set. Found at character offset 146400 of docs/index.html.",
+      "recommendation": "In data/sections.json:part1.html, change `showTab('pages')` to `showTab('selftest')` in the link with text 'Part 2b' (href=\"#part2b\"). This is a one-character fix in the JSON source."
+    },
+    {
+      "severity": "major",
+      "description": "Tab-switch mismatch in part4 (pages tab) self-reference: `<a href=\"#part6\" onclick=\"showTab('overview');return false\">Part 6</a>`. The onclick switches to the 'overview' tab — but per the V6 tab map there is no 'overview' tab in the defined-container list (the model tab is the introduction; 'overview' is referenced once in showTab calls but the defined tabs are ai, evaluate, falsify, killshots, model, overview, pages, predictions, refs, selftest, timestamp, wins). Even granting that 'overview' is a real tab, the anchor #part6 lives in the 'predictions' tab not 'overview'. Sentence: 'See [LINK]Part 6[/LINK] for the broader pattern of observer-centered geometry that any fixed-boundary mechanism inherently fails.' This is inside a WIN-class argument about ring-vs-wall epicenter geometry; the cross-reference is load-bearing. Found at character offset 715924 of docs/index.html.",
+      "recommendation": "In data/sections.json:part4.html, change `showTab('overview')` to `showTab('predictions')` in the link with text 'Part 6' (href=\"#part6\"). One-token fix."
+    },
+    {
+      "severity": "major",
+      "description": "Stale section number in the part2b → Registry Framing Audit link: `<a href=\"#registry-framing-audit\" onclick=\"showTab('pages');return false\">Section 4.2 — Registry Framing Audit</a>`. The href and tab are correct — #registry-framing-audit lives in part4 (pages tab) at heading `<h2>4.6 Registry Framing Audit — API Concessions vs Visible Headline</h2>`. But the link TEXT says 'Section 4.2'. Section 4.2 is a completely different section: '4.2 The August 2026 Eclipse: A Sophisticated But Non-Discriminating Prediction' with seven subsections (4.2.1 through 4.2.7a) — a major, frequently-referenced part of the review. A reader who knows our document will see 'Section 4.2 — Registry Framing Audit' as either (a) confusing (4.2 is the eclipse) or (b) evidence of editing sloppiness. Worse: a careful reader following the citation as '4.2' may file the Registry Framing Audit insight under the eclipse section in their mental map. Found at character offset 1124441 of docs/index.html. (This is the only semantic-mismatch hit out of all 874 hrefs.)",
+      "recommendation": "In data/sections.json:part2b.html, change the link text from 'Section 4.2 — Registry Framing Audit' to 'Section 4.6 — Registry Framing Audit' (matches the heading at #registry-framing-audit). Take the moment to grep for any other 4.2-vs-4.6 confusion seeded by the V6 restructure."
+    },
+    {
+      "severity": "moderate",
+      "description": "Carry-over from c2 hole #3 (moderate): imprecise part-level hrefs where a specific subsection anchor exists. Current incidence (after decider review of c2): `Section 1.8 → #part1` 3x (specific anchor `#section-1-8` exists and would be a strictly-better target); `Full source-code analysis (Section 6.6) → #part6` 1x (specific `#p6-66-5` exists); `Section 6.2 → #part6` 1x (specific `#p6-62-1` exists). These do not break navigation — the reader lands at the top of the correct part and can scroll — but they reduce the precision of important cross-references (the Section 1.8 'coordinate collapse' cascade and the 6.6 accuracy-claim analysis are both frequently cited and high-traffic). The c2 review marked these moderate-but-optional; the decider chose not to patch, which is a defensible call but means the residue persists. The unfixable subset (Section 2.1 7x, Section 2.2 4x, Sections 2.3/2.8 1x → all → #part2) cannot improve — Part 2 has no subsection anchors in current sections.json, so #part2 is the best available target.",
+      "recommendation": "Optional precision improvement: patch the 5 fixable cases (3x Section 1.8 → #section-1-8, 1x 'Full source-code analysis (Section 6.6)' → #p6-66-5, 1x Section 6.2 → #p6-62-1). The other 12 part-level instances (target Part 2) have no better target and should be left alone. If the decider declines again, this finding can be downgraded to wontfix-with-rationale rather than reopened next cycle — but document the rationale explicitly so it stops resurfacing."
+    },
+    {
+      "severity": "minor",
+      "description": "Three bare-prose mentions of 'Part 4.6' in part8b sections (8b.6 worked-example paragraph and 8b.7 closing-commitment recap) referring to the Registry Framing Audit. The references are not hyperlinked and are technically correct as 'Part 4 §4.6' shorthand — Section 4.6 IS the Registry Framing Audit. But the V6 restructure (2026-04-07) explicitly mapped old 'Part 4.6' to the Code Analysis section (now Part 2b). A reader carrying forward pre-restructure understanding, or any AI that ingests the V6 restructure map, will read 'Part 4.6' as the Code Analysis section, not the Registry Framing Audit. The prose disambiguates in context ('Registry Framing Audit (Part 4.6)') so the reader recovers — but the inconsistent terminology adds friction. The same paragraph uses 'Section 8.17' and 'Section 4.1' as cross-references — using 'Section 4.6' here would be internally consistent and remove the dual-meaning collision. Found at offsets 1610223, 1610344, 1612519 of docs/index.html.",
+      "recommendation": "In data/sections.json:part8b.html, replace the three 'Part 4.6' tokens with 'Section 4.6' to match the surrounding 'Section X.Y' convention and avoid the dual meaning. Pure terminology fix; no link or routing changes."
+    },
+    {
+      "severity": "minor",
+      "description": "Numbering gap in Part 4 (not strictly a cross-reference issue, but downstream of one). Part 4's visible subsections run 4.1, 4.2, 4.3, 4.4, [gap], 4.6 — Section 4.5 (Dielectric Infographic) was commented out (`<!-- Section 4.5 ... REMOVED FROM PUBLISHED VERSION -->`) but Section 4.6 (Registry Framing Audit) kept its number. A reader will notice 4.5 missing and may wonder whether the page is broken. The HTML comment is invisible to readers so the only visible cue is the numbering gap. Two reasonable fixes: (a) renumber the Registry Framing Audit to 4.5 (most readers will neither notice nor care); (b) put a brief in-flow note explaining the gap. Option (a) is simpler and aligns with the rest of the document's contiguous numbering, but cascades into the four other findings above — every 'Section 4.6' or 'Part 4.6' reference would need to be updated to 4.5 in the same patch.",
+      "recommendation": "Operator/decider call. If you fix hole #4 (Section 4.2 → 4.6 link-text correction) you may want to renumber Registry Framing Audit to 4.5 in the same touch — fewer references to update, restores contiguous numbering, and removes the dual-meaning hazard in hole #6. If you keep the 4.6 number, document the gap with a one-line comment so the next reviewer doesn't re-discover it."
+    }
+  ],
+  "sections_checked": [
+    "part1",
+    "part1b",
+    "part2",
+    "part2b",
+    "part3",
+    "part4",
+    "part5",
+    "part6",
+    "part7",
+    "part8",
+    "part8b",
+    "part9",
+    "part10"
+  ],
+  "cross_references_verified": 874,
+  "cross_references_broken_href": 0,
+  "cross_references_semantic_mismatch": 1,
+  "cross_references_imprecise_part_level": 17,
+  "cross_references_tab_anchor_mismatch": 3,
+  "v6_stale_old_numbers_found": 3,
+  "audit_baselines": {
+    "total_anchors_in_built_html": 336,
+    "total_hrefs_in_built_html": 874,
+    "broken_dangling_hrefs": 0,
+    "sections_json_only_anchors_dangling": 55,
+    "sections_json_only_dangling_anchors_resolve_via_built_html": true,
+    "note": "55 hrefs whose targets aren't in sections.json (e.g. #win012, #timestamp-error, #def-standard-model) all resolve in the built docs/index.html because build.js generates those anchors from wins.json, predictions.json, and the timestamp-error tab content. Sections.json-only audits will report false-positive broken hrefs and should always cross-check against the built HTML."
+  },
+  "v6_restructure_residue": {
+    "description": "Stale V6 numbering and tab assignments — items detected and characterized:",
+    "items": [
+      "3x 'Part 4.6' prose in part8b (minor; see hole #6) — V6 changed Part 4.6 → Part 2b semantically, but the prose uses 'Part 4.6' as section-shorthand for the current Section 4.6 (Registry Framing Audit). Dual meaning hazard, not a broken reference.",
+      "1x 'Section 4.5' in changelog prose (offset 1635098, V3 changelog entry: 'replaced Section 4.5 with magnetic dipole falsification') — historical, intentional, no fix needed.",
+      "0x stale anchor IDs (no broken href to #part4b, #part4c, #part3b).",
+      "3x tab-anchor mismatches that survived V6 (holes #1, #2, #3) — these are the most actionable V6 residue."
+    ]
+  },
+  "c2_carry_over_status": {
+    "c2_hole_1_critical_part1b_link": "FIXED — verified #section-1-8 substitution landed and label 'The Coordinate Collapse' is correct.",
+    "c2_hole_2_major_Section_1b_text": "FIXED — 0 instances of link-text 'Section 1b' remain in any part.",
+    "c2_hole_3_moderate_imprecise_part_level": "PARTIALLY FIXED — count dropped from 21 → 17. The 5 fixable instances (Section 1.8 ×3, Section 6.2 ×1, Section 6.6 ×1) persist; the 12 unfixable instances (Section 2.x → #part2, no specific anchors exist) are expected residue. Re-raised as hole #5 in this cycle with explicit fixable/unfixable split so the decider can declare wontfix on the unfixable portion."
+  },
+  "recommended_action": "minor_edit",
+  "advocate_mode": {
+    "best_defense": "A dome defender reading the review for sloppy editing finds the four major findings and points: 'They claim to have caught the dome model in numerical sloppiness — but their own published review can't keep section numbers straight (4.2 vs 4.6), can't keep tab navigation working (three clicks land you on the wrong tab), and uses inconsistent terminology between Part-X and Section-X.Y. If THIS is the standard of care they bring to their own document, what credence should we give their granular CWE / dome-monitor.py audits?' This is a credibility-by-association attack, not a substantive rebuttal — none of the four findings touches the scientific argument — but it's an effective opening blow in any debate where the dome defender wants to dismiss the whole review without engaging the physics.",
+    "defense_survives": 3,
+    "preemptive_recommendation": "Fix the four major findings (small JSON edits, each one-line). The credibility cost of leaving them in place is asymmetric — broken navigation is what casual readers notice first, and a dome defender or AI summarizer can quote any of the four as 'their review can't even keep its own house in order' for negligible argumentative work. Each fix is 1-2 minutes; the credibility shield is worth far more than the cost."
+  },
+  "cross_win_consistency": {
+    "related_wins": [],
+    "compatible": true,
+    "inconsistencies_found": "N/A for HOL-CROSSREF — this is a structural/navigation review, not a per-WIN argument check. The four MAJOR findings do not touch any individual WIN's scientific claim; they are purely UI/citation defects in the surrounding navigation prose."
+  },
+  "quantitative_verification": {
+    "claims_checked": [
+      "874 hrefs total",
+      "336 anchors total",
+      "0 broken hrefs in built HTML",
+      "55 sections.json-only dangling but all resolve in built HTML",
+      "3 tab-anchor mismatches",
+      "1 semantic Section-N.M mismatch",
+      "17 imprecise part-level hrefs (5 fixable, 12 unfixable)"
+    ],
+    "computations": "Built id+name anchor set from docs/index.html via regex; built #-href list from same source; set difference for dangling check; per-href onclick=showTab() regex extraction matched against V6 tab map; nearest-following-h2 lookup at each href target for semantic match check. All counts cross-checked against sections.json-derived counts. Reproduction commands in this review's methodology field.",
+    "all_verified": true,
+    "discrepancies": null
+  },
+  "deeper_analysis": "The signal-to-noise on this review is good: 874 hrefs, 4 majors + 2 minors of structural significance, plus the moderate c2 carry-over. The fact that 100% of hrefs resolve in the built HTML (zero dangling) shows the build pipeline and the OWNERSHIP discipline are working — anchors generated from wins.json, predictions.json, and the timestamp tab content are flowing through to the final document. The four tab-anchor mismatches are the most interesting class of failure because they are invisible to mechanical 'href resolves' checks and only surface when you cross-reference onclick targets against the V6 tab map. They are also the most user-visible failures (a casual reader CLICKS and ends up on the wrong tab). I recommend the decider patch holes 1-4 in a single commit (all are <5-character JSON source edits) and either fix hole 5's 5 fixable instances or formally wontfix them with rationale. Hole 6 (Part 4.6 prose) can wait; hole 7 (4.5 numbering gap) is operator judgment. A follow-up holistic check at next HOL-CROSSREF rotation should confirm tab/anchor consistency stays clean as new EXPs are integrated — the V6 restructure is the only systemic cause we have evidence of, but new content can introduce new tab-anchor pairs that need vetting.",
+  "citation_check": {
+    "citations_verified": [
+      "docs/index.html:79891 — Issue 1 quoted verbatim with surrounding sentence",
+      "docs/index.html:146400 — Issue 2 quoted verbatim with surrounding paragraph",
+      "docs/index.html:715924 — Issue 3 quoted verbatim with surrounding sentence",
+      "docs/index.html:1124441 — Issue 4 quoted verbatim with surrounding sentence",
+      "data/sections.json:part4.html — Registry Framing Audit heading text '4.6 Registry Framing Audit — API Concessions vs Visible Headline'",
+      "data/sections.json:part4.html — Section 4.5 commented-out block confirmed via HTML-comment boundary detection",
+      "monitor/v6-restructure-map.json — tab_ids and section_numbers consulted for V6 mappings"
+    ],
+    "citations_failed": [],
+    "citations_unchecked": []
+  },
+  "text_fingerprint": {
+    "audit_total_hrefs": 874,
+    "audit_total_anchors": 336,
+    "audit_broken_hrefs": 0,
+    "audit_tab_anchor_mismatches": 3,
+    "audit_semantic_mismatches": 1,
+    "audit_imprecise_part_level": 17,
+    "audit_imprecise_fixable": 5,
+    "audit_imprecise_unfixable": 12,
+    "docs_index_html_size_bytes": 1643276
+  },
+  "summary_for_decider": "Cross-reference integrity audit on the built docs/index.html. ALL 874 hrefs resolve (0 dangling) — pipeline is healthy. 4 MAJOR findings, all small-edit fixable: (1) #part6+timestamp tab mismatch in part1 OTS link → change href to #timestamp-error; (2) #part2b+pages tab in part1 overview → change tab to selftest; (3) #part6+overview tab in part4 ring-vs-wall WIN argument → change tab to predictions; (4) link text 'Section 4.2 — Registry Framing Audit' in part2b → fix to 'Section 4.6'. 1 MODERATE carry-over from c2 (5 fixable imprecise part-level hrefs; 12 unfixable Section 2.x → #part2 should be formally wontfix). 2 MINOR: 3x 'Part 4.6' prose in part8b (terminology consistency), and a Section 4.5 numbering gap in Part 4 (operator judgment). Strong recommendation: patch the 4 majors in a single small commit — total source edit ~20 characters across part1/part2b/part4 in sections.json — credibility benefit far exceeds cost. Advocate-mode rating: 3/5 — these are real holes a defender can use for credibility-by-association attack even though none touches the scientific argument.",
+  "priority_queue_for_decider": "Patch holes #1-4 (the 4 MAJORs) as a single ISS. They cluster: all are surviving V6-restructure residue, all are 1-2 character JSON edits, and all are visible to casual readers in the form of broken navigation or wrong section numbers in citations.",
+  "followup_holistic": "Next HOL-CROSSREF cycle should re-verify tab-anchor consistency (the 3 mismatches detected here are a new class of finding the c2 audit did not catch — confirm the patch closes them and no new ones have appeared). Also re-baseline the imprecise-part-level count after the decider decides fix-or-wontfix on hole #5."
+}
