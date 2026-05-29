@@ -530,6 +530,7 @@ a:hover{text-decoration:none}
 .ds-title-block .ds-subtitle{font-size:1.1rem;color:#666;margin:.2rem 0}
 .ds-title-block .ds-meta{font-size:.95rem;color:#999;margin-top:1rem}
 .ds-stance-statement{font-family:var(--serif);font-size:0.95rem;line-height:1.55;color:var(--ink-2);max-width:56ch;margin:0 auto 1.5rem;font-style:italic;text-wrap:pretty}
+.ds-reading-guide{font-family:var(--sans);font-size:0.88rem;line-height:1.65;color:var(--ink-2);max-width:62ch;margin:0 auto 2rem;padding-top:1.1rem;border-top:1px solid var(--rule);text-align:center}
 .ds-scorecard{display:grid;gap:1.5rem;margin:2rem 0;max-width:none}
 .ds-sc-hero{grid-template-columns:repeat(4,1fr)}
 @media(max-width:1100px){.ds-sc-hero{grid-template-columns:repeat(2,1fr)}}
@@ -1474,6 +1475,8 @@ ${CSS}
 <p class="ds-subtitle">Point-by-Point Analysis of ${counts.total} Claimed Wins, Live Power Dashboard,<br>Falsification Tests, Version Change Tracking, and AI Prompt Injection Analysis</p>
 <p class="ds-meta">${BUILD_DATE} &nbsp;|&nbsp; Version ${REVIEW_VERSION}<br>Source: <a href="https://john09289.github.io/predictions">john09289.github.io/predictions</a></p>
 </div>
+
+<p class="ds-reading-guide">The review is organized as a deliberate twelve-tab sequence. <strong>Evaluation Guide</strong> sets out how to audit any claim. <strong>The Model</strong> covers the dome's stated methodology and where its own geometry contradicts itself. <strong>Self-Contradictions</strong> shows that the dome's equations, worked honestly, refute the dome's own claimed values. <strong>Wins Reviewed</strong> works through every claimed win individually. <strong>Kill Shots</strong> applies five binary tests that each alone falsify the model. <strong>Timestamp Error</strong> shows why the dome's blockchain proof is applied to the wrong document. <strong>Predictions Analysis</strong> audits the dome's registry of future claims. <strong>External Tests</strong> brings in independent falsification datasets. <strong>AI &amp; Conclusions</strong> addresses how the dome attempts to influence AI evaluators. The tabs build on each other — the argument is clearest when read in order.</p>
 
 <section class="ds-thesis-hero" aria-labelledby="ds-thesis-statement">
 <p id="ds-thesis-statement" class="ds-thesis-statement" role="heading" aria-level="1">None of the ${counts.total} predictions produces a dome-specific result that standard physics cannot already explain.</p>
