@@ -1,0 +1,359 @@
+{
+  "prop_id": "PROP-063",
+  "title": "ISS ID-collision class (29 duplicate IDs in closed-issues.json) — retroactive dedup + next-ID intake hardening + daily duplicate-ID integrity audit",
+  "status": "proposed",
+  "priority": "low",
+  "author": "tinker (DIRECTIVE-20260528-001 execution, run tinker-2026-05-29T02-40)",
+  "authored_at": "2026-05-29T02:55:00Z",
+  "directive_reference": "DIRECTIVE-20260528-001 — Author PROP-063 — closed-issues.json ID-collision class (29 duplicate IDs) and decider next-ID intake hardening. Filed 2026-05-28T05:30Z by operator-cowork-session, priority=low.",
+  "predecessor_reference": "PROP-062 'failure_pattern_d_iss_id_collision_separate_class' explicitly punted this class to PROP-063 — quote: 'ID-collision is a separate defect class in the decider's next-ID intake (probably driven by partial-run state on 2026-05-18 REPAIR cycle when multiple decider runs touched closed-issues.json near-simultaneously). Recommend separate PROP-063 if operator wants a systemic fix; this PROP only flags the issue and recommends per-entry disposition.'",
+  "source_finding": "29 duplicate ID rows in monitor/decisions/closed-issues.json: 4 IDs with 3 entries each (ISS-2120, 2121, 2122, 2123) and 25 IDs with 2 entries each. The 4 three-entry IDs cluster on the 2026-05-18 REPAIR cycle (workspace-sync mass-delete disaster recovery). The 25 two-entry IDs are spread across 2026-05-02 → 2026-05-26 — multiple distinct allocation events, not a single disaster artifact. At least one entry (ISS-2122 entry 1, live-state cleanup pipeline bug) carries a misrouted closure_reason that describes a DIFFERENT entry's patch — the underlying bug may be unfixed.",
+  "summary": "Per Step 1 diagnosis: 22 of 29 IDs are pure collisions (true different bugs sharing an ID), 4 are full retroactive duplicates (same bug filed twice — safe dedup), 2 are 3-entry hybrids (2 entries are same-bug duplicates + 1 entry is a collision), and 1 (ISS-2122) is a 3-entry pure-collision with a misrouted closure_reason on entry 1. The structural root cause is the decider's next-ID allocator (canonically documented in monitor/prompts/reference/decider-reporting.md Step 5: 'Issue ID Assignment') which reads only open-issues.json.next_id and increments it — it does NOT cross-check max(ID) across closed-issues.json or closure-ledger.jsonl. When the 2026-05-18 mass-delete rewound open-issues.json (and its next_id) to a pre-disaster state, but closed-issues.json was re-populated from rescue commits, the allocator started reissuing IDs that closed-issues.json had already used. The 2-entry clusters from May 2-6 likely have a different proximate cause (multiple decider runs touching closed-issues.json in parallel, or a partial-run rollback where the allocator wrote without the closed-side knowing) — but the fix is the same: make the allocator's max-ID computation walk BOTH open-issues.json AND closed-issues.json AND closure-ledger.jsonl. Mirror the PROP-022 phase-5 archive-aware self-heal pattern that already protects EXP allocation (decider-curmudgeon.md lines 132-147). Add a daily integrity audit (structure-integrity.md) that walks closed-issues.json for duplicate IDs, classified MAJOR (same severity as EXP collisions per PROP-022). Optional same-run guard: at allocation time, the decider can grep the proposed ISS-{N} against closed-issues.json — if found, flag MAJOR and pick max+1 instead.",
+  "problem": {
+    "scope": {
+      "total_duplicate_id_rows": 29,
+      "three_entry_ids": ["ISS-2120", "ISS-2121", "ISS-2122", "ISS-2123"],
+      "two_entry_ids": ["ISS-1423", "ISS-1819", "ISS-1834", "ISS-1857", "ISS-1858", "ISS-1859", "ISS-1860", "ISS-1861", "ISS-1862", "ISS-1863", "ISS-1864", "ISS-1865", "ISS-1866", "ISS-1867", "ISS-1868", "ISS-1922", "ISS-1967", "ISS-2016", "ISS-2124", "ISS-2154", "ISS-2173", "ISS-2200", "ISS-2201", "ISS-2202", "ISS-2203"]
+    },
+    "structural_root_cause": {
+      "canonical_location": "monitor/prompts/reference/decider-reporting.md Step 5 ('Update Issue Tracker' → 'CRITICAL: Issue ID Assignment')",
+      "current_pseudocode": "const o=JSON.parse(fs.readFileSync('monitor/decisions/open-issues.json','utf8')); const id='ISS-'+o.next_id; o.next_id++; o.issues.push({id, ...}); fs.writeFileSync(...)",
+      "defect": "next_id is sourced exclusively from open-issues.json. closed-issues.json and closure-ledger.jsonl are never consulted. When open-issues.json is rewound (mass-delete recovery, manual edit, rollback) the allocator silently re-allocates IDs that already exist in closed-issues.json. The existing prose 'Never scan for max ID across issues' was added (per the inline comment) because 'IDs were historically reused between open and closed files, causing collisions' — but the *fix* it documents (use next_id from open-issues.json) is the same source of the current collisions. The historical reason for that prose was rate-of-write (every scan is expensive); after PROP-022 phase 5, the EXP allocator demonstrates that a global max-ID walk (live + archive) is cheap enough to run on every allocation and prevents exactly this defect."
+    },
+    "proximate_cause_candidates_per_cluster": {
+      "may_18_cluster_ISS_2120_2123": "Workspace-sync mass-delete disaster (2026-05-21 per CLAUDE.md, but the issue cluster's 2026-05-18 source dates suggest the original disaster window was wider, or there was a precursor mass-delete on 2026-05-18). open-issues.json was rewound to pre-disaster; closed-issues.json was re-populated by rescue commits with IDs ≥ the rewound open-side next_id. Decider's next intake run allocated colliding IDs.",
+      "may_2_6_cluster_ISS_1819_1868": "Less clear. Hypotheses: (a) two decider runs near-simultaneously (operator-triggered + cron-triggered) both allocated from the same next_id base before one wrote back, (b) a partial-run rollback where the decider closed an ISS into closed-issues.json but failed to push back open-issues.json's incremented next_id, causing the next run to re-allocate, (c) Mech-A patch path that closed an open ISS via direct write to closed-issues.json without touching open-issues.next_id. The fact that the May-2-6 collisions are pairs (not triples) and span 16 consecutive ISS numbers (1857-1868) is consistent with a single decider run that re-allocated a contiguous block.",
+      "may_25_26_cluster_ISS_2200_2203_2173": "Consistent with PROP-059 mandatory-pending-verification deployment churn + integrity-2026-05-26T01-16 EXP-432 collision discovery. The decider was processing high-volume close-and-collide self-applies during that period; the existing allocator gave it no guardrail."
+    },
+    "consequences": {
+      "observable_now": [
+        "Operator-confusing closed-issues.json queries — grep 'id.*ISS-2122' closed-issues.json returns 3 entries with different descriptions",
+        "ISS-2122 entry 1 has a misrouted closure_reason — the underlying 'live-state cleanup pipeline' bug may have been falsely closed (PROP-062 raised this and recommended operator investigation, deferred to PROP-063 for systemic fix)",
+        "Verifier (PROP-014 Mechanism 1a verify-pending-state.js) and integrity audits index by id — duplicate-id rows confuse downstream consumers"
+      ],
+      "future_blast_radius_if_unfixed": [
+        "Next mass-rewind event (FUSE workspace-sync incident, manual rollback, partial-run abort) reintroduces the defect with no detector",
+        "Operator time per query grows as the duplicate-ID count compounds — each unique ID resolution requires manual inspection",
+        "Any audit that asserts ID uniqueness (e.g. a future integrity check on closed-issues.json) starts firing inconsistently"
+      ]
+    }
+  },
+  "step_1_per_collision_class_diagnosis": {
+    "purpose": "Per directive's Step 1 — for each of the 29 IDs, classify as (a) same-bug retroactive duplicate, (b) true ID-collision (different bugs), or (c) misrouted closure (closure_reason describes a different entry's patch).",
+    "class_legend": {
+      "A": "Same underlying bug — legit retroactive duplicate, candidate for dedup",
+      "B": "Different bugs sharing an ID — true collision, needs ID-rewrite",
+      "C": "Misrouted closure — closure_reason describes a different entry's patch (underlying bug may be unfixed)",
+      "A_hybrid": "Multi-entry where some entries are same-bug duplicates + at least one is a B collision"
+    },
+    "three_entry_ids": {
+      "ISS-2120": {
+        "class": "A_hybrid (2A + 1B)",
+        "entry_0": {"source": "monitor/curmudgeon/reviews/WIN-063.c4.json", "topic": "WIN-063 CHAOS-7 source attribution (hole_1, parent file)", "classification": "A — same hole as entry 1, closure_reason populated"},
+        "entry_1": {"source": "monitor/curmudgeon/reviews/WIN-063.c4.json:hole_1", "topic": "WIN-063 CHAOS-7 source attribution (hole_1, deep ref)", "classification": "A — same hole as entry 0, closure_reason empty (deep-ref intake didn't capture closure)"},
+        "entry_2": {"source": "integrity-2026-05-18T01-20", "topic": "monitor/scripts/audit-rewrite.js missing — required by PROP-041 Phase 2", "classification": "B — true collision, different bug"},
+        "disposition": "Dedup E0+E1 by dropping E1 (E0 has populated closure_reason; E1 is the deep-ref intake artifact). Rewrite E2 to a new ID and re-link any audit-rewrite.js references."
+      },
+      "ISS-2121": {
+        "class": "A_hybrid (2A + 1B)",
+        "entry_0": {"source": "monitor/curmudgeon/reviews/WIN-063.c4.json", "topic": "WIN-063 re-slicing precedent (WIN-041/042 Misleading citation conflict, hole_2 parent)", "classification": "A — same hole as entry 1, closure_reason populated"},
+        "entry_1": {"source": "monitor/curmudgeon/reviews/WIN-063.c4.json:hole_2", "topic": "WIN-063 re-slicing precedent (hole_2 deep ref)", "classification": "A — same hole as entry 0"},
+        "entry_2": {"source": "integrity-2026-05-18T01-20", "topic": "86 missing EXP IDs across 12 gap ranges (largest EXP-324..348, EXP-350..376, EXP-378..383)", "classification": "B — true collision, different bug"},
+        "disposition": "Dedup E0+E1 by dropping E1. Rewrite E2 to a new ID."
+      },
+      "ISS-2122": {
+        "class": "B+C (3 different bugs + 1 misrouted closure) — CANONICAL EXAMPLE PER DIRECTIVE",
+        "entry_0": {"source": "monitor/curmudgeon/reviews/WIN-063.c4.json", "topic": "WIN-063 longitudinal-symmetry hedge", "classification": "B — own legit close, closure_reason matches description"},
+        "entry_1": {"source": "monitor/analyst/issue-proposals/proposal-NEW-live-state-cleanup-bug-2026-05-18.json", "topic": "Two parallel symptoms of state-mutation pipeline bug: archive jsonl + closed-issues append succeed but live-side remove (attention-inbox, open-issues array) fails", "classification": "C — MISROUTED. closure_reason reads 'Patched docs/llms.txt: 71 WIN entries -> 72 WIN entries to account for WIN-070.' That's E2's patch, not E1's bug. Underlying live-state cleanup bug (EXP-426 lineage) may be unfixed."},
+        "entry_2": {"source": "integrity-2026-05-18T01-20", "topic": "docs/llms.txt states 71 WIN entries vs wins.json 72 entries (WIN-070 unaccounted)", "classification": "B — own legit close, closure_reason matches description"},
+        "disposition": "Keep E0 as ISS-2122 (own legit close). Rewrite E2 to a new ID (own legit close). For E1: three operator-decidable options per directive's Step 3 (a) framing: (a1) strip E1's misrouted closure_reason+status, restore to status='assigned-tinker' so the live-state cleanup pipeline bug returns to the tinker queue with a NEW ID; (a2) operator investigates EXP-426 downstream history — grep closed-issues for any subsequent fix of the same bug-class, and if found, repoint E1's closure_reason to cite that fix commit; (a3) mark E1 closed-duplicate/closed-superseded with a pointer to a downstream PROP/EXP that handled the live-state pipeline bug. RECOMMENDED: (a2) — operator should grep EXP-426 + 'live-state cleanup' + 'attention-inbox' against closed-issues to determine if a legitimate downstream fix exists; if not, fall back to (a1)."
+      },
+      "ISS-2123": {
+        "class": "B (3 different bugs) — but entry 1 is near-duplicate of ISS-2122 entry 2",
+        "entry_0": {"source": "monitor/curmudgeon/reviews/WIN-063.c4.json", "topic": "WIN-063 averaging-window framing precision", "classification": "B — own legit close"},
+        "entry_1": {"source": "integrity-2026-05-18T01-20", "topic": "docs/llms.txt 71 vs 72 entries (CONTENT-DUPLICATE of ISS-2122 entry 2)", "classification": "B+content-duplicate-of-another-ID. Same llms.txt 71/72 finding as ISS-2122 E2 — two integrity reports filed the same finding twice in the same disaster-recovery window."},
+        "entry_2": {"source": "integrity-2026-05-18T01-20", "topic": "generate-html.js line 500 hardcoded caption (69+2=71 vs total=72 arithmetic)", "classification": "B — own bug; closure_reason already marks as duplicate of ISS-2112"},
+        "disposition": "Keep E0 as ISS-2123. E1: mark superseded-by-ISS-2122-entry-2 (no new ID needed, same content). E2: rewrite to new ID OR keep linked as 'duplicate-of-ISS-2112' per its existing closure_reason — operator decides."
+      }
+    },
+    "two_entry_classification_summary": {
+      "class_A_full_dedup_candidates": [
+        {"id": "ISS-1423", "rationale": "Same PRED-105 silent-ignore poller flag re-filed at later iteration (9+ polls → 11+ polls)"},
+        {"id": "ISS-1864", "rationale": "IDENTICAL cross-WIN boilerplate description, same severity, same found_at — true retroactive duplicate"},
+        {"id": "ISS-2154", "rationale": "Both reference SEC-6.13 MOND grouping arithmetic patch cluster — E0 is c7 finding, E1 is c8 verification of the same fix"},
+        {"id": "ISS-2173", "rationale": "Both reference poller change chg-20260523-0703-002 for PRED-073 discovery; E0 is empty-description placeholder, E1 is populated"}
+      ],
+      "class_B_pure_collision_candidates_full_list": [
+        "ISS-1819 (WIN-030 vs WIN-031)",
+        "ISS-1834 (WIN-016 anchor vs WIN-012 sign chars)",
+        "ISS-1857 (WIN-017.c5 vs PRED-R002 tldr)",
+        "ISS-1858 (WIN-028 monitoring vs PRED-094 tldr)",
+        "ISS-1859 (WIN-028 boilerplate vs PRED-TESLA-002 tldr)",
+        "ISS-1860 (WIN-028 longitude vs PO.DAAC link)",
+        "ISS-1861 (WIN-050 diurnal vs WIN-060 Halley dates)",
+        "ISS-1862 (WIN-050 0.6% vs WIN-060 core dynamics)",
+        "ISS-1863 (WIN-050 point-localization vs 18-WIN templated post-hoc list)",
+        "ISS-1865 (WIN-009 boilerplate vs WIN-060 defense_survives)",
+        "ISS-1866 (WIN-009 MT/Schumann vs WIN-060 paragraph structure)",
+        "ISS-1867 (WIN-009 source list vs WIN-036 OTS language)",
+        "ISS-1868 (WIN-050 two-bulge vs WIN-036 defense_survives)",
+        "ISS-1922 (WIN-033.c3 vs sub_rationale unwired)",
+        "ISS-1967 (SEC-6.14.c1 H4 vs WIN-034 skin depth [wontfix])",
+        "ISS-2016 (WIN-053 c11 vs WIN-034 c5 carry-over [wontfix])",
+        "ISS-2124 (WIN-006.c5 vs intermagnet URL move)",
+        "ISS-2200 (WIN-020 c6 hole #0 vs WIN-063 c5 Aubert)",
+        "ISS-2201 (WIN-020 c6 hole #1 vs WIN-063 c5 strawman residue)",
+        "ISS-2202 (WIN-020 c6 hole #2 vs EXP-432 collision)",
+        "ISS-2203 (WIN-020 c6 hole #3 vs EXP-425/431 archive cleanup)"
+      ],
+      "class_C_misrouted_closures_in_2_entry_set": "None — the only C-class misrouted closure in the 29-ID set is ISS-2122 entry 1 (in the 3-entry cluster).",
+      "underlying_bugs_potentially_unfixed": [
+        "ISS-2122 entry 1 — live-state cleanup pipeline bug (proposal-NEW-live-state-cleanup-bug-2026-05-18.json, EXP-426 lineage). Closure_reason describes ISS-2122 entry 2's llms.txt patch. Must be investigated and reopened or repointed."
+      ]
+    },
+    "totals": {
+      "ids_with_at_least_one_A_entry": 6,
+      "ids_with_at_least_one_B_entry": 25,
+      "ids_with_at_least_one_C_entry": 1,
+      "full_A_dedup_safe_count": 4,
+      "pure_B_count": 22,
+      "hybrid_A_plus_B_count": 2,
+      "B_plus_C_count": 1,
+      "verified_misrouted_closures": 1,
+      "verified_potentially_unfixed_bugs": 1
+    }
+  },
+  "step_2_structural_fix_design": {
+    "purpose": "Per directive's Step 2 — make the next-ID allocator read both open and closed sources, and add a daily duplicate-ID integrity audit. Mirror the PROP-022 phase 5 EXP archive-aware self-heal pattern that already exists.",
+    "change_2a_decider_reporting_md_step_5_allocator_hardening": {
+      "file": "monitor/prompts/reference/decider-reporting.md",
+      "target_section": "Step 5: Update Issue Tracker → 'CRITICAL: Issue ID Assignment'",
+      "current_code_block": "const o=JSON.parse(fs.readFileSync('monitor/decisions/open-issues.json','utf8')); const id='ISS-'+o.next_id; o.next_id++; o.issues.push({id, ...}); fs.writeFileSync(...)",
+      "new_code_block_replacement": [
+        "const fs=require('fs');",
+        "const o=JSON.parse(fs.readFileSync('monitor/decisions/open-issues.json','utf8'));",
+        "// PROP-063 archive-aware self-heal: walk closed-issues + closure-ledger to validate next_id",
+        "let maxClosedNum=0;",
+        "try {",
+        "  const ci=JSON.parse(fs.readFileSync('monitor/decisions/closed-issues.json','utf8'));",
+        "  for(const i of (ci.issues||ci)) {",
+        "    const m=(i.id||'').match(/^ISS-(\\d+)$/);",
+        "    if(m) maxClosedNum=Math.max(maxClosedNum, parseInt(m[1],10));",
+        "  }",
+        "} catch(_){}",
+        "try {",
+        "  for(const l of fs.readFileSync('monitor/decisions/closure-ledger.jsonl','utf8').trim().split('\\n').filter(Boolean)) {",
+        "    try { const e=JSON.parse(l); const m=(e.iss||e.id||'').match(/^ISS-(\\d+)$/); if(m) maxClosedNum=Math.max(maxClosedNum, parseInt(m[1],10)); } catch(_){}",
+        "  }",
+        "} catch(_){}",
+        "const maxOpenNum=Math.max(0, ...o.issues.map(i=>{const m=(i.id||'').match(/^ISS-(\\d+)$/); return m?parseInt(m[1],10):0;}));",
+        "const safeNext=Math.max(o.next_id||0, maxOpenNum+1, maxClosedNum+1);",
+        "if (safeNext !== o.next_id) {",
+        "  console.warn('next_id self-heal: open.next_id='+o.next_id+', max(open_ids)='+maxOpenNum+', max(closed_ids)='+maxClosedNum+', SAFE='+safeNext);",
+        "  o.next_id=safeNext;",
+        "}",
+        "const id='ISS-'+o.next_id;",
+        "o.next_id++;",
+        "o.issues.push({id, ...});",
+        "fs.writeFileSync('monitor/decisions/open-issues.json',JSON.stringify(o,null,2));"
+      ],
+      "rationale": "Mirrors PROP-022 phase 5 EXP archive-aware self-heal (decider-curmudgeon.md lines 132-147). The cost is one extra read of closed-issues.json + closure-ledger.jsonl (both already in the decider's working set for other Step 1 operations). The next_id field remains the canonical write-back path so no schema change to open-issues.json is needed; we only add a defensive read before each allocation.",
+      "prose_addendum_after_existing_warning": "**PROP-063 (2026-05-29):** The 'never scan for max ID across issues' rule from the prior commit was correct in spirit but mis-applied — it forbade a max-ID scan ON ALLOCATION, when the actual defect was failing to cross-check closed-issues.json at all. The PROP-063 self-heal runs an archive-aware MAX walk (open ∪ closed ∪ closure-ledger) and clamps `o.next_id` upward if it lags. The canonical write-back path is still `o.next_id++` — we never decrement, never reuse, and never silently allocate below max-existing-ID. Rationale: the 2026-05-18 mass-delete and several other 2026-05 cluster events demonstrated that open-issues.json.next_id can be rewound by upstream rollback/recovery; the only safe defense is a max-walk at allocation time."
+    },
+    "change_2b_decider_intake_md_step_5_cross_reference": {
+      "file": "monitor/prompts/reference/decider-intake.md",
+      "target_line": "Line 100: 'Increment `next_id` per Step 5 conventions.'",
+      "edit": "Change to: 'Increment `next_id` per Step 5 conventions in decider-reporting.md (PROP-063 archive-aware self-heal — DO NOT bump without running the max(open ∪ closed ∪ closure-ledger) walk).'",
+      "rationale": "The prompt currently dangles a 'Step 5 conventions' reference. PROP-063 makes the convention explicit and cites the canonical location to prevent future confusion about which 'Step 5' is canonical."
+    },
+    "change_2c_daily_integrity_audit_for_duplicate_ids": {
+      "file": "monitor/prompts/structure-integrity.md",
+      "target_section_anchor": "After the EXP-tracker duplicate/collision section (lines ~186-272)",
+      "new_audit_check_prose": "**ISS ID-collision audit (PROP-063, 2026-05-29):** Walk `monitor/decisions/closed-issues.json` for duplicate `id` values. Any duplicate is MAJOR severity (mirrors EXP-tracker duplicate-ID classification — PROP-022 phase 5). Also walk `open-issues.json` and verify no ID appears in BOTH open and closed (cross-file collision). Suggested fix template: 'rewrite duplicate-ID entries to new ISS numbers per PROP-063 retroactive dedup table; investigate any misrouted closure_reasons (where closure_reason describes a different entry's patch than the entry's own description).' If the duplicate-ID audit returns >0 entries that were not already tracked under a PROP-063-class ISS, file a new ISS with category='id_integrity_finding' and severity=major.",
+      "new_audit_pseudocode": [
+        "// PROP-063 ISS duplicate-ID audit",
+        "const ci=JSON.parse(fs.readFileSync('monitor/decisions/closed-issues.json','utf8'));",
+        "const buckets={};",
+        "for(const i of (ci.issues||ci)) { if(!i.id)continue; (buckets[i.id]=buckets[i.id]||[]).push(i); }",
+        "const dupes=Object.entries(buckets).filter(([,v])=>v.length>1);",
+        "if(dupes.length>0) {",
+        "  findings.push({",
+        "    category:'id_integrity_finding',",
+        "    severity:'major',",
+        "    description:'ISS duplicate-ID rows in closed-issues.json: '+dupes.length+' IDs affected ('+dupes.slice(0,3).map(d=>d[0]).join(', ')+(dupes.length>3?', ...':'')+')',",
+        "    location:'monitor/decisions/closed-issues.json',",
+        "    suggested_fix:'rewrite per PROP-063 retroactive dedup table; investigate misrouted closure_reasons',",
+        "    tracked_under: 'PROP-063'",
+        "  });",
+        "}",
+        "// Cross-file collision check",
+        "const oi=JSON.parse(fs.readFileSync('monitor/decisions/open-issues.json','utf8'));",
+        "const openIds=new Set(oi.issues.map(i=>i.id));",
+        "const closedIds=new Set((ci.issues||ci).map(i=>i.id));",
+        "const crossFile=[...openIds].filter(x=>closedIds.has(x));",
+        "if(crossFile.length>0) {",
+        "  findings.push({",
+        "    category:'id_integrity_finding',",
+        "    severity:'major',",
+        "    description:'ISS cross-file collision (id in both open AND closed): '+crossFile.slice(0,3).join(', ')+(crossFile.length>3?', +'+(crossFile.length-3)+' more':''),",
+        "    location:'monitor/decisions/{open,closed}-issues.json',",
+        "    suggested_fix:'allocator hardening per PROP-063 + per-entry rewrite',",
+        "    tracked_under: null",
+        "  });",
+        "}"
+      ]
+    },
+    "change_2d_optional_same_run_decider_guard": {
+      "file": "monitor/prompts/reference/decider-reporting.md (same Step 5 block)",
+      "purpose": "Belt-and-braces: even with the archive-aware self-heal, a same-run collision could happen if (a) decider opens an ISS-{N} that closed-issues.json already contains, (b) decider closes that ISS in the same run. The self-heal prevents (a), but a same-run collision guard is cheap and provides defense in depth.",
+      "guard_pseudocode": [
+        "// At the moment of writing the new ISS into open-issues.json, before push:",
+        "const proposedId=id;",
+        "const ci2=JSON.parse(fs.readFileSync('monitor/decisions/closed-issues.json','utf8'));",
+        "if((ci2.issues||ci2).some(e=>e.id===proposedId)) {",
+        "  console.error('CRITICAL: about to allocate '+proposedId+' which already exists in closed-issues.json. Bumping by 1 and retrying.');",
+        "  o.next_id++;",
+        "  // re-derive id and retry, with a small loop cap (≤5 iterations)",
+        "}"
+      ],
+      "rationale": "Cheap, idempotent, only runs at allocation. If the self-heal block above is wired correctly, this guard should never fire — its presence is purely so that we'd LOUDLY know if it did."
+    }
+  },
+  "step_3_retroactive_dedup_recommendations": {
+    "purpose": "Per directive's Step 3 — for each duplicate ID, recommend dedup-or-rewrite. Operator applies after reviewing.",
+    "non_goal": "NOT batch-executed. Operator applies (and may choose a different disposition than recommended). This PROP only proposes.",
+    "recommended_disposition_table": {
+      "ISS-1423": {"class": "A", "action": "Drop E1 (later, lower-info duplicate). Keep E0.", "operator_minutes_estimated": 2},
+      "ISS-1864": {"class": "A", "action": "Drop E1 (identical to E0). Keep E0.", "operator_minutes_estimated": 1},
+      "ISS-2154": {"class": "A", "action": "Merge: keep E0 (c7 reference); annotate E0 with c8 verification cross-link; drop E1.", "operator_minutes_estimated": 3},
+      "ISS-2173": {"class": "A", "action": "Drop E0 (empty-description placeholder). Keep E1.", "operator_minutes_estimated": 2},
+      "ISS-1819": {"class": "B", "action": "Keep E0 (WIN-030); rewrite E1 (WIN-031) to ISS-{nextAvail}.", "operator_minutes_estimated": 3},
+      "ISS-1834": {"class": "B", "action": "Keep E0 (WIN-016); rewrite E1 (WIN-012) to ISS-{nextAvail}.", "operator_minutes_estimated": 3},
+      "ISS-1857": {"class": "B", "action": "Keep E0 (WIN-017); rewrite E1 (PRED-R002) to ISS-{nextAvail}.", "operator_minutes_estimated": 3},
+      "ISS-1858": {"class": "B", "action": "Keep E0 (WIN-028); rewrite E1 (PRED-094) to ISS-{nextAvail}.", "operator_minutes_estimated": 3},
+      "ISS-1859": {"class": "B", "action": "Keep E0 (WIN-028); rewrite E1 (PRED-TESLA-002) to ISS-{nextAvail}.", "operator_minutes_estimated": 3},
+      "ISS-1860": {"class": "B", "action": "Keep E0 (WIN-028); rewrite E1 (PO.DAAC link) to ISS-{nextAvail}.", "operator_minutes_estimated": 3},
+      "ISS-1861": {"class": "B", "action": "Keep E0 (WIN-050); rewrite E1 (WIN-060 Halley) to ISS-{nextAvail}.", "operator_minutes_estimated": 3},
+      "ISS-1862": {"class": "B", "action": "Keep E0 (WIN-050); rewrite E1 (WIN-060 core) to ISS-{nextAvail}.", "operator_minutes_estimated": 3},
+      "ISS-1863": {"class": "B", "action": "Keep E0 (WIN-050); rewrite E1 (18-WIN templated list) to ISS-{nextAvail}.", "operator_minutes_estimated": 3},
+      "ISS-1865": {"class": "B", "action": "Keep E0 (WIN-009); rewrite E1 (WIN-060 defense_survives) to ISS-{nextAvail}.", "operator_minutes_estimated": 3},
+      "ISS-1866": {"class": "B", "action": "Keep E0 (WIN-009); rewrite E1 (WIN-060 paragraph) to ISS-{nextAvail}.", "operator_minutes_estimated": 3},
+      "ISS-1867": {"class": "B", "action": "Keep E0 (WIN-009); rewrite E1 (WIN-036 OTS) to ISS-{nextAvail}.", "operator_minutes_estimated": 3},
+      "ISS-1868": {"class": "B", "action": "Keep E0 (WIN-050); rewrite E1 (WIN-036 defense_survives) to ISS-{nextAvail}.", "operator_minutes_estimated": 3},
+      "ISS-1922": {"class": "B", "action": "Keep E0 (WIN-033); rewrite E1 (sub_rationale unwired) to ISS-{nextAvail}.", "operator_minutes_estimated": 3},
+      "ISS-1967": {"class": "B", "action": "Keep E0 (SEC-6.14); rewrite E1 (WIN-034 skin depth) to ISS-{nextAvail} preserving wontfix status.", "operator_minutes_estimated": 4},
+      "ISS-2016": {"class": "B", "action": "Keep E0 (WIN-053); rewrite E1 (WIN-034 carry-over) to ISS-{nextAvail} preserving wontfix status.", "operator_minutes_estimated": 4},
+      "ISS-2124": {"class": "B", "action": "Keep E0 (WIN-006); rewrite E1 (intermagnet URL) to ISS-{nextAvail}.", "operator_minutes_estimated": 3},
+      "ISS-2200": {"class": "B", "action": "Keep E0 (WIN-020 c6 hole#0); rewrite E1 (WIN-063 c5 Aubert) to ISS-{nextAvail}.", "operator_minutes_estimated": 3},
+      "ISS-2201": {"class": "B", "action": "Keep E0 (WIN-020 c6 hole#1); rewrite E1 (WIN-063 c5 strawman) to ISS-{nextAvail}.", "operator_minutes_estimated": 3},
+      "ISS-2202": {"class": "B", "action": "Keep E0 (WIN-020 c6 hole#2); rewrite E1 (EXP-432 collision) to ISS-{nextAvail}.", "operator_minutes_estimated": 3},
+      "ISS-2203": {"class": "B", "action": "Keep E0 (WIN-020 c6 hole#3); rewrite E1 (EXP-425/431 archive) to ISS-{nextAvail}.", "operator_minutes_estimated": 3},
+      "ISS-2120": {"class": "A_hybrid", "action": "Dedup E0+E1 (drop E1, deep-ref artifact). Rewrite E2 (audit-rewrite.js missing) to ISS-{nextAvail}.", "operator_minutes_estimated": 5},
+      "ISS-2121": {"class": "A_hybrid", "action": "Dedup E0+E1 (drop E1). Rewrite E2 (86 missing EXP IDs) to ISS-{nextAvail}.", "operator_minutes_estimated": 5},
+      "ISS-2122": {"class": "B+C", "action": "Keep E0 (WIN-063 longitudinal symmetry). For E1 (live-state cleanup, MISROUTED): per Step 1 disposition options (a1)/(a2)/(a3); recommended (a2) — operator investigates whether the live-state pipeline bug got fixed via a different ISS/PROP and either repoints E1's closure_reason (if fix is downstream) or restores status='assigned-tinker' (if no fix found). Rewrite E2 (llms.txt count) to ISS-{nextAvail}.", "operator_minutes_estimated": 15},
+      "ISS-2123": {"class": "B+near-dup", "action": "Keep E0 (WIN-063 averaging window). Mark E1 superseded-by-ISS-2122-E2 (same llms.txt content). E2 (generate-html.js caption) — keep as marked 'duplicate of ISS-2112' OR rewrite to new ISS if ISS-2112 is itself stale.", "operator_minutes_estimated": 8}
+    },
+    "id_renumbering_method": {
+      "rule": "All E1/E2 rewrites should allocate from the post-fix next_id counter (which after PROP-063 Change 2a is guaranteed to be > max(open ∪ closed ∪ closure-ledger)). Suggested batch: 28 new IDs needed total (1 per B/B+C/B+near-dup entry to rewrite + 0 for A-class drops). Allocate them sequentially after applying Change 2a so the self-heal sets next_id correctly.",
+      "audit_trail": "Each rewritten entry should carry a new field `rewritten_from: 'ISS-NNNN-entry-N'` so future audits can trace the rewrite. Add this field to the recommended-edit script.",
+      "old_id_handling_in_closed_issues_json": "Two options: (i) DELETE the duplicate entry from closed-issues.json (clean cut, no trace); (ii) REWRITE in place (preserve audit trail). Recommended: (ii) — set `id: 'ISS-{nextAvail}'`, append `rewritten_from: 'ISS-NNNN-collision-entry-N'`. Option (ii) is consistent with the project's 'no destructive modify without audit trail' default."
+    }
+  },
+  "step_4_operator_cost_vs_benefit_analysis": {
+    "purpose": "Per directive's Step 4 — estimate operator time and recommend integrated vs separate execution.",
+    "per_collision_dispositions_cost": {
+      "minutes_per_class": {"A_simple": 2, "A_merge": 3, "B_rewrite": 3, "A_hybrid": 5, "B_plus_C_with_investigation": 15, "B_plus_near_dup": 8},
+      "rolled_up_per_id_minutes_total": 105,
+      "rolled_up_human_readable": "~1h 45m for full per-entry execution across all 29 IDs.",
+      "components": {
+        "25_simple_2_entry": "(4×A-simple ≈ 8 min) + (21×B-rewrite ≈ 63 min) = ~71 min",
+        "4_three_entry": "(2×A_hybrid ≈ 10 min) + (1×B+C with investigation ≈ 15 min) + (1×B+near-dup ≈ 8 min) = ~33 min",
+        "total": "~104 minutes operator time for dedup-only path with no structural fix"
+      }
+    },
+    "structural_fix_cost": {
+      "change_2a_allocator_hardening": "~10 min prompt edit + ~5 min test (run a synthetic mass-delete simulation and verify the self-heal kicks in)",
+      "change_2b_cross_reference": "~2 min prompt edit",
+      "change_2c_daily_integrity_audit": "~10 min prompt edit + ~5 min review of next morning's integrity report to confirm the new audit fires",
+      "change_2d_same_run_guard": "~5 min prompt edit (or skip — Changes 2a+2c provide enough defense without it)",
+      "total_structural_only": "~25-35 min operator time + first verification cycle (24h wait for next integrity run)"
+    },
+    "combined_recommendation": {
+      "do_both_in_phased_order": "Phase 1 (~30 min): Apply Changes 2a, 2b, 2c first. This prevents future collisions and surfaces any existing ones via the daily audit — confirming the 29 known IDs and revealing any others that may exist. Phase 2 (~105 min): Apply per-ID dedup recommendations from Step 3, ordered by class (4 A-class quick wins first, then 21 B-class rewrites, then 4 hybrid/C-class with investigation last). Phase 3 (~10 min): Optional Change 2d if Phase 1 fix alone leaves any anxiety.",
+      "alternative_a_structural_only": "Apply Changes 2a-c only. Leave the 29 existing duplicate IDs as-is. Pros: 30 min total, prevents future occurrences, daily audit gives ongoing visibility. Cons: ISS-2122 entry 1's potentially-unfixed live-state cleanup pipeline bug remains in misrouted state; closed-issues queries still return ambiguous results for affected IDs.",
+      "alternative_b_dedup_only": "Apply per-ID dedup, skip structural fix. Pros: cleans up current state. Cons: 105 min one-shot, the underlying defect remains so the next mass-delete or partial-run rollback reintroduces it. DO NOT recommend.",
+      "recommended": "Phase 1 + Phase 2 (~135 min total operator time spread across however many sessions operator prefers; Phase 1 is self-contained and Phase 2 can be deferred indefinitely once Phase 1 is in place). Phase 1 is the higher-leverage half by a wide margin — apply it first."
+    },
+    "highest_priority_action": "ISS-2122 entry 1 — live-state cleanup pipeline bug investigation. This is the only one of the 29 collision rows with a credible chance of representing UNFIXED WORK. Operator should grep EXP-426 + 'live-state cleanup' against closed-issues + analyst-reports to determine current state before applying any other Phase 2 action."
+  },
+  "alternatives_considered": {
+    "scan_max_id_on_every_allocation_with_no_next_id_counter": "Pros: simplest mental model, no state to corrupt. Cons: O(N) on every allocation where N is closed-issues growth (~2,100 currently, growing). The existing next_id counter pattern is a cheap O(1) optimization; PROP-063's self-heal preserves that fast-path and only does the max-walk as a defensive cross-check.",
+    "lock_file_or_advisory_lock_during_allocation": "Pros: prevents the cross-clone race for the May-2-6 cluster cause. Cons: lock files don't survive FUSE quirks; advisory locks add cross-agent complexity. The archive-aware max-walk handles ALL the observed causes (mass-delete rewind, cross-clone race, partial-run rollback) with one mechanism, so a lock is redundant.",
+    "remove_next_id_field_entirely_force_max_walk": "Pros: eliminates the rewind footgun. Cons: changes the open-issues.json schema, breaks the existing 'CRITICAL: Issue ID Assignment' contract, requires migration script. The PROP-063 self-heal achieves the same safety with no schema change.",
+    "do_nothing_treat_collisions_as_acceptable_noise": "Per directive: 'The 29 duplicate IDs are not actively breaking anything — verifier audits, integrity audits, and routine pipeline operations all work despite the duplicates.' True, but PROP-062 already verified one case (ISS-2122) where a duplicate ID + misrouted closure may have falsely closed an underlying bug. The cost of doing-nothing is unbounded — every future mass-rewind reintroduces the defect. Reject."
+  },
+  "recommended_option": "Phase 1 (Changes 2a + 2b + 2c) first. Phase 2 (per-ID dedup) at operator's discretion, with ISS-2122 entry 1 investigation as the only urgent line item.",
+  "recommendation_rationale": "Structural fix is cheap (~30 min) and pays compound interest (every future allocation is protected). Dedup is more expensive (~105 min) and one-shot — only valuable if operator-confusing queries are a current pain point. ISS-2122 entry 1 is the only collision row whose underlying work may be unfinished, so it deserves its own pass independent of the dedup batch.",
+  "counter_considerations": {
+    "operator_perspective": "The collisions are not actively breaking anything per the directive's own priority_note. A reviewer could argue PROP-063 is over-engineering — fix the 1 misrouted closure (ISS-2122 entry 1) manually and leave the rest. Response: Change 2a alone is 10 min and prevents ALL future occurrences. Even if Phase 2 dedup is skipped, Phase 1 is high-ROI and low-risk.",
+    "could_the_self_heal_break_anything": "The self-heal can only INCREASE next_id, never decrease. The worst-case behavior is allocating an ID slightly higher than open.next_id, which is identical to what happens when a closed-issues append races an open-issues write. No downstream consumer assumes next_id is contiguous with open ID max — gaps are already legal (per expansion-tracker-gap-semantics.md, which documents similar gap rules for EXP).",
+    "could_the_integrity_audit_false_positive": "Change 2c flags ANY duplicate ID as MAJOR. If a legitimate dedup pass (Phase 2) writes a `rewritten_from` field to preserve audit trail, the audit must accept that as an acceptable shape. Implementation note: the duplicate-ID audit in Change 2c should match by id field only — once dedup is applied, duplicates are gone, audit returns clean. Until Phase 2 lands, the audit will report 29 IDs flagged — which is correct (it's a known backlog); the audit description should say 'see PROP-063 Step 3 dedup table' to prevent the daily noise from spawning new ISSs.",
+    "risk_of_misrouting_unrecovered_audit_trail": "Phase 2 rewrite (option ii: rewrite-in-place with rewritten_from field) preserves audit trail. Option (i) DELETE is simpler but loses provenance. The default recommendation (ii) trades 1 extra field per rewrite for full traceability."
+  },
+  "implementation_steps": [
+    "PHASE 1 — Structural fix (operator-applied, ~30 min total):",
+    "1a. Edit monitor/prompts/reference/decider-reporting.md Step 5 → replace the existing 'Example: create a new issue' code block with the PROP-063 archive-aware self-heal block (Change 2a). Add the prose addendum after the existing 'Never scan for max ID across issues' warning explaining the PROP-063 distinction.",
+    "1b. Edit monitor/prompts/reference/decider-intake.md line 100 → expand the 'Step 5 conventions' reference per Change 2b.",
+    "1c. Edit monitor/prompts/structure-integrity.md → add the ISS duplicate-ID audit per Change 2c (after the EXP-tracker collision section).",
+    "1d. (Optional) Edit decider-reporting.md to add the same-run-guard per Change 2d.",
+    "1e. Verify: run decider in a synthetic 'rewound next_id' scenario (set open-issues.json.next_id back to 2000 manually, then trigger a decider intake — assert that the next allocation produces ISS-2215 or higher, not ISS-2001).",
+    "1f. Verify: next morning's integrity run should report 29 duplicate-ID rows. If it doesn't, the audit didn't wire. If it reports a different count, investigate.",
+    "1g. To prevent the daily audit from generating 29 new ISSs on its first run after Phase 1 lands, the audit should produce a SINGLE finding with description='ISS duplicate-ID rows: 29 IDs affected — tracked under PROP-063 Phase 2' AND tracked_under='PROP-063'. Use the existing PROP-tracking convention.",
+    "",
+    "PHASE 2 — Retroactive dedup (operator-applied at discretion, ~105 min total):",
+    "2a. Investigate ISS-2122 entry 1 first (live-state cleanup pipeline bug): grep EXP-426 + 'live-state cleanup' + 'attention-inbox' + 'state-mutation pipeline' against closed-issues.json and analyst-reports/. If a downstream legitimate fix exists, repoint entry 1's closure_reason. If not, restore status='assigned-tinker'.",
+    "2b. Apply the 4 A-class dedups (ISS-1423, ISS-1864, ISS-2154, ISS-2173). Use the per-ID disposition table in Step 3.",
+    "2c. Apply the 2 A-hybrid dedups (ISS-2120, ISS-2121). Drop the A-class duplicate entry; rewrite the B-class collision entry to a new ID.",
+    "2d. Apply the 21 pure-B rewrites (ISS-1819, 1834, 1857-1863, 1865-1868, 1922, 1967, 2016, 2124, 2200-2203). For each, allocate the next ISS-{nextAvail} from the now-hardened allocator, append `rewritten_from` field.",
+    "2e. Apply ISS-2122 E2 rewrite and ISS-2123 dispositions.",
+    "2f. After Phase 2, run the integrity audit. Expected output: no duplicate-ID findings.",
+    "2g. Update the PROP-063 status field to 'implemented' with implemented_at + implemented_by + implementation_note ('Phase 1 applied {date}; Phase 2 applied {date}' or partial-Phase notes if operator stopped early)."
+  ],
+  "implementation_pseudocode_summary": "See Change 2a (allocator hardening), Change 2c (integrity audit). Both are <50 lines of additive JS code; no schema changes, no file moves.",
+  "edge_cases": {
+    "closed_issues_json_unreadable_or_malformed": "The self-heal block uses try/catch and falls back to maxClosedNum=0. In that case the allocator behaves like the pre-PROP-063 behavior (using open.next_id directly). NOT a regression — equivalent to old behavior under the same fault condition.",
+    "closure_ledger_jsonl_missing": "Same — try/catch fallback. The ledger is informational for the self-heal; closed-issues.json is the authoritative max-ID source.",
+    "non_standard_id_formats_like_iss_win062c6_h2": "Regex `^ISS-(\\d+)$` excludes non-standard IDs. They won't contribute to maxClosedNum, but they also can't collide with allocated standard IDs (different format), so safe.",
+    "concurrent_decider_runs": "Theoretically possible if operator triggers an ad-hoc run during a cron run. The self-heal cannot prevent this because both runs read the same closed-issues.json snapshot. The same-run-guard (Change 2d) provides marginal protection but the real fix is operator-discipline + clone-uniqueness per CLAUDE.md 'Per-session clone discipline'. Document this as a known residual risk."
+  },
+  "idempotency_contract": "Allocator self-heal is idempotent: running the max-walk on the same state always yields the same `safeNext`. The next_id increment is the only mutation, and it's atomic per-write. Integrity audit is read-only and idempotent. The Phase 2 rewrite is NOT idempotent (each rewrite consumes one new ID) and must be applied exactly once per duplicate-ID-entry-pair.",
+  "verification_pattern": "git show origin/main:monitor/prompts/reference/decider-reporting.md | grep -qF 'PROP-063 archive-aware self-heal'",
+  "blast_radius": {
+    "files_modified_by_phase_1": ["monitor/prompts/reference/decider-reporting.md", "monitor/prompts/reference/decider-intake.md", "monitor/prompts/structure-integrity.md"],
+    "files_modified_by_phase_2": ["monitor/decisions/closed-issues.json", "monitor/decisions/open-issues.json (possibly, for ISS-2122 E1 reopen)"],
+    "downstream_consumers": ["all decider runs (use the new allocator)", "next day's integrity report (gains the duplicate-ID audit)", "verify-pending-state.js (will see fewer ambiguous id matches once dedup is applied)"],
+    "no_breaking_changes": "Schema unchanged; field shapes unchanged; existing consumers see the same files with strictly-better contents."
+  },
+  "operator_action_required": [
+    "Phase 1: 3 prompt edits + 1 verification run (~30 min). Safe to apply standalone.",
+    "Phase 2: per-ID dedup pass (~105 min) — at operator discretion. Recommend investigating ISS-2122 entry 1 first (~15 min) regardless of whether full Phase 2 happens."
+  ],
+  "rejection_criteria": [
+    "If operator concludes the 29 collisions are below-noise (no actionable query confusion) AND the May-18 disaster cluster is a one-off (no future risk), then Phase 1 alone is sufficient. Reject Phase 2 dedup as over-engineering.",
+    "If operator wants to defer ALL action: low-priority directive permits this — PROP-063 stays 'proposed' as the design-of-record for if/when collisions accumulate further. The directive marks 'completed' upon PROP-063 authoring; implementation timing is operator's call."
+  ],
+  "related_props": ["PROP-022 (phase 5 EXP archive-aware self-heal — the pattern PROP-063 mirrors)", "PROP-037 (integrity-finding ISS-creation generalization — the same intake path)", "PROP-059 (mandatory verification_pattern — touches closed-issues.json write path)", "PROP-062 (verification-pattern defects — explicitly punted this class to PROP-063)"],
+  "estimated_implementation_effort": "Phase 1: 30 min operator + Opus prompt edits. Phase 2: 105 min operator-applied edits to closed-issues.json with audit-trail preservation. Total: ~135 min for both phases; ~30 min if Phase 1 only.",
+  "summary_counts_for_quick_reference": {
+    "total_duplicate_ids_diagnosed": 29,
+    "three_entry_clusters": 4,
+    "two_entry_clusters": 25,
+    "class_A_full_dedup_count": 4,
+    "class_A_hybrid_count": 2,
+    "class_B_pure_collision_count": 22,
+    "class_C_misrouted_closure_count": 1,
+    "underlying_bugs_potentially_unfixed": 1,
+    "structural_changes_proposed": 4,
+    "integrity_audits_added": 1
+  }
+}
