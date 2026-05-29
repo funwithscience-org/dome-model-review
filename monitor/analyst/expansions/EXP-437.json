@@ -1,0 +1,219 @@
+{
+  "item_id": "EXP-437",
+  "target": "HOL-NARRATIVE c2 hole 1: reconcile 70 (dome-claimed) vs 72 (review catalog) drift across all prose — pick denominator convention and apply document-wide",
+  "curmudgeon_review": "monitor/curmudgeon/reviews/HOLISTIC-HOL-NARRATIVE.c2.json",
+  "issue_ids": [
+    "ISS-2215"
+  ],
+  "source": "decider-route-from-hol-narrative-c2",
+  "category": "prose-accuracy",
+  "review_class": "deep-attack",
+  "status": "ready-for-integration",
+  "created_at": "2026-05-29T22:17:52.479Z",
+  "decision_summary": "Adopt Approach (a) — name the denominator at each mention — not Approach (b) (force all prose to 72). Rationale below. The fix has three parts: (1) a tiny build-pipeline change adding a {{CATALOG_TOTAL}} placeholder and replacing the hardcoded \"70 dome-claimed wins plus 2 numbered-collision sub-claims\" caption with computed values; (2) targeted prose patches at the 5 sites where a tally count (sum-of-72 numerator) is currently divided by a baseWins-length (70) denominator — those are arithmetically wrong; (3) one new explanatory paragraph near the Overview verdict bars (\"Why 70 and 72 are both real numbers\") so a reader who notices the drift gets the reconciliation in their first encounter, not buried in a caption.",
+  "kernel_of_truth": {
+    "description": "Both numbers are correct and load-bearing — neither is a bug to be erased. 70 is the dome's headline count of 'confirmed' WINs (currently exactly the entries in wins.json with three-digit IDs like '001'..'069'). 72 is our review catalog count, because the dome reused win-IDs 057 and 058 between its 'confirmed wins' list and its 'prospective predictions' list, and we split each collision into a parent row (057, 058) and a sub-claim row (057b, 058b) so each distinct claim gets its own verdict. Keeping both numbers in the prose carries an evidential point we do not want to lose: the dome has identifier-reuse problems (catalogued in Part 8b.1, Point 1 about claim_keys; that whole adoption section rests on the fact that the visible registry has duplicate WIN-NNN labels). If we collapse all prose to a single number, we either pretend the collisions don't exist (force 70) or pretend the dome itself claims 72 (force 72). Both options are worse than the current situation; the current situation is correctly two-numbered but inconsistently named.",
+    "why_it_doesnt_save_claim": "The curmudgeon's grep is correct: 129 mentions of 70 vs 15 of 72 in the rendered HTML is integrity drift, and even though most '70' mentions are defensibly dome-frame, FIVE specific prose locations use {{TOTAL_WINS}} (=70) as a denominator for a verdict tally whose NUMERATOR is computed over all 72 catalog rows. Those five are arithmetically wrong — most visibly 'TALLY_STD=18 of TOTAL_WINS=70' (the 18 includes WIN-057b which is a collision sub-claim, so the math is 17/70 + 1 collision = 18/72, never 18/70). Two of the three categories whose tally count differs between the 70-frame and 72-frame are involved: Std Model Explains (18 catalog / 17 dome) because 057b lands there, and Not Demonstrated (3 catalog / 2 dome) because 058b lands there. Self-Contradicted, Refuted, Misleading, and Unfalsifiable happen to be the same in both frames at HEAD because neither collision row landed in those buckets — but the cleanest fix should be robust to a future verdict change on 057b/058b, not lucky-by-coincidence."
+  },
+  "approach_a_vs_b_argument": {
+    "chosen": "(a) name the denominator at each mention",
+    "rationale_for_a": "The collision rows are evidence about the dome, not bookkeeping noise. WIN-057b ('Global cavity re-pressurization (SAA synchronous decay)') is a Std-Model-Explains finding for a dome claim that re-uses the WIN-057 number from 'Two-zone disc topology'; WIN-058b ('bedrock-κ') is a Not-Demonstrated finding for a dome claim that re-uses the WIN-058 number from 'θ=-lonE'. The fact that the dome reuses claim numbers across surfaces is a methodological point we make explicitly in Part 8b.1. If prose hides the 72-figure or hides the 70-figure, the structural argument that the visible registry has collisions loses one of its anchors.",
+    "rationale_against_b": "Force-72 would require rewording many sentences that are factually about what the dome itself claims ('the model claims 70 confirmed predictions', 'V51.0: 70 claimed wins') — those quotes and paraphrases are anchored to dome's own framing and reading '72' would misrepresent what the dome says. Force-72 would also break the V51.0 accuracy formula prose in §6.6, which is specifically about dome's own arithmetic on 70 with denominators of (70+4) and (70+4+silent_failures). Those are dome-side facts and cannot be re-templated to 72.",
+    "why_curmudgeon_called_either_acceptable": "Curmudgeon's c2 review wrote 'either path is fine' because their primary critique was integrity drift, not the choice of frame. The actual fix-set under (a) — the patches listed below — addresses exactly the same drift curmudgeon flagged, so the recommended action and curmudgeon's recommendation are compatible."
+  },
+  "build_pipeline_changes": {
+    "file": "build-scripts/generate-html.js",
+    "change_1": {
+      "location": "resolvePlaceholders function, ~line 61, in the replacements object",
+      "add_after": "'{{TOTAL_WINS}}': context.totalWins || 0,",
+      "insert": "    '{{CATALOG_TOTAL}}': context.catalogTotal || 0,\n    '{{COLLISION_COUNT}}': context.collisionCount || 0,",
+      "comment": "// CATALOG_TOTAL = wins.length (full review catalog including collision sub-claims).\n// COLLISION_COUNT = wins.length - baseWins.length (rows whose id has a letter suffix).\n// TOTAL_WINS stays as baseWins.length — dome's claimed count.\n// Use CATALOG_TOTAL anywhere a verdict tally is the numerator (since the tally\n// is computed over all 72 catalog rows); use TOTAL_WINS for prose about what\n// the dome claims as its own count."
+    },
+    "change_2": {
+      "location": "main() function, ~line 1198, in the context object construction near `const counts = {`",
+      "after_line": "const baseWins = wins.filter(w => /^\\d{3}$/.test(w.id));",
+      "insert": "  const collisionWins = wins.filter(w => /^\\d{3}[a-z]$/i.test(w.id));\n  // catalogTotal === wins.length; we derive it via baseWins + collisionWins for the\n  // build-time sanity check below.",
+      "add_to_counts": "    catalogTotal: wins.length,\n    collisionCount: collisionWins.length,",
+      "build_invariant": "// SANITY: baseWins.length + collisionWins.length must equal wins.length.\n// If not, the regex above missed a row shape (e.g. four-digit ID, two-letter suffix)\n// — fail the build so a future schema change does not silently corrupt the\n// CATALOG_TOTAL caption math.\nif (baseWins.length + collisionWins.length !== wins.length) {\n  throw new Error(`build: ID-shape coverage gap — baseWins=${baseWins.length} + collisions=${collisionWins.length} != wins.length=${wins.length}`);\n}",
+      "pass_to_context": "totalWins: counts.total,\ncatalogTotal: counts.catalogTotal,\ncollisionCount: counts.collisionCount,\n// (these get added wherever the existing context object is built and passed into resolvePlaceholders)"
+    },
+    "change_3": {
+      "location": "generateVerdictBarChart function, lines 499-500 (verdict-bars caption)",
+      "current": "<h2 id=\"verdict-bars-heading\" class=\"ds-vb-heading\">How the ${total} catalog entries actually land</h2>\n  <p class=\"ds-vb-caption\">${total} catalog entries = 70 dome-claimed wins plus 2 numbered-collision sub-claims. Sorted by count; percentages rounded to one decimal so they sum to 100. Click any verdict to jump to the detailed analysis.</p>",
+      "replacement": "<h2 id=\"verdict-bars-heading\" class=\"ds-vb-heading\">How the ${total} catalog entries actually land</h2>\n  <p class=\"ds-vb-caption\">${total} catalog entries = ${total - (context.collisionCount||0)} dome-claimed wins plus ${context.collisionCount||0} numbered-collision sub-claims. The dome reused win-IDs across its confirmed-wins and prospective-predictions surfaces; we split each collision into a parent row and a sub-claim row so every distinct dome claim gets its own verdict. Sorted by count; percentages rounded to one decimal so they sum to 100. Click any verdict to jump to the detailed analysis.</p>",
+      "note": "If the chart function does not currently receive `context` as a parameter, EITHER (a) pass it through from the call site (one extra arg) OR (b) hardcode the values as a temporary measure but mark the line with a // TODO: drive from context comment. Option (a) is preferred; option (b) is a 30-second fix if (a) requires plumbing."
+    },
+    "change_4": {
+      "location": "data/sections.json _meta.placeholders — document the new placeholders",
+      "add_keys": {
+        "{{CATALOG_TOTAL}}": "Total rows in wins.json (currently 72) — used as the denominator anywhere a verdict tally count is the numerator. Differs from {{TOTAL_WINS}} (the dome's claimed count, currently 70) because the catalog splits dome's two ID-collision claims into sub-rows.",
+        "{{COLLISION_COUNT}}": "Number of collision sub-claim rows (currently 2: WIN-057b, WIN-058b). Equals {{CATALOG_TOTAL}} − {{TOTAL_WINS}}."
+      }
+    }
+  },
+  "prose_patches": [
+    {
+      "patch_id": "P1",
+      "location": "data/sections.json → part2b.html → §2b.6 'Audit status' paragraph (offset ~26858 in part2b.html string)",
+      "current_html": "The {{TOTAL_WINS}} claims we review include {{TALLY_REFUTED}} refuted by external data, {{TALLY_SELFCON}} self-contradicted by the dome's own geometry, and {{TALLY_MISL",
+      "bug": "TALLY counts are summed over all {{CATALOG_TOTAL}}=72 rows; the denominator {{TOTAL_WINS}}=70 is wrong. Worst offender: Tally_STD=18 / TOTAL_WINS=70 is arithmetically off because 057b (Std Model Explains, a collision row) is in the numerator but not the denominator.",
+      "replacement_html": "The {{CATALOG_TOTAL}} catalog rows we review (the dome's {{TOTAL_WINS}} claimed wins plus {{COLLISION_COUNT}} numbered-collision sub-claims) include {{TALLY_REFUTED}} refuted by external data, {{TALLY_SELFCON}} self-contradicted by the dome's own geometry, and {{TALLY_MISL",
+      "note": "Only the opening clause changes; the rest of the sentence (everything after '{{TALLY_MISL') remains as-is. This keeps the rhetorical flow while making the denominator math correct and naming the collision rows explicitly."
+    },
+    {
+      "patch_id": "P2",
+      "location": "data/sections.json → part3.html → §3.1 verdict tally header (offset ~1641 in part3.html string)",
+      "current_html": "<div class=\"tally\"> <strong>Verdict Tally ({{TOTAL_WINS}} total WINs):</strong> Self-Contradicted: {{TALLY_SELFCON}} | Refuted by Data: {{TALLY_REFUTED}} | Not Demonstrated: {{TALLY_NOTDEMO}} | Standard Mode",
+      "bug": "Same as P1 — TALLY counts sum to 72 but the header says '{{TOTAL_WINS}}=70 total WINs'.",
+      "replacement_html": "<div class=\"tally\"> <strong>Verdict Tally ({{CATALOG_TOTAL}} catalog rows = {{TOTAL_WINS}} dome-claimed + {{COLLISION_COUNT}} collision sub-claims):</strong> Self-Contradicted: {{TALLY_SELFCON}} | Refuted by Data: {{TALLY_REFUTED}} | Not Demonstrated: {{TALLY_NOTDEMO}} | Standard Mode",
+      "note": "Slightly longer header but the denominator now matches the numerators arithmetically and the structural fact about collision-splitting is on the verdict-tally row itself, where a reader checking the math will see it."
+    },
+    {
+      "patch_id": "P3",
+      "location": "data/sections.json → part8.html → §8.2 'The claim vs the reality' (offset ~1458 in part8.html string)",
+      "current_html": "These directly contradict. The model's internal geometry refutes {{SELF_CONTRADICTED}} of the {{TOTAL_WINS}} WINs (see Part 2).",
+      "bug": "{{SELF_CONTRADICTED}}=20 happens to be the same in both frames at HEAD (no collision row is Self-Contradicted), but the 'of {{TOTAL_WINS}}' phrasing locks the denominator semantics; if a future row-split lands a sub-claim in Self-Contradicted, the math drifts silently. Templating defensively now is cheap.",
+      "replacement_html": "These directly contradict. The model's internal geometry refutes {{SELF_CONTRADICTED}} of the {{CATALOG_TOTAL}} catalog rows (see Part 2; the catalog covers all {{TOTAL_WINS}} dome-claimed wins plus {{COLLISION_COUNT}} collision sub-claims).",
+      "note": "Adds one parenthetical clause explaining the relationship. Reader who clicks through to Part 2 sees the same convention applied there."
+    },
+    {
+      "patch_id": "P4",
+      "location": "data/sections.json → part9.html → §9.1 Pattern 6 line (offset ~1270 in part9.html string)",
+      "current_html": "{{UNFALSIFIABLE}} theological assertions counted among {{TOTAL_WINS}} wins.",
+      "bug": "{{UNFALSIFIABLE}}=3, equal in both frames at HEAD (no collision row is Unfalsifiable). But same defensive-templating argument as P3.",
+      "replacement_html": "{{UNFALSIFIABLE}} theological assertions counted among the {{CATALOG_TOTAL}} catalog rows ({{TOTAL_WINS}} dome-claimed + {{COLLISION_COUNT}} collision sub-claims).",
+      "note": "Same fix-pattern as P3."
+    },
+    {
+      "patch_id": "P5",
+      "location": "data/sections.json → part9.html → Pattern 11 (offset ~3128 in part9.html string)",
+      "current_html": "Pattern 11 (NEW): Self-Contradicting Own Geometry.</strong> In {{SELF_CONTRADICTED}} of {{TOTAL_WINS}} WINs, the dome's own stated geometry",
+      "bug": "Same as P3.",
+      "replacement_html": "Pattern 11 (NEW): Self-Contradicting Own Geometry.</strong> In {{SELF_CONTRADICTED}} of the {{CATALOG_TOTAL}} catalog rows we reviewed, the dome's own stated geometry",
+      "note": "Slightly shorter than P3/P4 because Pattern 11 already has its own narrative voice and 'catalog rows we reviewed' suffices without re-explaining the 70/72 split. Reader following from §3.1 (P2) has the convention."
+    },
+    {
+      "patch_id": "P6_overview_explanatory_paragraph",
+      "location": "Overview section — recommend inserting immediately AFTER the verdict-bars block (after the existing 'Sorted by count...' caption) and BEFORE the Latest Findings block, as a one-paragraph reading guide.",
+      "current_html": "(no current text — this is an insertion, not a replacement)",
+      "replacement_html": "<details id=\"ds-counts-reading-guide\"><summary class=\"ps-summary\"><strong>Two numbers, 70 and 72 — why both are real.</strong> <span class=\"ps-tldr\">The dome claims 70 confirmed wins. Our catalog has 72 rows. The 2-row difference is two ID collisions the dome creates by reusing WIN-057 and WIN-058 across its confirmed and prospective lists; we split each collision so every distinct claim gets its own verdict.</span></summary><div class=\"ps-detail\"><p>Throughout this review, count-phrasing uses two conventions: prose about what the <strong>dome claims</strong> uses 70 (the dome's own count of confirmed wins); prose about <strong>our review catalog</strong> uses 72 (because the catalog covers all 70 dome-claimed wins plus the 2 collision sub-claims, WIN-057b and WIN-058b, that the dome creates by reusing win-IDs across its confirmed and prospective surfaces). Verdict tallies (Self-Contradicted, Refuted, Misleading, etc.) are computed over all 72 catalog rows, so any sentence reading \\\"<em>tally-count</em> of <em>denominator</em>\\\" uses 72 as the denominator. Sentences quoting or paraphrasing the dome's own framing (\\\"V51.0 claims 70 wins\\\", \\\"the dome's 70-claim accuracy formula\\\") use 70. The collision-split itself is a structural finding about the dome's identifier hygiene; see <a href=\"#p8b-1-claim-keys\" onclick=\"showTab('ai');return false\">Section 8b.1 (claim_key annotations)</a> for the full discussion.</p></div></details>",
+      "note": "This is the single reader-facing reconciliation block — without it, even a reader who notices the convention has to reverse-engineer it. The progressive-disclosure wrapper keeps the Overview short; only a reader checking the math expands it. Cross-links to Section 8b.1 close the loop with the existing collision-as-evidence argument."
+    }
+  ],
+  "mentions_left_unchanged": {
+    "count_approximate": 39,
+    "rationale": "Of the 44 {{TOTAL_WINS}} occurrences in sections.json, the 5 patched above (P1-P5) are the ones where the denominator semantics are arithmetically wrong (TALLY_* numerator over baseWins-length denominator). The remaining 39 are correctly dome-frame: either they quote/paraphrase the dome's own framing ('the model claims 70 confirmed predictions', 'V51.0: 70 claimed wins', 'the dome's 70-claim formula 70/(70+4)=95.2%'), or they are code-analysis denominators where the numerator (CA_*) is also computed over baseWins (code-analysis filters baseWins per generate-html.js line 1207, so 'CA_RELABELS of TOTAL_WINS' is internally consistent at 70/70). The audit pass below confirms each unchanged location.",
+    "sampled_unchanged_locations": [
+      "part1@497 — Overview KPI card 'Claims Made: {{TOTAL_WINS}}', sublabel 'The dome's own count of confirmed predictions' — already dome-labelled.",
+      "part1@4504 — 'The model claims {{TOTAL_WINS}} confirmed predictions' — direct dome paraphrase.",
+      "part2b@560 — 'Of {{TOTAL_WINS}} WINs, {{CA_REVIEWED}} have been reviewed' — code-analysis denominator; reviewed=baseWins.filter(...), so internally consistent.",
+      "part2b@21379 — '{{TOTAL_WINS}} minus {{CA_DOME}} of {{TOTAL_WINS}} WINs work backwards' — code-analysis numerator over baseWins; consistent.",
+      "part6@37103 — 'The V51.0 formula {{TOTAL_WINS}} / ({{TOTAL_WINS}} + 4) = 95.2%' — quoting dome's own arithmetic; must stay 70.",
+      "part9@8741 — 'The {{TOTAL_WINS}} claimed wins include systematic duplication' — direct dome paraphrase.",
+      "part10@6028 — 'This review represents an analysis of {{TOTAL_WINS}} claimed wins' — footer, dome-frame is correct.",
+      "part1b@761 — 'V51.0 (April 2026): {{TOTAL_WINS}} claimed wins (+{{NEW_IN_V51}})' — version-history note, dome-frame.",
+      "(33 more, all dome-frame on the same audit principle — full list available on request)"
+    ]
+  },
+  "current_values_at_authoring": {
+    "note": "Sanity-checked against wins.json at HEAD.",
+    "wins_json_length": 72,
+    "base_wins_length": 70,
+    "collision_count": 2,
+    "collision_rows": [
+      {
+        "id": "057b",
+        "verdict": "Std Model Explains",
+        "parent": "057 (Two-zone disc topology, Misleading)"
+      },
+      {
+        "id": "058b",
+        "verdict": "Not Demonstrated",
+        "parent": "058 (θ=-lonE convention, Misleading)"
+      }
+    ],
+    "verdict_tallies_72_catalog": {
+      "Refuted by Data": 12,
+      "Self-Contradicted": 20,
+      "Misleading": 16,
+      "Std Model Explains": 18,
+      "Not Demonstrated": 3,
+      "Unfalsifiable": 3,
+      "total": 72
+    },
+    "verdict_tallies_70_basewins_only": {
+      "Refuted by Data": 12,
+      "Self-Contradicted": 20,
+      "Misleading": 16,
+      "Std Model Explains": 17,
+      "Not Demonstrated": 2,
+      "Unfalsifiable": 3,
+      "total": 70
+    },
+    "diff_locations": {
+      "Std Model Explains": "18 (catalog) − 17 (basewins) = 1 (WIN-057b)",
+      "Not Demonstrated": "3 (catalog) − 2 (basewins) = 1 (WIN-058b)"
+    },
+    "arithmetic_bug_at_head": "Pre-patch, the rendered prose says 'Tally_STD=18 of TOTAL_WINS=70' (Part 2b §2b.6, P1 location). 18 of 70 is misleading because the 18 includes WIN-057b which is not in the 70-set. Post-patch, the prose reads 'Tally_STD=18 of CATALOG_TOTAL=72' which matches the actual numerator/denominator pair."
+  },
+  "holes_addressed": [
+    "HOL-NARRATIVE c2 hole 1 (moderate): 70-vs-72 count drift across prose — reconciled via Approach (a), patches P1-P6.",
+    "Cross-cuts the structural argument in Part 8b.1 (claim_key annotations): the patched explanatory paragraph (P6) now references Section 8b.1, closing the loop between the count-drift fix and the underlying claim-collision argument."
+  ],
+  "holes_NOT_addressed_here": [
+    {
+      "hole": "HOL-NARRATIVE c2 hole 2 (moderate): Part 2b.3 derive-count template glitch ('only 1 derive ... These 1 are: WIN-044 and WIN-057 ...')",
+      "reason": "Separate root cause (template counts vs prose enumeration drift on derives_from_dome=true). Belongs to its own EXP; not bundled here to keep the count-drift patch reviewable."
+    },
+    {
+      "hole": "HOL-NARRATIVE c2 hole 3 (moderate): stance-statement-first prejudgment attack",
+      "reason": "Operator closed ISS-2254 as wontfix on 2026-05-29 (decision: keep the 'The world is a globe' stance statement at its current position; same editorial reasoning as ISS-2217). Not addressable as an analyst patch."
+    },
+    {
+      "hole": "HOL-NARRATIVE c2 hole 4 (minor): Timestamp Error tab position",
+      "reason": "EXP-438 (separate tracker item). Tab-order editorial decision; not in this patch's scope."
+    },
+    {
+      "hole": "HOL-NARRATIVE c2 hole 5 (minor): missing top-of-document reading guide",
+      "reason": "Patch P6 (the explanatory paragraph) addresses the 'how to read the counts' subset of the reading-guide ask, but does not address the broader 'macro-arc of the 12 tabs' guide curmudgeon also asked for. That broader reading guide is a separate analyst task and would best ship after the count-drift fix lands so the new guide can reference the now-consistent count convention."
+    }
+  ],
+  "newsworthy": null,
+  "test_recommendations": {
+    "pre_commit_check": "node test.js should be run by the decider before commit per CLAUDE.md's 'Critical Workflow Rule: Run Tests Before Committing Data Changes' — any HTML count drift will surface in the existing test suite.",
+    "add_a_new_test": "Recommend a tests/run.sh assertion: after rebuild, grep the rendered docs/index.html for '{{TALLY_STD}} of 70' and 'TALLY_STD of {{TOTAL_WINS}}' patterns (post-substitution: '18 of 70', '17 of 70' etc. paired with verdict-tally context). Fail the test if any tally-numerator/baseWins-denominator pair appears outside an explicitly-labelled dome-frame context. This codifies the editorial standard so it doesn't decay in the next prose edit. Implementation sketch: a small node script that re-counts the rendered HTML for the specific bad patterns and exits 1 if any are found."
+  },
+  "anticipated_objections": [
+    {
+      "objection": "Why patch only 5 mentions when curmudgeon's grep counted 129 vs 15? Aren't you under-fixing the problem?",
+      "response": "Curmudgeon counted post-substitution occurrences in the rendered HTML: the 44 {{TOTAL_WINS}} placeholders in sections.json each render as '70', so they appear as 44 of the 129 '70' mentions; the rest are non-templated narrative paragraphs that quote the dome's '70 wins' framing directly. Of the 44 placeholder occurrences, only 5 are arithmetically wrong (tally-numerator over basewins-denominator). The other 39 are correct dome-frame uses — fixing them would mean replacing 'The model claims 70 predictions' with 'The model claims 72 predictions', which would misrepresent what the dome claims. The fix is targeted because the bug is targeted; the surface area is large but the actual bad-math is small."
+    },
+    {
+      "objection": "Approach (b) — force everything to 72 — is simpler. Why pay the complexity cost of two denominator placeholders?",
+      "response": "Three reasons. (1) The dome itself claims 70; quoting or paraphrasing the dome with '72' is factually wrong. (2) The collision-split is itself evidence about the dome (it's the kernel-of-truth here) — collapsing it erases that evidence. (3) Sections 6.6, 8.2, 9.3, 8b.1 are specifically arguing about the dome's own counting, where the 70-figure is the load-bearing number. Force-72 would require reworking all of those sections and would still leave the same kind of mismatch in the other direction (TALLY counts split into 'visible vs hidden' counterparts to track which sub-claims are in the 72-frame). Two placeholders is the minimum complexity that makes the math correct without rewriting load-bearing argument sections."
+    },
+    {
+      "objection": "What if the dome adds a third collision (WIN-019b or similar) tomorrow? The placeholder math has to track that automatically.",
+      "response": "It does, by construction. {{CATALOG_TOTAL}} = wins.length and {{COLLISION_COUNT}} = wins.length - baseWins.length. The build-time sanity check (build_pipeline_changes.change_2.build_invariant) explicitly fails if a row's id-shape isn't matched by either the baseWins regex (\\d{3}) or the collisionWins regex (\\d{3}[a-z]). So a future ID shape (e.g., '019c' or '042bb') will fail the build loudly until the regexes are updated. The caption in change_3 is also dynamic; it will read '72 catalog entries = 70 dome-claimed + 2 collisions' today and '73 = 70 + 3' tomorrow without further code changes."
+    },
+    {
+      "objection": "Why insert the explanatory paragraph P6 in the Overview rather than in §3.1 right above the verdict-tally header you also patched?",
+      "response": "Overview placement is for the reader who skims the verdict bars in the hero and notices that bars total 72 while the surrounding KPI card says '70 Claims Made'. That reader's first question — 'why two numbers?' — needs an immediate answer, not a click-through to §3.1. §3.1's own header (patch P2) carries a one-line abbreviation of the same reconciliation ('72 catalog rows = 70 dome-claimed + 2 collision sub-claims'), so the reader who goes straight to Part 3 also gets the convention named. The full explanatory block exists once in the Overview; everywhere else, the abbreviation is sufficient and consistent."
+    },
+    {
+      "objection": "The curmudgeon's recommended-action was 'minor_edit', not a fix this large. Are you overshooting scope?",
+      "response": "'minor_edit' refers to the per-section impact, not the cumulative patch size. Each individual prose patch is one clause-level swap; the build-pipeline change is a few lines of code; the explanatory paragraph is one new <details> block. No section gets a structural rewrite. The cumulative count of edits is moderate because the bug is distributed across five sections, but each edit individually is small. This matches curmudgeon's recommended_action='minor_edit' framing."
+    },
+    {
+      "objection": "Why not also fix the related Part 2b derive-count template glitch (HOL-NARRATIVE hole 2) in this same EXP? They're conceptually related — both are template-vs-prose count drift.",
+      "response": "Bundling would conflate two distinct root causes. Hole 1 is denominator-semantics drift (the {{TOTAL_WINS}} placeholder is used where {{CATALOG_TOTAL}} is the correct denominator). Hole 2 is template-vs-prose drift on derives_from_dome=true (a singular/plural agreement issue plus a count-vs-list mismatch). A patch that addresses both would be harder to review; a future regression on one would be harder to roll back without reverting the other. Each gets its own EXP; this one is hole 1 only."
+    }
+  ],
+  "decider_routing_hints": {
+    "integration_order": "P1-P5 (prose patches in sections.json) can land in any order; they are independent. The build-pipeline change (changes 1-4) must land BEFORE the prose patches reference the new {{CATALOG_TOTAL}} placeholder, otherwise the rendered HTML will show the literal string '{{CATALOG_TOTAL}}'. Recommend a single decider commit that does all build changes + all prose patches atomically, then runs node build.js to verify and node test.js to test.",
+    "related_followups": [
+      "EXP-441 (still pending): not directly related, but introduces a list_of_winids helper — if both land in the same cycle, the new {{COLLISION_COUNT}} computation can share file-organization conventions with the EXP-441 helper.",
+      "EXP-442 (still pending): not directly related; both are in part2b but touch different paragraphs."
+    ]
+  }
+}
