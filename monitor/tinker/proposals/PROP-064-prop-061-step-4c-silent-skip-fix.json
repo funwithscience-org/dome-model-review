@@ -1,0 +1,183 @@
+{
+  "prop_id": "PROP-064",
+  "title": "Fix PROP-061 Step 4c silent failure: capture pre-pull SHA so git→FUSE auto-sync fires when Step 1's pull absorbs upstream commits, plus harden the LOCAL/REMOTE comparison against benign-divergence false-positives. Add structure-integrity FUSE-prompt-staleness audit as the secondary detector.",
+  "status": "design-pending-operator-review",
+  "priority": "high",
+  "author": "tinker",
+  "authored_at": "2026-05-29T12:35:00Z",
+  "authored_by_run": "tinker-2026-05-29T12-34",
+  "source_directive": "DIRECTIVE-20260529-001 (operator filed HIGH after observing curmudgeon doing change-driven instead of holistic at 08:00Z because FUSE curmudgeon.md was 14h stale relative to git, despite PROP-061 having shipped two days earlier and the override clause having been on origin/main since 17:19Z 2026-05-28).",
+  "executive_summary": "PROP-061's Step 4c git→FUSE auto-sync has never executed successfully in production. Diagnostic: across the 40 workspace-sync runs since PROP-061 deployed 2026-05-27T19:56Z, ZERO sync-workspace-runs-*.json success sentinels exist, ONE non-FF abort sentinel exists (2026-05-28T21:07Z), and ONE divergence sentinel was overridden by the LLM with a custom `note` and `action: 'no-sync-needed'` (2026-05-29T11:07Z). Every other cycle silently exited via the LOCAL == REMOTE early-return branch. Root cause is a design defect in Step 4c's trigger condition, not an implementation bug in build.js sync-workspace (which the operator confirmed works correctly when invoked manually). The trigger compares LOCAL_SHA (clone HEAD after Step 4a/4b's commits and pushes) to REMOTE_SHA (origin/main after Step 4c's fetch). After a successful push these are equal — that's the happy path the conditional treats as 'nothing to sync'. But Step 1's `git pull --rebase origin main` SILENTLY fast-forwards LOCAL to absorb any upstream commits that arrived since the last cycle. By the time Step 4c runs, those upstream commits are inside LOCAL but invisible to the SHA comparison; the only thing that could legitimately make LOCAL != REMOTE after a successful push is a concurrent push landing in the ~30s window between Step 4b push and Step 4c fetch, or GitHub eventual-consistency lag (which produces phantom-divergence false-positives like the 11:07Z case). The 21:07Z non-FF abort is a separate-but-related Bug B: Step 4b's `git push origin main 2>&1 | tail -1` silently swallows push failures, leaving the run-report commit local-only, and Step 4c then reports a 'non-FF' that is actually 'LOCAL is ahead of REMOTE due to silent push failure'. The fix is in three workstreams: (A) capture PRE_PULL_SHA / POST_PULL_SHA at Step 1, set PULL_MOVED=1 when they differ, and treat that as the canonical trigger for git→FUSE sync; (B) replace the binary LOCAL==REMOTE check with a four-way merge-base classification (equal / LOCAL ancestor of REMOTE / REMOTE ancestor of LOCAL / neither) that correctly distinguishes 'sync needed' from 'benign LOCAL-ahead' from 'true non-FF'; (C) add a structure-integrity.md daily audit that md5-compares FUSE vs git for all files in build.js OWNERSHIP with category='git' or monitor/prompts/*.md, flagging any FUSE-staleness as a structural finding. (C) is the canary that would have caught this regression at the 2026-05-28T02:00Z integrity run, ~9h before the operator noticed manually. Recommended phasing: A+B ship together immediately (small, low-risk patch); C ships in a follow-up. Total estimated patch surface: ~30 lines of workspace-sync.md + ~25 lines of structure-integrity.md.",
+  "problem": {
+    "directive_evidence_summary": {
+      "the_one_abort_sentinel": "monitor/integrity/sync-workspace-non-ff-abort-2026-05-28T21-07-45Z.json — `would_ff: false` with divergent_files = workspace-sync's OWN run-report + verify-pending + narrative-cite outputs from that very cycle. The local_sha (3e15e69) and remote_sha (29ad7c9) do not match any known commit in project history per operator's gh-api lookup, meaning these were transient clone-internal SHAs, NOT a real divergence between two real commits.",
+      "the_one_divergence_sentinel": "monitor/integrity/git-to-fuse-divergence-2026-05-29T11-07-51Z.json — `would_ff: false` with divergent_files = workspace-sync's own outputs from this cycle (narrative-cite-audit, verify-pending-run, run-2026-05-29T11-07-03Z.json). The LLM noticed the pattern and IMPROVISED a custom `note: 'Benign: divergence is our own pushed commits not reflected in origin/main tracking ref. Push succeeded ... No external commits landed. No git->FUSE sync needed.'` and an `action: 'no-sync-needed'` not in the prompt's schema. The improvisation was a correct diagnosis but a wrong process — the prompt should have classified this benign case explicitly instead of leaving it to LLM judgment.",
+      "missing_success_sentinels": "Zero `sync-workspace-runs-*.json` files exist anywhere under monitor/integrity/, despite 40 workspace-sync cycles since PROP-061 deployment. The success path simply never ran.",
+      "observed_fuse_staleness": "Operator observed at 2026-05-29T10:39Z: FUSE monitor/prompts/curmudgeon.md = 518 lines, no override clause; git origin/main version = 521 lines with 2 hits on `operator_phase2_rerun_commission`. The git version had been on origin since commit e4f90e75e1 at 2026-05-28T17:19Z (~17 hours and ~17 workspace-sync cycles earlier). Every one of those cycles' Step 1 pull absorbed the new content into the clone's working tree, every Step 2's smart_copy correctly skipped the file via the monitor/prompts/*.md NEVER_PUSH dynamic rule, and every Step 4c saw LOCAL == REMOTE after push and silently exited.",
+      "agent_notes_record": "Spot-check of 18 run reports between 2026-05-28T17:07Z and 2026-05-29T10:07Z shows EVERY report's `agent_notes` field contains '45-49 mtime-guard skips (git newer than FUSE — normal)'. The agent was acknowledging git-newer-than-FUSE staleness as 'normal' on every cycle. The mtime-guard skip log shows the staleness applied to many file classes beyond prompts, including monitor/tinker/proposals/* (PROP-061 itself was stale in FUSE — git=2026-05-28T17:07Z, FUSE=2026-05-27T14:43Z — so the proposal that was supposed to fix git→FUSE staleness was, ironically, itself stale on FUSE because of the bug it was supposed to fix)."
+    },
+    "root_cause_diagnosis": {
+      "bug_A_silent_skip_when_pull_moved_head": {
+        "summary": "Step 4c's LOCAL == REMOTE check is the wrong test for whether FUSE needs a git→FUSE sync. The check captures 'did origin move BETWEEN our pull (Step 1) and our fetch (Step 4c)?', when the actual question is 'did upstream have commits FUSE hasn't seen yet?'. The two diverge because Step 1's `git pull --rebase` SILENTLY fast-forwards LOCAL to whatever origin had at pull-time, making LOCAL ≥ REMOTE-at-pull-time by definition before Step 2 ever runs. By the time Step 4c fetches (after Step 4a/4b's pushes), LOCAL and REMOTE are equal in the happy path because workspace-sync just pushed; the pull's effect is invisible to the SHA comparison.",
+        "fires_when": "Operator or scheduled agent pushes a git-owned file to origin via any path other than 'node build.js publish' AND no concurrent push happens between workspace-sync's own Step 4a/4b push and Step 4c fetch. This is the modal case — happens every hour for hours after every operator-direct prompt edit.",
+        "frequency": "100% of normal cycles when origin has had ANY upstream-only commits since the last workspace-sync run. 17/17 cycles between 2026-05-28T18:07Z and 2026-05-29T10:07Z fell into this branch."
+      },
+      "bug_B_false_positive_non_ff_when_local_ahead": {
+        "summary": "Step 4c's `git merge-base --is-ancestor HEAD origin/main` test treats 'HEAD is ahead of origin' as non-FF abort. That classification is wrong: when LOCAL is ahead of REMOTE, there is no divergence to propagate to FUSE — FUSE may need sync to absorb what's IN both, but the LOCAL-ahead state itself isn't divergent. Two paths produce LOCAL-ahead-of-REMOTE in the wild: (1) Step 4b's `git push origin main 2>&1 | tail -1` silently swallows push failures, leaving the run-report commit local-only (the 21:07Z case); (2) GitHub eventual-consistency lag between write replicas and read replicas (the 11:07Z case, per the LLM's correct improvised diagnosis). Both produce false-positive non-FF aborts.",
+        "fires_when": "Either Step 4b's push fails silently, or GitHub's read replica lags the write replica for the ~5-10s between push and fetch. Bug A would have masked Bug B until 2026-05-28 because Bug A short-circuits before Bug B can trip; the 21:07Z case was the first cycle where the concurrent-push window happened to coincide with a push-fail, surfacing Bug B for the first time.",
+        "frequency": "~5-10% of cycles based on the 2-of-40 observed-sentinels rate; would be higher if Bug A weren't suppressing the upstream divergence."
+      },
+      "shared_root_cause": "The trigger for 'should I invoke build.js sync-workspace?' is conflated with the trigger for 'is origin/main divergent from my local HEAD?'. The first question's correct answer is 'yes if any git-owned file in FUSE is stale relative to origin/main'. The second question's correct answer is the LOCAL/REMOTE merge-base classification. PROP-061 fused them, and the resulting test answers the wrong question in the modal case."
+    },
+    "the_2026_05_28T21_07Z_abort_reconstruction": {
+      "sequence_inferred": [
+        "Step 1: git pull --rebase origin main — pulled whatever was on origin at the time (likely the operator's 17:19Z override-clause push had landed earlier; this cycle absorbed it into LOCAL but FUSE never got it because Step 4c silently exits — Bug A).",
+        "Step 2-3: smart_copy iterated FUSE; verify-pending-run and narrative-cite-audit scripts wrote their integrity sentinels into the clone (visible in divergent_files); skip log accumulated 45 mtime-guard skips (including monitor/prompts/curmudgeon.md since the operator's override-clause commit).",
+        "Step 4a: 3 files committed (matches the run report's `files_committed: 3`). Push presumed succeeded — operator's gh-api lookup did not find SHA 3e15e69 on origin/main history, so the SHA was either pre-push (committed but unpushed in clone) or post-push but rebased away on a later cycle. The 3 committed files (per skip log + tracker presence) appear to be the integrity sentinels + the workspace-sync-skips append.",
+        "Step 4b: write run-report file (run-2026-05-28T21-07-20Z.json — present in FUSE confirming clone wrote it), commit + push. Push of THIS commit likely silently failed (the run-report file IS in FUSE now, but only because the operator's manual `node build.js sync-workspace` at 2026-05-29T10:42Z copied it from clone; or the next cycle's pull picked up an unrelated commit and bypassed it). The silent failure left LOCAL with the run-report commit that REMOTE didn't have.",
+        "Step 4c: git fetch origin main — fetched whatever origin had after Step 4a's push but BEFORE Step 4b's commit. LOCAL_SHA = HEAD (Step 4a's commit + Step 4b's run-report commit). REMOTE_SHA = HEAD-1 (only Step 4a's push landed). Or there was a concurrent push from another agent in this window that REMOTE has but LOCAL doesn't (then it's a true 3-way divergence, neither side ancestor of the other).",
+        "merge-base --is-ancestor HEAD origin/main: false (HEAD has commits REMOTE doesn't, regardless of which sub-case). Therefore would_ff: false → wrote sync-workspace-non-ff-abort sentinel with the false-positive `reason: 'origin/main is not a fast-forward'`.",
+        "EXIT trap fired: rm -rf $CLONE (which is why operator's note observed 'Clone was already removed when this was detected'). The clone with the 'extra' Step 4b commit was deleted; the abort sentinel was the only durable artifact."
+      ],
+      "evidence_for_inference": [
+        "The 21:07 run report itself (run-2026-05-28T21-07-20Z.json) is present in FUSE — it was eventually rescued via the operator's manual sync-workspace at 10:42Z.",
+        "The narrative-cite-audit sentinel for 21:06 is MISSING from FUSE per Read attempt, but verify-pending-run-2026-05-28T2106Z.json IS present — asymmetric rescue.",
+        "Skip log shows 45 mtime-guard skips on that cycle (run_id ws-sync-2026-05-28T2107Z-16), matching the run report's `skip_breakdown.mtime_guard: 45`.",
+        "The agent_notes string 'Routine sync. 45 mtime-guard skips ... Deploy clean.' contains no mention of push failure, abort, or any anomaly — consistent with Step 4b's `2>&1 | tail -1` silently swallowing the push failure before the LLM could observe it."
+      ],
+      "implication_for_fix": "Bug B requires not just classifying LOCAL-ahead-of-REMOTE as benign, but also surfacing Step 4b's push failure into AGENT_NOTES so future similar cases are visible in the run report rather than only the abort sentinel. The current `2>&1 | tail -1` pattern in Step 4b is a separate operability bug that should also be addressed in this PROP."
+    }
+  },
+  "alternatives_considered": [
+    {
+      "id": "option_a",
+      "name": "Report-only fallback (return Phase 1 of PROP-061)",
+      "summary": "Make Step 4c report-only: always write divergence reports based on the existing LOCAL/REMOTE comparison, never auto-merge, never invoke sync-workspace. Operator runs `node build.js sync-workspace` manually based on the reports.",
+      "pros": [
+        "Smallest possible change — strip the action arm of Step 4c, keep the detector.",
+        "Zero risk of FUSE-overwrites-LOCAL-content bugs since no automated copy fires.",
+        "Operator-control: every git→FUSE propagation is intentional."
+      ],
+      "cons": [
+        "Returns to the pre-PROP-061 state from the operator's perspective. The PROP-061 directive explicitly observed 4 separate manual sync-workspace runs across two cowork sessions as the cost-prompting failure mode. Going back to manual is a regression in the user-facing pain, even though it's a regression to the prior baseline rather than a new defect.",
+        "Doesn't fix Bug A — the reports themselves will be wrong (LOCAL == REMOTE → 'no divergence to report' when in fact upstream content reached LOCAL via the silent pull). The reports would still be empty in the modal case.",
+        "Defers the design fix indefinitely. The next time the operator pushes a prompt edit, they'll see FUSE drift again and a tinker run will re-author this PROP."
+      ]
+    },
+    {
+      "id": "option_b",
+      "name": "SHA-comparison fix (recommended)",
+      "summary": "Two changes: (1) capture PRE_PULL_SHA before Step 1's pull and POST_PULL_SHA after; if they differ set PULL_MOVED=1. (2) Replace Step 4c's binary LOCAL==REMOTE check with a four-way merge-base classification: equal / LOCAL ancestor of REMOTE / REMOTE ancestor of LOCAL / neither. Invoke sync-workspace whenever PULL_MOVED=1 OR the classification is 'LOCAL ancestor of REMOTE' (FF-able). Treat 'REMOTE ancestor of LOCAL' as benign (no abort, no sync). Treat 'neither' as the true non-FF case (abort sentinel).",
+      "pros": [
+        "Fixes Bug A directly: PULL_MOVED=1 captures the case where upstream had commits FUSE hasn't seen — exactly the missing trigger.",
+        "Fixes Bug B directly: the four-way classification distinguishes benign LOCAL-ahead from true non-FF, eliminating the false-positive sentinels.",
+        "Preserves all of PROP-061's safety architecture: still gated by FF check, still writes divergence reports, still aborts on true non-FF.",
+        "Idempotent in the success case: sync-workspace is a no-op when FUSE already matches LOCAL (copyFileSync overwrites with identical content), so PULL_MOVED=1 over-triggering is harmless.",
+        "Small patch: ~10 lines in Step 1 + ~15 lines rewriting the Step 4c gate."
+      ],
+      "cons": [
+        "PULL_MOVED can over-trigger: any upstream commit (even one that touches only files not in OWNERSHIP/prompts, like analyst expansions) will cause sync-workspace to run. Cost: ~1-2s of file copies per cycle. Acceptable given sync-workspace is already idempotent.",
+        "Doesn't surface Bug B's underlying silent-push-failure problem in Step 4b — the abort sentinel would just stop firing on the false-positive, not solve the actual silent failure. Recommend adding `if ! git push origin main 2>&1 | tee /dev/stderr; then AGENT_NOTES=...; fi` pattern in Step 4b as a sub-fix. See `the_2026_05_28T21_07Z_abort_reconstruction.implication_for_fix`.",
+        "The 11:07Z LLM-improvised note shows the LLM can correctly diagnose the benign case, but only after-the-fact. The fix's correctness depends on `git merge-base --is-ancestor` being reliable across GitHub eventual-consistency windows — empirically it is (it operates on local refs after fetch), but the read-replica lag could cause REMOTE_SHA to point at a stale commit even after fetch returns success."
+      ]
+    },
+    {
+      "id": "option_c",
+      "name": "Always-sync (drop the gate entirely)",
+      "summary": "Remove the entire LOCAL/REMOTE comparison from Step 4c. After Step 4a/4b's push completes, always invoke `node build.js sync-workspace`. Drop the divergence report and non-FF abort sentinel entirely.",
+      "pros": [
+        "Maximum simplicity: 4-line Step 4c replaces the current 90-line block.",
+        "Fixes both Bug A and Bug B by sidestepping the SHA comparison entirely.",
+        "sync-workspace's OWNERSHIP whitelist + copyFileSync overwrite-semantics make this structurally safe — even on a force-pushed origin, FUSE just inherits whatever is on git, no deletions."
+      ],
+      "cons": [
+        "Loses the audit trail: divergence reports were a useful operator-visible record of 'origin had upstream-only commits this cycle'. Tinker's soft-complaints grep would lose a signal.",
+        "Loses non-FF abort: if origin is ever force-pushed to a bad commit (e.g. 2026-05-21 disaster), FUSE inherits the bad state within the hour. The PROP-051 family of safety gates was specifically motivated by this risk.",
+        "Loses the 'two-phase rollout' safety pattern that PROP-061 itself used (Phase 1 report-only → Phase 2 auto-sync) — there'd be no degradation path if a bug were discovered later."
+      ]
+    },
+    {
+      "id": "option_d",
+      "name": "Hybrid (b + c lite): option_b as primary, plus an `--always-sync` operator escape hatch",
+      "summary": "Implement option_b. Additionally, allow `monitor/decisions/sync-workspace-always.flag` as a presence-detection escape hatch: when present, Step 4c skips the SHA comparison and just runs sync-workspace. Same shape as `monitor/decisions/prop-009-enforce.flag`. Operator sets the flag if option_b's gate misbehaves and they want to fall back to always-sync without re-pushing the prompt.",
+      "pros": [
+        "Belt-and-suspenders: option_b is the structurally-correct fix; the flag is the recovery escape if option_b's logic has a latent bug we haven't anticipated.",
+        "Flag is presence-detection only — semantically the same as prop-009-enforce.flag, no new mechanism."
+      ],
+      "cons": [
+        "Adds one more file class to NEVER_PUSH and one more semantic flag for the operator to track. Marginal but real cognitive overhead.",
+        "Probably YAGNI: option_b is small enough to validate within one operator-attention cycle; if it's wrong, the operator's existing manual sync-workspace remains available."
+      ]
+    }
+  ],
+  "recommendation": "Option B (SHA-comparison fix). Reasons: it directly addresses both bugs A and B with a small, surgical patch (~25 lines total); preserves PROP-061's safety architecture (FF gate, non-FF abort, divergence reports as audit trail); is idempotent and over-trigger-safe; restores the operator-facing UX that PROP-061 was supposed to deliver. Option C is more elegant but loses too much safety infrastructure. Option A is the conservative fallback if option B's first deployment shows unexpected behavior — easy to revert to. Option D adds optionality of dubious value.",
+  "proposed_implementation": {
+    "workstream_A_step_1_pre_pull_sha_capture": {
+      "file": "monitor/prompts/workspace-sync.md",
+      "section": "Step 1: Setup",
+      "change_summary": "Capture PRE_PULL_SHA before `git pull --rebase`, POST_PULL_SHA after. Set PULL_MOVED=1 when they differ. Export the variable for Step 4c.",
+      "patch_pseudocode": "After the existing `git pull --rebase origin main` line at the end of Step 1, add: `PRE_PULL_SHA=$(git rev-parse HEAD)` BEFORE the pull, `POST_PULL_SHA=$(git rev-parse HEAD)` after, and `if [ \"$PRE_PULL_SHA\" != \"$POST_PULL_SHA\" ]; then PULL_MOVED=1; echo \"[PROP-064] Step 1 pull moved HEAD: $PRE_PULL_SHA → $POST_PULL_SHA — git→FUSE sync will be triggered in Step 4c\"; else PULL_MOVED=0; fi`.",
+      "estimated_loc": 8
+    },
+    "workstream_B_step_4c_four_way_classification": {
+      "file": "monitor/prompts/workspace-sync.md",
+      "section": "Step 4c: PROP-061 git→FUSE propagation",
+      "change_summary": "Replace the binary `if [ \"$LOCAL_SHA\" = \"$REMOTE_SHA\" ]; then ... else ... fi` block with a four-way classification. Use `git merge-base --is-ancestor` twice to distinguish all four cases. Trigger sync-workspace whenever (PULL_MOVED=1) OR (REMOTE is ahead of LOCAL via FF). Treat (LOCAL is ahead of REMOTE) as benign with a one-line log. Treat (neither ancestor) as the existing non-FF abort.",
+      "patch_pseudocode": "Replace lines roughly 1099-1178 of workspace-sync.md with:\n\n```bash\nif [ \"$LOCAL_SHA\" = \"$REMOTE_SHA\" ]; then\n  CLASSIFICATION=equal\nelif git merge-base --is-ancestor \"$LOCAL_SHA\" \"$REMOTE_SHA\"; then\n  CLASSIFICATION=local-ancestor-of-remote  # origin moved ahead during cycle; FF sync\nelif git merge-base --is-ancestor \"$REMOTE_SHA\" \"$LOCAL_SHA\"; then\n  CLASSIFICATION=remote-ancestor-of-local  # benign — LOCAL is ahead (silent push fail / eventual-consistency lag)\nelse\n  CLASSIFICATION=true-non-ff\nfi\n\nNEED_SYNC=0\n[ \"$PULL_MOVED\" = \"1\" ] && NEED_SYNC=1\n[ \"$CLASSIFICATION\" = \"local-ancestor-of-remote\" ] && NEED_SYNC=1\n\necho \"[PROP-064] Step 4c classification=$CLASSIFICATION pull_moved=$PULL_MOVED need_sync=$NEED_SYNC\"\n\nif [ \"$CLASSIFICATION\" = \"true-non-ff\" ]; then\n  # existing non-FF abort sentinel path — unchanged\n  ...write monitor/integrity/sync-workspace-non-ff-abort-*.json...\nelif [ \"$CLASSIFICATION\" = \"remote-ancestor-of-local\" ]; then\n  # benign — log + write a lightweight benign-divergence audit\n  ...write monitor/integrity/git-to-fuse-divergence-*.json with action='benign-local-ahead'...\n  # still proceed to sync-workspace if PULL_MOVED=1, else exit cleanly\nfi\n\nif [ \"$NEED_SYNC\" = \"1\" ]; then\n  # FF merge if classification was local-ancestor-of-remote (origin moved)\n  [ \"$CLASSIFICATION\" = \"local-ancestor-of-remote\" ] && git merge --ff-only origin/main\n  # invoke sync-workspace + write success sentinel — existing logic\n  SYNC_OUT=$(node build.js sync-workspace 2>&1)\n  ...write monitor/integrity/sync-workspace-runs-*.json...\nfi\n```",
+      "estimated_loc": 35,
+      "delta_vs_existing": "+15 net (the four-way classification adds lines but the binary branching collapses; the non-FF abort and sync-success sentinel writers are unchanged)."
+    },
+    "workstream_B_subfix_step_4b_push_visibility": {
+      "file": "monitor/prompts/workspace-sync.md",
+      "section": "Step 4b: Write run report (the second push)",
+      "change_summary": "Replace `git push origin main 2>&1 | tail -1` with a pattern that surfaces push failures into AGENT_NOTES. The silent swallow contributed to the 2026-05-28T21:07Z misdiagnosis.",
+      "patch_pseudocode": "Replace the run-report push block (currently `git push origin main 2>&1 | tail -1`) with:\n\n```bash\nRUNREPORT_PUSH_OUT=$(git push origin main 2>&1)\nRUNREPORT_PUSH_EXIT=$?\necho \"$RUNREPORT_PUSH_OUT\" | tail -1\nif [ $RUNREPORT_PUSH_EXIT -ne 0 ]; then\n  AGENT_NOTES=\"$AGENT_NOTES soft-complaint: run-report push failed (exit=$RUNREPORT_PUSH_EXIT, tail=$(echo \\\"$RUNREPORT_PUSH_OUT\\\" | tail -1 | head -c 80))\"\nfi\n```\n\nNote: AGENT_NOTES is set BEFORE the run report is written, so this update is post-facto observational only — it lands in next cycle's report. That's still better than silent.",
+      "estimated_loc": 8,
+      "rationale": "Without this, Bug B can re-emerge with a different surface (e.g. Step 4a push failure not being surfaced either). The pattern hardens both pushes against silent-failure."
+    },
+    "workstream_C_structure_integrity_fuse_audit": {
+      "file": "monitor/prompts/structure-integrity.md",
+      "section": "New audit block to be inserted into existing daily checks",
+      "change_summary": "Add a daily audit that md5-compares FUSE vs git for files in the OWNERSHIP table with category='git' or monitor/prompts/*.md. Flag any mismatch as a structural finding. Self-resolves if next cycle's workspace-sync clears it.",
+      "patch_pseudocode": "Add a new audit step:\n\n```bash\nWORKSPACE=$(find /sessions/*/mnt/dome-model-review -maxdepth 0 2>/dev/null | head -1)\nSTALE_FILES=()\nfor f in $(node -e \"const o=require('./build.js' && '').OWNERSHIP||{};for(const k of Object.keys(o)){if(o[k]==='git')console.log(k)}\" 2>/dev/null) $(find monitor/prompts -name '*.md' -printf '%P\\n' | sed 's|^|monitor/prompts/|'); do\n  WS_HASH=$(md5sum \"$WORKSPACE/$f\" 2>/dev/null | cut -d' ' -f1)\n  GH_HASH=$(curl -s \"https://raw.githubusercontent.com/funwithscience-org/dome-model-review/main/$f\" | md5sum | cut -d' ' -f1)\n  if [ -n \"$GH_HASH\" ] && [ -n \"$WS_HASH\" ] && [ \"$WS_HASH\" != \"$GH_HASH\" ]; then\n    STALE_FILES+=(\"$f\")\n  fi\ndone\nif [ ${#STALE_FILES[@]} -gt 0 ]; then\n  # emit integrity finding category='fuse-staleness' severity='moderate'\n  # files: \"${STALE_FILES[@]}\"\n  # recommended_action: 'run node build.js sync-workspace from a fresh clone, or wait for next workspace-sync cycle if PROP-064 is in effect'\nfi\n```\n\nNote: shell-out to build.js OWNERSHIP is a sketch — the actual implementation should hard-code the file list or read it from a JSON sidecar to avoid coupling to build.js's internal export shape. Keep the audit's file list in sync with build.js OWNERSHIP via the existing CLAUDE.md File Ownership table cross-reference rule.",
+      "estimated_loc": 25,
+      "rationale": "This is the canary that would have caught the 14h FUSE staleness at the 2026-05-28T02:00Z integrity run, ~9h before the operator noticed manually. Independent of workstreams A+B because it doesn't trust workspace-sync's self-reporting — it directly compares FUSE bytes to GitHub raw. If workspace-sync regresses again (different bug), structure-integrity catches it."
+    }
+  },
+  "phasing": {
+    "phase_1_immediate": "Ship workstreams A + B together (the silent-skip fix). Single workspace-sync.md edit, ~30 lines total. Validate over 24 hours: expect to see sync-workspace-runs-*.json sentinels start appearing on cycles where the operator has pushed a prompt edit. Confirm no false-positive non-FF aborts.",
+    "phase_2_followup": "Ship workstream B's Step 4b push-visibility subfix and workstream C's structure-integrity audit. Both are independent; can ship in either order, can ship in same commit. Lower urgency because workstream A+B itself closes the immediate operator pain.",
+    "rollback_plan": "If workstreams A+B cause unexpected behavior (e.g. sync-workspace over-triggers and copies wrong content), revert the Step 4c block to PROP-061's pre-amendment state (preserved in git history) and fall back to option A's report-only behavior. Operator runs manual sync-workspace until a corrected fix lands. Total downtime: one workspace-sync cycle (~1h)."
+  },
+  "verification_pattern": {
+    "after_24h": "Check `ls monitor/integrity/sync-workspace-runs-*.json | wc -l` — expect >0 (one per cycle where origin had upstream-only commits since the prior cycle). Cross-check `ls monitor/integrity/sync-workspace-non-ff-abort-*.json` count against prior 7-day baseline — expect no NEW non-FF aborts unless origin actually was force-pushed (operator action).",
+    "after_72h": "Operator pushes a test prompt edit (e.g. add a comment line to monitor/prompts/tinker.md via clone push). Within ≤1h, FUSE monitor/prompts/tinker.md should match git (verify via `md5sum` comparison or line count). Pre-fix baseline: never propagates.",
+    "self_test": "Workstream B's NEED_SYNC condition can be unit-tested without running the full agent: simulate the four LOCAL/REMOTE relationships with `git commit` + `git reset --soft` on a scratch clone and verify the classification log line."
+  },
+  "estimated_effort": {
+    "phase_1_implementation": "30 min — small surgical patch, well-scoped.",
+    "phase_2_implementation": "60 min — two independent additions, light testing.",
+    "operator_review": "20 min — read PROP, scan workspace-sync.md diff."
+  },
+  "non_goals": [
+    "Do NOT roll back PROP-061's universal-pusher FUSE→git push direction — that direction works and is unrelated.",
+    "Do NOT modify build.js sync-workspace — operator-confirmed correct when manually invoked.",
+    "Do NOT add SHA-shadow-write logging or other debug tooling unless workstream A+B's deployment shows unexpected behavior — premature instrumentation.",
+    "Do NOT extend workstream C to also audit data files (wins.json, etc.) — those are write-side-handled by universal-pusher rescue + JSON-validity gate; FUSE staleness on data files is less critical than on prompts because data files are usually read fresh from clone, not FUSE."
+  ],
+  "related_props": {
+    "PROP-061": "The original Phase-1+2-merged shipment of git→FUSE propagation. This PROP amends Step 4c's trigger condition; does not modify any other Step.",
+    "PROP-010": "The build.js sync-workspace target itself — unchanged, used as-is.",
+    "PROP-051": "The four safety-gate family (A1-A4) added after the 2026-05-21 mass-delete disaster. Workstream A+B preserves all four gates; does not weaken them.",
+    "PROP-060": "PROP-060's Mode-0 dispatcher closed the writer-no-consumer pattern for assigned_to:'tinker'. PROP-064 closes a similar but inverse pattern for workspace-sync: a consumer that runs (build.js sync-workspace) but is never reached because the trigger condition tests the wrong thing."
+  },
+  "context_pointers": {
+    "operator_directive": "monitor/tinker/operator-directives/DIRECTIVE-20260529-001-prop-061-step-4c-silent-failure.json",
+    "the_one_abort_sentinel": "monitor/integrity/sync-workspace-non-ff-abort-2026-05-28T21-07-45Z.json",
+    "the_one_divergence_sentinel": "monitor/integrity/git-to-fuse-divergence-2026-05-29T11-07-51Z.json",
+    "the_new_divergence_sentinel_post_directive": "monitor/integrity/git-to-fuse-divergence-2026-05-29T11-07-51Z.json (contains LLM-improvised note that correctly diagnosed Bug B)",
+    "current_workspace_sync_md": "monitor/prompts/workspace-sync.md Step 4c block (lines ~1078-1179 as of HEAD)",
+    "run_report_directory": "monitor/integrity/workspace-sync-runs/ — 40 reports since PROP-061 deployment 2026-05-27T19:56Z, all consistent with the silent-skip pattern",
+    "operator_manual_workaround": "cd /tmp/sync-clone && node build.js sync-workspace — operator ran this at 2026-05-29T10:42Z to restore FUSE; result was 70 git-owned files copied + 97 new append-only files, confirming the cumulative ~17h backlog the silent skip produced"
+  }
+}
