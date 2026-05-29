@@ -1,0 +1,83 @@
+{
+  "item_id": "EXP-442",
+  "target": "Part 2b §2b.1 contrast paragraph — replace hard-coded Self-Contradicted counts and hardcoded-monitoring ID list with templated placeholders so values stay in sync with wins.json on each build",
+  "curmudgeon_review": "monitor/curmudgeon/reviews/HOLISTIC-HOL-COMPLETENESS.c3.json",
+  "issue_ids": [
+    "ISS-2251"
+  ],
+  "current_word_count": 88,
+  "replacement_word_count": 115,
+  "patch_target_file": "data/sections.json",
+  "patch_target_node": "part2b.html — contrast paragraph (starts \"The contrast with the hardcoded WINs is even more revealing.\")",
+  "current_html": "<p>The contrast with the hardcoded WINs is even more revealing. Of the dome's 14 self-contradicted WINs (Part 2), six have no monitoring at all — but the other eight (WIN-002/012/029/038/045/046/049/067) <em>do</em> have monitoring domains, all hardcoded to pass. The dome does not merely neglect to test its geometric contradictions; for half of them, it builds validation infrastructure that cannot fail by construction. Whether omitted or hardcoded, no self-contradicted WIN faces a genuine empirical test.</p>",
+  "replacement_html": "<p>The contrast with the hardcoded WINs is even more revealing. <em>(Counts and ID lists are templated from wins.json at build time.)</em> Of the dome's {{SC_TOTAL}} self-contradicted WINs (Part 2), {{SC_MON_NONE}} have no monitoring at all — but the other {{SC_MON_HARDCODED}} ({{SC_MON_HARDCODED_IDS}}) <em>do</em> have monitoring domains, all hardcoded to pass. The dome does not merely neglect to test its geometric contradictions; for {{SC_MON_HARDCODED}} of the {{SC_TOTAL}}, it builds validation infrastructure that cannot fail by construction. Whether omitted or hardcoded, no self-contradicted WIN faces a genuine empirical test.</p>",
+  "required_template_additions": {
+    "description": "Four placeholders must be wired into build-scripts/generate-html.js and build-scripts/section-loader.js at the same site where {{CA_NONE}} and {{CA_HARDCODED}} are defined. Three are simple counts; one is a formatted ID list reusing the same list_of_winids helper EXP-441 specifies.",
+    "placeholders": {
+      "{{SC_TOTAL}}": "reviewed.filter(w => w.verdict===\"Self-Contradicted\").length",
+      "{{SC_MON_NONE}}": "reviewed.filter(w => w.verdict===\"Self-Contradicted\" && (w.code_analysis.monitoring===\"none\" || !w.code_analysis.monitoring)).length",
+      "{{SC_MON_HARDCODED}}": "reviewed.filter(w => w.verdict===\"Self-Contradicted\" && w.code_analysis.monitoring===\"hardcoded\").length",
+      "{{SC_MON_HARDCODED_IDS}}": "list_of_winids(w => w.verdict===\"Self-Contradicted\" && w.code_analysis.monitoring===\"hardcoded\") with sep=\"/\" — slash-joined \"WIN-002/012/029/038/045/046/049/067\" preserves the original prose rhythm; recommend the helper accept an optional sep argument (default comma per EXP-441; override to \"/\" here)."
+    },
+    "build_invariant": "Add a build-time assertion: SC_MON_NONE + SC_MON_HARDCODED must equal SC_TOTAL — fail the build if not. The SC set is closed (every Self-Contradicted WIN has monitoring∈{none,hardcoded}; no \"partial\" or other tags appear in this subset at HEAD), so the sum check is a strict equality. If a future WIN introduces a third monitoring tag for a Self-Contradicted verdict, the build fails loudly and the prose gets revisited — exactly the failure-mode the curmudgeon flagged.",
+    "helper_reuse_note": "The list_of_winids helper introduced by EXP-441 (currently scoped to the stratification paragraph) becomes a shared utility once both EXPs integrate. Decider should land EXP-441 and EXP-442 in the same cycle so the helper has two consumers from the start, justifying its extraction."
+  },
+  "current_values_at_authoring": {
+    "note": "These match wins.json at HEAD. Verified against curmudgeon current_counts_snapshot in HOLISTIC-HOL-COMPLETENESS.c3.json — independent re-tally agrees to the WIN.",
+    "SC_TOTAL": 20,
+    "SC_MON_NONE": 12,
+    "SC_MON_HARDCODED": 8,
+    "SC_MON_HARDCODED_IDS": [
+      "002",
+      "012",
+      "029",
+      "038",
+      "045",
+      "046",
+      "049",
+      "067"
+    ],
+    "sum_check": "12 + 8 = 20 = SC_TOTAL ✓",
+    "fraction_check": "8/20 = 40% — no longer half (was 7/14 = 50% under prior cycle); prose drops the \"half\" claim in favor of the explicit \"{{SC_MON_HARDCODED}} of the {{SC_TOTAL}}\" phrasing per curmudgeon recommendation"
+  },
+  "holes_addressed": [
+    "major hole 2 (HOL-COMPLETENESS.c3): \"14 self-contradicted WINs\" — actual 20",
+    "major hole 2: \"six have no monitoring\" — actual 12",
+    "major hole 2: \"the other eight\" — count was correct (8) but framed as breaking the 7+7=14 symmetry the prior cycle used; templated counts make the asymmetry self-documenting",
+    "major hole 2: hardcoded-monitoring ID list — WIN-067 was already added by a prior partial edit (the list at HEAD is 002/012/029/038/045/046/049/067, which matches data); templating prevents a future drift from re-introducing the WIN-067 omission curmudgeon initially flagged",
+    "major hole 2: \"for half of them\" — actual 8/20 = 40%; replaced with explicit \"{{SC_MON_HARDCODED}} of the {{SC_TOTAL}}\" so the prose reads correctly at any future ratio"
+  ],
+  "holes_NOT_addressed_here": [
+    {
+      "hole": "major hole 3 (HOL-COMPLETENESS.c3): WIN-067 listed in §2b.1 line 13 monitoring=none Self-Contradicted set (\"WIN-044/050/051/053/056/061/067\")",
+      "reason": "EXP-441 replaces that entire stratification paragraph with templated content driven by CA_NONE_SelfContradicted_IDs = {034,044,047,048,050,051,052,053,054,055,056,061} — which excludes WIN-067 by construction. Hole 3 self-resolves when EXP-441 integrates. Both EXPs should land in the same decider cycle; if EXP-441 is delayed, this EXP can still ship — the contrast paragraph is independent of the stratification paragraph.",
+      "verification": "Confirmed by searching part2b.html at HEAD: only two occurrences of \"067\" remain outside the stratification list — the contrast paragraph (correctly classifies it as hardcoded) and §2b.2 silent-substitution citation (also consistent with monitoring=hardcoded)."
+    }
+  ],
+  "new_evidence_added": [
+    "wins.json at HEAD — independent re-tally of Self-Contradicted set and monitoring breakdown (matches curmudgeon current_counts_snapshot to the WIN: SC_TOTAL=20, SC_MON_NONE=12, SC_MON_HARDCODED=8)",
+    "Cross-check: SC monitoring tag distribution at HEAD is {hardcoded: 8, none: 12} — no \"partial\" or other tags appear in the Self-Contradicted subset, validating the strict sum-check build invariant"
+  ],
+  "anticipated_objections": [
+    {
+      "objection": "Why preserve the slash-joined \"WIN-002/012/029/038/045/046/049/067\" formatting when EXP-441 uses comma-joined ID lists with \"and\" before the last for screen-reader friendliness?",
+      "response": "Two reasons. (1) The contrast paragraph is one sentence; the ID list sits inside a parenthetical aside, where the slash-form reads more compactly and preserves the original prose rhythm a reader of the rendered page would recognize from prior cycles. (2) Stylistic divergence between the two paragraphs is a feature, not a bug — the stratification paragraph enumerates five verdict buckets with embedded lists per bucket (where the \"WIN-A, WIN-B, and WIN-C\" cadence helps the reader parse bucket boundaries), while the contrast paragraph names a single eight-element set as a unit. The helper EXP-441 introduces should accept an optional separator argument; here we override to \"/\" and the upstream call site declares its intent."
+    },
+    {
+      "objection": "The build invariant assumes SC monitoring tags are closed at {none, hardcoded}. If the analyst later adds a \"partial\" or \"present\" tag for a Self-Contradicted WIN, the build breaks.",
+      "response": "That break is the desired behavior. The Self-Contradicted contrast paragraph rests on a strict binary — every SC WIN either has no monitoring (omission) or has monitoring rigged to pass (hardcoded substitute). If a future WIN sits in a third bucket (e.g., \"partial monitoring with one real check\"), the contrast paragraph's entire argument needs revisiting, not just patching. A failing build forces the analyst back to the prose, which is the correct workflow. A silent placeholder mismatch would leak a category error to readers — exactly what these template additions are designed to prevent."
+    },
+    {
+      "objection": "You're asserting EXP-441 and EXP-442 should ship together based on a helper-reuse argument. What if the decider has already integrated EXP-441 in a prior cycle?",
+      "response": "Cross-checked: EXP-441 still appears in monitor/analyst/expansions/ at HEAD (item EXP-441 still in tracker as status=pending under prior run — last_analyst_note records it was just authored by the previous run). Both expansions are pending integration. If they land in different cycles, the helper extraction shifts from the first-integrated EXP (whichever it is) into a shared utility module on the second; the integration order does not affect correctness, only the commit history. The kernel-of-truth argument — both paragraphs sit in §2b.1, both depend on the same wins.json filters, both should refresh together on rebuild — still holds regardless of integration order."
+    },
+    {
+      "objection": "The contrast paragraph's rhetorical punch comes from the \"half of them\" claim. Replacing it with \"{{SC_MON_HARDCODED}} of the {{SC_TOTAL}}\" renders as \"8 of the 20, it builds validation infrastructure\" — clunkier than \"half.\"",
+      "response": "Curmudgeon explicitly flagged the \"half\" phrase as factually wrong (8/20 = 40%, not 50%). Two alternatives were considered: (a) qualitative phrasing like \"for nearly half\" (still misleading at 40%; will read worse if the ratio drifts further), or (b) the explicit \"N of M\" form chosen here. Form (b) is slightly less punchy but stays correct at any future ratio without needing prose patches. The structural argument the paragraph makes — that omission and hardcoded-pass are both forms of non-test — is unchanged; the only rhetorical loss is one specific fraction, which was wrong anyway."
+    }
+  ],
+  "kernel_of_truth": "The contrast paragraph's structural argument is correct and the curmudgeon's critique is purely numerical. The dome really does split its Self-Contradicted WINs into two non-testing buckets: those it never instruments, and those it instruments with checks rigged to pass. That observation is the kernel — it cleanly demonstrates that the dome's validation infrastructure was not built to detect geometric contradictions. What failed was keeping the specific counts and the \"half\" framing in sync as the Self-Contradicted set grew from 14 to 20 (and the hardcoded subset from 7 to 8). The fix preserves the kernel and makes the counts self-maintaining.",
+  "newsworthy": null,
+  "review_class": "deep-attack",
+  "summary_for_decider": "Contrast paragraph in §2b.1 currently says \"14 self-contradicted WINs ... six have no monitoring ... other eight (WIN-002/012/029/038/045/046/049/067) ... for half of them.\" Actual at HEAD: 20 total, 12 monitoring=none, 8 hardcoded — IDs in the list are correct but the totals are stale and 8/20 ≠ half. Replacement templates {{SC_TOTAL}}, {{SC_MON_NONE}}, {{SC_MON_HARDCODED}}, {{SC_MON_HARDCODED_IDS}}, drops the \"half\" phrase for \"{{SC_MON_HARDCODED}} of the {{SC_TOTAL}}\" (correct at any future ratio). Required template additions specify the four filter expressions and a build-time sum-check assertion (SC_MON_NONE + SC_MON_HARDCODED == SC_TOTAL). Reuses the list_of_winids helper EXP-441 introduces; the two EXPs should land in the same decider cycle if practical. Hole 3 from the same curmudgeon review (WIN-067 in §2b.1 line 13) is NOT addressed here — it self-resolves under EXP-441's replacement."
+}
