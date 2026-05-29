@@ -120,11 +120,33 @@ Write to `monitor/decisions/daily-report-YYYY-MM-DDTHH-MM.json`:
 
 **Never scan for max ID across issues.** IDs were historically reused between open and closed files, causing collisions. The `next_id` counter is the single source of truth for the next available ID.
 
+**PROP-063 (2026-05-29):** The 'never scan for max ID across issues' rule above was correct in spirit but mis-applied — it forbade a max-ID scan ON ALLOCATION, when the actual defect was failing to cross-check closed-issues.json at all. The PROP-063 self-heal below runs an archive-aware MAX walk (open ∪ closed ∪ closure-ledger) and clamps `o.next_id` upward if it lags. The canonical write-back path is still `o.next_id++` — we never decrement, never reuse, and never silently allocate below max-existing-ID. Rationale: the 2026-05-18 mass-delete and several other 2026-05 cluster events demonstrated that open-issues.json.next_id can be rewound by upstream rollback/recovery; the only safe defense is a max-walk at allocation time. This mirrors the PROP-022 phase 5 EXP archive-aware self-heal (decider-curmudgeon.md lines 132-147).
+
 ```bash
-# Example: create a new issue
+# Example: create a new issue (PROP-063 archive-aware self-heal)
 node -e "
 const fs=require('fs');
 const o=JSON.parse(fs.readFileSync('monitor/decisions/open-issues.json','utf8'));
+// PROP-063 archive-aware self-heal: walk closed-issues + closure-ledger to validate next_id
+let maxClosedNum=0;
+try {
+  const ci=JSON.parse(fs.readFileSync('monitor/decisions/closed-issues.json','utf8'));
+  for(const i of (ci.issues||ci)) {
+    const m=(i.id||'').match(/^ISS-(\d+)$/);
+    if(m) maxClosedNum=Math.max(maxClosedNum, parseInt(m[1],10));
+  }
+} catch(_){}
+try {
+  for(const l of fs.readFileSync('monitor/decisions/closure-ledger.jsonl','utf8').trim().split('\n').filter(Boolean)) {
+    try { const e=JSON.parse(l); const m=(e.iss||e.id||'').match(/^ISS-(\d+)$/); if(m) maxClosedNum=Math.max(maxClosedNum, parseInt(m[1],10)); } catch(_){}
+  }
+} catch(_){}
+const maxOpenNum=Math.max(0, ...o.issues.map(i=>{const m=(i.id||'').match(/^ISS-(\d+)$/); return m?parseInt(m[1],10):0;}));
+const safeNext=Math.max(o.next_id||0, maxOpenNum+1, maxClosedNum+1);
+if (safeNext !== o.next_id) {
+  console.warn('next_id self-heal: open.next_id='+o.next_id+', max(open_ids)='+maxOpenNum+', max(closed_ids)='+maxClosedNum+', SAFE='+safeNext);
+  o.next_id=safeNext;
+}
 const id='ISS-'+o.next_id;
 o.next_id++;
 o.issues.push({id, win_id:null, severity:'moderate', category:'content-update', status:'open', description:'...', found_by:'decider', found_at:new Date().toISOString()});

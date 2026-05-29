@@ -97,7 +97,7 @@ For each finding `F` in `R.issues_found` (or whichever field contains the findin
      "created_by": "decider-step1d-untracked-finding"
    }
    ```
-   Increment `next_id` per Step 5 conventions.
+   Increment `next_id` per Step 5 conventions in `decider-reporting.md` (PROP-063 archive-aware self-heal — DO NOT bump without running the max(open ∪ closed ∪ closure-ledger) walk).
 
 3. **URGENT FAST PATH — CRITICAL/MAJOR same-run self-apply**:
    - **Trigger**: `F.severity === 'critical' OR F.severity === 'major'` AND `F.suggested_fix` is structurally applicable (allocator-bump, tracker-backfill, build-run, file-delete) AND decider has self-apply authority for the target file.

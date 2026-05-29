@@ -271,6 +271,43 @@ Check `monitor/analyst/expansion-tracker.json` for signs of write collisions (co
 
 Classify: ID gaps, orphaned output files, `next_id` inversions, and live-archive overlaps are **major** (lost work / imminent collision / double-processing). Phantom entries, stale pending, and predicate violations are **moderate**.
 
+### 7a.5. ISS ID-Collision Audit (PROP-063, added 2026-05-29)
+
+Walk `monitor/decisions/closed-issues.json` for duplicate `id` values. Any duplicate is **major** severity (mirrors EXP-tracker duplicate-ID classification — PROP-022 phase 5). Also walk `open-issues.json` and verify no ID appears in BOTH open and closed (cross-file collision). Suggested fix template: "rewrite duplicate-ID entries to new ISS numbers per PROP-063 retroactive dedup table; investigate any misrouted closure_reasons (where closure_reason describes a different entry's patch than the entry's own description)." If the duplicate-ID audit returns >0 entries that were not already tracked under a PROP-063-class ISS, file a new ISS with `category: 'id_integrity_finding'` and `severity: 'major'`. While PROP-063 retroactive Phase 2 dedup is pending (29 known duplicates as of 2026-05-29), the audit should emit a SINGLE finding tagged `tracked_under: 'PROP-063'` so it doesn't generate 29 new ISSs on each daily run.
+
+```bash
+# PROP-063 ISS duplicate-ID audit
+const ci=JSON.parse(fs.readFileSync('monitor/decisions/closed-issues.json','utf8'));
+const buckets={};
+for(const i of (ci.issues||ci)) { if(!i.id)continue; (buckets[i.id]=buckets[i.id]||[]).push(i); }
+const dupes=Object.entries(buckets).filter(([,v])=>v.length>1);
+if(dupes.length>0) {
+  findings.push({
+    category:'id_integrity_finding',
+    severity:'major',
+    description:'ISS duplicate-ID rows in closed-issues.json: '+dupes.length+' IDs affected ('+dupes.slice(0,3).map(d=>d[0]).join(', ')+(dupes.length>3?', ...':'')+')',
+    location:'monitor/decisions/closed-issues.json',
+    suggested_fix:'rewrite per PROP-063 retroactive dedup table; investigate misrouted closure_reasons',
+    tracked_under: 'PROP-063'
+  });
+}
+// Cross-file collision check
+const oi=JSON.parse(fs.readFileSync('monitor/decisions/open-issues.json','utf8'));
+const openIds=new Set(oi.issues.map(i=>i.id));
+const closedIds=new Set((ci.issues||ci).map(i=>i.id));
+const crossFile=[...openIds].filter(x=>closedIds.has(x));
+if(crossFile.length>0) {
+  findings.push({
+    category:'id_integrity_finding',
+    severity:'major',
+    description:'ISS cross-file collision (id in both open AND closed): '+crossFile.slice(0,3).join(', ')+(crossFile.length>3?', +'+(crossFile.length-3)+' more':''),
+    location:'monitor/decisions/{open,closed}-issues.json',
+    suggested_fix:'allocator hardening per PROP-063 + per-entry rewrite',
+    tracked_under: null
+  });
+}
+```
+
 ### 7b. Workspace-Only Files at Risk
 
 The FUSE workspace mount is read-write but git cannot operate on it. Agents that write output files (curmudgeon reviews, analyst expansions, analyst reports) write to the workspace — but those files only persist if they are also committed to git via the clean clone. Check for files that exist on the workspace but not in git:
