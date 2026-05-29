@@ -1,0 +1,61 @@
+{
+  "id": "DIRECTIVE-20260529-001",
+  "filed_by": "operator-cowork-session",
+  "filed_at": "2026-05-29T10:50:00Z",
+  "status": "pending",
+  "priority": "high",
+  "title": "Investigate PROP-061 Step 4c silent failure — zero successful auto-syncs since deployment, single non-FF abort at 2026-05-28T21:07Z, ~14h FUSE staleness on git-owned prompts",
+  "background": "PROP-061 (workspace-sync bidirectional sync, Phase 1+2 shipped together 2026-05-27T19:56Z in commit d729289bfc) has been silently failing. Symptoms:\n\n1. Operator observed at 2026-05-29T10:39Z that curmudgeon was doing change-driven reviews instead of holistic, despite the 2026-05-28T17:19Z priority-flip override (commit e4f90e75e1) that adds `operator_phase2_rerun_commission` tag detection to curmudgeon.md Step 0d.\n2. Root cause: FUSE curmudgeon.md was at 518 lines (no override clause), git origin/main was at 521 lines (override clause present, 2 grep hits). FUSE had not been updated since the operator's 2026-05-27T19:56Z manual bootstrap.\n3. PROP-061 Step 4c should have detected divergence on every workspace-sync hourly cycle since 2026-05-28T17:19Z and FF-merged the prompt into FUSE.\n4. Per scan of monitor/integrity/ at 2026-05-29T10:39Z: ZERO `sync-workspace-runs-*.json` sentinels exist (the success-case audit file). ONE `git-to-fuse-divergence-*.json` exists, dated 2026-05-28T21-07-45Z — and it says `would_ff: false` with action `abort-non-ff`. No newer divergence reports exist either.\n5. Net effect: PROP-061 auto-sync has never executed successfully in production. Every workspace-sync cycle has either (a) detected non-FF and aborted, or (b) skipped the Step 4c block entirely (which would mean even the read-only Phase 1 detector isn't running). The operator manually ran `node build.js sync-workspace` from a fresh clone at 2026-05-29T10:42Z to restore FUSE.\n6. Operator-cost: 4 separate manual sync-workspace runs across two cowork sessions to date, plus one missed curmudgeon holistic cycle (curmudgeon ran change-driven instead of holistic at the 2026-05-29T08:00Z slot, missing the Phase 2 rerun the operator commissioned).",
+  "evidence": {
+    "the_one_abort_sentinel": {
+      "file": "monitor/integrity/git-to-fuse-divergence-2026-05-28T21-07-45Z.json",
+      "verbatim_contents": {
+        "event": "git-to-fuse-divergence",
+        "timestamp": "2026-05-28T21-07-45Z",
+        "local_sha": "3e15e69a55e02064c1024108b4ff504c54e8b526",
+        "remote_sha": "29ad7c92ac496e973c39bf6ccb397ec0590cf10c",
+        "divergent_files": [
+          "monitor/integrity/narrative-cite-audit-2026-05-28T2106Z.json",
+          "monitor/integrity/verify-pending-run-2026-05-28T2106Z.json",
+          "monitor/integrity/workspace-sync-runs/run-2026-05-28T21-07-20Z.json",
+          "monitor/integrity/workspace-sync-skips.jsonl"
+        ],
+        "divergent_count": 4,
+        "would_ff": false,
+        "action": "abort-non-ff"
+      },
+      "anomaly": "The four divergent files are ALL files that workspace-sync's own 21:07Z cycle would have written. The `local_sha` `3e15e69a55e02064...` does NOT match any known commit in the project history (operator verified via gh api commit lookup) — it appears to be a transient or uncommitted SHA from the workspace-sync clone's local state. The `remote_sha` `29ad7c92ac496e973...` also does not match a known HEAD commit. Either: (a) workspace-sync's clone had local-only commits, (b) the fetch saw a different remote state than is currently on origin (concurrent agent push?), or (c) the SHAs were captured at different points than the comparison logic assumed."
+    },
+    "missing_sentinels": "NO `sync-workspace-runs-*.json` sentinels exist anywhere in monitor/integrity/ (would have been written by the success path after `node build.js sync-workspace` executed). NO additional `git-to-fuse-divergence-*.json` reports exist after 2026-05-28T21-07-45Z — would have been written each cycle that detected any divergence, even no-FF. The complete absence of newer reports suggests Step 4c is silently exiting before the divergence detection block on most cycles.",
+    "fuse_staleness_observed_2026_05_29T10_39Z": {
+      "monitor/prompts/curmudgeon.md": {"fuse_lines": 518, "git_lines": 521, "override_clause_present_in_git": true, "override_clause_present_in_fuse": false}
+    },
+    "PROP_061_step_4c_pseudocode_reference": "Implemented in monitor/prompts/workspace-sync.md Step 4c. The block performs: `git fetch origin main` → `LOCAL_SHA=$(git rev-parse HEAD)` → `REMOTE_SHA=$(git rev-parse origin/main)` → if `LOCAL_SHA != REMOTE_SHA` then detect divergence + FF-merge if ancestor, else write abort sentinel. The first conditional gate (`if LOCAL_SHA == REMOTE_SHA, do nothing`) might be firing in most cycles — that would explain why no newer reports exist. But if so, FUSE should be in sync with git (it is not).",
+    "operator_manual_fix_applied": {
+      "at": "2026-05-29T10:42Z",
+      "command": "cd /tmp/sync-clone && node build.js sync-workspace",
+      "result": "70 git-owned files copied, 97 new append-only files. FUSE curmudgeon.md now 521 lines with 2 override-clause hits."
+    }
+  },
+  "requested_work": [
+    "Step 1 — Root-cause diagnosis: Read the actual Step 4c bash block in monitor/prompts/workspace-sync.md as committed. Trace what happens on each path (no-divergence / FF / non-FF). Specifically check: (a) does the block actually execute on every workspace-sync run, or is there a conditional that skips it? (b) is there a guard that compares local HEAD to a STALE remote SHA (e.g., the SHA from before the just-completed push)? (c) is the LOCAL_SHA / REMOTE_SHA comparison using the right post-push state? (d) is `git merge-base --is-ancestor` returning the expected result?",
+    "Step 2 — Reconstruct the 21:07Z 2026-05-28 abort: Look at the workspace-sync run report for that cycle (monitor/integrity/workspace-sync-runs/run-2026-05-28T21-07-20Z.json — visible in the abort sentinel's divergent_files list). Reconstruct the sequence: what files did workspace-sync push, what was origin/main HEAD at fetch time, what local commits existed but weren't on origin? The non-FF condition implies the workspace-sync clone had commits that aren't on origin — that should be impossible if the prior push succeeded.",
+    "Step 3 — Surface any silent skip path: Examine whether Step 4c can fail silently (set -e missing? trap eating errors? echo to /dev/null?). The absence of NEW divergence reports after 21:07Z (despite real FUSE-vs-git divergence existing) is the strongest signal that the block is not running at all, not just aborting.",
+    "Step 4 — Recommend a fix: Author PROP-064 (or amend PROP-061) with the structural fix. Two candidate approaches: (a) make Step 4c report-only (Phase 1 behavior) until the bug is understood, write divergence reports on every cycle, never auto-merge — operator runs sync-workspace manually based on reports; (b) fix the underlying race / SHA-comparison bug and keep auto-sync. Recommend one. Note the operator-side cost of (a) is roughly 1 manual sync per cowork session (~30s each) vs whatever fix complexity (b) requires.",
+    "Step 5 — Operator visibility: Add a structure-integrity.md daily audit that flags when FUSE prompt files diverge from git by more than 1 line — this is the canary that should have caught this regression at the 02:00Z 2026-05-28 integrity run."
+  ],
+  "non_goals": [
+    "Do NOT roll back PROP-061's universal-pusher FUSE→git push direction — that direction works fine and is unrelated to this bug.",
+    "Do NOT modify build.js sync-workspace itself — the script is correct (operator verified by running it manually). The bug is in Step 4c's decision to invoke (or not invoke) it.",
+    "Do NOT make this a CRITICAL severity — the failure mode is silent and the workaround is fast. HIGH because every passing day adds 1-2 manual sync events to the operator's load and risks subtle prompt-state drift between agents that read FUSE (analyst, tinker) and agents that clone fresh (decider, curmudgeon)."
+  ],
+  "context_pointers": {
+    "PROP_061_canonical_file": "monitor/tinker/proposals/PROP-061-git-to-fuse-propagation.json (status: implemented as of 2026-05-27T19:56Z)",
+    "step_4c_implementation": "monitor/prompts/workspace-sync.md (search for 'Step 4c' or 'PROP-061' — was added between Step 4b run-report and Step 5 report)",
+    "abort_sentinel": "monitor/integrity/git-to-fuse-divergence-2026-05-28T21-07-45Z.json",
+    "operator_session_log": "this directive's filed_at = the cowork session where the bug was diagnosed; conversation history captures the diagnosis pattern"
+  },
+  "expected_output": "Tinker run report covering Steps 1-3 diagnosis. PROP-064 (or PROP-061-amendment) authored in monitor/tinker/proposals/ with the recommended fix (option a = report-only fallback, option b = race/SHA-comparison fix, or hybrid). Optional Step 5 audit prompt edit attached to the PROP.",
+  "estimated_effort": "Mode 4 PROP-authoring + Mode 1 diagnostic data pull. ~30-40 min Opus.",
+  "priority_note": "Filed HIGH because: (a) the operator has now spent ~15 minutes across two sessions on manual sync workarounds, (b) every additional day adds more workaround cost, (c) the silent-failure mode is the worst kind of structural bug — visible symptoms (curmudgeon doing change-driven instead of holistic) appear unrelated to the actual cause (FUSE prompt staleness), making future operator debugging harder. Tinker should pick this up on its next scheduled run (03:30 PT) ahead of any LOW-priority pending work."
+}
