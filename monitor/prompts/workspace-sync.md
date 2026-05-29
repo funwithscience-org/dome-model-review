@@ -56,12 +56,25 @@ JSON
   exit 0
 fi
 
-# Stale-clone sweep (PROP-051 patch B3). Remove any leftover /tmp/ws-sync-*
-# (and any /tmp/dome-sync-* not matching $CLONE) older than 1 hour. These
-# accumulate when prior cycles abort before the EXIT trap fires (e.g., signal
-# kill). Match CLAUDE.md 'Per-session clone discipline' (2026-05-09) which
-# already authorizes this sweep at tinker level.
+# Stale-clone sweep (PROP-051 patch B3, expanded 2026-05-29 for cross-session
+# orphans). Remove any leftover /tmp/ws-sync-* (and any /tmp/dome-sync-* not
+# matching $CLONE) older than 1 hour. These accumulate when prior cycles abort
+# before the EXIT trap fires (e.g., signal kill). Match CLAUDE.md 'Per-session
+# clone discipline' (2026-05-09) which already authorizes this sweep at tinker
+# level.
 find /tmp -maxdepth 1 -type d \( -name 'ws-sync-*' -o -name 'dome-sync-*' \) -mmin +60 ! -path "$CLONE" -exec rm -rf {} \; 2>/dev/null || true
+
+# Cross-session orphan sweep (added 2026-05-29). The CLONE path is session-bound:
+# $CLONE = ${SESSION}/dome-sync-clone where SESSION = /sessions/<session-id>.
+# When the cowork session changes, the OLD session's /sessions/<old-id>/dome-sync-clone
+# becomes an orphan that the /tmp sweep above never reaches. Operator observed
+# 3 stale clones in /sessions/ requiring manual cleanup on 2026-05-29. This
+# sweep finds dome-sync-clone directories anywhere under /sessions/ that are
+# >60 minutes stale AND not our current $CLONE, and deletes them. The 60-minute
+# mtime guard protects any concurrently-active session whose workspace-sync is
+# still mid-cycle. Use 2>/dev/null because the operator's user lacks read perms
+# on most /sessions/<other-id>/ directories — the find walks what it can see.
+find /sessions -maxdepth 2 -type d -name 'dome-sync-clone' -mmin +60 ! -path "$CLONE" -exec rm -rf {} \; 2>/dev/null || true
 
 # Clone fresh if needed (first run only). This agent runs in its own ephemeral
 # session, so it cannot rely on dome-review-clean being present. The PAT is
