@@ -1,43 +1,23 @@
-TINKER RUN: 2026-05-30T02:40Z  |  MODE: 3 (Cost Engineering)  |  PIPELINE: GREEN
-═══════════════════════════════════════════════════════════════════════
+Tinker run 2026-05-29T12:34Z — Mode 4 (PROP authoring, directive-driven)
 
-QUICK CHECKS
-─────────────────────────────────────────────────────────────────────
-✓ Mode 1: all 11 agents firing on schedule, 0 stranded patches >24h
-✓ Mode 2: FUSE 0/5 stale; PAT verified HTTP 200; PROP-061 git→FUSE sync working
-✓ Backlog all-green: 14 open, 0 aged-out, net velocity 7d = +25
-✓ No pending operator directives; no Mode 0 (assigned-to-tinker) items
+Picked up: DIRECTIVE-20260529-001 (HIGH, filed today 10:50Z) — PROP-061 Step 4c silent failure.
 
-FINDINGS (4 — all info/minor)
-─────────────────────────────────────────────────────────────────────
-[info]   FND-01  Backlog all-green — closures outpace new issues 2.8:1 over 7d
-[info]   FND-02  Decider context-load shrunk -10.8% (4180→3728L) since 2026-05-25
-[minor]  FND-03  CLAUDE.md ~line 86 still says DIRECTIVE-20260521-002 is "pending
-                 tinker" but it has status=completed (closed by PROP-061)
-[info]   FND-04  Queue items 412-415 (verification) already reviewed by main
-                 curmudgeon; awaiting decider pop on next run (in flight at 02:34Z)
+DIAGNOSIS (3 work-steps complete):
+- Bug A (silent skip): Step 4c's `LOCAL_SHA == REMOTE_SHA` check is the wrong trigger. Step 1's `git pull --rebase` silently absorbs upstream commits into LOCAL before Step 4c compares anything; after Step 4a/4b push, LOCAL == REMOTE in the happy path, so the conditional exits "no sync needed" even though FUSE never saw the pulled content. 100% of normal cycles hit this branch. Confirmed across 17 cycles between 2026-05-28T18:07Z and 2026-05-29T10:07Z — every run report's agent_notes acknowledges "git newer than FUSE — normal".
+- Bug B (false-positive non-FF): the 21:07Z abort sentinel was a false-positive. Step 4b's `git push 2>&1 | tail -1` silently swallowed a push failure, leaving LOCAL ahead of REMOTE; the binary `merge-base --is-ancestor HEAD origin/main` test misclassified LOCAL-ahead as non-FF. The 11:07Z divergence sentinel had the LLM correctly diagnose and IMPROVISE a custom `action:'no-sync-needed'` not in the prompt schema — right answer, wrong process.
+- 40 workspace-sync cycles since PROP-061 deployment 2026-05-27T19:56Z. Zero `sync-workspace-runs-*.json` success sentinels exist anywhere. The success path has never run.
 
-CONTEXT LOAD (lines, incl. CLAUDE.md=209L)
-─────────────────────────────────────────────────────────────────────
-  decider     3728L  ↓ -10.8% vs 2026-05-25  (no bloat alerts)
-  analyst     1809L  → +0.4%
-  curmudgeon  1292L  (max with conditional)
-  tinker      1330L  ↑ +6.6% (under 10% threshold)
+DELIVERABLE:
+- PROP-064 authored: monitor/tinker/proposals/PROP-064-prop-061-step-4c-silent-skip-fix.json
+- Recommends Option B (SHA-comparison fix). ~30 LOC patch to Step 1 + Step 4c. Preserves all PROP-061 safety architecture; idempotent and over-trigger-safe.
+- Phase 2 follow-ups: harden Step 4b push-visibility (~8 LOC) + structure-integrity FUSE-staleness audit (~25 LOC) — these would have caught the regression ~9h before operator noticed.
+- DIRECTIVE-20260529-001 marked `status:'completed'`, `prop_id_authored:'PROP-064'`.
 
-COST ENGINEERING NOTES
-─────────────────────────────────────────────────────────────────────
-• curmudgeon-verify Sonnet: 0 eligible items in current queue (all 4
-  already-reviewed by main curmudgeon, or holes>2 / contains major).
-  Gate is correctly noop'ing; cheap. Monitor only.
-• Decider 12h cadence (since 2026-05-26) is paying off: 10 self-patches +
-  10 new ISS yesterday, no backlog regrowth.
+DIRECTIVE QUEUE FLAGGED:
+- DIRECTIVE-20260528-001 (iss-id-collision-class, LOW) may be already satisfied — PROP-063 with matching name exists. Operator should verify and mark `superseded` if so.
 
-CLEANUP
-─────────────────────────────────────────────────────────────────────
-✓ /tmp/tinker-clone (232MB) removed at end-of-run per PROP-060 FND-01.
+BACKLOG TREND: GREEN. open_issues=3 (was 34 a week ago, -91% WoW), net_velocity_7d=+36, no thresholds fired.
 
-NEXT RUN FOCUS
-─────────────────────────────────────────────────────────────────────
-Verify queue items 412-415 cleared by today's decider runs. If still
-present after 14:33Z, file PROP for pop-discipline. Otherwise continue
-Mode 3 cost tracking.
+PIPELINE HEALTH (quick check): not formally audited this run; deferred to next Mode 1 cycle given directive consumed the slot.
+
+Operator review path: monitor/tinker/proposals/PROP-064-prop-061-step-4c-silent-skip-fix.json — read `executive_summary`, `recommendation`, and `proposed_implementation.workstream_B_step_4c_four_way_classification` for the meat. Phase 1 is small enough to apply directly to monitor/prompts/workspace-sync.md if you concur with the recommendation.
