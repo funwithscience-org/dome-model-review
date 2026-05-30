@@ -1,0 +1,115 @@
+{
+  "point_id": "SEC-part2b-count-reconciliation",
+  "topic": "EXP-437 70/72 count reconciliation — verify integration matches the EXP spec",
+  "queue_id": 416,
+  "queue_pushed_at": "2026-05-30T02:57:57.229Z",
+  "reviewed_at": "2026-05-30T03:12:31.578Z",
+  "cycle": 1,
+  "trigger": "priority-queue-section-rewrite",
+  "change_summary": "Decider integrated EXP-437 (commit 8308d89) — 5 prose patches P1-P5, build-pipeline placeholders {{CATALOG_TOTAL}}/{{COLLISION_COUNT}}, and a regex split between baseWins (\\d{3}) and collisionWins (\\d{3}[a-z]). This review attacks the integration for completeness and correctness.",
+  "current_verdict_holds": true,
+  "confidence": 0.86,
+  "our_argument_summary": "Across the document, count phrasing uses 70 (dome-claimed wins) for dome-frame prose and 72 (full catalog including collision sub-claims) for our review-frame verdict tallies. The two-frame convention preserves both 'the dome itself claims 70' and 'our catalog covers all 72 distinct claims including ID collisions' as load-bearing evidential anchors. Five tally-numerator-over-baseWins-denominator math bugs identified by HOL-NARRATIVE c2 (hole 1) are claimed addressed by EXP-437.",
+  "dome_code_analysis": {
+    "relevant_files": [
+      "build-scripts/generate-html.js",
+      "data/sections.json",
+      "data/wins.json"
+    ],
+    "calculation_pipeline": "build-scripts/generate-html.js now derives baseWins (regex /^\\d{3}$/), collisionWins (regex /^\\d{3}[a-z]$/i), and catalogTotal = baseWins.length + collisionWins.length. Two new placeholders {{CATALOG_TOTAL}} and {{COLLISION_COUNT}} are resolved in resolvePlaceholders. The generateVerdictBarChart caption is now dynamic ({total} catalog entries = {total - collisionCount} dome-claimed wins plus {collisionCount} numbered-collision sub-claims).",
+    "hardcoded_vs_computed": "Mostly computed post-integration, but the audit pass missed several hardcoded literals (see holes_found).",
+    "data_sources_used": [
+      "data/wins.json (72 rows; 70 baseWins + 2 collisions)"
+    ],
+    "escape_clauses": "The new collisionWins regex /^\\d{3}[a-z]$/i is single-letter only — any future two-letter collision suffix (e.g., '057bb') or four-digit base (e.g., '0100') would silently drop out of both regexes. EXP-437 specified a build-time throw to catch exactly this; it was not integrated (see holes_found).",
+    "our_code_claims_accurate": true,
+    "code_discrepancies": "None at the code level — counts and placeholders behave as advertised in HEAD. The discrepancies are integration omissions, not implementation bugs."
+  },
+  "code_analysis_tags": {
+    "monitoring": "none",
+    "monitoring_evidence": "This is a SEC item, not a WIN; the code_analysis tag scheme is about dome monitoring of dome predictions and does not apply. Set to 'none' for schema compliance.",
+    "relabels_standard": false,
+    "relabels_standard_evidence": "Not a WIN.",
+    "post_hoc": false,
+    "post_hoc_evidence": "Not a WIN.",
+    "derives_from_dome": false,
+    "derives_from_dome_evidence": "Not a WIN.",
+    "reviewed": true
+  },
+  "holes_found": [
+    {
+      "severity": "major",
+      "description": "EXP-437 Patch P6 (Overview explanatory paragraph 'Two numbers, 70 and 72 — why both are real') was not integrated. The decider commit message says '5 prose patches'; EXP-437 specifies six. A search across all sections for 'Two numbers, 70 and 72', 'ds-counts-reading-guide', and '70 and 72' returns zero matches. Without P6, a reader who skims the Overview sees verdict bars totalling 72 catalog entries alongside a KPI tile reading 'Claims Made: 70' with no inline explanation. EXP-437's own argument: 'This is the single reader-facing reconciliation block — without it, even a reader who notices the convention has to reverse-engineer it.' The dome-frame vs catalog-frame convention is now used in five places (P1-P5) but is never explicitly named for the reader. P2 in §3.1 inlines a one-line abbreviation ('72 catalog rows = 70 dome-claimed + 2 collision sub-claims'), but that only fires for readers who jump to Part 3; the verdict bars at the top of the Overview are still unexplained.",
+      "recommendation": "Re-route the P6 patch as its own decider self-apply (or a small follow-up EXP) inserting the <details id=\"ds-counts-reading-guide\"> block immediately after the verdict-bars caption in the Overview. The exact replacement_html is in EXP-437.prose_patches[5].replacement_html — copy verbatim. Verify by reloading the rendered docs/index.html and confirming the block renders between the verdict bars and the Latest Findings block."
+    },
+    {
+      "severity": "moderate",
+      "description": "Build-time sanity check (EXP-437 build_pipeline_changes.change_2.build_invariant) not integrated. The spec called for: 'if (baseWins.length + collisionWins.length !== wins.length) throw new Error(`build: ID-shape coverage gap — baseWins=${...} + collisions=${...} != wins.length=${...}`);'. The integrated code instead defines catalogTotal as the SUM (line 1220: `const catalogTotal = baseWins.length + collisionWins.length;`) without comparing to wins.length. Today's regexes happen to cover all 72 rows, so the bug is latent — but it defeats the whole point of the invariant, which was 'a future schema change does not silently corrupt the CATALOG_TOTAL caption math.' If a dome update introduces an unanticipated ID shape (e.g., '057bb' or '0100' or '042c2'), catalogTotal silently understates by N and every CATALOG_TOTAL-denominated tally becomes silently wrong with no test fail. EXP-437's own anticipated-objections section explicitly defended its current scope against this scenario: 'It does, by construction... So a future ID shape will fail the build loudly until the regexes are updated.' That defense is now false in HEAD.",
+      "recommendation": "Add the throw guard at build-scripts/generate-html.js line 1221 (right after the catalogTotal definition). Two lines plus the error message; defensive and cheap. Pair it with a test in tests/run.sh that constructs a malformed wins.json with an unmatched ID and asserts build throws."
+    },
+    {
+      "severity": "minor",
+      "description": "EXP-437 build_pipeline_changes.change_4 (document the new placeholders in data/sections.json's _meta.placeholders block) not integrated. {{CATALOG_TOTAL}} and {{COLLISION_COUNT}} are usable from prose but undocumented in the canonical placeholder catalog. Future analysts editing sections.json (or readers grepping _meta.placeholders for available substitutions) will not see them. This is documentation hygiene, not a functional bug.",
+      "recommendation": "Add the two keys to data/sections.json's _meta.placeholders object with the descriptions in EXP-437.build_pipeline_changes.change_4.add_keys. Two-line JSON edit."
+    },
+    {
+      "severity": "moderate",
+      "description": "Hardcoded literal '69' count drift persists in multiple places, untouched by EXP-437 because the audit pass only scanned {{TOTAL_WINS}} placeholder occurrences (44 of them) and did not grep for bare numerals. Concrete instances in rendered docs/index.html: (a) part2b §2b.6: 'The claim_index.json indexes only 9 of 69 confirmed claims' (literal '69', should be {{TOTAL_WINS}}=70 today, dome-frame); (b) 'when the dome cites 69 confirmed predictions — three of those claims share one mechanism'; (c) Part 8b.1: 'the 69 confirmed aggregate at the top of the site' and 'tallied against the visible-prose registry'; (d) 'counted toward the dome site's 69 confirmed / 94.5% accuracy scorecard'; (e) a Taxonomy row: 'Taxonomy currently applied to 9 of 69 claims (using the dome's own 69-confirmed headline as the denominator)'. EXP-437's anticipated-objections section claimed '44 of the 129 occurrences are placeholder-rendered 70s; the rest are non-templated narrative paragraphs that quote the dome's 70-wins framing directly' — that claim is partially false: a meaningful subset is literal '69', which was the dome's prior count and has gone stale.",
+      "recommendation": "Open a separate ISS for hardcoded-numeral count-drift. The fix is the same shape as P1-P5: replace each bare '69' with {{TOTAL_WINS}} (dome-frame) or {{CATALOG_TOTAL}} (review-frame), depending on context. The 'claim_index.json indexes only 9 of 69' phrase is dome-frame (it's about how the dome indexes its own wins), so 9 of {{TOTAL_WINS}}. The 'Taxonomy currently applied to 9 of 69' is also dome-frame. Estimated patch size: 5-7 single-clause swaps, mechanically very similar to P1-P5. Recommend a child EXP (call it EXP-437b or a fresh number) to close this cleanly; do NOT re-open EXP-437 since it landed."
+    },
+    {
+      "severity": "minor",
+      "description": "The patched §2b.6 audit-status paragraph (P1) now reads: '{{CATALOG_TOTAL}} catalog rows we review (the dome's {{TOTAL_WINS}} claimed wins plus {{COLLISION_COUNT}} numbered-collision sub-claims) include {{TALLY_REFUTED}} refuted by external data, {{TALLY_SELFCON}} self-contradicted by the dome's own geometry, and {{TALLY_MISL...}}'. This enumerates 12+20+16 = 48 of 72 verdicts. The other 24 (Std=18, NotDemo=3, Unfalsifiable=3) are implicitly excluded. That is a defensible editorial choice for a paragraph specifically about WHICH claims FAIL audit, but the math is harder for the reader to check because the sentence does not say 'of the 72 rows, 48 fail and 24 pass'. A reader who runs the arithmetic 12+20+16=48 against 'the 72 catalog rows' will see the gap and wonder. Not a hole created by EXP-437 — preserved from the pre-patch sentence shape — but P1's restructure was an opportunity to address it and didn't.",
+      "recommendation": "Optional follow-up: append a one-clause arithmetic-anchor to the §2b.6 paragraph, e.g., '(the remaining {{TALLY_STD}} + {{TALLY_NOTDEMO}} + {{TALLY_UNFALSIFIABLE}} land in standard-physics, not-yet-demonstrated, and unfalsifiable buckets respectively — see Part 3 for the full tally)'. Defer to analyst judgment; the existing sentence is not wrong, just under-explained."
+    }
+  ],
+  "unresolved_prior_cycle": [],
+  "stronger_arguments": [
+    {
+      "description": "EXP-437's anticipated-objections section says: 'What if the dome adds a third collision (WIN-019b or similar) tomorrow? The placeholder math has to track that automatically. It does, by construction.' That claim is now false in HEAD because the build-invariant throw was dropped. The decider should restore the invariant explicitly, OR change the EXP's claim to acknowledge that auto-detection requires the invariant and the invariant is currently absent. Honesty either way; the current state is the worst of both worlds (claim made, mechanism missing).",
+      "sources": [
+        "EXP-437.anticipated_objections (item 3)",
+        "build-scripts/generate-html.js line 1220 in HEAD"
+      ]
+    },
+    {
+      "description": "EXP-437 P6 is also defensible without the explanatory paragraph if and only if every Overview-level surface where the 70-vs-72 gap is visible carries an inline reconciliation. Today the Overview has: KPI card 'Claims Made: 70' (dome-frame, fine), verdict bars total caption '72 catalog entries = 70 dome-claimed wins plus 2 numbered-collision sub-claims' (post-P3 / change_3, dynamic and now reconciliation-bearing!). So the verdict-bars caption itself DOES carry a one-line reconciliation — slightly weakens the major severity of the P6 omission. Still major (the <details> block was specifically designed for the reader who wants the structural-evidence framing about why the collision-split is itself a finding), but a defender can point to the dynamic caption and say 'we have a reconciliation surface, it's just terser.' Acknowledge this in the patch follow-up.",
+      "sources": [
+        "build-scripts/generate-html.js line 519 (dynamic caption)",
+        "EXP-437.prose_patches[5].rationale"
+      ]
+    }
+  ],
+  "kernel_of_truth": {
+    "description": "EXP-437's targeted patch strategy is correct as far as it goes (EXP-437.json:approach_a_vs_b_argument). The 5 sites P1-P5 are exactly the tally-numerator/baseWins-denominator math bugs HOL-NARRATIVE c2 hole 1 (HOLISTIC-HOL-NARRATIVE.c2.json:holes_found[0]) flagged. The chosen Approach (a) — name the denominator at each mention — preserves both the dome-frame fact (the dome itself claims 70) and the review-frame fact (the collision-split is itself evidence about identifier hygiene; cross-referenced in Part 8b.1 per EXP-437.json:kernel_of_truth.description). Five of six patches landed cleanly and the rendered output now shows '72 catalog entries = 70 dome-claimed wins plus 2 numbered-collision sub-claims' (docs/index.html via generateVerdictBarChart line 519) and 'Verdict Tally (72 catalog rows = 70 dome-claimed + 2 collision sub-claims)' (docs/index.html via P2 patch in part3 §3.1).",
+    "why_it_doesnt_save_claim": "Two omissions undermine the integration. (1) P6 missing means the Overview-level explanatory <details> block specified at EXP-437.prose_patches[5] never reached HEAD; the data/sections.json scan returns zero matches for 'Two numbers, 70 and 72' or 'ds-counts-reading-guide' — the reader-facing reconciliation surface is now ONLY the terse caption inside the verdict-bars block (build-scripts/generate-html.js:519), which carries the math but not the structural-evidence framing. (2) The build-time invariant throw (EXP-437.build_pipeline_changes.change_2.build_invariant) was not integrated; build-scripts/generate-html.js:1220 sets catalogTotal as a bare sum with no wins.length check, so a future unmatched ID shape would silently corrupt every CATALOG_TOTAL-denominated tally. The anticipated-objection defense in EXP-437.anticipated_objections (item 3) — 'It does, by construction... a future ID shape will fail the build loudly' — is therefore false in HEAD."
+  },
+  "recommended_action": "minor_edit",
+  "text_fingerprint": {
+    "claim_length": 0,
+    "finding_length": 0,
+    "detail_evidence_length": 0,
+    "detail_verdict_length": 0,
+    "verdict": "section-rewrite",
+    "integration_commit": "8308d89",
+    "p1_p5_present": true,
+    "p6_present": false,
+    "build_invariant_present": false,
+    "meta_placeholders_documented": false,
+    "catalog_total_renders_correctly": true,
+    "collision_count_renders_correctly": true
+  },
+  "deeper_analysis": "Devils-advocate sweep: could a dome defender point to the P6 omission as evidence that our review is sloppy? Not directly — the omission is internal-process and reader-invisible (the dynamic caption already carries the basic reconciliation), and the patched §2b.6 / §3.1 / §8.2 / §9.1 / §9.3 prose is now arithmetically clean. The visible-surface integrity HOL-NARRATIVE c2 hole 1 flagged is mostly fixed. The defender's stronger move is the second hole (hardcoded '69' literals) — a defender who wanted to argue 'these people can't keep their own counts straight' would cite 'indexes only 9 of 69 confirmed claims' alongside '72 catalog rows we review' and ask which it is. That's a real exposure surface; the answer 'the dome had 69 baseWins when we wrote that paragraph and now has 70' is technically defensible but rhetorically weak. Patch in a child-EXP and the exposure goes away. On the kernel-of-truth side: the dome's identifier-reuse behavior (which creates WIN-057b and WIN-058b as legitimate distinct claims) is genuine structural evidence about claim hygiene, and EXP-437 was correct to preserve both numbers in prose rather than collapse to one frame. The cross-reference from P6 to Section 8b.1 (claim_key annotations) was the load-bearing closing-the-loop move and is now MIA. Recommend the P6 patch goes in immediately; the build-invariant goes in next; the hardcoded '69' literals get their own EXP. Three follow-up items, decreasing severity.",
+  "citation_check": {
+    "citations_verified": [
+      "EXP-437.json (referenced and quoted)",
+      "HOLISTIC-HOL-NARRATIVE.c2.json (referenced for hole 1 origin)",
+      "build-scripts/generate-html.js lines 62-63, 469, 519, 1219-1220, 1389, 1407, 1553",
+      "data/sections.json HEAD (P1-P5 prose locations verified)",
+      "data/wins.json HEAD (72 rows; 70 basewins + 2 collisions; verdict tallies match EXP-437 stated values)"
+    ],
+    "citations_failed": [],
+    "citations_unchecked": []
+  },
+  "summary_for_decider": "EXP-437 integration is partially complete: 5 of 6 prose patches (P1-P5) landed, build-pipeline placeholders + dynamic verdict-bar caption landed, P6 (Overview explanatory paragraph) + build-time invariant throw + _meta.placeholders documentation did NOT land. Major: P6 missing reduces Overview-level reader explanation to the terse dynamic caption only. Moderate: build-invariant absent means a future unmatched ID shape would silently corrupt CATALOG_TOTAL math. Moderate (separate root cause): hardcoded literal '69 confirmed' / '9 of 69' drift in §2b.6, Part 8b.1, etc., untouched by EXP-437's placeholder-only audit. Recommend three small decider follow-ups: (1) self-apply P6 verbatim from EXP-437.prose_patches[5]; (2) add 3-line throw guard at generate-html.js:1221 (EXP-437.build_pipeline_changes.change_2.build_invariant); (3) open a child EXP for hardcoded-numeral count-drift in non-templated prose."
+}
