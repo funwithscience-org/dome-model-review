@@ -99,6 +99,8 @@ function resolvePlaceholders(html, context) {
     '{{CA_RELABELS}}': context.codeAnalysis?.relabelsStandard || 0,
     '{{CA_POSTHOC}}': context.codeAnalysis?.postHoc || 0,
     '{{CA_DOME}}': context.codeAnalysis?.derivesFromDome || 0,
+    '{{CA_DOME_WORD}}': (context.codeAnalysis?.derivesFromDome || 0) === 1 ? 'one' : String(context.codeAnalysis?.derivesFromDome || 0),
+    '{{CA_NON_DOME}}': String((context.totalWins || 0) - (context.codeAnalysis?.derivesFromDome || 0)),
     // Structural-failure cross-tabulation (4 tests: hardcoded-or-none monitoring,
     // relabels standard physics, post-hoc, does-NOT-derive-from-dome).
     // See Part 2b "The Quadruple Failure" prose.
@@ -1509,7 +1511,7 @@ ${CSS}
 <div class="ds-tab-content active" id="overview">
 
 <div class="ds-title-block">
-<p class="ds-stance-statement">The world is a globe. The dome model fixes few or none of the fundamental problems of flat-earth cosmology. That does not prevent us from engaging with the specific claims it does make — and that is what this document does.</p>
+<p class="ds-stance-statement">The world is a globe. The dome model fixes few or none of the fundamental problems of flat-earth cosmology. That does not prevent us from engaging with the specific claims it does make — and that is what this document does. The evidence is set out in the twelve tabs below.</p>
 <h1 style="border:none">Critical Review</h1>
 <h1 style="border:none;font-size:1.6rem;font-weight:400">Ovoid Cavity Cosmological Model ${DOME_VERSION}</h1>
 <p class="ds-subtitle">(formerly Dome Cosmological Model V50.6)</p>
@@ -1961,7 +1963,7 @@ ${sectionNav('pages', 'Live Power Dashboard', 'timestamp', 'Timestamp Error')}
 
 </div></details>
 
-<div class="ds-ts-related-callout"><p><strong>Related: methodology.json 5-class claim taxonomy.</strong> Alongside the OTS timestamping methodology, the April 17 rigor push introduced a 5-class claim taxonomy (<code>retrospective_structural</code>, <code>pending_contested</code>, <code>supportive_nonunique</code>, <code>prospective_confirmed</code>, <code>open_refinement</code>) in methodology.json, applied to 9 of 69+ claims in claim_index.json. For the registry-level audit of how that taxonomy and other API-level concessions compare to the visible headline, see <a href="#registry-framing-audit" onclick="showTab('pages');return false">Section 4.6 — Registry Framing Audit</a>. For per-WIN author-rating fields, see the <em>Author's Self-Rating</em> block on each WIN detail card.</p></div>
+<div class="ds-ts-related-callout"><p><strong>Related: methodology.json 5-class claim taxonomy.</strong> Alongside the OTS timestamping methodology, the April 17 rigor push introduced a 5-class claim taxonomy (<code>retrospective_structural</code>, <code>pending_contested</code>, <code>supportive_nonunique</code>, <code>prospective_confirmed</code>, <code>open_refinement</code>) in methodology.json, applied to 9 of 69+ claims in claim_index.json. For the registry-level audit of how that taxonomy and other API-level concessions compare to the visible headline, see <a href="#registry-framing-audit" onclick="showTab('pages');return false">Section 4.5 — Registry Framing Audit</a>. For per-WIN author-rating fields, see the <em>Author's Self-Rating</em> block on each WIN detail card.</p></div>
 
 ${sectionNav('killshots', 'Kill Shots', 'predictions', 'Predictions Analysis')}
 
