@@ -1,0 +1,132 @@
+{
+  "point_id": "SEC-part2b-stratification-paragraph",
+  "topic": "Part 2b §2b.1 stratification paragraph — verdict-bucket templated rewrite (EXP-441 integration)",
+  "queue_id": 418,
+  "queue_pushed_at": "2026-05-30T02:57:57.229Z",
+  "trigger": "priority-queue-section-rewrite",
+  "reviewed_at": "2026-05-30T07:15:51.598Z",
+  "cycle": 1,
+  "current_verdict_holds": false,
+  "confidence": 0.95,
+  "our_argument_summary": "EXP-441 replaced hard-coded WIN-ID lists and verdict counts in §2b.1 with templated placeholders ({{CA_NONE_UNFAL}}, {{CA_NONE_SC}}, etc.), split the relabelling axis into its own orthogonal paragraph, and added a closing sentence asserting \"these verdict-stratified counts sum to {{CA_NONE}} — every unmonitored WIN is accounted for.\" Intent: end the count-drift failure mode by templating from wins.json + a build-time sum-check invariant.",
+  "dome_code_analysis": {
+    "relevant_files": [
+      "data/sections.json:part2b.html",
+      "build-scripts/generate-html.js:1392-1404 (caNoneX filters)",
+      "build-scripts/generate-html.js:98 ({{CA_NONE}} mapping)",
+      "build-scripts/generate-html.js:1239 (reviewed = baseWins.filter(w=>w.code_analysis.reviewed))",
+      "build-scripts/generate-html.js:1260 (monitoring.none = reviewed.filter(monitoring===\"none\"))",
+      "data/wins.json"
+    ],
+    "calculation_pipeline": "{{CA_NONE}} is derived from counts.codeAnalysis.monitoring.none, computed over reviewed/baseWins (3-digit IDs only, code_analysis.reviewed=true). Bucket placeholders {{CA_NONE_UNFAL}}…{{CA_NONE_NOTDEMO}} and the *_IDS variants are computed over the unfiltered wins array (includes sub-WINs 057b, 058b, and any unreviewed entries).",
+    "hardcoded_vs_computed": "Counts now computed at build time — improvement over prior hard-coded 29/43 drift. But the denominator filter ({{CA_NONE}}) and the numerator filters ({{CA_NONE_X}}) do not match, so the sum-equality the prose asserts is structurally impossible to guarantee.",
+    "data_sources_used": [
+      "data/wins.json"
+    ],
+    "escape_clauses": "None — but the EXP required build_invariant (build-time assertion sum(CA_NONE_X) == CA_NONE that fails the build) was NOT implemented. No throw, no abort, no test.",
+    "our_code_claims_accurate": false,
+    "code_discrepancies": "EXP-441 claimed sum-to-CA_NONE is guaranteed by construction via the templating + assertion combo. The templating shipped without the assertion, AND the templating uses inconsistent filters (denominator: reviewed/baseWins; numerators: full wins). Current build: {{CA_NONE}}=43, bucket sum=2+12+10+12+8+1=45, prose reads 'sum to 43'. Reader doing the visible arithmetic gets a contradiction."
+  },
+  "code_analysis_tags": {
+    "monitoring": "none",
+    "monitoring_evidence": "This is a prose section, not a WIN. Tag inherited from the section's primary subject matter — monitoring=none WINs.",
+    "relabels_standard": false,
+    "relabels_standard_evidence": "Prose section, not a per-WIN claim.",
+    "post_hoc": false,
+    "post_hoc_evidence": "N/A — section is structural.",
+    "derives_from_dome": false,
+    "derives_from_dome_evidence": "N/A — section is our analytical structure.",
+    "reviewed": true
+  },
+  "holes_found": [
+    {
+      "severity": "critical",
+      "description": "Visible-arithmetic failure in production. The currently-deployed prose at docs/index.html §2b.1 reads: \"The 43 WINs with no monitoring code … 2 unfalsifiable … 12 self-contradicted … 10 misleading … 12 explained by standard physics … 8 refuted … 1 not demonstrated. These verdict-stratified counts sum to 43 — every unmonitored WIN is accounted for.\" Reader's arithmetic: 2+12+10+12+8+1 = 45, not 43. This is the EXACT failure mode EXP-441 was authored to eliminate (the old version visibly summed to 29 ≠ 43; the new version visibly sums to 45 ≠ 43). On the deployed site as of 2026-05-30 the inequality is staring at any reader who reads the paragraph slowly.",
+      "recommendation": "Two-pronged fix required: (a) make the placeholder filter contracts agree — either change {{CA_NONE}} to use unfiltered wins (then it would be 45 today) or change every bucket {{CA_NONE_X}} to use the same reviewed/baseWins filter as {{CA_NONE}} (then bucket sum would be 43 today; STDMODEL drops 057b, NOTDEMO drops 058b). The right choice is the latter — sub-WINs are our collision bookkeeping per build/generate-html.js:1235-1238, and 057b is unreviewed; verdict-categorizing unreviewed/sub entries is incoherent. (b) Implement the build_invariant assertion that the EXP required_template_additions explicitly specified ('fail the build if not') in build-scripts/generate-html.js immediately after the bucket counts are computed."
+    },
+    {
+      "severity": "critical",
+      "description": "Filter-contract mismatch between denominator and numerators makes the sum-to-{{CA_NONE}} invariant structurally unenforceable. {{CA_NONE}} is counts.codeAnalysis.monitoring.none, computed via reviewed.filter(w => w.code_analysis.monitoring==='none') where reviewed = baseWins.filter(w => w.code_analysis && w.code_analysis.reviewed) (build-scripts/generate-html.js:1239, 1260). All six bucket placeholders use wins.filter(...) directly (lines 1392-1397), so they include sub-WINs (057b, 058b) and unreviewed entries. EXP-441 authoring snapshot at commit ba9a149 happened to be consistent only because 057b's verdict and 058b's presence balanced out at that snapshot — and the analyst explicitly wrote '058b is filtered out of baseWins by build.js' believing the bucket filters would also do that filtering. They don't. The prose claim that the sum equals {{CA_NONE}} is therefore not a guarantee from the templating but a coincidence of any given snapshot — which is the same fragility the rewrite was trying to remove.",
+      "recommendation": "Align all CA_NONE_* filters in build-scripts/generate-html.js:1392-1404 to use the same reviewed.filter(...) source as the denominator: i.e., compute them off reviewed (already defined as baseWins.filter(w=>w.code_analysis && w.code_analysis.reviewed)), not off raw wins. This automatically drops sub-WINs and unreviewed entries from every bucket, making sum-to-{{CA_NONE}} true by construction. Then add the assertion."
+    },
+    {
+      "severity": "major",
+      "description": "EXP-441 required_template_additions.build_invariant was NOT implemented. The block reads verbatim: 'Add a build-time assertion: sum of CA_NONE_{UNFAL,SC,MISLEADING,STDMODEL,REFUTED,NOTDEMO} must equal {{CA_NONE}} — fail the build if not. This is the curmudgeon explicit recommendation and prevents this drift from recurring silently.' There is no such assertion in build.js, build-scripts/generate-html.js, build-scripts/section-loader.js, or test.js. grep -rn 'sum.*CA_NONE|caNoneUnfal.*+|sumCheck|assertSum' build-scripts/ build.js test.js returns zero hits. The integrity agent's 2026-05-30 report (overall_status: fail) did not catch this — it audits PROP-059 false closures, expansion-tracker collisions, and digest coverage, not prose arithmetic. So the very guard the EXP claimed prevents drift 'silently' is itself silently missing.",
+      "recommendation": "Add at line ~1404 of build-scripts/generate-html.js (right after the bucket-count computations): const _sumCheck = caNoneUnfal + caNoneSC + caNoneMisleading + caNoneStdmodel + caNoneRefuted + caNoneNotdemo; if (_sumCheck !== caNoneRaw) throw new Error('CA_NONE sum-check failed: bucket sum ' + _sumCheck + ' !== {{CA_NONE}} ' + caNoneRaw + '. Misaligned filter contract between denominator and numerators.'); — where caNoneRaw is reviewed.filter(w=>w.code_analysis.monitoring===\"none\").length. Also add a tests/run.sh check that the rendered docs/index.html contains a consistent sum within the stratification paragraph."
+    },
+    {
+      "severity": "major",
+      "description": "The '1 not demonstrated' line in the rendered prose has no accompanying ID list. Every other bucket has its WIN-IDs printed parenthetically; CA_NONE_NOTDEMO does not. The author's anticipated_objections[3].response explicitly justified the ID-list verbosity by saying 'a reader who wants to verify WIN-034 is Self-Contradicted, not theological can click through to the WIN entry' — but the deployed prose now contains a verdict-categorized count with no clickable referent. The reader cannot verify what '1 not demonstrated' refers to (it is WIN-058b, a collision sub-ID that the rest of the project filters out of baseWins, which is itself a structural inconsistency — see hole #2 above). The EXP template list at required_template_additions did not include {{CA_NONE_NOTDEMO_IDS}} in the bucket-IDs section (only the count placeholder), because the analyst expected the count to be 0; the EXP replacement_html therefore reads <strong>{{CA_NONE_NOTDEMO}} not demonstrated.</strong> with no IDs — and generate-html.js does define the IDs placeholder (line 76) but nothing in the prose references it.",
+      "recommendation": "If hole #1 fix aligns the filter to reviewed/baseWins, CA_NONE_NOTDEMO becomes 0 and the missing-ID problem disappears. If the project chooses instead to count sub-WINs in the buckets, then the prose must include ({{CA_NONE_NOTDEMO_IDS}}) (with conditional handling for the 0-count case to avoid an empty paren) and the analyst should also add {{CA_NONE_NOTDEMO_IDS}} to the documented required_template_additions for clarity."
+    },
+    {
+      "severity": "moderate",
+      "description": "WIN-057b is listed in CA_NONE_STDMODEL_IDS as a verdict-categorized exemplar but its code_analysis.reviewed is false in data/wins.json (verified at commit head). Citing an unreviewed sub-WIN as one of '12 explained by standard physics' undermines the structural framing — a dome defender can fairly object: 'You're counting a WIN whose own code_analysis flags itself as unreviewed; on what basis is it categorized?' The verdict itself may be substantively correct, but the citation is premature.",
+      "recommendation": "Same fix as hole #1 — align the bucket filter to require code_analysis.reviewed===true. Alternatively, set WIN-057b.code_analysis.reviewed=true in wins.json if the categorization is in fact settled (do this only after a real review pass on 057b; do not flip the flag merely to make the prose consistent)."
+    },
+    {
+      "severity": "moderate",
+      "description": "'Monitoring would expose the contradiction' (applied to all 12 Self-Contradicted unmonitored WINs) overclaims for several entries that are mathematical/derivational rather than observational. WIN-044 (Firmament Scaling Function from V12 geometry), WIN-047 (Low-z Hubble Law aetheric) and WIN-052 (RAR lensing extension) — among others — are derivational claims where the contradiction lives inside the model's own equations (κ vanishing, denominator collapse, geometry pinned by two incompatible constraints). Live monitoring cannot 'expose' a derivation that produces inconsistent symbolic results — at best it can show the predicted observable doesn't match data, which is the same evidence that is already in detail_evidence. A dome defender can plausibly say 'monitoring wouldn't expose the contradiction; it would either match (in which case both inconsistent predictions are individually right against data, which is the model's actual weak claim) or mismatch (which we already know — that is how you got the verdict).' This is a real overstatement.",
+      "recommendation": "Soften to 'monitoring would expose the empirical mismatch where the dome's self-contradicted equations make a measurable prediction' — or, in the cases where the contradiction is purely derivational, drop the 'monitoring would expose' clause and add a separate framing for the geometric-self-contradiction subset. A defender will not push back if the claim is restricted to empirical-side contradictions."
+    },
+    {
+      "severity": "moderate",
+      "description": "Kernel-of-truth challenge — causal-attribution framing is stronger than the data supports. The closing sentence 'the dome's monitoring avoids exactly the categories where testing would be most damaging' attributes intent ('avoids') to a pattern that could be explained by passive availability: theological assertions and cosmological-geometry claims simply do not have natural data sources to plug into a monitor.py-style validator. The relabelling-axis paragraph addresses the 'non-test' signature directionally, but the verdict stratification alone does not establish avoidance vs. unavailability. A dome defender can fairly respond: 'We monitor what has APIs. NOAA gives us magnetic data; nobody publishes a firmament-thickness feed.'",
+      "recommendation": "Either soften the closing sentence to a structural observation ('the dome's monitoring is concentrated in domains with publicly-available data feeds, leaving most of the geometric and theological claims untested') OR strengthen the avoidance claim by citing the orthogonal-axis paragraph's relabelling finding (relabelling is the active choice; monitoring=none is the consequence). The relabelling paragraph already does most of this work; the closing sentence of the stratification paragraph just needs to defer to it rather than restate intent."
+    }
+  ],
+  "unresolved_prior_cycle": [],
+  "stronger_arguments": [
+    {
+      "description": "Better framing for the orthogonal-axis paragraph: lead with the rebadge → no-test causal chain. 'For 29 of the 43 unmonitored WINs, the dome prediction is a rebadged standard-physics result (relabels_standard=true). Combined with monitoring=none, this means: there is no novel prediction to test, and there is no test of the rebadge. The remaining 14 unmonitored WINs either don't have a standard-physics analog (often because the claim is geometric or theological), or fall into the categories above without rebadging.' That sequencing makes the active-choice argument explicit without overclaiming intent.",
+      "sources": [
+        "data/wins.json (relabels_standard tag)",
+        "monitor/curmudgeon/reviews/HOLISTIC-HOL-COMPLETENESS.c3.json (parent review)"
+      ]
+    },
+    {
+      "description": "For the contrast paragraph (adjacent — queue_id 419), pair the 8-hardcoded SC finding with a direct quote from one or two of the hardcoded monitor.py domains so the reader can see the pred==obs pattern with both values baked in. Verified by recompute: SC ∩ monitoring=hardcoded = {WIN-002, WIN-012, WIN-029, WIN-038, WIN-045, WIN-046, WIN-049, WIN-067} — the prose 8-ID list is correct as of this snapshot.",
+      "sources": [
+        "raw-text/monitor.py",
+        "data/wins.json"
+      ]
+    }
+  ],
+  "kernel_of_truth": {
+    "description": "The structural argument the EXP-441 rewrite is making is correct (kernel_of_truth source: monitor/analyst/expansions/EXP-441.json:kernel_of_truth). Within the monitoring=none cohort there really is a verdict-distribution skew — 12/43 Self-Contradicted (data/wins.json:caNoneSC computed locally), 8/43 Refuted by Data, only 2/43 Unfalsifiable — and that distribution differs materially from the live-fetch cohort, where Refuted/Self-Contradicted verdicts are essentially absent (recomputed from data/wins.json:wins.filter(monitoring==='live_fetch'), which the prior reviewer flagged as a 4-WIN set). The orthogonal-axis observation that relabelling piles on top of monitoring=none (29/43 carry relabels_standard=true; recomputed live from data/wins.json) is also empirically grounded. The rewrite factual content survives this review — the holes are in the implementation plumbing, not in the underlying claim.",
+    "why_it_doesnt_save_claim": "Being structurally right doesn't save a paragraph whose visible arithmetic is wrong (holes_found[0]) and whose stated invariant ('sum to {{CA_NONE}}') is structurally unenforceable as built (holes_found[1]). A dome defender does not need to dispute the underlying skew — they only need to point at '43 ≠ 45' and the rest of the credibility argument collapses. The fix is mechanical (filter alignment + build_invariant assertion per holes 1/2/3), not analytical; once shipped, the kernel becomes defensible."
+  },
+  "recommended_action": "major_rewrite",
+  "text_fingerprint": {
+    "paragraph_block_length": 2434,
+    "deployed_ca_none": 43,
+    "deployed_bucket_sum": 45,
+    "deployed_bucket_breakdown": {
+      "unfal": 2,
+      "sc": 12,
+      "misleading": 10,
+      "stdmodel": 12,
+      "refuted": 8,
+      "notdemo": 1
+    },
+    "deployed_ca_none_relabels": 29,
+    "verdict": "N/A — section, not WIN"
+  },
+  "deeper_analysis": "EXP-441 author identified the right disease (count drift) and prescribed the right cure (templating + build-time assertion). The integration shipped the templating half but not the assertion half, and in doing so introduced a new variant of the original disease: the templating itself is internally inconsistent in its filter contracts. This is a meta-failure mode worth noting — 'templated from wins.json at build time' sounds like it guarantees consistency, but the guarantee depends entirely on whether every placeholder in the template draws from the same dataset slice. Here the denominator and numerators draw from different slices (baseWins ∩ reviewed vs. unfiltered wins). The fix is small (≤10 lines in generate-html.js) but its absence broke the load-bearing claim of the rewrite. Decider should integrate this as one patch covering both the filter realignment and the assertion, not split into two ISSes — they're structurally one fix.\n\nNote on review scope: I did not attack the adjacent contrast paragraph (queue_id 419 / EXP-442) here because it is a separate priority-queue item with its own deep-attack class. However, the contrast paragraph reuses the SC_TOTAL/SC_MON_* template family and has the same structural risk pattern; if the filter realignment fix lands for §2b.1, verify it lands for the contrast paragraph in the same commit (or flag SC_TOTAL/SC_MON_HARDCODED/etc. for the same denominator-vs-numerator audit). The contrast paragraph's arithmetic currently reads 12 + 8 = 20 = {{SC_TOTAL}} which is consistent at this snapshot — but consistent for the same reason: a happy coincidence rather than a guarantee.",
+  "citation_check": {
+    "citations_verified": [
+      "data/wins.json:wins[].verdict — recomputed locally, matches deployed rendered values",
+      "build-scripts/generate-html.js:1239 (reviewed = baseWins.filter(w=>w.code_analysis.reviewed)) — verified by grep",
+      "build-scripts/generate-html.js:1260 (monitoring.none on reviewed) — verified",
+      "build-scripts/generate-html.js:1392-1404 (caNoneX off unfiltered wins) — verified",
+      "build-scripts/generate-html.js:98 ({{CA_NONE}} mapping to context.codeAnalysis.monitoring.none) — verified",
+      "monitor/analyst/expansions/EXP-441.json:required_template_additions.build_invariant — read verbatim, not implemented in code",
+      "docs/index.html rendered §2b.1 — values 43/2/12/10/12/8/1 confirmed by python search of built file"
+    ],
+    "citations_failed": [],
+    "citations_unchecked": [
+      "Whether the integrity agent could grow a docs/index.html arithmetic-consistency check — recommended as a follow-up but not designed here"
+    ]
+  },
+  "summary_for_decider": "EXP-441 integration shipped HALF of what the EXP specified: the templating landed but the required build_invariant assertion did not, and the templating itself uses inconsistent filter contracts (denominator uses reviewed/baseWins, numerators use unfiltered wins). Live result: docs/index.html §2b.1 currently reads 'sum to 43' while the visible buckets sum to 45 (2+12+10+12+8+1). This is the same visible-arithmetic-failure mode the EXP was supposed to eliminate. Fix is small (~10 lines in build-scripts/generate-html.js: change caNoneX filters at 1392-1404 to use reviewed instead of wins, then add a sum-check throw). Adjacent EXP-442 (queue_id 419) uses the same template family — verify in the same commit. Parent: HOLISTIC-HOL-COMPLETENESS.c3.json (carry-over context, not a structured prior-cycle ISS on this new target_id). Recommend major_rewrite of the build-side wiring rather than touching sections.json prose; once filters align and the assertion fires, the prose is correct as-is."
+}

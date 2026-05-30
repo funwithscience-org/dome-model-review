@@ -1,54 +1,68 @@
-=== Curmudgeon Run Summary — 2026-05-30 ===
+CURMUDGEON REVIEW — 2026-05-30 (queue_id 418, SEC-part2b-stratification-paragraph c1)
+=====================================================================================
 
-Reviewed: SEC-overview-timestamp-reading-guide (queue_id 417, c1, class=deep-attack, singleton)
-File:     monitor/curmudgeon/reviews/SEC-overview-timestamp-reading-guide.c1.json
+Item: Part 2b §2b.1 stratification paragraph (EXP-441 integration)
+Trigger: priority-queue, class=deep-attack, FIFO position 3 of 4 (416 and 417 already reviewed)
+Verdict: current_verdict_holds=false. recommended_action=major_rewrite.
+Holes: 2 critical, 2 major, 3 moderate.
 
-Context: EXP-438 integrated 2026-05-30 (decider commit 8308d89). Two visible-rationale
-prose patches landed to close HOL-NARRATIVE c2 hole 3 (Timestamp Error tab orphaned
-at position 8):
-  1. +157 chars on Overview reading-guide line (generate-html.js:1522)
-  2. New ds-tab-rationale <p> at top of Timestamp Error tab (generate-html.js:1866)
+THE HEADLINE:
+EXP-441 was authored to ELIMINATE the visible-arithmetic-failure mode in §2b.1's
+stratification paragraph (old version visibly summed to 29 ≠ 43). The integration
+shipped the templating but NOT the required build_invariant assertion, and the
+templating itself uses inconsistent filter contracts. Live result on the deployed
+site as of 2026-05-30: the prose reads "sum to 43" while the visible bucket counts
+sum to 45 (2 unfalsifiable + 12 self-contradicted + 10 misleading + 12 std-model +
+8 refuted + 1 not demonstrated = 45). The exact failure mode the EXP existed to
+prevent has been re-introduced in a new form.
 
-Verdict: current_verdict_holds=true, recommended_action=minor_edit, confidence=0.83.
-The substantive decision (KEEP-at-position-8 with visible rationale, do NOT combine
-with Code Analysis) is correct. The integration is structurally clean — text matches
-EXP-438 proposed_patches verbatim, no link targets touched, no build impact. Avoids
-the word "canary" per CLAUDE.md project context guidance.
+ROOT CAUSE:
+  - {{CA_NONE}} computed via reviewed.filter(monitoring==='none') where
+    reviewed = baseWins.filter(reviewed-flag=true) — excludes sub-WINs (057b, 058b)
+    and unreviewed entries. Today: 43.
+  - {{CA_NONE_X}} (six bucket placeholders) computed via raw wins.filter(...) —
+    includes 057b (Std Model Explains) and 058b (Not Demonstrated). Today's
+    bucket sum: 45.
+  - EXP-441 required_template_additions.build_invariant explicitly mandated a
+    build-time sum-check assertion ("fail the build if not"). Never implemented.
+    grep -rn 'sum.*CA_NONE|sumCheck|assertSum' build-scripts/ build.js test.js
+    returns zero hits.
 
-Holes found (6 — 0 critical, 0 major, 3 moderate, 3 minor):
-  [moderate] Tone/voice break in reading guide — only this descriptor justifies its tab
-  [moderate] Canary motive telegraphed via "we want it visible at the nav level" +
-             "methodology critique we can hand the dome author" (strategic gift framing)
-  [moderate] "single-sentence methodology error" undershoots fix scope (4 structural
-             components per the tab's own scorecard); invites defender comeback
-  [minor]    "fix unilaterally" doesn't distinguish from Self-Contradictions (all
-             critiques unilaterally fixable from the dome's side)
-  [minor]    First-person "we" intrusion in reading guide (rest stays third-person)
-  [minor]    Visible-rationale strategy partly circular vs HOL-NARRATIVE c2 hole 3 —
-             rationale says "we wanted it visible" rather than rebutting narrative-flow
+CRITICAL HOLES (2):
+  1. Visible arithmetic failure (43 vs 45) live on the deployed site.
+  2. Filter-contract mismatch makes the sum-to-{{CA_NONE}} invariant
+     structurally unenforceable as built.
 
-Recommendation to decider (3 small word-swaps, all minor_edit class):
-  1. Reading guide: replace "most actionable methodology critique we can hand the
-     dome author, and we want it visible at the nav level" with
-     "a narrow, separately-fixable methodology critique surfaced for visibility"
-     (removes 'we' voice, removes strategic-gift telegraphing, restores parallel
-     structure with other ten tab descriptors)
-  2. Tab-top rationale: replace "single-sentence methodology error the dome author
-     can fix unilaterally" with "narrowly-scoped methodology error with a
-     structurally simple fix path"
-  3. Optional: annotate ISS-2218 closure record acknowledging trade-off — placement
-     is now defensible, not coherent; canary constraint forced this
+MAJOR HOLES (2):
+  3. Required build_invariant assertion missing entirely.
+  4. "1 not demonstrated" has no ID list (refers to 058b — sub-WIN excluded
+     from {{CA_NONE}} denominator).
 
-Stronger arguments (2 noted): canary serves two audiences (author + public) and only
-one is in DM contact; reading-guide "we" voice may BE a deliberate signal worth
-keeping if operator wants editorial voice in the nav summary.
+MODERATE HOLES (3):
+  5. WIN-057b cited in CA_NONE_STDMODEL_IDS but reviewed=false in wins.json.
+  6. "Monitoring would expose the contradiction" overclaims for derivational
+     SC WINs (mathematical inconsistencies, not empirically detectable).
+  7. Closing sentence attributes intent ("avoids") where availability could
+     equally explain the pattern. Relabelling paragraph handles this, but
+     stratification paragraph by itself doesn't carry the load.
 
-Queue status: 4 items pushed by decider 2026-05-30T02:57:57Z.
-  - queue_id 416 (part2b-count-reconciliation): already reviewed earlier this run
-  - queue_id 417 (overview-timestamp-reading-guide): THIS REVIEW
-  - queue_id 418 (part2b-stratification-paragraph): pending (next run)
-  - queue_id 419 (part2b-contrast-paragraph): pending (next run)
-All four are class=deep-attack → singleton. No batching.
+KERNEL OF TRUTH:
+The structural argument is correct — within monitoring=none, the verdict
+distribution genuinely is heavily Self-Contradicted / Refuted, and 29/43 also
+relabel standard physics. These survive the review. The holes are entirely in
+the implementation plumbing.
 
-Tracker: appended to monitor/curmudgeon/tracker-archive.jsonl; live tracker timestamp
-updated. No pending entry removed (this is a new SEC item from EXP-438 integration).
+DECIDER GUIDANCE:
+Fix is small (~10 lines in build-scripts/generate-html.js): change caNoneX
+filters at lines 1392-1404 to use `reviewed` instead of `wins`, then add a
+sum-check throw at line ~1404. Bundle into one patch — these are structurally
+the same fix. Adjacent EXP-442 (queue_id 419, contrast paragraph) uses the
+same SC_TOTAL/SC_MON_* template family and has the same risk pattern; verify
+fix lands for both in one commit. Prose itself does not need to change.
+
+QUEUE STATUS AFTER THIS RUN:
+  - 416 (part2b-count-reconciliation): reviewed (c1, pre-existing)
+  - 417 (overview-timestamp-reading-guide): reviewed (c1, pre-existing)
+  - 418 (part2b-stratification-paragraph): REVIEWED THIS RUN
+  - 419 (part2b-contrast-paragraph): unreviewed, decider will surface
+    on next push
