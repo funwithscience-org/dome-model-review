@@ -1,68 +1,54 @@
-CURMUDGEON REVIEW — 2026-05-30 (queue_id 418, SEC-part2b-stratification-paragraph c1)
-=====================================================================================
+Curmudgeon run 2026-05-30T09:18Z — qid 419 (SEC-part2b-contrast-paragraph)
+================================================================================
 
-Item: Part 2b §2b.1 stratification paragraph (EXP-441 integration)
-Trigger: priority-queue, class=deep-attack, FIFO position 3 of 4 (416 and 417 already reviewed)
-Verdict: current_verdict_holds=false. recommended_action=major_rewrite.
-Holes: 2 critical, 2 major, 3 moderate.
+Item reviewed: Part 2b §2b.1 contrast paragraph (EXP-442 integration)
+Trigger: priority-queue-section-rewrite, class=deep-attack (singleton)
+Cycle: 1
+File: monitor/curmudgeon/reviews/SEC-part2b-contrast-paragraph.c1.json
 
-THE HEADLINE:
-EXP-441 was authored to ELIMINATE the visible-arithmetic-failure mode in §2b.1's
-stratification paragraph (old version visibly summed to 29 ≠ 43). The integration
-shipped the templating but NOT the required build_invariant assertion, and the
-templating itself uses inconsistent filter contracts. Live result on the deployed
-site as of 2026-05-30: the prose reads "sum to 43" while the visible bucket counts
-sum to 45 (2 unfalsifiable + 12 self-contradicted + 10 misleading + 12 std-model +
-8 refuted + 1 not demonstrated = 45). The exact failure mode the EXP existed to
-prevent has been re-introduced in a new form.
+VERDICT: current_verdict_holds = true; recommended_action = minor_edit.
+The contrast paragraph now renders correct templated counts (20 SC: 12 none + 8
+hardcoded). The original HOL-COMPLETENESS.c3 hole 2 numbers are closed.
 
-ROOT CAUSE:
-  - {{CA_NONE}} computed via reviewed.filter(monitoring==='none') where
-    reviewed = baseWins.filter(reviewed-flag=true) — excludes sub-WINs (057b, 058b)
-    and unreviewed entries. Today: 43.
-  - {{CA_NONE_X}} (six bucket placeholders) computed via raw wins.filter(...) —
-    includes 057b (Std Model Explains) and 058b (Not Demonstrated). Today's
-    bucket sum: 45.
-  - EXP-441 required_template_additions.build_invariant explicitly mandated a
-    build-time sum-check assertion ("fail the build if not"). Never implemented.
-    grep -rn 'sum.*CA_NONE|sumCheck|assertSum' build-scripts/ build.js test.js
-    returns zero hits.
+5 HOLES FOUND (1 major + 3 moderate + 1 minor):
 
-CRITICAL HOLES (2):
-  1. Visible arithmetic failure (43 vs 45) live on the deployed site.
-  2. Filter-contract mismatch makes the sum-to-{{CA_NONE}} invariant
-     structurally unenforceable as built.
+[MAJOR] EXP-442 required_template_additions.build_invariant NOT integrated.
+  The decider integrated the four placeholder substitutions
+  (build-scripts/generate-html.js:77-80, 1405-1408) but skipped the spec-mandated
+  sum-check assertion (SC_MON_NONE + SC_MON_HARDCODED == SC_TOTAL).
+  At HEAD this is invisible (12+8=20), but the system is one classification flip
+  away from re-opening the prior cycle's hole. This is the THIRD consecutive
+  EXP in this decider batch (EXP-437, EXP-441, EXP-442) where the
+  build_invariant block was dropped — see sibling reviews SEC-part2b-count-
+  reconciliation.c1 hole 1 and SEC-part2b-stratification-paragraph.c1 hole 2.
+  Fix: one decider patch adding all three assertions together.
 
-MAJOR HOLES (2):
-  3. Required build_invariant assertion missing entirely.
-  4. "1 not demonstrated" has no ID list (refers to 058b — sub-WIN excluded
-     from {{CA_NONE}} denominator).
+[MODERATE] SC_MON_HARDCODED_IDS rendered with wrong format.
+  Spec: slash-joined "WIN-002/012/029/038/045/046/049/067" (single WIN- prefix).
+  Implementation: comma-space joined "WIN-002, WIN-012, ..." (8x WIN- prefix).
+  Renders correctly factually but breaks the prose rhythm the spec was explicit
+  about preserving (required_template_additions rationale).
 
-MODERATE HOLES (3):
-  5. WIN-057b cited in CA_NONE_STDMODEL_IDS but reviewed=false in wins.json.
-  6. "Monitoring would expose the contradiction" overclaims for derivational
-     SC WINs (mathematical inconsistencies, not empirically detectable).
-  7. Closing sentence attributes intent ("avoids") where availability could
-     equally explain the pattern. Relabelling paragraph handles this, but
-     stratification paragraph by itself doesn't carry the load.
+[MODERATE] list_of_winids helper NOT extracted (EXP-441 + EXP-442 cross-EXP
+  spec requirement). The inlined .filter(...).map(w=>'WIN-'+w.id).join(', ')
+  pattern is duplicated 8+ times in generate-html.js lines 1399-1408.
+  Extracting the helper now closes the slash-format issue at one site.
 
-KERNEL OF TRUTH:
-The structural argument is correct — within monitoring=none, the verdict
-distribution genuinely is heavily Self-Contradicted / Refuted, and 29/43 also
-relabel standard physics. These survive the review. The holes are entirely in
-the implementation plumbing.
+[MODERATE] Adjacent stale paragraph exposed by EXP-442's templating.
+  The "Even the 2 live-fetch WINs" paragraph immediately after says
+  "All four data sources" and names WIN-004, WIN-006, WIN-007, WIN-024 — but
+  only WIN-006 and WIN-007 currently carry monitoring=live_fetch. The
+  contradiction between the templated "2" and the hardcoded narrative is
+  glaring. Recommend new ISS / EXP to template this paragraph too.
 
-DECIDER GUIDANCE:
-Fix is small (~10 lines in build-scripts/generate-html.js): change caNoneX
-filters at lines 1392-1404 to use `reviewed` instead of `wins`, then add a
-sum-check throw at line ~1404. Bundle into one patch — these are structurally
-the same fix. Adjacent EXP-442 (queue_id 419, contrast paragraph) uses the
-same SC_TOTAL/SC_MON_* template family and has the same risk pattern; verify
-fix lands for both in one commit. Prose itself does not need to change.
+[MINOR] Mild scope ambiguity in "The contrast with the hardcoded WINs is even
+  more revealing" — could read as contrast against the entire hardcoded cohort
+  before the next sentence narrows it. Low-priority polish.
 
-QUEUE STATUS AFTER THIS RUN:
-  - 416 (part2b-count-reconciliation): reviewed (c1, pre-existing)
-  - 417 (overview-timestamp-reading-guide): reviewed (c1, pre-existing)
-  - 418 (part2b-stratification-paragraph): REVIEWED THIS RUN
-  - 419 (part2b-contrast-paragraph): unreviewed, decider will surface
-    on next push
+PATTERN OBSERVATION (for tinker / decider operator attention):
+  Across EXP-437, EXP-441, EXP-442 the decider integrated placeholder
+  substitutions but skipped build_invariant blocks 3/3 times.
+  Not a one-off — process gap worth investigating in the integration pipeline.
+
+QUEUE STATE: All 4 queue items now reviewed (qid 416, 417, 418 already had
+reviews; qid 419 = this review). Decider will pop on its next run.

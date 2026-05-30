@@ -1,0 +1,132 @@
+{
+  "point_id": "SEC-part2b-contrast-paragraph",
+  "topic": "Part 2b §2b.1 contrast paragraph — EXP-442 templating integration",
+  "queue_id": 419,
+  "queue_pushed_at": "2026-05-30T02:57:57.229Z",
+  "reviewed_at": "2026-05-30T09:17:45.440Z",
+  "cycle": 1,
+  "trigger": "priority-queue-section-rewrite",
+  "change_summary": "EXP-442 integrated by decider — contrast paragraph in §2b.1 now uses {{SC_TOTAL}}/{{SC_MON_NONE}}/{{SC_MON_HARDCODED}}/{{SC_MON_HARDCODED_IDS}} placeholders, dropping the stale '14/six/eight/half' hardcoded prose; substitution wiring lives in build-scripts/generate-html.js lines 77-80 and 1405-1408.",
+  "current_verdict_holds": true,
+  "confidence": 0.9,
+  "our_argument_summary": "The dome's 20 Self-Contradicted WINs split 12 unmonitored / 8 hardcoded-to-pass; for the hardcoded subset the dome 'builds validation infrastructure that cannot fail by construction.' Either way, no Self-Contradicted WIN faces a genuine empirical test. Counts and ID list are now templated from wins.json at build time.",
+  "dome_code_analysis": {
+    "relevant_files": [
+      "data/sections.json (part2b.html, contrast paragraph)",
+      "build-scripts/generate-html.js (substitution map @77-80; context computation @1405-1408)",
+      "docs/index.html (rendered output @1221)",
+      "monitor/analyst/expansions/EXP-442.json (authoring spec)"
+    ],
+    "calculation_pipeline": "Build-time: generate-html.js iterates wins, computes scTotal/scMonNone/scMonHardcoded/scMonHardcodedIds via inline filter+map+join, registers them in the context object that feeds the placeholder substitution map. Render: simple string-replace of {{SC_*}} tokens in part2b.html with computed values. No build-time invariant enforcement.",
+    "hardcoded_vs_computed": "Counts are computed from wins.json at build (good — matches EXP-442 intent). ID list is computed but joined with ', ' instead of '/' per spec.",
+    "data_sources_used": [
+      "data/wins.json (in-repo)"
+    ],
+    "escape_clauses": "Substitution map at line 77-80 uses '|| 0' / '|| \"\"' fallbacks — if context fields are undefined the prose silently renders '0 self-contradicted WINs', which would be visibly wrong but not a build break. With sum-check assertion missing, classification drift would render '20 SC = 12 + 8' = arithmetically consistent only by coincidence.",
+    "our_code_claims_accurate": true,
+    "code_discrepancies": "The prose claim 'all hardcoded to pass' depends on the monitoring=hardcoded tag definition (static expected AND static observed → pred==obs trivially). Curmudgeon prior reviews validated this for each of the 8 listed WINs; no discrepancy in current claim."
+  },
+  "code_analysis_tags": {
+    "monitoring": "none",
+    "monitoring_evidence": "SEC item (prose section), not a per-WIN dome prediction. The code_analysis tag scheme is about dome monitoring of dome predictions; set to 'none' for schema compliance.",
+    "relabels_standard": false,
+    "relabels_standard_evidence": "Not a WIN — no dome physical claim being relabeled here.",
+    "post_hoc": false,
+    "post_hoc_evidence": "Not a WIN.",
+    "derives_from_dome": false,
+    "derives_from_dome_evidence": "Not a WIN; this is our analytical prose.",
+    "reviewed": true
+  },
+  "holes_found": [
+    {
+      "severity": "major",
+      "description": "EXP-442's required_template_additions.build_invariant was NOT integrated. The spec verbatim: 'Add a build-time assertion: SC_MON_NONE + SC_MON_HARDCODED must equal SC_TOTAL — fail the build if not. The SC set is closed (every Self-Contradicted WIN has monitoring∈{none,hardcoded}; no \"partial\" or other tags appear in this subset at HEAD), so the sum check is a strict equality. If a future WIN introduces a third monitoring tag for a Self-Contradicted verdict, the build fails loudly and the prose gets revisited — exactly the failure-mode the curmudgeon flagged.' Verified: grep across build-scripts/*.js and build.js for 'SC_MON_NONE + SC_MON_HARDCODED', 'assert.*SC_TOTAL', and 'sum.*SC_TOTAL' returns zero hits. The integration delivered the placeholder substitution but skipped the safeguard that gives the templating its self-healing property. At HEAD this is invisible (12+8=20 currently holds) but the system is one classification flip away from re-opening the same hole the prior cycle's HOL-COMPLETENESS.c3 hole 2 caught. This is the THIRD consecutive EXP in this batch (EXP-437, EXP-441, EXP-442) where the decider integrated the placeholder substitution but skipped the build_invariant spec — see SEC-part2b-count-reconciliation.c1 hole 1 (EXP-437 invariant) and SEC-part2b-stratification-paragraph.c1 hole 2 (EXP-441 invariant). The pattern itself is the higher-order finding.",
+      "recommendation": "Add the assertion in build-scripts/generate-html.js immediately after the scTotal/scMonNone/scMonHardcoded fields are computed (~line 1408). Suggested implementation: `if (context.scMonNone + context.scMonHardcoded !== context.scTotal) throw new Error('build invariant violated: scMonNone + scMonHardcoded (' + context.scMonNone + '+' + context.scMonHardcoded + ') !== scTotal (' + context.scTotal + ')');`. Bundle with the equivalent EXP-441 and EXP-437 build_invariants the sibling reviews flagged — one decider patch, three assertions, closes the pattern across all three EXPs."
+    },
+    {
+      "severity": "moderate",
+      "description": "Format deviation: EXP-442's required_template_additions.placeholders.{{SC_MON_HARDCODED_IDS}} explicitly specifies `list_of_winids(...) with sep=\"/\"` and the explicit output format 'WIN-002/012/029/038/045/046/049/067' — single 'WIN-' prefix followed by slash-joined bare numeric IDs, with the rationale 'preserves the original prose rhythm'. build-scripts/generate-html.js:1408 implements `.map(w=>'WIN-'+w.id).join(', ')` producing 'WIN-002, WIN-012, WIN-029, WIN-038, WIN-045, WIN-046, WIN-049, WIN-067' — full 'WIN-' prefix repeated 8x, comma-space joined. Verified in docs/index.html (line 1221). The IDs are factually correct, but the rendering breaks the compact rhythm the spec was explicit about preserving. EXP-442's holes_addressed item #3 also notes the analyst intended the slash form to read as a single compound ID list rather than 8 separate citations.",
+      "recommendation": "Change line 1408 to `.map(w=>w.id).join('/')` and update part2b.html's contrast paragraph to insert a single literal 'WIN-' before the placeholder: `(WIN-{{SC_MON_HARDCODED_IDS}})`. Alternatively, accept the verbose form as the working standard and amend EXP-442 (or file an ISS recording that the slash spec was waived) — but the slash-joined rendering is the operator-approved authoring intent so honoring it is cheaper than retro-amending."
+    },
+    {
+      "severity": "moderate",
+      "description": "list_of_winids helper not extracted. EXP-442's required_template_additions.helper_reuse_note says: 'The list_of_winids helper introduced by EXP-441 (currently scoped to the stratification paragraph) becomes a shared utility once both EXPs integrate. Decider should land EXP-441 and EXP-442 in the same decider cycle so the helper has two consumers from the start, justifying its extraction.' EXP-441 and EXP-442 DID land in the same decider cycle (both pushed to the priority queue at 2026-05-30T02:57:57.229Z, qid 418 and 419), but the integration inlines `.filter(...).map(w=>'WIN-'+w.id).join(', ')` separately at every consumption site — generate-html.js lines 1399-1404 (six CA_NONE_*_IDS variants) and 1408 (SC_MON_HARDCODED_IDS). At least seven copies of the same pattern. Not a factual hole, but the inline duplication is what causes hole #2 above to need fixing in eight places instead of one — extracting the helper now would let SC_MON_HARDCODED_IDS pass `sep='/'` without further inlining.",
+      "recommendation": "Extract `function listOfWinIds(predicate, opts={}) { const sep=opts.sep||', '; const prefix=opts.prefix||'WIN-'; return wins.filter(predicate).map(w=>prefix+w.id).join(sep); }` near the top of generate-html.js (or as a shared util the file imports). Rewrite lines 1399-1404 and 1408 to call it. For SC_MON_HARDCODED_IDS pass `{sep:'/', prefix:''}` and update the prose to `(WIN-{{SC_MON_HARDCODED_IDS}})` — closing hole #2 and #3 with one change."
+    },
+    {
+      "severity": "moderate",
+      "description": "Adjacent stale paragraph (not in EXP-442's scope but exposed by EXP-442's templating). The very next paragraph in §2b.1 reads (docs/index.html line ~1223): 'Even the 2 live-fetch WINs are not independent. The WINs that fetch live data are WIN-004 (SAA separation, from NOAA/INTERMAGNET), WIN-006 and WIN-007 (North Magnetic Pole drift, from NOAA NP.xy), and WIN-024 (Roaring 40s correlation, from CPC/NOAA AAO index). All four data sources are produced by institutions that use spherical-Earth geodetic reference frames...' The templated '2' is correct ({{CA_LIVE}} = 2; only WIN-006 and WIN-007 carry monitoring=live_fetch at HEAD), but the hardcoded narrative then names FOUR WINs (004, 006, 007, 024) and says 'All four data sources'. WIN-004 and WIN-024 are NOT live_fetch in current wins.json (verified). The contradiction lands two sentences after the EXP-442 paragraph and is glaring next to the EXP-442 paragraph's correctly-templated counts — it undercuts §2b.1's stated self-templating discipline.",
+      "recommendation": "Surface a new ISS / EXP to template the live-fetch paragraph the same way EXP-442 templated the contrast paragraph. Use the (to-be-extracted) list_of_winids helper to render the live-fetch WIN list dynamically and replace 'All four data sources' with '{{CA_LIVE}} data sources' or '{{CA_LIVE}} of these'. Alternative: if WIN-004 and WIN-024 should still be discussed in this paragraph as 'fetched-from-NOAA but tagged hardcoded for the comparison step', explicitly distinguish the 'fetched-but-not-compared-live' WINs from monitoring=live_fetch and rephrase. Either way the current 'All four' phrasing is stale by ~3 WIN-tag reclassifications."
+    },
+    {
+      "severity": "minor",
+      "description": "Mild scope ambiguity in the opening clause. 'The contrast with the hardcoded WINs is even more revealing' reads at first as a contrast against the entire hardcoded cohort across all verdicts; the next sentences narrow the actual subject to the SC ∩ hardcoded subset (8 WINs). The preceding stratification paragraph just discussed CA_NONE WINs stratified by verdict, so a reader expecting 'now we look at hardcoded WINs the same way' may briefly mis-parse. Comprehensible after the second sentence; not a factual error.",
+      "recommendation": "Optional: rephrase as 'Within the Self-Contradicted cohort, the monitoring split is even more revealing,' or 'The contrast with the hardcoded subset of these WINs is even more revealing.' Low-priority polish — don't gate integration on this."
+    }
+  ],
+  "unresolved_prior_cycle": [],
+  "stronger_arguments": [
+    {
+      "description": "The 'hardcoded to pass' framing could be strengthened by contrasting against the dome's Live Power dashboard claim of '28 of 28 passing.' These 8 hardcoded SC WINs all show as passing in the dashboard despite being geometrically self-contradicted — that's the missing rhetorical punch. The current prose says 'cannot fail by construction' but doesn't explicitly tie that to the publicly-advertised pass count.",
+      "sources": [
+        "raw-text/08-live-power.txt (dashboard claims 28/28 passing at V51.2)",
+        "data/sections.json §2b.5 (already discusses the 28-of-28 figure separately)"
+      ]
+    },
+    {
+      "description": "A dome defender could argue 'hardcoded' monitors are continuous-integration sanity checks (verify data pipeline loads correctly), not substitutes for scientific validation. The contrast paragraph would be stronger if it pre-empted this by noting the dome explicitly presents these as predictive validations (not as CI checks) — e.g., via a parenthetical pointer to §2b.5 / Live Power.",
+      "sources": [
+        "data/sections.json §2b.5 dashboard analysis"
+      ]
+    }
+  ],
+  "kernel_of_truth": {
+    "description": "The distinction the dome implicitly makes between monitoring=\"none\" and monitoring=\"hardcoded\" is real (monitor.py does separate these cases — see code_analysis tag definitions in monitor/prompts/curmudgeon.md), and hardcoded checks DO catch one class of failure: silent breakage of the monitor.py loader itself. They are not entirely useless infrastructure (EXP-442.json:kernel_of_truth implicitly acknowledged this by surveying the SC subset as a discrete group worth distinguishing).",
+    "why_it_doesnt_save_claim": "The dome presents these checks as predictive validations of the WIN, not as CI sanity checks. §2b.5 (data/sections.json) documents the 28-of-28-passing dashboard claim built on these hardcoded passes. A pred==obs check with both sides baked in is a tautology — not a predictive validation in any scientific sense. The EXP-442 paragraph's phrase 'validation infrastructure that cannot fail by construction' captures this exactly, and the templated counts (now 8/20 from data/wins.json:Self-Contradicted+monitoring=hardcoded filter) document the scale."
+  },
+  "recommended_action": "minor_edit",
+  "text_fingerprint": {
+    "contrast_paragraph_length_in_sections_json": 727,
+    "contrast_paragraph_length_rendered_html": 686,
+    "sc_total": 20,
+    "sc_mon_none": 12,
+    "sc_mon_hardcoded": 8,
+    "sc_mon_hardcoded_ids": [
+      "002",
+      "012",
+      "029",
+      "038",
+      "045",
+      "046",
+      "049",
+      "067"
+    ],
+    "placeholder_count_in_prose": 4,
+    "placeholders_present": [
+      "{{SC_TOTAL}}",
+      "{{SC_MON_NONE}}",
+      "{{SC_MON_HARDCODED}}",
+      "{{SC_MON_HARDCODED_IDS}}"
+    ]
+  },
+  "deeper_analysis": "EXP-442's analyst-side authoring is correct and the templating intent is sound. The decider integrated the substitution but dropped two spec-mandated mechanisms: the build-time sum invariant (major) and the list_of_winids helper extraction (moderate). The slash-joined ID rendering is a third spec deviation (moderate). All three are symptoms of the same pattern: the decider treats `required_template_additions` as advisory rather than load-bearing. Across this batch (EXP-437/441/442) the pattern recurs three times, which makes it a process gap worth escalating beyond a single review. The adjacent live-fetch paragraph drift is a separate finding — EXP-442's templating has visually exposed §2b.1's other paragraphs that still hold hardcoded narratives; the operator should consider commissioning a §2b.1-wide sweep that audits every count/list and templates the rest. The §2b.1 TLDR (ISS-2268) and the §2b.1 derivation-question paragraph (EXP-449 pending) round out the sweep. Net: prose factually correct at HEAD; integration mechanics incomplete; recommend minor_edit (build-script fixes) and surface follow-ups.",
+  "citation_check": {
+    "citations_verified": [
+      "wins.json: 20 Self-Contradicted (independent recount confirms)",
+      "wins.json: 12 SC with monitoring∈{none,absent} (re-counted)",
+      "wins.json: 8 SC with monitoring=hardcoded (WIN-002/012/029/038/045/046/049/067, re-counted)",
+      "build-scripts/generate-html.js:77-80 (substitution map present)",
+      "build-scripts/generate-html.js:1405-1408 (context computation present)",
+      "EXP-442 holes_addressed items 1-5 all map to current prose state"
+    ],
+    "citations_failed": [
+      "EXP-442 required_template_additions.placeholders.{{SC_MON_HARDCODED_IDS}}: sep='/' format NOT honored in build script (using ', ' instead)",
+      "EXP-442 required_template_additions.build_invariant: SC_MON_NONE + SC_MON_HARDCODED == SC_TOTAL assertion NOT present in build pipeline",
+      "EXP-442 required_template_additions.helper_reuse_note: list_of_winids helper NOT extracted (still inlined at every site)"
+    ],
+    "citations_unchecked": [
+      "raw-text/monitor.py for current state of each hardcoded SC WIN — not present in raw-text/ at HEAD (V51 poller no longer fetches monitor.py); claim 'all hardcoded to pass' relies on retained prior-cycle curmudgeon code-analysis tags. Tag-rationale spot-checks would be a separate effort, not in this review's scope."
+    ]
+  },
+  "summary_for_decider": "EXP-442 integrated and the contrast paragraph now renders correct templated counts (20 SC: 12 none + 8 hardcoded), closing the original HOL-COMPLETENESS.c3 hole 2 numbers. Three integration gaps remain: (1) MAJOR — build_invariant sum-check assertion (SC_MON_NONE + SC_MON_HARDCODED == SC_TOTAL) was not implemented; this is the safeguard that gives the templating its self-healing property and its absence silently re-opens the same hole the next time a SC WIN gets a non-{none,hardcoded} monitoring tag. Same gap exists for EXP-437 and EXP-441 in this batch — recommend a single decider patch that adds all three build invariants together. (2) MODERATE — SC_MON_HARDCODED_IDS rendered as 'WIN-002, WIN-012, WIN-029, ...' (comma-space, prefix-per-element) instead of the spec's 'WIN-002/012/029/038/045/046/049/067' (slash-joined, single prefix). Spec was explicit that the slash form preserves the original prose rhythm. (3) MODERATE — list_of_winids helper not extracted; eight inlined `.map(...).join(', ')` copies in generate-html.js lines 1399-1408. Extracting the helper now closes #2 and prevents future spec deviation. ALSO surfaced (not in EXP-442 scope): the immediately-adjacent 'Even the 2 live-fetch WINs' paragraph still hardcodes 'WIN-004, WIN-006, WIN-007, WIN-024' and 'All four data sources' — only WIN-006 and WIN-007 currently carry monitoring=live_fetch. Recommend new ISS / EXP for that paragraph. Recommended action: minor_edit (build-script fixes, no prose change needed for the contrast paragraph itself). Verdict holds. Pattern observation worth tinker attention: across EXP-437/441/442 the decider integrated placeholder substitutions but skipped build_invariant blocks 3/3 times — process gap, not a one-off."
+}
