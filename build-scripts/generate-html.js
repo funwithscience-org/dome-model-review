@@ -59,6 +59,25 @@ function resolvePlaceholders(html, context) {
   // Simple count replacements
   const replacements = {
     '{{TOTAL_WINS}}': context.totalWins || 0,
+    '{{CATALOG_TOTAL}}': context.catalogTotal || 0,
+    '{{COLLISION_COUNT}}': context.collisionCount || 0,
+    '{{CA_NONE_UNFAL}}': context.caNoneUnfal || 0,
+    '{{CA_NONE_SC}}': context.caNoneSC || 0,
+    '{{CA_NONE_MISLEADING}}': context.caNoneMisleading || 0,
+    '{{CA_NONE_STDMODEL}}': context.caNoneStdmodel || 0,
+    '{{CA_NONE_REFUTED}}': context.caNoneRefuted || 0,
+    '{{CA_NONE_NOTDEMO}}': context.caNoneNotdemo || 0,
+    '{{CA_NONE_RELABELS}}': context.caNoneRelabels || 0,
+    '{{CA_NONE_UNFAL_IDS}}': context.caNoneUnfalIds || '',
+    '{{CA_NONE_SC_IDS}}': context.caNoneSCIds || '',
+    '{{CA_NONE_MISLEADING_IDS}}': context.caNoneMisleadingIds || '',
+    '{{CA_NONE_STDMODEL_IDS}}': context.caNoneStdmodelIds || '',
+    '{{CA_NONE_REFUTED_IDS}}': context.caNoneRefutedIds || '',
+    '{{CA_NONE_NOTDEMO_IDS}}': context.caNoneNotdemoIds || '',
+    '{{SC_TOTAL}}': context.scTotal || 0,
+    '{{SC_MON_NONE}}': context.scMonNone || 0,
+    '{{SC_MON_HARDCODED}}': context.scMonHardcoded || 0,
+    '{{SC_MON_HARDCODED_IDS}}': context.scMonHardcodedIds || '',
     '{{NEW_IN_V51}}': context.newInV51 || 0,
     '{{SELF_CONTRADICTED}}': context.selfContradicted || 0,
     '{{UNFALSIFIABLE}}': context.unfalsifiable || 0,
@@ -159,7 +178,7 @@ function resolveTypeB(html, winsByVerdict, counts, wins, tally, sectionNav) {
   }
 
   if (html.includes('{{VERDICT_BAR_CHART}}')) {
-    const barChart = generateVerdictBarChart(tally, wins.length);
+    const barChart = generateVerdictBarChart(tally, wins.length, wins.filter(w=>/^\d{3}[a-z]$/i.test(w.id)).length);
     html = html.replace('{{VERDICT_BAR_CHART}}', barChart);
   }
 
@@ -447,7 +466,7 @@ function generatePieChart(tally, total) {
 `;
 }
 
-function generateVerdictBarChart(tally, total) {
+function generateVerdictBarChart(tally, total, collisionCount) {
   // Anchor map — each verdict bar links to its grouped section in the WINS tab.
   // 'Unfalsifiable' shares section 3.6 with 'Misleading' (combined heading id="misleading");
   // both bars therefore route to the same anchor.
@@ -497,10 +516,11 @@ function generateVerdictBarChart(tally, total) {
   return `
 <section class="ds-verdict-bars" aria-labelledby="verdict-bars-heading">
   <h2 id="verdict-bars-heading" class="ds-vb-heading">How the ${total} catalog entries actually land</h2>
-  <p class="ds-vb-caption">${total} catalog entries = 70 dome-claimed wins plus 2 numbered-collision sub-claims. Sorted by count; percentages rounded to one decimal so they sum to 100. Click any verdict to jump to the detailed analysis.</p>
+  <p class="ds-vb-caption">${total} catalog entries = ${total - (collisionCount||0)} dome-claimed wins plus ${collisionCount||0} numbered-collision sub-claims. The dome reused win-IDs across its confirmed-wins and prospective-predictions surfaces; we split each collision into a parent row and a sub-claim row so every distinct dome claim gets its own verdict. Sorted by count; percentages rounded to one decimal so they sum to 100. Click any verdict to jump to the detailed analysis.</p>
   <div class="ds-vb-rows">
     ${rows}
   </div>
+<details id="ds-counts-reading-guide"><summary class="ps-summary"><strong>Two numbers, 70 and 72 — why both are real.</strong> <span class="ps-tldr">The dome claims 70 confirmed wins. Our catalog has 72 rows. The 2-row difference is two ID collisions the dome creates by reusing WIN-057 and WIN-058 across its confirmed and prospective lists; we split each collision so every distinct claim gets its own verdict.</span></summary><div class="ps-detail"><p>Throughout this review, count-phrasing uses two conventions: prose about what the <strong>dome claims</strong> uses 70 (the dome's own count of confirmed wins); prose about <strong>our review catalog</strong> uses 72 (because the catalog covers all 70 dome-claimed wins plus the 2 collision sub-claims, WIN-057b and WIN-058b, that the dome creates by reusing win-IDs across its confirmed and prospective surfaces). Verdict tallies (Self-Contradicted, Refuted, Misleading, etc.) are computed over all 72 catalog rows, so any sentence reading "<em>tally-count</em> of <em>denominator</em>" uses 72 as the denominator. Sentences quoting or paraphrasing the dome's own framing (\"V51.0 claims 70 wins\", \"the dome's 70-claim accuracy formula\") use 70. The collision-split itself is a structural finding about the dome's identifier hygiene; see <a href="#p8b-1-claim-keys" onclick="showTab('ai');return false">Section 8b.1 (claim_key annotations)</a> for the full discussion.</p></div></details>
 </section>
 `;
 }
@@ -1196,6 +1216,8 @@ function main() {
   // Base WINs = dome's claimed count (3-digit IDs only, e.g., "001"–"067")
   // Sub-IDs (e.g., "058b") are our tracking entries for dome numbering collisions
   const baseWins = wins.filter(w => /^\d{3}$/.test(w.id));
+  const collisionWins = wins.filter(w => /^\d{3}[a-z]$/i.test(w.id));
+  const catalogTotal = baseWins.length + collisionWins.length;
   const counts = {
     total: baseWins.length,  // dome's claimed count (used in prose as {{TOTAL_WINS}})
     newInV51: wins.filter(w => w.new_in_v51).length,
@@ -1364,6 +1386,25 @@ function main() {
   // Build context object for section rendering
   const context = {
     totalWins: counts.total,
+    catalogTotal: catalogTotal,
+    caNoneUnfal: wins.filter(w=>(!((w.code_analysis||{}).monitoring)||(w.code_analysis||{}).monitoring==='none')&&w.verdict==='Unfalsifiable').length,
+    caNoneSC: wins.filter(w=>(!((w.code_analysis||{}).monitoring)||(w.code_analysis||{}).monitoring==='none')&&w.verdict==='Self-Contradicted').length,
+    caNoneMisleading: wins.filter(w=>(!((w.code_analysis||{}).monitoring)||(w.code_analysis||{}).monitoring==='none')&&w.verdict==='Misleading').length,
+    caNoneStdmodel: wins.filter(w=>(!((w.code_analysis||{}).monitoring)||(w.code_analysis||{}).monitoring==='none')&&w.verdict==='Std Model Explains').length,
+    caNoneRefuted: wins.filter(w=>(!((w.code_analysis||{}).monitoring)||(w.code_analysis||{}).monitoring==='none')&&w.verdict==='Refuted by Data').length,
+    caNoneNotdemo: wins.filter(w=>(!((w.code_analysis||{}).monitoring)||(w.code_analysis||{}).monitoring==='none')&&w.verdict==='Not Demonstrated').length,
+    caNoneRelabels: wins.filter(w=>(!((w.code_analysis||{}).monitoring)||(w.code_analysis||{}).monitoring==='none')&&(w.code_analysis||{}).relabels_standard===true).length,
+    caNoneUnfalIds: wins.filter(w=>(!((w.code_analysis||{}).monitoring)||(w.code_analysis||{}).monitoring==='none')&&w.verdict==='Unfalsifiable').map(w=>'WIN-'+w.id).join(', '),
+    caNoneSCIds: wins.filter(w=>(!((w.code_analysis||{}).monitoring)||(w.code_analysis||{}).monitoring==='none')&&w.verdict==='Self-Contradicted').map(w=>'WIN-'+w.id).join(', '),
+    caNoneMisleadingIds: wins.filter(w=>(!((w.code_analysis||{}).monitoring)||(w.code_analysis||{}).monitoring==='none')&&w.verdict==='Misleading').map(w=>'WIN-'+w.id).join(', '),
+    caNoneStdmodelIds: wins.filter(w=>(!((w.code_analysis||{}).monitoring)||(w.code_analysis||{}).monitoring==='none')&&w.verdict==='Std Model Explains').map(w=>'WIN-'+w.id).join(', '),
+    caNoneRefutedIds: wins.filter(w=>(!((w.code_analysis||{}).monitoring)||(w.code_analysis||{}).monitoring==='none')&&w.verdict==='Refuted by Data').map(w=>'WIN-'+w.id).join(', '),
+    caNoneNotdemoIds: wins.filter(w=>(!((w.code_analysis||{}).monitoring)||(w.code_analysis||{}).monitoring==='none')&&w.verdict==='Not Demonstrated').map(w=>'WIN-'+w.id).join(', '),
+    scTotal: wins.filter(w=>w.verdict==='Self-Contradicted').length,
+    scMonNone: wins.filter(w=>w.verdict==='Self-Contradicted'&&(!((w.code_analysis||{}).monitoring)||(w.code_analysis||{}).monitoring==='none')).length,
+    scMonHardcoded: wins.filter(w=>w.verdict==='Self-Contradicted'&&(w.code_analysis||{}).monitoring&&(w.code_analysis||{}).monitoring!=='none').length,
+    scMonHardcodedIds: wins.filter(w=>w.verdict==='Self-Contradicted'&&(w.code_analysis||{}).monitoring&&(w.code_analysis||{}).monitoring!=='none').map(w=>'WIN-'+w.id).join(', '),
+    collisionCount: collisionWins.length,
     newInV51: counts.newInV51,
     selfContradicted: counts.selfContradicted,
     unfalsifiable: counts.unfalsifiable,
@@ -1476,7 +1517,7 @@ ${CSS}
 <p class="ds-meta">${BUILD_DATE} &nbsp;|&nbsp; Version ${REVIEW_VERSION}<br>Source: <a href="https://john09289.github.io/predictions">john09289.github.io/predictions</a></p>
 </div>
 
-<p class="ds-reading-guide">The review is organized as a deliberate twelve-tab sequence. <strong>Evaluation Guide</strong> sets out how to audit any claim. <strong>The Model</strong> covers the dome's stated methodology and where its own geometry contradicts itself. <strong>Self-Contradictions</strong> shows that the dome's equations, worked honestly, refute the dome's own claimed values. <strong>Wins Reviewed</strong> works through every claimed win individually. <strong>Kill Shots</strong> applies five binary tests that each alone falsify the model. <strong>Timestamp Error</strong> shows why the dome's blockchain proof is applied to the wrong document. <strong>Predictions Analysis</strong> audits the dome's registry of future claims. <strong>External Tests</strong> brings in independent falsification datasets. <strong>AI &amp; Conclusions</strong> addresses how the dome attempts to influence AI evaluators. The tabs build on each other — the argument is clearest when read in order.</p>
+<p class="ds-reading-guide">The review is organized as a deliberate twelve-tab sequence. <strong>Evaluation Guide</strong> sets out how to audit any claim. <strong>The Model</strong> covers the dome's stated methodology and where its own geometry contradicts itself. <strong>Self-Contradictions</strong> shows that the dome's equations, worked honestly, refute the dome's own claimed values. <strong>Wins Reviewed</strong> works through every claimed win individually. <strong>Kill Shots</strong> applies five binary tests that each alone falsify the model. <strong>Timestamp Error</strong> shows why the dome's blockchain proof is applied to the wrong document &mdash; surfaced as its own tab because this is the most actionable methodology critique we can hand the dome author, and we want it visible at the nav level. <strong>Predictions Analysis</strong> audits the dome's registry of future claims. <strong>External Tests</strong> brings in independent falsification datasets. <strong>AI &amp; Conclusions</strong> addresses how the dome attempts to influence AI evaluators. The tabs build on each other — the argument is clearest when read in order.</p>
 
 <section class="ds-thesis-hero" aria-labelledby="ds-thesis-statement">
 <p id="ds-thesis-statement" class="ds-thesis-statement" role="heading" aria-level="1">None of the ${counts.total} predictions produces a dome-specific result that standard physics cannot already explain.</p>
@@ -1509,7 +1550,7 @@ ${CSS}
 </ul>
 </section>
 
-${generateVerdictBarChart(tally, wins.length)}
+${generateVerdictBarChart(tally, wins.length, collisionWins.length)}
 
 <section class="ds-falsifiability-module" aria-labelledby="ds-fm-heading">
 <h2 id="ds-fm-heading" class="ds-fm-heading">What would change our verdict</h2>
@@ -1820,6 +1861,7 @@ ${sectionNav('pages', 'Live Power Dashboard', 'timestamp', 'Timestamp Error')}
 
 <h1 id="timestamp-error">The Timestamp Error</h1>
 <h2 style="color:var(--accent);font-weight:400;margin-top:0">He timestamps the observations, not the predictions</h2>
+<p class="ds-tab-rationale" style="font-size:0.92em;color:var(--ink-2);font-style:italic;margin:0 0 1.1em">This critique gets its own tab rather than living inside Self-Contradictions or AI &amp; Conclusions because it is a single-sentence methodology error the dome author can fix unilaterally &mdash; separating the prediction document from the observation document and timestamping each independently. The standalone placement keeps the recommendation visible.</p>
 
 <div class="ds-scorecard" style="grid-template-columns:1fr 1fr;margin:1.5em 0">
 <div class="ds-sc-card" style="border-left:4px solid var(--rule)">
