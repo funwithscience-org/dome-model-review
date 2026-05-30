@@ -1385,27 +1385,49 @@ function main() {
     ? ((counts.total / honestAccuracyDenom) * 100).toFixed(1) + '%'
     : '?';
 
+  // ISS-2312/ISS-2313 fix (2026-05-30): align caNone* bucket filters to use only
+  // reviewed WINs with monitoring==='none', matching the CA_NONE denominator source.
+  // Previously used `wins` (all WINs) which included unreviewed entries, causing
+  // bucket sum (45) to exceed CA_NONE denominator (44) by 1 (WIN-057b, unreviewed).
+  // Also fixes ISS-2319: adds build invariants for caNone and SC monitoring split.
+  const reviewedForCA = baseWins.filter(w => w.code_analysis && w.code_analysis.reviewed);
+  const caNoneBase = reviewedForCA.filter(w => w.code_analysis.monitoring === 'none');
+  const scReviewed = reviewedForCA.filter(w => w.verdict === 'Self-Contradicted');
+
+  // Build invariant: CA_NONE bucket sum == CA_NONE denominator (ISS-2313/ISS-2314)
+  const _caNoneSumCheck = ['Unfalsifiable','Self-Contradicted','Misleading','Std Model Explains','Refuted by Data','Not Demonstrated']
+    .reduce((s, v) => s + caNoneBase.filter(w => w.verdict === v).length, 0);
+  if (_caNoneSumCheck !== caNoneBase.length) {
+    throw new Error('build invariant: CA_NONE bucket sum (' + _caNoneSumCheck + ') !== CA_NONE denominator (' + caNoneBase.length + '). Check for WINs with monitoring===none but no matching verdict bucket.');
+  }
+  // Build invariant: SC monitoring split (ISS-2319)
+  const _scNone = scReviewed.filter(w => w.code_analysis.monitoring === 'none').length;
+  const _scHardcoded = scReviewed.filter(w => w.code_analysis.monitoring && w.code_analysis.monitoring !== 'none').length;
+  if (_scNone + _scHardcoded !== scReviewed.length) {
+    throw new Error('build invariant: scMonNone + scMonHardcoded (' + (_scNone+_scHardcoded) + ') !== scTotal (' + scReviewed.length + '). SC WINs with unexpected monitoring value.');
+  }
+
   // Build context object for section rendering
   const context = {
     totalWins: counts.total,
     catalogTotal: catalogTotal,
-    caNoneUnfal: wins.filter(w=>(!((w.code_analysis||{}).monitoring)||(w.code_analysis||{}).monitoring==='none')&&w.verdict==='Unfalsifiable').length,
-    caNoneSC: wins.filter(w=>(!((w.code_analysis||{}).monitoring)||(w.code_analysis||{}).monitoring==='none')&&w.verdict==='Self-Contradicted').length,
-    caNoneMisleading: wins.filter(w=>(!((w.code_analysis||{}).monitoring)||(w.code_analysis||{}).monitoring==='none')&&w.verdict==='Misleading').length,
-    caNoneStdmodel: wins.filter(w=>(!((w.code_analysis||{}).monitoring)||(w.code_analysis||{}).monitoring==='none')&&w.verdict==='Std Model Explains').length,
-    caNoneRefuted: wins.filter(w=>(!((w.code_analysis||{}).monitoring)||(w.code_analysis||{}).monitoring==='none')&&w.verdict==='Refuted by Data').length,
-    caNoneNotdemo: wins.filter(w=>(!((w.code_analysis||{}).monitoring)||(w.code_analysis||{}).monitoring==='none')&&w.verdict==='Not Demonstrated').length,
-    caNoneRelabels: wins.filter(w=>(!((w.code_analysis||{}).monitoring)||(w.code_analysis||{}).monitoring==='none')&&(w.code_analysis||{}).relabels_standard===true).length,
-    caNoneUnfalIds: wins.filter(w=>(!((w.code_analysis||{}).monitoring)||(w.code_analysis||{}).monitoring==='none')&&w.verdict==='Unfalsifiable').map(w=>'WIN-'+w.id).join(', '),
-    caNoneSCIds: wins.filter(w=>(!((w.code_analysis||{}).monitoring)||(w.code_analysis||{}).monitoring==='none')&&w.verdict==='Self-Contradicted').map(w=>'WIN-'+w.id).join(', '),
-    caNoneMisleadingIds: wins.filter(w=>(!((w.code_analysis||{}).monitoring)||(w.code_analysis||{}).monitoring==='none')&&w.verdict==='Misleading').map(w=>'WIN-'+w.id).join(', '),
-    caNoneStdmodelIds: wins.filter(w=>(!((w.code_analysis||{}).monitoring)||(w.code_analysis||{}).monitoring==='none')&&w.verdict==='Std Model Explains').map(w=>'WIN-'+w.id).join(', '),
-    caNoneRefutedIds: wins.filter(w=>(!((w.code_analysis||{}).monitoring)||(w.code_analysis||{}).monitoring==='none')&&w.verdict==='Refuted by Data').map(w=>'WIN-'+w.id).join(', '),
-    caNoneNotdemoIds: wins.filter(w=>(!((w.code_analysis||{}).monitoring)||(w.code_analysis||{}).monitoring==='none')&&w.verdict==='Not Demonstrated').map(w=>'WIN-'+w.id).join(', '),
-    scTotal: wins.filter(w=>w.verdict==='Self-Contradicted').length,
-    scMonNone: wins.filter(w=>w.verdict==='Self-Contradicted'&&(!((w.code_analysis||{}).monitoring)||(w.code_analysis||{}).monitoring==='none')).length,
-    scMonHardcoded: wins.filter(w=>w.verdict==='Self-Contradicted'&&(w.code_analysis||{}).monitoring&&(w.code_analysis||{}).monitoring!=='none').length,
-    scMonHardcodedIds: wins.filter(w=>w.verdict==='Self-Contradicted'&&(w.code_analysis||{}).monitoring&&(w.code_analysis||{}).monitoring!=='none').map(w=>'WIN-'+w.id).join(', '),
+    caNoneUnfal: caNoneBase.filter(w=>w.verdict==='Unfalsifiable').length,
+    caNoneSC: caNoneBase.filter(w=>w.verdict==='Self-Contradicted').length,
+    caNoneMisleading: caNoneBase.filter(w=>w.verdict==='Misleading').length,
+    caNoneStdmodel: caNoneBase.filter(w=>w.verdict==='Std Model Explains').length,
+    caNoneRefuted: caNoneBase.filter(w=>w.verdict==='Refuted by Data').length,
+    caNoneNotdemo: caNoneBase.filter(w=>w.verdict==='Not Demonstrated').length,
+    caNoneRelabels: caNoneBase.filter(w=>w.code_analysis.relabels_standard===true).length,
+    caNoneUnfalIds: caNoneBase.filter(w=>w.verdict==='Unfalsifiable').map(w=>'WIN-'+w.id).join(', '),
+    caNoneSCIds: caNoneBase.filter(w=>w.verdict==='Self-Contradicted').map(w=>'WIN-'+w.id).join(', '),
+    caNoneMisleadingIds: caNoneBase.filter(w=>w.verdict==='Misleading').map(w=>'WIN-'+w.id).join(', '),
+    caNoneStdmodelIds: caNoneBase.filter(w=>w.verdict==='Std Model Explains').map(w=>'WIN-'+w.id).join(', '),
+    caNoneRefutedIds: caNoneBase.filter(w=>w.verdict==='Refuted by Data').map(w=>'WIN-'+w.id).join(', '),
+    caNoneNotdemoIds: caNoneBase.filter(w=>w.verdict==='Not Demonstrated').map(w=>'WIN-'+w.id).join(', '),
+    scTotal: scReviewed.length,
+    scMonNone: scReviewed.filter(w=>w.code_analysis.monitoring==='none').length,
+    scMonHardcoded: scReviewed.filter(w=>w.code_analysis.monitoring&&w.code_analysis.monitoring!=='none').length,
+    scMonHardcodedIds: scReviewed.filter(w=>w.code_analysis.monitoring&&w.code_analysis.monitoring!=='none').map(w=>'WIN-'+w.id).join(', '),
     collisionCount: collisionWins.length,
     newInV51: counts.newInV51,
     selfContradicted: counts.selfContradicted,
