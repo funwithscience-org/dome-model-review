@@ -308,6 +308,41 @@ if(crossFile.length>0) {
 }
 ```
 
+### 7a.6. FUSE-vs-Git Prompt-Staleness Audit (PROP-064, added 2026-05-30)
+
+PROP-064 added a structural fix for PROP-061's Step 4c silent-skip bug. This audit is the secondary canary that catches FUSE staleness independent of workspace-sync's self-reporting — if workspace-sync regresses again (different bug variant), this audit catches it before the operator notices manually.
+
+**Scan:** For each git-owned prompt file under `monitor/prompts/*.md` (the canonical agent prompts), compute md5(FUSE version) and md5(GitHub raw at HEAD). If any mismatch, flag as `category: 'fuse-staleness'` severity `moderate` (rises to `major` if the same files appear stale across two consecutive integrity runs).
+
+**Why monitor/prompts only:** these are the files where staleness causes the worst harm — agents read them from FUSE for orientation and execution. Data files (closed-issues, expansion-tracker) are typically read from a fresh clone or cross-checked against GitHub raw by agents that care, so staleness there is less load-bearing.
+
+**Suggested fix template:** "Run `node build.js sync-workspace` from a fresh clone to sync the affected files, or wait for next workspace-sync cycle if PROP-064 is in effect. If staleness persists across two runs, the PROP-061/064 sync path may have regressed — file a tinker directive."
+
+```bash
+# PROP-064 FUSE-vs-git staleness audit (monitor/prompts/*.md only)
+WORKSPACE=$(find /sessions -maxdepth 2 -type d -name 'dome-model-review' -path '*/mnt/dome-model-review' 2>/dev/null | head -1)
+STALE_PROMPTS=()
+if [ -n "$WORKSPACE" ]; then
+  for f in $(find "$WORKSPACE/monitor/prompts" -name '*.md' -type f 2>/dev/null | sed "s|^$WORKSPACE/||"); do
+    WS_HASH=$(md5sum "$WORKSPACE/$f" 2>/dev/null | cut -d' ' -f1)
+    GH_HASH=$(curl -s -m 10 "https://raw.githubusercontent.com/funwithscience-org/dome-model-review/main/$f" | md5sum | cut -d' ' -f1)
+    if [ -n "$WS_HASH" ] && [ -n "$GH_HASH" ] && [ "$WS_HASH" != "$GH_HASH" ]; then
+      STALE_PROMPTS+=("$f")
+    fi
+  done
+fi
+if [ ${#STALE_PROMPTS[@]} -gt 0 ]; then
+  # findings.push({...})
+  # category: 'fuse-staleness'
+  # severity: 'moderate'
+  # description: ${#STALE_PROMPTS[@]} prompt files differ between FUSE and origin/main: ${STALE_PROMPTS[@]}
+  # location: monitor/prompts/ (FUSE vs git)
+  # suggested_fix: run node build.js sync-workspace from a fresh clone; if persistent, file tinker directive
+  # tracked_under: 'PROP-064' (until first clean integrity run after PROP-064 deployment)
+  echo "[PROP-064 audit] FUSE-stale prompt files: ${#STALE_PROMPTS[@]}"
+fi
+```
+
 ### 7b. Workspace-Only Files at Risk
 
 The FUSE workspace mount is read-write but git cannot operate on it. Agents that write output files (curmudgeon reviews, analyst expansions, analyst reports) write to the workspace — but those files only persist if they are also committed to git via the clean clone. Check for files that exist on the workspace but not in git:
