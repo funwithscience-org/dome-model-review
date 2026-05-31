@@ -1,42 +1,46 @@
-tinker-2026-05-31T17-22 — Mode 3 follow-up: PROP-072 post-deploy verification (FIXED)
+tinker-2026-05-31T17-51 — Mode 3 follow-up: PROP-072 PRIMARY observability FAILED on first post-deploy cycle (PARTIAL-SUCCESS)
 
-Mode: Mode 3 follow-up (PROP recently implemented → verify results)
-Pre-flight: PAT scope verified. No pending operator-directive. No Mode 0 assigned-to-tinker items.
+Mode: Mode 3 follow-up (PROP-072 post-deploy verification round 2)
+Pre-flight: PAT scope verified (HTTP 200). No pending operator-directive. No Mode 0 assigned-to-tinker items.
 
 Quick-checks:
   Mode 1: GREEN (all agent outputs <1h old; 0 stranded patches)
-  Mode 2: GREEN-with-transient-FUSE-obs (data/wins.json stale for ~35s at 17:22Z, self-resolved on second access — consistent with PROP-066 silent-skip; root-cause fix PROP-072 already in place)
-  Mode 3: PROP-072 lifecycle re-check + carry-over PROP-070 canary watch
+  Mode 2: GREEN (no fresh checks; own clone is only project footprint of note)
+  Mode 3: PROP-072 post-deploy verification round 2
 
-Backlog: HEALTHY (49 open, 0 aged ≥14d, oldest 0.2d, net velocity +120/7d).
-
-PROP lifecycle re-verified:
-  PROP-066: FIXED
-  PROP-068: implemented (no VP)
-  PROP-070: FIXED
-  PROP-072: FIXED — all three layers present (Primary 4c-FIRST hoist; Secondary AGENT_NOTES self-attestation; Tertiary Step 0 startup-check)
+Backlog: HEALTHY (49 open, 0 aged ≥14d, oldest 0.22d, net velocity +120/7d).
 
 >>> Previous-run findings status:
-  FND-01 from 17:00 run (PROP-066 silent-skip recurrence): **RESOLVED**.
-    PROP-072 authored 16:55, applied 17:16 (commit 4177f60). Mechanical verification grep returns FIXED.
-    First post-deploy workspace-sync cycle is ~18:09 UTC. Next tinker run should verify a
-    sync-workspace-runs-2026-05-31T18-xx-xxZ.json sentinel commits cleanly (PRIMARY proof
-    Step 4c executed under the new ordering). If missing, Secondary (AGENT_NOTES contains
-    "step4c-not-invoked") or Tertiary (Step 0 startup-WARNING) should surface the omission
-    one cycle earlier than the previous detection latency.
+  PROP-072 implementation (text-grep): VERIFIED-IMPLEMENTED (no change)
+  PROP-072 first observability window: **PRIMARY FAILED, SECONDARY DISAGREES**
 
-PROP-070 canaries (carry-over from 16-30 / 17-00 runs):
-  (a) Decider Step A0c sweep mention: STILL PENDING — last decider ran 17:14 from a 16:00
-      start (before PROP-070 deploy at 16:33). Next decider 18:10 UTC.
-  (b) Tinker PROP-070 observability counter: VERIFIED 0 this run.
-  (c) ISS-2311/2337/2365 auto-close: STILL PENDING — under 48h recency guard, ETA ~2026-06-02.
+FND-01: PROP-072 PARTIAL-SUCCESS (moderate)
+  The 17:22 workspace-sync cycle is the FIRST post-PROP-072 cycle.
+  Run-report agent_notes claims: 'step4c ran (SENTINEL_COUNT_THIS_CYCLE=4)'.
+  Empirical state: NO sync-workspace-runs-2026-05-31T17-22-*.json file in git after the cycle.
+  Most recent actual sentinel remains 2026-05-31T09-07-58Z (unchanged since 09:07Z).
+  c9e1d92 commit titled 'PROP-066 step4c sentinel: 17:22:40Z' contains 13 OTHER files; NO sentinel file.
+  PRIMARY observability proof (sentinel-in-git) FAILED.
+  SECONDARY self-attestation (literal 'step4c-not-invoked') was NOT emitted, suggesting the agent BELIEVES it ran.
+  The two layers disagree.
 
-Disk: 95% used (501MB avail). Project footprint 691MB — FUSE workspace + own clone (299MB) only;
-no leaked stale clones to harvest. /tmp/tinker-clone cleaned at end-of-run.
+Hypothesis: SENTINEL_COUNT_THIS_CYCLE is unreliable in a fresh clone — pre-existing
+sentinel files inherit the clone's mtime and falsely register as "recently modified",
+so the metric reads 3-4 without step4c writing any new file. Either step4c.js silently
+no-op'd, or it crashed before writeSentinel, or it wrote to wrong cwd. Self-attestation
+backstop was fooled by the same misleading metric.
 
-Context-load: workspace-sync.md=1413 lines (trending up across PROP-066/068/072 stack); decider.md=1207
-lines. Both within audit range but flag-watch on next 100-line growth.
+>>> Action (this run): defer PROP authoring one more cycle.
+>>> Action (next tinker run): verify the 18:00 workspace-sync cycle.
+  - If 18:00 commits a sync-workspace-runs-2026-05-31T18-xx-xxZ.json sentinel → FND-01 RESOLVED
+  - If 18:00 also fails → author PROP-073 with three sub-fixes:
+    (a) replace SENTINEL_COUNT_THIS_CYCLE mtime heuristic with filename-ISO-timestamp parse
+    (b) add a "did git-add actually stage anything" branch — fail-loud if zero sentinels staged
+    (c) instrument sync-workspace-step4c.js to log the absolute write path it used
 
-Operator action: NONE this run. PROP-072 is applied and waiting on observability cycle.
+PROP-070 canaries (carry-over from 17:00 / 17:22 runs):
+  (a) Decider Step A0c sweep mention: STILL PENDING (decider 18:10 UTC)
+  (b) Tinker observability counter: VERIFIED 0 this run
+  (c) ISS-2311/2337/2365 auto-close: STILL PENDING (~2026-06-02)
 
-Cleanup: /tmp/tinker-clone removed end-of-run.
+Next run priority: Mode 3 follow-up — verify 18:00 workspace-sync cycle sentinel landed.
