@@ -1,62 +1,62 @@
 {
   "prop_id": "PROP-067",
-  "title": "Cross-session dome-sync-clone sweep is structurally impossible — retire the misleading 2026-05-29 sweep, strengthen same-session reuse-vs-reclone logic, document operator-side fallback.",
-  "status": "design-pending-operator-review",
+  "title": "Cross-session dome-sync-clone sweep is structurally impossible \u2014 retire the misleading 2026-05-29 sweep, strengthen same-session reuse-vs-reclone logic, document operator-side fallback.",
+  "status": "superseded",
   "priority": "medium",
   "author": "tinker",
   "authored_at": "2026-05-31T06:35:00Z",
   "authored_by_run": "tinker-2026-05-31T06-24",
   "source_directive": "DIRECTIVE-20260531-003 (operator filed MEDIUM at 05:22Z after manually cleaning 3 stale /sessions/<id>/dome-sync-clone directories aged 10h/12h/15h. All three were created AFTER the 2026-05-29 cross-session sweep landed in FUSE, so the sweep is not working.)",
-  "executive_summary": "Hypothesis (a) from the directive is CONFIRMED. The cross-session sweep added 2026-05-29 (workspace-sync.md line 77, `find /sessions -maxdepth 2 -type d -name 'dome-sync-clone' -mmin +60 ! -path \"$CLONE\" -exec rm -rf {} \\; 2>/dev/null || true`) cannot ever delete a foreign session's dome-sync-clone because (1) /sessions/<other-id>/ is owned by nobody:nogroup mode 750 and the cowork-Haiku agent's per-session UID has no group membership granting read or traverse access, and (2) the `2>/dev/null` swallows every Permission-denied error so the find walk silently returns zero matches. The directive's Option (ii) — moving CLONE to /tmp/dome-sync-clone — was investigated and ALSO confirmed unworkable: /tmp is mode 1777 (sticky) and cross-session UID namespace mapping shows foreign files as nobody:nogroup; `rm` of foreign-owned /tmp files fails with `Operation not permitted` (verified by direct test). The correct disposition is (i) + (iv) hybrid: retire the misleading sweep, strengthen same-session abandonment recovery (which IS within the agent's perms), and document operator-side fallback for cross-session orphans (which is structurally outside any single agent's perms).",
+  "executive_summary": "Hypothesis (a) from the directive is CONFIRMED. The cross-session sweep added 2026-05-29 (workspace-sync.md line 77, `find /sessions -maxdepth 2 -type d -name 'dome-sync-clone' -mmin +60 ! -path \"$CLONE\" -exec rm -rf {} \\; 2>/dev/null || true`) cannot ever delete a foreign session's dome-sync-clone because (1) /sessions/<other-id>/ is owned by nobody:nogroup mode 750 and the cowork-Haiku agent's per-session UID has no group membership granting read or traverse access, and (2) the `2>/dev/null` swallows every Permission-denied error so the find walk silently returns zero matches. The directive's Option (ii) \u2014 moving CLONE to /tmp/dome-sync-clone \u2014 was investigated and ALSO confirmed unworkable: /tmp is mode 1777 (sticky) and cross-session UID namespace mapping shows foreign files as nobody:nogroup; `rm` of foreign-owned /tmp files fails with `Operation not permitted` (verified by direct test). The correct disposition is (i) + (iv) hybrid: retire the misleading sweep, strengthen same-session abandonment recovery (which IS within the agent's perms), and document operator-side fallback for cross-session orphans (which is structurally outside any single agent's perms).",
   "diagnostic_evidence": {
     "step_1_hypothesis_a_confirmed": {
       "session_under_test": "wonderful-epic-hypatia (uid=4419, gid=4419, no group memberships beyond own)",
       "ls_sessions_top_level": "Succeeds (mode 755 on /sessions/). Returns ~3331 directories.",
-      "ls_foreign_session_root": "FAILS — `ls: cannot open directory '/sessions/admiring-adoring-volta/': Permission denied` (exit 0 from ls because flag-default; underlying syscall failure swallowed by globbing).",
+      "ls_foreign_session_root": "FAILS \u2014 `ls: cannot open directory '/sessions/admiring-adoring-volta/': Permission denied` (exit 0 from ls because flag-default; underlying syscall failure swallowed by globbing).",
       "find_sweep_actual_output_no_quiet": "Stream of `find: '/sessions/<id>': Permission denied` for ~3300 entries. find itself walks /sessions/ at depth 1 successfully (the top-level read of /sessions/ works), but cannot descend into any /sessions/<other-id>/ directory.",
-      "find_sweep_with_quiet": "Returns 0 paths (Permission denied lost to 2>/dev/null). Exit 0 — looks identical to 'no orphans existed'. Indistinguishable from working.",
+      "find_sweep_with_quiet": "Returns 0 paths (Permission denied lost to 2>/dev/null). Exit 0 \u2014 looks identical to 'no orphans existed'. Indistinguishable from working.",
       "verification_commands_run_at_2026_05_31T06_30Z": [
         "id  # uid=4419(wonderful-epic-hypatia) gid=4419(wonderful-epic-hypatia) groups=4419(wonderful-epic-hypatia)",
         "ls -la /sessions/ | head -5  # drwxr-xr-x 3333 nobody nogroup, then drwxr-x--- per-session-dir entries",
         "ls /sessions/admiring-adoring-volta/  # Permission denied",
-        "find /sessions -maxdepth 2 -type d -name 'dome-sync-clone' 2>&1 | head  # find: '/sessions/<id>': Permission denied (×~3300)",
+        "find /sessions -maxdepth 2 -type d -name 'dome-sync-clone' 2>&1 | head  # find: '/sessions/<id>': Permission denied (\u00d7~3300)",
         "find /sessions -maxdepth 2 -type d -name 'dome-sync-clone' -mmin +60 2>/dev/null  # 0 paths, exit 0"
       ]
     },
     "step_2_option_ii_also_unworkable": {
       "summary": "Moving CLONE to /tmp/dome-sync-clone does NOT make the orphan sweep cross-session-capable. /tmp is shared across sessions but ownership is namespace-mapped: foreign-session files show as nobody:nogroup to my session view, and the sticky bit on /tmp prevents `rm` of files I do not own.",
-      "verification": "Direct test against /tmp/clean_clone.txt (a marker file owned by `nobody:nogroup`, originally written 2026-05-30 by /sessions/bold-vigilant-maxwell/dome-review-clean). `rm /tmp/clean_clone.txt` → `Operation not permitted` (exit 1). The file was restored from a captured copy after the test.",
+      "verification": "Direct test against /tmp/clean_clone.txt (a marker file owned by `nobody:nogroup`, originally written 2026-05-30 by /sessions/bold-vigilant-maxwell/dome-review-clean). `rm /tmp/clean_clone.txt` \u2192 `Operation not permitted` (exit 1). The file was restored from a captured copy after the test.",
       "implication": "Option (ii) trades 'find sees zero paths' for 'find finds the orphan but rm fails'. Neither helps reclaim disk; the difference is purely cosmetic. /sessions/<id>/ is actually marginally better for sandbox isolation because foreign sessions can't even enumerate the orphan name. Recommend keeping CLONE at /sessions/<id>/dome-sync-clone."
     },
     "step_2_option_iii_out_of_scope": {
-      "summary": "Operator-side scheduled task with elevated perms — directive's non-goal #1 explicitly forbids ('Do NOT add a system-level cron job or root-equivalent process — out of scope for the operator's cowork environment')."
+      "summary": "Operator-side scheduled task with elevated perms \u2014 directive's non-goal #1 explicitly forbids ('Do NOT add a system-level cron job or root-equivalent process \u2014 out of scope for the operator's cowork environment')."
     },
     "step_2_option_iv_is_already_the_status_quo": {
-      "summary": "Manual operator cleanup — the directive notes operator-side cost is ~30 sec per cleanup × every few days = 1-2 min/week. The operator IS doing this and the disk has never run out. The TRUE concern (per the directive's priority_note) is the misleading appearance of automation: the 2026-05-29 sweep is FUSE-deployed and reads as if it works, but produces 0-clean every cycle. Future operator-direct fixes that assume cross-session sweep capability will fail the same way."
+      "summary": "Manual operator cleanup \u2014 the directive notes operator-side cost is ~30 sec per cleanup \u00d7 every few days = 1-2 min/week. The operator IS doing this and the disk has never run out. The TRUE concern (per the directive's priority_note) is the misleading appearance of automation: the 2026-05-29 sweep is FUSE-deployed and reads as if it works, but produces 0-clean every cycle. Future operator-direct fixes that assume cross-session sweep capability will fail the same way."
     },
     "step_2_option_i_is_within_agent_perms_and_helps": {
-      "summary": "Same-session orphan recovery — the workspace-sync agent CAN clean orphans within its own session UID (no perms issue). Currently the agent reuses any existing $CLONE on subsequent runs (workspace-sync.md line 83 `if [ ! -d \"$CLONE\" ]; then ... clone fresh ...`) which is correct for normal cases. But if a prior run died mid-cycle and left a corrupted/stale clone, the reuse path may carry forward bad state. Adding a 'force re-clone if existing $CLONE has mtime >2h old' check converts orphan-from-abandoned-cycle into clean re-clone on the next hourly run, without affecting normal flow."
+      "summary": "Same-session orphan recovery \u2014 the workspace-sync agent CAN clean orphans within its own session UID (no perms issue). Currently the agent reuses any existing $CLONE on subsequent runs (workspace-sync.md line 83 `if [ ! -d \"$CLONE\" ]; then ... clone fresh ...`) which is correct for normal cases. But if a prior run died mid-cycle and left a corrupted/stale clone, the reuse path may carry forward bad state. Adding a 'force re-clone if existing $CLONE has mtime >2h old' check converts orphan-from-abandoned-cycle into clean re-clone on the next hourly run, without affecting normal flow."
     },
     "why_orphans_arise_in_the_first_place": {
-      "exit_trap_scope_limitation": "workspace-sync.md line 141 sets `trap 'rm -rf \"$CLONE\" 2>/dev/null' EXIT INT TERM` inside Step 1's bash block. Under the MCP bash tool model, EACH bash call is a fresh subshell — the trap fires at the end of Step 1's bash session (which would actively HARM the cycle if it deleted the clone before Step 2 ran; in practice the trap definition is lost when Step 1's bash exits normally so the EXIT side-effect does not actually fire across calls). Step 2-5 bash calls have no trap. The final explicit `rm -rf \"${CLONE}\"` at line 1367 only runs if the LLM reaches the Cleanup section. Common abandonment paths (LLM context exhausted, tool error mid-cycle, scheduled-task timeout, host session reset) skip the Cleanup section and orphan the clone.",
+      "exit_trap_scope_limitation": "workspace-sync.md line 141 sets `trap 'rm -rf \"$CLONE\" 2>/dev/null' EXIT INT TERM` inside Step 1's bash block. Under the MCP bash tool model, EACH bash call is a fresh subshell \u2014 the trap fires at the end of Step 1's bash session (which would actively HARM the cycle if it deleted the clone before Step 2 ran; in practice the trap definition is lost when Step 1's bash exits normally so the EXIT side-effect does not actually fire across calls). Step 2-5 bash calls have no trap. The final explicit `rm -rf \"${CLONE}\"` at line 1367 only runs if the LLM reaches the Cleanup section. Common abandonment paths (LLM context exhausted, tool error mid-cycle, scheduled-task timeout, host session reset) skip the Cleanup section and orphan the clone.",
       "cross_session_consequence": "When the cowork session itself ends (host process death, LLM-agent VM reset, scheduled-task host change), any orphaned /sessions/<dead-id>/dome-sync-clone persists with the prior session's UID. No future session can read or remove it (perms). It accumulates until operator cleanup.",
-      "rate_estimate": "Operator-observed 3 orphans aged 10-15h after the 2026-05-29 fix bootstrap into FUSE (operator manual cleanup 2026-05-31~05:00Z). That implies roughly 3 session-deaths × 90MB = 270MB accumulated over a ~24h window. Annualized: ~100GB/year if left unmanaged. At current operator cadence (~1 cleanup/2-3 days), the steady-state is bounded at ~200-400MB."
+      "rate_estimate": "Operator-observed 3 orphans aged 10-15h after the 2026-05-29 fix bootstrap into FUSE (operator manual cleanup 2026-05-31~05:00Z). That implies roughly 3 session-deaths \u00d7 90MB = 270MB accumulated over a ~24h window. Annualized: ~100GB/year if left unmanaged. At current operator cadence (~1 cleanup/2-3 days), the steady-state is bounded at ~200-400MB."
     }
   },
   "recommendation": {
     "chosen_option": "(i) + (iv) hybrid",
     "rationale": "Option (i) is the only mechanism within the agent's perms. Option (iv) is the only mechanism for cross-session. Combining them honestly bounds the problem AND removes the false signal that the 2026-05-29 cross-session sweep produces.",
-    "why_not_just_i": "(i) alone leaves cross-session orphans unaddressed. The operator IS already running (iv) ad-hoc; document it so the cost stays bounded and future tinker/integrity runs do not redundantly propose 'add cross-session cleanup' (this is the third proposal in 6 days on the topic — the recurring confusion is itself a tax).",
-    "why_not_just_iv": "(iv) alone leaves the misleading 2026-05-29 sweep in workspace-sync.md, where every future tinker/agent reading the prompt will think automated cross-session cleanup exists. Worse, the next time a cross-session-orphan issue arises, operator-Claude will look at the sweep, see it's already there, and (correctly) conclude it isn't working — repeating this entire diagnostic. Retire the broken code so future readers see honest state."
+    "why_not_just_i": "(i) alone leaves cross-session orphans unaddressed. The operator IS already running (iv) ad-hoc; document it so the cost stays bounded and future tinker/integrity runs do not redundantly propose 'add cross-session cleanup' (this is the third proposal in 6 days on the topic \u2014 the recurring confusion is itself a tax).",
+    "why_not_just_iv": "(iv) alone leaves the misleading 2026-05-29 sweep in workspace-sync.md, where every future tinker/agent reading the prompt will think automated cross-session cleanup exists. Worse, the next time a cross-session-orphan issue arises, operator-Claude will look at the sweep, see it's already there, and (correctly) conclude it isn't working \u2014 repeating this entire diagnostic. Retire the broken code so future readers see honest state."
   },
   "patches": [
     {
       "patch_id": "P1",
       "file": "monitor/prompts/workspace-sync.md",
       "change_type": "remove_text_block",
-      "where": "Lines 67-78 — the cross-session orphan sweep block ending with `find /sessions -maxdepth 2 -type d -name 'dome-sync-clone' -mmin +60 ! -path \"$CLONE\" -exec rm -rf {} \\; 2>/dev/null || true`",
+      "where": "Lines 67-78 \u2014 the cross-session orphan sweep block ending with `find /sessions -maxdepth 2 -type d -name 'dome-sync-clone' -mmin +60 ! -path \"$CLONE\" -exec rm -rf {} \\; 2>/dev/null || true`",
       "replacement_text_summary": "Replace with a short explanatory comment block documenting WHY cross-session sweep is structurally impossible and pointing to the operator-side cleanup pattern.",
-      "replacement_text": "# Cross-session orphan handling (PROP-067, 2026-05-31): NOT automated.\n# The 2026-05-29 attempt at `find /sessions -maxdepth 2 -type d -name 'dome-sync-clone' ...`\n# was structurally impossible — /sessions/<other-id>/ is owned by nobody:nogroup\n# mode 750 and this agent's per-session UID has no group access; every find walk\n# of a foreign session returned Permission denied (silently swallowed by\n# `2>/dev/null`). Moving CLONE to /tmp does not help either: /tmp is sticky-bit\n# 1777 with cross-session UID namespace mapping; `rm` of foreign-owned /tmp\n# files fails with Operation not permitted. See PROP-067 for the full\n# diagnostic. Cross-session orphans are cleaned by the operator from a shell\n# with cross-session read perms — see the 'Operator-side cleanup' subsection\n# in CLAUDE.md's Two-Repo Architecture for the documented command."
+      "replacement_text": "# Cross-session orphan handling (PROP-067, 2026-05-31): NOT automated.\n# The 2026-05-29 attempt at `find /sessions -maxdepth 2 -type d -name 'dome-sync-clone' ...`\n# was structurally impossible \u2014 /sessions/<other-id>/ is owned by nobody:nogroup\n# mode 750 and this agent's per-session UID has no group access; every find walk\n# of a foreign session returned Permission denied (silently swallowed by\n# `2>/dev/null`). Moving CLONE to /tmp does not help either: /tmp is sticky-bit\n# 1777 with cross-session UID namespace mapping; `rm` of foreign-owned /tmp\n# files fails with Operation not permitted. See PROP-067 for the full\n# diagnostic. Cross-session orphans are cleaned by the operator from a shell\n# with cross-session read perms \u2014 see the 'Operator-side cleanup' subsection\n# in CLAUDE.md's Two-Repo Architecture for the documented command."
     },
     {
       "patch_id": "P2",
@@ -70,21 +70,21 @@
       "file": "CLAUDE.md",
       "change_type": "insert_subsection",
       "where": "Inside `## Architecture` / `### Two-Repo Architecture (Filesystem Constraint)`, after the existing 'Operator-side Git Data API escape hatch' and 'Operator-side `allow_cowork_file_delete`' subsections (both already documented as operator-side capabilities).",
-      "insertion_text": "**Operator-side cross-session dome-sync-clone cleanup (PROP-067, 2026-05-31):** When the operator notices stale `/sessions/*/dome-sync-clone` directories accumulating (typically 1-3 every few days, ~90MB each), clean them by hand from the host shell. The cowork agent cannot do this itself — `/sessions/<id>/` is owned by `nobody:nogroup` mode 750 and per-session UIDs have no cross-session read perms, so `workspace-sync`'s `find /sessions ...` walk silently returns zero paths (PROP-067 diagnostic). The operator's shell has owner-equivalent perms via the cowork sandbox host mount and CAN see and remove these orphans. Recommended one-liner: `for d in /sessions/*/dome-sync-clone; do [ -d \"$d\" ] && [ $(($(date +%s) - $(stat -c %Y \"$d\"))) -gt 21600 ] && echo \"removing $d (age $(( ($(date +%s) - $(stat -c %Y \"$d\"))/3600 ))h)\" && rm -rf \"$d\"; done` (only deletes clones older than 6 hours to avoid concurrent-active sessions). Frequency: ~1-2 minutes per week of operator time. Disk pressure does not require this — workspace-sync's pre-flight `df -m /sessions` check will refuse to clone if free space is tight, so failure mode is benign (cycle skips, no data loss); the operator-side cleanup is purely to keep `/sessions/` disk footprint bounded."
+      "insertion_text": "**Operator-side cross-session dome-sync-clone cleanup (PROP-067, 2026-05-31):** When the operator notices stale `/sessions/*/dome-sync-clone` directories accumulating (typically 1-3 every few days, ~90MB each), clean them by hand from the host shell. The cowork agent cannot do this itself \u2014 `/sessions/<id>/` is owned by `nobody:nogroup` mode 750 and per-session UIDs have no cross-session read perms, so `workspace-sync`'s `find /sessions ...` walk silently returns zero paths (PROP-067 diagnostic). The operator's shell has owner-equivalent perms via the cowork sandbox host mount and CAN see and remove these orphans. Recommended one-liner: `for d in /sessions/*/dome-sync-clone; do [ -d \"$d\" ] && [ $(($(date +%s) - $(stat -c %Y \"$d\"))) -gt 21600 ] && echo \"removing $d (age $(( ($(date +%s) - $(stat -c %Y \"$d\"))/3600 ))h)\" && rm -rf \"$d\"; done` (only deletes clones older than 6 hours to avoid concurrent-active sessions). Frequency: ~1-2 minutes per week of operator time. Disk pressure does not require this \u2014 workspace-sync's pre-flight `df -m /sessions` check will refuse to clone if free space is tight, so failure mode is benign (cycle skips, no data loss); the operator-side cleanup is purely to keep `/sessions/` disk footprint bounded."
     }
   ],
   "non_patches_considered_and_rejected": [
     {
       "option": "(ii) Move CLONE to /tmp/dome-sync-clone",
-      "reason_rejected": "Confirmed unworkable in diagnostic Step 2 — /tmp is sticky-bit 1777 with cross-session UID namespace mapping; foreign-owned /tmp files cannot be `rm`'d by this agent's UID. Trades silent-zero-paths for silent-rm-permission-denied. No improvement."
+      "reason_rejected": "Confirmed unworkable in diagnostic Step 2 \u2014 /tmp is sticky-bit 1777 with cross-session UID namespace mapping; foreign-owned /tmp files cannot be `rm`'d by this agent's UID. Trades silent-zero-paths for silent-rm-permission-denied. No improvement."
     },
     {
       "option": "(iii) Operator-side scheduled task with elevated perms",
-      "reason_rejected": "Out of scope per directive non-goal #1 — 'Do NOT add a system-level cron job or root-equivalent process'."
+      "reason_rejected": "Out of scope per directive non-goal #1 \u2014 'Do NOT add a system-level cron job or root-equivalent process'."
     },
     {
       "option": "Strengthen the EXIT trap to cover Step 2-5 bash calls",
-      "reason_rejected": "Structurally impossible under MCP bash tool model. Each bash call is a fresh subshell; traps set in one call's process do NOT survive to subsequent calls. The reliable end-of-procedure cleanup is the final explicit `rm -rf` at line 1367, which already exists and runs when the LLM reaches it. The unfixable failure mode is the LLM abandoning the cycle before reaching that line — no in-prompt mechanism can guarantee against agent context exhaustion or tool errors. This is structural, not a coding gap."
+      "reason_rejected": "Structurally impossible under MCP bash tool model. Each bash call is a fresh subshell; traps set in one call's process do NOT survive to subsequent calls. The reliable end-of-procedure cleanup is the final explicit `rm -rf` at line 1367, which already exists and runs when the LLM reaches it. The unfixable failure mode is the LLM abandoning the cycle before reaching that line \u2014 no in-prompt mechanism can guarantee against agent context exhaustion or tool errors. This is structural, not a coding gap."
     },
     {
       "option": "Atomic-mtime touch at end of each step",
@@ -101,13 +101,13 @@
     "post_apply_check_2": "Confirm cross-session sweep removed: `grep -n 'find /sessions -maxdepth 2' monitor/prompts/workspace-sync.md` should return zero matches.",
     "post_apply_check_3": "Confirm same-session stale-clone check present: `grep -A 5 'Stale same-session clone' monitor/prompts/workspace-sync.md` should show the new block.",
     "post_apply_check_4": "Confirm operator-cleanup subsection present in CLAUDE.md: `grep -n 'Operator-side cross-session dome-sync-clone cleanup' CLAUDE.md` should return one hit.",
-    "runtime_verification": "Watch the next ~24h of workspace-sync run reports — agent_notes should NOT mention 'cross-session sweep' or 'find /sessions'. Operator should continue to observe cross-session orphans (the fix does not stop them from accumulating; it only retires the misleading sweep code). Operator's manual cleanup cadence should remain unchanged or improve slightly because the new CLAUDE.md subsection gives them a copy-pasteable one-liner."
+    "runtime_verification": "Watch the next ~24h of workspace-sync run reports \u2014 agent_notes should NOT mention 'cross-session sweep' or 'find /sessions'. Operator should continue to observe cross-session orphans (the fix does not stop them from accumulating; it only retires the misleading sweep code). Operator's manual cleanup cadence should remain unchanged or improve slightly because the new CLAUDE.md subsection gives them a copy-pasteable one-liner."
   },
   "estimated_effort": "Decider self-apply, 15-20 min Opus. Two prompt edits + one CLAUDE.md insertion. No new scripts.",
   "risks": [
     {
       "risk": "P2 same-session stale-clone check fires too aggressively and forces re-clone during normal slow cycles (e.g., if a cycle just took 2h+ to complete legitimately).",
-      "mitigation": "2h threshold is conservative — typical workspace-sync cycles are 1-5 min. The mtime check is on the clone DIRECTORY (updated whenever any file inside is created/touched), so a still-active cycle keeps the mtime fresh. The threshold could be lowered to 90min if real-world cycles never exceed it (verifiable from workspace-sync run report durations)."
+      "mitigation": "2h threshold is conservative \u2014 typical workspace-sync cycles are 1-5 min. The mtime check is on the clone DIRECTORY (updated whenever any file inside is created/touched), so a still-active cycle keeps the mtime fresh. The threshold could be lowered to 90min if real-world cycles never exceed it (verifiable from workspace-sync run report durations)."
     },
     {
       "risk": "Removing the cross-session sweep code reduces the apparent surface of 'we tried to fix this' and may make the operator think nothing is being done.",
@@ -119,13 +119,25 @@
     }
   ],
   "related_proposals": [
-    {"prop_id": "PROP-051", "relation": "Original workspace-sync disaster fix that added the clone-hygiene workstream B. The 2026-05-29 cross-session sweep was a PROP-051 follow-up. PROP-067 retires that specific follow-up without disturbing the rest of PROP-051."},
-    {"prop_id": "PROP-064", "relation": "PROP-061 Step 4c fix. Independent of PROP-067 — PROP-064 deals with git→FUSE direction; PROP-067 deals with clone-lifecycle disk hygiene."},
-    {"prop_id": "PROP-066", "relation": "Step 4c helper script extraction (authored same morning). Independent — different subsystem."}
+    {
+      "prop_id": "PROP-051",
+      "relation": "Original workspace-sync disaster fix that added the clone-hygiene workstream B. The 2026-05-29 cross-session sweep was a PROP-051 follow-up. PROP-067 retires that specific follow-up without disturbing the rest of PROP-051."
+    },
+    {
+      "prop_id": "PROP-064",
+      "relation": "PROP-061 Step 4c fix. Independent of PROP-067 \u2014 PROP-064 deals with git\u2192FUSE direction; PROP-067 deals with clone-lifecycle disk hygiene."
+    },
+    {
+      "prop_id": "PROP-066",
+      "relation": "Step 4c helper script extraction (authored same morning). Independent \u2014 different subsystem."
+    }
   ],
   "directive_disposition": {
     "directive_id": "DIRECTIVE-20260531-003",
     "status_recommendation": "completed (this PROP authoring is the requested expected_output: PROP file + diagnostic confirmation + recommendation + patch)",
     "follow_up_for_operator": "Review PROP-067 patches. If approved, the decider can self-apply (all three patches are mechanical text edits on git-owned files in NEVER_PUSH). If approved with changes, file a PROP-067 amendment. The directive's status field should be marked 'completed' after this run's report is written."
-  }
+  },
+  "superseded_at": "2026-05-31T07:15:00Z",
+  "superseded_by": "PROP-068",
+  "superseded_reason": "Operator feedback (DIRECTIVE-20260531-005): an agent should always be able to clean up its own clones. PROP-067 misframes the problem around cross-session sweep impossibility (real but irrelevant); the actual problem is that workspace-sync (and possibly other agents) leak their own clones because the Cleanup section at end-of-run is skip-by-omission vulnerable \u2014 same root cause as PROP-066 Step 4c silent-skip. PROP-068 will address: (a) unconditional pre-cycle blow-away (each cycle deletes any pre-existing  as its first action, no threshold), (b) audit of all 13 scheduled agents for the same leak pattern, (c) operator-side cleanup demoted from regular maintenance to bug-detection only. The diagnostic content of PROP-067 (perms barrier proof for /sessions and /tmp) remains valuable historical record and stays in the file unchanged."
 }
