@@ -1,0 +1,171 @@
+{
+  "run_id": "tinker-2026-05-31T11-09",
+  "started_at": "2026-05-31T11:00:00Z",
+  "completed_at": "2026-05-31T11:13:00Z",
+  "agent_subtype": "tinker",
+  "mode_selected": "directive-driven (DIRECTIVE-20260531-008)",
+  "mode_selection_reason": "Pending operator-directive DIRECTIVE-20260531-008 (priority=medium) preempts Mode 0 and Mode 1-4. Directive requested implementation of PROP-069 narrative-cite recalibration. Implementation completed in this run.",
+  "modes_checked": {
+    "operator_directive_pending": "DIRECTIVE-20260531-008 (medium, implement PROP-069)",
+    "mode_0_assigned_to_tinker": "0 items pending (verified open-issues.json status='assigned-tinker' count=0, expansion-tracker.json assigned_to='tinker' count=0)",
+    "mode_1_pipeline_health": "skipped — directive preempts",
+    "mode_2_infrastructure_fuse": "skipped — directive preempts",
+    "mode_3_cost_engineering": "skipped — directive preempts",
+    "mode_4_proposals": "skipped — directive preempts (the work IS a PROP implementation, but directive-routed)"
+  },
+  "previous_followup": [
+    {
+      "prop_id": "PROP-069",
+      "prior_status": "design-pending-operator-review (authored 2026-05-31T10:14Z by tinker)",
+      "status_this_run": "IMPLEMENTED",
+      "verification": "Implementation deployed in this run. Deployment validation sentinel at monitor/integrity/prop-069-deployment-validation-2026-05-31T1109Z.json shows actual 1680 claim-uncited vs projected 1640 — delta_pct +2.4% (within ±25% tolerance per directive Step 4). All 6 files committed and pushed to origin/main."
+    }
+  ],
+  "directive_work_completed": {
+    "directive_id": "DIRECTIVE-20260531-008",
+    "directive_title": "Implement PROP-069 — narrative-cite recalibration",
+    "directive_priority": "medium",
+    "directive_status_post_run": "completed",
+    "steps_executed": [
+      {
+        "step": "Step 1 — Verify PROP-069 against current audit-narrative-citations.js",
+        "status": "complete",
+        "finding": "Zero drift between PROP-069's described patches and current state of script (PROP-069 authored ~1h before this run)."
+      },
+      {
+        "step": "Step 2 — Modify monitor/scripts/audit-narrative-citations.js",
+        "status": "complete",
+        "version_bumped": "1.0.0 -> 2.0.0",
+        "changes": [
+          "Stage 1A: removed daily-report.pipeline_status surface + daily-report.recommended_actions[].action surface from SURFACES array",
+          "Stage 1C+1D: tinker.report.findings[].description extractor filters severity to {moderate,major,critical,operator_escalation} AND tags entries with _check_claim_shape:true",
+          "Stage 1D: added claimShapeFires() function with ENTITY_ID/CLAIM_VERB/SPECIFIC_NUM/SCI_REF/NAMED_LIT regexes",
+          "Stage 2: CITATION_RE tightened from /\\(([^)]+\\.(?:json|jsonl|txt|md))(?::([\\w-]+))?\\)/g to /\\(([./\\w-]+\\.(?:json|jsonl|txt|md))(?::([\\w-]+))?\\)/g",
+          "Stage 2: WELL_KNOWN_PATHS table added (16 entries) + resolveWellKnownPath() function inserted before existence check in checkAnchor()",
+          "Metrics: paragraphs_total renamed claim_shaped_paragraphs_total; paragraphs_uncited renamed claim_shaped_paragraphs_uncited; added citations_auto_resolved, claim_uncited_rate_pct, citation_resolve_rate_pct",
+          "Acceptance gates: added summary.acceptance object with claim_uncited (<=15%), citation_resolve (>=85%), bogus_anchor (<=20 flat), file_missing (<=20 flat)",
+          "Stdout: new format 'claim-uncited=N claim-shaped=N citation-resolve=X% bogus-anchor=N file-missing=N auto-resolved=N' plus legacy uncited=N bogus_anchors=N tail for 14-day overlap"
+        ],
+        "edge_cases_preserved": "empty prose, triple-backtick code blocks, single-backtick inline code, markdown headers (#), list items (-,*,1.), single-sentence paragraph skip — all unchanged"
+      },
+      {
+        "step": "Step 3 — Update monitor/prompts/workspace-sync.md Step 3.6c",
+        "status": "complete",
+        "changes": [
+          "Replaced MECH3_UNCITED + MECH3_BOGUS variable captures with MECH3_CLAIM_UNCITED + MECH3_RESOLVE_PCT + MECH3_BOGUS + MECH3_FILE_MISSING",
+          "Added legacy-key fallback (parses uncited= / bogus_anchors= if new keys read as 0) for 14-day overlap window — drop after",
+          "Soft-complaint trip logic: fires on resolve<85% OR bogus>20 OR file-missing>20 (claim-uncited rate enforced inside script)",
+          "Output format: 'soft-complaint: narrative-cite claim-uncited=N file-missing=N bogus-anchor=N resolve-rate=X%'",
+          "Used awk for float comparison (more portable than bc; the integration tests should still pass on the same Haiku-friendly idiom)"
+        ],
+        "tinker_grep_compat": "Tinker's soft-complaints grep targets the literal word 'soft-complaint' in run reports — that token is preserved in the new format, so no grep-pattern update was needed in tinker.md or any reference file."
+      },
+      {
+        "step": "Step 4 — Deployment validation",
+        "status": "complete",
+        "audit_run": "monitor/integrity/narrative-cite-audit-2026-05-31T1109Z.json",
+        "sentinel": "monitor/integrity/prop-069-deployment-validation-2026-05-31T1109Z.json",
+        "validation_result": {
+          "projected_claim_uncited": 1640,
+          "actual_claim_uncited": 1680,
+          "delta_pct": 2.44,
+          "tolerance_pct": 25,
+          "within_tolerance": true,
+          "deploy_decision": "PROCEED",
+          "reduction_3668_to_1680_pct": 54.2,
+          "projected_reduction_pct": 55.3,
+          "bogus_anchor_post": 17,
+          "bogus_anchor_cap": 20,
+          "file_missing_post": 10,
+          "file_missing_cap": 20,
+          "auto_resolved_count": 6,
+          "citation_resolve_rate_pct": 54.2
+        }
+      },
+      {
+        "step": "Step 5 — Commit + push",
+        "status": "complete",
+        "commits": [
+          "b270077 PROP-069: implement narrative-cite recalibration (script v2.0.0, workspace-sync.md soft-complaint, deployment-validation sentinel, PROP+directive lifecycle flips)",
+          "aa799aa PROP-069: record implementation_commit SHA",
+          "9d91fd8 PROP-069: correct implementation_commit SHA after rebase"
+        ],
+        "files_committed": 6,
+        "files": [
+          "monitor/scripts/audit-narrative-citations.js (v1.0.0->v2.0.0)",
+          "monitor/prompts/workspace-sync.md (Step 3.6c format update)",
+          "monitor/integrity/narrative-cite-audit-2026-05-31T1109Z.json (post-deployment audit)",
+          "monitor/integrity/prop-069-deployment-validation-2026-05-31T1109Z.json (validation sentinel)",
+          "monitor/tinker/proposals/PROP-069-narrative-cite-recalibration.json (status -> implemented, deferred_followup_note added)",
+          "monitor/tinker/operator-directives/DIRECTIVE-20260531-008-implement-prop-069.json (status -> completed)"
+        ]
+      },
+      {
+        "step": "Step 6 — Post-deployment canary (24h observation window)",
+        "status": "deferred-to-next-workspace-sync-cycle",
+        "note": "The next workspace-sync cycle (hourly) will produce a soft-complaint with the new format ('narrative-cite claim-uncited=N file-missing=N bogus-anchor=N resolve-rate=X%'). Subsequent tinker Mode 2 quick-checks should grep for 'claim-uncited=' to confirm the new format is live. If old format ('uncited=' without 'claim-' prefix and without 'bogus-anchor=' co-occurrence) persists 2+ workspace-sync cycles post-deployment, that's a regression worth investigating."
+      },
+      {
+        "step": "Step 7 — Lifecycle bookkeeping",
+        "status": "complete",
+        "directive_flipped_to": "completed",
+        "prop_flipped_to": "implemented",
+        "deferred_followup_note": "Added to PROP-069: the 1,680 claim-uncited paragraphs remaining concentrate in curmudgeon.reviews and represent the genuine claim-backing gap. The follow-up is a BEHAVIORAL PROP for curmudgeon citation discipline (likely PROP-070+ under a future operator-directive). Out of scope for PROP-069 per directive non_goals[0]."
+      }
+    ]
+  },
+  "findings": [
+    {
+      "id": "tinker-2026-05-31T11-09-prop-069-impl",
+      "severity": "info",
+      "category": "prop-implementation",
+      "title": "PROP-069 deployed: narrative-cite recalibration",
+      "description": "Implemented PROP-069 per DIRECTIVE-20260531-008. Three changes landed: Stage 1 surface targeting filter, Stage 2 CITATION_RE hardening + WELL_KNOWN_PATHS auto-resolution, threshold recalibration to claim-uncited<=15% / citation-resolve>=85% / flat caps of 20 on bogus-anchor and file-missing. Deployment validation: actual 1680 vs projected 1640 claim-uncited (delta +2.4%, within ±25% tolerance). Mechanical caps PASS (17<=20 bogus, 10<=20 file-missing). Auto-resolved 6 bare-filename citations. The claim-uncited rate (97.1%) and citation-resolve rate (54.2%) remain RED versus targets — this is the EXPECTED, ACTIONABLE state per PROP-069 §6.expected_initial_state_post_implementation. The remaining 1,680 uncited concentrate in curmudgeon.reviews (per the 2026-05-31T02:07Z baseline, ~85% of curmudgeon review files have zero citations anywhere). The follow-up is a behavioral PROP for curmudgeon citation discipline, deferred per directive non_goals[0] to a future operator-directive after PROP-069's projected reduction materializes in actual audit runs (it just did this run).",
+      "evidence": [
+        "monitor/integrity/narrative-cite-audit-2026-05-31T1109Z.json (post-deployment audit)",
+        "monitor/integrity/prop-069-deployment-validation-2026-05-31T1109Z.json (validation sentinel)",
+        "monitor/scripts/audit-narrative-citations.js (v2.0.0)",
+        "monitor/prompts/workspace-sync.md (Step 3.6c)"
+      ],
+      "action_required": "none — directive completed"
+    },
+    {
+      "id": "tinker-2026-05-31T11-09-backlog-trend",
+      "severity": "info",
+      "category": "backlog-trend",
+      "title": "Backlog trend healthy",
+      "description": "PROP-030 backlog-trend metrics computed: open_issues_total=59, open_status_count=12, assigned_analyst_count=35, age_ge_14d=0, age_ge_30d=0, oldest_open_age_days=0.67, new_issues_velocity_7d=59, closed_issues_velocity_7d=133, net_velocity_7d=+74 (positive — healthy), baby_drain_count_7d=1, verify_drain_count_7d=0. No PROP-030 thresholds fire. The queue is being drained faster than it fills, consistent with healthy BAU operation."
+    }
+  ],
+  "claude_md_audit": {
+    "status": "deferred-to-mode-3-run",
+    "note": "Directive-driven runs skip the per-Mode-3 CLAUDE.md accuracy and performance audits. The next Mode 3 tinker run should perform the full audit. No CLAUDE.md changes were required for PROP-069 implementation — the recalibration is observational and self-contained in audit-narrative-citations.js + workspace-sync.md."
+  },
+  "context_load": {
+    "status": "deferred-to-mode-3-run",
+    "note": "Per-agent context-load measurement deferred. This run's scope was a single directive."
+  },
+  "cleanup_actions": [
+    {
+      "path": "/tmp/tinker-clone",
+      "action": "removed-at-end-of-run",
+      "reason": "per-session clone discipline (tinker.md Cleanup section, added 2026-05-25 FND-01)"
+    }
+  ],
+  "backlog_metrics": {
+    "ts": "2026-05-31T11:11:16Z",
+    "open_issues_total": 59,
+    "open_status_count": 12,
+    "assigned_analyst_count": 35,
+    "assigned_tinker_count": 0,
+    "age_ge_14d_count": 0,
+    "age_ge_30d_count": 0,
+    "oldest_open_age_days": 0.67,
+    "new_issues_velocity_7d": 59,
+    "closed_issues_velocity_7d": 133,
+    "net_velocity_7d": 74,
+    "baby_drain_count_7d": 1,
+    "verify_drain_count_7d": 0,
+    "thresholds_fired": []
+  }
+}
