@@ -1,0 +1,303 @@
+{
+  "item_id": "EXP-481",
+  "target": "ISS-2304 / SEC-part2b-count-reconciliation.c1 hole 4 (moderate). EXP-437 templated the {{TOTAL_WINS}}/{{CATALOG_TOTAL}}/{{COLLISION_COUNT}} math at five sites (P1-P5) but its audit pass scanned only existing placeholder occurrences (44 of them) and did NOT grep for bare numerals. Concrete drift in HEAD docs/index.html: the literal '69' appears across part2b, part4, part6, part8 in references to the dome's published 'confirmed predictions' headline (currently 69), to '69-win registry', and inside the V51.1 arithmetic '69/(69+4) = 94.5%'. None of these self-update if the dome bumps to V51.2 or republishes a different headline count.",
+  "curmudgeon_review": "monitor/curmudgeon/reviews/SEC-part2b-count-reconciliation.c1.json",
+  "issue_ids": [
+    "ISS-2304"
+  ],
+  "source": "decider-bau-route",
+  "category": "section-rewrite-followup",
+  "review_class": "deep-attack",
+  "status": "ready-for-integration",
+  "created_at": "2026-05-31T11:18:46.183Z",
+  "kernel_of_truth": {
+    "description": "EXP-437's design choice — name the denominator at each mention rather than mass-rewrite to a single number — was the right pattern, and the P1-P5 patches landed cleanly (build-scripts/generate-html.js line 519 dynamic verdict-bars caption; part3 §3.1 dynamic verdict-tally caption; part2b §2b.6 dome-frame/catalog-frame split). The two-frame convention itself works: {{TOTAL_WINS}} = our enumeration of distinct WIN IDs (today 70), {{CATALOG_TOTAL}} = our review's total including collision sub-claims (72), and the verdict bars carry the reader-facing reconciliation inline. What EXP-437's audit pass missed is a THIRD frame the prose actually depends on: the dome's PUBLISHED 'confirmed predictions' headline (today 69), which differs from both {{TOTAL_WINS}}=70 and {{CATALOG_TOTAL}}=72. That third number — 69 — appears bare in five sections.",
+    "why_it_doesnt_save_the_claim": "EXP-437 anticipated_objections item 2 ('It does, by construction... the placeholder math has to track that automatically') is partially false in HEAD precisely because the third frame has no placeholder. A reader who runs the arithmetic 69/(69+4) = 94.5% against today's wins page sees the math work because the dome happens to currently publish 69. If the dome bumps to V51.2 with 70 confirmed and 4 still-acknowledged failures, every bare-'69' site silently lies about the dome's current state until a human re-edits the prose. That's exactly the reactive-prose-vs-structural-fix anti-pattern this review criticizes the dome model for (see EXP-468). The fix is the same shape as EXP-437 P1-P5: introduce a new placeholder for the third frame, document it in _meta.placeholders, wire it in generate-html.js's context object, and replace each bare '69' that means 'dome's published confirmed-headline' with the new placeholder."
+  },
+  "approach": {
+    "decision": "Introduce {{DOME_CONFIRMED_HEADLINE}} as a sibling placeholder to {{TOTAL_WINS}} and {{CATALOG_TOTAL}}, sourced from data/uncounted-failures.json:dome_claimed_confirmed (a NEW field, defaulting to 69 in HEAD), passed through generate-html.js's context object. Replace bare '69' instances in prose with {{DOME_CONFIRMED_HEADLINE}} where the reference is to the dome's headline, and explicitly enumerate the bare-'69' instances that STAY literal (verbatim snapshot quotes with snapshot dates, the V51.0 historical reference, the p6-69-8 anchor ID, and the σ-value decimals where \\b69\\b is a false positive on '47.69'/'2.69').",
+    "why_not_just_TOTAL_WINS": "Tempting but wrong. {{TOTAL_WINS}} resolves to baseWins.length = 70 in HEAD, which is OUR enumeration of distinct WIN IDs (we count one item the dome currently categorizes outside its 'confirmed' headline — likely a 'refined' or 'below-detection-threshold' entry the dome left in wins.html). Replacing bare '69' with {{TOTAL_WINS}} would silently misrepresent the dome's current published headline (69) as 70. The three-frame design is intentional: dome-headline (69), our-enumeration-of-dome-IDs (70), and our-catalog-including-collisions (72) are genuinely distinct numbers, each load-bearing in different prose contexts.",
+    "why_a_separate_field_not_derived": "{{DOME_CONFIRMED_HEADLINE}} is sourced from data/uncounted-failures.json rather than derived from wins.json because it tracks an external value (the dome's published headline) the dome can change without us adding or removing WIN IDs. The dome could re-classify one of our 70 baseWins from 'confirmed' to 'refined' and the headline would drop to 68 without our catalog changing. The field needs to be human-curated (or automated by the refresh agent) against the dome's actual published number, not computed from our wins.json. data/uncounted-failures.json already carries dome_claimed_failures and dome_claimed_accuracy as human-curated dome-tracking fields, so dome_claimed_confirmed is the schema-consistent home."
+  },
+  "build_pipeline_changes": {
+    "change_1_uncounted_failures_schema": {
+      "file": "data/uncounted-failures.json",
+      "action": "add field at top level",
+      "add_field": {
+        "dome_claimed_confirmed": 69
+      },
+      "placement": "Add between dome_claimed_failures and dome_claimed_accuracy for grouping consistency",
+      "rationale": "The schema already carries dome_claimed_failures (4) and dome_claimed_accuracy ('94.5%'); dome_claimed_confirmed (69) is the third element of the dome's published scoreboard tuple. Adding it makes the schema complete and matches how the dome's own homepage presents these three numbers together ('69 confirmed', '4 failed', '94.5% accuracy').",
+      "update_meta": "If data/uncounted-failures.json has a _meta block describing fields, add an entry for dome_claimed_confirmed: 'The dome's published \"confirmed predictions\" headline count, currently 69. Update when the dome bumps its homepage headline. Distinct from {{TOTAL_WINS}}=70 (our enumeration of distinct dome-IDs) and {{CATALOG_TOTAL}}=72 (our review catalog including collision sub-claims).'"
+    },
+    "change_2_generate_html_failures_default": {
+      "file": "build-scripts/generate-html.js",
+      "location": "main() function ~line 1278, in the failures-default literal",
+      "current": "let failures = { entries: [], dome_claimed_failures: 4, dome_claimed_accuracy: '94.5%' };",
+      "replacement": "let failures = { entries: [], dome_claimed_failures: 4, dome_claimed_accuracy: '94.5%', dome_claimed_confirmed: 69 };",
+      "rationale": "Keeps the in-code fallback in sync with the on-disk schema in change_1. If FAILURES_PATH doesn't exist, build still produces a sensible default."
+    },
+    "change_3_generate_html_context": {
+      "file": "build-scripts/generate-html.js",
+      "location": "main() function ~line 1442, in the context object construction where domeClaimedFailures is passed",
+      "current": "domeClaimedFailures: failures.dome_claimed_failures,",
+      "replacement": "domeClaimedFailures: failures.dome_claimed_failures,\n    domeClaimedConfirmed: failures.dome_claimed_confirmed || 69,",
+      "rationale": "Passes the new field into the placeholder context. Fallback to 69 if the field is absent from a legacy snapshot."
+    },
+    "change_4_generate_html_placeholder_map": {
+      "file": "build-scripts/generate-html.js",
+      "location": "resolvePlaceholders function ~line 61, in the replacements object, immediately after the {{DOME_CLAIMED_FAILURES}} entry",
+      "current": "    '{{DOME_CLAIMED_FAILURES}}': context.domeClaimedFailures || 0,",
+      "replacement": "    '{{DOME_CLAIMED_FAILURES}}': context.domeClaimedFailures || 0,\n    '{{DOME_CONFIRMED_HEADLINE}}': context.domeClaimedConfirmed || 69,",
+      "rationale": "Wires the placeholder string to the context value. Co-located with the sibling DOME_CLAIMED_* placeholders for grep-ability."
+    },
+    "change_5_sections_meta_placeholders_doc": {
+      "file": "data/sections.json",
+      "location": "_meta.placeholders object, add a new key",
+      "add_key": {
+        "{{DOME_CONFIRMED_HEADLINE}}": "Dome's published 'confirmed predictions' headline count (currently 69, sourced from data/uncounted-failures.json:dome_claimed_confirmed). Use when prose references the dome's homepage scoreboard, the V51.1 arithmetic 69/(69+4)=94.5%, or the '69-win registry' framing. Distinct from {{TOTAL_WINS}}=70 (our enumeration of distinct dome-IDs in wins.json) and {{CATALOG_TOTAL}}=72 (our full review catalog including collision sub-claims)."
+      },
+      "placement": "Add immediately after {{TOTAL_WINS}} for grouping consistency",
+      "rationale": "Closes the documentation hole the curmudgeon flagged separately under hole 3 of the same review (and ISS-2303): future analysts editing sections.json see the new placeholder in the canonical catalog."
+    },
+    "change_6_consider_HONEST_ACCURACY_desc": {
+      "file": "data/sections.json",
+      "location": "_meta.placeholders.{{HONEST_ACCURACY}} description string",
+      "current": "Recomputed accuracy: 69 / (69 + dome_claimed_failures + silent_failures)",
+      "replacement": "Recomputed accuracy: {{DOME_CONFIRMED_HEADLINE}} / ({{DOME_CONFIRMED_HEADLINE}} + dome_claimed_failures + silent_failures)",
+      "rationale": "Description-string hygiene; doesn't render to users but keeps the canonical placeholder catalog internally consistent. Optional follow-up if change_5 lands cleanly."
+    }
+  },
+  "prose_patches": [
+    {
+      "patch_id": "P1",
+      "location": "data/sections.json → part2b.html → §2b.6 accuracy-arithmetic paragraph",
+      "current_clause": "The arithmetic (e.g., 69/(69+4) = 94.5% in V51.1) is stated on the wins page",
+      "replacement_clause": "The arithmetic (e.g., {{DOME_CONFIRMED_HEADLINE}}/({{DOME_CONFIRMED_HEADLINE}}+{{DOME_CLAIMED_FAILURES}}) = {{DOME_CLAIMED_ACCURACY}} in V51.1) is stated on the wins page",
+      "rationale": "The most arithmetic-load-bearing site. If the dome bumps to V51.2 the math has to retrack. All three numbers (69, 4, 94.5%) are dome-published scoreboard values; templating all three keeps them in lockstep.",
+      "surface_check": "node -e \"console.log(JSON.parse(require('fs').readFileSync('data/sections.json','utf8')).part2b.html.includes('{{DOME_CONFIRMED_HEADLINE}}/({{DOME_CONFIRMED_HEADLINE}}+'))\" should print 'true' post-integration."
+    },
+    {
+      "patch_id": "P2",
+      "location": "data/sections.json → part2b.html → §2b 'Derives-from-Dome' intro paragraph",
+      "current_clause": "These are the backbone of the dome's \"69 confirmed predictions\" (V51.1 self-count).",
+      "replacement_clause": "These are the backbone of the dome's \"{{DOME_CONFIRMED_HEADLINE}} confirmed predictions\" (V51.1 self-count).",
+      "rationale": "Dome-headline reference. The V51.1 self-count framing is preserved; only the number tracks. Note the inner quotes are preserved because '\"69 confirmed predictions\"' is the dome's verbatim phrasing — the quote marks signal 'dome's wording', and the number inside still floats because the dome itself updates the number."
+    },
+    {
+      "patch_id": "P3",
+      "location": "data/sections.json → part2b.html → §2b.6 selection-bias bullet (1.)",
+      "current_clause": "The <code>claim_index.json</code> indexes only 9 of 69 confirmed claims.",
+      "replacement_clause": "The <code>claim_index.json</code> indexes only 9 of {{DOME_CONFIRMED_HEADLINE}} confirmed claims.",
+      "rationale": "Dome-frame: the 'confirmed claims' here is the dome's headline number, not our catalog. (For the same site's catalog-frame counts, the very next sentence already uses {{CATALOG_TOTAL}}, {{TOTAL_WINS}}, {{COLLISION_COUNT}} from EXP-437 P1 — that part doesn't need re-editing.)"
+    },
+    {
+      "patch_id": "P4",
+      "location": "data/sections.json → part4.html → 'Registry Framing Audit' section, paragraph about '69-win registry'",
+      "current_clause": "The 69-win registry displayed on <code>wins.html</code> is not per-claim classified.",
+      "replacement_clause": "The {{DOME_CONFIRMED_HEADLINE}}-win registry displayed on <code>wins.html</code> is not per-claim classified.",
+      "rationale": "Refers to the dome's wins.html registry size (its headline). Templated to track."
+    },
+    {
+      "patch_id": "P5",
+      "location": "data/sections.json → part4.html → Registry Framing Audit test-criterion sentence",
+      "current_clause": "does the count of classified claims in <code>claim_index.json</code> grow toward 69 (the full registry) and 28 (the live dashboard), or does it stall near nine?",
+      "replacement_clause": "does the count of classified claims in <code>claim_index.json</code> grow toward {{DOME_CONFIRMED_HEADLINE}} (the full registry) and 28 (the live dashboard), or does it stall near nine?",
+      "rationale": "Forward-looking test: 'grow toward the dome's headline count' — has to track the headline, not freeze at 69."
+    },
+    {
+      "patch_id": "P6",
+      "location": "data/sections.json → part4.html → Registry Framing Audit table row, 'Homepage' cell",
+      "current_clause": "<td>Homepage: <strong>69 Confirmed</strong>, <strong>94.5% accuracy</strong></td>",
+      "replacement_clause": "<td>Homepage: <strong>{{DOME_CONFIRMED_HEADLINE}} Confirmed</strong>, <strong>{{DOME_CLAIMED_ACCURACY}} accuracy</strong></td>",
+      "rationale": "Table cell describing dome's homepage state. Both numbers should track."
+    },
+    {
+      "patch_id": "P7",
+      "location": "data/sections.json → part4.html → Registry Framing Audit table, 'No classification badges' row",
+      "current_clause": "<td>No classification badges on WIN cards; 69-confirmed headline treats all claims uniformly</td>",
+      "replacement_clause": "<td>No classification badges on WIN cards; {{DOME_CONFIRMED_HEADLINE}}-confirmed headline treats all claims uniformly</td>",
+      "rationale": "Same dome-headline reference."
+    },
+    {
+      "patch_id": "P8",
+      "location": "data/sections.json → part4.html → Registry Framing Audit row about 'Taxonomy currently applied'",
+      "current_clause": "Taxonomy currently applied to <strong>9 of 69</strong> claims (using the dome's own 69-confirmed headline as the denominator)",
+      "replacement_clause": "Taxonomy currently applied to <strong>9 of {{DOME_CONFIRMED_HEADLINE}}</strong> claims (using the dome's own {{DOME_CONFIRMED_HEADLINE}}-confirmed headline as the denominator)",
+      "rationale": "Two 69s in one sentence; both refer to the dome's headline."
+    },
+    {
+      "patch_id": "P9",
+      "location": "data/sections.json → part4.html → Registry Framing Audit, 'If the classified count grows toward'",
+      "current_clause": "If the classified count grows toward 69 over time, the taxonomy is a real audit in progress.",
+      "replacement_clause": "If the classified count grows toward {{DOME_CONFIRMED_HEADLINE}} over time, the taxonomy is a real audit in progress.",
+      "rationale": "Same forward-looking test; tracks headline."
+    },
+    {
+      "patch_id": "P10",
+      "location": "data/sections.json → part4.html → 'Currently classified claims' table mirror caption",
+      "current_clause": "out of 69 confirmed claims (using the dome's own 69-confirmed headline as the denominator).",
+      "replacement_clause": "out of {{DOME_CONFIRMED_HEADLINE}} confirmed claims (using the dome's own {{DOME_CONFIRMED_HEADLINE}}-confirmed headline as the denominator).",
+      "rationale": "Two 69s in one sentence; both refer to the dome's headline."
+    },
+    {
+      "patch_id": "P11",
+      "location": "data/sections.json → part6.html → §6.1 accuracy-variants paragraph",
+      "current_clause": "The V51.1 headline is 94.5% (69/73).",
+      "replacement_clause": "The V51.1 headline is {{DOME_CLAIMED_ACCURACY}} ({{DOME_CONFIRMED_HEADLINE}}/{{HONEST_ACCURACY_DENOM_HEADLINE_VARIANT}}).",
+      "replacement_clause_simple_fallback": "The V51.1 headline is {{DOME_CLAIMED_ACCURACY}} ({{DOME_CONFIRMED_HEADLINE}}/73).",
+      "rationale": "PREFER the simple fallback: the 73 here is the dome's homepage denominator (69 confirmed + 4 failed = 73). It happens to derive from {{DOME_CONFIRMED_HEADLINE}}+{{DOME_CLAIMED_FAILURES}}=69+4=73, but introducing a derived placeholder is overkill for one site. Decider may choose: (a) simple — replace only the 69 → {{DOME_CONFIRMED_HEADLINE}}, leave 73 literal with a code-comment, OR (b) introduce {{DOME_HEADLINE_DENOMINATOR}} = domeClaimedConfirmed + domeClaimedFailures in the context object. RECOMMEND (a) for scope-discipline this run; defer (b) to a follow-up if the 73 ever drifts."
+    },
+    {
+      "patch_id": "P12",
+      "location": "data/sections.json → part6.html → §6.1 V51.1-added-WINs paragraph",
+      "current_clause": "V51.1 added 2 new WINs and updated the headline to 94.5% (69/73) — but the denominator logic is identical",
+      "replacement_clause": "V51.1 added 2 new WINs and updated the headline to {{DOME_CLAIMED_ACCURACY}} ({{DOME_CONFIRMED_HEADLINE}}/73) — but the denominator logic is identical",
+      "rationale": "Same pattern as P11; keep the 73 literal for now (see P11 note)."
+    },
+    {
+      "patch_id": "P13",
+      "location": "data/sections.json → part6.html → §6.9 closing paragraph",
+      "current_clause": "the attempt is more intellectually honest than a flat list of 69 undifferentiated 'WINs.'",
+      "replacement_clause": "the attempt is more intellectually honest than a flat list of {{DOME_CONFIRMED_HEADLINE}} undifferentiated 'WINs.'",
+      "rationale": "Refers to the dome's flat headline-WIN list."
+    },
+    {
+      "patch_id": "P14",
+      "location": "data/sections.json → part8.html → V51.1 update parenthetical",
+      "current_clause": "67 confirmed WINs and 95.2% accuracy (updated to 94.5% with 69 WINs in V51.1).",
+      "replacement_clause": "67 confirmed WINs and 95.2% accuracy (updated to {{DOME_CLAIMED_ACCURACY}} with {{DOME_CONFIRMED_HEADLINE}} WINs in V51.1).",
+      "rationale": "Two-number tracking: both the accuracy and the WIN count track the dome's V51.1 state. The 67 / 95.2% stays literal as historical V51.0 reference (the earlier number in the same sentence)."
+    }
+  ],
+  "mentions_left_unchanged": {
+    "rationale_overview": "Six bare-'69' classes of instance are deliberately NOT templated. Each is enumerated below with the specific reason; future audit passes (or curmudgeon followups) that grep for \\b69\\b in rendered HTML must reconcile against this list.",
+    "instances": [
+      {
+        "site": "data/sections.json → part1b.html → 'Key Structural Changes' TLDR",
+        "text": "V50.6 had 39 WINs and zero falsified. V51.0 jumped to 69 WINs",
+        "reason": "Historical reference to V51.0 era count (NOT the current V51.1 headline). V51.0 launched with 69 WINs; that is a fixed historical fact, not a tracking number. The 39 immediately before it is the V50.6 count — also historical. Templating either would silently rewrite history."
+      },
+      {
+        "site": "data/sections.json → part4.html → 'applied to only 9 of 83 registry items (69 confirmed, 4 refined, 10 prospective)'",
+        "text": "9 of 83 registry items (69 confirmed, 4 refined, 10 prospective)",
+        "reason": "This sentence describes a snapshot of the dome's three-class registry breakdown (confirmed/refined/prospective) from a specific monitoring capture. Templating only the 69 without also templating the 4 (refined) and 10 (prospective) would create an asymmetry where one number tracks and two don't. Defer to a follow-up EXP introducing {{DOME_REFINED_COUNT}} and {{DOME_PROSPECTIVE_COUNT}} if the three-class breakdown becomes a tracking metric. For now, keep all three literal."
+      },
+      {
+        "site": "data/sections.json → part4.html → verbatim status_history.json snapshot quote",
+        "text": "with the daily-review text directly below them saying \"Registry stands at 69 confirmed, 4 refined, and 10 prospective items\"",
+        "reason": "Verbatim quote of dome's status_history.json text. Snapshot date is anchored in the surrounding prose ('as of the 2026-04-18 first capture and unchanged at the 2026-04-28 refresh'). Quotes are immutable — templating would falsify the quoted source."
+      },
+      {
+        "site": "data/sections.json → part4.html → 2026-04-18 capture quote (second instance)",
+        "text": "reads \"Registry stands at 69 confirmed, 4 refined, and 10 prospective items\" as of the 2026-04-18 first capture",
+        "reason": "Same verbatim-quote rationale as above."
+      },
+      {
+        "site": "data/sections.json → part4.html → σ-value decimal occurrences",
+        "text": "47.69σ, 9.69, 2.69 etc.",
+        "reason": "False positives on the \\b69\\b regex. These are decimal significance values (47.69σ at the V51.2 28-domain dashboard, 2.69 size-reduction factor in part7, etc.), not count references. Word-boundary regex matches because '.' is a non-word character. Approximately 7 of part4's 18 \\b69\\b hits are σ-value false positives (indices 0, 3, 4, 5, 6, 7 in the curmudgeon's audit; also part7 idx 0)."
+      },
+      {
+        "site": "data/sections.json → part6.html → anchor ID 'p6-69-8'",
+        "text": "<details id=\"p6-69-8\">",
+        "reason": "Anchor ID (the section is numbered 6.9 in part6, and 'p6-69-8' is a slug). Templating would break section navigation."
+      },
+      {
+        "site": "data/sections.json → part8.html → 2026-04-17 snapshot quote",
+        "text": "The 2026-04-17 snapshot opens: \"Registry stands at 69 confirmed...Latest monitor snapshot is 100.0% with 28 of 28 scored domains passing...\"",
+        "reason": "Verbatim snapshot quote with anchored snapshot date. Same rationale as the part4 verbatim quotes."
+      },
+      {
+        "site": "build-scripts/generate-html.js → ts-april-2026-update prose (line 1968 et seq.)",
+        "text": "the headline \"69 confirmed\" continues to conflate claim classes...; \"69 confirmed\" tagline rest on a proof structure...",
+        "reason": "These references are INSIDE build-scripts/generate-html.js as hardcoded prose (Timestamp Error tab, April 2026 update section). They are NOT in data/sections.json, so the placeholder-resolution pass doesn't touch them. RECOMMEND: separate follow-up patch to refactor these into data/sections.json so the {{DOME_CONFIRMED_HEADLINE}} placeholder reaches them. Out of scope for this EXP because the refactor is larger than a single substring replacement (it changes where this content lives and which file owns the prose). File a follow-up ISS after this lands."
+      }
+    ]
+  },
+  "current_values_at_authoring": {
+    "catalog_total": 72,
+    "total_wins_basewins": 70,
+    "collision_count": 2,
+    "dome_confirmed_headline": 69,
+    "dome_claimed_failures": 4,
+    "dome_claimed_accuracy": "94.5%",
+    "dome_version": "V51.1",
+    "note": "The three count-frames (69 dome-headline, 70 our-baseWins, 72 our-catalog-with-collisions) are genuinely distinct numbers in HEAD. {{TOTAL_WINS}}=70 reflects our enumeration of distinct WIN IDs in wins.json; the dome itself categorizes one of those (likely a 'refined' or 'below detection threshold' item) outside its 'confirmed predictions' headline count of 69. {{CATALOG_TOTAL}}=72 adds two collision sub-claims (057b, 058b) the dome reuses across confirmed-wins and prospective-predictions surfaces."
+  },
+  "holes_addressed": [
+    "ISS-2304 / SEC-part2b-count-reconciliation.c1 hole 4 (moderate)",
+    "EXP-437 anticipated_objections item 2 — 'placeholder math tracks automatically' — restored to true for the dome-headline frame after this lands"
+  ],
+  "holes_NOT_addressed_here": [
+    {
+      "hole": "ISS-2302 / hole 1 (major): EXP-437 P6 'ds-counts-reading-guide' Overview <details> block not integrated.",
+      "reason": "Separate EXP being tracked elsewhere (EXP-481-adjacent)."
+    },
+    {
+      "hole": "ISS-2303 / hole 2 (moderate): build-time sanity check (baseWins+collisions vs wins.length) not integrated.",
+      "reason": "Separate EXP. This EXP's change_5 partially overlaps (documents {{DOME_CONFIRMED_HEADLINE}} in _meta.placeholders) but doesn't address the build invariant."
+    },
+    {
+      "hole": "Hole 5 (minor): §2b.6 verdict-arithmetic sentence enumerates 48 of 72 verdicts without naming the other 24 (Std=18, NotDemo=3, Unfalsifiable=3).",
+      "reason": "Out of scope for ISS-2304; reviewer marked as defer-to-analyst-judgment."
+    },
+    {
+      "hole": "build-scripts/generate-html.js Timestamp Error tab 'ts-april-2026-update' hardcoded '69 confirmed' instances (2 sites).",
+      "reason": "Refactor needed (move prose from generate-html.js into data/sections.json before the placeholder mechanism can reach it). File a follow-up ISS after this lands."
+    }
+  ],
+  "test_recommendations": [
+    {
+      "type": "regression",
+      "description": "Grep \\b69\\b in rendered docs/index.html post-build; assert match count matches the explicit whitelist in mentions_left_unchanged. Whitelist count: see current values_at_authoring + the documented exceptions. If the count exceeds the whitelist, either a new bare-69 was introduced (must be templated) or a templated value drifted (must be patched). Failing test prints the unwhitelisted contexts.",
+      "pseudocode": "node -e \"const html=require('fs').readFileSync('docs/index.html','utf8'); const m=html.match(/\\\\b69\\\\b/g); /* assert m.length === expected_whitelist_count */\""
+    },
+    {
+      "type": "placeholder-resolution",
+      "description": "Assert that resolved {{DOME_CONFIRMED_HEADLINE}} === failures.dome_claimed_confirmed at build time. Construct a synthetic uncounted-failures.json with dome_claimed_confirmed=70 and assert the rendered HTML reflects 70 (not 69) in the templated sites."
+    },
+    {
+      "type": "schema-integrity",
+      "description": "Assert data/uncounted-failures.json has dome_claimed_confirmed as a number field; fail build if missing or non-numeric. Pairs with change_2 fallback."
+    },
+    {
+      "type": "drift-detector",
+      "description": "Add to tests/run.sh a check that the dome_claimed_confirmed value in data/uncounted-failures.json matches the dome's current published headline (from poll snapshot in monitor/status.json). If they differ, fail the test with a clear 'dome headline drifted to N; update uncounted-failures.json' message. This automates the refresh-agent-vs-prose drift detection."
+    }
+  ],
+  "anticipated_objections": [
+    {
+      "objection": "Why introduce a third placeholder when we already have {{TOTAL_WINS}} (70) — couldn't we just keep them aligned at 70 by reclassifying our extra row?",
+      "response": "Because the dome's headline is the dome's editorial choice, not ours to align. We could split our catalog differently, but the dome publishes '69 confirmed' on its homepage; our review's job is to report what the dome publishes, not normalize it. The three-frame design preserves both 'what the dome says' (69) and 'how we count' (70 / 72) as separately load-bearing facts."
+    },
+    {
+      "objection": "If the dome bumps to V51.2 with 70 confirmed, isn't every '69' in the prose still semantically '69 at the time of V51.1', so should historical prose freeze?",
+      "response": "Distinguish two cases. (a) Sentences with explicit historical anchors ('V51.0 jumped to 69 WINs', 'as of the 2026-04-18 capture') stay literal — those are anchored in time. (b) Sentences in the form 'the dome's current headline is X' or 'a flat list of X undifferentiated WINs' are about the dome's PRESENT state — those should track. The mentions_left_unchanged list above pins case (a); the prose_patches list covers case (b). If the dome bumps to 70, case (b) sites correctly update; case (a) correctly stays."
+    },
+    {
+      "objection": "Adding a placeholder for an externally-curated dome number creates a maintenance burden — someone has to update dome_claimed_confirmed when the dome bumps.",
+      "response": "Already true for dome_claimed_failures (currently 4) and dome_claimed_accuracy ('94.5%'). The refresh agent's job description already includes tracking the dome's published scoreboard; adding dome_claimed_confirmed to that list is one line of agent work and aligns with how the refresh agent already maintains dome_claimed_failures. The drift-detector test (test_recommendations item 4) automates the staleness check."
+    },
+    {
+      "objection": "P11/P12 leave the 73 literal — isn't that the same anti-pattern?",
+      "response": "Partially yes, partially no. The 73 IS derivable ({{DOME_CONFIRMED_HEADLINE}} + {{DOME_CLAIMED_FAILURES}} = 69 + 4 = 73), but introducing {{DOME_HEADLINE_DENOMINATOR}} just for two sentences is scope-creep. The current proposal documents this in mentions_left_unchanged (the 73 stays as a literal with the rationale that it derives from two other tracked numbers); if the 73 ever drifts because the dome adds/removes a published failure, a one-line follow-up EXP introduces the derived placeholder. The current state is honest: 'we templated where it matters most, and the remaining one literal has a tracked derivation path.'"
+    },
+    {
+      "objection": "Why deep-attack rather than verification? The work is mechanically 14 prose patches plus a small build-pipeline change.",
+      "response": "Because (a) it introduces a NEW placeholder to the canonical catalog, which is a schema change and curmudgeon should adversarially attack the choice (could the new placeholder semantically drift?); (b) the mentions_left_unchanged enumeration is a load-bearing argument — curmudgeon should attack it for completeness (have we missed any cases?); (c) the three-frame design (69/70/72) is itself a contestable claim — curmudgeon may argue the right move is to drop {{TOTAL_WINS}} or to align our enumeration to the dome's headline. Verification class would batch this with neighbors and skip those arguments."
+    },
+    {
+      "objection": "The patches preserve {{TOTAL_WINS}} and {{CATALOG_TOTAL}} where they already exist (e.g., P3 keeps the existing P1-EXP-437 phrasing in the next sentence). What if integration accidentally re-templates an already-templated site?",
+      "response": "Each prose_patch above gives the current_clause as a substring fingerprint (substring of the existing prose with surrounding context). The decider integrates by find-and-replace on the exact current_clause string. If a prior integration already touched that string, the find fails loudly and the decider must reconcile. Standard EXP-437-style integration discipline."
+    }
+  ],
+  "decider_routing_hints": {
+    "integration_order": "Apply build_pipeline_changes 1-5 FIRST (in order: change_1 → change_2 → change_3 → change_4 → change_5). Then apply prose_patches P1-P14 in any order — each is independent and addresses a single substring replacement.",
+    "test_after": "Run `node build.js html` and `tests/run.sh` after the build_pipeline_changes land but before the prose_patches; the unchanged prose with the new placeholder definition is a no-op semantically (placeholders that don't appear in prose resolve to nothing) so the test suite should stay green. Then apply prose patches and re-run.",
+    "review_class_after_integration": "If post-integration curmudgeon attention is warranted, declare review_class='verification' for the integration review — the deep-attack adversarial argumentation is in THIS EXP's anticipated_objections; the integration review just confirms the patches landed where they should and the new placeholder resolves correctly.",
+    "rollback_plan": "If the {{DOME_CONFIRMED_HEADLINE}} schema choice is contested by curmudgeon post-integration, revert is mechanical: replace each {{DOME_CONFIRMED_HEADLINE}} in the rendered HTML with the literal '69', remove the placeholder from the resolvePlaceholders map and _meta.placeholders, drop dome_claimed_confirmed from data/uncounted-failures.json. No data loss; the three-frame split is recoverable from the literal numbers via the documented current_values_at_authoring block."
+  },
+  "newsworthy": "EXP-437's plate-of-templates discipline gets a third frame: 69-vs-70-vs-72 is now three named placeholders, not bare numbers — and the dome's headline tracks even if it bumps tomorrow.",
+  "summary_for_decider": "EXP-437's audit pass missed bare-numeral count-drift because it scanned only existing placeholder occurrences. ISS-2304 catalogs 14 prose sites where bare '69' references the dome's published 'confirmed predictions' headline; templating with {{TOTAL_WINS}} would be wrong because {{TOTAL_WINS}}=70 is OUR enumeration (we count one item the dome categorizes outside its 'confirmed' headline). Solution: introduce {{DOME_CONFIRMED_HEADLINE}} as a sibling placeholder (sourced from data/uncounted-failures.json:dome_claimed_confirmed, a new field defaulting to 69), wire it through generate-html.js's context object, document it in _meta.placeholders, and replace 14 bare '69' instances in prose. Six classes of bare-69 are explicitly enumerated as STAY literal (historical V51.0 reference, verbatim snapshot quotes with anchored dates, σ-value decimal false positives, the p6-69-8 anchor ID, the part4 '69 confirmed/4 refined/10 prospective' three-number registry breakdown, and the ts-april-2026-update prose in build-scripts/generate-html.js which needs a separate refactor). Total scope: 1 schema addition + 4 generate-html.js edits + 1 _meta.placeholders entry + 14 substring replacements in data/sections.json. Recommends class='deep-attack' for curmudgeon followup because the schema choice and the mentions_left_unchanged enumeration are both adversarial-attack-worthy."
+}
