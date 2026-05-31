@@ -1,0 +1,121 @@
+{
+  "run_id": "tinker-2026-05-31T17-00",
+  "timestamp": "2026-05-31T17:00:00Z",
+  "mode_selected": "Mode 3 -> Mode 4 escalation (cost-engineering audit surfaced a Mode 4 PROP candidate)",
+  "mode_selection_reason": "No pending operator directives. No Mode 0 assigned-to-tinker items. Mode 1 GREEN (all agents fresh, no stranded patches). Mode 2 GREEN-with-disk-warning (FUSE matches GitHub on 5 checked files, auth 200, disk 690MB project-relative — within expected workspace+clone footprint, no leak). Backlog healthy (52 open, 0 aged >=14d, net velocity +111/7d). Verified PROP-066 / PROP-070 / PROP-060 / PROP-059 all FIXED. Ran Mode 3 cost-engineering pass; surfaced a serious recurrence finding (PROP-066 silent-skip) that justified inline Mode 4 PROP authoring.",
+  "modes_checked": {
+    "mode_1_agent_freshness": {
+      "result": "GREEN",
+      "evidence": "All checked agent outputs fresh (curmudgeon tracker 0h, tinker summary 0h, expansion-tracker 1h, decider summary 1h, integrity summary 1h, poller 7h within 12h schedule). No stranded patches >24h."
+    },
+    "mode_2_infrastructure_and_fuse": {
+      "result": "GREEN with disk-WARNING (operational, not actionable)",
+      "evidence": "5 sample files (wins.json, sections.json, digest-reviews.js, generate-html.js, index.html) all md5-match GitHub. Auth HTTP 200. Project footprint 690MB (workspace FUSE 380MB + own clone 299MB) — within expected operating range; no leaked clones in /tmp. PROP-070 observability counter = 0 orphan-integrated assigned-analyst ISSs."
+    },
+    "mode_3_cost_engineering": {
+      "result": "AUDIT COMPLETED; finding promoted to Mode 4",
+      "evidence": "Verified PROP-066, PROP-068, PROP-070 all show 'implemented' status. Verified PROP-066 verification pattern: FIXED. Verified PROP-066 helper script working via manual invocation (wrote sync-workspace-runs-2026-05-31T16-52-42Z.json correctly). DISCOVERED: PROP-066 sentinel emission gap — 7 workspace-sync cycles post-PROP-068-deploy, ZERO step4c sentinels committed. This is FND-01."
+    },
+    "mode_4_proposals_self_fixes": {
+      "result": "ACTIVE (PROP-072 authored this run)",
+      "evidence": "Authored PROP-072 status=design-pending-operator-review. No self-apply (prompt files require operator approval per recent pattern). PROP-070 canaries (a) decider Step A0c sweep mention and (c) ISS-2311/2337/2365 auto-close are still pending (decider has not run since PROP-070 deploy)."
+    }
+  },
+  "findings": [
+    {
+      "finding_id": "FND-01",
+      "category": "structural-silent-skip-recurrence",
+      "severity": "major",
+      "title": "PROP-066 (Step 4c helper) silent-skip RECURRING after PROP-068 collapsed-block fix",
+      "evidence_summary": {
+        "prop_066_deploy": "ba212cf",
+        "prop_068_deploy": "e22b0e8 (2026-05-31 09:33:45 UTC)",
+        "post_deploy_ws_sync_cycles": 7,
+        "post_deploy_step4c_sentinels": 0,
+        "post_deploy_ws_sync_run_reports": 7,
+        "post_deploy_4a_commits_per_cycle": "1-13 files each (all successful)",
+        "tinker_manual_invocation_test_at_16_52Z": "PASSED — wrote sync-workspace-runs-2026-05-31T16-52-42Z.json; classification=equal, upstream_newer_than_last_sync=true, need_sync=true, action=pull-moved-auto-sync, files_copied=N, sync_exit_code=0",
+        "second_source_confirmation": "integrity-2026-05-31T16-00 latest summary's FUSE-staleness finding says 'PROP-066 Step 4c should self-heal on next workspace-sync cycle' — implies integrity has also observed Step 4c is not running on the cycles it expects."
+      },
+      "root_cause_hypothesis": "LLM agent's execution pattern is robust at FIRST + LAST positions within a single bash block (4a commit at top, 4b run-report + cleanup at bottom both reliably run) but unreliable at MIDDLE positions (Step 4c invocation in the middle is dropped). PROP-068's structural collapse removed one form of skip-boundary (trailing-section-header) but did not pin agent execution to ALL lines within the collapsed block.",
+      "proposal_authored": "PROP-072-step4c-hoist-to-first-position.json (design-pending-operator-review)",
+      "recommended_action": "Operator review + approve PROP-072 primary fix (reorder Step 4c to FIRST position after trap, before Step 4a). Secondary backstop (AGENT_NOTES self-attestation) and tertiary startup-check are defense-in-depth options.",
+      "priority": "high (defects in git->FUSE propagation cause FUSE-staleness which causes downstream agents to read stale data; integrity report already flagged one such case this cycle)"
+    },
+    {
+      "finding_id": "FND-02",
+      "category": "PROP-070 canary tracking (carry-over from previous run)",
+      "severity": "info",
+      "title": "PROP-070 post-deploy canaries pending verification",
+      "evidence_summary": {
+        "canary_a_decider_a0c_sweep_line": "NOT YET VERIFIED (latest decider summary is 14:50Z, before PROP-070 deploy at 16:33Z; next decider scheduled 18:10Z)",
+        "canary_b_tinker_prop_070_observability_counter": "VERIFIED at THIS run: 0 orphan-integrated assigned-analyst ISSs",
+        "canary_c_iss_2311_2337_2365_auto_close": "NOT YET (all 3 still status=assigned-analyst; ISS-2311 last_touched 05:39Z (~11h ago), ISS-2337 same, ISS-2365 last_touched 14:49Z (~2h ago) — all under 48h recency guard; expected auto-close ~2026-06-02)"
+      },
+      "recommended_action": "Next tinker run (after first post-deploy decider cycle at 18:10Z) should re-check canary (a). ISS auto-close (canary c) should be re-checked after 2026-06-02 once 48h guard releases."
+    },
+    {
+      "finding_id": "FND-03",
+      "category": "disk-footprint (operational, not actionable)",
+      "severity": "info",
+      "title": "Project footprint 690MB triggers Mode 2 WARNING threshold but is within expected operating range",
+      "evidence_summary": "FUSE workspace 380MB + own tinker clone 299MB + 1MB scratch = 680MB. No leaked clones. Root partition at 96% used is dominated by Ubuntu system image (~8GB), not project artifacts. The 500MB threshold is calibrated for leak detection; the expected operating footprint without leaks is 600-700MB.",
+      "recommended_action": "Consider raising Mode 2 disk-WARNING threshold from 500MB to 800MB so it doesn't flap on healthy operation. Will revisit if it persists across multiple runs."
+    }
+  ],
+  "backlog_trend_metrics": {
+    "ts": "2026-05-31T16:48:07.536Z",
+    "open_issues_total": 52,
+    "open_status_count": 18,
+    "assigned_analyst_count": 22,
+    "age_ge_14d_count": 0,
+    "age_ge_30d_count": 0,
+    "oldest_open_age_days": 0.4,
+    "new_issues_velocity_7d": 52,
+    "closed_issues_velocity_7d": 163,
+    "net_velocity_7d": 111,
+    "baby_drain_count_7d": 5,
+    "verify_drain_count_7d": 0,
+    "thresholds_fired": [],
+    "note": "Backlog healthy. verify_drain_count_7d=0 is notable (no class=verification items hit the curmudgeon-verify queue this week) but expected during PROP-038 Phase 1 ramp; not a finding."
+  },
+  "previous_followup": {
+    "prior_tinker_run": "tinker-2026-05-31T16-30 (directive-driven PROP-070 deploy)",
+    "prior_findings": [
+      {
+        "id": "info_1",
+        "status_in_prior": "info",
+        "description": "PROP-070 observability counter initial implementation omitted 48h guard",
+        "this_run_status": "FIXED (444898c added 48h guard; counter=0 this run, expected after fix)"
+      },
+      {
+        "id": "info_2",
+        "status_in_prior": "info",
+        "description": "3 orphan-integrated assigned-analyst ISSs in flight (held by 48h guard)",
+        "this_run_status": "STILL_HELD (per canary c above — expected to release 2026-06-02)"
+      }
+    ],
+    "prop_lifecycle_verification": {
+      "PROP-070": "FIXED (3 grep patterns match)",
+      "PROP-066": "FIXED (helper script exists; manual invocation works) BUT INVOCATION IS BEING SKIPPED — see FND-01",
+      "PROP-068": "FIXED (collapsed Step 4 block present, cleanup_ran:true visible in 16:09 run-report) BUT did NOT close Step 4c silent-skip — see FND-01",
+      "PROP-065": "FIXED (GIT_APPEND_ONLY + is_git_append_only present in workspace-sync.md — 12 matches)",
+      "PROP-060": "FIXED (ISS-1285 and ISS-2134 both closed)",
+      "PROP-059": "FIXED (verification_pattern requirement present in decider-patches-and-self-apply.md per VP)"
+    }
+  },
+  "claude_md_audit": {
+    "checks_done_this_run": "skipped (Mode 3 audit pivoted to FND-01 PROP authoring; full CLAUDE.md accuracy audit deferred to next Mode 3-pure run)",
+    "deferred_items": "File Ownership table cross-reference, file map completeness, data flow accuracy, size/token tracking"
+  },
+  "context_load": {
+    "checks_done_this_run": "skipped (deferred for the same reason as claude_md_audit; will revisit on next pure Mode 3 run)"
+  },
+  "cleanup_actions": [
+    {
+      "path": "/tmp/tinker-clone",
+      "action": "rm -rf at end of this run (mandatory per tinker.md Cleanup section, PROP-060 FND-01)",
+      "reason": "primary, run-local hygiene step"
+    }
+  ]
+}

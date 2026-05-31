@@ -1,0 +1,134 @@
+{
+  "prop_id": "PROP-072",
+  "title": "Hoist PROP-066 Step 4c helper invocation to FIRST position in workspace-sync's collapsed Step 4 block — PROP-068 structural collapse did not close the silent-skip defect for middle-of-block actions",
+  "status": "design-pending-operator-review",
+  "priority": "high",
+  "author": "tinker",
+  "authored_at": "2026-05-31T16:55:00Z",
+  "authored_by_run": "tinker-2026-05-31T17-00",
+  "source": "Mode 3 cost-engineering audit; finding promoted to Mode 4 PROP authoring",
+
+  "executive_summary": "PROP-066 (Step 4c helper script extraction) and PROP-068 (collapse trailing Cleanup into Step 4b's bash block) both shipped 2026-05-31. PROP-068's design promise was that the structural collapse would close the LLM-skip defect for middle-of-block actions including Step 4c. Empirically it has not: in the 7 workspace-sync cycles since PROP-068 deploy (09:33Z to 16:09Z), exactly ZERO PROP-066 step4c sentinels were committed, while all 7 cycles successfully ran Step 4a (FUSE->git commits visible) and Step 4b (run-reports visible). The script itself is provably working (tinker re-invoked it manually from a fresh clone at 16:52Z; classification=equal upstream_newer=true; sentinel written correctly). The defect is that the LLM agent runs the FIRST action of the collapsed bash block (4a commit) and the LAST actions (4b report + cleanup) reliably but drops the MIDDLE action (4c helper). PROP-068's collapse was necessary but not sufficient. PROP-072 proposes moving the 4c invocation to FIRST position (immediately after the trap), so the action the agent currently reliably executes IS the 4c invocation, and 4a/4b/cleanup follow as normal. The git->FUSE propagation 4c performs is independent of 4a's FUSE->git work; reordering does not change correctness.",
+
+  "problem": {
+    "observed_evidence": {
+      "prop_066_deploy_commit": "ba212cf",
+      "prop_068_deploy_commit_and_time": "e22b0e8 (2026-05-31 09:33:45 UTC)",
+      "ws_sync_cycles_after_prop_068_deploy": [
+        "10:09:08Z (eb3ef28)",
+        "11:07:17Z (80cbdb1)",
+        "12:12:34Z (358ae1f)",
+        "13:08:46Z (6c64ed7)",
+        "14:09:04Z (7ae7ebc)",
+        "15:06:55Z (df36cd0)",
+        "16:09:24Z (9e8ff27)"
+      ],
+      "prop_066_sentinels_committed_post_prop_068_deploy": 0,
+      "prop_066_sentinels_committed_total_today": 1,
+      "only_sentinel_commit": "4fe91bd PROP-066 step4c sentinel: 2026-05-31T09:08:11Z (BEFORE PROP-068 deploy)",
+      "ws_sync_run_reports_committed_post_deploy": 7,
+      "step_4a_fuse_to_git_commits_per_cycle": "1-13 files each cycle, all 7 cycles successful",
+      "tinker_manual_invocation_test": "ran node monitor/scripts/sync-workspace-step4c.js from fresh clone at 16:52Z; script wrote sync-workspace-runs-2026-05-31T16-52-42Z.json with action=pull-moved-auto-sync, files_copied=N, sync_exit_code=0. Script works correctly when invoked.",
+      "integrity_observation": "integrity-2026-05-31T16-00 report's FUSE-staleness finding for monitor/prompts/reference/analyst-mode5-prospective.md explicitly says 'PROP-066 Step 4c should self-heal on next workspace-sync cycle' — assumes Step 4c runs, but PROP-066 is not being invoked, so self-heal does not happen. Second-source confirmation of the same defect."
+    },
+
+    "root_cause_hypothesis": "In the PROP-068 collapsed Step 4 bash block, the LLM agent reliably executes the FIRST action (Step 4a: FUSE->git commit + push) and the LAST actions (Step 4b: run-report write + commit + push; Cleanup: rm $CLONE) but drops the MIDDLE action (Step 4c: PROP-066 helper invocation + git add sentinel + commit + push). The section comment '--- 4c: PROP-066 helper for git->FUSE propagation ---' inside the bash block still reads as a subsection boundary the agent can skim past, even though PROP-068's design intent was that collapse eliminates this skip-by-omission failure. This is the same skip-by-omission shape that PROP-066 was designed to close for inline-bash Step 4c; PROP-068's collapse moved the structure but did not pin the agent's execution to ALL lines within the collapsed block.",
+
+    "why_prop_068_was_necessary_but_not_sufficient": "PROP-068's diagnosis was correct: trailing Cleanup blocks were being skipped because they were rendered as separate sections after Step 4b's 'apparent completion'. The collapse fixed THAT pattern (cleanup_ran:true is now visible in 16:09 report -> cleanup is happening). What PROP-068 missed: the same defect class also affects MIDDLE-of-block actions, not just trailing-of-section actions. Step 4c is now structurally inside the same bash block as Step 4a and Step 4b, but the agent's execution pattern is still 'top + bottom skip middle', not 'top + middle + bottom'. The structural fix removed one form of skip-boundary (section-heading-as-stop-line) but left another (mid-block-comment-as-stop-line) intact."
+  },
+
+  "recommendation": {
+    "primary_fix": "Reorder the collapsed Step 4 block so PROP-066 helper invocation is the FIRST action after trap setup, BEFORE Step 4a (FUSE->git commit+push). This pre-empts the middle-of-block skip pattern by making 4c the action the agent reliably executes (the 'first action' the agent provably runs every cycle).",
+
+    "execution_order_after_fix": [
+      "0. trap 'rm -rf $CLONE' EXIT (setup)",
+      "1. 4c FIRST: node monitor/scripts/sync-workspace-step4c.js + git add sentinels + commit + push  <-- MOVED FROM MIDDLE TO TOP",
+      "2. 4a: FUSE->git commit + push (was previously step 1)",
+      "3. capture FILES_COMMITTED (after 4a HEAD shift)",
+      "4. 4b: write run-report + commit + push",
+      "5. rm $CLONE (cleanup)"
+    ],
+
+    "correctness_argument_for_reorder": "4c performs git->FUSE propagation (downloads upstream commits to FUSE if needed). 4a performs FUSE->git work (commits workspace-only files). These are independent: 4c reads origin/main, computes whether to propagate, optionally runs node build.js sync-workspace which copies git->FUSE per OWNERSHIP whitelist. 4a's subsequent FUSE->git commit happens AFTER 4c has potentially refreshed FUSE; this means 4a sees a possibly-newer-FUSE state (good — fresher input). Order independence: running 4c first does NOT corrupt 4a's commit (4a commits CURRENT-FUSE state regardless of what 4c just wrote), does NOT change the set of FUSE-side files committed (4c only writes git->FUSE for OWNERSHIP-whitelisted files; 4a commits all workspace-owned changes including non-OWNERSHIP files), does NOT change FILES_COMMITTED count (captured AFTER 4a's commit per Q-OP-1).",
+
+    "secondary_fix_backstop": "Add a self-attestation check in Step 4b's AGENT_NOTES guidance: 'If you did NOT see a [PROP-066] log line from the Step 4c invocation this cycle, you MUST include the string \"step4c-not-invoked\" in AGENT_NOTES.' This makes the omission visible in run-report soft-complaints grep, even if PROP-072's primary fix also fails. Tinker's next Mode 1 audit can then detect the recurrence within one cycle instead of waiting for an integrity-staleness finding to surface the symptom.",
+
+    "tertiary_fix_invariant": "Add a startup-check in workspace-sync.md's Step 0 (pre-flight): grep the most recent monitor/integrity/sync-workspace-runs-*.json sentinel; if its timestamp is more than 90 minutes old, the PRIOR cycle's Step 4c was skipped — emit a startup-WARNING into the current cycle's AGENT_NOTES. This is cheap (1 ls + 1 stat) and surfaces the silent-skip recurrence one cycle EARLIER than the soft-complaints grep."
+  },
+
+  "alternatives_considered": [
+    {
+      "alt": "Add a fail-loud assert at end of Step 4 that aborts the run if no step4c sentinel was committed this cycle",
+      "rejected_reason": "Step 4c is best-effort by design (PROP-066 doc: 'caller does NOT propagate exit code'). Asserting on its presence would convert silent-skip to fail-loud abort, which is more diagnostic but creates a new failure mode where genuine no-op cycles (classification=equal AND upstream_newer=false) would abort. The no-op sentinel makes this case observable — the issue is not the no-op cases but the genuine-skip cases."
+    },
+    {
+      "alt": "Convert Step 4 into 5 separately-numbered bash code blocks (4-pre-trap, 4c, 4a, 4b, cleanup)",
+      "rejected_reason": "Reverses PROP-068's structural fix. Cross-bash-tool-call variable loss would resurface (FILES_COMMITTED, CLONE). PROP-068's diagnostic verified one-block-per-cycle is necessary."
+    },
+    {
+      "alt": "Inline the Step 4c logic back into the bash block (undo PROP-066's extraction)",
+      "rejected_reason": "Reverses PROP-066. The ~140 line inline version was empirically skipped at >90% rate; the helper extraction was specifically designed to reduce that. The right move is to ALSO reorder, not to undo extraction."
+    },
+    {
+      "alt": "Add a one-line echo before 4c invocation, like 'echo [STEP-4C-STARTING]', to make the action more conspicuous",
+      "rejected_reason": "Cosmetic; does not change the structural position-in-block defect. The skip is not because the agent doesn't see Step 4c, but because Step 4c is in the position the agent is observed to drop."
+    },
+    {
+      "alt": "Defer Step 4c entirely to a separate scheduled task (dome-git-to-fuse-sync, runs every hour)",
+      "rejected_reason": "Adds an agent and a cron entry. PROP-072's reorder fix is minimal — same number of agents, same execution paths, just different ordering inside one block. Add-an-agent is the right move ONLY IF reorder also fails."
+    }
+  ],
+
+  "proposed_implementation": {
+    "file": "monitor/prompts/workspace-sync.md",
+    "section": "Step 4: Commit + push + Step 4c helper + run-report + cleanup",
+    "change_summary": "Move the 4c sub-block (node helper invocation + git add sentinels + commit + push) from its current MIDDLE position to FIRST position immediately after the trap. Adjust the Step 4 prose explanation to reflect new order.",
+    "patch_outline": "Within the bash block in Step 4: extract lines 'trap ... EXIT' (keep at top), then INSERT the 4c sub-block (~10 lines: node invocation + git add + diff check + commit + push), then KEEP existing 4a sub-block (DOCS_NOTE + git commit FUSE-to-git + git push + rebase-retry), then KEEP FILES_COMMITTED capture, then KEEP 4b sub-block (run-report + commit + push), then KEEP cleanup rm + EXIT trap remains. Net change: ~10 lines moved; no new lines added in primary fix. Secondary fix adds ~3 lines to AGENT_NOTES guidance comment. Tertiary fix adds ~5 lines to Step 0 pre-flight.",
+    "prose_update": "The 'Ordering inside the block matters' bullet list in Step 4's prose needs to be re-ordered to: (1) trap (2) 4c FIRST per PROP-072 (3) 4a (4) FILES_COMMITTED capture (5) 4b (6) rm. The correctness argument from PROP-072 (4c reads origin/main; 4a commits FUSE state; order-independence) should be inlined as a comment in the prose."
+  },
+
+  "verification_pattern": "grep -q '4c FIRST per PROP-072' monitor/prompts/workspace-sync.md && echo FIXED || echo STILL_BROKEN",
+
+  "verification_path": {
+    "synthetic_test_pre_deploy": "Author the patch in a clone. Verify the bash block is one block, verify 4c is now at the top per the prose. Mechanically verify via the verification_pattern grep.",
+    "live_canary_post_deploy": "Within 1-2 hourly workspace-sync cycles, monitor/integrity/sync-workspace-runs-*.json files should resume. Tinker's next Mode 1 audit should see step4c sentinel timestamps matching workspace-sync run report timestamps (within ~30 seconds). If after 3 cycles still no sentinels — PROP-072's reorder failed, escalate to secondary/tertiary fixes (add backstop + startup-check) or to deferring 4c to its own scheduled agent.",
+    "rollback_criterion": "If post-deploy a step4c sentinel arrives but FUSE-staleness findings INCREASE in integrity reports (because 4c reordering broke an unwritten invariant), revert PROP-072 and proceed with PROP-072-amendment-001 to add the backstop without reordering."
+  },
+
+  "non_goals": [
+    "Replacing the dome-workspace-sync scheduled agent with a non-LLM cron job (out of scope)",
+    "Refactoring the sync-workspace-step4c.js helper itself (script is verified working; the defect is INVOCATION, not script logic)",
+    "Adding observability beyond the secondary/tertiary backstops in this PROP",
+    "Removing Step 4a's auto-rebase-and-retry path (orthogonal to PROP-072)"
+  ],
+
+  "related_props": [
+    "PROP-061 (original Step 4c inline)",
+    "PROP-064 (PROP-061 silent-skip fix that proved necessary but not sufficient)",
+    "PROP-066 (helper script extraction — necessary but not sufficient on its own)",
+    "PROP-068 (collapse Step 4 cleanup — necessary but not sufficient on its own)",
+    "PROP-072 (this proposal — reorder to make 4c structurally unskippable)"
+  ],
+
+  "context_pointers": {
+    "evidence_files": [
+      "git log -1 --format=%ci ba212cf (PROP-066 ship commit)",
+      "git log -1 --format=%ci e22b0e8 (PROP-068 ship commit)",
+      "monitor/integrity/workspace-sync-runs/run-2026-05-31T10-09,11-07,12-12,13-08,14-09,15-06,16-09 (7 post-deploy run reports — none have step4c data)",
+      "monitor/integrity/sync-workspace-runs-2026-05-31T09-07-58Z.json (only step4c sentinel, BEFORE PROP-068 deploy)",
+      "monitor/integrity/latest-integrity-summary.txt 2026-05-31T16:00Z (flags FUSE-staleness pattern attributing self-heal to PROP-066 which is not running)"
+    ],
+    "prior_diagnostic_pattern": "PROP-064 reported PROP-061 was silently skipped; PROP-066 reported PROP-064's variable-loss + skip pattern; PROP-068 reported PROP-066's invocation skipped in inline form. PROP-072 reports PROP-066's invocation skipped in collapsed-block form. This is the 4th iteration of the same defect class — strongly suggests the agent's execution pattern is robust at 'first + last' positions of a bash block but unreliable at middle positions, regardless of the inline-vs-extracted form."
+  },
+
+  "estimated_blast_radius": "small-to-medium. Workspace-sync runs hourly; PROP-072 changes prompt instructions only. Bad case: post-deploy, 4c sentinel still fails — tinker observes within 1-3 cycles, rolls back via revert commit. Worst case: reorder breaks 4a's ability to commit (no precedent for this, but conservatively: rollback via revert + diagnostic). No data files touched; no schemas changed.",
+
+  "deployment_notes": "Implementation should be a SINGLE commit that edits monitor/prompts/workspace-sync.md only. Operator-approval pending. After deploy: verify with the verification_pattern grep; await 2-3 workspace-sync cycles; tinker Mode 1 audit confirms step4c sentinels resuming. Mark PROP-072 status=implemented after the audit confirms.",
+
+  "open_questions_for_operator": [
+    "Q1: Approve the primary reorder fix (Step 4c FIRST)? Or prefer secondary/tertiary backstops first?",
+    "Q2: Approve the secondary AGENT_NOTES self-attestation backstop too (add string 'step4c-not-invoked' when applicable)? This is a cheap defense-in-depth.",
+    "Q3: Approve the tertiary Step 0 startup-check (warn if prior sentinel >90min old)? Adds 5 lines to Step 0 pre-flight.",
+    "Q4: Should tinker self-apply this PROP, or wait for explicit operator commission via DIRECTIVE? (Per pattern, prompt-file changes have been operator-commissioned recently.)"
+  ]
+}
