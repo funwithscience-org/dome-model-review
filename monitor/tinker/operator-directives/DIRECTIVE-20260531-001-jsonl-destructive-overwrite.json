@@ -2,7 +2,7 @@
   "id": "DIRECTIVE-20260531-001",
   "filed_by": "operator-cowork-session",
   "filed_at": "2026-05-31T05:20:00Z",
-  "status": "pending",
+  "status": "completed",
   "priority": "high",
   "title": "Author PROP — workspace-sync universal-pusher destructive overwrite of append-only .jsonl files (data-loss vector confirmed 2026-05-30T09:11Z)",
   "background": "Tinker FND-02 from run 2026-05-31T02-40 surfaced a confirmed data-loss event: workspace-sync commit `3c62327` at 2026-05-30T09:11:20Z PUSHED FUSE's stale base of `monitor/tinker/queue-history.jsonl` over git, deleting the previous tinker run's row that had been written via the clone-and-push path. The deleted row was tinker's audit-trail metric for PROP-030 backlog-trend tracking; reconstructing it required re-running the metric computation.\n\nRoot cause: Universal-pusher mode (2026-04-26) lets workspace-sync push FUSE→git for runtime data files (data/, decisions/, applied-patches/, queue-history.jsonl, etc.) when FUSE has newer mtime. The smart_copy helper does mtime + content-hash guards but operates on a per-FILE basis — it doesn't model append-only semantics. So when:\n  (1) Tinker writes a new row to queue-history.jsonl via clone-and-push (git side now has N+1 rows)\n  (2) Some local agent or workspace-sync's previous cycle updates the FUSE-side queue-history.jsonl mtime without picking up the git-side row (e.g., touched via a different write path that bypassed the FUSE update)\n  (3) workspace-sync's next cycle sees FUSE-mtime > last-git-commit-time and triggers a push\nthe push overwrites git's N+1 rows with FUSE's N rows. The N+1-th row is silently lost.\n\nSame risk pattern affects:\n  - monitor/decisions/closure-ledger.jsonl (decider's closure audit trail)\n  - monitor/integrity/workspace-sync-skips.jsonl (direction-guard skip log)\n  - monitor/sloppytoppy/calibration-audits.jsonl (PROP-041 Phase 2 post-hoc audit)\n  - any future .jsonl in monitor/ classified as append-only-but-multi-writer.\n\nThis is functionally a regression of the 2026-05-21 workspace-sync mass-delete pattern, scoped to .jsonl files. PROP-051's A1-A4 safety gates catch large-blast-radius deletes (>50 files), but a single .jsonl-row loss flies under that threshold.",
@@ -27,11 +27,18 @@
   "context_pointers": {
     "tinker_finding": "monitor/tinker/run-2026-05-31T02-40 FND-02 (visible in run report)",
     "the_deletion_commit": "3c62327",
-    "related_props": ["PROP-022 (state file archives)", "PROP-051 (workspace-sync disaster gates)", "PROP-045 (anti-reversion guard)"],
+    "related_props": [
+      "PROP-022 (state file archives)",
+      "PROP-051 (workspace-sync disaster gates)",
+      "PROP-045 (anti-reversion guard)"
+    ],
     "smart_copy_implementation": "monitor/prompts/workspace-sync.md — search for 'smart_copy' to find the helper definition and per-file dispatch logic",
     "ownership_table": "build.js — the OWNERSHIP object (per CLAUDE.md File Ownership Rules). Adding a 'git-append-only' category here for option (iv) is the smallest-blast-radius design."
   },
   "expected_output": "monitor/tinker/proposals/PROP-065.json (or PROP-051-amendment-NNN.json) with: option chosen + rationale, smart_copy patch, file-list scope, idempotency contract, edge cases, verification path, optional Step 5 recovery summary.",
   "estimated_effort": "Mode 4 PROP-authoring + Mode 1 audit. ~30-40 min Opus.",
-  "priority_note": "HIGH because the .jsonl files affected are forensic gold (closure-ledger feeds revert scripts, queue-history feeds PROP-030 backlog trend, etc). Silent row-loss is the worst kind of data-loss bug — it doesn't trigger alarms and the missing row is only detected by tinker's audit-trail check on a later run. Each day this stays unfixed risks another silent loss event."
+  "priority_note": "HIGH because the .jsonl files affected are forensic gold (closure-ledger feeds revert scripts, queue-history feeds PROP-030 backlog trend, etc). Silent row-loss is the worst kind of data-loss bug — it doesn't trigger alarms and the missing row is only detected by tinker's audit-trail check on a later run. Each day this stays unfixed risks another silent loss event.",
+  "completed_at": "2026-05-31T05:35:00Z",
+  "completed_by_run": "tinker-2026-05-31T05-23",
+  "prop_id_authored": "PROP-065"
 }

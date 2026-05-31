@@ -1,0 +1,88 @@
+{
+  "tinker_run_id": "tinker-2026-05-31T05-23",
+  "run_ts": "2026-05-31T05:35:00Z",
+  "mode_selected": "directive_override",
+  "directive_id": "DIRECTIVE-20260531-001",
+  "modes_checked": "Skipped Mode 1-4 trigger evaluation per operator-directive priority rule. Three pending operator directives at run-start (all without issued_at, sort tied by priority/issued); operator wrote them in numbered sequence so DIRECTIVE-001 picked first. DIRECTIVE-002 (PROP-064 silent-skip) and DIRECTIVE-003 (cross-session clone cleanup) deferred to next runs per one-mode-per-invocation rule.",
+  "previous_followup": {
+    "fnd_01_prop_064_silent_skip": "STILL_BROKEN — DIRECTIVE-002 still pending; this run did not address it. Expected fix on next tinker run.",
+    "fnd_02_jsonl_destructive_overwrite": "ADDRESSED — PROP-065 authored this run, deny-list patch ready for operator review.",
+    "fnd_03_backlog_jump_14_to_67": "NEUTRAL — backlog at 67 today, unchanged from yesterday's snapshot. Velocity not re-computed (directive override). Re-evaluate on next BAU run.",
+    "fnd_04_prop_059_mech_a_bypasses": "FORWARDED — not tinker-actionable (operator/decider DIRECTIVE-20260526-002).",
+    "fnd_05_integrity_fuse_audit_false_positive": "DEFERRED — minor; not addressed this run."
+  },
+  "findings": [
+    {
+      "id": "FND-01",
+      "category": "data-loss",
+      "severity": "major",
+      "title": "PROP-065 authored — workspace-sync universal-pusher destructive overwrite of .jsonl files (DIRECTIVE-20260531-001 directive)",
+      "evidence": {
+        "directive": "monitor/tinker/operator-directives/DIRECTIVE-20260531-001-jsonl-destructive-overwrite.json (status flipped pending→completed this run)",
+        "prop_authored": "monitor/tinker/proposals/PROP-065-git-append-only-classification.json",
+        "files_in_scope": 15,
+        "confirmed_data_loss_events": 2,
+        "rows_irrecoverably_lost": 8,
+        "loss_event_1": {
+          "commit": "6be7216 at 2026-05-29T13:07:42Z",
+          "file": "monitor/tinker/queue-history.jsonl",
+          "rows_lost": 7,
+          "timestamps": ["2026-05-25T17:25:47Z", "2026-05-25T17:34:27Z", "2026-05-26T02:46:51Z", "2026-05-27T02:43:28Z", "2026-05-27T05:34:20Z", "2026-05-28T02:46:25Z", "2026-05-29T02:41:48Z"],
+          "discovered_this_run": true
+        },
+        "loss_event_2": {
+          "commit": "3c62327 at 2026-05-30T09:11:20Z",
+          "file": "monitor/tinker/queue-history.jsonl",
+          "rows_lost": 1,
+          "timestamps": ["2026-05-30T02:41:16.751Z"],
+          "discovered_previously": "tinker-2026-05-31T02-40 FND-02"
+        }
+      },
+      "diagnosis_summary": "Universal-pusher's smart_copy uses mtime + content-cmp + PROP-045 anti-reversion as defenses for FUSE→git pushes. For .jsonl files written exclusively via clone-and-push (producer-on-clone-pushes pattern), the FUSE replica is briefly stale between push and git→FUSE propagation. Any FUSE-mtime bump in that window triggers smart_copy to push FUSE-state back, deleting the new row. Anti-reversion SHOULD catch this (FUSE content matches historic git commit) but proved LEAKY: FND-02 event's FUSE sha1 e49c38f1... was byte-identical to commit 6be7216 yet anti-reversion did not fire. Root cause undiagnosed (clone depth edge case, bash variable lifetime, or anti-reversion bug — tracked as PROP-065 follow-up). Fix: deny-list, not backstop.",
+      "recommendation": "Apply PROP-065 patches: ~30 lines to monitor/prompts/workspace-sync.md, ~15 lines to build.js OWNERSHIP, ~20 lines to CLAUDE.md File Ownership Rules. Single commit. After deploy, tinker Mode 3 verifies via verification_pattern.",
+      "blast_radius": "~65 lines patch surface; behavior change limited to 15 .jsonl paths (FUSE→git push now refused); producer write paths unchanged; new skip-log reason code added (no schema break)."
+    },
+    {
+      "id": "FND-02",
+      "category": "backlog-trend",
+      "severity": "info",
+      "title": "Backlog steady at 67 open issues (no change from prev snapshot)",
+      "evidence": {
+        "open_issues_total": 67,
+        "open_status": 47,
+        "assigned_analyst": 9,
+        "oldest_open_days": 1.12,
+        "thresholds_firing": "none — all GREEN; closure velocity not recomputed this run (directive override)"
+      },
+      "diagnosis_summary": "Backlog unchanged from yesterday's 67. No new thresholds firing. PROP-030 metrics row appended to queue-history.jsonl via clone-and-push (which PROP-065 will then protect prospectively).",
+      "recommendation": "Re-evaluate velocity on next BAU run (Mode 3)."
+    },
+    {
+      "id": "FND-03",
+      "category": "deferred-directives",
+      "severity": "info",
+      "title": "Two operator directives remain pending after this run",
+      "evidence": {
+        "deferred": [
+          {"id": "DIRECTIVE-20260531-002", "priority": "high", "title": "PROP-064 silent-skip deeper investigation — divergence sentinel writes stopped at 2026-05-30T09:11Z despite hourly cycles"},
+          {"id": "DIRECTIVE-20260531-003", "priority": "medium", "title": "Cross-session dome-sync-clone cleanup — operator-side perms-limit investigation"}
+        ]
+      },
+      "diagnosis_summary": "Both share root cause space with PROP-065's FND-01 (workspace-sync trust/correctness). Per one-mode-per-invocation rule, deferred to subsequent tinker runs. Next tinker should pick DIRECTIVE-002 (also high priority, file-author bears directly on PROP-061/064/065 ecosystem).",
+      "recommendation": "Next tinker run: pick DIRECTIVE-20260531-002. DIRECTIVE-003 follows."
+    }
+  ],
+  "step_5_recovery_audit": {
+    "files_scanned": 15,
+    "events_found": 2,
+    "rows_lost_total": 8,
+    "reconstruction_decision": "DO NOT reconstruct. All lost rows are queue-history.jsonl metric snapshots derivable from individual report-*.json files, but tinker-recovery rows have already shifted the narrative; back-dated reconstruction would complicate temporal analyses. Mark as durable data-loss events in PROP-065 step_5_recovery_audit; defer to historical-analysis-time if ever needed.",
+    "other_at_risk_files_clean": "14 of 15 files show ZERO negative-net-delta workspace-sync commits in 60-day window. queue-history.jsonl was the sole victim (highest write frequency among the cohort)."
+  },
+  "claude_md_audit_skipped": "Directive override; full audit deferred to next Mode 3 run.",
+  "context_load_skipped": "Directive override; full audit deferred to next Mode 3 run.",
+  "cleanup_actions": [
+    {"action": "EOF clone removal", "path": "/tmp/tinker-clone", "status": "queued — performed in Cleanup step after push"}
+  ],
+  "next_run_focus": "Pick DIRECTIVE-20260531-002 (PROP-064 silent-skip diagnostic + PROP-066 authoring). DIRECTIVE-003 follows. After all three directives complete, return to Mode 3 BAU."
+}

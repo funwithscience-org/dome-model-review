@@ -1,57 +1,48 @@
-TINKER RUN: tinker-2026-05-31T02-40
+TINKER RUN: tinker-2026-05-31T05-23
 DATE: 2026-05-31
-MODE: 2 (Infrastructure & FUSE) — selected because 5 real-stale FUSE files detected
-STATUS: RED → recovered manually
+MODE: directive_override (DIRECTIVE-20260531-001)
+STATUS: PROP-065 authored
 
-== KEY FINDINGS ==
+== WHAT RAN ==
+Picked DIRECTIVE-20260531-001 (HIGH, jsonl-destructive-overwrite) as primary work.
+Skipped Mode 1-4 evaluation per operator-directive priority rule.
+DIRECTIVE-002 and DIRECTIVE-003 still pending — next tinker runs handle them.
 
-FND-01 (MAJOR) — PROP-061/064 git→FUSE sync not firing
-  workspace-sync agent runs hourly + pushes per-cycle, but the divergence sentinel
-  (monitor/integrity/git-to-fuse-divergence-*.json) has not been written since
-  2026-05-30T09:11:33Z (~17.5h gap). Five FUSE files were stale this morning:
-    - data/wins.json
-    - data/sections.json
-    - docs/index.html
-    - monitor/decisions/open-issues.json
-    - monitor/curmudgeon/priority-queue.json
-  Recovery this run: `node build.js sync-workspace` from clone — all 5 recovered.
-  Root cause unclear. PROP-064 was authored to fix exactly this silent-skip path
-  (PRE_PULL_SHA signal from Step 1), but it appears not to be working in practice.
-  RECOMMEND: Mode 4 next run — PROP authoring + workspace-sync prompt investigation.
+== KEY FINDING ==
 
-FND-02 (MAJOR) — Universal-pusher destructive overwrite of append-only .jsonl
-  workspace-sync commit 3c62327 (2026-05-30T09:11:20Z) deleted yesterday's
-  tinker entry from queue-history.jsonl by pushing FUSE's stale base over git.
-  Pattern: FUSE-newer-mtime triggers push, but FUSE was missing the row that
-  was written by the previous tinker via clone-and-push. Same risk affects
-  closure-ledger.jsonl, workspace-sync-skips.jsonl, calibration-audits.jsonl.
-  RECOMMEND: Mode 4 PROP — smart_copy should reject deletes from .jsonl files
-  or merge instead of replace.
+FND-01 (MAJOR, addressed) — PROP-065 authored
+  Confirmed 8 rows lost from monitor/tinker/queue-history.jsonl across 2 events:
+    - 6be7216 at 2026-05-29T13:07Z — 7 rows lost (NEW discovery this run)
+    - 3c62327 at 2026-05-30T09:11Z — 1 row lost (yesterday's FND-02)
+  Root cause: workspace-sync's universal-pusher smart_copy pushes FUSE-state
+  over git for .jsonl files written via clone-and-push when FUSE briefly
+  lacks the row just pushed. PROP-045 anti-reversion is LEAKY for this class
+  (FND-02's FUSE content was byte-identical to commit 6be7216 yet anti-
+  reversion did not fire — root cause undiagnosed, tracked as PROP-065
+  follow-up).
+  Recommendation: deny-list, not backstop. Add GIT_APPEND_ONLY category to
+  workspace-sync.md + build.js OWNERSHIP + CLAUDE.md. 15 .jsonl files in
+  scope; refuse FUSE→git push unconditionally; rely on Step 4c (PROP-061/064)
+  for git→FUSE propagation.
+  Patch surface: ~65 lines. Behavior change limited to the 15 paths.
 
-FND-03 (INFO) — Backlog jumped 14→67 overnight
-  47 new ISSes from HOL reviews + EXP-450/451 hole-finding + decider's CA_NONE
-  critical fix at 18:04Z. Velocity 172 new vs 97 closed over 7d (net -75).
-  Healthy: closures are accelerating (+58 vs yesterday); oldest age 0.5d; no
-  threshold tripped. Re-evaluate in 24h.
-
-FND-04 (CRITICAL, not-tinker-actionable) — 4 PROP-059 Mech-A bypasses
-  Forwarded from integrity 2026-05-31T01-15. ISS-2295/2296/2297/2298 closed by
-  decider self-verify without verification_pattern. Operator/decider-side
-  follow-up via DIRECTIVE-20260526-002 (pre-existing).
-
-FND-05 (MINOR) — Integrity FUSE-staleness audit false-positive
-  analyst-mode5-prospective.md flagged as stale, but it's a FUSE-orphan
-  (deleted in git, lingers in FUSE — HTTP 404 from raw.githubusercontent.com).
-  Audit should HTTP-status-check before md5-comparing 404 body bytes.
+== STEP 5 RECOVERY AUDIT ==
+- 15 at-risk .jsonl files scanned (60-day window).
+- queue-history.jsonl: 2 destructive overwrites, 8 rows lost. DO NOT
+  reconstruct — tinker-recovery rows already supersede; back-dated rows
+  would complicate temporal analyses.
+- 14 other files: ZERO negative-net-delta commits. Structurally vulnerable
+  but not yet hit (lower write frequency).
 
 == STATE AT END OF RUN ==
-- FUSE: all 5 real-stale files recovered via sync-workspace
-- queue-history.jsonl: new entry appended with full backlog metrics
-- DIRECTIVE-20260525-003: confirmed status=completed in git (was stale=pending in FUSE before recovery)
-- Backlog: 67 open (47 'open', 9 'assigned-analyst', 10 'blocked-on-curmudgeon', 1 'pending-human')
-- Project disk: 307MB (under 500MB warning threshold)
+- DIRECTIVE-20260531-001: status=completed, prop_id_authored=PROP-065
+- PROP-065 authored: monitor/tinker/proposals/PROP-065-git-append-only-classification.json
+- queue-history.jsonl row appended via clone-and-push (which PROP-065 will
+  protect prospectively)
+- Backlog: 67 open (unchanged from yesterday)
+- DIRECTIVE-002 and DIRECTIVE-003 still pending — next runs
 
 == NEXT-RUN FOCUS ==
-Mode 4 PROP authoring for FND-01 + FND-02. Both are infra integrity issues with
-clear technical scope. FND-05 is a small drive-by. Watch backlog (FND-03) for
-two-consecutive-negative-velocity escalation per PROP-030.
+Pick DIRECTIVE-20260531-002 (PROP-064 silent-skip deeper investigation +
+PROP-066 authoring). Same code area as PROP-065 — workspace-sync.md
+Step 4c. DIRECTIVE-003 follows. After all three: return to Mode 3 BAU.
