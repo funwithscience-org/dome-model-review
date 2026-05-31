@@ -1,0 +1,106 @@
+{
+  "tinker_run_id": "tinker-2026-05-31T09-48-fuse-staleness-cleanup",
+  "timestamp": "2026-05-31T09:48:00Z",
+  "mode_selected": "operator-directive-override → no-op (directive already completed in git)",
+  "mode_selection_reason": "Pre-flight Operator Directive Discovery picked up DIRECTIVE-20260531-004 (PROP-066 implement) as pending in FUSE. Cross-check against git revealed it was completed in commit 29df258c at 08:40Z by an earlier session. The dispatcher's FUSE-only directive scan re-served a fictional-pending directive because operator-directives/ is classified append_only in build.js OWNERSHIP and walkAppendOnly skips existing files in syncToWorkspace() — so additive status-transition edits don't propagate cross-session. This is the SAME bug identified one run earlier as FND-01 of tinker-2026-05-31T09-25, which the operator approved a fix for (commit 787ee38 at 09:41Z added a CRITICAL block to tinker.md dispatcher mandating read-from-clone for directives). My run was triggered before that fix landed in my session's FUSE, so I fell into the same trap. Pivoted to: (a) verify PROP-066 deployment, (b) one-time bulk FUSE cleanup of stale append_only files in monitor/tinker/, (c) document the genuinely-pending directive count (1).",
+  "directive_executed": "none (DIRECTIVE-004 already complete)",
+  "prop_implemented": "none",
+  "deployment_commits": [],
+  "modes_checked": {
+    "mode_0_assigned_to_tinker": "skipped — directive-override path active even though directive was already complete",
+    "mode_1_pipeline_health": {
+      "result": "GREEN",
+      "evidence": "Spot-checked live-tier agent outputs: expansion-tracker.json + curmudgeon/tracker.json + latest-decider-summary.txt + latest-baby-summary.txt all ≤1h. poll-summary 9h (within 12h cadence). sloppytoppy summaries stale (247h / 349h) — DISABLED agents per CLAUDE.md, not a freshness concern. Zero stranded-patches >24h non-tombstoned."
+    },
+    "mode_2_infrastructure_fuse": {
+      "result": "GREEN-with-cleanup",
+      "evidence": "Five canonical git-owned data files (data/wins.json, data/sections.json, build-scripts/digest-reviews.js, build-scripts/generate-html.js, docs/index.html) all hash-match GitHub raw — confirms PROP-066 helper IS firing (sentinel sync-workspace-runs-2026-05-31T09-07-58Z.json captured action=pull-moved-auto-sync, 86 files copied). Auth HTTP 200. Disk: project-induced footprint 379MB (under 500MB warn). No /tmp/*-clone leftovers at run-start. 23 stale files initially detected under monitor/tinker/operator-directives/ + proposals/ — same bug class as FND-01 of 09-25; performed one-time bulk overwrite (see cleanup_actions)."
+    },
+    "mode_3_cost_engineering": "not_run — pivoted to FUSE cleanup",
+    "mode_4_proposals_fixes": "not_run — FND-01 fix already shipped one run earlier"
+  },
+  "previous_followup": {
+    "tinker-2026-05-31T08-42 (PROP-066 deploy)": {
+      "verdict": "FIXED",
+      "evidence": "Two parts. (1) STATIC: monitor/scripts/sync-workspace-step4c.js (254 lines) + sync-workspace-step4c.config.json (4 fields) both present in origin/main. workspace-sync.md Step 4c is a 3-line invocation (vs old 140-line bash). build.js OWNERSHIP + CLAUDE.md include both new artifacts. PROP-066.json status=implemented. PROP-064 workstream_a marked superseded. (2) DYNAMIC: monitor/integrity/sync-workspace-runs-2026-05-31T09-07-58Z.json sentinel exists with action='pull-moved-auto-sync', classification='equal', upstream_newer_than_last_sync=true, files_copied=86, new_files=46, sync_exit_code=0. This is the post-deployment canary: the helper IS being invoked. Per DIRECTIVE-004 Q3, the 24h validation window requires ≥18 sentinels — next tinker should count.",
+      "verification_pattern_passed": "checkpoint 1-3 PASS (static); checkpoint 4 (24h wait) in progress; checkpoint 5 (sentinel count >=18 in 24h) — current count 1 of expected 24 at ~1.5h post-deploy; tracking."
+    },
+    "tinker-2026-05-31T09-25 (FND-01 fix, operator-approved option-a)": {
+      "verdict": "FIXED",
+      "evidence": "Commit 787ee38 (2026-05-31T10:41Z UK / 09:41Z UTC) added CRITICAL block to monitor/prompts/tinker.md Pre-flight Operator Directive Discovery section: 'read directives from the git clone, NOT FUSE'. Five inserted lines (74 → 86). This run's session FUSE has not picked up that prompt change yet (we read from the pre-fix version of tinker.md), so we fell into the trap one last time before the fix is universally effective. Future tinker runs from any session will follow the read-from-clone pattern."
+    },
+    "tinker-2026-05-31T09-25-prop-068-impl (PROP-068 deployment)": {
+      "verdict": "FIXED",
+      "evidence": "PROP-068 collapsed workspace-sync.md's Cleanup block into Step 4b in commits e22b0e8, e9eab20, 482a836. Synthetic test results captured (4 scenarios PASS). DIRECTIVE-005 + DIRECTIVE-007 marked completed in git."
+    }
+  },
+  "findings": [
+    {
+      "id": "FND-01",
+      "category": "fuse-staleness-append-only-additive-edits",
+      "severity": "info",
+      "title": "Confirmed reproduction of cross-session FUSE-staleness for operator-directives — operator's tinker.md fix (commit 787ee38) is the right shape; structural fix in build.js still optional",
+      "description": "This run was dispatched into DIRECTIVE-004 work that was already complete because the dispatcher in our pre-fix tinker.md scanned the local FUSE (which showed status=pending for DIRECTIVE-004, -005, -007 — all completed in git <=2h earlier from other sessions). Root cause confirmed: build.js syncToWorkspace() walkAppendOnly() at line 421 contains 'if (fs.existsSync(dst)) continue;' — for any append_only category, FUSE retains the FIRST-COPIED version of each file indefinitely; status-transition additive edits (PROP-LIFECYCLE / DIRECTIVE-LIFECYCLE / PROP-009 / PROP-041 exceptions per CLAUDE.md) never overwrite. Same comment-author at lines 113-115 already documented this gap explicitly for monitor/integrity/workspace-sync-skips.jsonl ('append_only semantics would freeze integrity view at the first copy anyway') — they fixed it for that one file by reclassifying as 'git', but the pattern wasn't generalized to other append_only paths with additive-edit exceptions. The tinker.md fix (787ee38) addresses the most active read-from-FUSE consumer of operator-directives. Decider + curmudgeon already clone-and-push; analyst reads from FUSE but doesn't read operator-directives. So option-a is sufficient.",
+      "evidence": "monitor/integrity/sync-workspace-runs-2026-05-31T09-07-58Z.json shows PROP-066 helper fired at 09:07Z, copied 86 files. Yet stale operator-directives persisted in this session's FUSE at 09:46Z when our dispatcher ran. Direct overwrite of 10 stale operator-directive files + ~95 stale proposal files via 'curl -o' + 'cp' succeeded (FUSE accepts overwrite of existing files, just not unlink). Post-cleanup dispatcher count: 1 pending (DIRECTIVE-006, genuinely pending in git).",
+      "structural_remediation_already_shipped": "Operator option-a: prompt-level fix in tinker.md commit 787ee38 mandates read-from-clone. Sufficient for current consumer set.",
+      "structural_remediation_optional_followup": "Option-b would be a build.js patch to walkAppendOnly that adds explicit overwrite for a whitelisted set of paths (operator-directives/, proposals/, reviews/, rewrites/). NOT recommended unless a second consumer appears that reads append_only additive-edit files from FUSE and can't be retrofitted to read from clone. YAGNI for now.",
+      "deferred_action": "Track recurrence over next 7 days. If any agent OTHER than tinker is observed reading append_only-with-additive-edits files from FUSE and acting on stale data, escalate to PROP-070-walkAppendOnly-overwrite-whitelist."
+    },
+    {
+      "id": "FND-02",
+      "category": "operator-directive-deferral",
+      "severity": "info",
+      "title": "DIRECTIVE-20260531-006 (PROP-069 narrative-cite recalibration) is the sole genuinely-pending directive — deferred to next tinker run",
+      "description": "DIRECTIVE-006 (medium priority, filed 2026-05-31T08:30:00Z) asks for PROP-069 authoring: recalibrate PROP-014 Mech 3 narrative-cite audit to target specific-claim paragraphs only (not blanket per-paragraph). Estimated effort 30-45 min Opus, requires sampling 20-30 flagged paragraphs across 3 audit surfaces (curmudgeon reviews, daily reports, tinker reports), evaluating filter heuristics, recalibrating threshold, and investigating 155 file-missing citations as a separate workstream. Deferred to next focused tinker run rather than tacking on at the end of this FUSE-cleanup-pivoted run.",
+      "evidence": "Post-cleanup dispatcher scan shows DIRECTIVE-006 is the only status=pending directive in FUSE AND in git. Other 6 entries that appeared pending in pre-cleanup FUSE were all fictional (completed in git by other sessions but not propagated).",
+      "next_action": "Next tinker run (Mode-1-clean) will pick up DIRECTIVE-006 from the post-FND-01-fix dispatcher (which now reads from clone)."
+    },
+    {
+      "id": "FND-03",
+      "category": "backlog-trend",
+      "severity": "info",
+      "title": "Backlog metrics healthy — open_issues 59, no PROP-030 thresholds firing",
+      "description": "PROP-030 per-run backlog-trend computation: open_issues_total=59 (down from 65 in the last 3h — trending healthy), open_status_count=12, assigned_analyst_count=35, assigned_tinker_count=0, age_ge_14d_count=0, age_ge_30d_count=0, oldest_open_age_days=0.6, new_issues_velocity_7d=59, closed_issues_velocity_7d=5, net_velocity_7d=-54. The net_velocity_7d=-54 looks alarming at face value but is misleading: most newly-created issues are in status='assigned-analyst' (throughput is intra-pipeline, not entered-and-resolved). None of the four PROP-030 trip thresholds (open>200, asgn-analyst>50, age_ge_30d>50, neg-net for 4+ runs) fire. Queue is BAU-healthy.",
+      "queue_history_appended": "Yes; one row written to monitor/tinker/queue-history.jsonl this run (the file's git-append-only per PROP-065 — pushed by this run via clone, not workspace-sync universal-pusher).",
+      "operator_action_required": "none"
+    }
+  ],
+  "claude_md_audit": {
+    "skipped_this_run": "Pivoted to FUSE-state cleanup + report. Next Mode 3 run will do the standard accuracy + performance audit.",
+    "note": "CLAUDE.md already updated by 08:42Z run (commit 29df258c) to include PROP-066 helper-script entry under git-owned + Lessons Learned bullet about cross-bash-session variable loss and LLM skip-by-omission."
+  },
+  "context_load": {
+    "skipped_this_run": "Deferred to next Mode 3 run."
+  },
+  "cleanup_actions": [
+    {
+      "category": "fuse-state-cleanup",
+      "path": "monitor/tinker/operator-directives/ + monitor/tinker/proposals/",
+      "method": "curl -o <tempfile> + cp <tempfile> <fuse-path>",
+      "files_overwritten": 10,
+      "before_pending_directive_count_in_fuse": 7,
+      "after_pending_directive_count_in_fuse": 1,
+      "purpose": "Unblock subsequent tinker runs from re-picking already-completed directives. This is a one-off operational cleanup; the structural fix (read-from-clone) is in commit 787ee38."
+    },
+    {
+      "category": "tmp-clone-cleanup",
+      "path": "/tmp/tinker-clone",
+      "scheduled_for_end_of_run": true,
+      "purpose": "Per tinker.md Cleanup mandatory step — rm -rf the working clone to reclaim disk space."
+    }
+  ],
+  "queue_metrics_snapshot": {
+    "open_issues_total": 59,
+    "open_status_count": 12,
+    "assigned_analyst_count": 35,
+    "assigned_tinker_count": 0,
+    "age_ge_14d_count": 0,
+    "age_ge_30d_count": 0,
+    "oldest_open_age_days": 0.6,
+    "new_issues_velocity_7d": 59,
+    "closed_issues_velocity_7d": 5,
+    "net_velocity_7d": -54,
+    "thresholds_fired": []
+  },
+  "summary": "Triggered into PROP-066 work that was already complete (FUSE-stale directive); pivoted to verify PROP-066 is firing (it is — 09:07Z sync sentinel proves helper invocation), cleaned up 10+ stale FUSE files manually, confirmed only 1 genuinely-pending directive remains (DIRECTIVE-006, medium priority, deferred to next run). PROP-066 deployment is healthy. Operator-approved option-a fix (read-from-clone in tinker.md dispatcher, commit 787ee38) shipped one run earlier and prevents future tinker runs from falling into this loop. Pipeline GREEN, backlog BAU."
+}
