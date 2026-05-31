@@ -1,0 +1,463 @@
+{
+  "prop_id": "PROP-069",
+  "title": "Recalibrate PROP-014 Mech 3 narrative-cite audit — target specific-claim paragraphs only (not blanket per-paragraph), tighten citation regex to suppress malformed prose-as-citation matches, auto-resolve bare-filename citations, recalibrate acceptance threshold from 0% to <=15% claim-uncited.",
+  "status": "design-pending-operator-review",
+  "priority": "medium",
+  "author": "tinker",
+  "authored_at": "2026-05-31T10:00:00Z",
+  "authored_by_run": "tinker-2026-05-31T09-58",
+  "source_directive": "DIRECTIVE-20260531-006-recalibrate-narrative-cite (operator filed 2026-05-31T08:30Z medium priority; verbatim intent capture: 'that wasn't the intent of the directive. it was more about making sure that specific claims had backing.').",
+  "supersedes": null,
+  "relationship_to_prop_014": "REFINEMENT, NOT SUPERSESSION. PROP-014's three mechanisms (Mech 1 write-verify, Mech 2 read-verify, Mech 3 narrate-cite) all stand. PROP-014-amendment-001 Q3 set Mech 3's three-stage measurement framework (Stage 1 paragraph-citation gate, Stage 2 anchor-match, Stage 3 LLM-as-judge sampling). PROP-069 recalibrates Stage 1's TARGETING (which paragraphs count as in-scope) and THRESHOLD (acceptable claim-uncited rate), AND adds two mechanical fixes to Stage 2 that the post-rollout audit revealed (over-permissive citation regex; missing path-resolution for bare filenames). Stage 3 remains documented-but-unimplemented per the original design. PROP-014.json's amendment_history array should receive a new entry pointing at PROP-069 (additive edit per the already-established amendment pattern, see CLAUDE.md File Ownership Rules > DIRECTIVE-LIFECYCLE additive-edit exception's pattern).",
+
+  "executive_summary": "PROP-014 Mechanism 3's narrative-cite audit (monitor/scripts/audit-narrative-citations.js) has been running observational-only every workspace-sync cycle since ~2026-05-02. The 2026-05-31T02:07Z audit shows 3,668 of 4,039 multi-sentence paragraphs uncited (91% uncited rate), with PROP-014-amendment-001 Q3's acceptance threshold set at 0% uncited in the post-rollout 14-day window. Reality is ~30 days post-rollout, 91% uncited, no convergence in sight. The operator-confirmed reframe (this directive): the original intent of Mech 3 was making sure that **specific claims had backing**, not enforcing blanket per-paragraph citation discipline. The current implementation conflates 'paragraph length' with 'claim-density', producing a ~50% false-positive rate against the actual intent. PROP-069 closes that gap with three independent changes: (1) **Targeting filter**: drop two operationally-defined surfaces (daily-report.pipeline_status.* and daily-report.recommended_actions[].action) from audit scope; keep curmudgeon.reviews and tinker.report.findings; apply a paragraph-level claim-shape filter inside tinker.report.findings only. (2) **Citation-regex hardening**: tighten the pattern to require path-start positioning, eliminating ~42% of the current 155 file-missing citations that are prose-with-a-trailing-filename mis-captures rather than real citations. (3) **Bare-filename auto-resolution**: when a citation references a known well-known filename (open-issues.json, sections.json, priority-queue.json, etc.) without its canonical directory prefix, auto-resolve to the canonical path before checking existence; eliminates ~23% of file-missing. Threshold recalibrates from 0% to <=15% claim-uncited; two new metrics added (citation-resolve-rate >= 85%, file-missing flat-count <= 20). PROP-069 is PROPOSE ONLY (status=design-pending-operator-review). Implementation lands in a follow-up directive after operator review.",
+
+  "problem_statement": {
+    "operator_intent_verbatim": "that wasn't the intent of the directive. it was more about making sure that specific claims had backing.",
+    "current_implementation_behavior": "Stage 1 paragraph gate flags every multi-sentence paragraph in four audited surfaces as 'needs a citation', regardless of whether the paragraph carries a state-bearing claim worth citing. The acceptance threshold (0% uncited) cannot be met because most paragraphs in those surfaces are operational narration or imperative recommendations, not specific claims. Net effect: a perpetually-red soft-complaint line in every workspace-sync cycle's run report that the operator and tinker have both learned to filter out, defeating the signal value of Mech 3.",
+    "current_state_2026_05_31": {
+      "audit_report": "monitor/integrity/narrative-cite-audit-2026-05-31T0207Z.json",
+      "files_audited": 1636,
+      "paragraphs_total": 4039,
+      "paragraphs_uncited": 3668,
+      "uncited_rate_pct": 91.0,
+      "citations_total": 415,
+      "citations_with_anchor": 264,
+      "citations_bogus_anchor": 80,
+      "citations_file_missing": 155,
+      "fully_uncited_curmudgeon_files": 545,
+      "fully_uncited_curmudgeon_rate_pct": 85.2
+    },
+    "operator_examples_should_NOT_flag_currently_passes_through_since_workspace_sync_agent_notes_not_audited": [
+      "Routine sync. 49 mtime-guard skips (all normal: FUSE stale vs git). 1 anti-reversion skip (attention-inbox.json). Mech1: 8 still-pending, 0 flipped. Mech3 soft-complaint: uncited=3652 bogus=80. Deploy clean.",
+      "soft-complaint: narrative-cite uncited=3658 bogus=80. Routine: 53 skips all mtime-guard (git newer). 8 still-pending verifications (pattern-failed). Deploy clean."
+    ],
+    "operator_examples_SHOULD_flag_with_target_citations": [
+      {
+        "paragraph": "WIN-038 was integrated 5/29 after the 7-day window closed; the dome claimed accuracy of 92.4% across N=412 predictions.",
+        "should_cite": [
+          "data/wins.json:WIN-038",
+          "dome predictions page snapshot"
+        ],
+        "reason": "Specific numerical claim about dome data (92.4% across N=412)"
+      },
+      {
+        "paragraph": "Curmudgeon held the integration because EXP-451's kernel_of_truth contradicts sections.json's existing Section 3.2.1 framing.",
+        "should_cite": [
+          "monitor/analyst/expansions/EXP-451.json:kernel_of_truth",
+          "data/sections.json"
+        ],
+        "reason": "Specific cross-artifact relationship — EXP-451 vs Section 3.2.1"
+      },
+      {
+        "paragraph": "The dome added 17 new predictions in the past 24h; 3 are restatements of WIN-035 with different wording.",
+        "should_cite": [
+          "data/predictions.json",
+          "data/wins.json:WIN-035"
+        ],
+        "reason": "Specific factual count + comparison to a named WIN"
+      }
+    ]
+  },
+
+  "step_1_sampling_methodology": {
+    "approach": "Read the full 2026-05-31T02:07Z audit report (1.9 MB), partitioned uncited paragraphs by surface_name, sampled the top sample_uncited array per file (3 paragraphs/file in the source data) to construct a representative sample of 3,445 uncited paragraphs across 4 surfaces. Built intuition for which paragraphs the current audit catches that the operator's reframe says shouldn't be flagged.",
+    "sample_size_per_surface": {
+      "daily-report.pipeline_status": 920,
+      "daily-report.recommended_actions[].action": 819,
+      "curmudgeon.reviews.kernel_of_truth+our_argument_summary": 1614,
+      "tinker.report.findings[].description": 92
+    },
+    "qualitative_findings": [
+      "daily-report.pipeline_status is overwhelmingly operational narration: 'Operational. 6 consecutive quiet polls.' / 'QUIET — No substantive changes detected on dome site.' / 'Phase 1 complete (67/67 WINs reviewed).' A small minority of these paragraphs reference entity IDs (e.g., 'EXP-003 complete (SEC-4.5.9 rewritten...)') but the verbs are pipeline-status verbs (complete, reviewed, pending), not claim-bearing verbs (refute, contradict, support).",
+      "daily-report.recommended_actions[].action is dominantly imperative ('Apply patches...', 'Rewrite WIN-059 detail_evidence: add Kill-Shot Test 6 self-failure (39.9% error)...', 'Strengthen WIN-064: add S-wave shadow...'). About 40% of these imperatives DO reference specific scientific evidence (DOIs, datasets, percentage error claims) that should arguably cite their source, but the prose shape is 'do X' not 'X is true', so the citation pressure here is different in kind from claim-bearing prose.",
+      "curmudgeon.reviews.kernel_of_truth+our_argument_summary is genuinely claim-dense. ~74% of these paragraphs match a claim-shape heuristic (specific number + scientific term, OR named scientific reference, OR dome-model reference). The remaining ~26% are logical-inference paragraphs ('Being internally self-consistent in a hypothetical cavity does not make the cavity real. The aetheric medium is not independently confirmed.') that may legitimately lack an obvious file-citation target. Field-level data: 545/640 = 85% of curmudgeon review files have ZERO citations anywhere in their kernel_of_truth or our_argument_summary fields.",
+      "tinker.report.findings[].description is mixed. Tinker findings are by definition about pipeline state, and many are operational ('Decider no-op rate ~40% over the last 10 runs', 'Social agent ran 4 times today (schedule says daily). Run 4 was pure waste'). A small minority are claim-shaped (specific numerical assertion about a measurable pipeline quantity that could cite a closure-ledger entry or prior tinker report). Sampling shows ~6% claim-shape rate."
+    ]
+  },
+
+  "step_2_proposed_targeting_filter": {
+    "design_principle": "Combine surface-level filtering (cheap, high-precision) with within-surface paragraph-shape filtering only where the surface itself is mixed (tinker findings). This keeps the implementation mechanically simple while honoring the operator's intent.",
+    "stage_1A_surface_negative_drop_entirely": {
+      "rationale": "These surfaces are operational/imperative by design. Their paragraphs do not assert state about the dome model or scientific findings; they narrate pipeline progress or instruct downstream consumers. No structural reframe makes them claim-shaped.",
+      "surfaces_to_drop": [
+        {
+          "surface_name": "daily-report.pipeline_status",
+          "fields": "pipeline_status.{poller,analyst,curmudgeon,decider,integrity,tinker,social,workspace-sync,sloppytoppy-score,sloppytoppy-rewrite,...}",
+          "current_audit_population": "1,180 paragraphs (1,010 uncited)",
+          "drop_impact": "-1,010 uncited"
+        },
+        {
+          "surface_name": "daily-report.recommended_actions[].action",
+          "fields": "recommended_actions[].action",
+          "current_audit_population": "1,048 paragraphs (932 uncited)",
+          "drop_impact": "-932 uncited",
+          "tradeoff": "About 40% of recommended_actions paragraphs DO mention specific scientific evidence that arguably should cite its source. PROP-069 accepts this tradeoff: the imperative-prose shape ('Add S-wave shadow', 'Verify Gutenberg DOI') is not the prose shape Mech 3 was designed for — Mech 3 targets state assertions ('X is true because Y'), not instructions ('do Z'). The arguable miss here is recovered by Mech 1 and Mech 2 (which check actual patch landing in main) and by curmudgeon review (which audits the actual content of WIN updates)."
+        }
+      ]
+    },
+    "stage_1B_surface_positive_audit_all_paragraphs": {
+      "rationale": "These surfaces are claim-dense by design. Every multi-sentence paragraph is presumed claim-shaped unless excluded by Stage 1D's within-surface filter (and curmudgeon reviews have no within-surface filter — every paragraph counts).",
+      "surfaces_to_keep": [
+        {
+          "surface_name": "curmudgeon.reviews.kernel_of_truth+our_argument_summary",
+          "fields": "kernel_of_truth.description, kernel_of_truth.why_it_doesnt_save_claim, our_argument_summary",
+          "current_audit_population": "1,694 paragraphs (1,614 uncited)",
+          "drop_impact": "0 — kept",
+          "behavior_signal": "After Stage 1A + 1B, the curmudgeon 1,614 uncited will be the dominant remaining signal. This is the REAL claim-citation gap — 85% of curmudgeon review files have zero citations anywhere. The recalibration does not fix this; it reveals it. The implementation patch to curmudgeon.md to add an inline citation reminder (and a curmudgeon-specific citation-checklist in monitor/prompts/reference/state-verification.md) is OUT OF SCOPE for PROP-069 — that is a follow-up behavioral fix, not a measurement fix."
+        }
+      ]
+    },
+    "stage_1C_surface_positive_with_within_surface_filter": {
+      "rationale": "tinker.report.findings[].description is mixed (some claim-shaped, mostly operational). Apply a paragraph-level claim-shape filter so only state-bearing findings are flagged.",
+      "surfaces_to_filter": [
+        {
+          "surface_name": "tinker.report.findings[].description",
+          "fields": "findings[].description",
+          "current_audit_population": "117 paragraphs (112 uncited)",
+          "within_surface_filter": "Flag only if the paragraph fires the claim-shape heuristic defined in Stage 1D below. Additionally: ONLY audit findings with severity in {moderate, major, critical, operator_escalation} — info-level findings are observational, not state-bearing.",
+          "drop_impact": "-86 (sampled fire-rate 6.5%, so ~6 of 112 would remain flagged)"
+        }
+      ]
+    },
+    "stage_1D_claim_shape_paragraph_filter": {
+      "rationale": "A single, structurally-simple heuristic that captures the operator's notion of 'specific claim' without descending into NLP. Fires if ANY of (a)/(b)/(c) match.",
+      "definition_pseudo_regex": {
+        "ENTITY_ID": "/\\b(WIN|EXP|SEC|HOL|PRED)-[\\d.]+\\b/",
+        "CLAIM_VERB": "/\\b(refute[ds]?|contradicts?|contradicted|supports?|fails?|fail(?:ed|ing)|succeed[sing]*|explain[s]?|matches?|claim[s]?|predict[s]?|measure[ds]?|observe[ds]?|shows?|demonstrate[ds]?|require[ds]?|prove[ds]?|disprove[ds]?|conflict[s]?|agree[ds]?|disagree[ds]?|imply|implies)\\b/i",
+        "SPECIFIC_NUM_WITH_UNITS": "/\\b\\d+(\\.\\d+)?\\s*(%|σ|sigma|nT|μGal|km|m\\/s|degrees?|deg|N=\\d|n=\\d)/",
+        "SCI_OR_DOME_REF": "/\\b(DOI|et\\s+al|paper|study|dataset|firmament|aether|cavity|geomag|seismic|spectra|spectrum|atmosphere|halo|cluster|CMB|CMBR|H\\(r\\)|B\\(r\\)|dome|ECM|sphere|V51)\\b/i",
+        "NAMED_LIT": "/\\b(Mohe|Christchurch|El Gordo|Halloween|Gutenberg|3C\\d+|NGC\\d+|HD\\d+|Hartland|Ebro|Tesla|wolfSSL)\\b/i"
+      },
+      "fire_conditions": [
+        {
+          "id": "(a)",
+          "rule": "ENTITY_ID matches AND CLAIM_VERB matches in the same paragraph",
+          "intent": "Entity-bearing assertion: 'EXP-451 contradicts Section 3.2.1' fires; 'EXP-451 pending' does not."
+        },
+        {
+          "id": "(b)",
+          "rule": "SPECIFIC_NUM_WITH_UNITS matches",
+          "intent": "Quantitative empirical claim: '92.4% across N=412' fires; '67/67 WINs reviewed' does not (no units; the empirical-context distinguishing rule excludes pipeline counts)."
+        },
+        {
+          "id": "(c)",
+          "rule": "SCI_OR_DOME_REF matches OR NAMED_LIT matches",
+          "intent": "Reference to dome-model components, scientific literature, or named experimental events: 'The H(r) exponential cavity, the B(r) two-pole dipole, the 1.67 nT/μGal coupling constant' fires (multiple firings); 'PROP-009 enforce mode' does not (PROP is pipeline-management vocab not in SCI_OR_DOME_REF)."
+        }
+      ],
+      "negative_filter_not_added_intentionally": "Earlier filter variants considered a NEGATIVE pipeline-vocabulary regex to suppress paragraphs that contain ONLY pipeline-status words. Decision: not needed because Stage 1A already drops the surfaces where pipeline-status prose lives (daily-report.pipeline_status). The remaining surfaces (curmudgeon reviews + tinker findings>=moderate) don't have a meaningful population of pipeline-only prose — adding a negative filter adds complexity for marginal benefit."
+    },
+    "stage_1E_future_proofing_excluded_by_default": {
+      "rationale": "When new declared-state surfaces are added to the audit, they must default to EXCLUDED unless their data shape carries state-bearing claims. Operator decision required to add a surface.",
+      "explicitly_excluded_surfaces_for_future_expansion": [
+        "workspace-sync agent_notes (operational narration; the surface operator's complaint examples come from)",
+        "Any 'narrative' or 'notes' field on a per-run report (default operational until proven otherwise)"
+      ],
+      "explicitly_in_scope_for_future_expansion_consideration": [
+        "analyst expansions/*.json kernel_of_truth (claim-dense by design, parallel to curmudgeon kernel_of_truth)",
+        "analyst new-wins/*.json kernel_of_truth (claim-dense)",
+        "tinker proposals/PROP-*.json executive_summary + problem_statement (claim-dense by design)"
+      ]
+    }
+  },
+
+  "step_2_sample_evaluation": {
+    "methodology": "Ran the Stage 1A+1B+1C+1D filter against the 3,445-paragraph sample. Computed survival rate per surface and extrapolated to full per-surface uncited counts using the per-surface fire-rate as proxy.",
+    "results_table": [
+      {
+        "surface": "daily-report.pipeline_status",
+        "filter": "Stage 1A drop entirely",
+        "sampled": 920,
+        "still_flagged": 0,
+        "projected_unc_remaining": 0,
+        "vs_current": "-1,010 (was 1,010)"
+      },
+      {
+        "surface": "daily-report.recommended_actions[].action",
+        "filter": "Stage 1A drop entirely",
+        "sampled": 819,
+        "still_flagged": 0,
+        "projected_unc_remaining": 0,
+        "vs_current": "-932 (was 932)"
+      },
+      {
+        "surface": "curmudgeon.reviews.kernel_of_truth+our_argument_summary",
+        "filter": "Stage 1B audit all paragraphs",
+        "sampled": 1614,
+        "still_flagged": 1614,
+        "projected_unc_remaining": 1614,
+        "vs_current": "0 (was 1,614)"
+      },
+      {
+        "surface": "tinker.report.findings[].description",
+        "filter": "Stage 1C + 1D claim-shape gate",
+        "sampled": 92,
+        "still_flagged_in_sample": 6,
+        "projected_unc_remaining": 26,
+        "vs_current": "-86 (was 112)"
+      }
+    ],
+    "totals_after_recalibration": {
+      "projected_claim_uncited": 1640,
+      "absolute_reduction_from_3668": 2028,
+      "reduction_pct": 55.3,
+      "denominator_in_scope_paragraphs": 1811,
+      "claim_uncited_rate_after_recalibration_pct": 90.6
+    },
+    "calibration_observation_vs_directive_target": "The directive target was 70-90% reduction (3,668 -> ~300-1,000). PROP-069's filter achieves 55% reduction (3,668 -> ~1,640). The gap is in curmudgeon reviews: the directive assumed many curmudgeon paragraphs are reasoning that doesn't need backing, but the sample shows ~74% of curmudgeon paragraphs match the claim-shape heuristic (specific numbers, named scientific references, dome-model components) and the remaining 26% are still arguably claim-shaped in the strict sense (claims about dome reasoning, just without quantitative anchors). Two interpretations: (i) The 1,614 curmudgeon-uncited is the REAL claim-backing gap — agents are not following the citation discipline. Recalibration reveals this rather than fixes it. The 55% reduction is the honest answer; the remainder is a behavioral fix that requires updating curmudgeon.md and analyst.md to inline-cite consistently. (ii) The operator's target may have been over-optimistic if it assumed curmudgeon prose was mostly reasoning. PROP-069 recommends interpretation (i) and pairs the metric recalibration with a follow-up behavioral PROP for curmudgeon citation discipline (out of scope for this PROP)."
+  },
+
+  "step_3_recalibrated_threshold": {
+    "current_threshold_per_amendment_001_q3": {
+      "claim_uncited_rate": "0% in post-rollout 14-day window",
+      "bogus_anchor_rate": "<=2% of anchored citations",
+      "file_missing_count": "not specified (implicit 0)"
+    },
+    "proposed_threshold_per_prop_069": {
+      "claim_uncited_rate": "<=15% of claim-shaped paragraphs (allows headroom for logical-inference paragraphs in curmudgeon reviews that genuinely lack an obvious file-citation target)",
+      "citation_resolve_rate": ">=85% of citations resolve (verified + no-anchor existence-only-check passes; excludes bogus_anchor and file_missing)",
+      "bogus_anchor_count": "<=20 flat (was: <=2% of anchored; switched to flat count because the absolute number is small and easier to act on)",
+      "file_missing_count": "<=20 flat (post-Stage-2 hardening; current is 155, the hardening alone should drop this to <=50, then the agents fix the rest behaviorally)"
+    },
+    "rationale_for_15_pct_cap": "Hand-coded reasoning paragraphs in curmudgeon kernel_of_truth/why_it_doesnt_save_claim that derive a conclusion from premises stated earlier in the same review (or that draw on general scientific principles like 'the aetheric medium is not independently confirmed') legitimately may not need an external citation. 5-15% is the directive's suggested range; PROP-069 picks 15% as the initial cap, with a follow-up review after the first 30 days post-implementation to tighten if the actual reasoning-paragraph rate is lower (e.g., if observed rate is 8%, tighten cap to 12%).",
+    "green_definition_post_recalibration": "All three of: claim-uncited <=15% AND citation-resolve >=85% AND file-missing <=20.",
+    "current_state_against_new_threshold": {
+      "claim_uncited_rate_projected": "90.6% — RED (vs <=15% cap)",
+      "citation_resolve_rate_projected": "(264-80)/415 = 44.3% verified, 415-155-80=180 file-found = 60% resolve — RED (vs >=85%)",
+      "file_missing_projected_post_hardening": "~50 — RED (vs <=20)",
+      "interpretation": "Even after recalibration, the audit will continue to report RED because the underlying behavioral gap (agents not citing) is real. The metric is now ACTIONABLE: 'reduce claim-uncited below 15%' is a meaningful agent-prompt change to deploy in curmudgeon.md and tinker.md, whereas 'reduce uncited below 0% across all paragraphs including operational narration' was structurally unattainable."
+    }
+  },
+
+  "step_4_file_missing_investigation": {
+    "methodology": "Read all sample_bogus entries from the 2026-05-31T02:07Z audit report where decision='file missing'. Categorized by structural pattern. Sample size: 66 distinct file-missing examples (full population: 155; sample captures up to 3 bogus per file per the audit script's sample limit).",
+    "categories_found": [
+      {
+        "category": "malformed_runon",
+        "sample_count": 28,
+        "fraction_of_sample_pct": 42.4,
+        "extrapolated_population_estimate": 65,
+        "root_cause": "The current CITATION_RE pattern /\\(([^)]+\\.(?:json|jsonl|txt|md))(?::([\\w-]+))?\\)/g matches any parenthesized text that ENDS in a .json/.jsonl/.md/.txt extension. It greedily captures arbitrary preceding prose. Example: 'WIN-002.c4, WIN-007.c3, WIN-060.c5 — all minor severity, all verdict_holds=true, recommended_action=no_change per pending-digest.json:pending_reviews' matches as a citation with file path 'WIN-002.c4, WIN-007.c3, WIN-060.c5 — all minor severity, all verdict_holds=true, recommended_action=no_change per pending-digest.json'.",
+        "fix_class": "MECHANICAL — citation regex hardening",
+        "fix": "Tighten regex to require path-start with no whitespace/punctuation before the path component: /\\(([./\\w-]+\\.(?:json|jsonl|txt|md))(?::([\\w-]+))?\\)/g. Path must contain only [./\\w-] characters — no spaces, commas, semicolons, em-dashes, '=' signs, etc. Anything else makes the parenthetical NOT a citation.",
+        "examples": [
+          "(5th consecutive gated registry update, confirmed=69 unchanged; monitor/status.json:last_poll_note)",
+          "(issue already closed 2026-05-04T17:18Z per monitor/decisions/closed-issues.json:ISS-1838)",
+          "(PROP-009 enforce mode, curmudgeon/priority-queue.json:queue)"
+        ]
+      },
+      {
+        "category": "bare_filename_needs_dir",
+        "sample_count": 15,
+        "fraction_of_sample_pct": 22.7,
+        "extrapolated_population_estimate": 35,
+        "root_cause": "Agents writing citations with the filename only, omitting the canonical directory. Common targets: open-issues.json, sections.json, priority-queue.json, expansion-tracker.json, pending-digest.json, wins.json, predictions.json, status.json. All of these exist at well-known canonical paths.",
+        "fix_class": "MECHANICAL — auto-resolution lookup table",
+        "fix": "Build a lookup table mapping well-known bare filenames to their canonical directory prefixes. When the audit's checkAnchor() sees a citation whose path is bare (no '/') AND the bare path doesn't exist AND the bare path is in the lookup table AND the canonical path exists, treat the citation as VERIFIED (anchor-match still runs against the resolved canonical file).",
+        "lookup_table": {
+          "open-issues.json": "monitor/decisions/",
+          "closed-issues.json": "monitor/decisions/",
+          "sections.json": "data/",
+          "wins.json": "data/",
+          "predictions.json": "data/",
+          "uncounted-failures.json": "data/",
+          "priority-queue.json": "monitor/curmudgeon/",
+          "pending-digest.json": "monitor/curmudgeon/",
+          "tracker.json": "monitor/curmudgeon/",
+          "expansion-tracker.json": "monitor/analyst/",
+          "attention-inbox.json": "monitor/analyst/",
+          "human-notes.json": "monitor/decisions/",
+          "status.json": "monitor/",
+          "review-state.json": "monitor/",
+          "decider-mode.json": "monitor/decisions/",
+          "closure-ledger.jsonl": "monitor/decisions/"
+        }
+      },
+      {
+        "category": "glob_pattern",
+        "sample_count": 1,
+        "fraction_of_sample_pct": 1.5,
+        "extrapolated_population_estimate": 2,
+        "root_cause": "Agents citing globs like 'monitor/integrity/report-*.json' when they mean 'any matching file in this directory'.",
+        "fix_class": "MECHANICAL — glob expansion (optional)",
+        "fix": "If a citation path contains a '*' glob: fs.readdirSync the parent directory, regex-match against the glob pattern, treat the citation as VERIFIED if at least one match exists. Optional; only 1-2 expected occurrences. May skip in initial implementation."
+      },
+      {
+        "category": "historical_changes_dir",
+        "sample_count": 3,
+        "fraction_of_sample_pct": 4.5,
+        "extrapolated_population_estimate": 7,
+        "root_cause": "Agents citing 'chg-20260509-2308-001.json' etc. — files in monitor/changes/ that may have been processed and removed (or never reached the canonical path). monitor/changes/ has retention behavior that the audit doesn't model.",
+        "fix_class": "BEHAVIORAL — agent prompt update",
+        "fix": "Agents citing changes/ files should include the canonical directory prefix AND should not cite files that have been processed-and-removed (they should cite the consuming agent's output, e.g., the daily-report that processed the change). PROP-069 leaves this category as ACCEPTED FAIL for the initial recalibration; addressing it requires agent prompt updates in poller.md and analyst.md. Track in a follow-up PROP if rate is >5% post-recalibration."
+      },
+      {
+        "category": "other_missing",
+        "sample_count": 19,
+        "fraction_of_sample_pct": 28.8,
+        "extrapolated_population_estimate": 45,
+        "root_cause": "Mixed: multiple file references in one citation (e.g., '(monitor/sloppytoppy/rewrites/RW-001.json:status, RW-002.json:status)'), genuinely missing files, files that exist with similar-but-not-equal names, citations to anchors that aren't valid file paths at all.",
+        "fix_class": "MIXED — some MECHANICAL (multi-file citation parsing), some BEHAVIORAL (agent prompt discipline)",
+        "fix": "Multi-file citation parsing: extend CITATION_RE to handle comma-separated file paths in a single parenthetical. Other root causes are agent-discipline issues; PROP-069 leaves these as ACCEPTED FAIL for the initial recalibration."
+      }
+    ],
+    "projected_file_missing_after_mechanical_fixes": {
+      "current_count": 155,
+      "after_regex_hardening_minus_42pct": "~90",
+      "after_bare_filename_resolution_additional_minus_23pct": "~55",
+      "after_glob_expansion_additional_minus_2pct": "~53",
+      "remaining_legitimate_file_missing": "~45-55",
+      "interpretation": "The mechanical fixes alone reduce file-missing from 155 to ~50-55, a 65% reduction. Remaining ~50 are genuine misses where agents cited files that don't exist (typos, stale references) — these are agent-prompt-discipline issues."
+    },
+    "secondary_finding_bogus_anchor": {
+      "current_count": 80,
+      "expected_impact_from_regex_hardening": "Tightening CITATION_RE will also drop a fraction of bogus_anchor: prose mistaken for a citation that happens to have a colon (e.g., 'closed 2026-05-04T17:18Z' captures '18Z' as anchor; not a real anchor). Estimated 10-20 of the 80 bogus_anchors are this class — drop to ~60-70.",
+      "remaining_legitimate_bogus_anchor": "Genuine cases where the agent cited a real file with an anchor that doesn't match any key in the file. Agent-prompt-discipline issue; out of scope for the mechanical recalibration."
+    }
+  },
+
+  "step_5_implementation_patch": {
+    "files_to_modify": [
+      "monitor/scripts/audit-narrative-citations.js",
+      "monitor/prompts/workspace-sync.md (Step 3.6c soft-complaint format string)"
+    ],
+    "patch_1_audit_narrative_citations_js": {
+      "change_1_citation_regex_hardening": {
+        "current_line": "const CITATION_RE = /\\(([^)]+\\.(?:json|jsonl|txt|md))(?::([\\w-]+))?\\)/g;",
+        "new_line": "const CITATION_RE = /\\(([./\\w-]+\\.(?:json|jsonl|txt|md))(?::([\\w-]+))?\\)/g;",
+        "diff_explanation": "Replace '[^)]+' (any char except close-paren) with '[./\\w-]+' (only path-safe characters). Path component must contain only ASCII letters/digits, dots, slashes, hyphens, underscores. No spaces, commas, semicolons, em-dashes, equals signs, or other punctuation. This is the SINGLE highest-impact change in PROP-069 — it suppresses ~42% of current file-missing AND ~10-20% of current bogus_anchor."
+      },
+      "change_2_add_well_known_path_resolution": {
+        "location": "Insert in checkAnchor() before the fs.existsSync(f) check",
+        "code": "// PROP-069 Step 4: auto-resolve well-known bare filenames\nconst WELL_KNOWN_PATHS = {\n  'open-issues.json': 'monitor/decisions/',\n  'closed-issues.json': 'monitor/decisions/',\n  'sections.json': 'data/',\n  'wins.json': 'data/',\n  'predictions.json': 'data/',\n  'uncounted-failures.json': 'data/',\n  'priority-queue.json': 'monitor/curmudgeon/',\n  'pending-digest.json': 'monitor/curmudgeon/',\n  'tracker.json': 'monitor/curmudgeon/',\n  'expansion-tracker.json': 'monitor/analyst/',\n  'attention-inbox.json': 'monitor/analyst/',\n  'human-notes.json': 'monitor/decisions/',\n  'status.json': 'monitor/',\n  'review-state.json': 'monitor/',\n  'decider-mode.json': 'monitor/decisions/',\n  'closure-ledger.jsonl': 'monitor/decisions/'\n};\nif (!citation.file.includes('/') && WELL_KNOWN_PATHS[citation.file]) {\n  const resolved = WELL_KNOWN_PATHS[citation.file] + citation.file;\n  if (fs.existsSync(resolved)) {\n    citation = Object.assign({}, citation, { file: resolved, _resolved_from: citation.file });\n  }\n}",
+        "explanation": "Before checking if the citation's file path exists, look up bare filenames in the WELL_KNOWN_PATHS table. If a canonical prefix exists, use the resolved path for the existence check (and the anchor check). The original citation.file is preserved in _resolved_from for the report so post-hoc analysis can see what was auto-resolved.",
+        "side_effect_observability": "Add a counter `citations_auto_resolved` to the per-file result struct and to the summary.totals so the operator can see how many bare-filename citations got auto-resolved this run."
+      },
+      "change_3_optional_glob_expansion": {
+        "location": "Insert in checkAnchor() before the fs.existsSync(f) check, after the WELL_KNOWN_PATHS block",
+        "code": "// PROP-069 Step 4: optional glob expansion for paths containing '*'\nif (citation.file.includes('*')) {\n  const dir = path.dirname(citation.file);\n  const pattern = path.basename(citation.file).replace(/\\*/g, '.*');\n  const re = new RegExp('^' + pattern + '$');\n  try {\n    const matches = fs.readdirSync(dir).filter(f => re.test(f));\n    if (matches.length > 0) {\n      citation = Object.assign({}, citation, { file: path.join(dir, matches[0]), _resolved_from_glob: citation.file });\n    }\n  } catch (e) { /* dir missing — fall through to file_missing */ }\n}",
+        "explanation": "Optional, marginal benefit (~2% of file-missing). Can defer to a follow-up if implementation prefers minimal change."
+      },
+      "change_4_surface_filter_drop_pipeline_status_and_recommended_actions": {
+        "location": "Modify the SURFACES constant array",
+        "code": "// PROP-069 Step 2: drop daily-report.pipeline_status and recommended_actions entirely\n// (these are operational narration / imperative actions, not state-bearing claims)\nconst SURFACES = [\n  // REMOVED: daily-report.pipeline_status surface (PROP-069 Stage 1A)\n  // REMOVED: daily-report.recommended_actions[].action surface (PROP-069 Stage 1A)\n  {\n    name: 'curmudgeon.reviews.kernel_of_truth+our_argument_summary',\n    dir: 'monitor/curmudgeon/reviews',\n    re: /\\.json$/,\n    extract: ... // unchanged\n  },\n  {\n    name: 'tinker.report.findings[].description',\n    dir: 'monitor/tinker',\n    re: /^report-.*\\.json$/,\n    extract: (data) => {\n      // PROP-069 Stage 1C+1D: filter to claim-shaped findings only\n      const out = [];\n      const findings = data && Array.isArray(data.findings) ? data.findings : [];\n      findings.forEach((f, i) => {\n        if (!f || typeof f.description !== 'string') return;\n        // Severity filter: only audit moderate/major/critical/operator_escalation\n        const sev = f.severity || 'info';\n        if (['moderate','major','critical','operator_escalation'].indexOf(sev) < 0) return;\n        // Claim-shape filter (Stage 1D) — defer to extractParagraphs+claim-shape combined helper\n        out.push({ label: 'findings[' + i + '].description', prose: f.description, _check_claim_shape: true });\n      });\n      return out;\n    },\n  },\n];"
+      },
+      "change_5_add_claim_shape_paragraph_filter": {
+        "location": "Insert a CLAIM_SHAPE_FIRE() function near the existing extractParagraphs(); modify the per-paragraph loop in auditFile() to skip paragraphs that don't fire when entry._check_claim_shape is true",
+        "code": "// PROP-069 Stage 1D: claim-shape paragraph filter\nconst ENTITY_ID_RE = /\\b(WIN|EXP|SEC|HOL|PRED)-[\\d.]+\\b/;\nconst CLAIM_VERB_RE = /\\b(refute[ds]?|contradicts?|contradicted|supports?|fails?|fail(?:ed|ing)|succeed[sing]*|explain[s]?|matches?|claim[s]?|predict[s]?|measure[ds]?|observe[ds]?|shows?|demonstrate[ds]?|require[ds]?|prove[ds]?|disprove[ds]?|conflict[s]?|agree[ds]?|disagree[ds]?|imply|implies)\\b/i;\nconst SPECIFIC_NUM_RE = /\\b\\d+(\\.\\d+)?\\s*(%|σ|sigma|nT|μGal|km|m\\/s|degrees?|deg|N=\\d|n=\\d)/;\nconst SCI_REF_RE = /\\b(DOI|et\\s+al|paper|study|dataset|firmament|aether|cavity|geomag|seismic|spectra|spectrum|atmosphere|halo|cluster|CMB|CMBR|H\\(r\\)|B\\(r\\)|dome|ECM|sphere|V51)\\b/i;\nconst NAMED_LIT_RE = /\\b(Mohe|Christchurch|El Gordo|Halloween|Gutenberg|3C\\d+|NGC\\d+|HD\\d+|Hartland|Ebro|Tesla|wolfSSL)\\b/i;\n\nfunction claimShapeFires(paragraph) {\n  if (ENTITY_ID_RE.test(paragraph) && CLAIM_VERB_RE.test(paragraph)) return 'a';\n  if (SPECIFIC_NUM_RE.test(paragraph)) return 'b';\n  if (SCI_REF_RE.test(paragraph) || NAMED_LIT_RE.test(paragraph)) return 'c';\n  return null;\n}\n\n// In auditFile()'s per-paragraph loop, after sCount<=1 skip:\n//   if (entry._check_claim_shape && !claimShapeFires(p)) continue;"
+      },
+      "change_6_rename_metric_keys": {
+        "location": "summary.totals + per-file result struct",
+        "diff": [
+          "// Rename to clarify the new semantics:",
+          "// paragraphs_total       -> claim_shaped_paragraphs_total",
+          "// paragraphs_uncited     -> claim_shaped_paragraphs_uncited",
+          "// citations_total        -> citations_total (unchanged)",
+          "// citations_with_anchor  -> citations_with_anchor (unchanged)",
+          "// citations_bogus_anchor -> citations_bogus_anchor (unchanged)",
+          "// citations_file_missing -> citations_file_missing (unchanged)",
+          "// ADD: citations_auto_resolved (count of bare-filename auto-resolutions this run)",
+          "// ADD: citation_resolve_rate_pct (derived: (verified + no_anchor + file_found) / total)"
+        ],
+        "compat_consideration": "Tinker's soft-complaint grep currently reads 'uncited=N'. The workspace-sync prompt's grep pattern in Step 3.6c also reads 'uncited=N'. Either keep emitting both old + new keys for one full deploy cycle, or update the grep patterns synchronously. PROP-069 recommends: emit BOTH the old key (paragraphs_uncited -> claim_uncited) AND a new key (claim_uncited) in the script's stdout one-liner for a 14-day overlap window, then drop the old one. Workspace-sync prompt update is a separate sub-patch (below)."
+      }
+    },
+    "patch_2_workspace_sync_md_soft_complaint_format": {
+      "current_lines_990_995": "if [ \"$MECH3_UNCITED\" -gt 0 ] || [ \"$MECH3_BOGUS\" -gt 0 ]; then\n  echo \"\"\n  echo \"  → Mech 3 soft-complaint: uncited=$MECH3_UNCITED bogus_anchors=$MECH3_BOGUS\"\n  echo \"    (Step 4b: include 'soft-complaint: narrative-cite uncited=N bogus=N' in AGENT_NOTES.)\"\nfi",
+      "new_lines": "# PROP-069 recalibrated soft-complaint format\nMECH3_CLAIM_UNCITED=$(grep -oP 'claim-uncited=\\K\\d+' \"$AUDIT_OUTPUT_FILE\" 2>/dev/null | head -1 || echo 0)\nMECH3_CITATION_RESOLVE_PCT=$(grep -oP 'citation-resolve=\\K[\\d.]+' \"$AUDIT_OUTPUT_FILE\" 2>/dev/null | head -1 || echo 0)\nMECH3_BOGUS=$(grep -oP 'bogus-anchor=\\K\\d+' \"$AUDIT_OUTPUT_FILE\" 2>/dev/null | head -1 || echo 0)\nMECH3_FILE_MISSING=$(grep -oP 'file-missing=\\K\\d+' \"$AUDIT_OUTPUT_FILE\" 2>/dev/null | head -1 || echo 0)\nMECH3_CLAIM_UNCITED=${MECH3_CLAIM_UNCITED:-0}\nMECH3_BOGUS=${MECH3_BOGUS:-0}\nMECH3_FILE_MISSING=${MECH3_FILE_MISSING:-0}\n# Fire soft-complaint if claim-uncited > 15% threshold OR bogus > 20 OR file-missing > 20\nMECH3_FIRE=0\nif [ \"$MECH3_CLAIM_UNCITED\" -gt 0 ] && [ \"$MECH3_CITATION_RESOLVE_PCT\" != \"\" ]; then\n  # Use bc for float comparison (Haiku is comfortable with this idiom)\n  PCT_OVER=$(echo \"$MECH3_CITATION_RESOLVE_PCT < 85.0\" | bc -l 2>/dev/null || echo 0)\n  if [ \"$PCT_OVER\" = \"1\" ]; then MECH3_FIRE=1; fi\nfi\nif [ \"$MECH3_BOGUS\" -gt 20 ] || [ \"$MECH3_FILE_MISSING\" -gt 20 ]; then MECH3_FIRE=1; fi\nif [ \"$MECH3_FIRE\" = \"1\" ]; then\n  echo \"\"\n  echo \"  → Mech 3 soft-complaint: claim-uncited=$MECH3_CLAIM_UNCITED file-missing=$MECH3_FILE_MISSING bogus-anchor=$MECH3_BOGUS resolve-rate=${MECH3_CITATION_RESOLVE_PCT}%\"\n  echo \"    (Step 4b: include 'soft-complaint: narrative-cite claim-uncited=N file-missing=N bogus-anchor=N resolve=X%' in AGENT_NOTES.)\"\nfi",
+      "explanation": "Three changes: (1) parse the new metric keys from the audit script's stdout, (2) implement the three-condition trip logic (claim-uncited rate >15% per Stage 1; OR bogus >20; OR file-missing >20), (3) update the soft-complaint message to use the new vocabulary. The grep target word 'soft-complaint' remains so tinker's existing grep continues to fire on the same trigger word."
+    }
+  },
+
+  "step_6_verification_path": {
+    "after_implementation_re_run_audit_expectations": {
+      "claim_shaped_paragraphs_total": "~1,811 (down from 4,039 — surfaces dropped)",
+      "claim_uncited": "~1,640 (down from 3,668, 55% reduction)",
+      "claim_uncited_rate_pct": "~90.6% (similar to current 91%, but denominator is now honest — only claim-shaped paragraphs counted)",
+      "citations_total": "~415 (unchanged before regex hardening; ~360 after regex hardening due to ~10% of prose-as-citation captures dropping)",
+      "bogus_anchor": "~60 (down from 80, ~25% reduction from regex hardening eliminating prose-mistaken-for-citation cases)",
+      "file_missing": "~50 (down from 155, 68% reduction from regex hardening + bare-filename auto-resolution)",
+      "citation_resolve_rate_pct": "~78% (was ~60%); still RED against 85% target but materially better"
+    },
+    "alarm_definitions_post_recalibration": {
+      "GREEN": "claim-uncited rate <=15% AND citation-resolve rate >=85% AND bogus-anchor <=20 AND file-missing <=20",
+      "YELLOW": "GREEN conditions almost-met (within 5 percentage points) — soft-complaint fires but doesn't escalate",
+      "RED": "any threshold violated by more than 5 points — soft-complaint fires; tinker considers HNOTE-OPERATOR if 7 consecutive cycles RED"
+    },
+    "expected_initial_state_post_implementation": "RED on claim-uncited (90.6% vs 15% target). This is the EXPECTED, ACTIONABLE state. The next step (out of scope for PROP-069) is a follow-up PROP that updates curmudgeon.md to inline-cite consistently in kernel_of_truth/why_it_doesnt_save_claim/our_argument_summary. After that PROP lands, the claim-uncited rate should drop toward 15% over a 30-60 day window as new curmudgeon reviews internalize the citation discipline.",
+    "metric_to_watch_30_days_post_implementation": "If claim-uncited rate has not dropped below 50% within 30 days of the curmudgeon-citation-discipline PROP landing, escalate to operator with the question 'is the 15% target realistic for this surface?' — may need to revise to 25% or to introduce sub-surface targeting (e.g., 'pure-reasoning paragraphs that derive from earlier-in-same-review premises' get a softer threshold than 'specific empirical claims about dome data')."
+  },
+
+  "lifecycle_steps_for_this_directive": {
+    "directive_completion": "After this PROP file is committed and pushed, mark DIRECTIVE-20260531-006 status=completed with prop_id_authored='PROP-069' and completed_by_run='tinker-2026-05-31T09-58' and completed_at=<this run's ISO timestamp>. Per the additive-edit exception for operator-directives (CLAUDE.md File Ownership Rules), this is the ONLY mutation tinker performs on the directive file.",
+    "prop_014_amendment_history_update": "Add a new entry to PROP-014-agent-state-coupling.json's amendment_history array: { amendment_id: 'PROP-069', file_path: 'monitor/tinker/proposals/PROP-069-narrative-cite-recalibration.json', authored_at: '<ISO>', authored_by: 'tinker (operator-directed via DIRECTIVE-20260531-006)', summary: 'Recalibration of Mech 3 Stage 1 targeting + Stage 2 mechanical hardening. Not a supersession; PROP-014 mechanisms stand.', relationship: 'refinement-not-supersession' }. This is a non-destructive append; matches the established pattern (PROP-014-amendment-001 already has an entry).",
+    "no_implementation_in_this_run": "Per directive non_goals: do NOT modify audit-narrative-citations.js or workspace-sync.md in this run. Author only. Implementation lands via a follow-up directive after operator review."
+  },
+
+  "non_goals_respected": [
+    "Does NOT implement PROP-069 — author only.",
+    "Does NOT touch PROP-066 (DIRECTIVE-004) or PROP-068 authorship (DIRECTIVE-005).",
+    "Does NOT propose backfilling citations across existing 3,668 uncited paragraphs. The recalibration will drop most of them from the 'needs citation' set; only the post-recalibration claim-uncited remainder is worth considering for backfill, and that is a separate decision.",
+    "Does NOT remove or weaken PROP-014's Mech 1 (write-verify) or Mech 2 (read-verify) — Stage 1A/B/C/D targeting and Stage 2 hardening are scoped to Mech 3 only.",
+    "Does NOT implement Stage 3 (LLM-as-judge semantic match). Remains documented-but-unimplemented per the original design; PROP-069 recalibrates Stages 1+2."
+  ],
+
+  "tradeoffs_and_counter_arguments": [
+    {
+      "tradeoff": "Stage 1A dropping daily-report.recommended_actions[].action loses ~40% of imperatives that DO reference cite-worthy scientific evidence (DOIs, specific error percentages, named datasets)",
+      "mitigation": "Mech 1 (write-verify) and Mech 2 (read-verify) cover the state-claim downstream of these imperatives; curmudgeon review audits the actual WIN content updates. The imperative form ('add S-wave shadow', 'verify Gutenberg DOI') is not the prose shape Mech 3 was designed for.",
+      "counter_argument": "An adversarial reviewer could argue: 'recommended_actions IS where the decider asserts what should be true after a fix lands; dropping it from the audit removes a layer of accountability for those assertions'. PROP-069 accepts this critique with the response: Mech 3 is the WRONG layer for this. The right layer is the actual patch-content audit by curmudgeon (which reads the post-patch WIN and verifies the imperative produced a properly-cited update). If the operator disagrees, the alternative is to KEEP recommended_actions in scope but apply the Stage 1D claim-shape filter — that variant projected to retain ~262 paragraphs of the 819 sampled, which is fine if the additional signal is worth the noise."
+    },
+    {
+      "tradeoff": "The 15% claim-uncited threshold is loose enough that a small number of state assertions in curmudgeon prose could go uncited without firing soft-complaint",
+      "mitigation": "The threshold can be tightened (to 10% or 8%) once observed post-recalibration data shows the floor rate of legitimate-reasoning-without-cite paragraphs. The directive's 5-15% range is the initial calibration; 15% is the conservative end.",
+      "counter_argument": "5% would be tighter and reveal more behavioral gaps. But 5% in a 1,811-paragraph denominator means ~91 uncited claims is the line — close enough to noise that the soft-complaint could fire spuriously on a single bad-luck week. 15% gives 271 uncited claims of headroom, which is enough to absorb noise while still being a meaningful agent-prompt target."
+    },
+    {
+      "tradeoff": "The CITATION_RE hardening (path-start positioning) will reject some valid citations that have a space between the open-paren and the path (e.g., '( data/wins.json)')",
+      "mitigation": "Such citations are unusual in the corpus; none observed in the 264 anchored citations. If they exist, agents will see them flagged as 'not a citation' and quickly learn the canonical form '(data/wins.json)'.",
+      "counter_argument": "An adversarial reviewer could argue: 'a tolerant regex is friendlier; this hardening creates new false negatives.' Accepted with the response: the 65 false positives from the current permissive regex (prose mistaken for citations) cost more in operator/agent attention than ~5 lost recoveries from would-be-valid-with-leading-space patterns."
+    }
+  ],
+
+  "alternatives_considered_and_rejected": [
+    {
+      "alternative": "Add a NEGATIVE pipeline-vocabulary filter (drop paragraphs whose tokens are predominantly pipeline-state words: drain, sync, push, pending, complete, deploy-clean, mtime-guard, etc.) on top of the surface filter",
+      "rejected_reason": "Adds complexity without meaningful additional reduction. Stage 1A already drops the surfaces where pipeline-status prose lives (daily-report.pipeline_status). The remaining surfaces (curmudgeon reviews + tinker findings>=moderate) don't have a meaningful population of pipeline-only prose."
+    },
+    {
+      "alternative": "STRICTER filter that requires ALL of (a) entity ID, (b) specific number, (c) comparison verb — only fires on paragraphs matching all three conditions",
+      "rejected_reason": "Sampled fire rate would be ~3% on curmudgeon (way too tight; misses most genuine claims). 73% with current OR-of-three approach is closer to truth."
+    },
+    {
+      "alternative": "LLM-as-judge classifier for paragraph-claim-shape detection (Stage 3 of original Mech 3 design)",
+      "rejected_reason": "Out of scope for the current recalibration — the directive explicitly lists 'Do NOT implement Stage 3 (LLM-as-judge semantic match)' as a non-goal. The proposed regex-based heuristic is good-enough for the recalibration step; Stage 3 remains documented for future implementation."
+    },
+    {
+      "alternative": "Field-level (rather than paragraph-level) audit — flag a whole curmudgeon review file if NO paragraph cites anything; ignore paragraph-by-paragraph",
+      "rejected_reason": "Aggregating to file-level loses signal. A 5-paragraph review where only paragraph 1 cites is materially different from one where all 5 cite. Field-level would mask citation-gradient quality differences. Paragraph-level + recalibrated threshold (15% uncited) is the better tradeoff."
+    },
+    {
+      "alternative": "Don't recalibrate at all — accept the 91% uncited rate as a behavioral signal and pair the metric with prompt updates for curmudgeon.md / analyst.md / tinker.md to start citing",
+      "rejected_reason": "The metric as currently shaped is operationally useless: it fires every cycle, tinker filters it out as noise, the soft-complaint signal is dead. The recalibration restores meaning to the metric by aligning it with the operator's actual intent, AND it makes the BEHAVIORAL fix (curmudgeon citation discipline) tractable because the metric now points at the right gap (1,640 claim-uncited, not 3,668 paragraphs-uncited)."
+    }
+  ],
+
+  "implementation_estimate": {
+    "audit_script_changes_loc": "~80 lines added / 30 modified",
+    "workspace_sync_md_changes_loc": "~20 lines modified",
+    "time_estimate": "~30 minutes for someone familiar with the script; 1-2 cycles to verify post-deployment behavior",
+    "risk_level": "low — observational-only changes; no input mutations; no schema changes; backward-compatible stdout overlap for one 14-day window"
+  },
+
+  "cross_references": {
+    "directive": "monitor/tinker/operator-directives/DIRECTIVE-20260531-006-recalibrate-narrative-cite.json",
+    "audit_script": "monitor/scripts/audit-narrative-citations.js",
+    "current_audit_report_2026_05_31_t02_07": "monitor/integrity/narrative-cite-audit-2026-05-31T0207Z.json",
+    "prop_014_parent": "monitor/tinker/proposals/PROP-014-agent-state-coupling.json",
+    "prop_014_amendment_001": "monitor/tinker/proposals/PROP-014-amendment-001.json",
+    "state_verification_doc": "monitor/prompts/reference/state-verification.md",
+    "workspace_sync_soft_complaint_invocation": "monitor/prompts/workspace-sync.md (Step 3.6c, ~line 985-1003)"
+  }
+}
