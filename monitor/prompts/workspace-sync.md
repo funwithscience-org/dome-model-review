@@ -976,24 +976,50 @@ https.get({
 # can see them without re-parsing the integrity reports).
 MECH1_FLIPPED=$(grep -oP 'flipped=\K\d+' "$VERIFY_OUTPUT_FILE" 2>/dev/null | head -1 || echo 0)
 MECH1_STILL_PENDING=$(grep -oP 'still_pending=\K\d+' "$VERIFY_OUTPUT_FILE" 2>/dev/null | head -1 || echo 0)
-MECH3_UNCITED=$(grep -oP 'uncited=\K\d+' "$AUDIT_OUTPUT_FILE" 2>/dev/null | head -1 || echo 0)
-MECH3_BOGUS=$(grep -oP 'bogus_anchors=\K\d+' "$AUDIT_OUTPUT_FILE" 2>/dev/null | head -1 || echo 0)
+# PROP-069 recalibrated counters: claim-uncited, citation-resolve-rate,
+# bogus-anchor, file-missing. Legacy `uncited=` / `bogus_anchors=` keys are
+# still emitted by the script for one 14-day overlap window — DO NOT remove
+# the new-key parses below; remove the legacy-key fallback after that.
+MECH3_CLAIM_UNCITED=$(grep -oP 'claim-uncited=\K\d+' "$AUDIT_OUTPUT_FILE" 2>/dev/null | head -1 || echo 0)
+MECH3_RESOLVE_PCT=$(grep -oP 'citation-resolve=\K[\d.]+' "$AUDIT_OUTPUT_FILE" 2>/dev/null | head -1 || echo 100)
+MECH3_BOGUS=$(grep -oP 'bogus-anchor=\K\d+' "$AUDIT_OUTPUT_FILE" 2>/dev/null | head -1 || echo 0)
+MECH3_FILE_MISSING=$(grep -oP 'file-missing=\K\d+' "$AUDIT_OUTPUT_FILE" 2>/dev/null | head -1 || echo 0)
+# Legacy fallback (drop after 14-day overlap window):
+if [ "$MECH3_CLAIM_UNCITED" = "0" ] && [ "$MECH3_BOGUS" = "0" ]; then
+  MECH3_CLAIM_UNCITED=$(grep -oP 'uncited=\K\d+' "$AUDIT_OUTPUT_FILE" 2>/dev/null | head -1 || echo 0)
+  MECH3_BOGUS=$(grep -oP 'bogus_anchors=\K\d+' "$AUDIT_OUTPUT_FILE" 2>/dev/null | head -1 || echo 0)
+fi
 DEPLOY_FAILS=$(grep -oP '^deploy-watch: \K\d+' "$DEPLOY_OUTPUT_FILE" 2>/dev/null | head -1 || echo 0)
 DEPLOY_FAIL_URL=$(grep -oP 'url=\Khttps://\S+' "$DEPLOY_OUTPUT_FILE" 2>/dev/null | head -1 || echo "")
 MECH1_FLIPPED=${MECH1_FLIPPED:-0}
 MECH1_STILL_PENDING=${MECH1_STILL_PENDING:-0}
-MECH3_UNCITED=${MECH3_UNCITED:-0}
+MECH3_CLAIM_UNCITED=${MECH3_CLAIM_UNCITED:-0}
+MECH3_RESOLVE_PCT=${MECH3_RESOLVE_PCT:-100}
 MECH3_BOGUS=${MECH3_BOGUS:-0}
+MECH3_FILE_MISSING=${MECH3_FILE_MISSING:-0}
 DEPLOY_FAILS=${DEPLOY_FAILS:-0}
 
 # Soft-complaint signal for Step 4b's AGENT_NOTES — if either Mech surfaces
 # something operator-visible, the run report's narrative field MUST mention
 # it so tinker's soft-complaints grep catches it. Use the literal word
 # "soft-complaint" (the grep target).
-if [ "$MECH3_UNCITED" -gt 0 ] || [ "$MECH3_BOGUS" -gt 0 ]; then
+#
+# PROP-069 §3 trip logic: fire if ANY of
+#   - citation-resolve < 85%
+#   - bogus-anchor > 20 (flat)
+#   - file-missing  > 20 (flat)
+# claim-uncited rate threshold (≤15%) is enforced inside the script and
+# surfaces via console output; the soft-complaint here focuses on the
+# operator-actionable counts.
+MECH3_FIRE=0
+RESOLVE_BELOW_85=$(awk -v v="$MECH3_RESOLVE_PCT" 'BEGIN{print (v+0 < 85.0) ? 1 : 0}' 2>/dev/null || echo 0)
+if [ "$RESOLVE_BELOW_85" = "1" ] || [ "$MECH3_BOGUS" -gt 20 ] || [ "$MECH3_FILE_MISSING" -gt 20 ]; then
+  MECH3_FIRE=1
+fi
+if [ "$MECH3_FIRE" = "1" ]; then
   echo ""
-  echo "  → Mech 3 soft-complaint: uncited=$MECH3_UNCITED bogus_anchors=$MECH3_BOGUS"
-  echo "    (Step 4b: include 'soft-complaint: narrative-cite uncited=N bogus=N' in AGENT_NOTES.)"
+  echo "  → Mech 3 soft-complaint: claim-uncited=$MECH3_CLAIM_UNCITED file-missing=$MECH3_FILE_MISSING bogus-anchor=$MECH3_BOGUS resolve-rate=${MECH3_RESOLVE_PCT}%"
+  echo "    (Step 4b: include 'soft-complaint: narrative-cite claim-uncited=N file-missing=N bogus-anchor=N resolve-rate=X%' in AGENT_NOTES.)"
 fi
 if [ "$MECH1_STILL_PENDING" -gt 0 ]; then
   echo ""

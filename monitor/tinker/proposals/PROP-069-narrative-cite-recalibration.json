@@ -1,7 +1,7 @@
 {
   "prop_id": "PROP-069",
   "title": "Recalibrate PROP-014 Mech 3 narrative-cite audit — target specific-claim paragraphs only (not blanket per-paragraph), tighten citation regex to suppress malformed prose-as-citation matches, auto-resolve bare-filename citations, recalibrate acceptance threshold from 0% to <=15% claim-uncited.",
-  "status": "design-pending-operator-review",
+  "status": "implemented",
   "priority": "medium",
   "author": "tinker",
   "authored_at": "2026-05-31T10:00:00Z",
@@ -9,9 +9,7 @@
   "source_directive": "DIRECTIVE-20260531-006-recalibrate-narrative-cite (operator filed 2026-05-31T08:30Z medium priority; verbatim intent capture: 'that wasn't the intent of the directive. it was more about making sure that specific claims had backing.').",
   "supersedes": null,
   "relationship_to_prop_014": "REFINEMENT, NOT SUPERSESSION. PROP-014's three mechanisms (Mech 1 write-verify, Mech 2 read-verify, Mech 3 narrate-cite) all stand. PROP-014-amendment-001 Q3 set Mech 3's three-stage measurement framework (Stage 1 paragraph-citation gate, Stage 2 anchor-match, Stage 3 LLM-as-judge sampling). PROP-069 recalibrates Stage 1's TARGETING (which paragraphs count as in-scope) and THRESHOLD (acceptable claim-uncited rate), AND adds two mechanical fixes to Stage 2 that the post-rollout audit revealed (over-permissive citation regex; missing path-resolution for bare filenames). Stage 3 remains documented-but-unimplemented per the original design. PROP-014.json's amendment_history array should receive a new entry pointing at PROP-069 (additive edit per the already-established amendment pattern, see CLAUDE.md File Ownership Rules > DIRECTIVE-LIFECYCLE additive-edit exception's pattern).",
-
   "executive_summary": "PROP-014 Mechanism 3's narrative-cite audit (monitor/scripts/audit-narrative-citations.js) has been running observational-only every workspace-sync cycle since ~2026-05-02. The 2026-05-31T02:07Z audit shows 3,668 of 4,039 multi-sentence paragraphs uncited (91% uncited rate), with PROP-014-amendment-001 Q3's acceptance threshold set at 0% uncited in the post-rollout 14-day window. Reality is ~30 days post-rollout, 91% uncited, no convergence in sight. The operator-confirmed reframe (this directive): the original intent of Mech 3 was making sure that **specific claims had backing**, not enforcing blanket per-paragraph citation discipline. The current implementation conflates 'paragraph length' with 'claim-density', producing a ~50% false-positive rate against the actual intent. PROP-069 closes that gap with three independent changes: (1) **Targeting filter**: drop two operationally-defined surfaces (daily-report.pipeline_status.* and daily-report.recommended_actions[].action) from audit scope; keep curmudgeon.reviews and tinker.report.findings; apply a paragraph-level claim-shape filter inside tinker.report.findings only. (2) **Citation-regex hardening**: tighten the pattern to require path-start positioning, eliminating ~42% of the current 155 file-missing citations that are prose-with-a-trailing-filename mis-captures rather than real citations. (3) **Bare-filename auto-resolution**: when a citation references a known well-known filename (open-issues.json, sections.json, priority-queue.json, etc.) without its canonical directory prefix, auto-resolve to the canonical path before checking existence; eliminates ~23% of file-missing. Threshold recalibrates from 0% to <=15% claim-uncited; two new metrics added (citation-resolve-rate >= 85%, file-missing flat-count <= 20). PROP-069 is PROPOSE ONLY (status=design-pending-operator-review). Implementation lands in a follow-up directive after operator review.",
-
   "problem_statement": {
     "operator_intent_verbatim": "that wasn't the intent of the directive. it was more about making sure that specific claims had backing.",
     "current_implementation_behavior": "Stage 1 paragraph gate flags every multi-sentence paragraph in four audited surfaces as 'needs a citation', regardless of whether the paragraph carries a state-bearing claim worth citing. The acceptance threshold (0% uncited) cannot be met because most paragraphs in those surfaces are operational narration or imperative recommendations, not specific claims. Net effect: a perpetually-red soft-complaint line in every workspace-sync cycle's run report that the operator and tinker have both learned to filter out, defeating the signal value of Mech 3.",
@@ -20,7 +18,7 @@
       "files_audited": 1636,
       "paragraphs_total": 4039,
       "paragraphs_uncited": 3668,
-      "uncited_rate_pct": 91.0,
+      "uncited_rate_pct": 91,
       "citations_total": 415,
       "citations_with_anchor": 264,
       "citations_bogus_anchor": 80,
@@ -59,7 +57,6 @@
       }
     ]
   },
-
   "step_1_sampling_methodology": {
     "approach": "Read the full 2026-05-31T02:07Z audit report (1.9 MB), partitioned uncited paragraphs by surface_name, sampled the top sample_uncited array per file (3 paragraphs/file in the source data) to construct a representative sample of 3,445 uncited paragraphs across 4 surfaces. Built intuition for which paragraphs the current audit catches that the operator's reframe says shouldn't be flagged.",
     "sample_size_per_surface": {
@@ -75,7 +72,6 @@
       "tinker.report.findings[].description is mixed. Tinker findings are by definition about pipeline state, and many are operational ('Decider no-op rate ~40% over the last 10 runs', 'Social agent ran 4 times today (schedule says daily). Run 4 was pure waste'). A small minority are claim-shaped (specific numerical assertion about a measurable pipeline quantity that could cite a closure-ledger entry or prior tinker report). Sampling shows ~6% claim-shape rate."
     ]
   },
-
   "step_2_proposed_targeting_filter": {
     "design_principle": "Combine surface-level filtering (cheap, high-precision) with within-surface paragraph-shape filtering only where the surface itself is mixed (tinker findings). This keeps the implementation mechanically simple while honoring the operator's intent.",
     "stage_1A_surface_negative_drop_entirely": {
@@ -161,7 +157,6 @@
       ]
     }
   },
-
   "step_2_sample_evaluation": {
     "methodology": "Ran the Stage 1A+1B+1C+1D filter against the 3,445-paragraph sample. Computed survival rate per surface and extrapolated to full per-surface uncited counts using the per-surface fire-rate as proxy.",
     "results_table": [
@@ -207,7 +202,6 @@
     },
     "calibration_observation_vs_directive_target": "The directive target was 70-90% reduction (3,668 -> ~300-1,000). PROP-069's filter achieves 55% reduction (3,668 -> ~1,640). The gap is in curmudgeon reviews: the directive assumed many curmudgeon paragraphs are reasoning that doesn't need backing, but the sample shows ~74% of curmudgeon paragraphs match the claim-shape heuristic (specific numbers, named scientific references, dome-model components) and the remaining 26% are still arguably claim-shaped in the strict sense (claims about dome reasoning, just without quantitative anchors). Two interpretations: (i) The 1,614 curmudgeon-uncited is the REAL claim-backing gap — agents are not following the citation discipline. Recalibration reveals this rather than fixes it. The 55% reduction is the honest answer; the remainder is a behavioral fix that requires updating curmudgeon.md and analyst.md to inline-cite consistently. (ii) The operator's target may have been over-optimistic if it assumed curmudgeon prose was mostly reasoning. PROP-069 recommends interpretation (i) and pairs the metric recalibration with a follow-up behavioral PROP for curmudgeon citation discipline (out of scope for this PROP)."
   },
-
   "step_3_recalibrated_threshold": {
     "current_threshold_per_amendment_001_q3": {
       "claim_uncited_rate": "0% in post-rollout 14-day window",
@@ -229,7 +223,6 @@
       "interpretation": "Even after recalibration, the audit will continue to report RED because the underlying behavioral gap (agents not citing) is real. The metric is now ACTIONABLE: 'reduce claim-uncited below 15%' is a meaningful agent-prompt change to deploy in curmudgeon.md and tinker.md, whereas 'reduce uncited below 0% across all paragraphs including operational narration' was structurally unattainable."
     }
   },
-
   "step_4_file_missing_investigation": {
     "methodology": "Read all sample_bogus entries from the 2026-05-31T02:07Z audit report where decision='file missing'. Categorized by structural pattern. Sample size: 66 distinct file-missing examples (full population: 155; sample captures up to 3 bogus per file per the audit script's sample limit).",
     "categories_found": [
@@ -316,7 +309,6 @@
       "remaining_legitimate_bogus_anchor": "Genuine cases where the agent cited a real file with an anchor that doesn't match any key in the file. Agent-prompt-discipline issue; out of scope for the mechanical recalibration."
     }
   },
-
   "step_5_implementation_patch": {
     "files_to_modify": [
       "monitor/scripts/audit-narrative-citations.js",
@@ -369,7 +361,6 @@
       "explanation": "Three changes: (1) parse the new metric keys from the audit script's stdout, (2) implement the three-condition trip logic (claim-uncited rate >15% per Stage 1; OR bogus >20; OR file-missing >20), (3) update the soft-complaint message to use the new vocabulary. The grep target word 'soft-complaint' remains so tinker's existing grep continues to fire on the same trigger word."
     }
   },
-
   "step_6_verification_path": {
     "after_implementation_re_run_audit_expectations": {
       "claim_shaped_paragraphs_total": "~1,811 (down from 4,039 — surfaces dropped)",
@@ -388,13 +379,11 @@
     "expected_initial_state_post_implementation": "RED on claim-uncited (90.6% vs 15% target). This is the EXPECTED, ACTIONABLE state. The next step (out of scope for PROP-069) is a follow-up PROP that updates curmudgeon.md to inline-cite consistently in kernel_of_truth/why_it_doesnt_save_claim/our_argument_summary. After that PROP lands, the claim-uncited rate should drop toward 15% over a 30-60 day window as new curmudgeon reviews internalize the citation discipline.",
     "metric_to_watch_30_days_post_implementation": "If claim-uncited rate has not dropped below 50% within 30 days of the curmudgeon-citation-discipline PROP landing, escalate to operator with the question 'is the 15% target realistic for this surface?' — may need to revise to 25% or to introduce sub-surface targeting (e.g., 'pure-reasoning paragraphs that derive from earlier-in-same-review premises' get a softer threshold than 'specific empirical claims about dome data')."
   },
-
   "lifecycle_steps_for_this_directive": {
     "directive_completion": "After this PROP file is committed and pushed, mark DIRECTIVE-20260531-006 status=completed with prop_id_authored='PROP-069' and completed_by_run='tinker-2026-05-31T09-58' and completed_at=<this run's ISO timestamp>. Per the additive-edit exception for operator-directives (CLAUDE.md File Ownership Rules), this is the ONLY mutation tinker performs on the directive file.",
     "prop_014_amendment_history_update": "Add a new entry to PROP-014-agent-state-coupling.json's amendment_history array: { amendment_id: 'PROP-069', file_path: 'monitor/tinker/proposals/PROP-069-narrative-cite-recalibration.json', authored_at: '<ISO>', authored_by: 'tinker (operator-directed via DIRECTIVE-20260531-006)', summary: 'Recalibration of Mech 3 Stage 1 targeting + Stage 2 mechanical hardening. Not a supersession; PROP-014 mechanisms stand.', relationship: 'refinement-not-supersession' }. This is a non-destructive append; matches the established pattern (PROP-014-amendment-001 already has an entry).",
     "no_implementation_in_this_run": "Per directive non_goals: do NOT modify audit-narrative-citations.js or workspace-sync.md in this run. Author only. Implementation lands via a follow-up directive after operator review."
   },
-
   "non_goals_respected": [
     "Does NOT implement PROP-069 — author only.",
     "Does NOT touch PROP-066 (DIRECTIVE-004) or PROP-068 authorship (DIRECTIVE-005).",
@@ -402,7 +391,6 @@
     "Does NOT remove or weaken PROP-014's Mech 1 (write-verify) or Mech 2 (read-verify) — Stage 1A/B/C/D targeting and Stage 2 hardening are scoped to Mech 3 only.",
     "Does NOT implement Stage 3 (LLM-as-judge semantic match). Remains documented-but-unimplemented per the original design; PROP-069 recalibrates Stages 1+2."
   ],
-
   "tradeoffs_and_counter_arguments": [
     {
       "tradeoff": "Stage 1A dropping daily-report.recommended_actions[].action loses ~40% of imperatives that DO reference cite-worthy scientific evidence (DOIs, specific error percentages, named datasets)",
@@ -420,7 +408,6 @@
       "counter_argument": "An adversarial reviewer could argue: 'a tolerant regex is friendlier; this hardening creates new false negatives.' Accepted with the response: the 65 false positives from the current permissive regex (prose mistaken for citations) cost more in operator/agent attention than ~5 lost recoveries from would-be-valid-with-leading-space patterns."
     }
   ],
-
   "alternatives_considered_and_rejected": [
     {
       "alternative": "Add a NEGATIVE pipeline-vocabulary filter (drop paragraphs whose tokens are predominantly pipeline-state words: drain, sync, push, pending, complete, deploy-clean, mtime-guard, etc.) on top of the surface filter",
@@ -443,14 +430,12 @@
       "rejected_reason": "The metric as currently shaped is operationally useless: it fires every cycle, tinker filters it out as noise, the soft-complaint signal is dead. The recalibration restores meaning to the metric by aligning it with the operator's actual intent, AND it makes the BEHAVIORAL fix (curmudgeon citation discipline) tractable because the metric now points at the right gap (1,640 claim-uncited, not 3,668 paragraphs-uncited)."
     }
   ],
-
   "implementation_estimate": {
     "audit_script_changes_loc": "~80 lines added / 30 modified",
     "workspace_sync_md_changes_loc": "~20 lines modified",
     "time_estimate": "~30 minutes for someone familiar with the script; 1-2 cycles to verify post-deployment behavior",
     "risk_level": "low — observational-only changes; no input mutations; no schema changes; backward-compatible stdout overlap for one 14-day window"
   },
-
   "cross_references": {
     "directive": "monitor/tinker/operator-directives/DIRECTIVE-20260531-006-recalibrate-narrative-cite.json",
     "audit_script": "monitor/scripts/audit-narrative-citations.js",
@@ -459,5 +444,11 @@
     "prop_014_amendment_001": "monitor/tinker/proposals/PROP-014-amendment-001.json",
     "state_verification_doc": "monitor/prompts/reference/state-verification.md",
     "workspace_sync_soft_complaint_invocation": "monitor/prompts/workspace-sync.md (Step 3.6c, ~line 985-1003)"
-  }
+  },
+  "implemented_at": "2026-05-31T11:10:04.239Z",
+  "implemented_by": "tinker (DIRECTIVE-20260531-008)",
+  "implementation_run_id": "tinker-2026-05-31T11-09",
+  "implementation_commit": "pending-pre-commit-placeholder",
+  "deployment_validation": "monitor/integrity/prop-069-deployment-validation-2026-05-31T1109Z.json",
+  "deferred_followup_note": "The 1,680 claim-uncited paragraphs remaining post-recalibration concentrate in curmudgeon.reviews (~85% of curmudgeon review files have zero citations anywhere in kernel_of_truth/why_it_doesnt_save_claim/our_argument_summary). This is the genuine claim-backing gap that PROP-069 reveals but does not fix. The follow-up is a BEHAVIORAL PROP for curmudgeon citation discipline (likely PROP-070+ authored under a future operator-directive). Out of scope for PROP-069 per DIRECTIVE-20260531-008 non_goals[0]."
 }
