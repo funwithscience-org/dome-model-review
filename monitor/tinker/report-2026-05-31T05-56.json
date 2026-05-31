@@ -1,0 +1,92 @@
+{
+  "run_id": "tinker-2026-05-31T05-56",
+  "timestamp": "2026-05-31T05:56:13Z",
+  "mode_selected": "operator_directive_override",
+  "directive_id": "DIRECTIVE-20260531-002",
+  "directive_priority": "high",
+  "directive_target_mode": "Mode 4 (PROP authoring)",
+  "prop_authored": "PROP-066",
+  "prop_path": "monitor/tinker/proposals/PROP-066-step-4c-helper-script-extraction.json",
+  "modes_checked": {
+    "mode_0_assigned_to_tinker": "0 items (verified after directive selection)",
+    "mode_1_pipeline_health": "deferred — directive-002 preempts; spot check showed no stranded patches >24h, agents producing per their cadences",
+    "mode_2_infrastructure": "deferred — directive-002 preempts; but findings overlap with FND-01 below",
+    "mode_3_cost_engineering": "deferred — directive-002 preempts (high-priority structural ask)",
+    "mode_4_proposals": "selected via directive override"
+  },
+  "findings": [
+    {
+      "id": "FND-01",
+      "category": "fuse-staleness-on-operator-directives",
+      "severity": "moderate",
+      "summary": "FUSE-side operator-directives directory is stale relative to git, causing tinker Mode 0 dispatcher to mis-classify completed directives as pending. Third tinker run today (after tinker-2026-05-31T05-23 and tinker-2026-05-31T05-42) to read DIRECTIVE-001 as pending from FUSE despite git showing status='completed'/'completed_at'='2026-05-31T05:35:00Z'/'prop_id_authored'='PROP-065'.",
+      "evidence": "FUSE hash of DIRECTIVE-20260531-001-jsonl-destructive-overwrite.json: 74674ef069e6ebccf68385395402a34a (status='pending'). Git/clone hash: bd60d7f8300784b0930ce535ad96fefa (status='completed'). Tinker dispatcher reads from FUSE per the prompt design; without external check against git, would have re-authored PROP-065. This run side-stepped the false-positive by clone-checking before doing substantive work and routed instead to DIRECTIVE-002 (the next valid pending directive on git). Cause: PROP-064 Step 4c silent-skip (the same bug PROP-066 is designed to fix). Last sync-workspace-runs sentinel: 2026-05-30T01:16:37Z, ~28h stale. Tinker repaired the FUSE-side directive files (001 + 002) via clone copy as a one-time recovery; PROP-066 deployment will close the recurrence.",
+      "files_affected": [
+        "monitor/tinker/operator-directives/DIRECTIVE-20260531-001-jsonl-destructive-overwrite.json (FUSE refreshed in this run)",
+        "monitor/tinker/operator-directives/DIRECTIVE-20260531-002-prop-064-deeper-silent-skip.json (FUSE refreshed in this run + marked completed by PROP-066 author)"
+      ],
+      "recommended_action": "PROP-066 deployment closes the root cause. Until then, tinker's Mode 0 directive-discovery should cross-check FUSE-vs-git for any pending directive whose status differs from git. Adding this check as a tinker.md inline step is a candidate for a future PROP if PROP-066 doesn't fully resolve the staleness within 24h.",
+      "status": "PROP-066 authored; awaiting operator review + implementation"
+    },
+    {
+      "id": "FND-02",
+      "category": "backlog-trend",
+      "severity": "info",
+      "summary": "PROP-030 backlog metrics computed this run — all tiers green. open_issues_total=65, net_velocity_7d=+69 (134 closed - 65 created), assigned_analyst=43, age_ge_30d=0. No threshold fired.",
+      "evidence": "monitor/tinker/queue-history.jsonl row appended at 2026-05-31T05:58:58Z. Backlog has cleared substantially: was 230+ in early May (per CLAUDE.md PROP-030 context), now 65. Decider/curmudgeon BAU cadences are draining faster than analyst inflow. No action needed.",
+      "recommended_action": "Continue current cadences. Re-check on next tinker run.",
+      "status": "monitoring"
+    },
+    {
+      "id": "FND-03",
+      "category": "tinker-mode-0-duplicate-pickup-pattern",
+      "severity": "info",
+      "summary": "Three tinker runs in 33 minutes (05-23, 05-42, 05-56) all hit FUSE-staleness on operator-directives. This run is the third instance — pattern is now well-evidenced (4+ events in ~13h counting tinker-2026-05-31T02-40 which separately found 5 stale FUSE files).",
+      "evidence": "tinker-2026-05-31T05-23 authored PROP-065 in response to DIRECTIVE-001. tinker-2026-05-31T05-42 attempted to author a duplicate PROP-065, wrote a stub redirect (PROP-065-jsonl-destructive-overwrite-fix.json with do_not_apply:true) when it discovered the duplicate via clone fetch. This run (05-56) detected the staleness pre-substantive-work and side-stepped, routing instead to DIRECTIVE-002. The pattern of 'tinker schedules cluster after operator activity, FUSE hasn't sync'd, duplicate work attempted' is recurring.",
+      "recommended_action": "PROP-066 deployment is the structural fix. As a secondary measure post-PROP-066: consider modifying tinker.md Mode 0 directive-discovery to fetch directly from origin/main rather than FUSE for the directive-status check. Defer until PROP-066 effectiveness is measured.",
+      "status": "PROP-066 covers; revisit if staleness persists post-deployment"
+    }
+  ],
+  "previous_followup": {
+    "PROP-065": {
+      "verification": "Confirmed implemented at 2026-05-31T05:52:49Z by operator-cowork-session. Verification per PROP-065's own verification_pattern: (1) workspace-sync.md contains GIT_APPEND_ONLY=( + is_git_append_only — VERIFIED (line 235); (2) build.js OWNERSHIP — not checked this run (operator-confirmed in implementation_notes); (3) CLAUDE.md File Ownership Rules — not checked this run (operator-confirmed); (4) synthetic test — not run; (5) 36h baseline period — too soon (deployment was 04h ago).",
+      "verdict": "DEPLOYED. Effectiveness measurement at next tinker Mode 3 run (post 2026-06-01T05:52Z target)."
+    },
+    "PROP-064": {
+      "verification": "STILL_BROKEN. Despite PROP-064's workstream A+B being present in workspace-sync.md (verified PRE_PULL_SHA capture at line 149, four-way classification at line 1210), Step 4c continues silent-skipping in production. Evidence: ONE sync-workspace-runs sentinel (bootstrap only) since deployment, ONE Step 4c commit message (`ea413b4` at 2026-05-30T17:11Z with improvised action), ZERO further Step 4c artifacts across ~18 subsequent cycles. This is the FND-01 of tinker-2026-05-31T02-40 + this run's diagnostic confirmation.",
+      "verdict": "STILL_BROKEN — PROP-066 authored to close via helper-script extraction (resolves bash-variable-loss + LLM-skip-by-omission + silent-early-return)."
+    },
+    "PROP-061": {
+      "verification": "Architecturally sound; PROP-064 + PROP-066 amend its Step 4c implementation. Universal-pusher FUSE→git direction continues to work correctly (multiple successful FUSE→git rescues visible in workspace-sync run reports).",
+      "verdict": "PARTIAL — git→FUSE direction depends on PROP-066 for reliable firing."
+    }
+  },
+  "queue_metrics": {
+    "ts": "2026-05-31T05:58:58.388Z",
+    "tinker_run_id": "tinker-2026-05-31T05-56",
+    "open_issues_total": 65,
+    "open_status_count": 9,
+    "assigned_analyst_count": 43,
+    "age_ge_14d_count": 0,
+    "age_ge_30d_count": 0,
+    "oldest_open_age_days": 0.45,
+    "new_issues_velocity_7d": 65,
+    "closed_issues_velocity_7d": 134,
+    "net_velocity_7d": 69,
+    "baby_drain_count_7d": 4,
+    "verify_drain_count_7d": 0,
+    "thresholds_firing": "none — all tiers green"
+  },
+  "cleanup_actions": [
+    "FUSE-refresh of DIRECTIVE-20260531-001-jsonl-destructive-overwrite.json (FUSE was stale showing status='pending'; clone had status='completed'; cp from clone to FUSE)",
+    "FUSE-refresh of DIRECTIVE-20260531-002-prop-064-deeper-silent-skip.json (additionally marked completed by this run after PROP-066 authored)"
+  ],
+  "writes_made": [
+    "monitor/tinker/proposals/PROP-066-step-4c-helper-script-extraction.json (NEW, 37KB)",
+    "monitor/tinker/operator-directives/DIRECTIVE-20260531-002-prop-064-deeper-silent-skip.json (additive edit: status pending → completed)",
+    "monitor/tinker/queue-history.jsonl (append-only, +1 row per PROP-030)",
+    "monitor/tinker/report-2026-05-31T05-56.json (this report)",
+    "monitor/tinker/latest-tinker-summary.txt (overwritten per cadence)"
+  ],
+  "next_run_handoff": "Awaiting operator review of PROP-066. Next tinker run should: (1) verify PROP-066 deployment status (if implemented, run verification_pattern from the PROP); (2) if PROP-066 deployed, count sync-workspace-runs sentinels in last 24h — expect ≥18; (3) if PROP-066 not deployed and PROP-065 already verified, fall through to Mode 3 cost engineering. Pending directive on git: DIRECTIVE-20260531-003 (medium priority, cross-session clone cleanup) — next tinker Mode 0 should pick this up if no higher-priority work."
+}
