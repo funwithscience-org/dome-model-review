@@ -1,0 +1,46 @@
+{
+  "id": "DIRECTIVE-20260531-009",
+  "filed_by": "operator-cowork-session",
+  "filed_at": "2026-05-31T13:10:00Z",
+  "status": "pending",
+  "priority": "medium",
+  "title": "Author PROP-070 — PROP-056 burndown logic does NOT follow consolidation chains; 18 ISSs were stuck post-integration; root-cause fix needed so future EXP integrations auto-close associated ISSs across consolidation chains",
+  "background": "Operator-side queue audit 2026-05-31T13:00Z surfaced a structural gap in PROP-056's burndown closure logic. 18 ISSs in open-issues.json had status=assigned-analyst but their corresponding EXPs had already been integrated (status=complete in expansion-tracker.json). The decider's burndown pass was not flipping these ISSs to status=fixed because the chain ISS → EXP-orig → consolidated-into-EXP-final → complete was not being traversed. PROP-056 burndown apparently checks `iss.issue_ids ∈ exp.issue_ids AND exp.status == 'complete'` but not `... AND any-consolidation-chain-endpoint.status == 'complete'`.\n\nOperator manually ran a burndown at 2026-05-31T13:00:00Z (commit 7ec29efbbd) closing the 18 stuck ISSs as a one-time backlog clear. The closures used closure_reason explaining the chain + audit_grandfathered=yes (no verification_pattern because the work was integrated by decider in prior runs, not by this burndown — closure is bookkeeping for already-done work). closure-ledger.jsonl received 18 entries with closed_by_mechanism=operator-burndown and can_revert=true.\n\nObserved 18 stuck-ISS patterns (all assigned-analyst → fixed via burndown):\n  - DIRECT (no consolidation): ISS-2304→EXP-481, ISS-2322→EXP-493, ISS-2324→EXP-462, ISS-2326→EXP-464, ISS-2327→EXP-465, ISS-2336→EXP-468 (6 ISSs)\n  - CONSOLIDATED→complete: ISS-2302/2303→EXP-479/480 (consolidated→EXP-517 complete); ISS-2320/2321/2323→EXP-491/492/494 (→EXP-518 complete); ISS-2338/2339→EXP-502/503 (→EXP-519 complete); ISS-2347/2348/2349/2353/2354→EXP-521-525 (→EXP-520 complete) (12 ISSs)\n\nThe DIRECT cases (6) are surprising — PROP-056 burndown SHOULD have caught these (no chain to follow). Either the burndown ran but missed these, or the burndown doesn't run frequently enough, or there's a different gap in the closure logic. Worth confirming whether the 6 DIRECT cases were genuinely missed by burndown or just hadn't been picked up yet on the next BAU cycle.\n\nThe CONSOLIDATED cases (12) are the architectural finding: burndown logic doesn't follow the consolidation pointer to identify the chain endpoint.\n\nA related-but-out-of-scope finding: 3 more ISSs (ISS-2343/2344/2345) point to consolidation targets (EXP-476/478) that exist as files in monitor/analyst/expansions/ but are NOT in expansion-tracker.json. They are analyst-baby-authored amendment files (item_id=EXP-476 etc., amends_exp=EXP-450) intended to be applied AT decider's integration time of EXP-450. These ISSs were NOT closed by today's burndown because their EXP-chain endpoint isn't 'complete' in tracker — they're genuinely awaiting EXP-450 integration. PROP-070 should consider whether to extend burndown awareness to amendment-file consolidation targets too (separately from the in-tracker consolidation chain fix).",
+  "operator_burndown_commit_evidence": {
+    "commit_sha": "7ec29efbbd",
+    "closure_count": 18,
+    "closure_ledger_entries_appended": 18,
+    "open_issues_count_before": 62,
+    "open_issues_count_after": 44,
+    "burndown_method": "operator-Node-script via Git Data API; not via the existing PROP-056 burndown CLI"
+  },
+  "requested_work": [
+    "Step 1 — Read PROP-056 implementation in build-scripts/revert-burndown-closures.js (and any other PROP-056 source files), specifically the closure-detection logic. Confirm or refute the hypothesis: 'PROP-056 burndown checks iss.issue_ids ∈ exp.issue_ids AND exp.status == complete, but does not traverse consolidation chains.'",
+    "Step 2 — Determine the consolidation-chain shape in actual data: walk expansion-tracker.json to identify all EXPs with status='consolidated-into-EXP-NNN'. For each, identify the chain endpoint (the EXP-NNN they consolidate into). Count how many such chains end in 'complete' (these are the missed-closure-opportunities the operator's burndown caught today) vs how many end in 'pending' / 'ready-for-integration' (these are genuinely-still-pending). The 12 CONSOLIDATED cases from today's burndown are concrete examples.",
+    "Step 3 — Investigate the 6 DIRECT cases (ISS-2304/2322/2324/2326/2327/2336). These should have been caught by PROP-056 even without chain traversal. Was PROP-056 burndown not running? Or was the close-detection logic also missing direct cases? Sample one of these ISSs' history and trace why the EXP integration completed without the ISS being auto-closed.",
+    "Step 4 — Address the amendment-file consolidation pattern (ISS-2343/2344/2345 → EXP-476/478). These EXPs exist as files but aren't in expansion-tracker. Determine whether (a) the tracker should auto-register amendment files, (b) the burndown should scan monitor/analyst/expansions/ directly for amendment-file presence + integration evidence, or (c) the amendment files should be folded into the parent EXP at authoring time so the tracker stays consistent. Recommend ONE approach in PROP-070 (with rationale).",
+    "Step 5 — Author PROP-070 with: (a) confirmed root cause of the burndown gap from Steps 1+3, (b) chain-traversal logic patch for PROP-056 (or replacement of PROP-056), (c) amendment-file handling from Step 4, (d) re-run of operator's burndown logic against the updated data to verify zero remaining stuck-ISSs of the same pattern, (e) any operator-facing observability addition (e.g., tinker daily Mode 2 quick-check should count assigned-analyst ISSs whose EXP-chain endpoint is complete; should report >0 as a soft-complaint).",
+    "Step 6 — Lifecycle: mark this directive completed with prop_id_authored='PROP-070'. The operator's manual burndown commit 7ec29efbbd remains the one-time backlog clear; PROP-070 implementation prevents recurrence."
+  ],
+  "non_goals": [
+    "Do NOT IMPLEMENT PROP-070 in this run — author only. Implementation is a follow-up directive after operator review.",
+    "Do NOT touch any of the 18 already-closed ISSs from today's burndown. They are correctly closed.",
+    "Do NOT re-close ISS-2343/2344/2345 — they are GENUINELY pending decider integration of EXP-450 + EXP-476/478 amendments. Closing them now would be premature; they'll close naturally when EXP-450 lands.",
+    "Do NOT widen scope to all ISS-closure-pattern audits — focus is the EXP-integration→ISS-closure chain only. Other closure patterns (decider self-apply patches, curmudgeon verdict-driven, etc.) are out of scope.",
+    "Do NOT supersede PROP-056. PROP-056's burndown is mostly working — only the consolidation-chain case (and possibly the DIRECT case if Step 3 surfaces a gap there) needs the patch. PROP-070 is an enhancement, not a replacement."
+  ],
+  "context_pointers": {
+    "prop_056": "monitor/tinker/proposals/PROP-056-burndown-decider-open-issues-stuck-assignments.json (status: implemented)",
+    "prop_055": "monitor/tinker/proposals/PROP-055-mandate-verification-pattern-on-closure.json (status: implemented; the verification_pattern mandate PROP-059 enforces)",
+    "prop_053": "monitor/tinker/proposals/PROP-053-exp-tracker-gap-audit.json (status: implemented; precursor to the chain-awareness problem)",
+    "burndown_script": "build-scripts/revert-burndown-closures.js (reads closure-ledger.jsonl)",
+    "operator_burndown_commit": "7ec29efbbd at 2026-05-31T13:00:00Z — the one-time backlog clear this directive is following up on",
+    "closure_ledger_path": "monitor/decisions/closure-ledger.jsonl (now 334 entries; the 18 new entries are easily identified by closed_by_mechanism=operator-burndown)",
+    "stuck_iss_examples_consolidated": ["ISS-2302→EXP-517", "ISS-2320→EXP-518", "ISS-2338→EXP-519", "ISS-2347→EXP-520"],
+    "stuck_iss_examples_direct": ["ISS-2304→EXP-481", "ISS-2322→EXP-493", "ISS-2324→EXP-462"],
+    "amendment_pattern_examples": ["ISS-2343→EXP-470→consolidated-into-EXP-476 (amendment file, not in tracker)", "ISS-2344→EXP-471→EXP-478", "ISS-2345→EXP-472→EXP-476"]
+  },
+  "expected_output": "monitor/tinker/proposals/PROP-070-burndown-consolidation-chain-fix.json (status='design-pending-operator-review') with: confirmed root cause, chain-traversal patch for PROP-056, amendment-file handling design, re-run validation against current data, optional observability addition. PLUS: this directive flipped to status='completed' with prop_id_authored='PROP-070'.",
+  "estimated_effort": "~30-45 min Opus. Steps 1+3 (investigate PROP-056 code + sample DIRECT case) are ~15 min. Step 2 (consolidation chain walk on current data) is ~10 min. Step 4 (amendment-file design call) is ~5 min. Steps 5-6 mechanical.",
+  "priority_note": "MEDIUM — backlog hygiene fix. Not a data-loss or operational-blocker issue; the 18 stuck ISSs cleared by today's burndown were already-done work that just wasn't bookkept correctly. The value of PROP-070: (a) prevents future backlog inflation from the same pattern, (b) makes the queue counts mean what they appear to mean, (c) might surface the DIRECT-case gap if PROP-056 burndown isn't actually running on schedule."
+}
