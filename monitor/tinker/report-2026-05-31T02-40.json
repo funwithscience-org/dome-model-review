@@ -1,0 +1,142 @@
+{
+  "run_id": "tinker-2026-05-31T02-40",
+  "run_at": "2026-05-31T02:40:00Z",
+  "mode_selected": "Mode 2 (Infrastructure & FUSE)",
+  "mode_selected_because": "Pre-flight pulled DIRECTIVE-20260525-003 as pending in FUSE, but it is actually status='completed' in git canonical (FUSE stale). Mode 0 scan: no assigned-to-tinker items (clean in both FUSE and git). Mode 1 quick check: all 11 enabled agents firing on schedule, no stranded patches >24h. Mode 2 detected 6 stale FUSE files (data/wins.json, data/sections.json, docs/index.html, monitor/decisions/open-issues.json, monitor/curmudgeon/priority-queue.json, monitor/prompts/reference/analyst-mode5-prospective.md). Selected Mode 2 to recover FUSE.",
+  "modes_checked": {
+    "mode_0_assigned_to_tinker": {
+      "result": "EMPTY (FUSE) and EMPTY (git after pull)",
+      "evidence": "open-issues.json has 0 status='assigned-tinker'; expansion-tracker.json has 0 assigned_to='tinker' active items"
+    },
+    "operator_directive_pending": {
+      "fuse_reading": "DIRECTIVE-20260525-003 status=pending (low)",
+      "git_reading": "DIRECTIVE-20260525-003 status=completed (already finished in prior run)",
+      "discrepancy_cause": "FUSE staleness on monitor/tinker/operator-directives/ — was synced earlier today by workspace-sync but never picked up the close-write from the prior tinker run that authored PROP-060",
+      "action": "Trust git canonical; no directive work performed this run"
+    },
+    "mode_1_pipeline_health": {
+      "result": "GREEN-with-context",
+      "evidence": [
+        "All 11 enabled agents fired on schedule (workspace-sync hourly, decider 12h last 02:34Z, analyst 2h, curmudgeon 2h, integrity daily 01:08Z, analyst-baby 12h, curmudgeon-verify 4h, poller daily 00:06Z, social daily, prune-integrity daily 08:06Z, tinker now)",
+        "Stranded patches >24h non-tombstoned: 0",
+        "Workspace-sync IS committing per-cycle to git (latest 2026-05-31T02:08:14Z commit 498569b9)",
+        "Operator-direct decider run pushed 7431bc6a at 02:48Z mid-tinker-run; pull --rebase clean"
+      ]
+    },
+    "mode_2_infrastructure_and_fuse": {
+      "result": "RED (recovered)",
+      "evidence": [
+        "FUSE staleness: 5 real stale files (data/wins.json, data/sections.json, docs/index.html, monitor/decisions/open-issues.json, monitor/curmudgeon/priority-queue.json) + 1 false-positive (analyst-mode5-prospective.md is a FUSE orphan — git returns 404)",
+        "Recovery: ran `node build.js sync-workspace` from /tmp/tinker-clone. 70 git-owned files copied, all 5 real stale files RECOVERED.",
+        "Root cause: PROP-061 step 4c (workspace-sync's git→FUSE divergence detect) has not fired since 2026-05-30T09-11-33Z (~17.5h gap). workspace-sync agent IS running every hour and pushing per-cycle, but the divergence check is exiting via the 'equal' branch even though other agents have been pushing in between. PROP-064 was supposed to fix this (workstream A: PULL_MOVED signal from Step 1), so the regression is post-PROP-064 deployment.",
+        "Dome PAT scope verified: HTTP 200",
+        "Project-induced disk footprint: 307MB (under 500MB warning threshold)",
+        "Root FS at 93% — system-image baseline (per CLAUDE.md, not pipeline-controllable)"
+      ]
+    },
+    "mode_3_cost_engineering": {
+      "result": "skipped this run (Mode 2 took priority)"
+    },
+    "mode_4_proposals_and_fixes": {
+      "result": "deferred to future run (findings flagged here, PROPs not authored)"
+    }
+  },
+  "previous_followup": {
+    "PROP-061_git_to_fuse_propagation": "STILL_BROKEN — sentinel evidence: no git-to-fuse-divergence-*.json sentinels written since 2026-05-30T09-11-33Z, despite hourly workspace-sync runs. workspace-sync commits per-cycle to git (verified) but Step 4c is silently no-op'ing. Per PROP-064 prompt comments, the PRE_PULL_SHA signal from Step 1 should set PULL_MOVED=1 when upstream commits get absorbed during workspace-sync's git pull --rebase, but the check appears not to be running or PULL_MOVED is not propagating to Step 4c. Recovery this run: manual `node build.js sync-workspace` from clone — restored 5 stale FUSE files.",
+    "PROP-064_step_4c_silent_skip_fix": "PARTIALLY_BROKEN — PROP-064 was authored to fix exactly this silent-skip pattern, but in practice the divergence-detection still isn't firing. Either PROP-064 wasn't fully deployed to workspace-sync's running version, or the fix didn't cover the actual silent-skip path observed today. Recommend investigation in Mode 4 next run.",
+    "PROP-060_assigned_to_tinker_dispatcher": "ACTIVE — Mode 0 scan ran this morning, returned 'no assigned-to-tinker items pending' in both FUSE and git. Dispatcher in place; nothing currently routed.",
+    "DIRECTIVE-20260525-003": "COMPLETED in git (verified). FUSE shows status=pending due to stale operator-directives/ dir; FUSE recovered via sync-workspace this run."
+  },
+  "backlog_trend": {
+    "category": "backlog-trend",
+    "severity": "info",
+    "ts": "2026-05-31T02:49:29.734Z",
+    "metrics": {
+      "open_issues_total": 67,
+      "open_status_count": 47,
+      "assigned_analyst_count": 9,
+      "blocked_on_curmudgeon": 10,
+      "age_ge_14d_count": 0,
+      "age_ge_30d_count": 0,
+      "oldest_open_age_days": 0.50,
+      "new_issues_velocity_7d": 172,
+      "closed_issues_velocity_7d": 97,
+      "net_velocity_7d": -75,
+      "baby_drain_count_7d": 2,
+      "verify_drain_count_7d": 0
+    },
+    "comparison_vs_yesterday": "open=67 vs 14 (+53). closures 97 vs 39 (+58) — drain rate accelerating. new-issues 172 vs 14 (+158) — overnight HOL-rerun + EXP-450/451 hole-finding produced ~50 new ISSes; further decider self-apply on 2026-05-30T18 fixed CRITICALs (CA_NONE bucket filter) and produced 17 more on 2026-05-31. net_velocity_7d -75 reflects the burst.",
+    "thresholds_fired": "none — open=67 < 200 (moderate threshold), <300 (major), <400 (operator_escalation). assigned_analyst=9 < 50. oldest=0.5d, age_ge_30d=0. Healthy growth pattern: closures are draining, just lagging burst of new ISSes. PROP-030 threshold table requires 2 consecutive negative-velocity runs for moderate; this is the FIRST observed negative since 2026-05-25 (queue-history was missing entries 2026-05-26..2026-05-30 due to the destructive-overwrite issue, so technically unknown whether prior runs were negative)."
+  },
+  "context_load": {
+    "claude_md_lines": 209,
+    "tinker_md_lines_dispatcher": 400,
+    "trend_alerts": [],
+    "notes": "No load measurements this run; deferred to next Mode 3 invocation."
+  },
+  "findings": [
+    {
+      "id": "FND-01",
+      "category": "infrastructure",
+      "severity": "major",
+      "title": "PROP-061/064 git→FUSE sync not firing — 5 real-stale files this morning, recovered manually",
+      "summary": "workspace-sync's PROP-061 step 4c (git→FUSE divergence detect + auto-sync) hasn't written a divergence sentinel since 2026-05-30T09-11-33Z. Yet workspace-sync agent IS running hourly and pushing per-cycle FUSE→git syncs to git (latest 02:08:14Z 2026-05-31). The divergence check is exiting via the 'equal' branch every cycle, meaning either PULL_MOVED isn't being captured in Step 1 OR Step 4c isn't being executed. Result: 5 stale FUSE files this morning (wins.json, sections.json, docs/index.html, open-issues.json, priority-queue.json) — the canonical agent-readable data was up to ~17h behind git canonical. Other agents (analyst, curmudgeon) that read from FUSE could have produced incorrect work.",
+      "evidence_files": [
+        "monitor/integrity/git-to-fuse-divergence-2026-05-30T09-11-33Z.json (last divergence sentinel)",
+        "monitor/integrity/workspace-sync-runs/run-2026-05-30T09-11-45Z.json (last FUSE-visible run report; agent has run ~20 more times since per git log but reports aren't propagating)",
+        "monitor/decisions/open-issues.json (FUSE was at older state pre-recovery; recovered to match git)"
+      ],
+      "this_run_recovery": "Ran `node build.js sync-workspace` from /tmp/tinker-clone — recovered all 5 real-stale files. Verified post-sync via md5 vs raw.githubusercontent.com.",
+      "recommendation": "Mode 4 next run: PROP authoring. (1) Investigate why workspace-sync's PROP-064 four-way classification is returning 'equal' on every cycle. Hypothesis A: PRE_PULL_SHA captured before Step 1's pull but the var doesn't survive across bash session boundaries within the agent prompt. Hypothesis B: workspace-sync's clone state vs origin/main are genuinely equal at Step 4c because Step 4 just pushed our own changes — the OTHER agents' commits had already been absorbed by Step 1's pull but no signal carries that forward to Step 4c. (2) Add a daily Mode 2 self-test that runs `node build.js sync-workspace` from a fresh clone if the FUSE staleness count is >0. This is the safety-net we just exercised manually.",
+      "tracked_under": null
+    },
+    {
+      "id": "FND-02",
+      "category": "infrastructure",
+      "severity": "major",
+      "title": "Universal-pusher destructively overwrote queue-history.jsonl, losing yesterday's tinker entry",
+      "summary": "Workspace-sync's commit 3c62327 (2026-05-30T09:11:20Z) pushed FUSE's queue-history.jsonl over git's copy. The diff shows the 2026-05-30T02:41:16Z row (added by yesterday's tinker-2026-05-30T02-40 run) was DELETED. This happened because FUSE was stale: yesterday's tinker had appended to a FUSE that was missing context, then the tinker's commit (which would have written to clone, not FUSE) didn't sync back to FUSE before workspace-sync's smart_copy saw 'FUSE mtime > git mtime' and pushed FUSE's version. For append-only .jsonl files, this is data loss.",
+      "evidence": "git show 3c62327 -- monitor/tinker/queue-history.jsonl shows the single line removal. The lost row content is still recoverable from monitor/tinker/report-2026-05-30T02-40.json:backlog_trend.metrics.",
+      "recommendation": "Mode 4 PROP: workspace-sync's smart_copy should special-case append-only .jsonl files. Either (a) reject pushes that delete lines from a .jsonl file (only allow appends), or (b) read git's tail before pushing and merge instead of replace. Same pattern likely affects closure-ledger.jsonl, workspace-sync-skips.jsonl, calibration-audits.jsonl. NOT a quick self-fix — needs design review.",
+      "data_loss_this_incident": "1 queue-history row (2026-05-30T02:41:16Z). Recoverable from yesterday's tinker report.",
+      "tracked_under": null
+    },
+    {
+      "id": "FND-03",
+      "category": "backlog-trend",
+      "severity": "info",
+      "title": "Backlog jumped 14→67 overnight (HOL reviews + EXP-450/451 hole-finding); drain is keeping pace",
+      "summary": "47 new ISS-23xx created from overnight curmudgeon reviews of HOL-COMPLETENESS/CROSSREF/HIERARCHY/NARRATIVE/TAXONOMY/TONE/REDUNDANCY/MISSING + EXP-450/451 hole-finding + decider's CA_NONE critical fix at 18:04Z 2026-05-30. Plus 10 new on 2026-05-31 decider 02:34Z run. Velocity over 7d: 172 new vs 97 closed (net -75). Healthy pattern: backlog growth is concentrated to the last 24h; closures are also up (39→97 over 7d); oldest age 0.5d. No threshold fired. Compare yesterday's net +25 — overnight burst tipped to negative.",
+      "recommendation": "Watch: re-evaluate in 24h. If net velocity stays negative through 2026-06-01 tinker run, escalate to MODERATE per PROP-030 threshold (negative velocity 2 consecutive runs).",
+      "tracked_under": null
+    },
+    {
+      "id": "FND-04",
+      "category": "integrity-finding-followup",
+      "severity": "critical",
+      "title": "Integrity 2026-05-31T01-15 flagged 4 PROP-059 Mech-A-bypass ISSes — still uninvestigated by tinker",
+      "summary": "Today's integrity report listed 4 CRITICAL: ISS-2295/2296/2297/2298 closed by decider 2026-05-30 14:43-14:47Z with fixed_by='decider-self-verify' / 'decider-dedup-step' / 'decider-prop059-verification', no verification_pattern, no audit_grandfathered. These are decider-side closures of decider's own integrity-finding ISSes without verification fingerprints — bypassing PROP-059's pending-verification gate. Note ISS-2296 incomplete fix: set next_id=475 when live items already reached EXP-478 (collision caught + corrected by decider's next run 7431bc6a setting next_id=479).",
+      "recommendation": "Operator awareness: this is the PROP-059 bypass pattern that DIRECTIVE-20260526-002 was authored to address. Tinker is not the right writer for decider-self-apply discipline (that's decider's prompt). Forward to operator / decider via integrity report path. Not a tinker action item.",
+      "evidence_files": ["monitor/integrity/report-2026-05-31T01-15.json", "monitor/decisions/closed-issues.json (search ISS-2295..2298)"],
+      "tracked_under": "DIRECTIVE-20260526-002 (pre-existing follow-up)"
+    },
+    {
+      "id": "FND-05",
+      "category": "integrity-tooling",
+      "severity": "minor",
+      "title": "Integrity's PROP-064 FUSE-staleness audit false-positives on git-deleted files that linger in FUSE as orphans",
+      "summary": "Integrity 2026-05-31T01-15 flagged monitor/prompts/reference/analyst-mode5-prospective.md as 'first occurrence' stale. Investigation: the file does NOT exist on origin/main (HTTP 404 from raw.githubusercontent.com). FUSE has the orphan from a prior version (Apr 11 mtime); git deleted it. The audit's md5 vs GH compare matches the FUSE md5 against curl's 404-body bytes, producing a false 'staleness' mismatch.",
+      "recommendation": "Mode 4 small PROP: integrity's PROP-064 audit should check curl HTTP status before md5-comparing the body. If 404, classify as 'fuse-orphan' (informational) not 'stale' (warn). Tinker's quick checks should adopt the same fix.",
+      "tracked_under": null
+    }
+  ],
+  "cleanup_actions": [
+    {
+      "path": "/tmp/tinker-clone",
+      "age_hours": 0,
+      "size_mb": "TBD",
+      "reason": "Mandatory end-of-run cleanup per PROP-060 FND-01"
+    }
+  ],
+  "next_run_focus": "Mode 4 PROP authoring for FND-01 (PROP-061/064 git→FUSE silent skip), FND-02 (workspace-sync destructive .jsonl overwrite). Both are urgent infra integrity. FND-05 is a small drive-by fix. Backlog (FND-03) — verify velocity recovers by tomorrow's run."
+}
