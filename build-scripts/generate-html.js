@@ -225,6 +225,15 @@ function escapeHtml(s) {
     .replace(/'/g, '&#39;');
 }
 
+// Shared helper: build a WIN-ID list string from a predicate (EXP-442 helper_reuse_note / ISS-2321)
+// opts.sep defaults to ', ', opts.prefix defaults to 'WIN-'
+// For slash-joined bare IDs: listOfWinIds(w => ..., wins, {sep:'/', prefix:''})
+function listOfWinIds(predicate, wins, opts) {
+  const sep = (opts && opts.sep != null) ? opts.sep : ', ';
+  const prefix = (opts && opts.prefix != null) ? opts.prefix : 'WIN-';
+  return wins.filter(predicate).map(w => prefix + w.id).join(sep);
+}
+
 function renderFailureEntry(e) {
   const idLabel = escapeHtml(e.id);
   const refLabel = e.dome_ref_current
@@ -1220,6 +1229,10 @@ function main() {
   const baseWins = wins.filter(w => /^\d{3}$/.test(w.id));
   const collisionWins = wins.filter(w => /^\d{3}[a-z]$/i.test(w.id));
   const catalogTotal = baseWins.length + collisionWins.length;
+  // Build invariant: every WIN ID must match either base or collision pattern (EXP-437 change_2 / ISS-2302)
+  if (baseWins.length + collisionWins.length !== wins.length) {
+    throw new Error(`build: ID-shape coverage gap — baseWins=${baseWins.length} + collisions=${collisionWins.length} != wins.length=${wins.length}. A WIN ID matched neither /^\d{3}$/ nor /^\d{3}[a-z]$/i — update the regexes in main().`);
+  }
   const counts = {
     total: baseWins.length,  // dome's claimed count (used in prose as {{TOTAL_WINS}})
     newInV51: wins.filter(w => w.new_in_v51).length,
@@ -1418,16 +1431,16 @@ function main() {
     caNoneRefuted: caNoneBase.filter(w=>w.verdict==='Refuted by Data').length,
     caNoneNotdemo: caNoneBase.filter(w=>w.verdict==='Not Demonstrated').length,
     caNoneRelabels: caNoneBase.filter(w=>w.code_analysis.relabels_standard===true).length,
-    caNoneUnfalIds: caNoneBase.filter(w=>w.verdict==='Unfalsifiable').map(w=>'WIN-'+w.id).join(', '),
-    caNoneSCIds: caNoneBase.filter(w=>w.verdict==='Self-Contradicted').map(w=>'WIN-'+w.id).join(', '),
-    caNoneMisleadingIds: caNoneBase.filter(w=>w.verdict==='Misleading').map(w=>'WIN-'+w.id).join(', '),
-    caNoneStdmodelIds: caNoneBase.filter(w=>w.verdict==='Std Model Explains').map(w=>'WIN-'+w.id).join(', '),
-    caNoneRefutedIds: caNoneBase.filter(w=>w.verdict==='Refuted by Data').map(w=>'WIN-'+w.id).join(', '),
-    caNoneNotdemoIds: caNoneBase.filter(w=>w.verdict==='Not Demonstrated').map(w=>'WIN-'+w.id).join(', '),
+    caNoneUnfalIds: listOfWinIds(w=>w.verdict==='Unfalsifiable', caNoneBase),
+    caNoneSCIds: listOfWinIds(w=>w.verdict==='Self-Contradicted', caNoneBase),
+    caNoneMisleadingIds: listOfWinIds(w=>w.verdict==='Misleading', caNoneBase),
+    caNoneStdmodelIds: listOfWinIds(w=>w.verdict==='Std Model Explains', caNoneBase),
+    caNoneRefutedIds: listOfWinIds(w=>w.verdict==='Refuted by Data', caNoneBase),
+    caNoneNotdemoIds: listOfWinIds(w=>w.verdict==='Not Demonstrated', caNoneBase),
     scTotal: scReviewed.length,
     scMonNone: scReviewed.filter(w=>w.code_analysis.monitoring==='none').length,
     scMonHardcoded: scReviewed.filter(w=>w.code_analysis.monitoring&&w.code_analysis.monitoring!=='none').length,
-    scMonHardcodedIds: scReviewed.filter(w=>w.code_analysis.monitoring&&w.code_analysis.monitoring!=='none').map(w=>'WIN-'+w.id).join(', '),
+    scMonHardcodedIds: listOfWinIds(w=>w.code_analysis.monitoring&&w.code_analysis.monitoring!=='none', scReviewed, {sep:'/', prefix:''}),
     collisionCount: collisionWins.length,
     newInV51: counts.newInV51,
     selfContradicted: counts.selfContradicted,

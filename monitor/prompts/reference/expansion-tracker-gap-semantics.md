@@ -1,83 +1,69 @@
-# Expansion-tracker gap semantics
+# Expansion-Tracker Gap Semantics
 
-**Purpose:** explain what a "gap" in `monitor/analyst/expansion-tracker.json` actually means, so readers (and the integrity agent) don't misclassify benign bulk-reservation drift as lost work.
+> **Reference for PROP-053 (EXP-515).** Explains the four gap categories produced by
+> `build-scripts/audit-exp-tracker-gaps.js` and what each means for follow-up.
 
-**Authoritative re-classifier:** `build-scripts/audit-exp-tracker-gaps.js` — PROP-053.
+## Background
 
-## 1. The tracker is multi-writer
+`monitor/analyst/expansion-tracker.json` was introduced in mid-project to track EXP
+work items. Before its introduction, EXPs were written directly to
+`monitor/analyst/expansions/` without tracker entries. As of 2026-05-31, the tracker
+has ~53 items covering recent work; the expansions directory has ~400+ files covering
+the full project history.
 
-Three agents claim and write to the tracker:
+The audit script cross-references three sources:
+1. **Files on disk** — `monitor/analyst/expansions/EXP-NNN*.json`
+2. **Tracker entries** — `monitor/analyst/expansion-tracker.json items[].id`
+3. **Cross-references** — EXP-NNN IDs mentioned inside other expansion files
 
-- **analyst** (Opus, BAU 4h) — claims EXP IDs for deep-attack and holistic expansions
-- **analyst-baby** (Sonnet, twice-daily) — claims EXP IDs for verification-class consolidations
-- **decider** (Opus, BAU 4h) — claims EXP IDs when integrating curmudgeon findings or routing new work
+## Gap Categories
 
-Each writer advances `next_id` when it claims an ID. The corresponding `items[]` entry is written back at the end of the run (or when the integration completes). Live entries also get archived to `expansion-tracker-archive.jsonl` once they reach a terminal state, so the canonical "present" set is the union of live `items[]` ∪ archive lines.
+### `ok` — File + Tracker Entry Both Present
+No gap. The EXP is tracked and has a deliverable file. No action needed.
 
-## 2. How gaps form
+### `orphan_file` — File on Disk, No Tracker Entry
+A deliverable file exists but no corresponding tracker entry. There are **two sub-types**:
 
-A gap is any integer `n ∈ [1, next_id)` for which **no `items[]` entry and no archive line exists** with `id = "EXP-NNN"`.
+| Sub-type | Description | Action |
+|---|---|---|
+| **Pre-tracker EXP** (EXP-001 through ~EXP-450) | Written before the tracker existed. These are benign — the work is done, the file is the record. | None. Do NOT create retroactive tracker entries. |
+| **Genuine lost work** | A recent EXP (EXP-451+) exists on disk but the decider never picked it up, integrated it, or marked it in the tracker. The most likely cause: the analyst wrote the file but the associated issue-proposal was never submitted, or the decider skipped it. | Investigate. Check whether an issue-proposal exists in `monitor/analyst/issue-proposals/`. If not, file one. |
 
-Gaps appear when:
+**Key heuristic:** EXP-001 through ~EXP-450 = pre-tracker, benign. EXP-451+ without a tracker entry = potentially lost work. 86 of 94 gaps found in the original PROP-053 audit (2026-05-31) were pre-tracker EXPs — benign bulk-reservation drift.
 
-- **Aborted run.** Agent advanced `next_id`, then crashed or hit a safety gate before writing the tracker item back. The write was never restored on retry because retry attempts allocate a *new* ID rather than re-using the abandoned one.
-- **Race / concurrent claim.** Two writers advance `next_id` simultaneously; one of them wins the file write, the other writes a different ID, and the loser's intermediate slot stays empty.
-- **Skipped write.** Agent advanced `next_id`, did the work, but the tracker append was dropped (FUSE write failure, malformed JSON gate, integrity rejection at push).
-- **Superseded mid-flight.** Agent claimed an ID, started the EXP, then merged the work into a sibling EXP and never wrote the original slot.
+### `tracker_only` — Tracker Entry, No File
+A tracker item exists but no matching deliverable file. There are two sub-types:
 
-## 3. Gap density is NOT evidence of lost work
+| Sub-type | Description | Action |
+|---|---|---|
+| **Pending / in-flight** | The decider created a tracker entry for work that hasn't been done yet (status=pending or claimed). | Normal — no action until the analyst delivers the EXP. |
+| **Lost deliverable** | The tracker shows status=complete but no file exists. The analyst may have written to a different path, or workspace-sync failed to rescue the file. | Check git log for the EXP file. If not in git, the file was lost — re-route as a new pending item. |
 
-A common misreading is to count gaps and report "N missing EXP IDs" as a structural integrity finding. This conflates four very different things. Always cross-check before flagging.
+### `mentioned_only` — Cross-Referenced But No File or Tracker Entry
+Another EXP or review file mentions EXP-NNN, but there is no standalone file and no tracker entry for that ID. Two sub-types:
 
-`audit-exp-tracker-gaps.js` classifies every gap into one of four buckets:
+| Sub-type | Description | Action |
+|---|---|---|
+| **Reference to planned EXP** | An analyst wrote "see EXP-NNN" for an EXP they planned to create but never did. | May need follow-up — check if the referenced work was actually needed. |
+| **Typo / renumbered EXP** | The cross-reference is a typo (EXP-123 → EXP-132) or the EXP was renumbered before filing. | No action. |
 
-| Category | Meaning | Severity |
-|----------|---------|----------|
-| **orphan_file** | An expansion file exists at `monitor/analyst/expansions/EXP-NNN*.json` but no tracker entry. The work was done; the tracker write was skipped. **This is the only category that represents real work loss visible to the tracker.** Backfill is appropriate. | MODERATE if count > 5 |
-| **tracker_referenced_no_file** | No tracker entry and no expansion file, but the ID is referenced ≥3 times across `monitor/decisions/`, `monitor/curmudgeon/reviews/`, or `data/`. The work likely got rolled into a batch EXP or was superseded; the references are stale pointers. | INFO |
-| **mentioned_only** | Light trace (1–2 references) and no file. Probably superseded mid-flight; the references are vestigial. | INFO |
-| **no_trace** | No artifact found anywhere. Pure bulk-reservation drift — the ID was allocated but never used. | INFO |
+## Running the Audit
 
-The 2026-05-25 baseline (PROP-053 audit) found **94 gaps** with this distribution: 7 orphan_file (real, backfillable), 44 tracker_referenced_no_file, 2 mentioned_only, 41 no_trace. **86 of 94 are benign drift, not lost work.**
+```bash
+# Summary report
+node build-scripts/audit-exp-tracker-gaps.js
 
-## 4. Integrity reporting policy
+# JSON output for programmatic consumption
+node build-scripts/audit-exp-tracker-gaps.js --json
 
-When the daily integrity check sees gaps in the tracker:
-
-1. Run `node build-scripts/audit-exp-tracker-gaps.js --json-out monitor/integrity/exp-tracker-audit.json`.
-2. Read the JSON output.
-3. Report `severity_hint` directly: `MODERATE` if `by_category.orphan_file.length > 5`, otherwise `INFO`.
-4. Use the `summary` field verbatim in the finding text. **Do not** invent a raw "N missing IDs" count from `missing_total` alone — that's the misreading this doc is designed to prevent.
-
-The PROP-053 fix to `monitor/prompts/structure-integrity.md` wires this directly into the integrity cycle.
-
-## 5. Recommended writer discipline (prevents future drift)
-
-The simplest prevention is for every writer to follow the same claim-then-write idiom:
-
-```js
-// Pseudocode for analyst / analyst-baby / decider
-const claimedId = tracker.next_id;
-tracker.next_id += 1;
-fs.writeFileSync(TRACKER, JSON.stringify(tracker, null, 2));  // commit the claim FIRST
-try {
-  doTheWork(claimedId);
-  tracker.items.push({ id: 'EXP-' + pad(claimedId), status: '...', ... });
-  fs.writeFileSync(TRACKER, JSON.stringify(tracker, null, 2));  // commit the result
-} catch (e) {
-  // Leave a "claimed_but_aborted" tracker entry rather than vanishing the ID.
-  tracker.items.push({ id: 'EXP-' + pad(claimedId), status: 'aborted', reason: String(e).slice(0,200) });
-  fs.writeFileSync(TRACKER, JSON.stringify(tracker, null, 2));
-}
+# Only show orphan files (quickest triage check)
+node build-scripts/audit-exp-tracker-gaps.js --orphans-only
 ```
 
-This converts "no_trace" gaps into explicit `status='aborted'` items, which are visible in the audit but distinguishable from real work. PROP-053 does not enforce this; it is recommended for future analyst/decider prompt updates.
+## Triage Priority
 
-## 6. Related files
+For routine operation, scan only:
+1. **`orphan_file` with EXP-451+** — potential lost recent work
+2. **`tracker_only` with status=complete** — deliverable may be missing
 
-- `monitor/analyst/expansion-tracker.json` — canonical live tracker
-- `monitor/analyst/expansion-tracker-archive.jsonl` — historical archive (read alongside live for "present" set)
-- `monitor/analyst/expansions/EXP-NNN*.json` — the actual expansion files
-- `build-scripts/audit-exp-tracker-gaps.js` — re-classifier (this PROP)
-- `monitor/prompts/structure-integrity.md` — integrity prompt that wires the audit into the daily check
-- `monitor/tinker/proposals/PROP-053-exp-tracker-gap-audit-and-prevention.json` — the originating proposal
+Pre-tracker EXPs (EXP-001 through ~EXP-450) appearing as orphan_file are expected and require no action.
