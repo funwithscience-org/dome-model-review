@@ -1,46 +1,70 @@
-tinker-2026-05-31T17-51 — Mode 3 follow-up: PROP-072 PRIMARY observability FAILED on first post-deploy cycle (PARTIAL-SUCCESS)
+tinker-2026-05-31T20-07 — Mode 3 follow-up: PROP-073 AUTHORED (PROP-072 hoist did NOT close the silent-skip; trigger fired after 3 consecutive failed cycles)
 
-Mode: Mode 3 follow-up (PROP-072 post-deploy verification round 2)
-Pre-flight: PAT scope verified (HTTP 200). No pending operator-directive. No Mode 0 assigned-to-tinker items.
+Mode: Mode 3 follow-up (PROP-072 post-deploy verification round 3)
+Pre-flight: PAT scope verified (HTTP 200). No pending operator-directive (74 total, 0 pending). No Mode 0 assigned-to-tinker items.
 
 Quick-checks:
-  Mode 1: GREEN (all agent outputs <1h old; 0 stranded patches)
-  Mode 2: GREEN (no fresh checks; own clone is only project footprint of note)
-  Mode 3: PROP-072 post-deploy verification round 2
+  Mode 1: GREEN (all agent outputs <1h; 0 stranded patches)
+  Mode 2: GREEN (FUSE md5 matches main for 6 checked files; auth 200; project footprint 304MB)
+  Mode 3: PROP-072 post-deploy verification round 3 — TRIGGER FIRED
 
-Backlog: HEALTHY (49 open, 0 aged ≥14d, oldest 0.22d, net velocity +120/7d).
+Backlog: HEALTHY (56 open, 0 aged >=14d, oldest 0.3d, net velocity +158/7d, 171 closed vs 13 new last 7d).
 
 >>> Previous-run findings status:
-  PROP-072 implementation (text-grep): VERIFIED-IMPLEMENTED (no change)
-  PROP-072 first observability window: **PRIMARY FAILED, SECONDARY DISAGREES**
+  PROP-072 implementation: VERIFIED-IMPLEMENTED (still present in workspace-sync.md)
+  PROP-072 observability: PROMOTED to PROP-073 (three-cycle confirmation of partial-success)
 
-FND-01: PROP-072 PARTIAL-SUCCESS (moderate)
-  The 17:22 workspace-sync cycle is the FIRST post-PROP-072 cycle.
-  Run-report agent_notes claims: 'step4c ran (SENTINEL_COUNT_THIS_CYCLE=4)'.
-  Empirical state: NO sync-workspace-runs-2026-05-31T17-22-*.json file in git after the cycle.
-  Most recent actual sentinel remains 2026-05-31T09-07-58Z (unchanged since 09:07Z).
-  c9e1d92 commit titled 'PROP-066 step4c sentinel: 17:22:40Z' contains 13 OTHER files; NO sentinel file.
-  PRIMARY observability proof (sentinel-in-git) FAILED.
-  SECONDARY self-attestation (literal 'step4c-not-invoked') was NOT emitted, suggesting the agent BELIEVES it ran.
-  The two layers disagree.
+FND-01: PROP-072 PARTIAL-SUCCESS confirmed (major) — PROP-073 authored.
 
-Hypothesis: SENTINEL_COUNT_THIS_CYCLE is unreliable in a fresh clone — pre-existing
-sentinel files inherit the clone's mtime and falsely register as "recently modified",
-so the metric reads 3-4 without step4c writing any new file. Either step4c.js silently
-no-op'd, or it crashed before writeSentinel, or it wrote to wrong cwd. Self-attestation
-backstop was fooled by the same misleading metric.
+Three consecutive post-PROP-072 workspace-sync cycles (17:22, 18:10, 19:22):
+  - All three commit a "PROP-066 step4c sentinel: <ts>" titled commit
+  - All three commits contain ZERO sync-workspace-runs/non-ff-abort/crash files
+  - Each contains 4 Step 3 universal-pusher rescue files (analyst expansions,
+    issue-proposals, closed-issues, etc) mis-attributed under step4c's title
+  - Last actual sentinel file: 2026-05-31T09:07:58Z (now ~11h stale)
+  - 17:22 run-report agent_notes: "step4c ran (SENTINEL_COUNT_THIS_CYCLE=4)"
+    — false-positive from broken mtime heuristic (fresh-clone resets mtimes)
+  - 18:10 + 19:22 run-reports DO NOT include "step4c-not-invoked" attestation
+    — backstop fooled by same false-positive count
 
->>> Action (this run): defer PROP authoring one more cycle.
->>> Action (next tinker run): verify the 18:00 workspace-sync cycle.
-  - If 18:00 commits a sync-workspace-runs-2026-05-31T18-xx-xxZ.json sentinel → FND-01 RESOLVED
-  - If 18:00 also fails → author PROP-073 with three sub-fixes:
-    (a) replace SENTINEL_COUNT_THIS_CYCLE mtime heuristic with filename-ISO-timestamp parse
-    (b) add a "did git-add actually stage anything" branch — fail-loud if zero sentinels staged
-    (c) instrument sync-workspace-step4c.js to log the absolute write path it used
+Root cause (two co-occurring defects):
+  (1) LLM workspace-sync agent is NOT invoking `node monitor/scripts/sync-workspace-step4c.js`
+      despite PROP-072 hoisting it to FIRST position in the collapsed Step 4 block.
+      PROP-072's hypothesis (FIRST-position skip-resistance) is too weak — what
+      the LLM reliably executes is trap setup + subsequent content-producing
+      commit actions; a pure-side-effect node invocation falls in the skip-zone.
+  (2) When (1) happens, Step 4c's `git add` matches zero sentinel files but
+      `git diff --cached --quiet` sees Step 3's pre-staged files and fires the
+      commit under the WRONG TITLE. This makes the audit signal
+      "PROP-066 step4c sentinel commit exists => Step 4c ran" FALSE-POSITIVE.
 
-PROP-070 canaries (carry-over from 17:00 / 17:22 runs):
-  (a) Decider Step A0c sweep mention: STILL PENDING (decider 18:10 UTC)
-  (b) Tinker observability counter: VERIFIED 0 this run
-  (c) ISS-2311/2337/2365 auto-close: STILL PENDING (~2026-06-02)
+PROP-073 four sub-fixes (mirrors previous tinker's three-sub-fix plan + one more):
+  (1) PRIMARY: stage-delta gating — capture PRE_ADD_STAGED / POST_ADD_STAGED;
+      only fire 4c's commit if ADDED_BY_4C > 0. Mis-titled-commit failure mode
+      defeated; pre-staged files flow correctly through to Step 4a.
+  (2) SECONDARY: replace mtime-based SENTINEL_COUNT_THIS_CYCLE with filename-ISO
+      timestamp parse. Robust to fresh-clone mtime reset. False-positives
+      eliminated; self-attestation backstop becomes meaningful again.
+  (3) TERTIARY: instrument sync-workspace-step4c.js writeSentinel function with
+      `console.log('[PROP-066] wrote sentinel:', path.resolve(p))`. Gives
+      ground-truth invocation proof in the bash output.
+  (4) QUATERNARY: AGENT_NOTES guidance adds 'step4c-mis-titled' bullet for
+      future-regression visibility.
 
-Next run priority: Mode 3 follow-up — verify 18:00 workspace-sync cycle sentinel landed.
+>>> Action this run: PROP-073 authored at
+    monitor/tinker/proposals/PROP-073-step4c-mis-titled-commit-and-mtime-heuristic.json
+    Suggested deployment: DIRECTIVE-20260531-XXX (mirrors DIRECTIVE-20260531-012
+    pattern for PROP-072). After deploy, watch 3 cycles. If still no actual
+    sentinels, escalate to PROP-074 (separate scheduled agent for git->FUSE sync).
+
+>>> Forward-watch (next tinker run): verify 21:00 workspace-sync cycle.
+    - If PROP-073 not yet deployed: expect more mis-titled commits, continue watch.
+    - If PROP-073 deployed: expect either real sentinel commit OR clean Step 4a
+      commit with no mis-titled "PROP-066 step4c sentinel" commit.
+
+PROP-070 canaries (carry-over):
+  (a) Decider Step A0c sweep mention — STILL PENDING (decider 18:30 BAU ran but specific A0c-sweep evidence not verified this run)
+  (b) Tinker observability counter — VERIFIED 0 this run
+  (c) ISS-2311/2337/2365 auto-close — STILL PENDING (~2026-06-02 ETA)
+
+CLAUDE.md audit DEFERRED this run (Mode 3 follow-up scope; full audit next clean Mode 3 cycle).
