@@ -61,7 +61,14 @@ function writeSentinel(name, body) {
   fs.mkdirSync(INTEGRITY_DIR, { recursive: true });
   const p = path.join(INTEGRITY_DIR, name);
   fs.writeFileSync(p, JSON.stringify(body, null, 2));
-  console.log('[PROP-066]', name);
+  // PROP-073 sub-fix #3 (2026-05-31): log ABSOLUTE write path. The previous
+  // `console.log('[PROP-066]', name)` printed only the basename, which made it
+  // impossible to distinguish "script ran in correct cwd" from "script ran in
+  // unexpected cwd" or "script never invoked". path.resolve(p) gives an
+  // unambiguous absolute path. Tinker audits grep run-report bash output for
+  // '[PROP-066] wrote sentinel: /tmp/<clone>/monitor/integrity/...' and treat
+  // its absence as primary skip evidence.
+  console.log('[PROP-066] wrote sentinel:', path.resolve(p));
   return p;
 }
 

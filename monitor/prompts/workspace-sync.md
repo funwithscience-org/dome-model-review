@@ -1220,14 +1220,60 @@ trap 'rm -rf "$CLONE" 2>/dev/null || true' EXIT
 # rebase. FILES_COMMITTED capture stays AFTER 4a (line below) so it reads the
 # workspace-sync commit, not the sentinel commit.
 node monitor/scripts/sync-workspace-step4c.js 2>&1 | tail -10 || echo "[PROP-066] helper exited non-zero (sentinel written; see monitor/integrity/)"
-# Capture pre-add count for AGENT_NOTES self-attestation (PROP-072 secondary backstop).
-SENTINEL_COUNT_THIS_CYCLE=$(ls -1 monitor/integrity/sync-workspace-runs-*.json monitor/integrity/sync-workspace-non-ff-abort-*.json monitor/integrity/sync-workspace-step4c-crash-*.json 2>/dev/null | xargs -I{} stat -c '%Y {}' {} 2>/dev/null | awk -v now=$(date -u +%s) '($1 > now - 600){c++} END{print c+0}')
+
+# PROP-073 sub-fix #2 (2026-05-31): replace mtime-based SENTINEL_COUNT_THIS_CYCLE
+# with a FILENAME-ISO-TIMESTAMP parse. Each workspace-sync cycle runs in a
+# FRESH CLONE, so pre-existing sentinel files inherit clone-time mtimes (within
+# the last few seconds) and the mtime '>now-600' filter matched them ALL,
+# producing false-positive counts of 3-4 even when zero sentinels were written
+# this cycle. The filename-ISO parse uses the in-name timestamp set by the
+# script at write time and is independent of filesystem mtime. Falls back to 0
+# (correct when no current-cycle sentinel was written) if anything errors —
+# false-positives are the failure mode this change closes.
+SENTINEL_COUNT_THIS_CYCLE=$(python3 -c "
+import os, re, time, glob
+from datetime import datetime, timezone
+now = time.time()
+n = 0
+for pat in ('monitor/integrity/sync-workspace-runs-*.json',
+            'monitor/integrity/sync-workspace-non-ff-abort-*.json',
+            'monitor/integrity/sync-workspace-step4c-crash-*.json'):
+    for path in glob.glob(pat):
+        m = re.search(r'(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})Z', os.path.basename(path))
+        if not m: continue
+        try:
+            iso = f'{m.group(1)}T{m.group(2)}:{m.group(3)}:{m.group(4)}+00:00'
+            ts = datetime.fromisoformat(iso).timestamp()
+            if now - ts < 600: n += 1
+        except Exception:
+            pass
+print(n)
+" 2>/dev/null || echo 0)
+
+# PROP-073 sub-fix #1 (2026-05-31): STAGE-DELTA GATING. Capture PRE_ADD_STAGED
+# count BEFORE the git add and POST_ADD_STAGED count AFTER. ADDED_BY_4C =
+# POST - PRE is the number of sentinel files Step 4c actually staged this
+# cycle. Only commit under the "PROP-066 step4c sentinel" title when
+# ADDED_BY_4C > 0 — defeats the mis-titled-commit failure mode where Step 3
+# (smart_copy + universal-pusher) left files pre-staged in the index, and the
+# previous `git diff --cached --quiet` check fired the commit under the WRONG
+# TITLE with WRONG CONTENTS (Step 3 analyst/integrity files mis-attributed as
+# step4c sentinels). Forensic smoking-gun: commits c9e1d92 / 007d0fe /
+# b7c36cb / fb52feb8 on 2026-05-31, all titled 'PROP-066 step4c sentinel: ...'
+# but containing ZERO sync-workspace-runs/non-ff-abort/step4c-crash files.
+# If ADDED_BY_4C == 0, defer the pre-staged files to Step 4a's commit (which
+# fires under its own correct 'Workspace sync: <ts>' title).
+PRE_ADD_STAGED=$(git diff --cached --name-only 2>/dev/null | wc -l)
 git add monitor/integrity/sync-workspace-runs-*.json \
         monitor/integrity/sync-workspace-non-ff-abort-*.json \
         monitor/integrity/sync-workspace-step4c-crash-*.json 2>/dev/null || true
-if ! git diff --cached --quiet 2>/dev/null; then
+POST_ADD_STAGED=$(git diff --cached --name-only 2>/dev/null | wc -l)
+ADDED_BY_4C=$((POST_ADD_STAGED - PRE_ADD_STAGED))
+if [ "$ADDED_BY_4C" -gt 0 ]; then
   git commit -m "PROP-066 step4c sentinel: $(date -u +%Y-%m-%dT%H:%M:%SZ)" 2>&1 | tail -1
   git push origin main 2>&1 | tail -1
+else
+  echo "[PROP-073] step4c added 0 sentinel files; refusing to commit under 'PROP-066 step4c sentinel' title; deferring pre-staged files to Step 4a"
 fi
 
 # --- 4a: commit + push FUSE→git ---
@@ -1282,6 +1328,14 @@ MTIME_GUARD_COUNT=$([ -f "$SKIP_LOG" ] && grep -c "mtime-guard" "$SKIP_LOG" || e
 #     it should be >=1 on every successful cycle). This turns the silent-skip
 #     regression class into a visible-in-run-report soft-complaint that
 #     tinker's grep catches on next audit.
+#   - "step4c-mis-titled" (PROP-073 detective backstop) if you observe that a
+#     commit titled "PROP-066 step4c sentinel: ..." was created in THIS cycle's
+#     git log but ADDED_BY_4C was 0 (per PROP-073 stage-delta gating above).
+#     This would mean the stage-delta gate failed open and pre-staged Step 3
+#     files were mis-attributed under the step4c title — a regression of the
+#     mis-titled-commit class PROP-073 sub-fix #1 was designed to prevent.
+#     Including the literal "step4c-mis-titled" string here makes the
+#     regression visible in tinker's soft-complaints grep on next audit.
 #   - "routine" if the run was completely uneventful (tinker's soft-complaints grep
 #     ignores "routine"; the field needs SOMETHING for the JSON to be valid)
 # Keep it to <=300 chars.
