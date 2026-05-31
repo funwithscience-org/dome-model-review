@@ -140,21 +140,7 @@ git config user.name "steve"
 # if Step 5 already removed the clone, the trap's rm -rf is a no-op.
 trap 'rm -rf "$CLONE" 2>/dev/null' EXIT INT TERM
 
-# PROP-064 workstream A (2026-05-30): capture PRE_PULL_SHA before the rebase so
-# Step 4c can detect "did Step 1 absorb upstream commits into our clone?". Without
-# this signal, the SHA comparison in Step 4c misses every case where origin moved
-# during the cycle — git pull --rebase silently fast-forwards LOCAL to absorb
-# those commits, then Step 4c sees LOCAL == REMOTE and exits via the silent-skip
-# branch. This was Bug A behind PROP-061's 40-cycle zero-success record.
-PRE_PULL_SHA=$(git rev-parse HEAD 2>/dev/null || echo "")
 git pull --rebase origin main
-POST_PULL_SHA=$(git rev-parse HEAD 2>/dev/null || echo "")
-if [ -n "$PRE_PULL_SHA" ] && [ -n "$POST_PULL_SHA" ] && [ "$PRE_PULL_SHA" != "$POST_PULL_SHA" ]; then
-  PULL_MOVED=1
-  echo "[PROP-064] Step 1 pull moved HEAD: $PRE_PULL_SHA -> $POST_PULL_SHA — git→FUSE sync will be triggered in Step 4c"
-else
-  PULL_MOVED=0
-fi
 ```
 
 ### Step 2: Sync workspace files to clone
@@ -216,6 +202,13 @@ NEVER_PUSH=(
   # dedicated scheduled task; not called from workspace-sync's hot path. Same
   # source-code classification as audit-rewrite.js and push-via-api.js.
   'monitor/scripts/prune-integrity.js'
+  # PROP-066 Phase 1 (2026-05-31): sync-workspace-step4c.js is the helper that
+  # encapsulates Step 4c's four-way classification + git→FUSE propagation logic.
+  # Same source-code classification as audit-rewrite.js / push-via-api.js /
+  # prune-integrity.js. The companion config (sync-workspace-step4c.config.json)
+  # is operator-curated; git-owned and edit-via-clone-only.
+  'monitor/scripts/sync-workspace-step4c.js'
+  'monitor/scripts/sync-workspace-step4c.config.json'
   # All .md files under monitor/prompts/ are operator-edited (dynamic rule
   # in is_never_push() below). Covers monitor/prompts/sloppytoppy-rewrite.md
   # and monitor/prompts/reference/sloppytoppy-rewrite-rubric.md automatically.
@@ -1184,161 +1177,25 @@ fi
 rm -f "$SKIP_LOG"
 ```
 
-### Step 4c: PROP-061 git→FUSE propagation (divergence detect + auto-sync via build.js)
+### Step 4c: git→FUSE propagation (PROP-066 helper-script extraction)
 
-After the FUSE→git push and run report commit succeed, propagate any divergence in the OPPOSITE direction (git→FUSE). This is needed because operator-direct commits (via clone or GitHub Git Data API), scheduled-agent pushes from clones, and decider self-applies that don't run `build.js publish` leave FUSE permanently stale for git-owned files. The fix mechanism already exists in `build.js` as the `sync-workspace` target (PROP-010) — this step is the missing caller.
+Invoke the helper script. It encapsulates the four-way classification + sync logic that lived inline through PROP-061/064; PROP-066 moved it into a Node helper because the inline bash block was being silently skipped on ~94% of cycles (LLM skip-by-omission + cross-bash-session PULL_MOVED loss). The script reads `monitor/scripts/sync-workspace-step4c.config.json` for its bootstrap fallback, derives the upstream-newer-than-last-sync signal from the most recent `monitor/integrity/sync-workspace-runs-*.json` sentinel timestamp (not from a Step-1-set bash variable), and ALWAYS writes exactly one sentinel — success, divergence audit, abort, or no-op — so future tinker audits can distinguish "ran and decided no-op" from "didn't run at all".
 
-**Safety architecture:**
-- Read-only divergence detection ALWAYS writes a report file to `monitor/integrity/git-to-fuse-divergence-<ts>.json` (for operator audit).
-- Auto-sync ONLY runs if `git merge-base --is-ancestor HEAD origin/main` is true (origin moved forward, no force-push).
-- If origin is non-fast-forward (rewritten, force-pushed, reset), write `monitor/integrity/sync-workspace-non-ff-abort-<ts>.json` sentinel and SKIP the sync. Operator inspects before recovery.
-- `node build.js sync-workspace` is idempotent: it copies according to the OWNERSHIP table whitelist, has NO delete logic, and re-running produces no different result.
-- This step does NOT touch git history (no commits other than the sentinel-file follow-up). Push has already completed.
-
-**PROP-064 four-way classification (2026-05-30).** PROP-061's original Step 4c had a fatal silent-skip bug: it compared `LOCAL_SHA` (clone HEAD AFTER Step 1's pull) to `REMOTE_SHA` (origin/main after Step 4c's fetch). In the steady state these are equal — but Step 1's `git pull --rebase` SILENTLY absorbed any upstream commits into LOCAL. By Step 4c, those upstream commits live in LOCAL invisibly to the SHA comparison, the conditional exits via the "no divergence" branch, and FUSE never gets synced. Result: across the first 40 cycles after PROP-061 deployed, ZERO success sentinels exist. The fix below uses `PRE_PULL_SHA` (captured at Step 1 before the pull) as the upstream-moved signal, AND replaces the binary SHA check with a four-way classification that distinguishes (a) no movement (equal), (b) origin moved ahead via FF (legitimate divergence to sync), (c) LOCAL is ahead of origin (benign — our own push hasn't propagated to the fetch ref yet; eventual-consistency lag), (d) true non-FF (force-push or rebase — abort sentinel).
+Safety architecture (preserved from PROP-061/064, now enforced inside the script):
+- Read-only divergence detection; the script never amends git history other than writing the sentinel file the post-call bash commits.
+- Auto-sync (`node build.js sync-workspace`) only runs when the script computes need_sync=1 (classification=local-ancestor-of-remote, OR classification=equal AND upstream HEAD timestamp > last-sentinel timestamp).
+- Force-pushed / rebased origin (classification=true-non-ff) → script writes `sync-workspace-non-ff-abort-<ts>.json` and exits 1. Caller does NOT propagate the exit code (Step 4c is best-effort; workspace-sync continues to Step 5).
+- Script crash → `sync-workspace-step4c-crash-<ts>.json` with stack trace + input state (HEAD, REMOTE, last-sentinel-at) per DIRECTIVE-20260531-004 Q2. Exit 2.
+- `node build.js sync-workspace` is idempotent: OWNERSHIP-whitelist copy, no delete logic.
 
 ```bash
-# Re-fetch to learn whether any commits landed between our push and now,
-# OR whether origin had unmerged commits relative to our local HEAD all along.
-# (The git pull --rebase at Step 1 + push at Step 4 normally keep us caught up,
-# but operator-direct API pushes can race this whole flow.)
-git fetch origin main 2>&1 | tail -3
-LOCAL_SHA=$(git rev-parse HEAD)
-REMOTE_SHA=$(git rev-parse origin/main)
-TS_PROP061=$(date -u +%Y-%m-%dT%H-%M-%SZ)
-
-# PROP-064 workstream B: four-way classification of LOCAL vs REMOTE.
-if [ "$LOCAL_SHA" = "$REMOTE_SHA" ]; then
-  CLASSIFICATION=equal
-elif git merge-base --is-ancestor "$LOCAL_SHA" "$REMOTE_SHA" 2>/dev/null; then
-  CLASSIFICATION=local-ancestor-of-remote   # origin moved ahead during cycle — FF sync needed
-elif git merge-base --is-ancestor "$REMOTE_SHA" "$LOCAL_SHA" 2>/dev/null; then
-  CLASSIFICATION=remote-ancestor-of-local   # benign — LOCAL is ahead (push not yet visible to fetch ref / eventual-consistency lag)
-else
-  CLASSIFICATION=true-non-ff                 # force-push or rebase
-fi
-
-# PROP-064 workstream A: PULL_MOVED is the upstream-absorbed signal from Step 1.
-# If Step 1's pull absorbed upstream commits into our clone, we need to propagate
-# them to FUSE even though LOCAL == REMOTE post-push (the upstream is now baked
-# into LOCAL). PULL_MOVED is set at end of Step 1.
-NEED_SYNC=0
-[ "${PULL_MOVED:-0}" = "1" ] && NEED_SYNC=1
-[ "$CLASSIFICATION" = "local-ancestor-of-remote" ] && NEED_SYNC=1
-
-echo "[PROP-064] Step 4c classification=$CLASSIFICATION pull_moved=${PULL_MOVED:-0} need_sync=$NEED_SYNC local=${LOCAL_SHA:0:10} remote=${REMOTE_SHA:0:10}"
-
-# Bypass the original if/else entirely when nothing needs to happen.
-if [ "$CLASSIFICATION" = "equal" ] && [ "$NEED_SYNC" = "0" ]; then
-  echo "[PROP-064] No divergence and Step 1 pull did not move; no git→FUSE sync needed this run."
-else
-  # WOULD_FF retained for the existing divergence-report schema below.
-  # In the four-way world: WOULD_FF=true means "we can FF-merge if we want to";
-  # this is true for classification=local-ancestor-of-remote and also equal-with-pull-moved
-  # (no merge needed but sync still required). WOULD_FF=false means true-non-ff.
-  if [ "$CLASSIFICATION" = "true-non-ff" ]; then WOULD_FF=false; else WOULD_FF=true; fi
-  DIVERGENT_FILES=$(git diff --name-only HEAD origin/main 2>/dev/null | sort -u)
-  DIVERGENT_COUNT=$(echo "$DIVERGENT_FILES" | grep -c . || echo 0)
-  # When PULL_MOVED=1 but LOCAL==REMOTE, divergent_files is empty but sync is still
-  # needed. List the files Step 1's pull absorbed so the divergence report shows them.
-  if [ "$DIVERGENT_COUNT" = "0" ] && [ "$PULL_MOVED" = "1" ] && [ -n "$PRE_PULL_SHA" ]; then
-    DIVERGENT_FILES=$(git diff --name-only "$PRE_PULL_SHA" HEAD 2>/dev/null | sort -u)
-    DIVERGENT_COUNT=$(echo "$DIVERGENT_FILES" | grep -c . || echo 0)
-  fi
-
-  # Always write divergence report (Phase 1 behavior — preserved as audit trail).
-  DIV_REPORT="monitor/integrity/git-to-fuse-divergence-${TS_PROP061}.json"
-  mkdir -p monitor/integrity
-  # PROP-064: include classification + pull_moved in the audit so future tinker
-  # runs can spot regressions of either bug variant without re-deriving them.
-  DIV_ACTION="abort-non-ff"
-  [ "$NEED_SYNC" = "1" ] && DIV_ACTION="auto-sync"
-  [ "$CLASSIFICATION" = "remote-ancestor-of-local" ] && DIV_ACTION="benign-local-ahead"
-  DIVERGENT_FILES="$DIVERGENT_FILES" LOCAL_SHA="$LOCAL_SHA" REMOTE_SHA="$REMOTE_SHA" \
-  TS_PROP061="$TS_PROP061" WOULD_FF="$WOULD_FF" DIVERGENT_COUNT="$DIVERGENT_COUNT" \
-  CLASSIFICATION="$CLASSIFICATION" PULL_MOVED="${PULL_MOVED:-0}" PRE_PULL_SHA="${PRE_PULL_SHA:-}" \
-  DIV_ACTION="$DIV_ACTION" \
-  DIV_REPORT="$DIV_REPORT" node -e "
-const fs=require('fs');
-const files=(process.env.DIVERGENT_FILES||'').trim().split('\n').filter(Boolean);
-fs.writeFileSync(process.env.DIV_REPORT, JSON.stringify({
-  event:'git-to-fuse-divergence',
-  timestamp: process.env.TS_PROP061,
-  local_sha: process.env.LOCAL_SHA,
-  remote_sha: process.env.REMOTE_SHA,
-  pre_pull_sha: process.env.PRE_PULL_SHA,
-  pull_moved: process.env.PULL_MOVED==='1',
-  classification: process.env.CLASSIFICATION,
-  divergent_files: files,
-  divergent_count: parseInt(process.env.DIVERGENT_COUNT||'0',10),
-  would_ff: process.env.WOULD_FF==='true',
-  action: process.env.DIV_ACTION
-}, null, 2));
-console.log('[PROP-064] divergence report:', process.env.DIV_REPORT, '(classification='+process.env.CLASSIFICATION+', action='+process.env.DIV_ACTION+')');
-"
-
-  if [ "$NEED_SYNC" = "1" ]; then
-    # PROP-064: only FF-merge if classification=local-ancestor-of-remote.
-    # For PULL_MOVED=1 with classification=equal, the pull at Step 1 already
-    # absorbed the upstream commits, so no merge is needed — just sync-workspace.
-    if [ "$CLASSIFICATION" = "local-ancestor-of-remote" ]; then
-      git merge --ff-only origin/main 2>&1 | tail -3 || {
-        echo "[PROP-064] ff merge failed unexpectedly; skipping sync, leaving divergence report for tinker"
-      }
-    fi
-    SYNC_OUT=$(node build.js sync-workspace 2>&1)
-    SYNC_EXIT=$?
-    SYNC_COPIED=$(echo "$SYNC_OUT" | grep -oE '[0-9]+ git-owned files copied' | grep -oE '^[0-9]+' || echo 0)
-    SYNC_NEW=$(echo "$SYNC_OUT" | grep -oE '[0-9]+ new append-only files' | grep -oE '^[0-9]+' || echo 0)
-    SYNC_REPORT="monitor/integrity/sync-workspace-runs-${TS_PROP061}.json"
-    SYNC_OUT="$SYNC_OUT" SYNC_EXIT="$SYNC_EXIT" SYNC_COPIED="$SYNC_COPIED" SYNC_NEW="$SYNC_NEW" \
-    TS_PROP061="$TS_PROP061" DIVERGENT_COUNT="$DIVERGENT_COUNT" SYNC_REPORT="$SYNC_REPORT" \
-    node -e "
-const fs=require('fs');
-const out=process.env.SYNC_OUT||'';
-fs.writeFileSync(process.env.SYNC_REPORT, JSON.stringify({
-  event:'sync-workspace-run',
-  timestamp: process.env.TS_PROP061,
-  divergent_count: parseInt(process.env.DIVERGENT_COUNT||'0',10),
-  files_copied: parseInt(process.env.SYNC_COPIED||'0',10),
-  new_files: parseInt(process.env.SYNC_NEW||'0',10),
-  sync_exit_code: parseInt(process.env.SYNC_EXIT||'0',10),
-  output_tail: out.split('\n').slice(-20).join('\n')
-}, null, 2));
-console.log('[PROP-061] sync-workspace report:', process.env.SYNC_REPORT, 'copied='+process.env.SYNC_COPIED, 'new='+process.env.SYNC_NEW);
-"
-  elif [ "$CLASSIFICATION" = "true-non-ff" ]; then
-    # True non-FF — origin was force-pushed or rebased. Refuse to sync. Operator recovery.
-    ABORT_SENTINEL="monitor/integrity/sync-workspace-non-ff-abort-${TS_PROP061}.json"
-    LOCAL_SHA="$LOCAL_SHA" REMOTE_SHA="$REMOTE_SHA" DIVERGENT_COUNT="$DIVERGENT_COUNT" \
-    TS_PROP061="$TS_PROP061" ABORT_SENTINEL="$ABORT_SENTINEL" \
-    CLASSIFICATION="$CLASSIFICATION" node -e "
-const fs=require('fs');
-fs.writeFileSync(process.env.ABORT_SENTINEL, JSON.stringify({
-  event:'sync-workspace-non-ff-abort',
-  timestamp: process.env.TS_PROP061,
-  local_sha: process.env.LOCAL_SHA,
-  remote_sha: process.env.REMOTE_SHA,
-  classification: process.env.CLASSIFICATION,
-  divergent_count: parseInt(process.env.DIVERGENT_COUNT||'0',10),
-  reason: 'origin/main is not a fast-forward of our HEAD AND our HEAD is not an ancestor of origin/main; refusing to sync until operator inspects',
-  action_recommended: 'investigate whether origin was force-pushed (operator recovery), rebased, or this is a concurrent-push race; if recovery, operator runs node build.js sync-workspace manually after verifying canonical state'
-}, null, 2));
-console.log('[PROP-064] NON-FF ABORT:', process.env.ABORT_SENTINEL);
-"
-  else
-    # CLASSIFICATION=remote-ancestor-of-local + NEED_SYNC=0. Benign — our previous
-    # push is not yet visible in origin/main's fetch ref (eventual-consistency lag),
-    # or some other no-op state. Divergence report already written with action=benign-local-ahead.
-    echo "[PROP-064] Benign divergence (LOCAL ahead of REMOTE); audit logged, no sync action taken."
-  fi
-
-  # Commit the new sentinel/report files (mirror Step 4b's commit-and-push pattern).
-  git add monitor/integrity/git-to-fuse-divergence-*.json monitor/integrity/sync-workspace-runs-*.json monitor/integrity/sync-workspace-non-ff-abort-*.json 2>/dev/null || true
-  if ! git diff --cached --quiet 2>/dev/null; then
-    git commit -m "PROP-061 git→FUSE detect+sync: $(date -u +%Y-%m-%dT%H:%M:%SZ)" 2>&1 | tail -1
-    git push origin main 2>&1 | tail -1
-  fi
+node monitor/scripts/sync-workspace-step4c.js 2>&1 | tail -10 || echo "[PROP-066] helper exited non-zero (sentinel written; see monitor/integrity/)"
+git add monitor/integrity/sync-workspace-runs-*.json \
+        monitor/integrity/sync-workspace-non-ff-abort-*.json \
+        monitor/integrity/sync-workspace-step4c-crash-*.json 2>/dev/null || true
+if ! git diff --cached --quiet 2>/dev/null; then
+  git commit -m "PROP-066 step4c sentinel: $(date -u +%Y-%m-%dT%H:%M:%SZ)" 2>&1 | tail -1
+  git push origin main 2>&1 | tail -1
 fi
 ```
 

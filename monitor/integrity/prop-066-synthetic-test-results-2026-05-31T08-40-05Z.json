@@ -1,0 +1,77 @@
+{
+  "event": "prop-066-synthetic-test-results",
+  "timestamp": "2026-05-31T08:40:05Z",
+  "prop_id": "PROP-066",
+  "executed_by": "tinker-2026-05-31-prop-066-impl",
+  "sandbox": "/tmp/prop066-sandbox (bare origin + work-init clone + other-clone)",
+  "scenarios": [
+    {
+      "id": 1,
+      "name": "fresh clone, no recent sentinels, no in-cycle upstream movement (bootstrap)",
+      "setup": "fresh clone of bare origin; integrity/ empty of sync-workspace-runs-*.json sentinels; config fallback_baseline_at = 2026-05-30T00:00:00Z; origin/main commit ts = 2026-05-31T08:38:40Z (newer than fallback)",
+      "expected_classification": "equal",
+      "expected_need_sync": true,
+      "expected_action": "pull-moved-auto-sync (bootstrap case: no prior sentinel + upstream newer than fallback baseline triggers initial sync)",
+      "observed_classification": "equal",
+      "observed_need_sync": true,
+      "observed_action": "pull-moved-auto-sync",
+      "observed_exit_code": 0,
+      "observed_sentinel_filename_pattern": "sync-workspace-runs-<ts>.json",
+      "result": "PASS",
+      "interpretation": "On true cold start with no sentinel history, the bootstrap fallback triggers one initial sync against the upstream. After this sentinel lands, subsequent runs compare against it (the real on-disk source of truth), not the fallback. This matches the design in DIRECTIVE-20260531-004 Q1 answer."
+    },
+    {
+      "id": 2,
+      "name": "external agent commits to origin while work-init has older sentinel",
+      "setup": "second clone pushes a commit to origin; work-init still at older SHA; sentinel ts=2026-05-31T08:30Z exists, origin HEAD ts=2026-05-31T08:39:11Z (newer)",
+      "expected_classification": "local-ancestor-of-remote",
+      "expected_need_sync": true,
+      "expected_action": "auto-sync (FF-merge + node build.js sync-workspace)",
+      "observed_classification": "local-ancestor-of-remote",
+      "observed_need_sync": true,
+      "observed_action": "auto-sync",
+      "observed_exit_code": 0,
+      "observed_files_copied": 3,
+      "observed_new_files": 1,
+      "result": "PASS",
+      "interpretation": "The PRIMARY production path. PROP-064 was supposed to catch this case via PRE_PULL_SHA capture in Step 1; PROP-066's helper-script approach catches it via durable on-disk sentinel timestamps. Confirmed: ff-merge succeeded, sync-workspace was invoked, sentinel written."
+    },
+    {
+      "id": 3,
+      "name": "local-only commit ahead of remote (eventual-consistency lag)",
+      "setup": "work-init makes a local commit but doesn't push; sentinel ts=2026-05-31T08:40Z exists, origin HEAD ts older than sentinel",
+      "expected_classification": "remote-ancestor-of-local",
+      "expected_need_sync": false,
+      "expected_action": "benign-local-ahead",
+      "observed_classification": "remote-ancestor-of-local",
+      "observed_need_sync": false,
+      "observed_action": "benign-local-ahead",
+      "observed_exit_code": 0,
+      "observed_divergent_count": 3,
+      "result": "PASS",
+      "interpretation": "Benign case — LOCAL is ahead, no force-push, no sync needed. Audit-only sentinel written with divergent_files list."
+    },
+    {
+      "id": 4,
+      "name": "force-push: origin rewritten with divergent history",
+      "setup": "other-clone hard-resets, makes divergent commit, force-pushes to origin; work-init's HEAD is no longer an ancestor of origin and vice versa",
+      "expected_classification": "true-non-ff",
+      "expected_action": "abort-non-ff",
+      "expected_exit_code": 1,
+      "observed_classification": "true-non-ff",
+      "observed_action": "abort-non-ff",
+      "observed_exit_code": 1,
+      "observed_sentinel_filename_pattern": "sync-workspace-non-ff-abort-<ts>.json",
+      "result": "PASS",
+      "interpretation": "Safety abort path fires correctly. Sentinel written under sync-workspace-non-ff-abort-*.json (NOT sync-workspace-runs-*.json) so the per-cycle audit count is preserved. Exit 1 signals to caller that something went wrong; caller's bash block does not propagate the exit code (best-effort)."
+    }
+  ],
+  "additional_notes": {
+    "config_file_read": "Verified: helper reads monitor/scripts/sync-workspace-step4c.config.json on each invocation and uses fallback_baseline_at when no sentinels exist on disk.",
+    "always_writes_sentinel": "Verified across all 4 scenarios: exactly one final sentinel file written per invocation (success, divergence, abort, or no-op). No silent early-returns. This is the diagnostic improvement over PROP-064.",
+    "cross_bash_session_safe": "Verified: the helper takes no environment-variable inputs from previous bash tool calls. It derives every signal from durable on-disk state (config, sentinel directory, git CLI). Closes failure_mode_1 from PROP-066's diagnosis.",
+    "skip_by_omission_safe": "Structural: the prompt-side invocation is 3 lines instead of 140 lines. Cannot be directly tested in synthetic — that's a property of the prompt, not the helper. Will be confirmed by post-deployment canary (sentinel count >= 18 in 24h)."
+  },
+  "verdict": "all_pass",
+  "next_step": "Deploy commit + push + manual workspace-sync.md sync to FUSE per DIRECTIVE Step 7."
+}

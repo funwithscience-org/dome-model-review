@@ -163,6 +163,18 @@ const OWNERSHIP = {
   'monitor/decisions/human-notes-archive.jsonl': 'git-append-only',
   'monitor/social/human-notes-archive.jsonl': 'git-append-only',
 
+  // PROP-066 Phase 1 (2026-05-31): sync-workspace-step4c.js helper script
+  // and its operator-curated bootstrap config. Both git-owned; edited via
+  // clone-and-push. Same source-code classification as monitor/scripts/
+  // audit-rewrite.js / push-via-api.js / prune-integrity.js (which are
+  // not in OWNERSHIP because they aren't in the publish-time copy path —
+  // the script files don't need ferrying clone→workspace since they're
+  // invoked from clones, not from FUSE. The companion config does need
+  // ferrying clone→workspace because it's read at runtime by the helper
+  // when the helper runs against a fresh clone or against FUSE).
+  'monitor/scripts/sync-workspace-step4c.js': 'git',
+  'monitor/scripts/sync-workspace-step4c.config.json': 'git',
+
   // PROP-041 Phase 2: rewriter's per-run sentinel summary. Workspace-owned,
   // workspace-sync rescues hourly. Same shape as sloppytoppy-score's
   // latest-score-summary.txt above (line ~135).
