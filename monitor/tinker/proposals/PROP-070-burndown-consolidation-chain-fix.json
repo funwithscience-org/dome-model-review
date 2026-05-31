@@ -1,0 +1,108 @@
+{
+  "id": "PROP-070",
+  "title": "decider end-of-run Step A0c: assigned-analyst chain-aware close sweep — closes status='assigned-analyst' ISSs when their EXP-chain endpoint reaches integrated=true (with amendment-noted hold-back); plus root-cause fix for Step 8 bypass that caused the 6 DIRECT cases on 2026-05-31",
+  "authored_by": "tinker",
+  "authored_by_run": "tinker-2026-05-31T15-13",
+  "authored_at": "2026-05-31T15:30:00Z",
+  "status": "design-pending-operator-review",
+  "priority": "medium",
+  "category": "workflow_redesign",
+  "target": "monitor/prompts/decider.md (end-of-run Step A0c, sibling to PROP-056 A0 and PROP-058 A0b); monitor/prompts/reference/decider-curmudgeon-pq-mechanics.md (Step 8 explicit self-test); monitor/prompts/tinker.md (Mode 2 quick-check observability addition)",
+  "related_findings": [
+    "DIRECTIVE-20260531-009 (operator-filed): 18 ISSs stuck post-EXP-integration; operator-burndown commit 7ec29efbbd closed them as one-time backlog clear",
+    "Closure-ledger entries 2026-05-31T13:00:00Z, closed_by_mechanism='operator-burndown', 18 ISSs"
+  ],
+  "executive_summary": {
+    "problem_one_line": "Two distinct gaps surfaced by the operator-burndown of 18 stuck ISSs on 2026-05-31. (Gap A — DIRECT, 6 cases): Step 8 (canonical close-on-EXP-integration in decider-curmudgeon-pq-mechanics.md) is sometimes bypassed by the decider LLM — commit 1727ee3 (decider-2026-05-31T12-28) integrated EXP-464 and EXP-465 (marked integrated=true in tracker) but did NOT close ISS-2326 or ISS-2327 (which are in those EXPs' issue_ids). (Gap B — CONSOLIDATED, 12 cases): the existing end-of-run sweeps (PROP-056 Step A0 for status='closed' residue and PROP-058 Step A0b for status='blocked-on-curmudgeon' residue) do NOT handle status='assigned-analyst' ISSs whose EXP-chain endpoint has reached integrated=true. The chain awareness is already built into the issue_ids aggregation at consolidation time, but neither sweep targets the right status.",
+    "fix_one_line": "Add a third end-of-run sweep — Step A0c — that walks open-issues.json for status='assigned-analyst' entries, traverses the consolidation chain on each referenced EXP, and closes the ISS if the chain endpoint is integrated=true (with an amendment-noted hold-back so amendment-EXPs awaiting their parent integration do NOT auto-close). Plus a Step 8 self-test that fail-loud-aborts if any EXP marked integrated=true in this run still has issue_ids in open-issues.json at run-end.",
+    "blast_radius_one_line": "Low: ~50-line addition to the decider end-of-run section, mirrors PROP-056 Step A0 and PROP-058 Step A0b pattern. Idempotent. No burndown script needed (operator-burndown 7ec29efbbd already cleared the 18 pre-existing cases)."
+  },
+  "directive_framing_correction": {
+    "directive_hypothesis": "DIRECTIVE-20260531-009 framed the problem as: 'PROP-056 burndown checks iss.issue_ids in exp.issue_ids AND exp.status == complete, but does not traverse consolidation chains.'",
+    "actual_findings": [
+      "PROP-056 is NOT a burndown — it is the status='closed' residue migration sweep. The 'burndown' the operator's commit message refers to is the operator's one-time manual closure, not a recurring agent step.",
+      "PROP-058 Step A0b IS a recurring end-of-run burndown, but it only targets status='blocked-on-curmudgeon' ISSs — not status='assigned-analyst', which is what all 18 of today's stuck cases were.",
+      "The canonical close-on-EXP-integration path IS Step 8 in decider-curmudgeon-pq-mechanics.md ('For each issue ID in issue_ids, move from open-issues.json to closed-issues.json with status: fixed, fixed_by: expansion-integration. Verify removal. Unclosed issues become zombies.'). Step 8 already follows the consolidation chain implicitly because the chain endpoint's issue_ids array is the AGGREGATE of the upstream EXPs' issue_ids (analyst-baby builds this when consolidating). When chain endpoints integrate, Step 8 would close all upstream ISSs in one shot.",
+      "The DIRECT case (6 of 18) is a Step 8 bypass: decider integrated EXP-464 and EXP-465 in commit 1727ee3 (status flipped to integrated=true), but Step 8's close-issues sub-step was skipped — ISS-2326 and ISS-2327 stayed in open-issues. This is the same defect class as PROP-056's improvised close-sites: the canonical path exists, but LLM execution sometimes drops a step.",
+      "The CONSOLIDATED case (12 of 18) is a TIMING issue, not a logic gap: the chain-endpoint EXPs (EXP-517/518/519/520) are status='complete' integrated=false — they haven't been integrated yet by the decider. When they do integrate, Step 8 WILL close all 12 upstream ISSs (the issue_ids array on EXP-517 is [ISS-2302, ISS-2303]; on EXP-518 is [ISS-2320, ISS-2321, ISS-2323]; on EXP-519 is [ISS-2338, ISS-2339]; on EXP-520 is [ISS-2347, ISS-2348, ISS-2349, ISS-2353, ISS-2354] — exactly the 12 the operator burndown closed). The operator burndown anticipated this integration and closed the ISSs at status='complete' time, which is semantically EARLIER than Step 8 fires.",
+      "The directive's framing ('chain traversal missing') is partially correct in spirit: the existing recurring sweeps don't catch status='assigned-analyst' chain-endpoint-integrated ISSs. But the fix is not to teach PROP-056/058 about chains — it's to add a new sweep that targets the right status enum."
+    ],
+    "amendment_file_pattern_finding": "ISS-2343/2344/2345 point to amendment files EXP-470/471/472, which the tracker DOES register (consolidated-into EXP-476/477/478). EXP-476/477/478 are in the tracker archive with integrated=true AND integration_mode='amendment-noted-pre-EXP-450-integration' (or similar). So the tracker IS auto-registering amendment files. The 'gap' the directive worried about (Step 4 — 'EXP-476/478 exist as files but NOT in tracker') was a stale observation; the tracker has them. The ACTUAL issue is that the closure logic doesn't understand integration_mode='amendment-noted-*' encodes a CONDITIONAL integration: the amendment is filed, but its real-site effect is gated on the parent EXP integrating. ISSs that reference the amendment should NOT close until the parent ALSO integrates."
+  },
+  "problem_detail": {
+    "evidence_table_direct": "ISS-2304→EXP-481 (not integrated, queued); ISS-2322→EXP-493 (not integrated); ISS-2324→EXP-462 (not integrated, popped to curmudgeon); ISS-2326→EXP-464 (INTEGRATED 12:28Z, Step 8 BYPASSED — canonical-path-failure); ISS-2327→EXP-465 (INTEGRATED 12:28Z, Step 8 BYPASSED); ISS-2336→EXP-468 (not integrated, queued). 2 of 6 are the Step 8 bypass; the other 4 were closed early at status='complete' before integration.",
+    "evidence_table_consolidated": "ISS-2302/2303→EXP-479/480→EXP-517 (complete, NOT integrated); ISS-2320/2321/2323→EXP-491/492/494→EXP-518 (complete, NOT integrated); ISS-2338/2339→EXP-502/503→EXP-519 (complete, NOT integrated); ISS-2347/2348/2349/2353/2354→EXP-521-525→EXP-520 (complete, NOT integrated). All 12 chain endpoints have aggregated issue_ids; when they integrate via Step 8, all 12 ISSs would close naturally.",
+    "step_8_bypass_evidence": "Commit 1727ee3 (decider-2026-05-31T12-28) diff for monitor/analyst/expansion-tracker.json shows EXP-464 and EXP-465 flipped to integrated=true at 2026-05-31T12:28:57.103Z. Diff for monitor/decisions/closed-issues.json shows ISS-2378-2382 closed but NO entries for ISS-2326 or ISS-2327. Diff for monitor/decisions/open-issues.json shows ISS-2326 and ISS-2327 NOT removed. Conclusion: Step 8 was bypassed for EXP-464 and EXP-465 at integration time. Same defect class as PROP-056's improvised close-sites — canonical path documented at decider-curmudgeon-pq-mechanics.md line 92, LLM executed integration but skipped the issue-closure sub-step.",
+    "consolidation_chain_walk_result": "Walked expansion-tracker.json for entries with status matching /^consolidated-into-EXP-\\d+/. The chain endpoints carry issue_ids forward via aggregation at consolidation time (verified: EXP-517.issue_ids=[ISS-2302,ISS-2303]; EXP-518=[ISS-2320,ISS-2321,ISS-2323]; EXP-519=[ISS-2338,ISS-2339]; EXP-520=[ISS-2347,ISS-2348,ISS-2349,ISS-2353,ISS-2354] — exact matches to the operator's 12 CONSOLIDATED closures). So the consolidation chain DOES carry issue_ids forward; Step 8 at endpoint integration time would close all upstream ISSs. The gap is only that nothing rescues ISSs in the assigned-analyst-with-pending-integration intermediate state."
+  },
+  "proposed_fix": {
+    "summary": "Three changes: (1) add Step A0c sweep to decider end-of-run, sibling to PROP-056 A0 and PROP-058 A0b; (2) tighten Step 8 in decider-curmudgeon-pq-mechanics.md with an explicit self-test that fail-loud-aborts if any EXP marked integrated=true in this run still has issue_ids in open-issues.json; (3) add a tinker Mode 2 quick-check observability counter for assigned-analyst ISSs whose EXP-chain endpoint is integrated.",
+    "files_to_modify": [
+      {
+        "path": "monitor/prompts/decider.md",
+        "find_anchor_hint": "Find the end of PROP-058 Step A0b (the closing code block plus 'Why a sweep (mirroring PROP-056's reasoning):' paragraph). Insert Step A0c AFTER that paragraph, BEFORE '## End-of-Run Step A: Analyst Attention Inbox'.",
+        "behavior_summary": "Step A0c (a) walks open-issues.json for status='assigned-analyst' entries; (b) for each entry, extracts an EXP reference (iss.exp_id, iss.related_expansion, or EXP-NNN regex match in description/title/notes/routing_reason); (c) walks the consolidation chain (status='consolidated-into-EXP-X' → follow to EXP-X, recurse, max depth 8) using BOTH live tracker AND tracker-archive; (d) closes the ISS if and only if the chain endpoint is integrated=true AND integration_mode does NOT start with 'amendment-noted-' (amendment integrations are conditional on parent EXP integration). Idempotent. Skip ISSs touched in last 48h (same recently-touched guard as M2). Records closure_evidence with the full chain path for audit. Closure_by_mechanism='step-a0c-sweep'.",
+        "approximate_code_pattern": "Mirror PROP-058 A0b structure: read open-issues + tracker + archive; build expMap; define chainEndpoint(expId, seen) walker; define extractExpId(iss) regex helper; iterate status='assigned-analyst' ISSs; apply 48h guard then chain walk then integrated=true check then amendment-noted hold-back; migrate to closed-issues.json + append closure-ledger line (dedup via existingLedger). Self-test: every remaining assigned-analyst entry must satisfy (no EXP extractable | endpoint not in tracker | endpoint not integrated | amendment-noted with unintegrated parent | touched <48h). Fail-loud if not."
+      },
+      {
+        "path": "monitor/prompts/reference/decider-curmudgeon-pq-mechanics.md",
+        "find_anchor_hint": "Find Step 8 ('Close related issues — do NOT skip.'). Append a self-test paragraph IMMEDIATELY AFTER Step 8 (and before Step 8b).",
+        "behavior_summary": "Step 8 self-test: after each EXP integration that flips integrated=true, verify that ALL entries in exp.issue_ids have been removed from (or marked fixed in) open-issues.json. If any remain in open-issues.json with non-fixed status, FAIL LOUD and abort commit — this is the defect class that caused commit 1727ee3 to leak ISS-2326 and ISS-2327.",
+        "approximate_code_pattern": "node -e read open-issues + tracker + archive; find INTEGRATED_EXP entry; leaked = exp.issue_ids.filter(id => oi.issues.find(i => i.id===id && i.status !== 'fixed' && i.status !== 'wontfix')); if leaked.length > 0: process.exit(1) with diagnostic. Otherwise pass."
+      },
+      {
+        "path": "monitor/prompts/tinker.md",
+        "find_anchor_hint": "Find the Mode 2 quick-check section ('# Quick FUSE check...'). Append a new sub-check AFTER the disk-space check, before the trigger summary line.",
+        "behavior_summary": "PROP-070 observability counter: count assigned-analyst ISSs whose EXP-chain endpoint is integrated=true (excluding amendment-noted). >0 → info-level finding 'PROP-070 SOFT-COMPLAINT' indicating Step A0c sweep coverage gap.",
+        "approximate_code_pattern": "ORPHAN_INTEGRATED=$(node -e \"...\" 2>/dev/null || echo 0); echo \"PROP-070 orphan-integrated count: $ORPHAN_INTEGRATED\"; if >0 echo soft-complaint. Mirrors disk-space and stranded-patches quick-checks."
+      }
+    ],
+    "files_to_create": [],
+    "files_to_delete": [],
+    "burndown_script_not_needed": "The operator's manual burndown (commit 7ec29efbbd) already cleared the 18 known stuck cases. PROP-070's Step A0c sweep prevents the SAME PATTERN from recurring. No one-time backfill script is needed."
+  },
+  "tradeoffs": {
+    "what_we_gain": "Status='assigned-analyst' ISSs auto-close when their EXP-chain endpoint integrates. No more 18-stuck-ISS backlogs requiring operator-burndown. Step 8 self-test makes the canonical close path fail-loud when bypassed — converts a silent LLM-execution drop into an immediate run abort. Observability counter on tinker Mode 2 surfaces coverage gaps as soft-complaints.",
+    "what_we_might_lose": "~50-line addition to decider end-of-run section. Step A0c runs every decider run (~6×/day) but is near-no-op when there's no residue. Token cost negligible. The amendment-noted hold-back is best-effort (parses parent EXP from integration_mode string); if the integration_mode lacks an EXP reference, the sweep conservatively holds the ISS open — operator can re-investigate.",
+    "edge_cases": {
+      "cycle_in_consolidation_chain": "Defended by `seen` set + max-depth-8 guard. A cycle returns the chain prefix and the ISS is held open ('no resolvable endpoint').",
+      "chain_endpoint_not_in_tracker": "Held open with reason 'EXP-chain endpoint not in tracker' — never closed without evidence.",
+      "exp_id_extractable_but_wrong": "The regex grabs the first EXP-NNN substring in description/title. False positives possible (e.g., 'previously addressed by EXP-XXX' references). Mitigated by: (a) preferring structured fields exp_id and related_expansion first, (b) the 48h recently-touched guard, (c) the integrated=true requirement (most EXP-NNN references in ISS bodies point to in-flight or not-yet-integrated EXPs, so the false-positive rate against integrated EXPs is low).",
+      "amendment_chain_with_unintegrated_parent": "Held open. Conservative default — the directive's non-goal explicitly says ISS-2343/2344/2345 (amendment-noted-pre-EXP-450-integration) should NOT close until EXP-450 integrates.",
+      "step_8_self_test_fails_under_load": "If Step 8 self-test fails, the decider aborts before commit. open-issues.json may be mutated in memory but not written. Same recovery as PROP-058 self-test — next run re-attempts.",
+      "interaction_with_M2": "M2 EXP-tied auto-close (Step 8b, PROP-026 Phase 1) targets status='open' ISSs at integration time, severity-floor minor/info. A0c targets status='assigned-analyst' at end-of-run, no severity floor (integration evidence is the gate, not severity). Different scopes, no overlap.",
+      "race_with_operator_burndown": "If the operator runs a manual burndown that closes an ISS, the sweep's existingLedger check picks up the prior ledger entry by iss_id and skips the duplicate ledger-append. Closure-only happens to ISSs still in open-issues.json, so already-migrated ISSs are inherently skipped."
+    }
+  },
+  "verification_pattern": "grep -q 'Step A0c: assigned-analyst Chain-Aware Close Sweep' monitor/prompts/decider.md && grep -q 'Step 8 self-test (PROP-070' monitor/prompts/reference/decider-curmudgeon-pq-mechanics.md && grep -q 'PROP-070 observability' monitor/prompts/tinker.md && echo FIXED || echo STILL_BROKEN",
+  "verification_pattern_post_deploy": "Run the orphan-integrated count query (in tinker.md Mode 2 quick-check block) — should return 0 after the next decider run completes Step A0c. If >0, investigate which ISSs are left over and why.",
+  "requires_human_judgment": true,
+  "why_human_needed": "Three calls for operator: (a) Confirm the amendment-noted hold-back design: the sweep parses parent EXP from integration_mode string ('amendment-noted-pre-EXP-450-integration' → parent EXP-450). If parsing fails, conservative hold. Is the heuristic robust enough? (b) Step 8 self-test fail-loud-aborts the decider commit if any issue_id is leaked. Conservative default — alternative is warn-only. Operator preference? (c) The directive's framing inverted the actual defect (PROP-056 vs PROP-058 vs Step 8); PROP-070 reframes accordingly. Does the reframe match the operator's mental model, or should there be a closer literal answer to each directive Step?",
+  "operator_action_required": {
+    "primary": "Apply files_to_modify from a clean clone (decider.md, decider-curmudgeon-pq-mechanics.md, tinker.md). Push.",
+    "validation_step_1": "Run the verification_pattern. Expected output: 'FIXED'.",
+    "validation_step_2": "Wait for the next decider run (every 4h). Verify the run report includes a 'Step A0c sweep' line (migrated count + held-open count). Verify any orphaned-integrated cases close.",
+    "validation_step_3": "On the next tinker Mode 2 run, verify the PROP-070 observability counter prints. >0 immediately after deploy means there are pre-existing cases the sweep didn't catch (investigate). 0 means clean.",
+    "burndown_not_needed": "Operator commit 7ec29efbbd already cleared the 18 stuck cases. PROP-070 prevents recurrence; no follow-up burndown required."
+  },
+  "estimated_impact": {
+    "tokens": "~50 lines added to decider.md end-of-run section. Step A0c runs every decider invocation but is near-no-op when there's no residue. ~25 lines added to decider-curmudgeon-pq-mechanics.md Step 8 self-test (runs only on EXP integration). ~15 lines added to tinker.md Mode 2 quick-check.",
+    "metric_correctness": "Future open_issues_total reflects real backlog without operator-burndown intervention. assigned_analyst_count returns to true value (only ISSs whose chain endpoint is NOT yet integrated). age_ge_14d / age_ge_30d counters drop naturally as the sweep clears residue.",
+    "risk_reduction": "Eliminates the same defect class as the 2026-05-31 18-stuck-ISS event. Converts silent Step 8 bypasses into immediate decider run aborts via the self-test."
+  },
+  "rollout_plan": [
+    "1. Operator reviews this PROP for amendment-noted heuristic acceptability and Step 8 self-test fail-loud preference.",
+    "2. Operator (or follow-up tinker Mode 4 if self-apply granted) applies the three files_to_modify items.",
+    "3. Validation step 1: verification_pattern returns FIXED.",
+    "4. Validation step 2: next decider run report shows Step A0c output.",
+    "5. Validation step 3: next tinker Mode 2 run shows PROP-070 observability count (expect 0 after first sweep clears any leftover state).",
+    "6. Update this PROP to 'implemented' with implementation_commit_sha, implementation_at, implementation_run."
+  ],
+  "scope_authority": "Tinker authors PROP. Operator applies (consistent with PROP-051/PROP-054/PROP-055/PROP-058 pattern).",
+  "directive_reference": "DIRECTIVE-20260531-009 (operator-filed 2026-05-31T13:10:00Z); tinker-2026-05-31T15-13 run authored this PROP per directive Step 5.",
+  "non_goals_from_directive": [
+    "Do NOT implement PROP-070 in this run — author only.",
+    "Do NOT re-close ISS-2343/2344/2345 — amendment-noted hold-back is correctly designed to keep them open until EXP-450 integrates.",
+    "Do NOT supersede PROP-056 or PROP-058 — both are correctly scoped to their respective status enums."
+  ]
+}

@@ -1,40 +1,35 @@
-tinker run tinker-2026-05-31T09-58 at 2026-05-31T10:14:52Z
+tinker-2026-05-31T15-13 — directive-driven run
 
-Mode: 4 (PROP authoring) — preempted by pending operator directive.
+ACTIVITY:
+- Pre-flight Operator Directive Discovery: 1 pending → DIRECTIVE-20260531-009 (medium, "Author PROP-070 — burndown consolidation-chain fix"). Mode 0 + Mode 1-4 selection skipped per dispatcher rules.
+- Authored monitor/tinker/proposals/PROP-070-burndown-consolidation-chain-fix.json (status=design-pending-operator-review).
+- Flipped DIRECTIVE-20260531-009 to status=completed with prop_id_authored=PROP-070.
 
-Directive consumed: DIRECTIVE-20260531-006 (medium) — "Author PROP-069 — recalibrate
-PROP-014 Mech 3 narrative-cite audit."
+KEY FINDING — directive framing partially reframed:
+The directive hypothesized "PROP-056 burndown does not traverse consolidation chains." Investigation found:
+  • PROP-056 is the status=closed residue sweep, NOT a burndown.
+  • PROP-058 Step A0b is the recurring burndown but targets status=blocked-on-curmudgeon, not status=assigned-analyst (which all 18 stuck ISSs were).
+  • The canonical close-on-EXP-integration (Step 8 in decider-curmudgeon-pq-mechanics.md) DOES carry consolidation chains correctly — via the issue_ids aggregation that analyst-baby builds when consolidating EXPs. The chain endpoint's issue_ids array IS the union of upstream issue_ids.
+  • Of the 18 stuck ISSs the operator closed manually: 4 of 6 "DIRECT" cases had EXPs that weren't yet integrated (operator burndown was early but defensible at status=complete); 2 cases (ISS-2326/2327→EXP-464/465) had EXPs integrated by commit 1727ee3 BUT Step 8 was bypassed (canonical-path-failure, same defect class as PROP-056's improvised close-sites).
+  • The 12 "CONSOLIDATED" cases will close NATURALLY when EXP-517/518/519/520 integrate — their issue_ids already aggregate the upstream IDs. The operator anticipated this by closing at status=complete time, semantically earlier than Step 8 fires.
 
-Output: monitor/tinker/proposals/PROP-069-narrative-cite-recalibration.json
-        (50.8 KB, status=design-pending-operator-review)
+PROPOSED FIX (PROP-070):
+  • Step A0c sweep in decider end-of-run (sibling to PROP-056 A0 and PROP-058 A0b): walks open-issues.json for status=assigned-analyst, traverses consolidation chain, closes if endpoint is integrated=true (with amendment-noted hold-back for ISS-2343/2344/2345 conditional-integration cases).
+  • Step 8 self-test in decider-curmudgeon-pq-mechanics.md: fail-loud-abort if any EXP marked integrated=true in this run still has issue_ids in open-issues.json. Converts silent LLM-execution drops into immediate aborts.
+  • PROP-070 observability counter in tinker.md Mode 2 quick-check: count orphaned assigned-analyst ISSs whose chain endpoint is integrated. >0 = soft-complaint.
 
-What PROP-069 proposes (in one paragraph): the narrative-cite audit's 91% uncited
-rate (3,668 of 4,039 paragraphs) is mostly a measurement artifact — the audit
-flags every multi-sentence paragraph regardless of whether it carries a state-
-bearing claim. The recalibration drops two surfaces from scope (daily-report
-pipeline_status and recommended_actions — both operational/imperative by
-design), tightens the CITATION_RE to suppress ~42% of file-missing that are
-prose mistaken for citations, auto-resolves ~23% of file-missing that are
-bare filenames missing their canonical directory prefix (open-issues.json ->
-monitor/decisions/open-issues.json), and recalibrates the 0% claim-uncited
-threshold to <=15%. Projected impact: 3,668 -> ~1,640 claim-uncited (55%
-reduction). The remaining 1,640 — almost entirely in curmudgeon reviews —
-is the REAL claim-backing gap (85% of curmudgeon review files have zero
-citations anywhere) and is a behavioral fix, not a measurement fix.
+NO burndown script needed — operator commit 7ec29efbbd already cleared the 18 pre-existing cases.
 
-Lifecycle updates (additive edits per CLAUDE.md):
-  - DIRECTIVE-20260531-006 status: pending -> completed
-    (+ completed_at, completed_by_run, prop_id_authored=PROP-069)
-  - PROP-014 amendment_history: +1 entry pointing at PROP-069
-    (refinement-not-supersession; PROP-014 mechanisms stand)
+OPERATOR ASKS (in PROP-070):
+  (a) Confirm amendment-noted hold-back heuristic (parses parent EXP from integration_mode string).
+  (b) Step 8 self-test fail-loud-abort vs warn-only?
+  (c) Does the reframe match your mental model, or do you want a literal answer to each directive Step?
 
-Pipeline health (info-only, not the focus of this run):
-  - open-issues-total: 59 (12 open / 35 assigned-analyst / 0 assigned-tinker)
-  - age_ge_14d=0, age_ge_30d=0, oldest=0.63d — healthy steady-state, no Mode 1
-    escalation
-  - disk: project footprint within bounds; only /tmp/tinker-clone (~288 MB) —
-    cleaned up at end-of-run per PROP-060 FND-01
+BACKLOG STATE:
+  • open_issues_total = 52 (post operator-burndown + 8 new ISSs from later runs)
+  • assigned_analyst = 22 (down from 35 pre-burndown)
+  • net_velocity_7d = +111 (163 closed / 52 new) — strongest in recent history
+  • No PROP-030 thresholds fired.
 
-Next: operator review of PROP-069. If accepted, a follow-up directive will
-trigger the audit-narrative-citations.js + workspace-sync.md implementation
-(~30 min, low risk, observational-only).
+DEFERRED:
+  • Mode 3 audit (CLAUDE.md accuracy + per-agent context load + no-op rates) is overdue. Next non-directive run defaults to Mode 3.
