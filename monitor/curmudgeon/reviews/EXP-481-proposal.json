@@ -1,0 +1,148 @@
+{
+  "point_id": "EXP-481",
+  "topic": "EXP-481 proposal: introduce {{DOME_CONFIRMED_HEADLINE}} placeholder + 14 bare-69 prose patches (ISS-2304 followup to EXP-437 audit-coverage gap)",
+  "queue_id": 428,
+  "queue_pushed_at": "2026-05-31T14:49:09.562Z",
+  "reviewed_at": "2026-05-31T17:14:28.406Z",
+  "cycle": 1,
+  "trigger": "priority-queue-section-rewrite",
+  "change_summary": "Pre-integration adversarial review of EXP-481 proposal package. Class deep-attack. The decider is holding 14 prose patches + 4 generate-html.js edits pending this review; nothing has landed in HEAD yet (verified: zero DOME_CONFIRMED_HEADLINE/dome_claimed_confirmed occurrences in build-scripts/, data/uncounted-failures.json, data/sections.json post git-pull-rebase).",
+  "current_verdict_holds": true,
+  "confidence": 0.84,
+  "our_argument_summary": "EXP-437 templated the {{TOTAL_WINS}}/{{CATALOG_TOTAL}}/{{COLLISION_COUNT}} math at five sites but its audit pass scanned only existing placeholder occurrences, missing bare numerals. EXP-481 introduces a third frame — {{DOME_CONFIRMED_HEADLINE}} sourced from data/uncounted-failures.json:dome_claimed_confirmed — for the dome's published headline (69), distinct from {{TOTAL_WINS}}=70 (our enumeration of distinct WIN IDs) and {{CATALOG_TOTAL}}=72 (catalog with collisions). Proposes 1 schema field + 4 generate-html.js wiring edits + 1 _meta.placeholders entry + 14 substring replacements in data/sections.json, with 8 bare-69 sites explicitly enumerated as stay-literal.",
+  "dome_code_analysis": {
+    "relevant_files": [
+      "build-scripts/generate-html.js (lines 1291, 1455, 113 in HEAD — EXP cites \"~1278\", \"~1442\", \"~61\" respectively)",
+      "data/uncounted-failures.json (top-level schema)",
+      "data/sections.json (_meta.placeholders + part1b/part2b/part4/part6/part8 prose)",
+      "monitor/prompts/poller.md (line 341 — confirms dome headline 69 is a poller-watched value)"
+    ],
+    "calculation_pipeline": "Proposal wires {{DOME_CONFIRMED_HEADLINE}} as: failures.dome_claimed_confirmed (new field, default 69) → context.domeClaimedConfirmed (in main() context assembly) → resolvePlaceholders mapping at line 113 area. Then 14 prose substring replacements consume the placeholder.",
+    "hardcoded_vs_computed": "New field is HUMAN-CURATED (or pseudo-curated; see hole on refresh-agent automation gap). Value 69 is stored as a literal default in three places after the patch (uncounted-failures.json:dome_claimed_confirmed, generate-html.js:1291 fallback literal, generate-html.js:113 area placeholder fallback || 69) — defensive but the triple-literal is itself a mini-drift hazard if the schema bumps.",
+    "data_sources_used": [
+      "data/uncounted-failures.json (post-EXP)",
+      "static fallbacks in generate-html.js"
+    ],
+    "escape_clauses": "context.domeClaimedConfirmed || 69 fallback (change_4) means if the field is dropped from uncounted-failures.json, the rendered HTML silently shows 69 forever rather than failing the build. Mirrors the existing domeClaimedFailures || 0 pattern, but failures defaulting to 0 is sentinel-distinguishable from a real low number; 69 as a fallback is indistinguishable from a stale curated 69. Minor.",
+    "our_code_claims_accurate": true,
+    "code_discrepancies": "Line-number hints in build_pipeline_changes are off by ~13-52 lines vs HEAD (EXP says \"~1278\" actual 1291; \"~1442\" actual 1455; \"~61\" actual 113). Hint text is hedged with \"~\" so technically fine, and the current_clause string fingerprints are exact (verified per-patch — all 14 prose fingerprints + all 4 generate-html.js current strings substring-match exactly once in HEAD). Decider find-and-replace by string content is safe."
+  },
+  "code_analysis_tags": {
+    "monitoring": "none",
+    "monitoring_evidence": "Not a WIN; schema-compliance only.",
+    "relabels_standard": false,
+    "relabels_standard_evidence": "Not a WIN.",
+    "post_hoc": false,
+    "post_hoc_evidence": "Not a WIN.",
+    "derives_from_dome": false,
+    "derives_from_dome_evidence": "Not a WIN.",
+    "reviewed": true
+  },
+  "holes_found": [
+    {
+      "severity": "moderate",
+      "description": "EXP-481 audits data/sections.json for bare 69s comprehensively (verified: independent walk-the-tree scan finds 23 \\b69\\b instances; 14 are P1-P14 targets, 8 are enumerated stay-literals in mentions_left_unchanged, and the remaining 2 are in _meta.placeholders.{{HONEST_ACCURACY}} description which change_6 addresses — full coverage), but does NOT scan data/uncounted-failures.json itself, the very file the EXP is modifying as change_1. That file currently carries dome_accuracy_formula: \"69 / (69 + 4)\" with TWO bare 69s and one bare 4. After EXP-481 lands, the file would simultaneously declare dome_claimed_confirmed: 69 (the new tracked field) AND retain dome_accuracy_formula: \"69 / (69 + 4)\" (vestigial bare-literal). If the dome bumps to 70 confirmed, dome_claimed_confirmed updates but dome_accuracy_formula stays \"69 / (69 + 4)\" — inconsistent within the same file. The very anti-pattern this EXP exists to prevent, reproduced inside the EXP's own change_1. Mitigating factor: dome_accuracy_formula has zero grep hits in build-scripts/ or data/ (verified) — it is currently unrendered, so user-visible impact is zero.",
+      "recommendation": "Extend change_1 to also address dome_accuracy_formula. Two acceptable options: (a) drop the field entirely if confirmed unused (one-line removal in uncounted-failures.json); (b) replace the value with a self-documenting reference string like \"{{dome_claimed_confirmed}} / ({{dome_claimed_confirmed}} + {{dome_claimed_failures}})\" — purely descriptive, not resolved at render time, but no longer drift-vulnerable. Option (a) is cleanest. Decider should pick one before integrating."
+    },
+    {
+      "severity": "moderate",
+      "description": "test_recommendations item 1 (regression test: \"Grep \\b69\\b in rendered docs/index.html post-build; assert match count matches the explicit whitelist\") is unimplementable as worded because the EXP does not supply the expected whitelist count number. After patches, the expected bare-69 count in rendered docs/index.html is approximately 16-18: ~10 in sections.json post-EXP (1 part1b historical + 1 part4 three-class breakdown + 2 part4 verbatim quotes + ~5 part4 σ-decimal false-positives + 1 part6 anchor p6-69-8 + 1 part8 verbatim) + ~4 in generate-html.js (Timestamp Error tab — see hole 4) + 2 in uncounted-failures.json dome_accuracy_formula if not removed. The decider has to compute and enshrine this number itself. The pseudocode in test_recommendations item 1 (\"const m=html.match(/\\b69\\b/g); /* assert m.length === expected_whitelist_count */\") explicitly leaves expected_whitelist_count as a TODO comment.",
+      "recommendation": "EXP should supply expected_bare_69_count_post_integration as an integer with itemized derivation (per-section count), OR restructure the test as a list-of-contexts assertion (e.g., a fixture file listing each expected stay-literal context substring, and the test asserting m.length === fixture.length AND every match contains one of the fixture substrings nearby — much more brittle-test-friendly than a bare integer). Otherwise this test will land as a TODO and rot."
+    },
+    {
+      "severity": "moderate",
+      "description": "anticipated_objections #3 says: \"Already true for dome_claimed_failures (currently 4) and dome_claimed_accuracy (94.5%). The refresh agent's job description already includes tracking the dome's published scoreboard.\" This is partially false in HEAD. (a) The dome-project poller (poller.md row 341: \"WIN count | confirmed predictions | 69 | home page, wins page\") WATCHES the dome's published count and would fire breaking_news on a delta, but it does NOT write to data/uncounted-failures.json. (b) Evidence of human-curated-only: uncounted-failures.json last_updated is 2026-04-29T01:19Z — over a month stale at review time (2026-05-31). dome_claimed_failures=4 and dome_claimed_accuracy=\"94.5%\" have sat unchanged regardless of poller activity. Introducing dome_claimed_confirmed: 69 adds a third drift-vulnerable field with the same human-curation pattern, and the EXP's drift-detector test (test_recommendations item 4) — which the EXP positions as the automated mitigation — points at monitor/status.json as the source-of-truth for the dome's current published headline. status.json was inspected (top-level keys: last_run, last_agent, run_type, mode, status, last_poll, ..., open_issues_count, etc.) — it does NOT carry the dome's confirmed-count. The test as worded has no data source to read from.",
+      "recommendation": "Two acceptable fixes. (a) Honest reframe: edit anticipated_objections #3 to acknowledge these fields are human-curated, list \"manual update on poller breaking_news\" as the operational discipline, and either drop the drift-detector test or rescope it to read from monitor/changes/*.json poller diffs (which DO record dome-side count deltas). (b) Wiring commitment: include in this EXP (or a sibling EXP filed simultaneously) a poller.md edit that adds an explicit write to data/uncounted-failures.json when the watched scoreboard values change. (a) is cheaper and matches the actual workflow; (b) is the real automation fix and would justify the original framing."
+    },
+    {
+      "severity": "minor",
+      "description": "holes_NOT_addressed_here item 4 cites \"build-scripts/generate-html.js Timestamp Error tab ts-april-2026-update hardcoded '69 confirmed' instances (2 sites)\". Independent line-by-line scan of generate-html.js lines 1981-2001 finds FOUR distinct bare-69 sites: (i) line 1981 TLDR — \"the headline '69 confirmed' continues to conflate claim classes\"; (ii) line 1987 detail-body — \"more of the 69 WINs get classified\" and trailing \"the headline '69 confirmed' is therefore being displayed\"; (iii) line 1995 closing — \"the site's 94.5% headline and '69 confirmed' tagline\"; (iv) line 2001 related-callout — \"applied to 9 of 69+ claims in claim_index.json\". So EXP-481 undercounts the follow-up scope by 2. Not a blocker (the EXP correctly defers all of these to a separate refactor), but the next EXP that picks this up should know it's 4 sites, not 2.",
+      "recommendation": "Update holes_NOT_addressed_here item 4 to read \"(4 sites at lines 1981, 1987, 1995, 2001 in HEAD)\" so the followup EXP doesn't walk in expecting half the work."
+    },
+    {
+      "severity": "minor",
+      "description": "change_6 (update _meta.placeholders.{{HONEST_ACCURACY}} description to use {{DOME_CONFIRMED_HEADLINE}} instead of bare \"69 / (69 + dome_claimed_failures + silent_failures)\") is marked \"Optional follow-up if change_5 lands cleanly. Description-string hygiene; doesn't render to users but keeps the canonical placeholder catalog internally consistent.\" The undersell is misleading: the description string contains TWO bare 69s that will become stale on the same trigger as the prose 69s. The whole point of EXP-481 is that the placeholder catalog should track. Leaving change_6 as optional means the canonical catalog itself contradicts the discipline the EXP is establishing.",
+      "recommendation": "Promote change_6 from optional to required. It is one substring swap inside one JSON string value — adds essentially no scope to integration but closes the hygiene loop. Without it, future analysts reading _meta.placeholders for canonical guidance see the same stale 69 the EXP is teaching them to template away."
+    },
+    {
+      "severity": "minor",
+      "description": "mentions_left_unchanged item 2 (the part4 three-class breakdown \"9 of 83 registry items (69 confirmed, 4 refined, 10 prospective)\") defers all three numbers to a follow-up EXP \"if the three-class breakdown becomes a tracking metric. For now, keep all three literal.\" But the data plumbing for the three-class breakdown is already 2/3 built: data/uncounted-failures.json:dome_claimed_prospective_count = 10 exists, and build-scripts/generate-html.js:1459 already exposes domeProspectiveCount in the context object. After EXP-481 also lands dome_claimed_confirmed, only dome_claimed_refined is missing — one more field. The asymmetry argument the EXP uses to justify the defer is weaker than it reads: 2/3 of the plumbing exists; the defer leaves 1 site bare-literal that could be closed with two more lines of change. Defensible scope discipline, but slightly underdeveloped reasoning.",
+      "recommendation": "Either (a) extend change_1 to add dome_claimed_refined: 4, change_3 to expose domeClaimedRefined, change_4 to wire {{DOME_REFINED_COUNT}} and {{DOME_PROSPECTIVE_COUNT}} placeholders, and convert the three-class sentence to use all three — net additional scope ~6 lines. OR (b) tighten the mentions_left_unchanged item 2 rationale to acknowledge the existing plumbing and explain why the defer is still right (e.g., \"the three-class breakdown is a single-site reference and the schema-cleanup isn't worth a fresh EXP\"). (b) is fine if the decider just wants to land the headline change. (a) is the more honest finish if the EXP's discipline is \"if it can drift, template it.\""
+    }
+  ],
+  "unresolved_prior_cycle": [
+    {
+      "iss_id": "ISS-2304",
+      "prior_cycle": 1,
+      "holes_index": -1,
+      "note": "EXP-481 IS the patch for ISS-2304 (= SEC-part2b-count-reconciliation.c1 hole 4). Not a carry-over of a hole into this review; the EXP itself is the carry-over response. Recording for decider M3 audit trail."
+    }
+  ],
+  "stronger_arguments": [
+    {
+      "description": "The recursive-audit-coverage observation is the strongest single argument against the EXP and is not made anywhere in the EXP's own anticipated_objections section. The EXP critiques EXP-437 for missing bare numerals because EXP-437's audit pass \"scanned only existing placeholder occurrences (44 of them) and did NOT grep for bare numerals\" (verbatim from the EXP target field). The EXP then comprehensively grep's sections.json for \\b69\\b (correctly), but does NOT grep its OWN change_1 target file (uncounted-failures.json) for \\b69\\b. The exact same audit-coverage failure repeats one level down. A capable adversary should be expected to apply the criticism recursively; the EXP's anticipated_objections section anticipates 7 critiques but misses the most obvious one.",
+      "sources": [
+        "EXP-481.target field",
+        "data/uncounted-failures.json:dome_accuracy_formula in HEAD",
+        "hole 1 in this review"
+      ]
+    },
+    {
+      "description": "The drift-detector framing in test_recommendations item 4 is a stronger argument than the EXP commits to, IF the implementation gap (status.json doesn't carry the dome's confirmed count; see hole 3) is closed. A test that reads the latest monitor/changes/*.json poller diff and asserts dome_claimed_confirmed in uncounted-failures.json matches the dome's current published headline is the right discipline. The EXP could land both: change_1 PLUS a tests/run.sh entry that operationalizes the drift-detector. As is, the drift-detector recommendation is one half-implementable test in a 7-item list, easy for the decider to skip.",
+      "sources": [
+        "EXP-481.test_recommendations[3]",
+        "monitor/changes/*.json poller output schema",
+        "monitor/prompts/poller.md row 341"
+      ]
+    }
+  ],
+  "kernel_of_truth": {
+    "description": "The three-frame design (69 dome-headline vs 70 our-enumeration vs 72 our-catalog) IS load-bearing and the EXP's choice to introduce {{DOME_CONFIRMED_HEADLINE}} as a sibling placeholder rather than reuse {{TOTAL_WINS}} is the right call (EXP-481.json:approach.why_not_just_TOTAL_WINS). Verified: data/sections.json:_meta.placeholders shows {{TOTAL_WINS}} and {{CATALOG_TOTAL}} already exist as distinct placeholders for our-enumeration vs catalog-with-collisions; conflating dome-headline into either would silently misrepresent the dome's scoreboard. The 14 patch fingerprints are exact and one-per-file in HEAD (verified per-patch via substring walk of data/sections.json: P1-P14 each match exactly once at the expected path). The 4 build-pipeline current-strings (changes 2/3/4 and the failures-default) are also exact substring matches against generate-html.js lines 1291/1455/113. Mechanical integration is safe.",
+    "why_it_doesnt_save_claim": "The schema choice and the 14-patch coverage of data/sections.json are correct, but the EXP does not extend its own discipline to the file it modifies as change_1 (hole 1 — dome_accuracy_formula bare-69 left in place inside data/uncounted-failures.json); the drift-detection mitigation it cites in anticipated_objections #3 is not actually wired in HEAD (hole 3 — uncounted-failures.json:last_updated 2026-04-29 over a month stale, poller does not write to this file, status.json does not carry the watched value); and the regression test it recommends is left as a TODO with no concrete expected count (hole 2). None of these is integration-blocking — verdict holds, action minor_edit — but the EXP's own kernel-of-truth claim (EXP-481.json:kernel_of_truth.why_it_doesnt_save_the_claim) that this fix \"closes the reactive-prose-vs-structural-fix anti-pattern\" is overclaimed by exactly the gaps the EXP itself doesn't close."
+  },
+  "recommended_action": "minor_edit",
+  "text_fingerprint": {
+    "claim_length": 0,
+    "finding_length": 0,
+    "detail_evidence_length": 0,
+    "detail_verdict_length": 0,
+    "verdict": "section-rewrite-proposal",
+    "proposal_in_head": true,
+    "integration_commit": null,
+    "sections_json_bare_69_count_pre": 23,
+    "sections_json_bare_69_targeted_by_P1_P14": 16,
+    "sections_json_bare_69_stay_literal": 7,
+    "uncounted_failures_json_bare_69_count_pre": 2,
+    "uncounted_failures_json_bare_69_addressed_by_EXP": 0,
+    "generate_html_js_bare_69_count": 4,
+    "generate_html_js_bare_69_addressed_by_EXP": 0,
+    "placeholders_proposed": [
+      "{{DOME_CONFIRMED_HEADLINE}}"
+    ],
+    "schema_fields_added": [
+      "dome_claimed_confirmed (uncounted-failures.json top-level)"
+    ]
+  },
+  "deeper_analysis": "Counter-argument the EXP should have made and didn't: \"Is the recursive coverage gap (sections.json fully audited, uncounted-failures.json not audited at all) the same anti-pattern this EXP exists to fix?\" Honest answer is yes, on a smaller surface (dome_accuracy_formula has 0 grep hits in render code so user-visible impact = 0, while the prose 69s ARE in rendered HTML). The EXP's anticipated_objections covers \"why introduce a third placeholder\", \"isn't historical prose immutable\", \"maintenance burden\", \"why leave 73 literal\", \"why deep-attack not verification\", and \"what if integration accidentally re-templates\" — six adversarial frames — but does not anticipate the recursive-audit critique. This is the single attack a fresh adversarial pass should make against any audit-coverage EXP: did the EXP apply its own discipline to the files it touched? Here, partially no.\n\nThe pro-proposal counter-counter: there's a defensible scoping argument that data/uncounted-failures.json is the SCHEMA, not the prose, and schema-internal redundancy (dome_accuracy_formula carrying the same value as dome_claimed_confirmed + dome_claimed_failures) is documentation, not user-visible rendering. By that read, change_1 doesn't need to grep the file because the file's purpose is to BE the source-of-truth, not to be audited as if it's prose. This is fine if dome_accuracy_formula is dropped (acknowledging it's now redundant with the new field tuple); it is not fine if dome_accuracy_formula is kept (then it's prose-shaped and falls under the EXP's discipline).\n\nOn the verification-class question (anticipated_objections #5): the EXP correctly argues for deep-attack and correctly identifies the schema choice + mentions_left_unchanged enumeration as adversarial-attack-worthy. This review confirms the deep-attack class was right; verification-mode (PROP-038 narrow Sonnet) could not have produced findings 1-3, which are structural rather than line-item.\n\nIntegration order: the decider_routing_hints sequence (changes 1→2→3→4→5 first, then P1-P14 any order) is correct. P11/P12 use {{DOME_CLAIMED_ACCURACY}} (already wired pre-EXP) plus {{DOME_CONFIRMED_HEADLINE}} (needs change_4); P1 uses {{DOME_CONFIRMED_HEADLINE}} + {{DOME_CLAIMED_FAILURES}} + {{DOME_CLAIMED_ACCURACY}}; all are safe under the proposed order.",
+  "citation_check": {
+    "citations_verified": [
+      "EXP-481.build_pipeline_changes.change_2 current string vs generate-html.js:1291 — exact match",
+      "EXP-481.build_pipeline_changes.change_3 current string vs generate-html.js:1455 — exact match",
+      "EXP-481.build_pipeline_changes.change_4 current string vs generate-html.js:113 — exact match",
+      "P1-P14 current_clause vs data/sections.json — each matches exactly once at expected path (independent substring walk)",
+      "data/sections.json:_meta.placeholders has existing {{TOTAL_WINS}}, {{CATALOG_TOTAL}}, {{COLLISION_COUNT}}, {{DOME_CLAIMED_FAILURES}}, {{DOME_CLAIMED_ACCURACY}}, {{HONEST_ACCURACY}} — EXP placement claim verified",
+      "data/uncounted-failures.json has existing dome_claimed_failures (4), dome_claimed_accuracy (\"94.5%\"), dome_claimed_prospective_count (10) — schema-consistent placement verified",
+      "monitor/prompts/poller.md:341 confirms dome confirmed count is a watched value"
+    ],
+    "citations_failed": [
+      "EXP-481 line-number hints \"~line 1278\" (actual 1291), \"~line 1442\" (actual 1455), \"~line 61\" (actual 113) — hedged with \"~\" but cosmetically off",
+      "EXP-481 holes_NOT_addressed_here item 4 \"(2 sites)\" — actual 4 sites in generate-html.js lines 1981/1987/1995/2001"
+    ],
+    "citations_unchecked": [
+      "V51.0 vs V51.1 historical 69-count assertion in part1b TLDR (EXP keeps literal; pre-existing prose, not in scope to verify here)",
+      "tests/run.sh existing placeholder validation tests (no grep hits for TOTAL_WINS / CATALOG_TOTAL in tests/run.sh — tests/run.sh may not currently validate placeholder integrity, but checking that is out of scope for this proposal review)"
+    ]
+  },
+  "summary_for_decider": "EXP-481 is mechanically safe to integrate (verdict holds, action minor_edit). Six findings: 3 moderate, 3 minor. The two structural moderate findings the decider should resolve BEFORE pushing the patches: (1) data/uncounted-failures.json has dome_accuracy_formula: \"69 / (69 + 4)\" — bare 69s in the file the EXP modifies as change_1; extend change_1 to drop the field or reformulate as a self-doc string; (2) test_recommendations item 1 has no expected whitelist count, decider must either compute it or restructure the test as a per-site fixture; (3) anticipated_objections #3 overclaims refresh-agent automation — uncounted-failures.json last_updated is 2026-04-29 (a month stale), poller does not write to this file, and monitor/status.json does not carry the watched dome-confirmed count, so the drift-detector test recommendation has no data source. Either honest-reframe #3 or wire the poller in a sibling EXP. Minor: undercounts generate-html.js Timestamp Error tab bare-69 sites (4 actual vs 2 claimed); change_6 should be required not optional (closes the placeholder-catalog hygiene loop); mentions_left_unchanged item 2 defer-to-followup reasoning is weak because dome_claimed_prospective_count already exists in the schema. Class deep-attack was correct (verification-mode could not have surfaced findings 1-3). Mark this review consumed with queue_id 428 on next decider run.",
+  "batched": false
+}
