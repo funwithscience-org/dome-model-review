@@ -1,38 +1,37 @@
-tinker-2026-05-31T06-24 — operator_directive_override (DIRECTIVE-20260531-003)
-=============================================================================
+Tinker run tinker-2026-05-31T08-42 — Operator-directive execution
 
-Handled DIRECTIVE-20260531-003 (medium, pending): cross-session dome-sync-clone cleanup.
+Executed DIRECTIVE-20260531-004 (high priority) — implemented PROP-066 Phase 1:
+extract workspace-sync Step 4c into a Node helper to close the ~94% silent-skip
+rate that PROP-064 failed to fix.
 
-Diagnostic findings:
-- Hypothesis (a) CONFIRMED. Cross-session sweep added 2026-05-29 cannot work — /sessions/<other-id>/ is
-  owned nobody:nogroup mode 750; agent uid 4419 has no group access. find walks return Permission denied;
-  the sweep's `2>/dev/null` silences this, returning 0 paths exit 0 (indistinguishable from "no orphans").
-- Option (ii) ALSO unworkable. /tmp is sticky-bit 1777 with cross-session UID namespace mapping;
-  foreign-owned /tmp files cannot be `rm`'d by this agent (verified by direct test against
-  /tmp/clean_clone.txt — Operation not permitted, exit 1; restored after).
-- Option (iii) out of scope per directive non-goal #1 (no system-level cron).
-- Recommended (i)+(iv) hybrid: retire the misleading sweep, add same-session stale-clone recovery,
-  document operator-side cleanup pattern.
+What changed (commit 29df258 + 5acd56f):
+  * NEW: monitor/scripts/sync-workspace-step4c.js (~250 lines)
+  * NEW: monitor/scripts/sync-workspace-step4c.config.json (operator-editable
+    bootstrap fallback; initial fallback_baseline_at=2026-05-30T00:00:00Z)
+  * MODIFIED: workspace-sync.md — Step 1 cleaned of dead PRE_PULL_SHA capture
+    (15 lines); Step 4c reduced from ~157-line bash block to 3-line node
+    invocation + sentinel commit (157 -> 30 lines net -157)
+  * MODIFIED: build.js OWNERSHIP, CLAUDE.md (ownership table + new PROP-066
+    rationale paragraph), proposal files (PROP-066 status=implemented, PROP-064
+    workstream A=superseded), DIRECTIVE-004 status=completed
 
-PROP-067 authored. Three patches:
-  P1: remove cross-session sweep block from workspace-sync.md (lines 67-78)
-  P2: add same-session stale-clone recovery before the clone-fresh guard
-  P3: add operator-side cleanup subsection to CLAUDE.md (with copy-pasteable one-liner)
+Synthetic test (all 4 PASS):
+  1 fresh clone no sentinels -> bootstrap pull-moved-auto-sync
+  2 external upstream commit -> auto-sync (PRIMARY production path)
+  3 local-only commit -> benign-local-ahead audit only
+  4 force-push -> abort-non-ff exit 1
+Results sentinel: monitor/integrity/prop-066-synthetic-test-results-2026-05-31T08-40-05Z.json
 
-Directive marked status=completed with prop_id_authored=PROP-067.
+Manually synced workspace-sync.md + helper + config to FUSE (clone -> workspace)
+so the next workspace-sync cycle picks up the new prompt without needing the
+broken git->FUSE path it itself fixes.
 
-Backlog-trend metrics (PROP-030, every run):
-  open_issues_total=65, assigned_analyst=43, assigned_tinker=0, age_ge_30d=0, oldest_open=0.47d.
-  closed_velocity_7d=134, new_velocity_7d=65, net_velocity_7d=+69. No thresholds firing. Pipeline draining.
+Queue health: open=65, assigned-analyst=43, oldest=0.6d, net velocity 7d=+69.
+All trend thresholds GREEN.
 
-  Note: initial closure-ledger read used wrong field name (`o.ts` instead of `closed_at`),
-  produced velocity_7d=0; corrected at write-time. queue-history row carries _note field documenting.
+Canary plan: top-of-hour 09:00Z workspace-sync should write the first new
+sync-workspace-runs sentinel. 24h target >=18. If <18, file DIRECTIVE-005 for
+PROP-067 escalation.
 
-Action for operator:
-- Review PROP-067 at monitor/tinker/proposals/PROP-067-cross-session-clone-cleanup-confirm-impossible.json.
-- If approved, decider can self-apply all three patches (all are mechanical edits to git-owned files
-  already in workspace-sync NEVER_PUSH).
-- The 1-2 min/week operator-side cleanup pattern continues to be the right answer; PROP-067 makes it
-  documented rather than implicit.
-
-Clone cleanup: /tmp/tinker-clone (282MB) removed at end of run.
+Deferred this run: DIRECTIVE-20260531-005 (medium, author PROP-068). Will pick
+up on next tinker invocation.
