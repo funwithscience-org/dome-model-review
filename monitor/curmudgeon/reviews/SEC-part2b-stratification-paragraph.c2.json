@@ -1,0 +1,137 @@
+{
+  "point_id": "SEC-part2b-stratification-paragraph",
+  "topic": "Part 2b stratification paragraph — EXP-475 verification (CA_NONE_NOTDEMO_IDS + DERIVES-FROM-DOME enumeration)",
+  "queue_id": 423,
+  "queue_pushed_at": "2026-05-31T02:45:42.073Z",
+  "reviewed_at": "2026-05-31T03:15:49.790Z",
+  "cycle": 2,
+  "trigger": "priority-queue-section-rewrite",
+  "change_summary": "EXP-475 integrated: P1 added {{CA_NONE_NOTDEMO_IDS}} to not-demonstrated line; P2 fixed DERIVES-FROM-DOME enumeration ('The {{CA_DOME}} exceptions' -> 'Four apparent exceptions'). Verification scope: did patches land cleanly + did the c1 critical/major holes get closed by the integration?",
+  "batched": true,
+  "batch_position": 1,
+  "current_verdict_holds": true,
+  "confidence": 0.92,
+  "our_argument_summary": "The stratification paragraph in Part 2b breaks the 43 unmonitored WINs (CA_NONE) into 6 verdict buckets (unfalsifiable / self-contradicted / misleading / std-model-explains / refuted / not-demonstrated), each enumerated with WIN-IDs, summing to 43. The DERIVES-FROM-DOME paragraph contrasts 70-1 = 69 non-derivation WINs against the 1 genuine dome-geometry derivation, after walking through four candidate exceptions (WIN-020, WIN-044, WIN-057, WIN-058) that fail or partly fail.",
+  "dome_code_analysis": {
+    "relevant_files": [
+      "build-scripts/generate-html.js",
+      "data/sections.json",
+      "data/wins.json",
+      "docs/index.html"
+    ],
+    "calculation_pipeline": "build-scripts/generate-html.js lines 1389-1410 compute CA_NONE bucket counts from baseWins (3-digit IDs only) filtered to code_analysis.reviewed===true, then filtered to monitoring==='none'. Bucket counts are then verdict-grouped and rendered via template variables {{CA_NONE_NOTDEMO}}, {{CA_NONE_NOTDEMO_IDS}}, etc.",
+    "hardcoded_vs_computed": "All bucket counts and ID lists are computed from data/wins.json — no hardcoding.",
+    "data_sources_used": [
+      "data/wins.json",
+      "data/sections.json"
+    ],
+    "escape_clauses": "When CA_NONE_NOTDEMO=0, CA_NONE_NOTDEMO_IDS resolves to empty string and '()' renders (cosmetic-empty parens) — acceptable per EXP-475's cosmetic_note.",
+    "our_code_claims_accurate": true,
+    "code_discrepancies": "None observed. Bucket logic matches prose."
+  },
+  "code_analysis_tags": {
+    "monitoring": "none",
+    "monitoring_evidence": "Section-level (not WIN-level) — N/A. The section discusses monitoring patterns across all WINs.",
+    "relabels_standard": false,
+    "relabels_standard_evidence": "Section-level — N/A.",
+    "post_hoc": false,
+    "post_hoc_evidence": "Section-level — N/A.",
+    "derives_from_dome": false,
+    "derives_from_dome_evidence": "Section-level — N/A.",
+    "reviewed": true
+  },
+  "holes_found": [
+    {
+      "severity": "minor",
+      "description": "Cosmetic-empty parens render: when CA_NONE_NOTDEMO=0 (current), the rendered text is '0 not demonstrated () — monitoring would validate the mechanism.' The empty '()' is visible to readers. A dome defender will not exploit this (it does not affect the argument), but the cosmetic flaw is real. EXP-475's cosmetic_note acknowledged this as acceptable; flagging for future polish (e.g., conditional template logic to omit parens when ID list is empty).",
+      "recommendation": "Future enhancement: add list_of_winids template helper (per ISS-2321) that emits ' (IDs)' only when non-empty. Not a blocker."
+    }
+  ],
+  "patches_verified": [
+    {
+      "patch_id": "EXP-475-P1-notdemo-ids",
+      "target_file": "data/sections.json",
+      "landed": true,
+      "evidence": "grep 'CA_NONE_NOTDEMO_IDS' data/sections.json -> 1 match (in stratification paragraph); rendered docs/index.html shows '0 not demonstrated () — monitoring would validate the mechanism.'"
+    },
+    {
+      "patch_id": "EXP-475-P2-derives-from-dome-enumeration",
+      "target_file": "data/sections.json",
+      "landed": true,
+      "evidence": "grep 'Four apparent exceptions deserve individual scrutiny' data/sections.json -> 1 match; old 'The {{CA_DOME}} exceptions deserve individual scrutiny' -> 0 matches. Rendered HTML reads 'Four apparent exceptions deserve individual scrutiny — three fail on close examination, leaving 1 genuine dome-geometry derivation:'"
+    }
+  ],
+  "c1_holes_status": {
+    "h0_critical_visible_arithmetic_43_vs_45": {
+      "status": "fixed",
+      "evidence": "Bucket count is now 2+12+10+11+8+0 = 43 (matches CA_NONE_denominator=43, matches rendered 'sum to 43'). Verified via node script: baseWins=70, reviewedForCA=70, caNoneBase=43; bucket verdicts {Unfalsifiable:2, Self-Contradicted:12, Misleading:10, Std Model Explains:11, Refuted by Data:8, Not Demonstrated:0}, sum=43."
+    },
+    "h1_critical_filter_contract_mismatch": {
+      "status": "fixed",
+      "evidence": "build-scripts/generate-html.js lines 1393-1394: 'const reviewedForCA = baseWins.filter(w => w.code_analysis && w.code_analysis.reviewed); const caNoneBase = reviewedForCA.filter(w => w.code_analysis.monitoring === \"none\");' — denominator and numerators both use reviewedForCA, uniform filter contract."
+    },
+    "h2_major_build_invariant_not_implemented": {
+      "status": "fixed",
+      "evidence": "build-scripts/generate-html.js lines 1397-1402: 'const _caNoneSumCheck = [...verdicts...].reduce(...); if (_caNoneSumCheck !== caNoneBase.length) { throw new Error(\"build invariant: CA_NONE bucket sum (...) !== CA_NONE denominator (...)\"); }' — assertion runs on every build, would fail loudly if drift recurred."
+    },
+    "h3_major_no_ids_for_notdemo": {
+      "status": "fixed",
+      "evidence": "Template now reads '{{CA_NONE_NOTDEMO}} not demonstrated</strong> ({{CA_NONE_NOTDEMO_IDS}}) — monitoring would validate the mechanism.' Renders consistently with other buckets (ID list slot present), even though current count is 0."
+    },
+    "h4_moderate_win057b_in_stdmodel_ids": {
+      "status": "fixed_side_effect",
+      "evidence": "baseWins filter is now /^\\d{3}$/.test(w.id), which excludes WIN-057b (a sub-ID). Grep of docs/index.html confirms WIN-057b no longer appears in any CA_NONE bucket list (only in legitimate documentary contexts: the WIN-numbering note and one magnetic-cluster mention). ISS-2316 should be auto-closeable on next decider sweep."
+    },
+    "h5_moderate_overclaim_monitoring_would_expose": {
+      "status": "carry_over_open",
+      "iss_id": "ISS-2317",
+      "evidence": "Rendered HTML still reads '12 self-contradicted by the dome\\'s own geometry (WIN-034, WIN-044, ...) — monitoring would expose the contradiction.' WIN-044 (FSF) is mathematical/derivational, not observational; monitoring cannot expose a math identity. Not addressed by EXP-475."
+    },
+    "h6_moderate_causal_attribution_kernel_of_truth": {
+      "status": "carry_over_open",
+      "iss_id": "ISS-2318",
+      "evidence": "Rendered HTML still reads 'The gaps are systematic: the dome\\'s monitoring avoids exactly the categories where testing would be most damaging.' Causal-attribution framing remains. Not addressed by EXP-475."
+    }
+  },
+  "unresolved_prior_cycle": [
+    {
+      "iss_id": "ISS-2317",
+      "prior_cycle": 1,
+      "holes_index": null,
+      "note": "carry-over from c1 hole 5 (moderate overclaim re monitoring-would-expose-contradiction for derivational WINs). Not addressed by EXP-475; ISS-2317 still open. Routes via existing ISS, not flagged as new hole here."
+    },
+    {
+      "iss_id": "ISS-2318",
+      "prior_cycle": 1,
+      "holes_index": null,
+      "note": "carry-over from c1 hole 6 (moderate causal-attribution kernel-of-truth challenge). Not addressed by EXP-475; ISS-2318 still open. Routes via existing ISS."
+    }
+  ],
+  "stronger_arguments": [],
+  "kernel_of_truth": {
+    "description": "EXP-475 is a clean, well-scoped integration. It (1) closes the visible-arithmetic invariant via uniform filter contract and a build-time assertion, (2) adds the missing ID-list slot for the not-demonstrated bucket so the table is symmetric, and (3) trades a counter-intuitive '{{CA_DOME}}=1 exceptions' lead-in for the natural 'Four apparent exceptions' phrasing. Tests pass (3767/3767). The cosmetic empty-parens artifact when CA_NONE_NOTDEMO=0 is acknowledged in EXP-475's cosmetic_note and is not a defender-exploitable hole. (data/sections.json:stratification, build-scripts/generate-html.js:1389-1410, monitor/analyst/expansions/EXP-475-baby-batch-1.json)",
+    "why_it_doesnt_save_claim": "Verification confirms the section-level critical holes from c1 are closed, but does not retire the section. Two moderate c1 holes (ISS-2317 overclaim, ISS-2318 causal-attribution kernel-of-truth) remain open and were out of scope for EXP-475. They should route through their existing ISS entries rather than be re-raised here. (monitor/decisions/open-issues.json:ISS-2317, ISS-2318)"
+  },
+  "recommended_action": "no_change",
+  "text_fingerprint": {
+    "sections_json_strat_paragraph_length": 47136,
+    "sections_json_contains_CA_NONE_NOTDEMO_IDS": true,
+    "sections_json_contains_Four_apparent_exceptions": true,
+    "docs_html_renders_sum_to_43": true,
+    "build_invariant_present": true,
+    "ca_none_bucket_sum": 43,
+    "ca_none_denominator": 43
+  },
+  "citation_check": {
+    "citations_verified": [
+      "data/sections.json:stratification-paragraph",
+      "build-scripts/generate-html.js:1389-1410 (CA_NONE bucket logic)",
+      "build-scripts/generate-html.js:1397-1402 (build invariant)",
+      "monitor/analyst/expansions/EXP-475-baby-batch-1.json",
+      "monitor/decisions/open-issues.json:ISS-2317, ISS-2318"
+    ],
+    "citations_failed": [],
+    "citations_unchecked": []
+  },
+  "summary_for_decider": "EXP-475 P1 and P2 landed cleanly in data/sections.json. All four c1 critical/major holes (h0 visible arithmetic 43 vs 45, h1 filter-contract mismatch, h2 missing build invariant, h3 missing IDs for notdemo) are now closed via the uniform reviewedForCA filter + build-time assertion. C1 h4 (WIN-057b in STDMODEL list) is fixed as a side effect of the baseWins /^\\d{3}$/ filter; ISS-2316 can be auto-closed. C1 h5 (ISS-2317 monitoring-would-expose overclaim) and h6 (ISS-2318 causal-attribution kernel-of-truth) remain open and were out of EXP-475 scope. Tests 3767/3767. Recommended action: pop queue_id 423 (verification successful), close ISS-2316 (WIN-057b stratification listing) as auto-fixed-by-baseWins-filter. The one minor finding (cosmetic empty parens '0 not demonstrated ()') is acceptable per EXP-475 cosmetic_note; deferring to future ISS-2321 list_of_winids helper."
+}

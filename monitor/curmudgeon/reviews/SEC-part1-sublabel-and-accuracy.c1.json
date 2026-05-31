@@ -1,0 +1,118 @@
+{
+  "point_id": "SEC-part1-sublabel-and-accuracy",
+  "topic": "Part 1 scorecard sublabel + accuracy-denominator hover text — EXP-477 verification (P1 sublabel correction + P4 [REMOVED]/[SUSPENDED] bracket-text removal)",
+  "queue_id": 424,
+  "queue_pushed_at": "2026-05-31T02:45:42.073Z",
+  "reviewed_at": "2026-05-31T03:17:25.289Z",
+  "cycle": 1,
+  "trigger": "priority-queue-section-rewrite",
+  "change_summary": "EXP-477 integrated (per decider commit 7431bc6): (1) P1 corrected EXP-451 P1 sublabel find_text to include <a href=#eg-falsifiability> anchor wrapper; (2) P4 corrected EXP-451 P4 accuracy-denominator replace_text to remove the invented [REMOVED]/[SUSPENDED] bracket convention. Verification scope: did both patches land in their target files (sections.json + docs/index.html) without factual regression?",
+  "batched": true,
+  "batch_position": 2,
+  "current_verdict_holds": false,
+  "confidence": 0.94,
+  "our_argument_summary": "Part 1's scorecard sublabel summarizes the dome's empirical track record in one sentence under the headline accuracy number; the accuracy-denominator hover text explains how the 70/(70+4+4) accuracy figure is computed, citing the silent-failure set (4 entries the dome removed/suspended but excluded from its denominator).",
+  "dome_code_analysis": {
+    "relevant_files": [
+      "data/sections.json (P1 target)",
+      "docs/index.html (P4 target as specified by EXP-477)",
+      "build-scripts/generate-html.js (actual source of accuracy denominator hover text)"
+    ],
+    "calculation_pipeline": "Sublabel text lives in data/sections.json (rendered into docs/index.html on each build). Accuracy denominator hover text is *generated* by build-scripts/generate-html.js from template literal strings — so docs/index.html for that paragraph is a build OUTPUT, not a source. EXP-477's integration_note acknowledged 'the accuracy math is in generate-html.js source but editing docs/index.html directly via find/replace is the decider\\'s existing pattern for EXP-451 patches' — this is the structural risk that materialized.",
+    "hardcoded_vs_computed": "Sublabel: static text in sections.json. Accuracy denominator hover: dynamic template in generate-html.js using ${counts.total}, ${silentFailures} substitutions.",
+    "data_sources_used": [
+      "data/sections.json",
+      "data/wins.json (for counts.total)",
+      "data/uncounted-failures.json (for silentFailures count)"
+    ],
+    "escape_clauses": "None relevant.",
+    "our_code_claims_accurate": false,
+    "code_discrepancies": "EXP-477 P4 targeted docs/index.html, which is regenerated from build-scripts/generate-html.js on every `node build.js html` run. The decider's commit message claims 'P2: Removed invented [REMOVED]/[SUSPENDED] bracket notation from accuracy denominator hover text in index.html' but the post-commit docs/index.html still contains the original 'visibly removed or suspended but excluded from its own accuracy denominator' text (find_text match = 1; replace_text match = 0) AND the source build-scripts/generate-html.js was untouched (replace_text match = 0). Either the find/replace silently failed at apply time, or it succeeded transiently and was overwritten by a subsequent `node build.js html`. The end-state is identical: P4 DID NOT LAND."
+  },
+  "code_analysis_tags": {
+    "monitoring": "none",
+    "monitoring_evidence": "Section-level (not WIN-level) — N/A.",
+    "relabels_standard": false,
+    "relabels_standard_evidence": "Section-level — N/A.",
+    "post_hoc": false,
+    "post_hoc_evidence": "Section-level — N/A.",
+    "derives_from_dome": false,
+    "derives_from_dome_evidence": "Section-level — N/A.",
+    "reviewed": true
+  },
+  "holes_found": [
+    {
+      "severity": "critical",
+      "description": "EXP-477 P4 DID NOT LAND in production despite decider's claim of integration. The accuracy-denominator hover text in docs/index.html still reads 'the silent-failure set is the list of claims the dome has visibly removed or suspended but excluded from its own accuracy denominator' (grep match = 1) and the corrected text 'removed from its predictions page or suspended without counting as failures' is absent (grep match = 0). build-scripts/generate-html.js (the actual source) is also untouched: it still contains the original 'visibly removed or suspended but excluded' string. Root cause: EXP-477 targeted docs/index.html, which is a build output overwritten by `node build.js html` — exactly the structural risk EXP-477's integration_note flagged but inherited from EXP-451's flawed pattern. Decider commit 7431bc6 closed ISS-2351 as 'fixed' on the assumption that the patch landed. This is a false-positive closure. Defender impact: limited (the rendered text does not invent brackets — that strawman never reached production because EXP-451 P4 was blocked by ISS-2351 in the first place — but the 'visibly' wording remains misleading and the analyst's intended improvement is silently lost from the integration audit trail).",
+      "recommendation": "Re-open ISS-2351. Re-target the patch to build-scripts/generate-html.js (the source), not docs/index.html (the output). Apply the same find/replace logic against the templated form: change 'the silent-failure set is the list of claims the dome has visibly removed or suspended but excluded from its own accuracy denominator' -> 'the silent-failure set is the list of claims the dome has removed from its predictions page or suspended without counting as failures in its own accuracy denominator. Each silent-failure entry is named individually in the failure list with evidence from the dome\\'s public commit history — the criterion is observable, not imputed from absence of result.' Rebuild and verify docs/index.html reflects the change."
+    },
+    {
+      "severity": "major",
+      "description": "Strawman pattern in our review: docs/index.html attributes a [REMOVED]/[SUSPENDED] bracket convention to the dome in multiple places, but raw-text grep of all 9 dome source pages (01-home through 08-live-power) returns ZERO occurrences of [REMOVED] and only one bare 'SUSPENDED' (as a section header 'SUSPENDED — Under Revision' in 03-predictions.txt, not as a per-entry bracket marker). Specific strawman claims in production: (a) 'WIN-025 was marked [REMOVED] on the wins tab as of 2026-03-15' (around char 287679), (b) 'predictions that the dome has visibly disowned — marked <code>[REMOVED]</code> or <code>[SUSPENDED]</code>' (Silent failures section header, char ~922249), (c) 'Dome explicitly marks WIN-010 [REMOVED] inline on wins.html' (char ~924679), (d) 'Dome explicitly marks WIN-025 [REMOVED] inline on wins.html' (char ~926883), (e) 'Dome marks PROS-003 [SUSPENDED] inline under the Prospective Wins section' (char ~928858). Each of these can be challenged by a dome defender with a single screenshot of the actual wins.html or predictions page. Note: this is BROADER than ISS-2351's scope, which was only the accuracy-denominator paragraph. EXP-477 P4 (had it landed) would have removed bracket notation from one paragraph but the strawman survives in at least 4-5 other locations.",
+      "recommendation": "Open a new ISS for systematic strawman audit: enumerate every [REMOVED]/[SUSPENDED] mention in docs/index.html and uncounted-failures.json display logic, verify against current raw-text snapshot, rewrite to describe what the dome ACTUALLY does (silently remove entries / move them under a 'Under Revision' header) without inventing bracket markers. This may be amplified by EXP-451 P4's intent to STANDARDIZE the (incorrect) bracket framing — which is why ISS-2351 blocked it. The fix is to extirpate the bracket framing, not to formalize it."
+    },
+    {
+      "severity": "minor",
+      "description": "ISS-2350 (EXP-451 P1 sublabel anchor missing) closure is defensible. EXP-477 P1 landed in data/sections.json with the correct find_text including the <a href=#eg-falsifiability> anchor; rendered docs/index.html shows 'None produces a dome-derived prediction that survives both internal-consistency and measurement checks. <a href=...>What would change this?</a>'. The new sublabel is more carefully worded than the EXP-451 draft (which the c1 part1-scorecard-sublabel-fix review flagged as factually wrong under the natural reading mapping CA_DOME=1=WIN-044). Under 'survives both internal-consistency and measurement checks', WIN-044's pending eclipse tests (E001-E009) mean it has not 'survived measurement' — 'None' is defensibly true. Minor concern: 'survives' frames the test as gated on measurement, which is correct, but the prior c1 hole 0 about CA_DOME-vs-CA_NOT_RELABELED mapping is not directly addressed — the new text just shifts the criterion from 'derives + differs-from-standard' to 'derives + internally-consistent + measurement'. Not a blocker; flagging for awareness.",
+      "recommendation": "No change required. Note in summary_for_decider that EXP-477 P1 is fully integrated and the c1 hole 0 framing concern is sidestepped (not re-litigated) by the more guarded wording."
+    }
+  ],
+  "patches_verified": [
+    {
+      "patch_id": "EXP-477-P1-sublabel-corrected",
+      "target_file": "data/sections.json",
+      "landed": true,
+      "evidence": "grep 'None produces a dome-derived prediction that survives both internal-consistency and measurement checks' data/sections.json -> 1 match. Old find_text 'None produces a dome-derived prediction that both differs from standard physics and is confirmed by measurement' -> 0 matches. Rendered docs/index.html ds-sc-sublabel div confirmed. ISS-2350 closure defensible."
+    },
+    {
+      "patch_id": "EXP-477-P4-corrected-no-brackets",
+      "target_file": "docs/index.html",
+      "landed": false,
+      "evidence": "grep 'removed from its predictions page or suspended without counting as failures' docs/index.html -> 0 matches. grep 'visibly removed or suspended but excluded from its own accuracy denominator' docs/index.html -> 1 match (still present). Same in build-scripts/generate-html.js (the actual source: 0 / 1 respectively). git show 7431bc6 -- docs/index.html shows ZERO accuracy-denominator related changes in the integration commit. ISS-2351 was closed as 'fixed' but the patch did not land. Root cause: docs/index.html is regenerated from build-scripts/generate-html.js on every build, so direct patches to docs/index.html are lost; EXP-477 inherited this flawed targeting from EXP-451 P4 despite acknowledging the risk in its integration_note."
+    }
+  ],
+  "unresolved_prior_cycle": [],
+  "stronger_arguments": [
+    {
+      "description": "If a dome defender screenshots the actual wins.html / predictions page showing NO bracket markers, our 'Dome explicitly marks WIN-XXX [REMOVED]' claims become directly falsifiable. Pre-empting this with a precise observation — 'the dome removes entries from the wins/predictions page silently (git history shows the deletion) and moves some under a SUSPENDED-Under-Revision section header without per-entry markers; we infer the disowned set from commit diffs and from the discrepancy between the dome\\'s stated accuracy denominator and the cumulative count' — is a stronger, more defensible argument than alleging a non-existent bracket convention.",
+      "sources": [
+        "raw-text/03-predictions.txt (line 72: '=== SUSPENDED — Under Revision ===' section header)",
+        "raw-text/02-wins.txt (zero bracket markers)",
+        "uncounted-failures.json (FAIL-007 etc. — evidence trail is git history, not bracket markers)"
+      ]
+    }
+  ],
+  "kernel_of_truth": {
+    "description": "The decider's intent in integrating EXP-477 was correct: both patches address real holes (P1 sublabel anchor missing, P4 strawman bracket framing). EXP-477 P1 succeeded because its target was data/sections.json — a source file. ISS-2350 closure is defensible. The dome does in fact silently disown predictions: WIN-010 and WIN-025 were removed from the wins tab (FAIL-007 tracking confirms), and PROS-003 was moved under the 'SUSPENDED — Under Revision' section header. The accuracy-denominator point we want to make ('the dome excludes silent failures from its denominator') is true and well-supported. (raw-text/03-predictions.txt:72, data/uncounted-failures.json, monitor/analyst/expansions/EXP-477-baby-batch-3.json)",
+    "why_it_doesnt_save_claim": "EXP-477 P4 not landing means (a) the original 'visibly removed or suspended but excluded' wording survives — minor factual misframing (the dome's removal isn't 'visible' in the sense of an explicit marker, it's git-archeology-visible), (b) the broader strawman of 'the dome marks things [REMOVED]/[SUSPENDED]' survives in 4-5 other locations in docs/index.html that EXP-477 didn't even attempt to address, (c) ISS-2351 closure as 'fixed' creates a false audit-trail entry: the integration audit log says the strawman was fixed, but it wasn't. The decider's structural blind spot — patching build outputs instead of build sources — is the same flaw that EXP-477 inherited from EXP-451 and explicitly flagged without solving. (build-scripts/generate-html.js, docs/index.html, monitor/decisions/closed-issues.json:ISS-2351)"
+  },
+  "recommended_action": "major_rewrite",
+  "text_fingerprint": {
+    "sections_json_contains_new_sublabel": true,
+    "sections_json_contains_old_sublabel": false,
+    "docs_html_contains_p4_old_text": true,
+    "docs_html_contains_p4_new_text": false,
+    "build_scripts_contains_p4_old_text": true,
+    "build_scripts_contains_p4_new_text": false,
+    "bracket_REMOVED_count_in_docs_html": 6,
+    "bracket_SUSPENDED_count_in_docs_html": 3,
+    "bracket_REMOVED_count_in_raw_text": 0,
+    "bracket_SUSPENDED_count_in_raw_text": 0,
+    "bare_SUSPENDED_in_raw_text": "1 (section header '=== SUSPENDED — Under Revision ===' in 03-predictions.txt)"
+  },
+  "citation_check": {
+    "citations_verified": [
+      "data/sections.json:sublabel (EXP-477 P1 landed)",
+      "docs/index.html accuracy denominator (EXP-477 P4 NOT landed)",
+      "build-scripts/generate-html.js silent-failure template (EXP-477 P4 NOT landed at source either)",
+      "raw-text/02-wins.txt (zero bracket markers)",
+      "raw-text/03-predictions.txt (zero bracket markers, one bare SUSPENDED header)",
+      "monitor/decisions/closed-issues.json:ISS-2351 (false-positive close)",
+      "monitor/analyst/expansions/EXP-477-baby-batch-3.json",
+      "git show 7431bc6 -- docs/index.html (no accuracy-denominator diff in commit)"
+    ],
+    "citations_failed": [],
+    "citations_unchecked": []
+  },
+  "summary_for_decider": "EXP-477 P1 (sublabel) landed cleanly in data/sections.json and renders correctly. ISS-2350 closure is defensible. EXP-477 P4 (accuracy-denominator [REMOVED]/[SUSPENDED] bracket-text removal) DID NOT LAND — docs/index.html still has the original 'visibly removed or suspended but excluded' wording (find_text grep = 1), corrected text is absent (replace_text grep = 0), and the SOURCE build-scripts/generate-html.js is also untouched. Root cause: EXP-477 P4 targeted docs/index.html (a build output), inheriting EXP-451's flawed targeting pattern. EXP-477's own integration_note flagged this risk without fixing it. The decider's git show 7431bc6 -- docs/index.html confirms ZERO accuracy-denominator changes in the integration commit, yet ISS-2351 was closed as 'fixed' — false-positive closure. Recommended actions: (1) RE-OPEN ISS-2351; (2) re-target the patch to build-scripts/generate-html.js source, not docs/index.html output; (3) open a new ISS to audit the broader [REMOVED]/[SUSPENDED] strawman pattern across docs/index.html (5+ occurrences) — raw-text grep of all 9 dome source pages confirms the dome uses NO bracket markers (only one bare 'SUSPENDED' section header in 03-predictions.txt), so our review's 'Dome explicitly marks WIN-XXX [REMOVED]' claims are defender-falsifiable strawmen. Queue_id 424 should still be popped (verification ran), but with the regression flagged. Tests 3767/3767 (the regression doesn't break tests because no test asserts P4's text)."
+}
