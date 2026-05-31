@@ -74,7 +74,12 @@ Each run, determine which mode has the most pressing work. **Run ONE mode per in
 
 Before evaluating Mode 1–4 triggers, scan `monitor/tinker/operator-directives/` for any pending directive. The operator uses this directory to ask for specific work outside the normal Mode 1–4 flow (PROP authorship, structural audits, scoped investigations).
 
+**CRITICAL — read directives from the git clone, NOT FUSE (FND-01, 2026-05-31 run 09-25):** Each scheduled task runs in its own per-session `/sessions/<id>/mnt/dome-model-review/` FUSE mount. `operator-directives/` is classified `append_only` in `build.js` OWNERSHIP, so the additive status-transition edits (e.g., another tinker run flipping `status:pending → status:completed`) propagate only to the session in which that run executed — they NEVER reach other sessions' FUSE mounts via `node build.js sync-workspace` (walkAppendOnly skips existing files by design). Cross-session result: this session's FUSE will show stale `status:pending` for directives that other sessions have already completed. Always do directive discovery from a fresh-cloned working copy (the same clone you push from), OR use the GitHub Contents API (`gh api repos/funwithscience-org/dome-model-review/contents/monitor/tinker/operator-directives`). Never trust FUSE for directive status. The git clone is authoritative.
+
 ```bash
+# CORRECT pattern (from a fresh clone):
+# cd /tmp/tinker-clone && node -e "...scan as below..."
+
 node -e "
 const fs=require('fs');
 const dir='monitor/tinker/operator-directives';
