@@ -1,0 +1,327 @@
+{
+  "id": "PROP-071",
+  "title": "Eliminate per-session FUSE-staleness bug class by auditing every scheduled agent for FUSE-relative reads of cross-session STATE_FILE data",
+  "status": "design-pending-operator-review",
+  "filed_by": "tinker-2026-05-31T16-02-prop-071",
+  "filed_at": "2026-05-31T16:05:00Z",
+  "directive_ref": "DIRECTIVE-20260531-010",
+  "siblings": [
+    "PROP-066 (producer-side FUSE→git+git→FUSE bidirectional sync) — complementary, NOT superseded",
+    "Tinker FND-01 fix at commit 787ee38 (added CRITICAL note + clone-or-API direction for operator-directive discovery in tinker.md) — first instance of this class fixed; PROP-071 propagates the lesson"
+  ],
+  "complementary_to_prop_066": "PROP-066 fixes the producer side (workspace-sync's own session FUSE gets the latest git state via Step 4c). PROP-071 fixes the consumer side (every OTHER agent reads from its own clone instead of FUSE for cross-session STATE_FILE). Both are needed; neither replaces the other.",
+
+  "problem_statement": {
+    "summary": "Every scheduled task runs in its own per-session /sessions/<id>/mnt/dome-model-review/ FUSE mount, and these mounts are independently initialized. PROP-066 Step 4c only syncs the workspace-sync session's own FUSE; the propagation does NOT reach other agents' session FUSE. Any agent that reads cross-session-mutated STATE_FILE via a FUSE-relative path can see arbitrarily stale data — minutes to days behind origin/main HEAD.",
+    "observable_bugs_today": [
+      {
+        "instance": "INSTANCE 1 — tinker operator-directive discovery (FIXED at commit 787ee38, 2026-05-31T11:51Z)",
+        "shape": "tinker.md Pre-flight Operator Directive Discovery read monitor/tinker/operator-directives/ via FUSE-relative path. operator-directives/ is classified append_only in build.js OWNERSHIP, and walkAppendOnly skips existing files (by design — it's append-only). So additive status-transition edits (status:pending → status:completed written by another tinker session) never reach this session's FUSE.",
+        "evidence": "Three natural experiments in past 24h: (a) tinker-2026-05-31T08-54 report — 'Pre-flight Operator-Directive Discovery picked up FUSE-stale DIRECTIVE-20260531-004 as pending; cross-check against clone revealed it completed 08:42Z'. (b) tinker-2026-05-31T09-25-prop-068-impl report — 'Pre-flight operator-directive scan returned 7 pending in FUSE; clone showed only 2'. (c) tinker-2026-05-31T09-48-fuse-staleness-cleanup report — explicitly documented the bug class. Fix: tinker.md now has a CRITICAL note mandating read-from-clone or via GitHub Contents API.",
+        "verdict": "FIXED — confirm in audit table"
+      },
+      {
+        "instance": "INSTANCE 2 — analyst-baby Mode 1 dispatcher tracker read (NOT FIXED)",
+        "shape": "analyst-baby.md line 84-85 reads monitor/analyst/expansion-tracker.json and monitor/decisions/open-issues.json via FUSE-relative paths. CLEAN_CLONE is set up at line 218 (later, for cleanup) but NOT cd'd into before the dispatcher reads.",
+        "evidence": "Operator observation 2026-05-31T~15:00Z: baby run saw 10 pending tracker items while git showed 3. No re-work performed (claimed-by-other-agent guard caught it) but signal of the bug.",
+        "verdict": "OPEN — Step 4 below recommends READ_FROM_CLONE fix"
+      }
+    ]
+  },
+
+  "step_3_cross_session_fuse_independence_finding": {
+    "hypothesis_tested": "Per-session FUSE mounts are independently initialized and only PROP-066 Step 4c keeps the running session's own FUSE current. Cross-session FUSE refresh is NOT a feature of the cowork backend.",
+    "methodology_used": "Natural-experiment evidence collection. Did NOT run the suggested marker-file test because (a) the bug already manifests reliably and is documented in 3 independent tinker reports today, (b) cross-session test would require coordinating with a separate scheduled agent invocation which is not within a single tinker run, (c) sufficient evidence exists to declare the hypothesis confirmed.",
+    "evidence_collected": [
+      {
+        "experiment": "Natural experiment 1 — operator-directive cross-session lag",
+        "observation": "DIRECTIVE-20260531-004 was committed status:completed to origin/main at 2026-05-31T08:40Z by commit 29df258c (session A). The 08:54Z tinker run (session B) read its FUSE and saw the directive as status:pending. The 09:25Z tinker run (session C) saw 7 pending in FUSE while git had 2. The 09:48Z run (session D) saw the still-stale FUSE.",
+        "interpretation": "Sessions B, C, D each had FUSE mounts that NEVER received the 08:40Z update, even ~70 minutes later. This rules out FUSE eventual-consistency models (which would converge in seconds) and confirms per-session independence."
+      },
+      {
+        "experiment": "Natural experiment 2 — operator's intent vs reality on workspace-sync's reach",
+        "observation": "Operator's verbatim statement when filing DIRECTIVE-20260531-010: 'FUSE shouldn't have been stale. there were 2 workspace sync runs between those 2 baby runs.' This expectation was that workspace-sync's git→FUSE propagation reaches other agents' sessions.",
+        "interpretation": "The empirical fact is that workspace-sync's PROP-066 Step 4c runs `node build.js sync-workspace` against ${WORKSPACE} = workspace-sync's own session FUSE only. There is no mechanism by which workspace-sync can write into baby's, decider's, curmudgeon's, or any other agent's session FUSE — those mounts are filesystem-isolated."
+      },
+      {
+        "experiment": "Negative experiment — workspace-sync's own session DOES see fresh git data post-PROP-066",
+        "observation": "Workspace-sync's own runs report that its FUSE is in-sync with origin/main after Step 4c (see workspace-sync sentinel files in monitor/integrity/sync-workspace-runs-*.json). Universal-pusher mode confirms it can ALSO push FUSE→git for its own session.",
+        "interpretation": "PROP-066 correctly handles same-session bidirectional sync. The bug class targeted by PROP-071 is strictly cross-session FUSE divergence."
+      }
+    ],
+    "conclusion": "**HYPOTHESIS CONFIRMED.** Per-session FUSE mounts are independent. No cross-session freshness mechanism exists in the cowork backend that the dome project can rely on. Each scheduled agent must take responsibility for reading STATE_FILE data from a source other than its own session FUSE — either a fresh agent-owned clone or the GitHub Contents API.",
+    "implication_for_fix_scope": "Per-agent prompt edits. Each agent that reads cross-session-mutated STATE_FILE via FUSE-relative path needs the read redirected to its existing CLEAN_CLONE (preferred — most agents already have one) or to the GitHub Contents API (fallback — for agents without an existing clone, e.g., integrity).",
+    "open_question_for_operator_step_5e": "Could cowork session-init be configured to pull origin/main HEAD into the new session's FUSE before agent startup? If yes, this closes the entire bug class architecturally and PROP-071's per-agent patches become unnecessary. This is out-of-scope for the dome codebase (would require cowork infrastructure changes) but operator may want to file an upstream cowork request. PROP-071's per-agent fixes would still be useful as defense-in-depth even if cowork added a session-init prefetch."
+  },
+
+  "step_2_per_agent_audit_table": {
+    "legend": {
+      "source_classes": {
+        "FUSE-relative": "'monitor/foo.json' with CWD=FUSE workspace (typical scheduled-task start CWD)",
+        "FUSE-absolute": "${WORKSPACE}/monitor/foo.json (explicit FUSE path)",
+        "CLEAN_CLONE-relative": "${CLEAN_CLONE}/monitor/foo.json or relative-path after cd ${CLEAN_CLONE}",
+        "CLONE-relative": "${CLONE}/monitor/foo.json or relative after cd ${CLONE}",
+        "GH-API": "via gh api or curl https://raw.githubusercontent.com/.../main/..."
+      },
+      "file_classes": {
+        "STATE_FILE": "Cross-session-mutated data — open-issues, closed-issues, expansion-tracker, priority-queue, attention-inbox, predictions, wins, sections, curmudgeon/tracker.json, decider-mode, closure-ledger. MUST be fresh.",
+        "CONFIG": "Slow-changing operator-curated config — rubric-config.json, math-dense-surfaces.json, content-dense-surfaces.json. FUSE-OK (operator commits explicitly; daily cadence acceptable).",
+        "REFERENCE": "Prompts, reference/ directory, CLAUDE.md, v6-restructure-map.json. FUSE-OK (changes via decider commit; clone-or-FUSE both acceptable for read-only reference).",
+        "PER_SESSION": "Session-local state — status.json, review-state.json. FUSE-OK (workspace-owned, written by the running agent itself or by workspace-sync in same session).",
+        "ATTENTION_INBOX_SPECIAL": "Intentionally FUSE-canonical per analyst.md Mode 2b (FUSE is source of truth; clone lags). NO_FIX_NEEDED."
+      },
+      "intent_classes": {
+        "RMW": "Read-Modify-Write — decision based on read informs a subsequent write (highest staleness risk)",
+        "decision-read": "Read informs which mode/path the agent takes (no write but stale decision possible)",
+        "inspection-read": "Read for reporting/logging only (low-blast-radius staleness)"
+      }
+    },
+    "agents": [
+      {
+        "agent": "tinker",
+        "file": "monitor/prompts/tinker.md",
+        "reads": [
+          {"line": 85, "path_literal": "monitor/tinker/operator-directives/", "source": "FUSE-relative", "class": "STATE_FILE", "intent": "decision-read", "flag": "FIXED-DOCS-ONLY", "note": "FND-01 fix at commit 787ee38 added a CRITICAL note above this block saying read from clone/API. However the literal code at line 85 still shows `const dir='monitor/tinker/operator-directives'` (relative) — fix is documentation-only and relies on the LLM following the CRITICAL note. Recommend code-level fix (Step 4 below)."},
+          {"line": 124, "path_literal": "monitor/decisions/open-issues.json", "source": "FUSE-relative", "class": "STATE_FILE", "intent": "decision-read", "flag": "OPEN-MEDIUM", "note": "Mode 0 Assigned-To-Tinker Scan. Reads from FUSE. Cross-session stale risk: another tinker run could have closed assigned-tinker items but FUSE still shows them. Mitigation: tinker's per-run cap is 1 item, and the close path is via HNOTE (decider actions it). But could still drive redundant Mode 0 work on stale items."},
+          {"line": 134, "path_literal": "monitor/analyst/expansion-tracker.json", "source": "FUSE-relative", "class": "STATE_FILE", "intent": "decision-read", "flag": "OPEN-MEDIUM", "note": "Mode 0 scan source 2. Same risk as 124."},
+          {"line": 191, "path_literal": "monitor/decisions/open-issues.json", "source": "FUSE-relative", "class": "STATE_FILE", "intent": "inspection-read", "flag": "OPEN-LOW", "note": "Backlog-Trend Computation. Stale data → misleading thresholds in the run's report but no write. Today's run hit this discrepancy: my computation read clone (I cd'd in) but a literal LLM following the prompt would read FUSE. Result would be inaccurate trend lines in queue-history.jsonl."}
+        ],
+        "verdict": "FND-01 documentation-fix is in place but the literal code still uses FUSE-relative paths. Mode 0 + Backlog-Trend reads are not covered by the FND-01 note. Recommend code-level READ_FROM_CLONE fix across all three sites."
+      },
+      {
+        "agent": "analyst",
+        "file": "monitor/prompts/analyst.md",
+        "cd_into_clone": "NO — Step 0a explicitly says 'Do NOT cd into the clone — existing steps below run from whatever cwd the scheduled task started from.' All relative reads are FUSE-relative.",
+        "reads": [
+          {"line": 75, "path_literal": "data/wins.json", "source": "FUSE-relative", "class": "STATE_FILE", "intent": "inspection-read", "flag": "OPEN-LOW", "note": "Verdict tally helper; informational. Decider writes data/wins.json from CLEAN_CLONE — cross-session stale risk."},
+          {"line": 124, "path_literal": "data/wins.json", "source": "FUSE-relative", "class": "STATE_FILE", "intent": "decision-read", "flag": "INTENTIONAL", "note": "Mode 0 WORKSPACE_COUNT is INTENTIONALLY FUSE-relative because line 125 compares it to a GH-API GITHUB_COUNT. This IS the FUSE staleness check itself. NO_FIX_NEEDED."},
+          {"line": 127, "path_literal": "monitor/status.json", "source": "FUSE-relative", "class": "PER_SESSION", "intent": "inspection-read", "flag": "NO_FIX_NEEDED", "note": "status.json is workspace-owned, written by the running agent or workspace-sync in same session. FUSE-OK."},
+          {"line": 139, "path_literal": "monitor/analyst/expansion-tracker.json", "source": "FUSE-relative", "class": "STATE_FILE", "intent": "RMW", "flag": "OPEN-HIGH", "note": "Mode 1 dispatcher. Reads tracker for routing decision; subsequent EXP writes + tracker updates depend on this. HIGH-risk RMW path."},
+          {"line": 165, "path_literal": "monitor/decisions/open-issues.json", "source": "FUSE-relative", "class": "STATE_FILE", "intent": "decision-read", "flag": "OPEN-HIGH", "note": "PROP-029 orphan check. Could miss recently-closed issues; analyst might re-assign attention to an already-handled issue. HIGH risk because analyst.md doesn't have a defensive double-check."},
+          {"line": 184, "path_literal": "data/predictions.json", "source": "FUSE-relative", "class": "STATE_FILE", "intent": "decision-read", "flag": "OPEN-MEDIUM", "note": "Mode 1b trigger. Stale → analyst could pick up a prediction another session already wrote a verdict for."},
+          {"line": 191, "path_literal": "monitor/analyst/human-notes.json", "source": "FUSE-relative", "class": "STATE_FILE", "intent": "decision-read", "flag": "MITIGATED", "note": "Human Notes Rule mandates dual-write FUSE+clone, so FUSE reads SHOULD have all notes. But if dual-write is ever skipped, FUSE could miss recently-added notes. MEDIUM defense-in-depth."},
+          {"line": 206, "path_literal": "${WORKSPACE}/monitor/analyst/attention-inbox.json", "source": "FUSE-absolute", "class": "ATTENTION_INBOX_SPECIAL", "intent": "RMW", "flag": "INTENTIONAL", "note": "Analyst.md lines 198-203 explicitly document attention-inbox.json as FUSE-canonical (operator decision 2026-04-27). NO_FIX_NEEDED."},
+          {"line": 264, "path_literal": "monitor/analyst/expansion-tracker.json", "source": "FUSE-relative", "class": "STATE_FILE", "intent": "decision-read", "flag": "OPEN-HIGH", "note": "Mode 3 trigger. Same shape as line 139."},
+          {"line": 271, "path_literal": "monitor/analyst/globe-fingerprint-tracker.json", "source": "FUSE-relative", "class": "STATE_FILE", "intent": "decision-read", "flag": "OPEN-LOW", "note": "Mode 4 trigger. Globe-fingerprint tracker — lower write velocity than expansion-tracker, but still cross-session mutable."},
+          {"line": 278, "path_literal": "${WORKSPACE}/monitor/analyst/human-notes.json", "source": "FUSE-absolute", "class": "STATE_FILE", "intent": "decision-read", "flag": "MITIGATED", "note": "Mode 5 trigger. Same dual-write mitigation as line 191."},
+          {"line": 315, "path_literal": "monitor/decisions/open-issues.json", "source": "FUSE-relative", "class": "STATE_FILE", "intent": "decision-read", "flag": "OPEN-HIGH", "note": "Assigned-issues check (every run). Decider closes assigned-analyst issues from a clone; analyst's FUSE read could see them as still-assigned for an arbitrary lag."}
+        ],
+        "internal_inconsistency_flagged": "Step 0a says 'Do NOT cd into the clone' (forces FUSE-relative reads), but the analyst.md Mode 2b OBE note at line 258 says 'those are decider-canonical / clone-fresh files, so use the relative-path (clone) reads'. These directly contradict each other. Recommend resolving as part of PROP-071 implementation: either (a) flip Step 0a to allow cd-into-clone for non-Mode-2b modes, or (b) update each affected read site to use ${CLEAN_CLONE}/ prefix explicitly.",
+        "verdict": "8 OPEN flags (3 HIGH, 1 MEDIUM, 2 LOW, 2 MITIGATED), 2 INTENTIONAL, 1 NO_FIX_NEEDED. Highest-priority fixes: lines 139, 165, 264, 315."
+      },
+      {
+        "agent": "analyst-baby",
+        "file": "monitor/prompts/analyst-baby.md",
+        "cd_into_clone": "NO — CLEAN_CLONE setup at line 218 is for cleanup only; not cd'd into before dispatcher reads at line 84-85.",
+        "reads": [
+          {"line": 84, "path_literal": "monitor/analyst/expansion-tracker.json", "source": "FUSE-relative", "class": "STATE_FILE", "intent": "RMW", "flag": "OPEN-HIGH", "note": "Mode 1 BAU dispatcher. The CANONICAL instance observed 2026-05-31T~15:00Z — baby saw 10 pending vs git's 3. RMW because baby claims items and writes EXPs based on this."},
+          {"line": 85, "path_literal": "monitor/decisions/open-issues.json", "source": "FUSE-relative", "class": "STATE_FILE", "intent": "decision-read", "flag": "OPEN-HIGH", "note": "Mode 1 orphan check. Could miss recently-closed assigned-analyst issues."}
+        ],
+        "verdict": "2 OPEN-HIGH. Both are operator-cited as the trigger for filing this directive. Highest-priority fixes in PROP-071 scope."
+      },
+      {
+        "agent": "decider",
+        "file": "monitor/prompts/decider.md",
+        "cd_into_clone": "NO top-level cd, but most reads use ${CLEAN_CLONE}/ prefix explicitly (Step 0a + downstream).",
+        "reads": [
+          {"line": 112, "path_literal": "${CLEAN_CLONE}/monitor/decisions/decider-mode.json", "source": "CLEAN_CLONE-relative", "class": "STATE_FILE", "intent": "decision-read", "flag": "NO_FIX_NEEDED", "note": "Explicit CLEAN_CLONE path. CORRECT."},
+          {"line": 129, "path_literal": "${CLEAN_CLONE}/...digest-reviews.js", "source": "CLEAN_CLONE-relative", "class": "REFERENCE", "intent": "decision-read", "flag": "NO_FIX_NEEDED", "note": "Script execution from clone. CORRECT."},
+          {"line": 139, "path_literal": "monitor/analyst/new-wins/WIN-*.json", "source": "FUSE-relative", "class": "STATE_FILE", "intent": "decision-read", "flag": "OPEN-MEDIUM", "note": "Priority 1 New WIN trigger. Analyst writes new-wins from its own FUSE; the file may not have reached the decider's FUSE in this session. Could miss new WINs that need onboarding. MEDIUM because new-wins are append-only — files won't be deleted, just delayed."},
+          {"line": 149, "path_literal": "${CLEAN_CLONE}/monitor/analyst/processed-proposals.json", "source": "CLEAN_CLONE-relative", "class": "STATE_FILE", "intent": "RMW", "flag": "NO_FIX_NEEDED", "note": "Processed-proposals ledger; written by decider itself in clone. CORRECT."},
+          {"line": 152, "path_literal": "monitor/analyst/issue-proposals/", "source": "FUSE-relative", "class": "STATE_FILE", "intent": "decision-read", "flag": "OPEN-MEDIUM", "note": "Issue proposal directory listing. Same shape as new-wins/ — append-only files written by analyst from FUSE. Could miss new proposals in this session's FUSE."},
+          {"line": 161, "path_literal": "monitor/external-reports/report-*.json AND ./monitor/decisions/open-issues.json", "source": "FUSE-relative", "class": "STATE_FILE", "intent": "decision-read", "flag": "OPEN-HIGH", "note": "Priority 2 external-reports check uses BOTH paths FUSE-relative. The open-issues read is dangerous because decider writes open-issues from clone; FUSE-read could see stale state."},
+          {"line": 168, "path_literal": "${CLEAN_CLONE}/monitor/integrity/report-*.json", "source": "CLEAN_CLONE-relative", "class": "STATE_FILE", "intent": "decision-read", "flag": "NO_FIX_NEEDED", "note": "Integrity report listing from clone. CORRECT."},
+          {"line": 175, "path_literal": "${CLEAN_CLONE}/monitor/sloppytoppy/rewrites/RW-*.json", "source": "CLEAN_CLONE-relative", "class": "STATE_FILE", "intent": "decision-read", "flag": "NO_FIX_NEEDED", "note": "Rewrite proposals from clone. CORRECT."},
+          {"line": 182, "path_literal": "${CLEAN_CLONE}/monitor/curmudgeon/pending-digest.json", "source": "CLEAN_CLONE-relative", "class": "STATE_FILE", "intent": "decision-read", "flag": "NO_FIX_NEEDED", "note": "Digest from clone. CORRECT — explicitly documented as 'must run from clone'."},
+          {"line": 205, "path_literal": "monitor/analyst/expansion-tracker.json", "source": "FUSE-relative", "class": "STATE_FILE", "intent": "decision-read", "flag": "OPEN-HIGH", "note": "Priority 4 trigger. Tracker is multi-writer (analyst + decider + baby). Decider WRITES from clone but READS from FUSE here — could decide 'NO PENDING EXPANSIONS' while clone has integration-ready entries."},
+          {"line": 222, "path_literal": "monitor/decisions/decider-mode.json", "source": "FUSE-relative", "class": "STATE_FILE", "intent": "decision-read", "flag": "OPEN-MEDIUM", "note": "Priority 5b M1 sweep. Inconsistent with line 112 which uses ${CLEAN_CLONE}/."},
+          {"line": 231, "path_literal": "monitor/decisions/open-issues.json", "source": "FUSE-relative", "class": "STATE_FILE", "intent": "RMW", "flag": "OPEN-CRITICAL", "note": "Priority 5b M1 stale-issue sweep. Reads stale open-issues → computes sweep candidates → writes corrective ledger entries + status changes from clone. WORST CASE: decider could 'sweep' an issue that another session has already closed, double-writing the ledger or reopening a closed item."},
+          {"line": 232, "path_literal": "monitor/decisions/closed-issues.json", "source": "FUSE-relative", "class": "STATE_FILE", "intent": "decision-read", "flag": "OPEN-HIGH", "note": "Same M1 sweep context. Could miss recent closures and re-process."},
+          {"line": 424, "path_literal": "monitor/decisions/open-issues.json", "source": "FUSE-relative", "class": "STATE_FILE", "intent": "RMW", "flag": "OPEN-HIGH", "note": "Another open-issues read site for downstream M2 closure processing."},
+          {"line": 425, "path_literal": "monitor/decisions/closed-issues.json", "source": "FUSE-relative", "class": "STATE_FILE", "intent": "RMW", "flag": "OPEN-HIGH", "note": "Same context."},
+          {"line": 509, "path_literal": "monitor/decisions/open-issues.json", "source": "FUSE-relative", "class": "STATE_FILE", "intent": "RMW", "flag": "OPEN-CRITICAL", "note": "Blocked-on-curmudgeon walk. RMW → writes status changes to clone."},
+          {"line": 510, "path_literal": "monitor/decisions/closed-issues.json", "source": "FUSE-relative", "class": "STATE_FILE", "intent": "RMW", "flag": "OPEN-HIGH"},
+          {"line": 511, "path_literal": "monitor/analyst/expansion-tracker.json", "source": "FUSE-relative", "class": "STATE_FILE", "intent": "decision-read", "flag": "OPEN-HIGH"},
+          {"line": 519, "path_literal": "monitor/analyst/expansion-tracker-archive.jsonl", "source": "FUSE-relative", "class": "STATE_FILE", "intent": "decision-read", "flag": "OPEN-MEDIUM"},
+          {"line": 655, "path_literal": "CLONE+'/monitor/curmudgeon/priority-queue.json'", "source": "CLONE-relative", "class": "STATE_FILE", "intent": "RMW", "flag": "NO_FIX_NEEDED", "note": "CLONE-relative read (CLONE is decider's own clone variable). CORRECT."},
+          {"line": 715, "path_literal": "CLONE+'/monitor/curmudgeon/priority-queue.json'", "source": "CLONE-relative", "class": "STATE_FILE", "intent": "RMW", "flag": "NO_FIX_NEEDED", "note": "CORRECT."},
+          {"line": 916, "path_literal": "${CLEAN_CLONE}/monitor/curmudgeon/priority-queue.json", "source": "CLEAN_CLONE-relative", "class": "STATE_FILE", "intent": "decision-read", "flag": "NO_FIX_NEEDED", "note": "CORRECT."},
+          {"line": 967, "path_literal": "CLONE+'/monitor/curmudgeon/priority-queue.json'", "source": "CLONE-relative", "class": "STATE_FILE", "intent": "RMW", "flag": "NO_FIX_NEEDED", "note": "CORRECT."}
+        ],
+        "verdict": "Decider is partially correct — most CRITICAL paths use ${CLEAN_CLONE}/ or CLONE+'/' explicitly. But several STATE_FILE reads are still FUSE-relative, including TWO RMW-CRITICAL paths (M1 sweep at 231, blocked-on-curmudgeon walk at 509). Highest-priority fixes."
+      },
+      {
+        "agent": "curmudgeon",
+        "file": "monitor/prompts/curmudgeon.md",
+        "cd_into_clone": "YES — `cd ${CLONE}` at line 96 (Step 0).",
+        "reads": [
+          {"line": 96, "path_literal": "cd ${CLONE}", "source": "CLONE-relative", "class": "n/a", "intent": "n/a", "flag": "NO_FIX_NEEDED", "note": "All subsequent relative reads are clone-relative. Curmudgeon clones fresh per-run."}
+        ],
+        "verdict": "CORRECT BY DESIGN. Curmudgeon's Step 0 clones fresh and cd's in. Followed by all reads from clone CWD. No fix needed."
+      },
+      {
+        "agent": "curmudgeon-verify",
+        "file": "monitor/prompts/curmudgeon-verify.md",
+        "cd_into_clone": "YES — `cd \"${CLEAN_CLONE}\"` at line 85.",
+        "reads": [
+          {"line": 98, "path_literal": "path+'/monitor/curmudgeon/priority-queue.json' where path=${CLEAN_CLONE}", "source": "CLEAN_CLONE-relative", "class": "STATE_FILE", "intent": "decision-read", "flag": "NO_FIX_NEEDED", "note": "Explicit CLEAN_CLONE prefix. CORRECT."}
+        ],
+        "verdict": "CORRECT BY DESIGN. No fix needed."
+      },
+      {
+        "agent": "structure-integrity",
+        "file": "monitor/prompts/structure-integrity.md",
+        "cd_into_clone": "NO — no clone setup at all. Pure FUSE reads.",
+        "reads": [
+          {"line": 151, "path_literal": "data/sections.json", "source": "FUSE-relative", "class": "STATE_FILE", "intent": "inspection-read", "flag": "OPEN-MEDIUM", "note": "Integrity inspects sections.json for V6 structure checks. Stale → could report drift that's already been fixed."},
+          {"line": 192, "path_literal": "monitor/analyst/expansion-tracker.json", "source": "FUSE-relative", "class": "STATE_FILE", "intent": "inspection-read", "flag": "OPEN-MEDIUM"},
+          {"line": 210, "path_literal": "monitor/analyst/expansion-tracker.json", "source": "FUSE-relative", "class": "STATE_FILE", "intent": "inspection-read", "flag": "OPEN-MEDIUM"},
+          {"line": 223, "path_literal": "monitor/analyst/expansions/", "source": "FUSE-relative", "class": "STATE_FILE", "intent": "inspection-read", "flag": "OPEN-MEDIUM", "note": "Directory listing. Could miss recently-written EXPs from another session."},
+          {"line": 237, "path_literal": "monitor/analyst/expansion-tracker.json", "source": "FUSE-relative", "class": "STATE_FILE", "intent": "inspection-read", "flag": "OPEN-MEDIUM"},
+          {"line": 260, "path_literal": "monitor/analyst/expansion-tracker.json", "source": "FUSE-relative", "class": "STATE_FILE", "intent": "inspection-read", "flag": "OPEN-MEDIUM"},
+          {"line": 280, "path_literal": "monitor/decisions/closed-issues.json", "source": "FUSE-relative", "class": "STATE_FILE", "intent": "inspection-read", "flag": "OPEN-MEDIUM"},
+          {"line": 295, "path_literal": "monitor/decisions/open-issues.json", "source": "FUSE-relative", "class": "STATE_FILE", "intent": "inspection-read", "flag": "OPEN-MEDIUM"},
+          {"line": 365, "path_literal": "monitor/analyst/expansion-tracker.json", "source": "FUSE-relative", "class": "STATE_FILE", "intent": "inspection-read", "flag": "OPEN-MEDIUM"},
+          {"line": 366, "path_literal": "monitor/curmudgeon/priority-queue.json", "source": "FUSE-relative", "class": "STATE_FILE", "intent": "inspection-read", "flag": "OPEN-MEDIUM"},
+          {"line": 522, "path_literal": "monitor/curmudgeon/pending-digest.json", "source": "FUSE-relative", "class": "STATE_FILE", "intent": "inspection-read", "flag": "OPEN-LOW", "note": "Pending-digest is git-owned and generated by decider — FUSE may not have it at all in this session. Defensive read."}
+        ],
+        "verdict": "Integrity is read-only-inspection — no STATE_FILE WRITES. But stale reads produce false-positive findings that decider then has to triage (wasted cycles) or false-negative findings (missing drift). Integrity is a Haiku agent, currently has no clone. Step 4 fix: either add CLEAN_CLONE setup mirroring analyst-baby's pattern, OR switch to GitHub Contents API for STATE_FILE reads."
+      },
+      {
+        "agent": "social",
+        "file": "monitor/prompts/social.md",
+        "cd_into_clone": "NO clone — social uses gh CLI + curl for GitHub API reads of the dome's external repo, not the dome-review repo's state files.",
+        "reads": [
+          {"line": 374, "path_literal": "(prose mention) monitor/decisions/open-issues.json, monitor/decisions/closed-issues.json", "source": "FUSE-relative-implied", "class": "STATE_FILE", "intent": "decision-read", "flag": "OPEN-LOW", "note": "Social's dedup-before-filing rule mentions reading open/closed-issues but doesn't have a code block. If a future social run literally implements this check via FUSE-relative path, it could re-file an already-closed issue. Currently no observable instance; flagged for awareness."}
+        ],
+        "verdict": "Mostly clean — social's reads are against the dome's external repo via gh/curl. The only dome-review STATE_FILE touch is the dedup-mention at line 374, which is prose-only. Step 4 fix: clarify in prose that dedup checks should use clone or gh api."
+      },
+      {
+        "agent": "poller",
+        "file": "monitor/prompts/poller.md",
+        "cd_into_clone": "NO clone — poller is FUSE-resident, writes to monitor/changes/ + monitor/status.json.",
+        "reads": [
+          {"line": 236, "path_literal": "data/predictions.json", "source": "FUSE-relative", "class": "STATE_FILE", "intent": "decision-read", "flag": "OPEN-MEDIUM", "note": "Mode 1b prediction-window trigger. Stale → poller could mark a window 'closed' on a prediction another session has already updated, or miss recently-added predictions."},
+          {"line": 298, "path_literal": "data/uncounted-failures.json", "source": "FUSE-relative", "class": "STATE_FILE", "intent": "inspection-read", "flag": "OPEN-LOW"}
+        ],
+        "verdict": "Poller doesn't have a clone. Same fix-pattern options as integrity: add CLEAN_CLONE OR use GH-API."
+      },
+      {
+        "agent": "sloppytoppy-score",
+        "file": "monitor/prompts/sloppytoppy-score.md",
+        "cd_into_clone": "YES — `cd \"${CLEAN_CLONE}\"` at line 78.",
+        "reads": [
+          {"line": 89, "path_literal": "${CLEAN_CLONE}/monitor/sloppytoppy/rubric-config.json", "source": "CLEAN_CLONE-relative", "class": "CONFIG", "intent": "decision-read", "flag": "NO_FIX_NEEDED"},
+          {"line": 91, "path_literal": "${CLEAN_CLONE}/monitor/sloppytoppy/math-dense-surfaces.json", "source": "CLEAN_CLONE-relative", "class": "CONFIG", "intent": "decision-read", "flag": "NO_FIX_NEEDED"},
+          {"line": 92, "path_literal": "${CLEAN_CLONE}/monitor/sloppytoppy/content-dense-surfaces.json", "source": "CLEAN_CLONE-relative", "class": "CONFIG", "intent": "decision-read", "flag": "NO_FIX_NEEDED"},
+          {"line": 112, "path_literal": "monitor/sloppytoppy/scores.json (CWD=CLEAN_CLONE per line 78 cd)", "source": "CLEAN_CLONE-relative-via-cwd", "class": "STATE_FILE", "intent": "RMW", "flag": "NO_FIX_NEEDED", "note": "CWD is the clone via line 78. CORRECT."}
+        ],
+        "verdict": "CORRECT BY DESIGN (cd into CLEAN_CLONE first). Currently DISABLED pending operator decision post 2026-05-21 disaster, but pattern is correct for re-enable."
+      },
+      {
+        "agent": "sloppytoppy-rewrite",
+        "file": "monitor/prompts/sloppytoppy-rewrite.md",
+        "cd_into_clone": "YES — `cd \"${CLEAN_CLONE}\"` at line 82.",
+        "reads": [
+          {"line": 96, "path_literal": "${CLEAN_CLONE}/...", "source": "CLEAN_CLONE-relative", "class": "CONFIG", "intent": "decision-read", "flag": "NO_FIX_NEEDED"},
+          {"line": 98, "path_literal": "${CLEAN_CLONE}/...", "source": "CLEAN_CLONE-relative", "class": "CONFIG", "intent": "decision-read", "flag": "NO_FIX_NEEDED"},
+          {"line": 99, "path_literal": "${CLEAN_CLONE}/...", "source": "CLEAN_CLONE-relative", "class": "CONFIG", "intent": "decision-read", "flag": "NO_FIX_NEEDED"},
+          {"line": 101, "path_literal": "${CLEAN_CLONE}/monitor/sloppytoppy/scores.json", "source": "CLEAN_CLONE-relative", "class": "STATE_FILE", "intent": "decision-read", "flag": "NO_FIX_NEEDED"},
+          {"line": 103, "path_literal": "${CLEAN_CLONE}/monitor/sloppytoppy/rewrite-attempts.json", "source": "CLEAN_CLONE-relative", "class": "STATE_FILE", "intent": "RMW", "flag": "NO_FIX_NEEDED"}
+        ],
+        "verdict": "CORRECT BY DESIGN. Currently DISABLED."
+      },
+      {
+        "agent": "workspace-sync",
+        "file": "monitor/prompts/workspace-sync.md",
+        "cd_into_clone": "YES — `cd \"$CLONE\"` at line 106 (CLONE is workspace-sync's own clone).",
+        "reads": [
+          {"description": "All smart_copy reads of $WORKSPACE/... files are INTENTIONAL FUSE reads — workspace-sync's job is to push FUSE→git. FUSE is the source of truth for those reads by design.", "flag": "NO_FIX_NEEDED"},
+          {"description": "Post-PROP-066 Step 4c invokes monitor/scripts/sync-workspace-step4c.js which derives 'upstream-moved' from durable on-disk state (sentinel timestamps + origin/main HEAD) — does not depend on cross-bash-session variables. CORRECT.", "flag": "NO_FIX_NEEDED"}
+        ],
+        "verdict": "CORRECT BY DESIGN. Workspace-sync is the producer of git→FUSE sync; its FUSE reads are intentional. Out of PROP-071 scope per directive non_goals."
+      },
+      {
+        "agent": "prune-integrity (script-only)",
+        "file": "monitor/scripts/prune-integrity.js + SKILL.md",
+        "cd_into_clone": "YES — script runs from a fresh shallow clone per SKILL.md.",
+        "reads": [
+          {"description": "Script reads monitor/integrity/ per-run artifacts (append-only, one-file-per-run). No staleness risk because (a) each artifact file is written once and never modified, (b) the script runs from a fresh clone.", "flag": "NO_FIX_NEEDED"}
+        ],
+        "verdict": "CORRECT BY DESIGN."
+      }
+    ]
+  },
+
+  "step_4_fix_recommendations": {
+    "fix_pattern_a_READ_FROM_CLONE": {
+      "description": "Change the read path to prefix with ${CLEAN_CLONE}/ (or CLONE/ for agents using that naming) or do a top-of-procedure `cd ${CLEAN_CLONE}` before the relevant reads. Mirror the tinker.md FND-01 fix pattern (commit 787ee38) and the curmudgeon Step 0 pattern (cd ${CLONE}).",
+      "applies_to_agents": ["tinker (4 sites)", "analyst (8 sites)", "analyst-baby (2 sites)", "decider (8 sites)", "poller (2 sites, after adding CLEAN_CLONE setup)"],
+      "operator_design_question": "For analyst, the existing Step 0a explicitly says 'Do NOT cd into the clone.' Two equally-valid implementation choices: (i) flip Step 0a to allow cd, OR (ii) add ${CLEAN_CLONE}/ prefix to every STATE_FILE read site without changing CWD. Choice (ii) is more conservative but verbose. Operator should pick before PROP-071 implementation. PROP-071 itself does not prescribe one — both work."
+    },
+    "fix_pattern_b_READ_VIA_API": {
+      "description": "Replace fs.readFileSync('...') with a curl/gh api call against https://raw.githubusercontent.com/funwithscience-org/dome-model-review/main/... or gh api /repos/.../contents/.... More HTTP calls but doesn't require a local clone.",
+      "applies_to_agents": ["integrity (11 sites — Haiku model, no clone today, adding one would be heavier than API)", "social (1 site — already uses curl pattern for external repo, extends naturally)"],
+      "operator_design_question": "Integrity is daily-cadence Haiku — 11 small curl reads per run is cheap. Adding a CLEAN_CLONE for it is also viable. Operator preference?"
+    },
+    "fix_pattern_c_NO_FIX_NEEDED": {
+      "description": "Read is FUSE-relative but the class is CONFIG/REFERENCE/PER_SESSION/ATTENTION_INBOX_SPECIAL, OR the FUSE-relative-ness is intentional (workspace-sync, attention-inbox-FUSE-canonical, FUSE-vs-API staleness comparator).",
+      "applies_to_sites": ["analyst.md:124 (intentional FUSE-vs-API check)", "analyst.md:127 (PER_SESSION status.json)", "analyst.md:206 (ATTENTION_INBOX_SPECIAL)", "analyst.md:278 (dual-write mitigation)", "workspace-sync (all sites — producer)", "curmudgeon (cd in)", "curmudgeon-verify (cd in)", "sloppytoppy-score (cd in, DISABLED)", "sloppytoppy-rewrite (cd in, DISABLED)", "prune-integrity (fresh clone)"]
+    },
+    "snippet_examples": {
+      "analyst-baby_line_84_85_BEFORE": "const t=JSON.parse(fs.readFileSync('monitor/analyst/expansion-tracker.json','utf8'));\nconst oi=JSON.parse(fs.readFileSync('monitor/decisions/open-issues.json','utf8'));",
+      "analyst-baby_line_84_85_AFTER_option_a_inline_prefix": "const CLONE = process.env.CLEAN_CLONE || (process.env.SESSION + '/dome-review-clean');\nconst t=JSON.parse(fs.readFileSync(CLONE + '/monitor/analyst/expansion-tracker.json','utf8'));\nconst oi=JSON.parse(fs.readFileSync(CLONE + '/monitor/decisions/open-issues.json','utf8'));",
+      "analyst-baby_line_84_85_AFTER_option_b_pre_block_cd": "Insert a Pre-flight subsection above line 78 that does Step 0a's CLEAN_CLONE rebase + a literal `cd \"${CLEAN_CLONE}\"`, then leave the dispatcher reads unchanged.",
+      "decider_line_231_232_BEFORE": "const oi=JSON.parse(fs.readFileSync('monitor/decisions/open-issues.json','utf8'));\nconst ci=JSON.parse(fs.readFileSync('monitor/decisions/closed-issues.json','utf8'));",
+      "decider_line_231_232_AFTER": "const oi=JSON.parse(fs.readFileSync(process.env.CLEAN_CLONE + '/monitor/decisions/open-issues.json','utf8'));\nconst ci=JSON.parse(fs.readFileSync(process.env.CLEAN_CLONE + '/monitor/decisions/closed-issues.json','utf8'));",
+      "tinker_dispatcher_line_85_AFTER": "const CLONE = process.argv[2] || process.env.CLEAN_CLONE || (process.env.SESSION + '/tinker-clone');\nconst dir = CLONE + '/monitor/tinker/operator-directives';\n// (and adjust the node -e wrapper to actually cd into $CLONE before invoking)",
+      "tinker_backlog_trend_line_191_AFTER": "const oi = JSON.parse(fs.readFileSync(process.env.CLEAN_CLONE + '/monitor/decisions/open-issues.json', 'utf8'));"
+    }
+  },
+
+  "step_5d_operator_side_observability": {
+    "proposal": "Add a 'cross-session-fuse-staleness' check to monitor/prompts/structure-integrity.md that compares this session's FUSE STATE_FILE tail to origin/main HEAD via curl. When divergence exceeds a threshold, integrity emits a finding that decider promotes to an ISS.",
+    "check_pseudocode": "for path in ['monitor/decisions/open-issues.json', 'monitor/analyst/expansion-tracker.json', 'monitor/curmudgeon/priority-queue.json', 'data/wins.json']:\n  fuse_sha = sha1(fs.readFileSync(workspace + '/' + path))\n  git_sha = sha1(curl raw.githubusercontent.com/.../main/path)\n  if fuse_sha != git_sha:\n    finding('fuse-staleness', path, severity='moderate')",
+    "alert_thresholds": "info if 1 file diverges, moderate if 2+, major if 4+ or oldest divergence > 6h",
+    "integrity_writes_finding_to": "monitor/integrity/report-<ts>.json under findings[]. Decider's Priority 2b ingests integrity findings → promotes to ISS as today.",
+    "value": "Regression canary. If a future prompt change reintroduces a FUSE-relative STATE_FILE read, integrity catches it next-day rather than after the next operator-observed bug. Cheap to implement (~30 LOC added to integrity), low FUSE-staleness check cost (4 curl reads + sha compares)."
+  },
+
+  "step_5e_architectural_followup_for_operator": {
+    "question": "Can cowork session-init be configured to pull origin/main HEAD into the new session's FUSE before agent startup?",
+    "if_yes_implication": "This would close the entire bug class architecturally. Every per-agent fix proposed by PROP-071 becomes redundant (defense-in-depth, not load-bearing). Session FUSE would be at-most-N-seconds stale (the time between session init and agent dispatch).",
+    "if_no_implication": "PROP-071's per-agent fixes are the only mitigation; we are committed to maintaining N-fix-sites in N-agent-prompts forever.",
+    "operator_action_path_if_yes": "Coordinate with Anthropic cowork team to add a `pre_session_git_pull` config flag to the scheduled-task wrapper. Once available, PROP-071's per-agent fixes can be reverted (or kept as defense-in-depth).",
+    "operator_action_path_if_no": "Proceed with PROP-071's per-agent fixes as the only mitigation. Add the Step 5d observability check to catch future regressions."
+  },
+
+  "estimated_implementation_effort": {
+    "phase_1_critical_priority": "Fix analyst-baby (2 sites), analyst (8 sites), decider RMW-CRITICAL (4 sites: 231, 232, 509, 510). ~30-45 min Opus. Highest blast-radius items.",
+    "phase_2_decider_remaining": "Fix decider remaining 4 sites (205, 222, 424, 425, 511, 519). ~15 min Opus.",
+    "phase_3_low_priority": "Fix tinker (4 sites — extends FND-01 fix), poller (2 sites + add CLEAN_CLONE setup), integrity (11 sites — operator picks API vs CLEAN_CLONE; if API, ~45 min; if CLEAN_CLONE, ~25 min). ~70-90 min total.",
+    "phase_4_observability": "Add structure-integrity.md fuse-staleness canary per Step 5d. ~30 min.",
+    "total": "~2.5-3.5h Opus implementation, spread across 1-3 directives."
+  },
+
+  "interaction_with_other_props": {
+    "prop_066": "PROP-066 (producer-side bidirectional sync) is COMPLEMENTARY to PROP-071. Both are needed. PROP-066 ensures workspace-sync's session has correct FUSE; PROP-071 ensures every other session reads from a known-fresh source.",
+    "prop_065": "PROP-065 (git-append-only .jsonl files) is the inverse problem — preventing FUSE→git regression. PROP-071 is git→FUSE regression. Both protect cross-session integrity.",
+    "prop_060": "PROP-060 (Mode 0 assigned-to-tinker scan) is a CONSUMER of stale data — Mode 0 itself uses FUSE-relative open-issues read at tinker.md:124. PROP-071 fixes that read site, making PROP-060 reliable cross-session."
+  },
+
+  "rollback_plan": {
+    "trigger": "PROP-071 fixes break a previously-working agent (e.g., decider can't find CLEAN_CLONE; falls into FUSE fallback and misbehaves).",
+    "mechanism": "Each phase fixes a small set of read sites with clearly-scoped diffs. Operator can revert by single-commit revert per phase. The fix-pattern is mechanical — wrap relative path in ${CLEAN_CLONE}/ — so reverting is unambiguous.",
+    "safety": "All fixes use existing CLEAN_CLONE/CLONE infrastructure that was already set up by Step 0a / Pre-flight blocks. No new infrastructure is introduced; only existing infrastructure is consistently used."
+  },
+
+  "out_of_scope_per_directive": [
+    "Implementation of fixes (author-only per directive non_goal #1)",
+    "Re-fixing tinker.md FND-01 — already done at commit 787ee38 (directive non_goal #2)",
+    "Modifying PROP-066 Step 4c logic (directive non_goal #3)",
+    "System-level cross-session FUSE sync mechanism (directive non_goal #4 — needs cowork infra changes)",
+    "Superseding or amending PROP-066 (directive non_goal #5 — PROP-071 is complementary)"
+  ],
+
+  "expected_followup_directive": "After operator reviews this audit, file a DIRECTIVE-2026MMDD-NNN with target_mode set to whatever agent does the per-agent prompt edits (likely tinker via Mode 4, OR direct operator-side edits). The followup directive should pick fix-pattern A vs B for the design-question sites (analyst CD vs prefix, integrity CLEAN_CLONE vs API) before any edits land. Operator may want to split implementation into 2-3 directives by phase priority."
+}
