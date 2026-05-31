@@ -1,0 +1,74 @@
+{
+  "tinker_run_id": "tinker-2026-05-31T09-25-prop-068-impl",
+  "timestamp": "2026-05-31T09:25:00Z",
+  "mode_selected": "operator_directive_override",
+  "mode_selection_reason": "Pre-flight operator-directive scan returned 7 pending directives in FUSE; cross-checked against git clone (authoritative) and found only DIRECTIVE-20260531-006 and DIRECTIVE-20260531-007 still pending in git. Of these, 007 is most recently filed (filed_at=2026-05-31T09:05Z) and operator answers to all 4 open questions were locked in. Took 007 as the run's primary task per dispatcher priority (pending operator-directive preempts Mode 0-4).",
+  "directive_executed": "DIRECTIVE-20260531-007",
+  "prop_implemented": "PROP-068",
+  "deployment_commits": ["e22b0e8", "e9eab20", "482a836"],
+  "modes_checked": {
+    "mode_0_assigned_to_tinker": "skipped — operator directive override active",
+    "mode_1_pipeline_health": "spot-check: all FUSE files synced post-run; PROP-066 firing (09:07Z sentinel observed pre-run); no stalled-agent indicators in queue-history. Skipped full health audit due to directive override.",
+    "mode_2_infrastructure": "disk-pressure check: project footprint ~290MB (tinker-clone only); FUSE matches git post-sync; PAT verified (HTTP 200 via PRELUDE). All clear.",
+    "mode_3_cost": "deferred to next run",
+    "mode_4_proposals": "PROP-068 was authored last run; this run implemented it"
+  },
+  "previous_followup": {
+    "tinker-2026-05-31T08-42 (PROP-066 deploy)": {
+      "verdict": "FIXED",
+      "evidence": "monitor/integrity/sync-workspace-runs-2026-05-31T09-07-58Z.json exists with action=pull-moved-auto-sync, files_copied=86, sync_exit_code=0. Helper script ran at top-of-hour 09:07Z workspace-sync cycle. Pre-PROP-066 expectation: ~94% silent-skip; post-PROP-066: 1 sentinel in first cycle after deployment confirms helper IS being invoked. Verification window per DIRECTIVE-004 Q3 answer is 24h; next-tinker should count sentinels.",
+      "verification_pattern_passed": "checkpoint 1: monitor/scripts/sync-workspace-step4c.js exists in git (PASS, head e22b0e8 includes ~290 lines). checkpoint 2: monitor/prompts/workspace-sync.md Step 4c invocation is 3 lines (PASS, lines 1191-1199). checkpoint 3: build.js OWNERSHIP + CLAUDE.md include the script (PASS, verified pre-run). checkpoint 4: wait 24h — next-tinker. checkpoint 5: sentinel count ≥18 in 24h — next-tinker."
+    },
+    "tinker-2026-05-31T08-44-prop-068-author (PROP-068 authoring)": {
+      "verdict": "FIXED",
+      "evidence": "PROP-068 authored at status=design-pending-operator-review; operator reviewed + answered 4 open questions in DIRECTIVE-007 commit message; this run implements per locked answers."
+    }
+  },
+  "findings": [
+    {
+      "id": "FND-01",
+      "category": "fuse-staleness-cross-session",
+      "severity": "info",
+      "title": "FUSE in this session was stale on operator-directives at run start; PROP-066's Step 4c only syncs the session it runs in",
+      "evidence": "Pre-flight directive scan from FUSE returned 7 'pending' directives (003, 005, 006, 007, plus older 002/028/025-003 still labeled 'open' which the dispatcher filters out). Cross-check against git clone showed DIRECTIVE-004 and DIRECTIVE-005 were 'completed' in git but 'pending' in FUSE. Root cause: operator-directives/ is classified 'append_only' in build.js OWNERSHIP, so walkAppendOnly skips existing files (additive-edit exception allowed by CLAUDE.md DIRECTIVE-LIFECYCLE rule transfers ONLY via the agent's authoritative clone — sync-workspace doesn't overwrite append_only files in FUSE). When workspace-sync runs in session A (e.g., affectionate-intelligent-mayer at 09:07Z), it only updates session A's FUSE. Session B (lucid-affectionate-mccarthy, mine) sees stale FUSE indefinitely.",
+      "impact": "Tinker's pre-flight directive scan reads from cwd-relative path; cwd starts as the FUSE workspace, so scans get stale state. Mitigation in this run: cross-check against git clone, take the git state as authoritative. Same risk applies to any agent that reads operator-directives from FUSE — currently only tinker.",
+      "options": [
+        {"id":"a","name":"Tinker pre-flight always clones first, reads from clone","cost":"~15s/run (cheap)","fix_class":"prompt-edit"},
+        {"id":"b","name":"Sync extend walkAppendOnly to overwrite operator-directives files (status-transition specific)","cost":"build.js logic change","fix_class":"build-change"},
+        {"id":"c","name":"Cross-session FUSE-sweep on directive-status-change","cost":"complex, perms barriers","fix_class":"deferred"}
+      ],
+      "recommendation": "option (a) — minimal prompt-edit. Add to tinker.md dispatcher pre-flight: 'Before reading operator-directives, ensure you are reading from the most recent git state. If you are running from FUSE, either fresh-clone first or  to read the git-authoritative version.' File as a separate PROP later if recurrence justifies it.",
+      "deferred_to": "next tinker run (not blocking this directive)"
+    },
+    {
+      "id": "FND-02",
+      "category": "deployment-verification",
+      "severity": "info",
+      "title": "PROP-068 deployment verified via synthetic test (4 scenarios PASS); real-world canary needs 7-day window",
+      "evidence": "monitor/integrity/prop-068-synthetic-test-results-2026-05-31T09-33-04Z.json — all 4 scenarios PASS: (1) collapsed Step 4 captures FILES_COMMITTED=3 before sentinel commit (not 1), writes cleanup_ran=true, rms clone explicitly; (2) trap-EXIT backstop fires on mid-block failure; (3) tinker soft-complaints grep distinguishes cleanup_ran=false from missing-field legacy; (4) sloppytoppy safety guard preserves clones with uncommitted changes.",
+      "next_action": "Per DIRECTIVE-007 Step 7: 7-day observation window. Operator should observe ZERO new dome-sync-clone orphans in /sessions/. Tinker Mode 2 quick-check next runs: grep monitor/integrity/workspace-sync-runs/run-*.json for cleanup_ran=false count; flag if >0."
+    }
+  ],
+  "claude_md_audit": {
+    "skipped_this_run": "Operator-directive override took the full run budget. CLAUDE.md accuracy + performance audit deferred to next Mode 3 run.",
+    "note": "PROP-068 implementation is fully reflected in CLAUDE.md File Ownership? checked — workspace-sync.md and sloppytoppy-*.md are git-owned via the dynamic monitor/prompts/*.md rule, no per-file CLAUDE.md entry needed."
+  },
+  "context_load": {
+    "skipped_this_run": "Deferred to next Mode 3 run."
+  },
+  "cleanup_actions": [
+    {
+      "path": "/tmp/prop068-sandbox*",
+      "reason": "synthetic test sandboxes from pre-deployment scenarios",
+      "size_mb": "<2MB",
+      "removed": true
+    },
+    {
+      "path": "/tmp/tinker-clone",
+      "reason": "tinker's working clone — per per-session discipline (mandatory cleanup)",
+      "size_mb": "~290MB",
+      "removed": "pending end-of-run"
+    }
+  ],
+  "outcome_summary": "DIRECTIVE-007 completed; PROP-068 deployed at commit e22b0e8 with synthetic test PASS. 3 prompts modified (workspace-sync.md +178/-100, sloppytoppy-score.md +59/-22, sloppytoppy-rewrite.md +58/-20). PROP-068 + DIRECTIVE-007 lifecycle markers flipped at commit e9eab20. Queue-history row at commit 482a836. 7-day post-deployment canary scheduled for next tinker runs."
+}
