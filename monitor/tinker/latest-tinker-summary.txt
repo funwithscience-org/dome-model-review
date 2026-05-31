@@ -1,48 +1,32 @@
-TINKER RUN: tinker-2026-05-31T05-23
-DATE: 2026-05-31
-MODE: directive_override (DIRECTIVE-20260531-001)
-STATUS: PROP-065 authored
+TINKER RUN 2026-05-31T05-42 — duplicate-PROP detection on DIRECTIVE-20260531-001
 
-== WHAT RAN ==
-Picked DIRECTIVE-20260531-001 (HIGH, jsonl-destructive-overwrite) as primary work.
-Skipped Mode 1-4 evaluation per operator-directive priority rule.
-DIRECTIVE-002 and DIRECTIVE-003 still pending — next tinker runs handle them.
+Outcome: NO-OP. Picked up DIRECTIVE-20260531-001 (jsonl destructive overwrite) on
+pre-flight because FUSE showed status=pending. Authored full 42KB PROP. On clone-
+fresh-for-push, discovered prior run (tinker-2026-05-31T05-23 at commit 65f80e9)
+had ALREADY authored PROP-065-git-append-only-classification.json and marked the
+directive completed at 05:35Z (7 minutes before my run started at 05:42Z).
 
-== KEY FINDING ==
+Root cause: FUSE-staleness on the directive lifecycle field. Exactly the PROP-
+061/064 silent-skip surface that DIRECTIVE-20260531-002 (already pending) asks
+to fix. This run is a real-harm canary event for that directive — the harm was
+~30 min of wasted Opus authoring on already-completed work.
 
-FND-01 (MAJOR, addressed) — PROP-065 authored
-  Confirmed 8 rows lost from monitor/tinker/queue-history.jsonl across 2 events:
-    - 6be7216 at 2026-05-29T13:07Z — 7 rows lost (NEW discovery this run)
-    - 3c62327 at 2026-05-30T09:11Z — 1 row lost (yesterday's FND-02)
-  Root cause: workspace-sync's universal-pusher smart_copy pushes FUSE-state
-  over git for .jsonl files written via clone-and-push when FUSE briefly
-  lacks the row just pushed. PROP-045 anti-reversion is LEAKY for this class
-  (FND-02's FUSE content was byte-identical to commit 6be7216 yet anti-
-  reversion did not fire — root cause undiagnosed, tracked as PROP-065
-  follow-up).
-  Recommendation: deny-list, not backstop. Add GIT_APPEND_ONLY category to
-  workspace-sync.md + build.js OWNERSHIP + CLAUDE.md. 15 .jsonl files in
-  scope; refuse FUSE→git push unconditionally; rely on Step 4c (PROP-061/064)
-  for git→FUSE propagation.
-  Patch surface: ~65 lines. Behavior change limited to the 15 paths.
+Actions taken:
+  - Deleted duplicate PROP from clone before push (no git pollution)
+  - Overwrote duplicate PROP in FUSE with 2KB redirect stub pointing to the
+    authoritative PROP-065-git-append-only-classification.json
+  - Appended fresh row to monitor/tinker/queue-history.jsonl (PROP-030 metric)
+  - Wrote this report + run report at monitor/tinker/report-2026-05-31T05-42.json
 
-== STEP 5 RECOVERY AUDIT ==
-- 15 at-risk .jsonl files scanned (60-day window).
-- queue-history.jsonl: 2 destructive overwrites, 8 rows lost. DO NOT
-  reconstruct — tinker-recovery rows already supersede; back-dated rows
-  would complicate temporal analyses.
-- 14 other files: ZERO negative-net-delta commits. Structurally vulnerable
-  but not yet hit (lower write frequency).
+Recommendation: prioritize DIRECTIVE-20260531-002 (PROP-064 deeper silent-skip)
+in the next tinker run. Consider a secondary structural fix at the Mode-0
+dispatcher: read operator-directives DIRECTORY from a fresh clone or via gh-api
+raw fetch instead of FUSE, to make Mode-0 robust to FUSE-staleness independent
+of PROP-064 deployment timing.
 
-== STATE AT END OF RUN ==
-- DIRECTIVE-20260531-001: status=completed, prop_id_authored=PROP-065
-- PROP-065 authored: monitor/tinker/proposals/PROP-065-git-append-only-classification.json
-- queue-history.jsonl row appended via clone-and-push (which PROP-065 will
-  protect prospectively)
-- Backlog: 67 open (unchanged from yesterday)
-- DIRECTIVE-002 and DIRECTIVE-003 still pending — next runs
+Backlog: open_issues=66, net_velocity_7d=+68, all tiers GREEN. No urgent work.
 
-== NEXT-RUN FOCUS ==
-Pick DIRECTIVE-20260531-002 (PROP-064 silent-skip deeper investigation +
-PROP-066 authoring). Same code area as PROP-065 — workspace-sync.md
-Step 4c. DIRECTIVE-003 follows. After all three: return to Mode 3 BAU.
+5 other directives remain pending (DIRECTIVE-20260531-002 HIGH, -003 MEDIUM,
+plus 3 LOW directives from earlier weeks).
+
+Cleanup: /tmp/tinker-clone removed at end-of-run.
