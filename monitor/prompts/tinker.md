@@ -344,9 +344,19 @@ try{
     const parent=expMap.get(m[0]); if(!parent) return true;
     return parent.integrated!==true;
   }
+  // Mirror Step A0c's 48h recently-touched guard so the counter only flags
+  // ACTIONABLE cases. Fresh ISSs (<48h) are correctly held by the sweep — counting
+  // them produces false soft-complaints that flap until they age out.
+  const NOW=Date.now();
+  function tooFresh(iss){
+    const t=iss.last_touched_at || iss.last_updated || iss.routed_at || iss.assigned_at;
+    if(!t) return false;
+    return (NOW - Date.parse(t)) < 48*3600*1000;
+  }
   let n=0;
   for(const iss of oi.issues){
     if(iss.status!=='assigned-analyst') continue;
+    if(tooFresh(iss)) continue;
     const startExp=extractExpId(iss); if(!startExp) continue;
     const ep=chainEndpoint(startExp); if(!ep) continue;
     if(ep.integrated!==true) continue;
