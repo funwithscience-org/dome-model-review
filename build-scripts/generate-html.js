@@ -111,6 +111,7 @@ function resolvePlaceholders(html, context) {
     // Acknowledged failures (soft-pedal bucket: refined/suspended/falsified, no dome_status_current)
     '{{ACKNOWLEDGED_FAILURES}}': context.acknowledgedFailures || 0,
     '{{DOME_CLAIMED_FAILURES}}': context.domeClaimedFailures || 0,
+    '{{DOME_CONFIRMED_HEADLINE}}': context.domeClaimedConfirmed || 69,
     '{{DOME_CLAIMED_ACCURACY}}': context.domeClaimedAccuracy || '?',
     '{{UNCOUNTED_FAILURE_COUNT}}': context.uncountedFailureCount || 0,
     '{{INCL_FAILURES_ACCURACY_PCT}}': context.inclFailuresAccuracyPct || '?',
@@ -1288,7 +1289,7 @@ function main() {
   console.log('Computed counts:', JSON.stringify(counts, null, 2));
 
   // Load acknowledged failures
-  let failures = { entries: [], dome_claimed_failures: 4, dome_claimed_accuracy: '94.5%' };
+  let failures = { entries: [], dome_claimed_failures: 4, dome_claimed_accuracy: '94.5%', dome_claimed_confirmed: 69 };
   if (fs.existsSync(FAILURES_PATH)) {
     failures = JSON.parse(fs.readFileSync(FAILURES_PATH, 'utf8'));
     console.log('Acknowledged failures:', failures.entries.length);
@@ -1453,6 +1454,7 @@ function main() {
     honestAccuracy,
     honestAccuracyDenom,
     domeClaimedFailures: failures.dome_claimed_failures,
+    domeClaimedConfirmed: failures.dome_claimed_confirmed || 69,
     uncountedFailureCount: failures.entries.length,
     inclFailuresAccuracyPct: ((counts.total / (counts.total + (failures.dome_claimed_failures || 0) + failures.entries.length)) * 100).toFixed(1) + '%',
     domeClaimedAccuracy: failures.dome_claimed_accuracy,
@@ -1995,6 +1997,16 @@ ${sectionNav('pages', 'Live Power Dashboard', 'timestamp', 'Timestamp Error')}
 <p><strong>Where the line currently sits.</strong> The cryptographic infrastructure is real. The rhetorical scope is now correct. The structural fix is still not there. Until that changes, the site's 94.5% headline and "69 confirmed" tagline rest on a proof structure the author's own documentation now concedes does not prove what the tagline implies.</p>
 
 <p><strong>Reference example in this repository.</strong> To make the structural fix concrete, this review's repository now contains <a href="https://github.com/funwithscience-org/dome-model-review/blob/main/predictions/eclipse-2026-08-12-predictions.json" target="_blank"><code>predictions/eclipse-2026-08-12-predictions.json</code></a> alongside its companion <a href="https://github.com/funwithscience-org/dome-model-review/blob/main/predictions/eclipse-2026-08-12-predictions.json.ots" target="_blank"><code>.ots</code></a> proof. The JSON registers prospective predictions for the August 12, 2026 total solar eclipse: standard-physics + Chapman-Sq predictions for nine cited stations, dome-geometry-forced predictions derived from the dome's own published parameters (<code>firmament_height = 8,537 km</code>, <code>decay = 8,619 km</code>, V51.1 commit <code>c3b9f56</code>), and symmetric falsification criteria for both models plus our own analysis. The <code>.ots</code> file was produced by <code>ots stamp</code> on May 2, 2026 — over three months before the eclipse — and anchors the JSON's SHA-256 hash (<code>c2ba6650…42660</code>) to the Bitcoin blockchain via four independent calendar servers. The two files together demonstrate the two-document structure described in <em>What Would Fix It</em> above: a predictions-only document, OTS-anchored before any confirming data exists, with the post-eclipse observations to be anchored independently after August 12. The <code>.ots</code> proof confirmed in <strong>Bitcoin block 947665</strong>, mined <strong>2026-05-03 04:42:46 UTC</strong> — 101 days before the August 12 eclipse and ~10 hours after stamping. Anyone may run <code>ots verify predictions/eclipse-2026-08-12-predictions.json.ots</code> against the JSON file and read out the attesting block height. A reader-facing verification walkthrough is forthcoming.</p>
+
+</div></details>
+
+<details id="ts-reactive-prose-pattern"><summary class="ps-summary"><h2 style="display:inline;margin:0">The Reactive-Prose Pattern: What Has Changed, What Has Not</h2><p class="ps-tldr">Since April 2026 the dome site has produced multiple prose-level updates that respond to specific critiques on this tab — version bumps, the <code>review-response.html</code> page, methodology.json scoping, the killshot.html AI-Auditor rewrite, the 5-class claim taxonomy, badge demotions. None of those updates is the structural fix described in <a href="#ts-what-would-fix-it">What Would Fix It</a>: an independently OpenTimestamps-anchored predictions-only document whose timestamp predates the observations file. The OTS canary remains untripped.</p></summary><div class="ps-detail">
+
+<p>The dome author is reading critique and reactively patching, and the rhetorical position on this tab's specific critique is now substantially correct: <code>methodology.json</code>'s <code>timestamp_scope</code> block concedes the scope-of-proof distinction; the <code>killshot.html</code> AI-Auditor callout now reads "claim-level prospectivity still needs item-by-item audit"; the new 5-class claim taxonomy formally distinguishes <em>prospective_confirmed</em> from the four non-prospective classes that currently contain every classified WIN. This is genuine engagement and is credited above in <a href="#ts-april-2026-update" onclick="document.getElementById('ts-april-2026-update').open=true;return true">Update (April 2026)</a>.</p>
+
+<p>Every observable dome-site response to critique on this tab is rhetorical: re-wordings, qualifier additions, scope narrowings, taxonomy distinctions, badge color changes. The structural commitments — an independent <a href="https://opentimestamps.org/">OpenTimestamps</a> anchor on a predictions-only document published before the observations file, a falsifiable accuracy denominator that includes silent failures, a published derivation path from dome geometry to numerical claims — remain unimplemented. The most recent dome prospective registration (<code>weekly_predictions_2026-03-15.json</code>) still has no <code>.ots</code> companion; the only OpenTimestamps anchor on the dome site is the one on <code>status_history.json</code> that bundles prediction and observation fields per commit. This review's reference example (<code>predictions/eclipse-2026-08-12-predictions.json</code> + <code>.ots</code>, confirmed in Bitcoin block 947665) demonstrates the fix is small in scope; the dome author built the <code>monitor.py</code> / <code>status_history.json</code> / SHA-256 pipeline himself and has the technical capacity to implement the same pattern in an afternoon.</p>
+
+<p>The pattern of narrative responsiveness without methodological repair is itself a finding. A scientific framework, confronted with a list of internal contradictions, changes parameters or predictions; a rhetorical framework adjusts prose. The OTS canary in <a href="#ts-what-would-fix-it">What Would Fix It</a> was set precisely to distinguish these two modes. After six weeks of prose updates, it remains untripped. The day an independently-anchored predictions-only file appears, this section will be rewritten.</p>
 
 </div></details>
 
