@@ -1,0 +1,255 @@
+{
+  "prop_id": "PROP-068",
+  "title": "Collapse workspace-sync's Cleanup into Step 4b's proven-invoked bash block; reorder Step 4c ahead of Step 4b; instrument run-report with cleanup_ran field; supersedes PROP-067 (misframed cross-session sweep).",
+  "status": "design-pending-operator-review",
+  "priority": "medium",
+  "author": "tinker",
+  "authored_at": "2026-05-31T08:50:00Z",
+  "authored_by_run": "tinker-2026-05-31T08-44-prop-068-author",
+  "source_directive": "DIRECTIVE-20260531-005 (operator filed medium at 07:15Z; amended 07:50Z after diagnostic followup that surfaced the cross-session perms barrier AND the LLM skip-by-omission shared-root-cause with PROP-066).",
+  "supersedes": "PROP-067-cross-session-clone-cleanup-confirm-impossible (status=superseded persistence verified at 2026-05-31T08:50Z; superseded_by=PROP-068 already set; superseded_at=2026-05-31T07:15:00Z; superseded_reason confirms PROP-067 misframed the problem around cross-session sweep impossibility — real but irrelevant — when the actual fix is in-cycle).",
+  "executive_summary": "workspace-sync's Cleanup section (line 1219, trailing bash block ~250 lines after Step 4b's last push) leaks ~43% of clones it creates (operator's 2026-05-31 diagnostic: 3 orphans observed across 7 successive cycles in the 14:00–20:00Z window, with run-reports for all 7 cycles confirming Step 4b ran). This is the same LLM-skip-by-omission failure mode PROP-066 just closed for Step 4c (~94% skip-rate pre-helper-script extraction): the agent writes the run report (Step 4b's commit+push completes the apparent workflow), then jumps to Step 5's one-line report and exits, silently skipping the trailing Cleanup bash block. The fix is structural-not-behavioral: move the rm INTO Step 4b's bash block (the only block proven-invoked by every cycle's run-report existence), reorder Step 4c ahead of Step 4b so the clone is still alive when 4c runs, and add a `cleanup_ran` boolean to the run-report JSON so future audits can distinguish cycles that cleaned up from cycles that should-have-but-skipped. PROP-067's framing (cross-session sweep) was rejected by operator because each scheduled-task invocation gets a fresh /sessions/<uid>/ with a fresh UID — prior cycles' clones are perms-locked from a new cycle's perspective, so neither sweep-on-start nor sweep-on-end can work across sessions. The fix has to be IN-CYCLE, and the in-cycle fix is to make cleanup piggyback on a proven-invoked bash block. 13-agent audit (Step 3 of directive): 3 agents have the same separate-trailing-block-after-last-push pattern (workspace-sync, sloppytoppy-score, sloppytoppy-rewrite) and should all receive the same reorder+inline treatment. 7 agents have cleanup but no in-prompt push (they rely on workspace-sync rescue) — same risk class, same fix; just no push to reorder against. 2 agents have no clone at all (poller, social — both write workspace-only). 1 agent has cleanup in script-only SKILL.md outside the repo (prune-integrity — cleanup status not verifiable from inside this audit; recommend operator check).",
+  "operator_followup_diagnosis_verified": {
+    "line_number_check": {
+      "directive_cited": "Step 4b at ~1100-1185, Step 4c at ~1187-1344, Cleanup at ~1362-1370, EXIT trap comment at line 1182",
+      "actual_after_prop_066_landed": "Step 4 (commit+push FUSE→git) at line 1072. Step 4b (run-report) at line 1093-1178. Step 4c (PROP-066 helper invocation) at line 1180-1199 (now ~22 lines, was ~140 lines pre-PROP-066). Step 5 (one-line summary) at line 1202. Cleanup at line 1219-1227. EXIT-trap removal comment at line 1175 (`# Now safe to clean up the skip-log tmpfile (replaces the EXIT trap that was removed because it fired across LLM bash sessions; see Operational Notes).`)",
+      "implication": "Directive's line numbers were pre-PROP-066. Now: Step 4b is line 1093-1178 (~85 lines), Step 4c is ~22 lines, gap from end of Step 4c push to start of Cleanup bash block is ~25 lines of prose. Reorder is even cleaner post-PROP-066 — Step 4c is now small enough that putting it before Step 4b doesn't bloat the prompt at all.",
+      "discrepancy_note": "Two more bash-block boundaries showed up than expected because of how grep counts opening fences — none of this changes the diagnosis."
+    },
+    "exit_trap_removed_confirmed": "line 155 (Operational Notes) reads `No EXIT trap on the SKIP_LOG (commit 1807d16). The LLM agent runs Step 2 and Step 4b in separate bash sessions; an EXIT trap on the tmpfile fires at end of Step 2's session and deletes the file before Step 4b can read it.` AND line 1175 confirms: `replaces the EXIT trap that was removed because it fired across LLM bash sessions; see Operational Notes`. PROP-068 must not rely on an EXIT trap — it was removed for documented reasons that still apply.",
+    "cross_session_perms_barrier_confirmed": "ls -ld /sessions/*/dome-*-clone /sessions/*/dome-review-clean 2>&1 ⇒ `No such file or directory` from this tinker session (which is in /sessions/nifty-modest-wright/). Either (a) no orphans currently exist in any /sessions/ directory other than the current one, or (b) those /sessions/ directories' contents are unreadable from this UID. Either way: a new cycle in a different /sessions/<id>/ cannot enumerate or rm prior cycles' clones. Operator's diagnosis is correct. The implication PROP-067 missed: the fix cannot reach across sessions — it must execute IN-CYCLE in the same /sessions/<id>/ that created the clone.",
+    "shared_root_cause_with_prop_066_confirmed": "Identical failure-mode 2 from PROP-066: a separate trailing bash block in a long prompt that the LLM skips because the apparent workflow ended at the prior block's commit+push. PROP-066 fixed Step 4c by extracting to a 3-line helper invocation; PROP-068 fixes Cleanup by inlining into the proven-invoked Step 4b block. Different fix-shape because cleanup is a 2-line rm rather than a 140-line classification block — extraction to a script would be over-engineering. But the architectural lesson is the same: trailing bash blocks after an apparent-completion point are unreliable; the fix is to move the work into a block the LLM provably invokes."
+  },
+  "per_agent_cleanup_audit": {
+    "methodology": "For each of the 13 enabled scheduled agents (per `list_scheduled_tasks` 2026-05-31T08:45Z): (a) does the agent's prompt clone? (b) where is the rm-rf clone line relative to the last push line in the prompt? (c) are the rm-rf and last-push in the same bash block (low risk) or different blocks (skip-by-omission risk)? (d) has the operator observed orphans for this agent specifically?",
+    "agents_at_risk_separate_trailing_block_after_last_push": [
+      {
+        "agent": "workspace-sync",
+        "clone_name": "dome-sync-clone",
+        "schedule": "hourly",
+        "model": "Haiku",
+        "last_push_block_start_line": 1191,
+        "cleanup_block_start_line": 1223,
+        "gap_lines": 32,
+        "observed_orphans": "YES — operator observed 3 orphans on 2026-05-31 from cycles in the 14:00-20:00Z window (10-15h ages). All 7 cycles in that window successfully wrote run-reports (per operator's 175-report gap analysis), confirming Step 4b ran and only the trailing Cleanup block skipped. ~43% skip rate in the sampled window.",
+        "fix_recommended": "PROP-068 PRIMARY FIX. Reorder Step 4c (PROP-066 helper invocation, lines 1180-1199) to before Step 4b's run-report write. Inline `rm -rf \"$CLONE\"` at the END of Step 4b's bash block (after the `git push` of the run-report). Add `cleanup_ran: true` field to run-report JSON, written from inside the same bash block that does the rm. Address the `files_committed` field's HEAD-shift dependency (see Open Question Q-OP-1 below)."
+      },
+      {
+        "agent": "sloppytoppy-score",
+        "clone_name": "dome-sloppytoppy-score-clone",
+        "schedule": "daily 03:31 UTC",
+        "model": "Sonnet",
+        "last_push_block_start_line": 171,
+        "cleanup_block_start_line": 242,
+        "gap_lines": 71,
+        "observed_orphans": "NOT OBSERVED — operator hasn't grep'd specifically for `dome-sloppytoppy-score-clone` orphans. Currently DISABLED (since 2026-05-21 workspace-sync mass-delete disaster) so no recent runs to leak. Risk if re-enabled.",
+        "fix_recommended": "PROP-068 SECONDARY. Same reorder+inline pattern OR add the rm inside Step 6 (the commit+push block) right after the `git push origin main` line. Cleanup checks `git status --porcelain` before rm (safety guard preserved). Add cleanup_ran reporting if a run-report mechanism is added."
+      },
+      {
+        "agent": "sloppytoppy-rewrite",
+        "clone_name": "dome-sloppytoppy-rewrite-clone",
+        "schedule": "every 2 days at 05:00 UTC",
+        "model": "Opus",
+        "last_push_block_start_line": 219,
+        "cleanup_block_start_line": 259,
+        "gap_lines": 40,
+        "observed_orphans": "NOT OBSERVED — same status as sloppytoppy-score (DISABLED). Risk if re-enabled.",
+        "fix_recommended": "Same as sloppytoppy-score. Inline the safety-guarded rm into Step 5 (commit+push) immediately after the `git push origin main` line."
+      }
+    ],
+    "agents_low_risk_no_in_prompt_push_relies_on_workspace_sync_rescue": [
+      {
+        "agent": "analyst",
+        "clone_name": "(no clone — writes only to workspace; line 404: \"Do NOT attempt git clone, git commit, or git push. Write outputs to workspace. The decider handles git.\")",
+        "schedule": "every 2h (temporary; BAU is daily 02:00 PT)",
+        "model": "Opus",
+        "cleanup_block_start_line": 412,
+        "fix_recommended": "NO ACTION. The 'Cleanup' section at line 412 is rm-rf for any clone the analyst MAY have created (currently it doesn't clone). If analyst ever starts cloning, apply the same reorder+inline pattern."
+      },
+      {
+        "agent": "analyst-baby",
+        "clone_name": "(no clone — same as analyst)",
+        "schedule": "twice daily 04:20/16:20",
+        "model": "Sonnet",
+        "cleanup_block_start_line": 211,
+        "fix_recommended": "NO ACTION. Same as analyst — defensive cleanup block exists but no clone is currently created."
+      },
+      {
+        "agent": "curmudgeon",
+        "clone_name": "dome-curmudgeon-clone (created in clone+pull pattern; pushes only via FUSE-write rescue or workspace-sync universal-pusher)",
+        "schedule": "every 2h (temporary; BAU is twice daily)",
+        "model": "Opus",
+        "cleanup_block_start_line": 513,
+        "fix_recommended": "INVESTIGATE. Curmudgeon's cleanup block at line 513 is structurally similar (trailing block after apparent workflow). Cross-check: are there orphan dome-curmudgeon-clone directories in /sessions/? If yes, apply same reorder pattern. If no, recommend inlining rm at the end of the last clone-using bash block as preventive hardening (low-cost belt-and-suspenders)."
+      },
+      {
+        "agent": "curmudgeon-verify",
+        "clone_name": "dome-curmudgeon-verify-clone (implied; SubAgent of curmudgeon pattern)",
+        "schedule": "every 4h",
+        "model": "Sonnet",
+        "cleanup_block_start_line": 273,
+        "fix_recommended": "INVESTIGATE. Same as curmudgeon. Apply preventive reorder if any orphans observed."
+      },
+      {
+        "agent": "decider",
+        "clone_name": "dome-review-clean",
+        "schedule": "twice daily 03:33 + 15:33 PT",
+        "model": "Opus",
+        "cleanup_block_start_line": 1029,
+        "fix_recommended": "INVESTIGATE — HIGH ATTENTION. Decider's prompt is 1037 lines and the cleanup block at line 1029 is in the LAST 8 lines (very far from any pushes which happen via the patches-and-self-apply module). Decider pushes many commits per run via push-via-api.js fallback. Risk that decider skips its final cleanup block is non-negligible. RECOMMENDED: file a sibling PROP (post-PROP-068 review) to apply same inline pattern in decider after the last push of each run. NOTE: same disability gap that hit decider previously per Cleanup section header comment in tinker.md: \"Same discipline gap that hit decider and decider-self-apply weeks ago.\""
+      },
+      {
+        "agent": "tinker",
+        "clone_name": "tinker-clone (canonical /tmp/tinker-clone)",
+        "schedule": "daily 03:39 UTC",
+        "model": "Opus",
+        "cleanup_block_start_line": 385,
+        "fix_recommended": "INVESTIGATE. Tinker's cleanup block was added 2026-05-25 per PROP-060 FND-01 — same skip-discipline gap. The block is at line 385-394, near end of prompt. Tinker writes a report + summary but doesn't push from its own prompt — it commits + pushes via the same patches-and-self-apply pattern as decider. Risk that tinker skips its own cleanup is comparable to decider's. RECOMMENDED: include in the same sibling PROP as decider — inline rm after the last in-prompt push or at end of the run-report write block."
+      },
+      {
+        "agent": "structure-integrity",
+        "clone_name": "/tmp/dome-integrity-clone (per prompt line 615-625)",
+        "schedule": "daily 02:08 UTC",
+        "model": "Haiku",
+        "cleanup_block_start_line": 620,
+        "fix_recommended": "INVESTIGATE. Cleanup block exists but with the comment `cannot be cleaned up from other sessions due to Linux user-ownership` — the prompt explicitly acknowledges the cross-session perms barrier. Same risk class as workspace-sync. RECOMMENDED: inline the rm at the end of the last in-clone bash block, OR move cleanup to immediately after the integrity check completes (before report writing)."
+      }
+    ],
+    "agents_no_clone_no_risk": [
+      {
+        "agent": "poller",
+        "schedule": "daily 01:05 PT",
+        "model": "Sonnet",
+        "clone": "none",
+        "notes": "Writes to workspace only; no clone, no cleanup-skip risk. No action needed."
+      },
+      {
+        "agent": "social",
+        "schedule": "daily 04:36 PT",
+        "model": "Sonnet",
+        "clone": "none (line 1-375 has no clone pattern, no rm-rf clone line)",
+        "notes": "Writes social drafts to workspace; decider commits. No clone, no cleanup-skip risk. No action needed."
+      }
+    ],
+    "agents_audit_blocked": [
+      {
+        "agent": "prune-integrity",
+        "schedule": "daily 09:05 UTC",
+        "model": "Haiku",
+        "clone": "dome-prune-clone (per CLAUDE.md \"runs from a fresh shallow clone\")",
+        "audit_status": "PROMPT NOT IN REPO. Per CLAUDE.md, prune-integrity is script-only via SKILL.md at /Users/headknocker/Documents/Claude/Scheduled/dome-prune-integrity/SKILL.md. That file is outside the repo and not readable from this tinker session (EPERM). Cleanup pattern cannot be verified from the audit. Operator action recommended: confirm whether SKILL.md inlines the rm in the same block that runs the script + push, or has a separate trailing rm block. If trailing, apply same fix."
+      }
+    ]
+  },
+  "design": {
+    "primary_workspace_sync_changes": [
+      {
+        "change_id": "C1",
+        "type": "reorder",
+        "summary": "Move Step 4c (PROP-066 helper invocation, current lines 1180-1199) to BEFORE Step 4b's run-report write. New section order: Step 4 (FUSE→git commit+push) → Step 4c (helper + sentinel commit+push) → Step 4b (run-report write + commit+push + INLINE CLEANUP).",
+        "rationale": "Step 4c's sync-workspace target only needs origin/main to be current; Step 4a's push establishes that. Verified via inspection of build.js sync-workspace target (lines 460-465): no git ops, no clone-state dependencies, pure OWNERSHIP-whitelist copy from clone to FUSE. Independent of Step 4b's run-report state.",
+        "dependency_check": "Three potential dependency points checked:\n  (a) Step 4c reads `monitor/integrity/sync-workspace-runs-*.json` to derive last-sentinel-ts. These files are written by previous Step 4c invocations (committed to git), so they exist in the clone independent of whether Step 4b has run.\n  (b) Step 4c reads origin/main HEAD timestamp via `git log -1 --format=%cI origin/main`. After Step 4a's push, origin/main is current; Step 4b's later commits would shift HEAD again, but Step 4c only needs HEAD-at-the-time-it-runs.\n  (c) Step 4c writes a new sentinel + commits + pushes. This shifts origin/main HEAD. Step 4b's run-report commit would then be one commit further forward. This affects files_committed counting in Step 4b — see Open Question Q-OP-1 below."
+      },
+      {
+        "change_id": "C2",
+        "type": "inline-rm",
+        "summary": "At the END of Step 4b's bash block (after the run-report's `git push origin main` line at current line 1170-1174), append the cleanup rm. Bash block sequence: write JSON → git add → git commit → git push → rm -rf \"$CLONE\".",
+        "rationale": "Step 4b is the ONLY bash block proven-invoked by every cycle (per operator's 175-report gap analysis: every cycle in cadence has a run-report). Inlining the rm here gives cleanup the same invocation guarantee as the run-report.",
+        "safety": "The CLONE variable must be set and non-empty (Step 1 sets it to `${SESSION}/dome-sync-clone`). Add a defensive guard: `[ -n \"${CLONE:-}\" ] && [ -d \"$CLONE\" ] && [[ \"$CLONE\" == */dome-sync-clone* ]] && rm -rf \"$CLONE\"` to match the pattern used in tinker.md line 388-394."
+      },
+      {
+        "change_id": "C3",
+        "type": "instrument-report",
+        "summary": "Add `cleanup_ran: true` field to the run-report JSON. Written from inside Step 4b's bash block AFTER the rm completes? No — must be BEFORE the rm, because the JSON is committed-and-pushed before the rm runs. Pattern: emit cleanup_ran=true in the JSON as a structural claim — \"if this block completed (JSON exists, push succeeded), cleanup also ran as the next statement in this bash block.\"",
+        "rationale": "Future tinker audits + the cleanup_ran soft-complaint grep can distinguish: (a) no run-report → ghost run / Step 4b skipped entirely (same class as PROP-066's pre-fix Step 4c); (b) run-report exists with cleanup_ran=true → success; (c) run-report exists with cleanup_ran=false OR missing field → legacy report from before this change, or a regression. Tinker's soft-complaints grep extends naturally.",
+        "schema_diff": "Add to the existing run-report schema (current fields: run_id, timestamp, files_committed, skips_total, skip_breakdown.never_push, skip_breakdown.mtime_guard, agent_notes). New field: cleanup_ran (boolean). Optional: cleanup_skipped_reason (string, only set if cleanup_ran=false, for the case where the rm command itself is conditionally skipped — e.g. uncommitted changes detected)."
+      },
+      {
+        "change_id": "C4",
+        "type": "remove-trailing-cleanup-section",
+        "summary": "Delete the `## Cleanup (mandatory, run last)` section at current line 1219-1227. The inline rm at end of Step 4b replaces it. Keep a one-line note in the file's Operational Notes section pointing to the inline location: `Cleanup is inlined at the end of Step 4b's bash block (PROP-068). Do not add a trailing Cleanup section — trailing blocks are LLM-skip-by-omission risk per PROP-066/068.`",
+        "rationale": "Removing the section eliminates the temptation for a future prompt edit to re-add a trailing cleanup block (which would re-introduce the bug). The Operational Notes pointer is the discoverable record."
+      }
+    ],
+    "secondary_sibling_agent_changes": {
+      "summary": "Apply the same reorder+inline+instrument pattern to sloppytoppy-score, sloppytoppy-rewrite, decider, tinker, structure-integrity if operator confirms the per-agent fix-recommended actions in the audit. Curmudgeon and curmudgeon-verify are INVESTIGATE-first; preventive only if operator confirms no observed orphans.",
+      "ordering_recommendation": "Implement workspace-sync first (it's the only confirmed-leaking agent; highest cost-benefit). Verify zero orphans in workspace-sync over a 7-day window. Then batch the sibling agents.",
+      "non_blocking": "The sibling-agent fixes do NOT need to land in the same commit as the workspace-sync fix. PROP-068's primary scope is workspace-sync; siblings are a follow-up workstream."
+    }
+  },
+  "open_questions_for_operator": [
+    {
+      "id": "Q-OP-1",
+      "question": "After the reorder (Step 4 → 4c → 4b), Step 4b's run-report uses `files_committed = git log -1 --name-only --pretty=format: HEAD | grep -c .` to count files committed in this cycle. After Step 4c's sentinel commit lands, `HEAD` points to the sentinel commit (~1 file: the sentinel JSON), not to the Step 4 FUSE→git commit (which may have committed 0–500+ files). The run-report would under-report files_committed. Three fix options: (a) move the files_committed capture to BEFORE Step 4c runs, persisting via tmpfile (same SKIP_LOG pattern), then read back in Step 4b; (b) use `git log --grep=\"^Workspace sync:\" --max-count=1 --name-only --pretty=format:` to find the FUSE→git commit specifically; (c) compute files_committed from the staged-file count BEFORE the Step 4 commit (`git diff --cached --name-only | wc -l`) and persist via tmpfile. Which approach does the operator prefer? Recommended: (b) — no tmpfile, query is deterministic, matches commit-message convention.",
+      "blocking": "yes — must be answered before implementation."
+    },
+    {
+      "id": "Q-OP-2",
+      "question": "The `cleanup_ran` field is a structural claim (\"the rm runs as the next statement after the JSON write\"), not a verified fact. If the bash block is interrupted between the JSON push and the rm, the JSON would say cleanup_ran=true while the clone persists. Acceptable? Or should the field instead be `cleanup_about_to_run=true` (less misleading)? Alternative: `cleanup_will_run=true` (similar honesty). Recommended: keep `cleanup_ran=true` — the interruption window is microseconds wide (between two adjacent bash statements with no I/O), and the field's value to operators is signal-vs-skip distinction, not strict atomic guarantees.",
+      "blocking": "no — defaultable to `cleanup_ran=true`."
+    },
+    {
+      "id": "Q-OP-3",
+      "question": "Should the same fix-shape be applied SIMULTANEOUSLY to sloppytoppy-score and sloppytoppy-rewrite (both currently disabled pending the 2026-05-21 workspace-sync disaster decision)? Or wait until they're re-enabled? Recommended: apply now while editing — both are at the same risk class, both fixes are mechanical (one bash block reorder + one rm-inline + report-field). Cost: ~10 minutes per sibling agent. Benefit: when sloppytoppy is re-enabled, it doesn't immediately start leaking.",
+      "blocking": "no — defaultable to 'apply now'."
+    },
+    {
+      "id": "Q-OP-4",
+      "question": "For curmudgeon and curmudgeon-verify (INVESTIGATE-first per audit), should I check for actual orphans in the operator's session FIRST (operator-side grep for `dome-curmudgeon-*-clone` in /sessions/) and apply only if orphans observed? Or apply preventively to all 3 confirmed-pattern-match agents (decider, tinker, structure-integrity) plus curmudgeon family in a single sibling PROP? Recommended: operator should grep first. If orphans observed for curmudgeon or curmudgeon-verify, include in the sibling PROP. If not, apply only to the 3 confirmed-pattern-match agents (decider, tinker, structure-integrity).",
+      "blocking": "no — defer to follow-up PROP after operator grep."
+    }
+  ],
+  "verification_path": {
+    "synthetic_pre_deployment_test": {
+      "description": "In a fresh sandbox: manually invoke a modified Step 4b bash block with the inline rm + cleanup_ran field. Verify (a) JSON has cleanup_ran=true, (b) $CLONE directory no longer exists after block completion, (c) git push succeeded.",
+      "expected_outcome": "JSON written → committed → pushed → clone removed. All four assertions pass.",
+      "failure_mode_to_simulate": "Bash interruption between JSON push and rm (e.g. `false` line inserted). Expected: JSON exists in git with cleanup_ran=true, clone persists locally. Operator-side grep for orphan + grep for cleanup_ran=true in JSON would flag this as 'partial-completion' — distinguish from 'skip-by-omission' (no JSON at all).",
+      "test_artifact_location": "monitor/integrity/prop-068-synthetic-test-results-<ISO>.json (one-time integrity artifact, append_only_glob)."
+    },
+    "real_world_post_deployment_canary": {
+      "description": "7-day observation window starting from deployment commit. Daily operator check (and tinker Mode 2 quick-check): grep run-reports for `cleanup_ran` presence and value. Cross-check: any orphan dome-sync-clone in any /sessions/ directory the operator can see.",
+      "target": "ZERO orphans observed in workspace-sync's session over 7 days. ZERO run-reports with cleanup_ran=false. <5% run-reports with cleanup_ran missing (acceptable migration window for legacy reports already on disk).",
+      "regression_threshold": "If ≥1 orphan observed in the 7-day window AND the corresponding cycle's run-report has cleanup_ran=true → indicates partial-completion (rare) and operator inspects the cycle's git/system state. If ≥1 orphan AND the corresponding cycle's run-report is missing OR has cleanup_ran=false → indicates regression (the inline rm isn't running). File PROP-069 to investigate, possibly extracting the inline cleanup to a helper script à la PROP-066.",
+      "soft_complaint_extension": "Add to workspace-sync's existing AGENT_NOTES soft-complaint: if rm fails (non-zero exit), append `cleanup-rm-failed` to AGENT_NOTES. This surfaces partial-completions in the same grep tinker already uses."
+    }
+  },
+  "implementation_patches": {
+    "patch_1_workspace_sync_md_reorder_and_inline": {
+      "file": "monitor/prompts/workspace-sync.md",
+      "patch_description": "Three-part edit: (1) cut Step 4c from current lines 1180-1199 and paste BEFORE Step 4b at line 1093; (2) append cleanup rm + cleanup_ran update at end of Step 4b's bash block (currently ends at line 1178 with `rm -f \"$SKIP_LOG\"`); (3) delete the trailing Cleanup section at lines 1219-1227 and add a one-line note in Operational Notes pointing to the inline location.",
+      "exact_diff_pending": "Operator review of Q-OP-1 (files_committed handling) — once answered, the patch can be generated mechanically. Estimate: ~50 lines reordered, ~10 lines added (the rm + cleanup_ran + defensive guard), ~9 lines deleted (the old Cleanup section)."
+    },
+    "patch_2_run_report_schema_doc": {
+      "file": "monitor/prompts/reference/DATA-SCHEMAS.md (if it documents the workspace-sync run-report schema) OR inline in workspace-sync.md",
+      "patch_description": "Add `cleanup_ran` (boolean) to the documented schema. Note it as introduced by PROP-068 on <commit-sha>."
+    },
+    "patch_3_sibling_agents_apply_same_pattern": {
+      "files": [
+        "monitor/prompts/sloppytoppy-score.md (Step 6 inline rm with safety guard)",
+        "monitor/prompts/sloppytoppy-rewrite.md (Step 5 inline rm with safety guard)",
+        "monitor/prompts/decider.md (sibling PROP — line 1029 cleanup inlined into last push block)",
+        "monitor/prompts/tinker.md (sibling PROP — line 385 cleanup inlined into last in-prompt push block, currently no in-prompt push so inline into report-write block)",
+        "monitor/prompts/structure-integrity.md (sibling PROP — line 620 cleanup inlined into the last in-clone bash block)"
+      ],
+      "blocked_on": "Q-OP-3 + Q-OP-4 operator decisions."
+    }
+  },
+  "non_goals": [
+    "Do NOT recommend pre-cycle blow-away (cross-session perms barrier — PROP-067's documented dead-end).",
+    "Do NOT recommend operator-side cleanup as regular maintenance (operator-side cleanup remains a bug-detection signal only).",
+    "Do NOT add an EXIT trap (removed per line 155 / 1175 commits because it fires across LLM bash sessions).",
+    "Do NOT extract cleanup to a Node helper (over-engineering for a 2-line rm — the architectural lesson is reorder/inline, not always-extract).",
+    "Do NOT change the workspace-sync.md OWNERSHIP / NEVER_PUSH classification — this PROP touches the procedural prompt only, not the file-classification rules.",
+    "Do NOT bundle the sibling-agent fixes into the same commit as the workspace-sync fix. Workspace-sync ships first; siblings as a follow-up after the 7-day canary."
+  ],
+  "context_pointers": {
+    "directive_pending": "monitor/tinker/operator-directives/DIRECTIVE-20260531-005-author-prop-068.json (status: pending; flipped to status:completed with prop_id_authored=PROP-068 by this run).",
+    "directive_predecessor": "monitor/tinker/operator-directives/DIRECTIVE-20260531-003-cross-session-clone-cleanup.json (status: completed by tinker 2026-05-31T06:24Z with prop_id_authored=PROP-067 — that PROP is being superseded by THIS one).",
+    "superseded_prop_status_verified": "monitor/tinker/proposals/PROP-067-cross-session-clone-cleanup-confirm-impossible.json status=superseded, superseded_by=PROP-068, superseded_at=2026-05-31T07:15:00Z, superseded_reason starts with `Operator feedback (DIRECTIVE-20260531-005): an agent should always be able to clean up its own clones.` — verified at 2026-05-31T08:50Z; no conflict, no override needed.",
+    "shared_root_cause_prop": "monitor/tinker/proposals/PROP-066-step-4c-helper-script-extraction.json (status: implemented 2026-05-31; same LLM skip-by-omission failure mode; PROP-066 closed Step 4c via helper-script extraction; PROP-068 closes Cleanup via inline-into-proven-block).",
+    "workspace_sync_md": "monitor/prompts/workspace-sync.md — line 27 (CLONE definition), 1072 (Step 4 commit+push), 1093 (Step 4b run-report), 1175 (EXIT-trap removed comment), 1180 (Step 4c PROP-066 helper invocation), 1202 (Step 5 one-line summary), 1219 (Cleanup section to remove).",
+    "operator_diagnostic_evidence_in_directive": "DIRECTIVE-005 operator_followup_findings_2026_05_31T07_30Z field — operator pulled all 175 run-reports, computed gap analysis (6 gaps >90min in 9 days indicating ~6 ghost runs), read 7 successive reports in the 14:00-20:00Z window (all looked identical-shape), proved the 3 orphans Steve cleaned at 05:00Z had ages 10-15h matching that window, established ~43% Cleanup-skip rate."
+  },
+  "expected_output_for_implementation_directive": "When operator files the follow-up implementation directive (DIRECTIVE-NNN for PROP-068 implementation), the implementing tinker run should produce: (a) modified monitor/prompts/workspace-sync.md (reorder + inline + section delete); (b) modified workspace-sync run-report schema doc; (c) monitor/integrity/prop-068-synthetic-test-results-<ISO>.json (test artifact); (d) PROP-068.json status flipped to 'implemented' with deployment_commit_sha; (e) one-line Lessons Learned addition to CLAUDE.md File Ownership Rules section under workspace-sync subsection.",
+  "estimated_effort_if_implemented": "~30 min Opus for the workspace-sync edit + synthetic test + deploy. Sibling agents ~10 min each (3-5 agents pending operator answer to Q-OP-3/Q-OP-4). Total range: 30-90 min Opus depending on sibling scope."
+}

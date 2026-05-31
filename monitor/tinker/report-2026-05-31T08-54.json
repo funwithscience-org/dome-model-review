@@ -1,0 +1,98 @@
+{
+  "run_id": "tinker-2026-05-31T08-54-prop-068-author",
+  "ts": "2026-05-31T08:55:49Z",
+  "mode_selected": "operator-directive-override (DIRECTIVE-20260531-005)",
+  "mode_rationale": "Pre-flight: Operator-Directive Discovery picked up FUSE-stale DIRECTIVE-20260531-004 (PROP-066 implement) as pending, but cross-check against the clone (source of truth) revealed it was already completed at 08:42Z by commits 29df258c + 5acd56fe + fb7dbcb2 from earlier in the morning. Re-scan in the clone returned two genuinely-pending medium-priority directives: DIRECTIVE-005 (PROP-068 author, filed 07:15Z amended 07:50Z) and DIRECTIVE-006 (PROP-069 author, filed 08:30Z). Selected -005 — filed first, shares root cause with just-deployed PROP-066, operator already did most of the diagnostic legwork. -006 (PROP-069 narrative-cite recalibration) deferred to next tinker run.",
+  "modes_checked": {
+    "mode_0_assigned_to_tinker": "not_run — operator directive took precedence per dispatcher priority order (pending directive > Mode 0 > Mode 1-4).",
+    "mode_1_pipeline_health": {
+      "result": "GREEN",
+      "evidence": "All 5 spot-checked agent outputs <1h old (poll-summary, tracker.json, latest-decider-summary, expansion-tracker, workspace-sync-runs). Stranded-patches non-tombstoned-and-older-than-24h count: 0."
+    },
+    "mode_2_infrastructure_fuse": {
+      "result": "AMBER",
+      "evidence": "6 workspace files stale vs origin/main (data/wins.json, data/sections.json, build-scripts/digest-reviews.js, build-scripts/generate-html.js, docs/index.html, monitor/scripts/sync-workspace-step4c.js). This is precisely the bug class PROP-066 (deployed 08:42Z this morning) is designed to fix: workspace-sync's last cycle was 08:21Z, before PROP-066 landed, so the helper script never invoked. Next workspace-sync cycle (~09:03Z) will execute Step 4c via the new helper and detect upstream-newer-than-last-sentinel-ts, triggering 'node build.js sync-workspace' and resolving all 6 stale files. NOT a manual-action item — self-resolves within ~1h. Disk: project-induced footprint 287MB (<500MB warn). Root filesystem 95% used (488M free) — same as recent cycles; not a tinker-actionable disk-pressure event."
+    },
+    "mode_3_cost_engineering": "not_run — directive override.",
+    "mode_4_proposals_fixes": "ENGAGED — PROP-068 authored. See findings."
+  },
+  "previous_followup": {
+    "tinker-2026-05-31T08-42": {
+      "what_was_done": "Recorded PROP-066 deployment commit SHA + queue-history row. Marked DIRECTIVE-004 status=completed.",
+      "verification_pattern_result": "PROP-066 implementation verified: monitor/scripts/sync-workspace-step4c.js (254 lines) and monitor/scripts/sync-workspace-step4c.config.json (4 fields) exist in origin/main HEAD. PROP-066.json status=implemented. PROP-064 workstream_a_status=superseded-by-PROP-066-on-2026-05-31. workspace-sync.md Step 4c is now a 3-line helper invocation (lines 1191-1196). FUSE-staleness expected to clear on next workspace-sync cycle.",
+      "status": "FIXED"
+    },
+    "tinker-2026-05-31T06-24": {
+      "what_was_done": "Authored PROP-067 (cross-session clone cleanup confirm impossible) for DIRECTIVE-003.",
+      "verification_pattern_result": "PROP-067 status=superseded (by PROP-068, this run), superseded_at=2026-05-31T07:15:00Z. Persistence verified. The supersession is correct: operator rejected PROP-067's framing as misframed (problem isn't cross-session sweep impossibility, it's in-cycle skip-by-omission).",
+      "status": "SUPERSEDED (intentional, by PROP-068)"
+    }
+  },
+  "findings": [
+    {
+      "id": "FND-01",
+      "category": "operator-directive-completion",
+      "severity": "info",
+      "title": "DIRECTIVE-20260531-005 completed — PROP-068 authored",
+      "description": "Per directive Step 7: marked DIRECTIVE-005 status=completed with completed_at=2026-05-31T08:55:00Z, completed_by_run=tinker-2026-05-31T08-54-prop-068-author, prop_id_authored=PROP-068, amendment_file_authored=null. PROP-068.json written (255 lines, JSON-valid) at monitor/tinker/proposals/PROP-068-collapse-cleanup-into-step-4b.json with status=design-pending-operator-review.",
+      "evidence_files": [
+        "monitor/tinker/proposals/PROP-068-collapse-cleanup-into-step-4b.json",
+        "monitor/tinker/operator-directives/DIRECTIVE-20260531-005-author-prop-068.json"
+      ],
+      "operator_action_required": "Review PROP-068's open_questions_for_operator (Q-OP-1 through Q-OP-4), then file an implementation directive when ready. Q-OP-1 (files_committed handling after Step 4c reorder) is BLOCKING; the other three are defaultable."
+    },
+    {
+      "id": "FND-02",
+      "category": "per-agent-audit-finding",
+      "severity": "moderate",
+      "title": "3 agents share workspace-sync's separate-trailing-cleanup-block pattern",
+      "description": "Per the PROP-068 audit (13 enabled scheduled agents): workspace-sync (CONFIRMED LEAKING ~43%), sloppytoppy-score (RISK if re-enabled, currently disabled), and sloppytoppy-rewrite (RISK if re-enabled, currently disabled) all have a Cleanup bash block separated from their last-push bash block by 32-71 lines of prose. Three more agents (decider line 1029, tinker line 385, structure-integrity line 620) have cleanup blocks far from their main work but no in-prompt push to reorder against; risk-class is the same but the fix shape differs. Curmudgeon and curmudgeon-verify are INVESTIGATE-first pending operator orphan-grep.",
+      "evidence_files": [
+        "monitor/tinker/proposals/PROP-068-collapse-cleanup-into-step-4b.json (per_agent_cleanup_audit section)"
+      ],
+      "operator_action_required": "PROP-068 Q-OP-3 (simultaneous fix for sloppytoppy pair) and Q-OP-4 (operator-side grep for curmudgeon/decider/tinker orphans before applying preventive fix)."
+    },
+    {
+      "id": "FND-03",
+      "category": "fuse-staleness-self-resolving",
+      "severity": "info",
+      "title": "6 workspace files stale vs origin/main; awaiting first post-PROP-066 workspace-sync cycle",
+      "description": "Mode 2 quick-check detected 6 stale FUSE files. Cause: workspace-sync last cycle (08:21Z) preceded PROP-066's deployment (08:42Z), so the Step 4c helper-script extraction never invoked. Next cycle (~09:03Z) will be the first to run with PROP-066's helper. If the helper executes as designed, it should detect upstream-newer-than-last-sentinel-ts (last sentinel was 2026-05-30T01:16:37Z from PROP-064 bootstrap; origin/main has dozens of commits since), classify as 'local-ancestor-of-remote', trigger 'node build.js sync-workspace', and write the first post-PROP-066 sync-workspace-runs sentinel.",
+      "verification_planned": "Next tinker run should check: (a) ls monitor/integrity/sync-workspace-runs-2026-05-31T09*.json — expect ≥1; (b) re-run the md5 spot-check on the 6 stale files — expect all match. If sentinel exists but staleness persists, that's a regression and indicates the PROP-066 helper has a path-resolution bug — file PROP-067 (slot reuse since current PROP-067 is superseded).",
+      "operator_action_required": "None for now — let the canary play out on the natural cadence."
+    }
+  ],
+  "claude_md_audit": {
+    "performed": false,
+    "skipped_reason": "Operator-directive mode — deep work scoped to PROP-068 authorship per directive's per-run-cap discipline. Next Mode 3 run should resume the CLAUDE.md accuracy pass. Most recent CLAUDE.md pass was tinker-2026-05-27T17-30 — 4 days ago. Not stale yet but watch."
+  },
+  "context_load": {
+    "performed": false,
+    "skipped_reason": "Same as claude_md_audit — Mode 3 work deferred. Latest measurements still valid from tinker-2026-05-27."
+  },
+  "backlog_trend": {
+    "queue_history_row_appended": true,
+    "metrics": {
+      "open_issues_total": 65,
+      "open_status_count": 9,
+      "assigned_analyst_count": 43,
+      "age_ge_14d_count": 0,
+      "age_ge_30d_count": 0,
+      "oldest_open_age_days": 0.57,
+      "new_issues_velocity_7d": 65,
+      "closed_issues_velocity_7d": 134,
+      "net_velocity_7d": 69,
+      "baby_drain_count_7d": 6,
+      "verify_drain_count_7d": 0
+    },
+    "thresholds_fired": [],
+    "interpretation": "Backlog healthy: open count 65 (<200), assigned-analyst 43 (<50 threshold), oldest open issue 0.57 days, net 7-day velocity +69 (closing far faster than opening — 134 closed vs 65 new). Verify drain 0/7d — note: dome-curmudgeon-verify ran at 07:37Z so reviews are landing; the 0 count may reflect agent_subtype field not being set or scanning the FUSE clone (which doesn't have today's reviews yet due to the same staleness this report flagged in FND-03). Worth verifying next tinker run after FUSE sync."
+  },
+  "cleanup_actions": [],
+  "next_tinker_recommendations": [
+    "If PROP-068 implementation directive lands: budget 30-90 min Opus for the actual workspace-sync.md edit + synthetic test + deploy. The 60-min PROP-066 deploy this morning is the precedent for the time estimate.",
+    "DIRECTIVE-006 (PROP-069 narrative-cite recalibration) is the next medium-priority pending directive — pick it up if no higher-priority work fires.",
+    "Verify FND-03 self-resolved: monitor/integrity/sync-workspace-runs-2026-05-31T09*.json should exist after first post-PROP-066 cycle; rerun md5 spot-check.",
+    "Resume Mode 3 cadence on next quiet run: CLAUDE.md accuracy pass + context-load audit."
+  ]
+}
