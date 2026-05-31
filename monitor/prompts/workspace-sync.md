@@ -1136,23 +1136,40 @@ for all 7 cycles confirming Step 4b ran). Same skip-by-omission shape PROP-066
 just closed for Step 4c. The fix is structural-not-behavioral: every action that
 MUST run on every cycle now lives in the single block below.
 
-Ordering inside the block matters:
-- **4a (FUSE→git commit+push) runs first** — establishes the HEAD that 4b's
-  `files_committed` capture reads from.
-- **`FILES_COMMITTED` is captured next**, before HEAD shifts to any sentinel
-  commit. Per DIRECTIVE-20260531-007 Q-OP-1 answer (c): collapse keeps the
-  variable local to one bash session so no cross-bash-tool-call persistence
-  hack (tmpfile, grep-by-message) is needed.
-- **4c (PROP-066 helper)** runs next while `$CLONE` is still alive. It writes
-  EITHER a sync-workspace-runs sentinel OR a divergence audit OR a non-ff abort;
-  always exactly one of the three so future tinker audits can distinguish
-  "ran and decided no-op" from "didn't run at all". `node build.js sync-workspace`
-  is idempotent (OWNERSHIP-whitelist copy, no delete logic).
+Ordering inside the block matters (PROP-072, 2026-05-31 — 4c FIRST per PROP-072):
+- **4c (PROP-066 helper) runs FIRST** — hoisted from middle-of-block per PROP-072
+  after 7/7 post-PROP-068 cycles produced zero sync-workspace-runs sentinels
+  while Step 4a + 4b both ran reliably (run-reports visible for all 7). Empirical
+  finding: the LLM agent reliably executes FIRST and LAST positions within a
+  collapsed bash block but drops MIDDLE positions; 4c was the canonical
+  middle-position skip. Correctness argument: 4c reads `origin/main` and may
+  write a sentinel commit; 4a writes FUSE→git workspace files — disjoint data,
+  so reordering is correctness-preserving. Side-benefit: 4c may
+  `git merge --ff-only origin/main` to fast-forward the local clone, which
+  improves 4a's push success rate (no rebase needed afterward). The helper
+  writes EITHER a sync-workspace-runs sentinel OR a divergence audit OR a non-ff
+  abort; always exactly one of the three so future tinker audits can
+  distinguish "ran and decided no-op" from "didn't run at all".
+  `node build.js sync-workspace` is idempotent (OWNERSHIP-whitelist copy, no
+  delete logic).
+- **4a (FUSE→git commit+push) runs next** — uses the (possibly fast-forwarded
+  by 4c) HEAD as its parent. The push-rejected rebase-retry handles any
+  remaining race.
+- **`FILES_COMMITTED` is captured next**, AFTER 4a's commit so it reads the
+  workspace-sync commit HEAD (not the sentinel commit 4c may have made). Per
+  DIRECTIVE-20260531-007 Q-OP-1 answer (c): collapse keeps the variable local
+  to one bash session so no cross-bash-tool-call persistence hack (tmpfile,
+  grep-by-message) is needed.
 - **4b (run-report write + commit + push)** runs next. `cleanup_ran:true` is
   written into the report — per DIRECTIVE-007 Q-OP-2 the structural-claim
   framing is fine because the rm failure mode is essentially impossible
   ($CLONE owned by this UID, no other process holds open handles, scheduled-task
-  land).
+  land). The AGENT_NOTES self-attestation backstop (PROP-072 secondary)
+  instructs the LLM to include the literal string `step4c-not-invoked` if it
+  observes that no sync-workspace-runs sentinel was created this cycle — turns
+  any future Step-4c regression from silent-skip into immediately-visible in
+  the run report (tinker's soft-complaints grep already catches similar
+  patterns).
 - **rm `$CLONE`** runs LAST, as an unconditional statement plus an EXIT trap for
   defense in depth. The trap was added per the directive's "Optionally
   trap-protect the rm so a mid-block error still attempts cleanup" — even if
@@ -1173,12 +1190,36 @@ Safety architecture for 4c (preserved from PROP-061/064, enforced in the script)
   input state (HEAD, REMOTE, last-sentinel-at) per DIRECTIVE-20260531-004 Q2. Exit 2.
 
 ```bash
-# === PROP-068 collapsed Step 4 (4a → capture → 4c → 4b → cleanup) ===
+# === PROP-068 collapsed Step 4 with PROP-072 ordering (4c FIRST per PROP-072 → 4a → capture → 4b → cleanup) ===
 # Defense-in-depth: set EXIT trap FIRST so any mid-block failure still attempts
 # the rm. The explicit rm at end is primary; trap is the backstop. Safe inside
 # one bash tool call (does NOT fire across LLM bash sessions — see Operational
 # Notes on why an EXIT trap was removed for SKIP_LOG).
 trap 'rm -rf "$CLONE" 2>/dev/null || true' EXIT
+
+# --- 4c FIRST per PROP-072: PROP-066 helper for git→FUSE propagation ---
+# PROP-072 (2026-05-31): hoisted from middle-of-block to FIRST position
+# (immediately after trap setup). Empirical evidence: 7/7 post-PROP-068 cycles
+# (09:33Z → 16:09Z) produced zero sync-workspace-runs sentinels while Step 4a
+# + 4b ran reliably in all 7 (run-reports visible). The LLM agent reliably
+# runs FIRST + LAST positions in a collapsed bash block but drops MIDDLE
+# positions; 4c was the canonical middle-position skip.
+# Correctness argument: 4c reads origin/main and may write a sentinel commit;
+# 4a writes FUSE→git workspace files. Disjoint data — reorder is
+# correctness-preserving. Side-benefit: 4c may `git merge --ff-only origin/main`
+# to fast-forward the local clone, which makes 4a's push less likely to need
+# rebase. FILES_COMMITTED capture stays AFTER 4a (line below) so it reads the
+# workspace-sync commit, not the sentinel commit.
+node monitor/scripts/sync-workspace-step4c.js 2>&1 | tail -10 || echo "[PROP-066] helper exited non-zero (sentinel written; see monitor/integrity/)"
+# Capture pre-add count for AGENT_NOTES self-attestation (PROP-072 secondary backstop).
+SENTINEL_COUNT_THIS_CYCLE=$(ls -1 monitor/integrity/sync-workspace-runs-*.json monitor/integrity/sync-workspace-non-ff-abort-*.json monitor/integrity/sync-workspace-step4c-crash-*.json 2>/dev/null | xargs -I{} stat -c '%Y {}' {} 2>/dev/null | awk -v now=$(date -u +%s) '($1 > now - 600){c++} END{print c+0}')
+git add monitor/integrity/sync-workspace-runs-*.json \
+        monitor/integrity/sync-workspace-non-ff-abort-*.json \
+        monitor/integrity/sync-workspace-step4c-crash-*.json 2>/dev/null || true
+if ! git diff --cached --quiet 2>/dev/null; then
+  git commit -m "PROP-066 step4c sentinel: $(date -u +%Y-%m-%dT%H:%M:%SZ)" 2>&1 | tail -1
+  git push origin main 2>&1 | tail -1
+fi
 
 # --- 4a: commit + push FUSE→git ---
 DOCS_NOTE=""
@@ -1200,21 +1241,12 @@ if [ $PUSH_EXIT -ne 0 ] && echo "$PUSH_OUT" | grep -qi "rejected\|non-fast-forwa
   git push origin main 2>&1 | tail -2
 fi
 
-# --- Capture FILES_COMMITTED NOW, before HEAD shifts to any sentinel commit ---
+# --- Capture FILES_COMMITTED NOW, AFTER 4a so it reads the workspace-sync commit ---
 # Per Q-OP-1: collapse keeps this variable local. Reads HEAD = the FUSE→git
 # commit just pushed (or its predecessor if the commit was empty — grep -c
-# handles both cases honestly).
+# handles both cases honestly). Note (PROP-072): the sentinel commit 4c may
+# have just made is NOT captured here because HEAD now points to 4a's commit.
 FILES_COMMITTED=$(git log -1 --name-only --pretty=format: HEAD 2>/dev/null | grep -c .)
-
-# --- 4c: PROP-066 helper for git→FUSE propagation ---
-node monitor/scripts/sync-workspace-step4c.js 2>&1 | tail -10 || echo "[PROP-066] helper exited non-zero (sentinel written; see monitor/integrity/)"
-git add monitor/integrity/sync-workspace-runs-*.json \
-        monitor/integrity/sync-workspace-non-ff-abort-*.json \
-        monitor/integrity/sync-workspace-step4c-crash-*.json 2>/dev/null || true
-if ! git diff --cached --quiet 2>/dev/null; then
-  git commit -m "PROP-066 step4c sentinel: $(date -u +%Y-%m-%dT%H:%M:%SZ)" 2>&1 | tail -1
-  git push origin main 2>&1 | tail -1
-fi
 
 # --- 4b: write + commit + push run-report ---
 # This is the only durable record of workspace-sync's narrative; the /tmp
@@ -1234,6 +1266,13 @@ MTIME_GUARD_COUNT=$([ -f "$SKIP_LOG" ] && grep -c "mtime-guard" "$SKIP_LOG" || e
 #   - "swallowed" or "leftover" if you suspect prior-run state contaminated this run
 #   - "fallback" if you took an alternative path because the primary path failed
 #   - "warning" if anything looked off
+#   - "step4c-not-invoked" (PROP-072 self-attestation backstop) if you observed
+#     that 4c at the top of this block did NOT run this cycle — i.e., no NEW
+#     sync-workspace-runs / non-ff-abort / step4c-crash sentinel was created
+#     in the last ~10 minutes (check $SENTINEL_COUNT_THIS_CYCLE captured above:
+#     it should be >=1 on every successful cycle). This turns the silent-skip
+#     regression class into a visible-in-run-report soft-complaint that
+#     tinker's grep catches on next audit.
 #   - "routine" if the run was completely uneventful (tinker's soft-complaints grep
 #     ignores "routine"; the field needs SOMETHING for the JSON to be valid)
 # Keep it to <=300 chars.
