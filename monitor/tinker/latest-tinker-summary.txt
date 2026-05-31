@@ -1,41 +1,96 @@
-=== Tinker Run tinker-2026-05-31T08-54-prop-068-author ===
-Mode: operator-directive override (DIRECTIVE-20260531-005)
+=== Tinker run 2026-05-31T09:25Z ===
+Mode: operator_directive_override
+Run ID: tinker-2026-05-31T09-25-prop-068-impl
 
-WORK COMPLETED
-  - PROP-068 authored: monitor/tinker/proposals/PROP-068-collapse-cleanup-into-step-4b.json
-    Title: Collapse workspace-sync's Cleanup into Step 4b's proven-invoked bash block;
-           reorder Step 4c ahead of Step 4b; instrument run-report with cleanup_ran field.
-    Status: design-pending-operator-review
-    Lines: 255 / JSON-valid
-  - DIRECTIVE-005 status flipped to completed (prop_id_authored=PROP-068)
-  - Per-agent cleanup audit completed: 13 enabled scheduled agents reviewed
-    * AT RISK (confirmed-pattern): workspace-sync (CONFIRMED LEAKING ~43%),
-      sloppytoppy-score (disabled), sloppytoppy-rewrite (disabled)
-    * INVESTIGATE: decider, tinker, structure-integrity (cleanup far from main work,
-      no in-prompt push; preventive fix recommended pending operator orphan-grep)
-    * INVESTIGATE: curmudgeon, curmudgeon-verify (operator orphan-grep first)
-    * NO ACTION: analyst, analyst-baby (no clone), poller, social (no clone)
-    * AUDIT BLOCKED: prune-integrity (SKILL.md outside repo, EPERM)
+DIRECTIVE EXECUTED
+==================
+DIRECTIVE-20260531-007 (medium) — Implement PROP-068 (collapse workspace-sync's
+trailing Cleanup into the proven-invoked Step 4 bash block; same fix-shape to
+sloppytoppy-score + sloppytoppy-rewrite). Operator answers to 4 open questions
+locked in at directive filing time (Q-OP-1 = (c) collapse 4a+4c+4b into one bash
+block; Q-OP-2 = keep cleanup_ran=true; Q-OP-3 = YES apply simultaneously to
+sloppytoppy pair despite both DISABLED; Q-OP-4 = curmudgeon family excluded).
 
-OPERATOR ACTIONS NEEDED
-  - Review PROP-068's 4 open questions for operator (Q-OP-1 blocking, others defaultable)
-  - File PROP-068 implementation directive when ready
-  - Q-OP-4: operator-side grep for orphan curmudgeon/decider/tinker clones to inform
-    sibling-agent fix scope
+DEPLOYMENT
+==========
+- e22b0e8 — main PROP-068 patch (3 prompts + synthetic test results + PROP/
+  directive lifecycle markers). +295/-106 lines.
+- e9eab20 — PROP-068 + DIRECTIVE-007 implementation_commit SHA recorded.
+- 482a836 — queue-history.jsonl row for this run.
+- 46f51a6 — tinker run report.
+Final state: PROP-068.status='implemented'; DIRECTIVE-20260531-007.status='completed'.
 
-PIPELINE HEALTH
-  - Mode 1: GREEN (all agent outputs <1h, 0 stranded patches >24h)
-  - Mode 2: AMBER — 6 workspace files stale vs origin/main; PROP-066 just deployed at
-    08:42Z but workspace-sync last cycle was 08:21Z (pre-deploy). Self-resolves on
-    next cycle (~09:03Z) via the new helper script. NOT an actionable issue.
-  - Disk: 287MB project footprint (<500MB warn); root FS at 95% (488M free) —
-    same baseline as recent cycles.
-  - Backlog: 65 open issues, +69 net velocity over 7 days. Healthy.
+WHAT CHANGED
+============
+1. workspace-sync.md (PRIMARY): collapsed Step 4 (FUSE→git commit+push),
+   Step 4c (PROP-066 helper), Step 4b (run-report), and Cleanup (rm $CLONE)
+   into ONE bash block. Ordering: trap-EXIT first → 4a commit+push → capture
+   FILES_COMMITTED → 4c helper → 4b write+commit+push run-report → rm $CLONE.
+   Added cleanup_ran:true to run-report schema. Cleanup section header
+   preserved as redirect stub. File grew from 1227 → 1277 lines (+50) net.
 
-NEXT TINKER RUN
-  - Verify FND-03 self-resolved: should see sync-workspace-runs-2026-05-31T09*.json
-    sentinel and the 6 stale files match origin/main after the 09:03Z cycle.
-  - DIRECTIVE-006 (PROP-069 narrative-cite recalibration, medium-pri) is the next
-    operator directive in the queue.
-  - Resume Mode 3 cadence: CLAUDE.md accuracy pass + context-load audit (last done
-    2026-05-27).
+2. sloppytoppy-score.md: Step 6 commit+push block now includes safety-guarded
+   rm $CLEAN_CLONE (mirrors analyst-baby.md lines 220-235). Trap-EXIT
+   backstop. Cleanup section preserved as redirect stub. +59/-22 lines.
+
+3. sloppytoppy-rewrite.md: Step 5 commit+push block same fix. Step 7 Cleanup
+   preserved as redirect stub. +58/-20 lines. Both sloppytoppy agents are
+   currently DISABLED (pending operator decision since 2026-05-21) — this is
+   pre-fix only; no runtime impact until re-enable.
+
+SYNTHETIC TEST
+==============
+monitor/integrity/prop-068-synthetic-test-results-2026-05-31T09-33-04Z.json —
+all 4 scenarios PASS:
+- Primary path: FILES_COMMITTED=3 (captured before sentinel), cleanup_ran=true,
+  rm fires, clone gone post-block.
+- Defense in depth: trap-EXIT fires on mid-block failure.
+- Tinker grep distinguishes cleanup_ran=false (actionable) from missing-field
+  legacy reports.
+- Sloppytoppy safety guard preserves clones with uncommitted changes.
+
+PREVIOUS-RUN FOLLOWUPS
+======================
+- tinker-2026-05-31T08-42 PROP-066: FIXED. sync-workspace-runs-2026-05-31T09-07-58Z.json
+  shows helper ran at top-of-hour with action=pull-moved-auto-sync,
+  files_copied=86. Pre-PROP-066 expectation: ~94% silent-skip; first
+  post-deployment cycle delivered a sentinel. 24h sentinel-count verification
+  is the next-tinker checkpoint.
+- tinker-2026-05-31T08-44 PROP-068 authoring: FIXED. PROP-068 implemented
+  this run.
+
+FINDINGS
+========
+FND-01 (info, fuse-staleness-cross-session): tinker pre-flight directive
+scan reads FUSE; workspace-sync only syncs the session it runs in, so other
+sessions can see arbitrarily stale operator-directives state. Mitigated this
+run via cross-check against git clone. Recommendation: prompt-edit tinker.md
+pre-flight to fresh-clone or `git fetch && git show origin/main:<path>`
+before reading directives. Deferred to next run; not blocking.
+
+FND-02 (info, deployment-verification): PROP-068 deployed; synthetic test
+PASS; 7-day real-world canary scheduled (per DIRECTIVE-007 Step 7). Tinker
+Mode 2 next runs should grep workspace-sync run reports for
+cleanup_ran=false; >0 → leak signal.
+
+CLEANUP
+=======
+- /tmp/prop068-sandbox{,-trap,-sloppy} removed (synthetic test sandboxes).
+- /tmp/tinker-clone removed at end-of-run per FND-01 of 2026-05-25T17-37.
+
+PIPELINE HEALTH (quick)
+=======================
+- Open issues: 65 (well under moderate threshold 200)
+- Net velocity 7d: +58 (positive — net work draining)
+- Oldest open: 0.6d (no aged-out issues)
+- PROP-066 firing in production (09:07Z sentinel observed)
+- Disk: ~290MB project footprint (will be ~0 after end-of-run cleanup)
+- PAT: verified (HTTP 200 via PRELUDE)
+
+REMAINING PENDING DIRECTIVES (in git, authoritative)
+====================================================
+- DIRECTIVE-20260531-006 (medium): Author PROP-069 (PROP-014 Mech 3
+  narrative-cite recalibration). Next tinker run pickup.
+
+Mode 3 (cost engineering + CLAUDE.md audit) DEFERRED to next run — directive
+override took the full budget this cycle.
