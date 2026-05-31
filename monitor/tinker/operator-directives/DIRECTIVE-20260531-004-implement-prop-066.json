@@ -1,0 +1,55 @@
+{
+  "id": "DIRECTIVE-20260531-004",
+  "filed_by": "operator-cowork-session",
+  "filed_at": "2026-05-31T06:30:00Z",
+  "status": "pending",
+  "priority": "high",
+  "title": "Implement PROP-066 Phase 1 — extract workspace-sync Step 4c into monitor/scripts/sync-workspace-step4c.js helper; deprecate PROP-064 workstream A; always-write-sentinel discipline",
+  "background": "PROP-066 (authored by tinker 2026-05-31T05:56Z, status=design-pending-operator-review) diagnoses PROP-064 as architecturally sound but execution-broken: ~94% silent-skip rate post-deployment, with two compounding failure modes — (1) cross-bash-session variable loss (PRE_PULL_SHA/PULL_MOVED set in Step 1's bash tool call do not survive to Step 4c's separate bash tool call) and (2) LLM skip-by-omission of the 140-line Step 4c block in a 1370-line prompt. Recommended fix (option_2): extract Step 4c into an ~80-line Node helper script in monitor/scripts/sync-workspace-step4c.js, invoked from workspace-sync.md via a structurally-hard-to-skip 3-line bash block. Helper derives PULL_MOVED-equivalent from on-disk state (last sentinel ts vs origin/main HEAD ts), always writes a sentinel.\n\nOperator has reviewed PROP-066 and chose option_2. Three open questions answered below.",
+  "operator_answers_to_prop_066_open_questions": {
+    "Q1_fallback_timestamp_source": {
+      "question": "Should the helper script's 'last successful sync sentinel' fallback be hard-coded to '2026-05-30T00:00:00Z' (PROP-064 deployment), or read from a one-time config file (e.g. monitor/scripts/sync-workspace-step4c.config.json)?",
+      "answer": "Read from config file.",
+      "rationale": "Resilient to manual runs and schedule changes. A hard-coded date going stale (e.g. after a long pause like 2026-05-21 disaster, or if the agent is paused for maintenance) would compare against ancient history and either spam spurious sync triggers or be useless. Config file is operator-editable so we can bump it on redeployment without touching the script. The fallback is bootstrap-only — after first sentinel lands, sentinels-on-disk become the source of truth — so the config-file cost is minimal (one extra file read per invocation at startup, only used when no sentinels exist on disk).",
+      "implementation_note": "Helper reads monitor/scripts/sync-workspace-step4c.config.json on startup. Schema: { 'fallback_baseline_at': '<ISO8601>', 'notes': '<free-text>', 'updated_at': '<ISO8601>', 'updated_by': '<run-id-or-operator>' }. Initial value: 'fallback_baseline_at': '2026-05-30T00:00:00Z'. Classify the config file as 'git' in build.js OWNERSHIP and add to workspace-sync.md NEVER_PUSH (operator-curated, git-owned, semantic flag-like). If the file is missing or malformed, helper logs a warning to stderr and uses a hard-coded safety baseline (2026-05-30T00:00:00Z) — never crashes on missing config."
+    },
+    "Q2_crash_sentinel_format": {
+      "question": "Should the script try to fall back to operator-readable plain-English errors in the crash sentinel, or keep the raw stack trace?",
+      "answer": "Raw stack trace + the input state (HEAD SHA, REMOTE SHA, last-sentinel-at).",
+      "rationale": "When a helper crashes, tinker or the operator is debugging. Plain English loses information; stack traces give exact failure line. The input-state dump is what makes the crash reproducible. Tinker's soft-complaints grep can be extended to parse 'crash sentinel' filenames separately from the success sentinels."
+    },
+    "Q3_validation_window": {
+      "question": "Phase 1's validation window is 24h. Acceptable? PROP-064 went 26h with one bootstrap success and then ~94% silent skip; want to avoid the same pattern.",
+      "answer": "24h.",
+      "rationale": "Mirrors PROP-064's own observation window, so the comparison is apples-to-apples. If PROP-066 shows <18 sentinels in the first 24h (target: ≥18 = 75%+ hit rate, accounting for ~6 cycles where workspace-sync itself may be missed due to PAT/disk issues), we treat that as a regression and escalate to PROP-067. Tinker's daily Mode 2 quick-check should add: count of sync-workspace-runs sentinels in last 24h, flag if <18."
+    }
+  },
+  "requested_work": [
+    "Step 1 — Author monitor/scripts/sync-workspace-step4c.js per PROP-066 proposed_implementation. ~80 lines Node. Read on-disk state (last sync-workspace-runs-*.json sentinel mtime/timestamp, latest origin/main HEAD ts via `git log -1 --format=%cI origin/main`), classify equal / local-ancestor-of-remote / remote-ancestor-of-local / true-non-ff. NEED_SYNC=1 if last-sentinel-ts < origin-HEAD-ts OR classification != 'equal'. On NEED_SYNC=1 fast-forward path: invoke `node build.js sync-workspace` and capture exit code. On NEED_SYNC=1 non-ff path: write abort sentinel + exit 1 (mirrors PROP-061 behavior). On NEED_SYNC=0: write no-op sentinel with action='no-op-no-upstream-movement'. ALWAYS writes a sentinel to monitor/integrity/sync-workspace-runs-<ISO>.json before exit, success or failure.",
+    "Step 2 — Author monitor/scripts/sync-workspace-step4c.config.json with initial fallback_baseline_at='2026-05-30T00:00:00Z' (per Q1 answer). Schema enforced by helper script. Classify 'git' in build.js OWNERSHIP. Add to workspace-sync.md NEVER_PUSH array (operator-curated semantic config).",
+    "Step 3 — Edit monitor/prompts/workspace-sync.md: (a) delete Step 1 lines 143-157 (PRE_PULL_SHA / POST_PULL_SHA / PULL_MOVED capture) — becomes dead code per PROP-066 deprecation_note_for_prop_064; (b) replace Step 4c bash block (~140 lines) with a 3-line invocation: `node monitor/scripts/sync-workspace-step4c.js 2>&1 | tee -a $SKIP_LOG`. Single line is structurally hard for the LLM to skip-by-omission. Keep the headers and the surrounding prose (so the prompt still documents what Step 4c does); just replace the bash block.",
+    "Step 4 — Edit build.js OWNERSHIP: add the helper script (`monitor/scripts/sync-workspace-step4c.js`, category 'git') and the config file (`monitor/scripts/sync-workspace-step4c.config.json`, category 'git').",
+    "Step 5 — Edit CLAUDE.md File Ownership Rules: add a one-line entry for the helper script under git-owned. Add a Lessons Learned bullet (or equivalent rationale paragraph in the existing PROP-064 / FND-01-03 context section) summarizing the cross-bash-session + LLM-skip-by-omission root causes and the helper-script extraction pattern as the structural fix.",
+    "Step 6 — Pre-deployment synthetic test (per PROP-066 verification_path.synthetic_pre_deployment_test): run the helper script in a fresh clone with each of the 4 conditions (no recent sentinels / external-agent commit / local-only commit / force-push), verify expected sentinel actions. Capture results in a one-shot file `monitor/integrity/prop-066-synthetic-test-results-<ISO>.json` (one-time integrity artifact, classified append_only_glob via existing monitor/integrity/ classification).",
+    "Step 7 — Deploy: commit + push the new helper + config + workspace-sync.md + build.js + CLAUDE.md changes in one batch. Manually copy workspace-sync.md to FUSE (it's a prompt file — workspace-sync needs it to take effect on next scheduled run; FUSE staleness via Step 4c being currently broken).",
+    "Step 8 — Post-deployment canary (per PROP-066 verification_path.real_world_post_deployment_canary): within ≤1h of deployment, the next workspace-sync cycle writes ITS sentinel. Operator and tinker monitor `ls monitor/integrity/sync-workspace-runs-2026-06-*.json | wc -l` — expect ≥1/h, target ≥18 in 24h. If <18 in 24h, file DIRECTIVE-005 for PROP-067.",
+    "Step 9 — Mark PROP-066 status: 'implemented'. Mark PROP-064 workstream A as 'superseded by PROP-066' in PROP-064.json (add field; do not delete the proposal). PROP-064 workstream B (four-way classification, now in helper script) and workstream C (structure-integrity FUSE-staleness audit) remain valid — only workstream A is deprecated."
+  ],
+  "non_goals": [
+    "Do NOT also tackle DIRECTIVE-20260531-003 (cross-session clone cleanup) in this run — it's a separate medium-priority directive.",
+    "Do NOT change PROP-065 (GIT_APPEND_ONLY) — independent fix, already implemented. Helper script does not touch per-file pushes.",
+    "Do NOT delete PROP-064.json — its workstreams B and C remain valid; only workstream A is dead code.",
+    "Do NOT pause scheduled tasks during this deployment unless the synthetic test (Step 6) fails — the deploy is intended to be live."
+  ],
+  "context_pointers": {
+    "prop_066": "monitor/tinker/proposals/PROP-066-step-4c-helper-script-extraction.json (status: design-pending-operator-review at directive time)",
+    "predecessor_directives": ["DIRECTIVE-20260531-002 (completed by tinker 2026-05-31T06:10Z, prop_id_authored=PROP-066)"],
+    "helper_script_precedents": "monitor/scripts/push-via-api.js (PROP-050), monitor/scripts/audit-rewrite.js (PROP-041 Phase 2), monitor/scripts/prune-integrity.js (PROP-051 Workstream C) — same pattern of moving complex multi-step bash logic into Node helpers invoked from prompts.",
+    "workspace_sync_md": "monitor/prompts/workspace-sync.md (~1370 lines; Step 1 lines 143-157 = PROP-064 workstream A to deprecate; Step 4c ~line 1118-1258 = ~140-line bash block to replace with 3-line invocation).",
+    "build_js_ownership": "build.js — add 2 entries; expect ~3 lines of diff.",
+    "claude_md_section": "CLAUDE.md File Ownership Rules — add 1 bullet under git-owned for the helper script."
+  },
+  "expected_output": "Commit on origin/main containing: monitor/scripts/sync-workspace-step4c.js (new), monitor/scripts/sync-workspace-step4c.config.json (new), monitor/prompts/workspace-sync.md (modified), build.js (modified), CLAUDE.md (modified), monitor/integrity/prop-066-synthetic-test-results-<ISO>.json (one-time test artifact), monitor/tinker/proposals/PROP-066-*.json (status flipped to 'implemented'), monitor/tinker/proposals/PROP-064-*.json (workstream A marked superseded). Plus this directive flipped to status='completed' with prop_id_authored=PROP-066 and amendment_file_authored=null (no amendment needed; PROP-066 itself is the design doc).",
+  "estimated_effort": "Per PROP-066 Phase 1 estimated_effort: ~60 min Opus for the helper script + prompt edit + build.js + CLAUDE.md + synthetic test. Plus ~15 min for the deploy + FUSE sync + verification. Total ~75-90 min Opus.",
+  "priority_note": "HIGH — every day PROP-064 doesn't fire means FUSE staleness accumulates silently. Today's tinker run was the third operator-attention event for this bug class in 5 days. PROP-066 should deploy this run if Opus budget allows; otherwise next scheduled tinker. Cost-benefit is clearly favorable: ~75 min Opus to close a recurring failure mode that is consuming operator manual-sync time and creating data-integrity risk."
+}
