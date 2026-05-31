@@ -46,6 +46,15 @@ if (!VALID_TARGETS.has(target)) {
 //   - 'append_only_glob'    : same, but the walker accepts any file and lets
 //                             the glob-style matching in workspace-sync.md
 //                             pick out the timestamped/per-ID files.
+//   - 'git-append-only': .jsonl files written exclusively via clone-and-push
+//                        (PROP-065, 2026-05-31). Treated as git-owned for
+//                        git→FUSE copy, but workspace-sync MUST NOT push
+//                        FUSE→git regardless of mtime/content (mirrors
+//                        NEVER_PUSH semantics for these specific .jsonl
+//                        archive/log files). The deny is enforced in
+//                        workspace-sync.md's smart_copy via the
+//                        GIT_APPEND_ONLY array + is_git_append_only helper.
+//                        Eliminates the FND-02 destructive overwrite class.
 //
 // A file that is NOT listed here is outside the build-direction contract.
 // The one deliberate omission is `monitor/curmudgeon/tracker.json`, which
@@ -129,7 +138,30 @@ const OWNERSHIP = {
   //   Mode 3 recalibration audit. Git-owned for the same reason as
   //   workspace-sync-skips.jsonl (jsonl in non-jsonl-walked dir).
   'monitor/sloppytoppy/rewrite-attempts.json': 'git',
-  'monitor/sloppytoppy/calibration-audits.jsonl': 'git',
+  // PROP-065 (2026-05-31): reclassified from 'git' to 'git-append-only' after
+  // FND-02 destructive overwrite of queue-history.jsonl (2026-05-30T09:11Z).
+  'monitor/sloppytoppy/calibration-audits.jsonl': 'git-append-only',
+
+  // PROP-065 (2026-05-31): GIT_APPEND_ONLY .jsonl files. These are written
+  // exclusively via agent clone-and-push. workspace-sync NEVER pushes them
+  // FUSE→git regardless of mtime/content. git→FUSE propagation continues
+  // normally (treated as 'git' in the syncToWorkspace loop). This category
+  // matches workspace-sync.md's GIT_APPEND_ONLY array; if you edit one,
+  // edit both.
+  'monitor/tinker/queue-history.jsonl': 'git-append-only',
+  'monitor/integrity/prop-009-shadow.jsonl': 'git-append-only',
+  'monitor/integrity/narrative-cite-audit-archive.jsonl': 'git-append-only',
+  'monitor/integrity/push-failure-archive.jsonl': 'git-append-only',
+  'monitor/integrity/verify-pending-runs-archive.jsonl': 'git-append-only',
+  'monitor/integrity/workspace-sync-runs-archive.jsonl': 'git-append-only',
+  'monitor/analyst/expansion-tracker-archive.jsonl': 'git-append-only',
+  'monitor/analyst/attention-inbox-archive.jsonl': 'git-append-only',
+  'monitor/analyst/human-notes-archive.jsonl': 'git-append-only',
+  'monitor/curmudgeon/tracker-archive.jsonl': 'git-append-only',
+  'monitor/curmudgeon/priority-queue-archive.jsonl': 'git-append-only',
+  'monitor/curmudgeon/human-notes-archive.jsonl': 'git-append-only',
+  'monitor/decisions/human-notes-archive.jsonl': 'git-append-only',
+  'monitor/social/human-notes-archive.jsonl': 'git-append-only',
 
   // PROP-041 Phase 2: rewriter's per-run sentinel summary. Workspace-owned,
   // workspace-sync rescues hourly. Same shape as sloppytoppy-score's
@@ -385,6 +417,11 @@ function syncToWorkspace() {
 
   for (const [entry, category] of Object.entries(OWNERSHIP)) {
     if (category === 'git') {
+      if (copyIfExists(entry)) synced++;
+    } else if (category === 'git-append-only') {
+      // PROP-065 (2026-05-31): treat identically to 'git' for git→FUSE.
+      // The deny on FUSE→git is enforced in workspace-sync.md's smart_copy
+      // via the GIT_APPEND_ONLY array + is_git_append_only helper.
       if (copyIfExists(entry)) synced++;
     } else if (category === 'workspace') {
       console.log(`   · skip (workspace-owned): ${entry}`);

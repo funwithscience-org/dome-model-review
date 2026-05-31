@@ -1639,7 +1639,7 @@ ${generateVerdictBarChart(tally, wins.length, collisionWins.length)}
 <h3 id="accuracy-math-heading" class="ams-heading">Accuracy math — supporting detail</h3>
 <div class="ams-grid">
 <div class="ams-col ams-col-arith">
-<p class="ams-p"><strong>Honest accuracy ${honestAccuracy}, not the headline ${failures.dome_claimed_accuracy}.</strong> Computed as ${counts.total} confirmed &divide; (${counts.total} + ${failures.dome_claimed_failures} acknowledged + ${silentFailures} silent), where the silent-failure set is the list of claims the dome has visibly removed or suspended but excluded from its own accuracy denominator. <a href="#p3-failures" onclick="showTab('wins');return false">See the failure list &rarr;</a></p>
+<p class="ams-p"><strong>Honest accuracy ${honestAccuracy}, not the headline ${failures.dome_claimed_accuracy}.</strong> Computed as ${counts.total} confirmed &divide; (${counts.total} + ${failures.dome_claimed_failures} acknowledged + ${silentFailures} silent), where the silent-failure set is the list of claims the dome has removed from its predictions page or suspended without counting as failures in its own accuracy denominator. <a href="#p3-failures" onclick="showTab('wins');return false">See the failure list &rarr;</a></p>
 ${accuracyVariantList ? `<p class="ams-p ams-variant">Internal queries return ${accuracyVariantList} depending on which data source and counting method is used; the dome's public denominator includes only ${failures.dome_claimed_failures} acknowledged falsifications and excludes unresolved open problems and below-detection-threshold entries.</p>` : ''}
 </div>
 <div class="ams-col ams-col-source">

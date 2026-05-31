@@ -221,6 +221,56 @@ NEVER_PUSH=(
   # and monitor/prompts/reference/sloppytoppy-rewrite-rubric.md automatically.
 )
 
+# GIT_APPEND_ONLY: .jsonl files written exclusively by an agent's clone-and-push.
+# FUSE is a downstream-only replica; workspace-sync must NEVER push FUSE→git for
+# these files because the producer's row may briefly be missing from FUSE during
+# the window between producer's git push and workspace-sync's next git→FUSE sync.
+# The anti-reversion check (PROP-045) is a backstop but it is LEAKY for this class
+# (proven by 2026-05-30T09:11Z FND-02 where FUSE-content byte-matched a historic
+# commit yet anti-reversion didn't fire; root cause undiagnosed). PROP-065 makes
+# the deny the primary defense and the divergence sentinel the canary.
+#
+# Producers continue to write via clone-and-push. git→FUSE propagation happens
+# via Step 4c (PROP-061/064) on the next workspace-sync cycle.
+GIT_APPEND_ONLY=(
+  'monitor/tinker/queue-history.jsonl'
+  'monitor/sloppytoppy/calibration-audits.jsonl'
+  'monitor/integrity/prop-009-shadow.jsonl'
+  'monitor/integrity/narrative-cite-audit-archive.jsonl'
+  'monitor/integrity/push-failure-archive.jsonl'
+  'monitor/integrity/verify-pending-runs-archive.jsonl'
+  'monitor/integrity/workspace-sync-runs-archive.jsonl'
+  'monitor/analyst/expansion-tracker-archive.jsonl'
+  'monitor/analyst/attention-inbox-archive.jsonl'
+  'monitor/analyst/human-notes-archive.jsonl'
+  'monitor/curmudgeon/tracker-archive.jsonl'
+  'monitor/curmudgeon/priority-queue-archive.jsonl'
+  'monitor/curmudgeon/human-notes-archive.jsonl'
+  'monitor/decisions/human-notes-archive.jsonl'
+  'monitor/social/human-notes-archive.jsonl'
+)
+
+is_git_append_only() {
+  local dst="$1"
+  local p
+  for p in "${GIT_APPEND_ONLY[@]}"; do
+    [ "$dst" = "$p" ] && return 0
+  done
+  return 1
+}
+
+# Self-test the GIT_APPEND_ONLY list. Failure here means someone edited the list
+# inconsistently. Tests the known-victim file (queue-history.jsonl) and a known-
+# non-jsonl file (open-issues.json must be eligible for universal-pusher rescue).
+if ! is_git_append_only 'monitor/tinker/queue-history.jsonl'; then
+  echo "FATAL: is_git_append_only self-test failed (queue-history.jsonl must be in GIT_APPEND_ONLY — FND-02 victim)"
+  exit 1
+fi
+if is_git_append_only 'monitor/decisions/open-issues.json'; then
+  echo "FATAL: is_git_append_only self-test failed (open-issues.json must NOT be in GIT_APPEND_ONLY — universal-pusher rescue path)"
+  exit 1
+fi
+
 is_never_push() {
   local dst="$1"
   local p
@@ -293,6 +343,25 @@ smart_copy() {
       fi
     fi
     echo "SKIP (never-push; source/generated file): $dst" >> "$SKIP_LOG"
+    return 0
+  fi
+  if is_git_append_only "$dst"; then
+    # GIT_APPEND_ONLY (PROP-065): producer writes via clone-and-push exclusively.
+    # FUSE is downstream-only. Refuse FUSE→git push regardless of mtime/content.
+    # Log a divergence sentinel into the skip log if FUSE differs from clone —
+    # that's a producer-side canary (agent wrote to FUSE instead of clone-push).
+    if [ -f "$dst" ] && ! cmp -s "$src" "$dst"; then
+      local ws_mt git_t
+      ws_mt=$(stat -c %Y "$src" 2>/dev/null || echo 0)
+      git_t=$(git log -1 --format=%at -- "$dst" 2>/dev/null || echo 0)
+      if [ "$ws_mt" -gt "$git_t" ]; then
+        echo "SKIP (git-append-only; FUSE-newer divergence — producer-bug canary): $dst (ws_mt $ws_mt, git_t $git_t)" >> "$SKIP_LOG"
+      else
+        echo "SKIP (git-append-only; git-newer — normal stale-FUSE state): $dst" >> "$SKIP_LOG"
+      fi
+    else
+      echo "SKIP (git-append-only; FUSE matches git): $dst" >> "$SKIP_LOG"
+    fi
     return 0
   fi
   if [ ! -f "$dst" ]; then
@@ -1285,6 +1354,7 @@ Output a one-line summary: how many files were new, how many modified, or "Nothi
 - **Never revert git.** Always use `smart_copy` instead of raw `cp`. The helper refuses to overwrite a clone file whose last git commit is newer than the workspace file's mtime — this protects direct-to-git commits from being silently undone. If you find yourself wanting to force-overwrite a skipped file, stop and escalate to tinker or a human instead.
 - **Universal-pusher mode (2026-04-26):** runtime data files (data/, decision state, applied-patches) ARE eligible to push when FUSE has newer content. This is the rescue path for decider 403 push failures. Generated/source files (docs/, build-scripts/, build.js, prompts) remain in the NEVER_PUSH deny-list — those must never round-trip from FUSE. The one exception: when source data is being pushed, this agent regenerates `docs/index.html` itself in the clone (Step 3) so the live site doesn't drift.
 - **Bidirectional sync (PROP-061, 2026-05-27):** workspace-sync is now bidirectional. The Universal-pusher mode above covers FUSE→git rescue; Step 4c covers git→FUSE propagation for any commit that lands on origin/main via a path other than `build.js publish` (operator-direct API push, scheduled-agent push from a clone, decider self-apply that didn't publish). The git→FUSE direction uses `node build.js sync-workspace` (an idempotent OWNERSHIP-whitelist copy with no delete logic) and is gated by a fast-forward-only check that aborts via sentinel on a force-pushed/rebased origin. Together, the two directions close the recurring FND-01/FND-03 staleness gap that motivated PROP-061.
+- **GIT_APPEND_ONLY classification (PROP-065, 2026-05-31):** 15 .jsonl files are excluded from universal-pusher. These are written exclusively via clone-and-push (queue-history, calibration-audits, prop-009-shadow, integrity archives, analyst/curmudgeon/decider/social human-notes archives, expansion-tracker-archive, attention-inbox-archive, priority-queue-archive). FUSE-side staleness on these files is normal and self-resolves via Step 4c (PROP-061/064) git→FUSE sync. workspace-sync NEVER pushes FUSE→git for these files. If FUSE diverges (producer-side bug), the divergence is logged to workspace-sync-skips.jsonl with reason `git-append-only; FUSE-newer divergence — producer-bug canary`. Operator should inspect those entries — they indicate an agent wrote to FUSE instead of clone-and-push. This eliminates the FND-02 class (2026-05-30T09:11Z queue-history.jsonl destructive overwrite).
 - **Anti-reversion guard (PROP-045, enforce 2026-05-17):** `smart_copy` adds a content-hash check after the mtime guard. Even when FUSE mtime > git commit time, if the FUSE content sha1 matches any of the last 20 historic commits' versions on that path, the copy is SKIPPED with reason `anti-reversion; FUSE matches historic commit <sha>`. This catches the 2026-05-17T13:00Z failure mode where workspace-sync reverted analyst-baby's EXP-415..420 orphan-batch commit by pushing a pre-commit stale FUSE copy that had been updated mtime-wise but contained pre-baby content. Affects multi-writer files (`expansion-tracker.json`, `attention-inbox.json`, `curmudgeon/tracker.json`) where read-modify-write races between agents are common. Rescue path preserved: decider's committed-but-unpushed content is a never-pushed state with a content hash that won't match any historic commit, so it proceeds normally. Tinker's soft-complaints grep should flag any run where `anti_reversion` count > 0 (sustained >0 indicates a writer-side bug worth fixing at source).
 - If git pull --rebase fails with merge conflicts, do NOT attempt to resolve. Output the error and stop. A human or the tinker agent will fix it.
 - Use your own clone directory (`dome-sync-clone`), never touch `dome-review-clean`.

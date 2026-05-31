@@ -1,7 +1,7 @@
 {
   "prop_id": "PROP-065",
   "title": "Add `git-append-only` ownership category to prevent workspace-sync universal-pusher from destructively overwriting .jsonl files written via clone-and-push. 15 files in scope; confirmed 8-row data-loss on monitor/tinker/queue-history.jsonl across two events (2026-05-29T13:07Z and 2026-05-30T09:11Z).",
-  "status": "proposed",
+  "status": "implemented",
   "priority": "high",
   "author": "tinker",
   "authored_at": "2026-05-31T05:25:00Z",
@@ -25,7 +25,9 @@
     },
     "vulnerability_class_explanation": "The producer-on-clone-pushes pattern creates a window where FUSE briefly lacks the row just pushed to git. Producers (tinker, decider, prune-integrity, verify-pending-state.js running inside workspace-sync's own clone) write to their clone's local file, `git add`+`git commit`+`git push`, then exit and rm -rf the clone. FUSE only catches up via the workspace-sync git→FUSE sync (Step 4c, PROP-061/064 — currently silently broken per DIRECTIVE-20260531-002, separate fix in flight). During the window, FUSE has the pre-push content; git has the post-push content. Universal-pusher's smart_copy treats this as 'FUSE has newer/different content — push FUSE-state back'. The push deletes the row.",
     "scope_of_risk_15_files": {
-      "confirmed_overwritten": ["monitor/tinker/queue-history.jsonl"],
+      "confirmed_overwritten": [
+        "monitor/tinker/queue-history.jsonl"
+      ],
       "structurally_at_risk_not_yet_hit": [
         "monitor/sloppytoppy/calibration-audits.jsonl (tinker writes from clone during Mode 3 calibration audit; sloppytoppy-rewrite suite is currently DISABLED so write rate is zero — risk is latent until re-enabled)",
         "monitor/integrity/prop-009-shadow.jsonl (decider writes from clone during PROP-009 shadow mode)",
@@ -229,5 +231,8 @@
     "for_tinker_followup_audit": "1) Confirm monitor/prompts/workspace-sync.md contains the string 'GIT_APPEND_ONLY=(' AND 'is_git_append_only' AND the new branch in smart_copy. 2) Confirm build.js OWNERSHIP has entries with category 'git-append-only'. 3) Confirm CLAUDE.md File Ownership Rules has the 'git-append-only' subsection. 4) Run synthetic test (verification_path.synthetic_pre_deployment_test) and confirm pass criteria. 5) Wait 36h, confirm zero new negative-net-delta workspace-sync commits on the 15 files via the Step 5 audit method. ALL FIVE must pass for FIXED verdict."
   },
   "estimated_blast_radius": "Patch surface: ~30 lines workspace-sync.md + ~15 lines build.js + ~20 lines CLAUDE.md = ~65 lines total. Behavior change: 15 .jsonl files now refuse FUSE→git push. No other smart_copy logic changes. Skip log gains a new reason code. Producer agents are unchanged. Risk of new bug: low — the new branch in smart_copy mirrors the proven NEVER_PUSH pattern.",
-  "deployment_notes": "Apply patches in order: workspace-sync.md first (the deny-list is the actual fix); build.js and CLAUDE.md second (documentation parity). Single commit recommended for atomic deploy. After deploy, tinker's next Mode 3 run will verify via verification_pattern."
+  "deployment_notes": "Apply patches in order: workspace-sync.md first (the deny-list is the actual fix); build.js and CLAUDE.md second (documentation parity). Single commit recommended for atomic deploy. After deploy, tinker's next Mode 3 run will verify via verification_pattern.",
+  "implemented_at": "2026-05-31T05:52:49Z",
+  "implemented_by": "operator-cowork-session",
+  "implementation_notes": "Applied 3 files: workspace-sync.md (GIT_APPEND_ONLY array + is_git_append_only helper + smart_copy check + docs note + Operational Notes bullet), build.js (new git-append-only category in syncToWorkspace + 15 paths classified, including reclassification of calibration-audits.jsonl from git→git-append-only), CLAUDE.md (new git-append-only subsection in File Ownership Rules with the 15 paths enumerated). FND-02 closed."
 }
