@@ -132,13 +132,31 @@ fi
 git config user.email "russelst@melrosecastle.com"
 git config user.name "steve"
 
-# EXIT trap for cleanup (PROP-051 patch B2). The end-of-procedure cleanup step
-# (Step 5 below) is the primary path; this trap is the safety net for any abort
-# path (gate fire, push failure, LLM early-exit, signal). Without the trap, a
-# leaked $CLONE accumulates ~90MB per failed cycle — the directive of 2026-05-21
-# cited a 491MB /tmp/ws-sync-2 leftover exactly this way. The trap is idempotent:
-# if Step 5 already removed the clone, the trap's rm -rf is a no-op.
-trap 'rm -rf "$CLONE" 2>/dev/null' EXIT INT TERM
+# EXIT trap REMOVED (2026-05-31 — operator observation of live agent run).
+# Previously (PROP-051 patch B2): trap 'rm -rf "$CLONE" 2>/dev/null' EXIT INT TERM
+# Removed because the trap fires at end of THIS bash tool call, NOT at end of
+# the workspace-sync procedure. The LLM agent invokes Step 1 in its own bash
+# tool call (separate from Steps 2-4), so the trap pre-deletes $CLONE before
+# Steps 2-4 can use it. Empirically observed 2026-05-31: a Haiku run mid-cycle
+# narrated "The EXIT trap from Step 1 deleted the clone" and had to restructure
+# its remaining bash calls into a single consolidated call to recover. This is
+# the same cross-bash-session lesson already documented in the Operational Notes
+# below for SKIP_LOG (commit 1807d16) — re-introduced here in error by PROP-051
+# patch B2. The cleanup path now is:
+#   - PRIMARY: PROP-068 Step 4's inline `rm -rf "$CLONE"` at end of collapsed block
+#   - BACKSTOP: PROP-068 Step 4's bash-local trap (fires only at Step 4 block exit,
+#     safe because Step 4 is collapsed into ONE bash tool call per PROP-068)
+# Tradeoff: cycles that abort BEFORE reaching Step 4 (disk-pressure mid-cycle,
+# pre-push integrity gate firing, LLM context-exhaust between Steps 1-3) will
+# leak $CLONE. The line-83 `if [ ! -d "$CLONE" ]` guard handles the gone-clone
+# case; a stale-but-present $CLONE persists until next cycle's stale-clone
+# detection (per per-session UID isolation, cross-session orphans are impossible
+# to clean automatically — operator handles via the documented periodic sweep
+# in CLAUDE.md). This tradeoff is acceptable because empirical leak rate from
+# Steps 2-3 aborts is observably near-zero in workspace-sync run reports.
+#
+# DO NOT RE-ADD A `trap '...' EXIT` HERE. If you find yourself adding one,
+# the line-155 SKIP_LOG operational note and this comment both warn you off.
 
 git pull --rebase origin main
 ```
