@@ -1,0 +1,74 @@
+{
+  "report_id": "tinker-2026-05-31T06-24",
+  "ts": "2026-05-31T06:24:46Z",
+  "agent": "tinker",
+  "agent_subtype": null,
+  "mode_selected": "operator_directive_override",
+  "mode_selected_reason": "DIRECTIVE-20260531-003 (medium priority, pending) preempted Mode 0 and Mode 1-4 selection per the dispatcher's documented priority order. Directive requested diagnostic confirmation of hypothesis (a), design alternatives, and PROP authorship for cross-session dome-sync-clone cleanup.",
+  "directive_handled": {
+    "id": "DIRECTIVE-20260531-003",
+    "title": "Investigate cross-session dome-sync-clone cleanup",
+    "priority": "medium",
+    "outcome": "completed — PROP-067 authored; directive marked status=completed with prop_id_authored=PROP-067",
+    "prop_authored": "PROP-067"
+  },
+  "modes_checked": {
+    "mode_0_assigned_to_tinker": "preempted by directive; not evaluated",
+    "mode_1_pipeline_health": "preempted; quick check not run",
+    "mode_2_infrastructure": "partial — disk check ran as pre-flight side-effect: / at 93% used (684MB free), within disk-pressure-warning band but no project-induced clone leak detected (only /tmp/tinker-clone at 282MB which is this run's own clone)",
+    "mode_3_cost_engineering": "preempted",
+    "mode_4_proposals": "PROP-067 authored as the directive's requested expected_output; counts as mode_4 work-product"
+  },
+  "previous_followup": {
+    "previous_run": "tinker-2026-05-31T05-56 (deferred per CLAUDE.md PROP lifecycle verification rule — see related_proposals on PROP-067; the PROP-066 authored by that run is independent of PROP-067 and not re-verified here)",
+    "note": "Per the tinker.md output rule, this is a directive-override run; the previous-followup section is abbreviated. Next BAU tinker run should resume the standard PROP verification walk."
+  },
+  "findings": [
+    {
+      "finding_id": "FND-01",
+      "category": "diagnostic-confirmation",
+      "severity": "info",
+      "summary": "Cross-session sweep added 2026-05-29 (workspace-sync.md line 77) is structurally impossible. Hypothesis (a) from DIRECTIVE-20260531-003 confirmed.",
+      "evidence": "ls /sessions/<foreign-id>/ → Permission denied; find /sessions -maxdepth 2 ... 2>&1 → ~3300 'Permission denied' lines (silenced by 2>/dev/null in the sweep); find ... 2>/dev/null → 0 paths exit 0. /sessions/<id>/ is owned by nobody:nogroup mode 750; agent uid 4419 has no group access. Cannot fix from within the agent's perms.",
+      "disposition": "Authored PROP-067 to retire the misleading sweep and document the operator-side fallback."
+    },
+    {
+      "finding_id": "FND-02",
+      "category": "design-disposition",
+      "severity": "info",
+      "summary": "Directive's Option (ii) — move CLONE to /tmp/dome-sync-clone — ALSO unworkable. /tmp is mode 1777 (sticky) with cross-session UID namespace mapping; rm of foreign-owned /tmp files fails with Operation not permitted. Verified by direct test on /tmp/clean_clone.txt (restored after).",
+      "evidence": "ls -ld /tmp → drwxrwxrwt; rm /tmp/clean_clone.txt → Operation not permitted (exit 1); the file showed as nobody:nogroup despite being writable by its prior-session owner.",
+      "disposition": "Option (ii) explicitly rejected in PROP-067 non_patches_considered_and_rejected."
+    },
+    {
+      "finding_id": "FND-03",
+      "category": "backlog-trend",
+      "severity": "info",
+      "summary": "PROP-030 metrics: open_issues_total=65, assigned_analyst=43, assigned_tinker=0, age_ge_30d=0, oldest_open_age_days=0.47, closed_velocity_7d=134, new_velocity_7d=65, net_velocity_7d=+69, baby_drain_7d=4, verify_drain_7d=0. No thresholds firing.",
+      "evidence": "monitor/tinker/queue-history.jsonl tail. Net velocity positive — pipeline draining faster than filling.",
+      "disposition": "No action. (Note: initial computation used wrong field name `o.ts` instead of `closed_at` and produced velocity_7d=0; corrected at write-time before push. Documented in the _note field of the queue-history row.)"
+    }
+  ],
+  "patches_proposed": [
+    {
+      "prop_id": "PROP-067",
+      "title": "Cross-session dome-sync-clone sweep is structurally impossible — retire 2026-05-29 sweep, strengthen same-session cleanup, document operator-side fallback",
+      "patches": ["P1: remove cross-session sweep block from workspace-sync.md", "P2: add same-session stale-clone recovery to workspace-sync.md", "P3: add operator-side cleanup subsection to CLAUDE.md"],
+      "estimated_effort": "Decider self-apply, 15-20 min Opus"
+    }
+  ],
+  "self_audit": {
+    "prompt_size_lines": 401,
+    "clone_path": "/tmp/tinker-clone",
+    "clone_size_mb": 282,
+    "clone_cleanup_planned": true,
+    "queue_history_write_pattern": "FUSE-direct AND clone-and-push (PROP-065 says queue-history.jsonl is git-append-only and must be written via clone; the tinker.md prompt still has the FUSE-direct fs.appendFileSync. Followed both paths this run to keep both replicas in sync, but the tinker.md prompt is now out-of-sync with PROP-065 — flagged for next BAU tinker as a prompt-update candidate.)",
+    "directive_dispatcher_outcome": "directive handled correctly; status transition pending->completed applied per CLAUDE.md DIRECTIVE-LIFECYCLE additive-edit exception."
+  },
+  "cleanup_actions": [
+    {"action": "end-of-run /tmp/tinker-clone removal", "size_mb": 282, "reason": "mandatory per tinker.md Cleanup section + DIRECTIVE-20260508-001 task 3 disk hygiene"}
+  ],
+  "claude_md_audit": {
+    "scope_this_run": "skipped (directive-override run); next BAU tinker should run the standard audit. PROP-067 P3 patch will require a CLAUDE.md update; that addition was scoped to the existing Two-Repo Architecture subsection where similar operator-side capabilities are documented, so no audit-table changes anticipated."
+  }
+}

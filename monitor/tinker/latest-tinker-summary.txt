@@ -1,35 +1,38 @@
-tinker run 2026-05-31T05-56 — Mode 4 (operator directive override)
+tinker-2026-05-31T06-24 — operator_directive_override (DIRECTIVE-20260531-003)
+=============================================================================
 
-DIRECTIVE-002 (HIGH): "Author PROP — deeper PROP-064 silent-skip: divergence sentinel writes stopped at 2026-05-30T09:11Z despite hourly workspace-sync runs (PRE_PULL_SHA signal insufficient)" — COMPLETED.
+Handled DIRECTIVE-20260531-003 (medium, pending): cross-session dome-sync-clone cleanup.
 
-PROP-066 authored: monitor/tinker/proposals/PROP-066-step-4c-helper-script-extraction.json
-  Recommends extracting Step 4c into a Node helper script (monitor/scripts/sync-workspace-step4c.js).
-  Diagnosis: PROP-064's PRE_PULL_SHA capture in Step 1 doesn't survive the MCP bash tool boundary
-  to Step 4c (failure_mode_1). Combined with LLM skip-by-omission of the 140-line Step 4c block
-  (failure_mode_2) and the silent-early-return at line 1232 that writes no sentinel for the
-  modal equal-no-pull case, Step 4c writes zero artifacts on ~94% of cycles since PROP-064.
-  Fix: 80-line helper script derives PULL_MOVED-equivalent from on-disk state (last sync sentinel
-  timestamp vs latest origin/main commit); always writes a sentinel; invoked from workspace-sync.md
-  via a 3-line bash block that's structurally hard to skip. Aligns with existing helper-script
-  precedent (push-via-api.js, audit-rewrite.js, prune-integrity.js).
+Diagnostic findings:
+- Hypothesis (a) CONFIRMED. Cross-session sweep added 2026-05-29 cannot work — /sessions/<other-id>/ is
+  owned nobody:nogroup mode 750; agent uid 4419 has no group access. find walks return Permission denied;
+  the sweep's `2>/dev/null` silences this, returning 0 paths exit 0 (indistinguishable from "no orphans").
+- Option (ii) ALSO unworkable. /tmp is sticky-bit 1777 with cross-session UID namespace mapping;
+  foreign-owned /tmp files cannot be `rm`'d by this agent (verified by direct test against
+  /tmp/clean_clone.txt — Operation not permitted, exit 1; restored after).
+- Option (iii) out of scope per directive non-goal #1 (no system-level cron).
+- Recommended (i)+(iv) hybrid: retire the misleading sweep, add same-session stale-clone recovery,
+  document operator-side cleanup pattern.
 
-FND-01 (moderate): Third tinker run today (after 05-23 and 05-42) to hit FUSE-staleness on
-  operator-directives. Side-stepped by clone-checking before substantive work. FUSE-refreshed
-  DIRECTIVE-001 + DIRECTIVE-002 directives from clone (recovery).
+PROP-067 authored. Three patches:
+  P1: remove cross-session sweep block from workspace-sync.md (lines 67-78)
+  P2: add same-session stale-clone recovery before the clone-fresh guard
+  P3: add operator-side cleanup subsection to CLAUDE.md (with copy-pasteable one-liner)
 
-FND-02 (info): PROP-030 backlog metrics all green — open_issues=65, net_velocity_7d=+69,
-  assigned_analyst=43, age_ge_30d=0. Backlog has cleared substantially since early-May 230+.
+Directive marked status=completed with prop_id_authored=PROP-067.
 
-FND-03 (info): Tinker Mode-0 duplicate-pickup pattern is now well-evidenced — PROP-066's
-  deployment closes the root cause; secondary mitigation (Mode 0 fetch from origin/main rather
-  than FUSE) deferred pending PROP-066 effectiveness measurement.
+Backlog-trend metrics (PROP-030, every run):
+  open_issues_total=65, assigned_analyst=43, assigned_tinker=0, age_ge_30d=0, oldest_open=0.47d.
+  closed_velocity_7d=134, new_velocity_7d=65, net_velocity_7d=+69. No thresholds firing. Pipeline draining.
 
-Previous followup:
-  PROP-065: DEPLOYED 2026-05-31T05:52Z. Effectiveness measurement at next Mode 3 run.
-  PROP-064: STILL_BROKEN. Architectural cause + execution gap. PROP-066 closes.
-  PROP-061: PARTIAL — universal-pusher (FUSE→git) working; git→FUSE depends on PROP-066.
+  Note: initial closure-ledger read used wrong field name (`o.ts` instead of `closed_at`),
+  produced velocity_7d=0; corrected at write-time. queue-history row carries _note field documenting.
 
-Next pending directives on git:
-  DIRECTIVE-20260531-003 (medium): cross-session dome-sync-clone cleanup.
+Action for operator:
+- Review PROP-067 at monitor/tinker/proposals/PROP-067-cross-session-clone-cleanup-confirm-impossible.json.
+- If approved, decider can self-apply all three patches (all are mechanical edits to git-owned files
+  already in workspace-sync NEVER_PUSH).
+- The 1-2 min/week operator-side cleanup pattern continues to be the right answer; PROP-067 makes it
+  documented rather than implicit.
 
-No urgent operator action required tonight. PROP-066 awaits review when convenient.
+Clone cleanup: /tmp/tinker-clone (282MB) removed at end of run.
