@@ -76,11 +76,17 @@ find /tmp -maxdepth 1 -type d \( -name 'ws-sync-*' -o -name 'dome-sync-*' \) -mm
 # on most /sessions/<other-id>/ directories — the find walks what it can see.
 find /sessions -maxdepth 2 -type d -name 'dome-sync-clone' -mmin +60 ! -path "$CLONE" -exec rm -rf {} \; 2>/dev/null || true
 
+# [CLONE-DEBUG] Inventory clone state at Step 1 entry (added 2026-05-31):
+echo "[CLONE-DEBUG] Step 1 entry: SESSION=$SESSION CLONE=$CLONE"
+echo "[CLONE-DEBUG] Step 1 entry: \$CLONE exists? $([ -d "$CLONE" ] && echo YES || echo NO)"
+echo "[CLONE-DEBUG] Step 1 entry: /tmp clone-like dirs: $(ls -d /tmp/ws-sync-* /tmp/dome-sync-* 2>/dev/null | tr '\n' ' ' || echo '(none)')"
+
 # Clone fresh if needed (first run only). This agent runs in its own ephemeral
 # session, so it cannot rely on dome-review-clean being present. The PAT is
 # pulled from the workspace's git remote URL — Cowork sets that URL when
 # mounting the workspace, so it is always current.
 if [ ! -d "$CLONE" ]; then
+  echo "[CLONE-DEBUG] Step 1: \$CLONE missing → fresh-clone path"
   AUTH_URL=$(git -C "${WORKSPACE}" remote get-url origin 2>/dev/null)
   PAT=$(echo "$AUTH_URL" | grep -oP 'x-access-token:\K[^@]+')
   if [ -z "$PAT" ]; then
@@ -92,9 +98,13 @@ if [ ! -d "$CLONE" ]; then
   # working + ~20MB .git = ~90MB total, vs ~290MB for a full clone). The depth
   # is shared across all scheduled-agent clones per PROP-049.
   git clone --depth 50 "https://x-access-token:${PAT}@github.com/funwithscience-org/dome-model-review.git" "$CLONE"
+  echo "[CLONE-DEBUG] Step 1: fresh clone created at $CLONE"
+else
+  echo "[CLONE-DEBUG] Step 1: \$CLONE already exists, reusing (size=$(du -sh "$CLONE" 2>/dev/null | cut -f1))"
 fi
 
 cd "$CLONE"
+echo "[CLONE-DEBUG] Step 1: cd-ed into $CLONE (cwd=$(pwd))"
 
 # Working-tree population check (PROP-051 patch A3, post-2026-05-21 disaster).
 # Verify the clone actually populated its working tree. A successful clone
@@ -121,6 +131,7 @@ if [ "${TRACKED_FILE_COUNT:-0}" -lt "$MIN_TRACKED_FILES" ]; then
 JSON
   echo "[workspace-sync] ABORT: working-tree underpopulated (${TRACKED_FILE_COUNT} files < ${MIN_TRACKED_FILES})."
   echo "                 Clone is likely no-checkout or partial. Sentinel: $ABORT_FILE"
+  echo "[CLONE-DEBUG] Step 1 abort-path: rm -rf $CLONE then exit 0"
   # Clean up the bad clone so the next cycle starts fresh.
   cd / && rm -rf "$CLONE"
   exit 0
@@ -1283,7 +1294,49 @@ rm -f "$SKIP_LOG"
 # proven-invoked run-report block (174-cycle run-report existence in 9d ⇒
 # Step 4b reliably executes). The trap above is the defense-in-depth backstop
 # for mid-block failures; this is the primary explicit cleanup.
+echo "[CLONE-DEBUG] Step 4 end: about to rm -rf $CLONE (current size=$(du -sh "$CLONE" 2>/dev/null | cut -f1))"
 rm -rf "$CLONE"
+echo "[CLONE-DEBUG] Step 4 end: rm executed; \$CLONE exists? $([ -d "$CLONE" ] && echo YES-LEAK || echo NO-OK)"
+
+# --- Post-cleanup verification (added 2026-05-31 — operator request) ---
+# Confirms cleanup actually worked by inspecting BOTH known clone locations:
+#   1. $CLONE = ${SESSION}/dome-sync-clone  (canonical session-bound path)
+#   2. /tmp/ws-sync-* and /tmp/dome-sync-*  (legacy alt-paths swept at Step 1 line 65)
+# If either has a residual directory post-rm, the cleanup leaked.
+# This catches:
+#   - The rm failing silently (permissions, busy file, etc.)
+#   - A path-shadowing bug where the rm targeted a different path than was actually used
+#   - Recovery clones the agent might create at a fallback path under runtime restructuring
+#     (e.g., if the agent recovers from a trap pre-delete by cloning to /tmp/dome-sync-recovery)
+# Result is logged to stdout (operator-visible in live observation) AND written
+# to ${WORKSPACE}/monitor/integrity/workspace-sync-leak-<ts>.json (FUSE only —
+# per-session, so this session's leak sentinel will not auto-propagate to next
+# session's FUSE; operator-side detection via /sessions/*/dome-sync-clone grep
+# remains the authoritative cross-session check). The stdout line is the
+# real-time signal; the FUSE sentinel is best-effort persistence for this
+# session's debug.
+LEAKED=()
+[ -d "$CLONE" ] && LEAKED+=("$CLONE (session)")
+for d in /tmp/ws-sync-* /tmp/dome-sync-*; do
+  [ -d "$d" ] && [ "$d" != "$CLONE" ] && LEAKED+=("$d (tmp)")
+done
+if [ ${#LEAKED[@]} -gt 0 ]; then
+  echo "[CLONE-LEAK] WARNING: ${#LEAKED[@]} leaked clone director(ies) detected post-cleanup:"
+  printf '  - %s\n' "${LEAKED[@]}"
+  mkdir -p "${WORKSPACE}/monitor/integrity"
+  LEAK_FILE="${WORKSPACE}/monitor/integrity/workspace-sync-leak-$(date -u +%Y-%m-%dT%H-%M-%SZ).json"
+  # Build JSON via printf — bash string concatenation safe because LEAKED values
+  # are paths we just enumerated (no shell-injection risk from /tmp glob results).
+  LEAKED_JSON=$(printf '"%s",' "${LEAKED[@]}" | sed 's/,$//')
+  printf '{"event":"workspace-sync-cleanup-leak","timestamp":"%s","cycle_run_id":"%s","leaked_paths":[%s],"session":"%s"}\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    "${RUN_ID:-unknown}" \
+    "$LEAKED_JSON" \
+    "${SESSION}" > "$LEAK_FILE" 2>/dev/null || true
+  echo "[CLONE-LEAK] FUSE sentinel: $LEAK_FILE (per-session; cross-session detection via operator-side /sessions/*/dome-sync-clone grep)"
+else
+  echo "[CLONE-DEBUG] post-cleanup verification PASS: 0 leaked clones (both session and /tmp paths clean)"
+fi
 ```
 
 ### Step 5: Report
