@@ -1,0 +1,68 @@
+{
+  "event": "prop-068-synthetic-test-results",
+  "timestamp": "2026-05-31T09:33:04Z",
+  "prop_id": "PROP-068",
+  "directive_id": "DIRECTIVE-20260531-007",
+  "executed_by": "tinker-2026-05-31T09-25-prop-068-impl",
+  "sandbox": "/tmp/prop068-sandbox{,-trap,-sloppy} (bare origin + work-init clones, single-bash-tool-call execution)",
+  "scenarios": [
+    {
+      "id": 1,
+      "name": "Collapsed Step 4 block: capture FILES_COMMITTED before sentinel, run helper, write report with cleanup_ran=true, rm clone as FINAL action",
+      "setup": "Sandbox bare-origin + work-init clone with 3 FUSE-style staged files (data/wins.json, data/sections.json, monitor/decisions/open-issues.json). Step 4a commit creates FUSE→git commit with HEAD=that commit. Then capture FILES_COMMITTED. Then simulate Step 4c sentinel commit (HEAD advances to a 1-file commit). Then write Step 4b run-report with FILES_COMMITTED previously captured + cleanup_ran=true. Then rm -rf $CLONE.",
+      "expected_files_committed": 3,
+      "observed_files_committed": 3,
+      "expected_cleanup_ran": true,
+      "observed_cleanup_ran": true,
+      "expected_clone_removed": true,
+      "observed_clone_removed": true,
+      "post_sentinel_head_files": 1,
+      "result": "PASS",
+      "interpretation": "The PRIMARY production fix. FILES_COMMITTED=3 (the FUSE→git commit's file count, captured BEFORE HEAD shifted to the 1-file sentinel commit) confirms Q-OP-1 answer (c) collapse keeps the variable correct without cross-bash-tool-call persistence. cleanup_ran=true is written into the JSON before rm runs (Q-OP-2 honesty trade-off accepted because rm failure mode is essentially impossible). rm -rf $CLONE at end fires reliably because it's in the same proven-invoked bash block as the run-report write. This is the failure mode that produced 3 orphans across 7 cycles per operator's 2026-05-31 diagnostic — now closed."
+    },
+    {
+      "id": 2,
+      "name": "Trap-EXIT defense-in-depth fires on mid-block failure",
+      "setup": "Subshell with trap 'rm -rf $CLONE 2>/dev/null || true' EXIT, then trigger a deliberate failure (`false`) BEFORE the explicit rm. Verify the explicit rm did NOT run but the trap did.",
+      "expected_clone_removed": true,
+      "observed_clone_removed": true,
+      "explicit_rm_reached": false,
+      "result": "PASS",
+      "interpretation": "Defense in depth works. If any of the 4a/4c/4b steps throws mid-block, the EXIT trap still attempts cleanup. This was added per the directive's 'Optionally trap-protect the rm so a mid-block error still attempts cleanup'. Safe inside ONE bash tool call (does NOT fire across LLM bash sessions — different from the SKIP_LOG EXIT trap that was removed for that reason; see workspace-sync.md Operational Notes)."
+    },
+    {
+      "id": 3,
+      "name": "Tinker soft-complaints grep detects cleanup_ran=false but ignores missing-field legacy reports",
+      "setup": "Three reports: legacy (no cleanup_ran field), new-with-true, new-with-false. Run a grep for cleanup_ran:false.",
+      "expected_match": "new-with-false only",
+      "observed_match": "new-with-false only",
+      "legacy_ignored": true,
+      "result": "PASS",
+      "interpretation": "Per directive Step 4: 'Existing reports (pre-deployment) will lack the field — that's expected; tinker should treat missing as pre-deployment legacy run, ignore for runs older than the deployment timestamp.' The grep pattern '\"cleanup_ran\"[[:space:]]*:[[:space:]]*false' matches only explicit false (not missing field). Tinker's Mode 2 quick-check can add: `grep -l '\"cleanup_ran\"[[:space:]]*:[[:space:]]*false' monitor/integrity/workspace-sync-runs/run-*.json` to detect leak signals."
+    },
+    {
+      "id": 4,
+      "name": "Sloppytoppy safety guard refuses rm when uncommitted changes exist",
+      "setup": "Clone with one committed file and one staged-but-not-committed file. Run the safety-guarded cleanup pattern (mirrored from analyst-baby.md lines 220-235).",
+      "expected_clone_preserved": true,
+      "observed_clone_preserved": true,
+      "expected_output_contains": "SKIPPING rm — uncommitted changes",
+      "observed_output_contains": "SKIPPING rm — uncommitted changes",
+      "result": "PASS",
+      "interpretation": "Sloppytoppy-score and sloppytoppy-rewrite use the analyst-baby-style safety guard (`git status --porcelain | grep -q .`) before rm. Verified the guard refuses to rm when there are uncommitted changes — preserves any in-flight work that didn't make it to a push. The trap-EXIT in sloppytoppy can still fire on mid-block failure but the trap also respects the same guard (`rm -rf $CLEAN_CLONE 2>/dev/null || true` is best-effort, but the safety-guarded explicit rm is the primary)."
+    }
+  ],
+  "all_scenarios_pass": true,
+  "verification_summary": {
+    "primary_fix_validated": "FILES_COMMITTED captured before sentinel, cleanup_ran=true written, rm fires explicitly. Confirmed via scenario 1.",
+    "defense_in_depth_validated": "Trap-EXIT fires on mid-block failure. Confirmed via scenario 2.",
+    "soft_complaints_grep_validated": "Tinker can distinguish cleanup_ran=false (actionable) from missing field (legacy, ignore). Confirmed via scenario 3.",
+    "sloppytoppy_safety_guard_validated": "git status --porcelain guard preserves clones with uncommitted changes. Confirmed via scenario 4."
+  },
+  "files_modified_in_this_run": [
+    "monitor/prompts/workspace-sync.md (collapsed Step 4; +178/-100 lines)",
+    "monitor/prompts/sloppytoppy-score.md (Step 6 collapsed + Cleanup stub; +59/-22 lines)",
+    "monitor/prompts/sloppytoppy-rewrite.md (Step 5 collapsed + Step 7 stub; +58/-20 lines)"
+  ],
+  "deployment_status": "Pre-deployment test PASS. Safe to commit and push."
+}

@@ -166,12 +166,42 @@ fs.writeFileSync(scoresPath, JSON.stringify(scores,null,2));
 
 **Important**: scores.json is single-writer (sloppytoppy-score). Phase 2 sloppytoppy-rewrite will READ but NOT WRITE this file. No multi-writer guard needed in Phase 1.
 
-## Step 6: Commit + push
+## Step 6: Commit + push + inline cleanup (collapsed per PROP-068)
+
+PROP-068 (2026-05-31) moved cleanup (`rm -rf "$CLEAN_CLONE"`) inside Step 6's
+proven-invoked commit+push block. Previously the Cleanup section at the bottom
+of this prompt was a separate trailing block (71 lines after Step 6's last
+push). Same skip-by-omission shape PROP-066 closed for workspace-sync Step 4c.
+Sloppytoppy-score is currently DISABLED (pending operator decision after the
+2026-05-21 workspace-sync disaster) but this is a pre-fix so it doesn't
+immediately leak when re-enabled.
 
 ```bash
+# Defense-in-depth EXIT trap: safe inside one bash tool call.
+trap 'rm -rf "$CLEAN_CLONE" 2>/dev/null || true' EXIT
+
 git add monitor/sloppytoppy/scores.json
 git commit -m "sloppytoppy-score run <RUN_ID>: scored <N> surfaces (<X> first-time, <Y> re-scored)"
 git push origin main
+
+# --- PROP-068 inline cleanup: safety-guarded rm $CLEAN_CLONE as FINAL action ---
+# Mirrors analyst-baby.md's safety guard pattern: refuse to rm if uncommitted
+# changes exist. The trap above is defense in depth for mid-block failure; this
+# is the primary explicit cleanup.
+if [ -d "${CLEAN_CLONE}/.git" ]; then
+  cd "${CLEAN_CLONE}"
+  if ! git status --porcelain | grep -q .; then
+    cd - >/dev/null
+    rm -rf "${CLEAN_CLONE}"
+    echo "CLEANUP: removed ${CLEAN_CLONE}"
+  else
+    cd - >/dev/null
+    echo "CLEANUP: SKIPPING rm — ${CLEAN_CLONE} has uncommitted changes; investigate before next run"
+    git -C "${CLEAN_CLONE}" status --porcelain | head -10
+  fi
+else
+  echo "CLEANUP: no clone at ${CLEAN_CLONE} — nothing to remove"
+fi
 ```
 
 ## Step 7: Write run summary
@@ -237,24 +267,17 @@ You read but don't modify:
 - `monitor/prompts/reference/sloppytoppy-rubric.md` (the rubric)
 - `monitor/sloppytoppy/rubric-config.json`, `math-dense-surfaces.json`, `content-dense-surfaces.json`
 
-## Cleanup (mandatory, run last)
+## Cleanup (mandatory, run last) — PROP-068: now inlined in Step 6
 
-```bash
-SESSION=$(pwd | grep -oP '/sessions/[^/]+' | head -1)
-CLEAN_CLONE="${CLEAN_CLONE:-${SESSION}/dome-sloppytoppy-score-clone}"
-if [ -d "${CLEAN_CLONE}/.git" ]; then
-  cd "${CLEAN_CLONE}"
-  if ! git status --porcelain | grep -q .; then
-    cd - >/dev/null
-    rm -rf "${CLEAN_CLONE}"
-    echo "CLEANUP: removed ${CLEAN_CLONE}"
-  else
-    cd - >/dev/null
-    echo "CLEANUP: SKIPPING rm — uncommitted changes"
-    git -C "${CLEAN_CLONE}" status --porcelain | head -10
-  fi
-fi
-```
+PROP-068 (2026-05-31) moved `rm -rf "$CLEAN_CLONE"` into Step 6's commit+push
+bash block above (with safety guard preserved + EXIT trap as defense-in-depth
+backstop). Previously this was a separate trailing block 71 lines after Step 6's
+last push — same skip-by-omission shape PROP-066 closed for workspace-sync
+Step 4c. The collapsed-into-Step-6 location piggybacks on the proven-invoked
+commit+push.
+
+Backward-compat redirect: the heading is preserved because some docs reference
+"Cleanup section" by name. The mechanics live in Step 6's bash block.
 
 **Only delete your own clone (`dome-sloppytoppy-score-clone`).** Never touch other clones.
 

@@ -1069,9 +1069,63 @@ fi
 echo "[workspace-sync] Pre-push delete-gate: ${STAGED_DEL} deletes (cap ${DEL_CAP}). OK."
 ```
 
-### Step 4: Commit and push
+### Step 4: Commit + push + Step 4c helper + run-report + cleanup (collapsed per PROP-068)
+
+PROP-068 (2026-05-31) collapsed what used to be four separate sections —
+Step 4 (FUSE→git commit+push), Step 4c (PROP-066 helper invocation), Step 4b
+(run-report write+push), Cleanup (rm `$CLONE`) — into ONE bash block. Each was
+previously a trailing block separated by section-heading prose; the LLM agent
+provably skipped ~43% of trailing Cleanup blocks (operator's 2026-05-31 diagnostic:
+3 orphans across 7 cycles in the 14:00-20:00Z window, with run-reports present
+for all 7 cycles confirming Step 4b ran). Same skip-by-omission shape PROP-066
+just closed for Step 4c. The fix is structural-not-behavioral: every action that
+MUST run on every cycle now lives in the single block below.
+
+Ordering inside the block matters:
+- **4a (FUSE→git commit+push) runs first** — establishes the HEAD that 4b's
+  `files_committed` capture reads from.
+- **`FILES_COMMITTED` is captured next**, before HEAD shifts to any sentinel
+  commit. Per DIRECTIVE-20260531-007 Q-OP-1 answer (c): collapse keeps the
+  variable local to one bash session so no cross-bash-tool-call persistence
+  hack (tmpfile, grep-by-message) is needed.
+- **4c (PROP-066 helper)** runs next while `$CLONE` is still alive. It writes
+  EITHER a sync-workspace-runs sentinel OR a divergence audit OR a non-ff abort;
+  always exactly one of the three so future tinker audits can distinguish
+  "ran and decided no-op" from "didn't run at all". `node build.js sync-workspace`
+  is idempotent (OWNERSHIP-whitelist copy, no delete logic).
+- **4b (run-report write + commit + push)** runs next. `cleanup_ran:true` is
+  written into the report — per DIRECTIVE-007 Q-OP-2 the structural-claim
+  framing is fine because the rm failure mode is essentially impossible
+  ($CLONE owned by this UID, no other process holds open handles, scheduled-task
+  land).
+- **rm `$CLONE`** runs LAST, as an unconditional statement plus an EXIT trap for
+  defense in depth. The trap was added per the directive's "Optionally
+  trap-protect the rm so a mid-block error still attempts cleanup" — even if
+  some earlier step in the block throws, the trap fires on bash exit. This is
+  DIFFERENT from the EXIT trap on SKIP_LOG that was removed for cross-bash-session
+  reasons (see Operational Notes); the trap here fires inside ONE bash tool call
+  and is safe.
+
+Safety architecture for 4c (preserved from PROP-061/064, enforced in the script):
+- Read-only divergence detection; the script never amends git history other than
+  writing the sentinel file the post-call bash commits.
+- Auto-sync only runs when the script computes need_sync=1 (classification=
+  local-ancestor-of-remote, OR classification=equal AND upstream HEAD timestamp >
+  last-sentinel timestamp).
+- Force-pushed/rebased origin → script writes `sync-workspace-non-ff-abort-<ts>.json`
+  and exits 1. Caller does NOT propagate the exit code (Step 4c is best-effort).
+- Script crash → `sync-workspace-step4c-crash-<ts>.json` with stack trace +
+  input state (HEAD, REMOTE, last-sentinel-at) per DIRECTIVE-20260531-004 Q2. Exit 2.
 
 ```bash
+# === PROP-068 collapsed Step 4 (4a → capture → 4c → 4b → cleanup) ===
+# Defense-in-depth: set EXIT trap FIRST so any mid-block failure still attempts
+# the rm. The explicit rm at end is primary; trap is the backstop. Safe inside
+# one bash tool call (does NOT fire across LLM bash sessions — see Operational
+# Notes on why an EXIT trap was removed for SKIP_LOG).
+trap 'rm -rf "$CLONE" 2>/dev/null || true' EXIT
+
+# --- 4a: commit + push FUSE→git ---
 DOCS_NOTE=""
 if git diff --cached --name-only -- docs/index.html | grep -q .; then
   DOCS_NOTE="
@@ -1080,33 +1134,43 @@ fi
 git commit -m "Workspace sync: $(date -u +%Y-%m-%dT%H:%M:%SZ)
 
 Auto-committed workspace-only files from FUSE mount.
-Files from: analyst, curmudgeon, poller, decider, social, integrity, tinker.${DOCS_NOTE}"
+Files from: analyst, curmudgeon, poller, decider, social, integrity, tinker.${DOCS_NOTE}" 2>&1 | tail -3 || true
 
-git push origin main
-```
+PUSH_OUT=$(git push origin main 2>&1)
+PUSH_EXIT=$?
+echo "$PUSH_OUT" | tail -2
+if [ $PUSH_EXIT -ne 0 ] && echo "$PUSH_OUT" | grep -qi "rejected\|non-fast-forward"; then
+  echo "[workspace-sync] push rejected; pull --rebase + retry once"
+  git pull --rebase origin main 2>&1 | tail -3
+  git push origin main 2>&1 | tail -2
+fi
 
-If push fails due to remote changes, pull --rebase and retry once:
-```bash
-git pull --rebase origin main && git push origin main
-```
+# --- Capture FILES_COMMITTED NOW, before HEAD shifts to any sentinel commit ---
+# Per Q-OP-1: collapse keeps this variable local. Reads HEAD = the FUSE→git
+# commit just pushed (or its predecessor if the commit was empty — grep -c
+# handles both cases honestly).
+FILES_COMMITTED=$(git log -1 --name-only --pretty=format: HEAD 2>/dev/null | grep -c .)
 
-### Step 4b: Write run report (for tinker visibility)
+# --- 4c: PROP-066 helper for git→FUSE propagation ---
+node monitor/scripts/sync-workspace-step4c.js 2>&1 | tail -10 || echo "[PROP-066] helper exited non-zero (sentinel written; see monitor/integrity/)"
+git add monitor/integrity/sync-workspace-runs-*.json \
+        monitor/integrity/sync-workspace-non-ff-abort-*.json \
+        monitor/integrity/sync-workspace-step4c-crash-*.json 2>/dev/null || true
+if ! git diff --cached --quiet 2>/dev/null; then
+  git commit -m "PROP-066 step4c sentinel: $(date -u +%Y-%m-%dT%H:%M:%SZ)" 2>&1 | tail -1
+  git push origin main 2>&1 | tail -1
+fi
 
-Write a JSON report capturing this run's outcome AND any narrative observations
-you noticed during the run. This is the only durable record of workspace-sync's
-narrative — without it, agent-side observations (e.g. "the /tmp permission issue
-swallowed the skip log writes") are invisible to tinker and to operator review.
-The /tmp skip-log permission bug lived undetected for 17 days / 100 runs because
-workspace-sync had no report file for tinker's soft-complaints grep to scan.
-Do not skip this step.
-
-```bash
+# --- 4b: write + commit + push run-report ---
+# This is the only durable record of workspace-sync's narrative; the /tmp
+# skip-log permission bug lived undetected for 17 days / 100 runs because
+# workspace-sync had no report file for tinker's soft-complaints grep.
+# Do not skip the AGENT_NOTES narrative.
 mkdir -p monitor/integrity/workspace-sync-runs
 RUN_REPORT_PATH="monitor/integrity/workspace-sync-runs/run-$(date -u +%Y-%m-%dT%H-%M-%SZ).json"
 SKIPS_COUNT=$([ -f "$SKIP_LOG" ] && wc -l < "$SKIP_LOG" || echo 0)
 NEVER_PUSH_COUNT=$([ -f "$SKIP_LOG" ] && grep -c "never-push" "$SKIP_LOG" || echo 0)
 MTIME_GUARD_COUNT=$([ -f "$SKIP_LOG" ] && grep -c "mtime-guard" "$SKIP_LOG" || echo 0)
-FILES_COMMITTED=$(git log -1 --name-only --pretty=format: HEAD 2>/dev/null | grep -c .)
 
 # AGENT_NOTES is the narrative field. You (the LLM) MUST fill it with a one-to-
 # few-sentence observation about the run. Required strings to include if they
@@ -1115,17 +1179,14 @@ FILES_COMMITTED=$(git log -1 --name-only --pretty=format: HEAD 2>/dev/null | gre
 #   - "swallowed" or "leftover" if you suspect prior-run state contaminated this run
 #   - "fallback" if you took an alternative path because the primary path failed
 #   - "warning" if anything looked off
-#   - "routine" if the run was completely uneventful (this is also useful — tinker's
-#     soft-complaints grep ignores "routine"; the field needs SOMETHING for the JSON
-#     to be valid)
-# Keep it to <=300 chars. The grep target is the prose, not a structured enum,
-# so write what you'd say to the operator if they asked "anything weird?"
+#   - "routine" if the run was completely uneventful (tinker's soft-complaints grep
+#     ignores "routine"; the field needs SOMETHING for the JSON to be valid)
+# Keep it to <=300 chars.
 AGENT_NOTES="<<<FILL_THIS_IN — see comment above>>>"
 
-# Env vars MUST be set BEFORE the `node -e` invocation, not after — see
-# Operational Notes for the bash semantics. Do NOT try to persist RUN_ID
-# across bash tool calls via /tmp/...; each call is a fresh shell session and
-# fixed /tmp paths hit the same per-session-uid permission collision that
+# Env vars MUST be set BEFORE the `node -e` invocation. Do NOT try to persist
+# RUN_ID across bash tool calls via /tmp/...; each call is a fresh shell session
+# and fixed /tmp paths hit the same per-session-uid permission collision that
 # bit SKIP_LOG. The node script falls back to generating its own run_id from
 # timestamp+pid when process.env.RUN_ID is empty — let it.
 OUT="$RUN_REPORT_PATH" \
@@ -1147,56 +1208,38 @@ const rec={
     never_push: parseInt(process.env.NEVER_PUSH_COUNT||'0',10),
     mtime_guard: parseInt(process.env.MTIME_GUARD_COUNT||'0',10)
   },
-  agent_notes: process.env.AGENT_NOTES || ''
+  agent_notes: process.env.AGENT_NOTES || '',
+  cleanup_ran: true
 };
 fs.writeFileSync(out, JSON.stringify(rec, null, 2));
 console.log('Run report written:', out);
 "
 
-# Stage and commit the run report itself in a follow-up commit so it lands in git
-# (it's append-only and tinker reads from git, not from FUSE).
 git add "$RUN_REPORT_PATH"
 git commit -m "workspace-sync run report: $(date -u +%Y-%m-%dT%H:%M:%SZ)" 2>&1 | tail -1
 
 # PROP-064 workstream B sub-fix (2026-05-30): capture push exit code + output
 # instead of silently swallowing. Push failures here contributed to the
-# 2026-05-28T21:07Z misdiagnosis (transient clone-internal SHAs in the abort
-# sentinel). Surface failures into next cycle's AGENT_NOTES.
+# 2026-05-28T21:07Z misdiagnosis. Surface failures into next cycle's AGENT_NOTES.
 RUNREPORT_PUSH_OUT=$(git push origin main 2>&1)
 RUNREPORT_PUSH_EXIT=$?
 echo "$RUNREPORT_PUSH_OUT" | tail -1
 if [ $RUNREPORT_PUSH_EXIT -ne 0 ]; then
-  echo "[PROP-064] Step 4b run-report push FAILED (exit=$RUNREPORT_PUSH_EXIT) — observation will surface in next cycle's AGENT_NOTES"
-  # Best-effort tmpfile so next cycle's Step 4b can read it before AGENT_NOTES is set
+  echo "[PROP-064] run-report push FAILED (exit=$RUNREPORT_PUSH_EXIT) — observation will surface in next cycle's AGENT_NOTES"
   mkdir -p "${SESSION}/ws-sync-state" 2>/dev/null
   echo "soft-complaint: run-report push failed (exit=$RUNREPORT_PUSH_EXIT, tail=$(echo "$RUNREPORT_PUSH_OUT" | tail -1 | head -c 80))" > "${SESSION}/ws-sync-state/last-runreport-push-fail.txt" 2>/dev/null
 fi
 
-# Now safe to clean up the skip-log tmpfile (replaces the EXIT trap that was
-# removed because it fired across LLM bash sessions; see Operational Notes).
+# --- Cleanup: skip-log tmpfile (was the post-Step-4b rm-f, kept in place) ---
 rm -f "$SKIP_LOG"
-```
 
-### Step 4c: git→FUSE propagation (PROP-066 helper-script extraction)
-
-Invoke the helper script. It encapsulates the four-way classification + sync logic that lived inline through PROP-061/064; PROP-066 moved it into a Node helper because the inline bash block was being silently skipped on ~94% of cycles (LLM skip-by-omission + cross-bash-session PULL_MOVED loss). The script reads `monitor/scripts/sync-workspace-step4c.config.json` for its bootstrap fallback, derives the upstream-newer-than-last-sync signal from the most recent `monitor/integrity/sync-workspace-runs-*.json` sentinel timestamp (not from a Step-1-set bash variable), and ALWAYS writes exactly one sentinel — success, divergence audit, abort, or no-op — so future tinker audits can distinguish "ran and decided no-op" from "didn't run at all".
-
-Safety architecture (preserved from PROP-061/064, now enforced inside the script):
-- Read-only divergence detection; the script never amends git history other than writing the sentinel file the post-call bash commits.
-- Auto-sync (`node build.js sync-workspace`) only runs when the script computes need_sync=1 (classification=local-ancestor-of-remote, OR classification=equal AND upstream HEAD timestamp > last-sentinel timestamp).
-- Force-pushed / rebased origin (classification=true-non-ff) → script writes `sync-workspace-non-ff-abort-<ts>.json` and exits 1. Caller does NOT propagate the exit code (Step 4c is best-effort; workspace-sync continues to Step 5).
-- Script crash → `sync-workspace-step4c-crash-<ts>.json` with stack trace + input state (HEAD, REMOTE, last-sentinel-at) per DIRECTIVE-20260531-004 Q2. Exit 2.
-- `node build.js sync-workspace` is idempotent: OWNERSHIP-whitelist copy, no delete logic.
-
-```bash
-node monitor/scripts/sync-workspace-step4c.js 2>&1 | tail -10 || echo "[PROP-066] helper exited non-zero (sentinel written; see monitor/integrity/)"
-git add monitor/integrity/sync-workspace-runs-*.json \
-        monitor/integrity/sync-workspace-non-ff-abort-*.json \
-        monitor/integrity/sync-workspace-step4c-crash-*.json 2>/dev/null || true
-if ! git diff --cached --quiet 2>/dev/null; then
-  git commit -m "PROP-066 step4c sentinel: $(date -u +%Y-%m-%dT%H:%M:%SZ)" 2>&1 | tail -1
-  git push origin main 2>&1 | tail -1
-fi
+# --- PROP-068 inline cleanup: rm $CLONE as FINAL action ---
+# Previously a separate "Cleanup" trailing section; skipped ~43% of cycles per
+# operator's 2026-05-31 diagnostic. The collapsed location piggybacks on the
+# proven-invoked run-report block (174-cycle run-report existence in 9d ⇒
+# Step 4b reliably executes). The trap above is the defense-in-depth backstop
+# for mid-block failures; this is the primary explicit cleanup.
+rm -rf "$CLONE"
 ```
 
 ### Step 5: Report
@@ -1216,12 +1259,19 @@ Output a one-line summary: how many files were new, how many modified, or "Nothi
 - If git pull --rebase fails with merge conflicts, do NOT attempt to resolve. Output the error and stop. A human or the tinker agent will fix it.
 - Use your own clone directory (`dome-sync-clone`), never touch `dome-review-clean`.
 
-## Cleanup (mandatory, run last)
+## Cleanup (mandatory, run last) — PROP-068: now inlined in collapsed Step 4
 
-Delete your clone directory to reclaim disk space. Each session creates a fresh clone, and without cleanup these accumulate and fill the disk.
+PROP-068 (2026-05-31) moved `rm -rf "$CLONE"` into the Step 4 bash block above —
+as the FINAL statement of that block, with an EXIT trap as defense-in-depth
+backstop. Previously this section was a separate trailing block that the LLM
+agent skipped ~43% of cycles per operator's 2026-05-31 diagnostic (3 orphans
+across 7 cycles in the 14:00-20:00Z window, with run-reports present for all 7
+confirming Step 4b ran but Cleanup did not). The collapsed-into-Step-4 location
+piggybacks on the proven-invoked run-report block — every workspace-sync run
+that writes a run-report now also rms its clone.
 
-```bash
-rm -rf "${CLONE}"
-```
+Backward-compat redirect: the heading is preserved because `CLAUDE.md` and some
+agent prompts reference "Cleanup section" by name. The mechanics live in
+Step 4's collapsed bash block above.
 
 **Only delete `dome-sync-clone`.** Never touch `dome-review-clean` (analyst/decider) or `dome-curmudgeon-clone` (curmudgeon).
