@@ -91,6 +91,43 @@ if(!existing){
 
 8. **Close related issues — do NOT skip.** For each issue ID in `issue_ids`, move from open-issues.json to closed-issues.json with `status: "fixed"`, `fixed_by: "expansion-integration"`. Verify removal. Unclosed issues become zombies.
 
+**Step 8 self-test (PROP-070, added 2026-05-31).** Immediately after the Step 8 close-loop completes for a just-integrated EXP, run a fail-loud verification that ALL entries in `exp.issue_ids` have been removed from `open-issues.json` (or are present only with `status='fixed'` / `status='wontfix'`). The 2026-05-31 commit 1727ee3 (decider-2026-05-31T12-28) integrated EXP-464 and EXP-465 (tracker flipped to `integrated=true`) but did NOT close ISS-2326 or ISS-2327, which were in those EXPs' `issue_ids` arrays — the LLM-skip-by-omission failure mode (same class as PROP-066 / PROP-068). The self-test converts this silent leak into an immediate operator-visible run abort.
+
+```bash
+node -e "
+const fs=require('fs');
+const INTEGRATED_EXP=process.env.INTEGRATED_EXP; // EXP-NNN that was just flipped to integrated=true
+if(!INTEGRATED_EXP){ console.error('Step 8 self-test: INTEGRATED_EXP env var not set; skipping'); process.exit(0); }
+const oi=JSON.parse(fs.readFileSync('monitor/decisions/open-issues.json','utf8'));
+const tracker=JSON.parse(fs.readFileSync('monitor/analyst/expansion-tracker.json','utf8'));
+let exp=(tracker.items||[]).find(e=>e.id===INTEGRATED_EXP);
+if(!exp){
+  try{
+    for(const line of fs.readFileSync('monitor/analyst/expansion-tracker-archive.jsonl','utf8').split('\n')){
+      if(!line.trim())continue;
+      try{ const e=JSON.parse(line); if(e.id===INTEGRATED_EXP){ exp=e; break; } }catch{}
+    }
+  }catch{}
+}
+if(!exp){ console.error('Step 8 self-test: '+INTEGRATED_EXP+' not in tracker or archive'); process.exit(1); }
+const issueIds=Array.isArray(exp.issue_ids)?exp.issue_ids:[];
+if(issueIds.length===0){ console.log('Step 8 self-test: '+INTEGRATED_EXP+' has no issue_ids; pass'); process.exit(0); }
+const leaked=issueIds.filter(id=>{
+  const i=oi.issues.find(x=>x.id===id);
+  return i && i.status!=='fixed' && i.status!=='wontfix';
+});
+if(leaked.length>0){
+  console.error('Step 8 SELF-TEST FAIL: '+INTEGRATED_EXP+' integrated but '+leaked.length+' issue_ids leaked:');
+  leaked.forEach(id=>console.error('  LEAK '+id));
+  console.error('Aborting commit. Run the Step 8 close-loop for these IDs and re-verify.');
+  process.exit(1);
+}
+console.log('Step 8 self-test: '+INTEGRATED_EXP+' all '+issueIds.length+' issue_ids closed; pass');
+"
+```
+
+Run with `INTEGRATED_EXP=EXP-NNN node -e ...` (substitute the EXP id you just integrated). If the self-test exits non-zero, do NOT commit — re-run Step 8's close-loop for the leaked IDs, then re-verify.
+
 **8b. M2 EXP-tied auto-close (PROP-026 Phase 1, landed 2026-05-10).** After Step 8 closes the ISSs explicitly listed in `issue_ids`, M2 sweeps `open-issues.json` for orphan ISSs that reference EXP-NNN but were never linked to its `issue_ids`. This catches the ISS-1547-archetype: "EXP-249 ready — pending curmudgeon review" still sitting in open-issues 14 days after EXP-249 integrated. Roughly 5-10 of the open-issues backlog are this shape per re-measurement.
 
 ```bash

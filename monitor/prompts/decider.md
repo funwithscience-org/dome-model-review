@@ -611,6 +611,176 @@ skipped.forEach(s=>console.log('  kept-open', s.id, '-', s.reason));
 
 **Why a sweep (mirroring PROP-056's reasoning):** the dependent-ISS close-back step is fragile to add at every integration site (the decider would have to walk open-issues.json on every EXP integration and on every iss closure, both of which already do plenty). A single end-of-run sweep is the robust answer: any close site that forgot to walk back gets cleaned up at run-end, regardless of which close mechanism triggered it.
 
+## End-of-Run Step A0c: assigned-analyst Chain-Aware Close Sweep (PROP-070, added 2026-05-31, sibling to PROP-056 Step A0 and PROP-058 Step A0b)
+
+Immediately after Step A0b (blocked-on-curmudgeon residue), walk `open-issues.json` for entries with `status === 'assigned-analyst'`. These are ISSs whose EXP-chain endpoint has reached `integrated=true` (often via baby-consolidation into a parent EXP that then integrated) but whose canonical Step 8 close-on-integration never fired for them — either because Step 8 was bypassed (the LLM-skip-by-omission defect class that produced the 2026-05-31 6-DIRECT-case event) or because the chain endpoint integrated upstream and Step 8 only closed the endpoint's literal issue_ids, not the upstream-pre-consolidation references.
+
+```bash
+node -e "
+const fs=require('fs');
+const RUN_ID=process.env.RUN_ID || 'decider-unknown';
+const oi=JSON.parse(fs.readFileSync('monitor/decisions/open-issues.json','utf8'));
+const ci=JSON.parse(fs.readFileSync('monitor/decisions/closed-issues.json','utf8'));
+const tracker=JSON.parse(fs.readFileSync('monitor/analyst/expansion-tracker.json','utf8'));
+
+// Build EXP map keyed by id: live tracker entries take precedence over archive duplicates
+const expMap=new Map();
+for(const e of (tracker.items||[])){ expMap.set(e.id, e); }
+try{
+  for(const line of fs.readFileSync('monitor/analyst/expansion-tracker-archive.jsonl','utf8').split('\n')){
+    if(!line.trim())continue;
+    try{
+      const e=JSON.parse(line);
+      if(!expMap.has(e.id)) expMap.set(e.id, e);
+    }catch{}
+  }
+}catch{}
+
+// Chain walker: follow status='consolidated-into-EXP-X' from start expId up to depth 8.
+// Returns {endpoint:<EXP entry>, path:[expId...]} or {endpoint:null, path:[...], reason:'cycle'|'unresolved'|'too-deep'}.
+function chainEndpoint(expId, seen){
+  seen = seen || new Set();
+  const path=[];
+  let cur=expId, depth=0;
+  while(cur && depth<8){
+    if(seen.has(cur)) return {endpoint:null, path, reason:'cycle'};
+    seen.add(cur); path.push(cur);
+    const e=expMap.get(cur);
+    if(!e) return {endpoint:null, path, reason:'unresolved'};
+    if(typeof e.status==='string'){
+      const m=e.status.match(/^consolidated-into-(EXP-\d+)$/);
+      if(m){ cur=m[1]; depth++; continue; }
+    }
+    return {endpoint:e, path};
+  }
+  return {endpoint:null, path, reason:'too-deep'};
+}
+
+function extractExpId(iss){
+  if(iss.exp_id && /^EXP-\d+$/.test(iss.exp_id)) return iss.exp_id;
+  if(iss.related_expansion && /^EXP-\d+$/.test(iss.related_expansion)) return iss.related_expansion;
+  const txt=String(iss.description||'')+' '+String(iss.title||'')+' '+String(iss.notes||'')+' '+String(iss.routing_reason||'');
+  const m=txt.match(/\bEXP-\d+\b/g);
+  return m && m[0] || null;
+}
+
+// 48h recently-touched guard: skip ISSs touched recently — leave to natural integration flow
+const NOW=Date.now();
+function tooFresh(iss){
+  const t=iss.last_touched_at || iss.last_updated || iss.routed_at || iss.assigned_at;
+  if(!t) return false;
+  return (NOW - Date.parse(t)) < 48*3600*1000;
+}
+
+// Amendment-noted hold-back: integration_mode='amendment-noted-pre-EXP-XXX-integration' means
+// the amendment was filed but its real-site effect is gated on parent EXP integration.
+// Parse parent EXP from integration_mode; if parent is NOT itself integrated, hold the ISS open.
+function amendmentNotedHeldBack(endpoint){
+  const mode=String(endpoint.integration_mode||'');
+  if(!mode.startsWith('amendment-noted-')) return false;
+  const m=mode.match(/EXP-\d+/);
+  if(!m){
+    // Can't parse parent — conservative: hold ISS open
+    return true;
+  }
+  const parentId=m[0];
+  const parent=expMap.get(parentId);
+  if(!parent) return true; // parent not in tracker — hold
+  if(parent.integrated===true) return false; // parent integrated — amendment-noted is now durable
+  return true; // parent not yet integrated — hold
+}
+
+const candidates=oi.issues.filter(i=>i.status==='assigned-analyst');
+if(candidates.length===0){ console.log('Step A0c sweep: no assigned-analyst residue'); process.exit(0); }
+
+// Ledger dedup
+const ledgerPath='monitor/decisions/closure-ledger.jsonl';
+const existingLedger=new Set();
+try{
+  for(const l of fs.readFileSync(ledgerPath,'utf8').split('\n')){
+    if(!l.trim())continue;
+    try{existingLedger.add(JSON.parse(l).iss_id);}catch{}
+  }
+}catch{}
+
+const now=new Date().toISOString();
+const migrated=[], heldOpen=[];
+for(const iss of candidates){
+  if(tooFresh(iss)){ heldOpen.push({id:iss.id, reason:'touched <48h — leave to natural integration flow'}); continue; }
+  const startExp=extractExpId(iss);
+  if(!startExp){ heldOpen.push({id:iss.id, reason:'no extractable EXP reference'}); continue; }
+  const walk=chainEndpoint(startExp);
+  if(!walk.endpoint){ heldOpen.push({id:iss.id, reason:'chain '+walk.reason+'; path='+walk.path.join('->')}); continue; }
+  if(walk.endpoint.integrated!==true){ heldOpen.push({id:iss.id, reason:'endpoint '+walk.endpoint.id+' not integrated (status='+walk.endpoint.status+')'}); continue; }
+  if(amendmentNotedHeldBack(walk.endpoint)){ heldOpen.push({id:iss.id, reason:'amendment-noted hold-back: endpoint '+walk.endpoint.id+' integration_mode='+walk.endpoint.integration_mode}); continue; }
+
+  // Migrate to closed-issues.json
+  iss.status='fixed';
+  iss.fixed_at=now;
+  iss.fixed_by='exp-chain-endpoint-integrated';
+  iss.migrated_at=now;
+  iss.migrated_by_run=RUN_ID;
+  iss.migrated_by_mechanism='step-a0c-sweep-PROP-070';
+  iss.closure_evidence={
+    start_exp:startExp,
+    chain_path:walk.path,
+    endpoint_id:walk.endpoint.id,
+    endpoint_integrated_at:walk.endpoint.integrated_at || walk.endpoint.completed_at,
+    endpoint_integration_mode:walk.endpoint.integration_mode || null
+  };
+  ci.issues.push(iss);
+  if(!existingLedger.has(iss.id)){
+    fs.appendFileSync(ledgerPath, JSON.stringify({
+      closed_at: now, closed_by_run: RUN_ID, closed_by_mechanism: 'step-a0c-sweep',
+      iss_id: iss.id, prior_status: 'assigned-analyst',
+      closure_reason: 'PROP-070 sweep: EXP-chain endpoint integrated (' + walk.path.join('->') + ' -> ' + walk.endpoint.id + ')',
+      action_taken: 'patch',
+      closure_evidence: Object.assign({severity:iss.severity||'unknown', description_excerpt:String(iss.description||'').slice(0,120)}, iss.closure_evidence),
+      can_revert: false, dryrun: false
+    })+'\n');
+  }
+  migrated.push({id:iss.id, chain:walk.path, endpoint:walk.endpoint.id});
+}
+
+// Remove migrated entries from open-issues.json
+const migratedIds=new Set(migrated.map(m=>m.id));
+oi.issues = oi.issues.filter(i=>!migratedIds.has(i.id));
+oi.last_updated=now;
+fs.writeFileSync('monitor/decisions/open-issues.json',JSON.stringify(oi,null,2));
+fs.writeFileSync('monitor/decisions/closed-issues.json',JSON.stringify(ci,null,2));
+console.log('Step A0c sweep: migrated='+migrated.length+', held-open='+heldOpen.length);
+migrated.forEach(m=>console.log('  closed', m.id, 'via chain', m.chain.join('->'), '-> endpoint', m.endpoint));
+heldOpen.forEach(h=>console.log('  kept-open', h.id, '-', h.reason));
+
+// Self-test: every remaining status='assigned-analyst' entry MUST satisfy one of the safety predicates
+// (touched <48h, no extractable EXP, chain unresolved/cycle/too-deep, endpoint not integrated, amendment-noted hold-back).
+// If any remaining entry's chain endpoint is integrated AND not amendment-noted-held AND >48h old, the sweep failed.
+const oi2=JSON.parse(fs.readFileSync('monitor/decisions/open-issues.json','utf8'));
+const remaining=oi2.issues.filter(i=>i.status==='assigned-analyst');
+const leaks=[];
+for(const iss of remaining){
+  if(tooFresh(iss)) continue;
+  const startExp=extractExpId(iss);
+  if(!startExp) continue;
+  const walk=chainEndpoint(startExp);
+  if(!walk.endpoint) continue;
+  if(walk.endpoint.integrated!==true) continue;
+  if(amendmentNotedHeldBack(walk.endpoint)) continue;
+  leaks.push({id:iss.id, chain:walk.path, endpoint:walk.endpoint.id});
+}
+if(leaks.length>0){
+  console.error('Step A0c SELF-TEST FAIL: '+leaks.length+' assigned-analyst ISSs remain whose chain endpoint is integrated:');
+  leaks.forEach(l=>console.error('  LEAK', l.id, 'chain='+l.chain.join('->'), 'endpoint='+l.endpoint));
+  console.error('Aborting commit. Investigate why the sweep did not close these.');
+  process.exit(1);
+}
+"
+```
+
+**Self-test:** after the sweep, every remaining `status='assigned-analyst'` entry in open-issues.json must satisfy AT LEAST ONE safety predicate: (a) touched <48h, (b) no extractable EXP reference, (c) chain unresolved/cycle/too-deep, (d) endpoint not integrated, (e) amendment-noted hold-back. If ANY remaining entry's chain endpoint is integrated AND >48h old AND not amendment-noted-held, the sweep failed — fail-loud and abort commit. This is the same defect class as Step 8 bypass (canonical close path documented, LLM execution dropped the step); the fail-loud abort converts a silent leak into an operator-visible signal.
+
+**Why this exists (PROP-070):** the 2026-05-31 operator burndown of 18 stuck ISSs surfaced two gaps: (Gap A — DIRECT, 6 cases) Step 8 is sometimes bypassed (commit 1727ee3 integrated EXP-464/465 but did NOT close ISS-2326/2327); (Gap B — CONSOLIDATED, 12 cases) status='assigned-analyst' ISSs whose EXP-chain endpoint reached integrated=true have no existing sweep (PROP-056 covers status='closed', PROP-058 covers status='blocked-on-curmudgeon'). Step A0c targets the right status enum AND adds chain-awareness via the consolidation walker, so an upstream pre-consolidation ISS closes when its chain endpoint integrates. The amendment-noted hold-back protects ISSs (e.g., ISS-2343/2344/2345) whose chain endpoint is an amendment-noted-pre-parent-integration EXP — those should remain open until the parent EXP actually integrates.
+
 ## End-of-Run Step A: Analyst Attention Inbox
 
 **After** self-applying patches but **before** queue management, check whether any of your patches this run affect content the analyst previously analyzed. If you patched a WIN's evidence or verdict text, or modified a section the analyst wrote an expansion for, append an item to `monitor/analyst/attention-inbox.json`:

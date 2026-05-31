@@ -302,6 +302,64 @@ PROJ_MB=$(du -sm "${SESSION}/mnt" /tmp/*-clone /tmp/dome-* 2>/dev/null | awk '{s
 echo "DISK: project-induced footprint ${PROJ_MB}MB (FUSE workspaces + ephemeral agent clones + agent scratch)"
 if [ "$PROJ_MB" -ge 1000 ]; then echo "DISK CRITICAL: project footprint ≥1000MB — likely accumulated clone leak"; fi
 if [ "$PROJ_MB" -ge 500 ]; then echo "DISK WARNING: project footprint ≥500MB — investigate clone cleanup"; fi
+# PROP-070 observability counter (added 2026-05-31): count status='assigned-analyst' ISSs
+# whose EXP-chain endpoint is integrated=true (excluding amendment-noted hold-back).
+# Expected to be 0 after Step A0c sweep deploys. >0 means there are pre-existing cases
+# the sweep didn't catch — escalate for investigation. Mirrors disk-space and stranded-patches
+# quick-checks: cheap to compute, surfaced as a soft-complaint when non-zero.
+ORPHAN_INTEGRATED=$(cd "${WORKSPACE}" 2>/dev/null && node -e "
+const fs=require('fs');
+try{
+  const oi=JSON.parse(fs.readFileSync('monitor/decisions/open-issues.json','utf8'));
+  const tracker=JSON.parse(fs.readFileSync('monitor/analyst/expansion-tracker.json','utf8'));
+  const expMap=new Map();
+  for(const e of (tracker.items||[])){ expMap.set(e.id, e); }
+  try{
+    for(const line of fs.readFileSync('monitor/analyst/expansion-tracker-archive.jsonl','utf8').split('\n')){
+      if(!line.trim())continue;
+      try{ const e=JSON.parse(line); if(!expMap.has(e.id)) expMap.set(e.id, e); }catch{}
+    }
+  }catch{}
+  function chainEndpoint(expId, seen){
+    seen=seen||new Set(); let cur=expId, depth=0;
+    while(cur && depth<8){
+      if(seen.has(cur)) return null;
+      seen.add(cur);
+      const e=expMap.get(cur); if(!e) return null;
+      if(typeof e.status==='string'){ const m=e.status.match(/^consolidated-into-(EXP-\d+)$/); if(m){ cur=m[1]; depth++; continue; } }
+      return e;
+    }
+    return null;
+  }
+  function extractExpId(iss){
+    if(iss.exp_id && /^EXP-\d+$/.test(iss.exp_id)) return iss.exp_id;
+    if(iss.related_expansion && /^EXP-\d+$/.test(iss.related_expansion)) return iss.related_expansion;
+    const txt=String(iss.description||'')+' '+String(iss.title||'')+' '+String(iss.notes||'')+' '+String(iss.routing_reason||'');
+    const m=txt.match(/\bEXP-\d+\b/g); return m && m[0] || null;
+  }
+  function amendmentNotedHeldBack(endpoint){
+    const mode=String(endpoint.integration_mode||'');
+    if(!mode.startsWith('amendment-noted-')) return false;
+    const m=mode.match(/EXP-\d+/); if(!m) return true;
+    const parent=expMap.get(m[0]); if(!parent) return true;
+    return parent.integrated!==true;
+  }
+  let n=0;
+  for(const iss of oi.issues){
+    if(iss.status!=='assigned-analyst') continue;
+    const startExp=extractExpId(iss); if(!startExp) continue;
+    const ep=chainEndpoint(startExp); if(!ep) continue;
+    if(ep.integrated!==true) continue;
+    if(amendmentNotedHeldBack(ep)) continue;
+    n++;
+  }
+  process.stdout.write(String(n));
+}catch(e){ process.stdout.write('0'); }
+" 2>/dev/null || echo 0)
+echo "PROP-070 observability: ${ORPHAN_INTEGRATED} orphan-integrated assigned-analyst ISSs"
+if [ "${ORPHAN_INTEGRATED}" -gt 0 ] 2>/dev/null; then
+  echo "PROP-070 SOFT-COMPLAINT: ${ORPHAN_INTEGRATED} ISSs whose EXP-chain endpoint is integrated should have been closed by Step A0c sweep"
+fi
 ```
 Trigger: Any STALE file, auth failure, project footprint ≥500MB, or previous report flagged FUSE/infra issues.
 → Read `monitor/prompts/reference/tinker-infrastructure.md`, execute that procedure.
