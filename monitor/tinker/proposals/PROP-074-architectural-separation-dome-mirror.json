@@ -1,0 +1,130 @@
+{
+  "id": "PROP-074",
+  "title": "Architectural separation of git→FUSE sync into single-purpose dome-mirror agent; restore workspace-sync to its original unidirectional FUSE→git identity",
+  "authored_by": "tinker",
+  "authored_at": "2026-06-01T05:55:00Z",
+  "authored_by_run": "tinker-2026-06-01T05-30-Z (DIRECTIVE-20260601-001)",
+  "status": "implemented",
+  "implemented_at": "2026-06-01T05:55:00Z",
+  "implemented_by_run": "tinker-2026-06-01T05-30-Z (DIRECTIVE-20260601-001)",
+  "priority": "high",
+  "related_props": ["PROP-066", "PROP-068", "PROP-072", "PROP-073", "PROP-061", "PROP-064"],
+  "supersedes_partial": ["PROP-066", "PROP-068", "PROP-072", "PROP-073"],
+  "operator_directive": "DIRECTIVE-20260601-001",
+  "problem": {
+    "summary": "After 6 successive iterations attempting to make workspace-sync reliably invoke its Step 4c (git→FUSE propagation helper), the cumulative success rate ceiling stabilized at ~14% (1 sentinel in 7 overnight cycles post-PROP-073). The failure mode was identical across all 6 iterations: the LLM agent (Haiku, later confirmed under Sonnet) pattern-matched the unfamiliar git→FUSE half as decorative scaffolding and silently dropped it, regardless of where in the prompt it was placed, how it was framed, or what self-attestation backstops were in place.",
+    "iteration_history": [
+      {"iteration": 1, "prop": "PROP-066", "deploy_commit": "ba212cf", "approach": "extract Step 4c logic into monitor/scripts/sync-workspace-step4c.js so the in-prompt invocation is 3 lines instead of ~140; helper always writes exactly one sentinel so 'no-op' is distinguishable from 'didn't run'", "result": "post-deploy sentinel rate ~0 across multiple cycles; LLM still skipped the 3-line invocation"},
+      {"iteration": 2, "prop": "PROP-068", "deploy_commit": "e22b0e8 (2026-05-31 09:33:45Z)", "approach": "collapse Step 4a + Step 4c + Step 4b + Cleanup into ONE bash tool call (so trailing-block skip mode is structurally impossible)", "result": "7/7 cycles 09:33→16:09Z produced zero sync-workspace-runs sentinels while Steps 4a + 4b ran reliably in all 7 (run-reports visible). MIDDLE-position skip remained even within a single bash block"},
+      {"iteration": 3, "prop": "PROP-072", "deploy_commit": "4177f60", "approach": "hoist Step 4c to FIRST position inside the collapsed block (immediately after trap setup, before Step 4a's commit). Reasoning: LLM agents reliably execute FIRST + LAST positions but drop MIDDLE", "result": "post-hoist cycles still produced mis-titled commits 'PROP-066 step4c sentinel: ...' that contained ZERO sync-workspace-runs sentinels (Step 3 universal-pusher rescues mis-attributed). Sentinel rate ~14%"},
+      {"iteration": 4, "prop": "contextual_reframe (commit 143419813f)", "approach": "reframe prompt opening from 'You are the Workspace Sync agent' to 'You are the bidirectional FUSE↔git syncer'; both halves are core, every cycle. Hypothesis: self-conception framing would override pattern-rejection", "result": "no measurable improvement; pattern-recognition over the prompt body filtered the git→FUSE half regardless of opening framing"},
+      {"iteration": 5, "prop": "PROP-073", "deploy_commit": "15674330", "approach": "stage-delta gating + AGENT_NOTES self-attestation backstop + filename-ISO parse to fix the false-positive SENTINEL_COUNT mtime heuristic + absolute write-path log in helper. Three sub-fixes to prevent the mis-titled-commit failure mode + give detective signal when Step 4c silently skipped", "result": "stage-delta gating DID work for preventing mis-titled commits (defense-in-depth detection layers ARE effective); but preventive prompt-design fix for the underlying pattern-rejection failure did not. Post-PROP-073 sentinel rate: 1/7 = ~14%"},
+      {"iteration": 6, "prop": "PROP-074 (this one)", "approach": "architectural separation — extract Step 4c into its own dome-mirror scheduled agent with a single-action prompt; restore workspace-sync to its original FUSE→git-only identity"}
+    ],
+    "root_cause_finding": "Agent self-conception filters out unfamiliar actions regardless of prompt design. workspace-sync's months-long established identity as a FUSE→git pusher is fundamentally incompatible with adding a git→FUSE half. Sonnet (and likely Haiku) filter the unfamiliar action out via pattern-recognition over the prompt; preventive prompt-design fixes (relocation, reframing, self-attestation) all failed because they operate on the wrong layer.",
+    "smoking_gun_commit": "fb52feb8 (2026-05-31T21:20Z) — titled 'PROP-066 step4c sentinel' but contained 13 unrelated files from Step 3 universal-pusher rescues. Proved the pattern-rejection failure mode: the LLM ran the surrounding commit-and-push wrapper but skipped the actual `node monitor/scripts/sync-workspace-step4c.js` invocation in between, so when the wrapper looked for sentinels there were none, but git diff --cached --quiet was false (Step 3 had already staged its files), so the wrapper committed Step 3's work under Step 4c's title."
+  },
+  "solution": {
+    "summary": "Extract the git→FUSE sync into a new, single-purpose dome-mirror scheduled agent. When the only action in the prompt IS the helper invocation, pattern-matching cannot filter it out. workspace-sync returns to its original unidirectional identity (FUSE→git only), which Sonnet/Haiku has been reliably executing for months.",
+    "components": {
+      "new_agent": {
+        "name": "dome-mirror",
+        "model": "Haiku",
+        "cadence": "hourly at top-of-hour (`0 * * * *`)",
+        "prompt_file": "monitor/prompts/dome-mirror.md (178 lines)",
+        "single_action": "Run monitor/scripts/sync-workspace-step4c.js; commit any sentinel it wrote; push; cleanup",
+        "scheduling_offset_rationale": "dome-mirror at :00 runs BEFORE workspace-sync at :05 (or :10). dome-mirror updates FUSE from git → workspace-sync's smart_copy then compares fresh FUSE vs clone. If workspace-sync ran first with stale FUSE, smart_copy could revert recent git commits via the mtime-guard backfire. Recommended cron: dome-mirror `0 * * * *` + workspace-sync `5 * * * *` (5-min offset)."
+      },
+      "helper_script_disposition": {
+        "path": "monitor/scripts/sync-workspace-step4c.js",
+        "decision": "REUSE as-is for v1. Optional cosmetic rename to dome-mirror-sync.js deferred (creates rebase noise; helper is proven correct when invoked)",
+        "callers_after_prop_074": ["dome-mirror (sole caller)"]
+      },
+      "workspace_sync_changes": {
+        "opening_reframe": "Title reverted from 'Bidirectional FUSE↔git syncer' to 'FUSE→git pusher'. Body reverted from 'You are the bidirectional FUSE↔git syncer' to 'You are the FUSE→git pusher'. Counterpart-agent paragraph added explaining dome-mirror handles the reverse direction.",
+        "step_4c_block_removal": "The PROP-066 helper invocation block (FIRST-position per PROP-072), the PROP-073 stage-delta gating + commit block, and the PROP-073 sub-fix #2 filename-ISO SENTINEL_COUNT_THIS_CYCLE python block — all removed from the collapsed Step 4 bash block. Replaced with a brief comment noting the work moved to dome-mirror.",
+        "agent_notes_simplification": "Removed `step4c-not-invoked` (PROP-072 self-attestation) and `step4c-mis-titled` (PROP-073 detective backstop) from AGENT_NOTES required-string list. These were detective layers for the now-removed Step 4c work.",
+        "preserved_unchanged": [
+          "PROP-068 collapsed Step 4 architecture (Step 4a + capture + Step 4b + cleanup remain in ONE bash block; trap-protected; explicit final rm)",
+          "PROP-051 patches (degraded-mode prohibitions, disk-pressure pre-flight, working-tree-size check, delete-sanity gate)",
+          "[CLONE-DEBUG] and [CLONE-LEAK] verification logging at end of Step 4 (detective-only, still valuable)",
+          "Universal-pusher rescue path for runtime data files (data/, decision state, applied-patches)",
+          "PROP-045 anti-reversion content-hash check inside smart_copy",
+          "PROP-065 GIT_APPEND_ONLY classification for 15 .jsonl files",
+          "PROP-013 NEVER_PUSH strand rescue (Step 3.5)",
+          "PROP-014 verify-pending-state + audit-narrative-citations + deploy-watch (Step 3.6)",
+          "PROP-024 JSON-validity gate + PROP-050 mtime-drift backstop for docs/index.html"
+        ]
+      },
+      "rules_section_updates": {
+        "added": "'Do NOT run node build.js sync-workspace or monitor/scripts/sync-workspace-step4c.js. That is the dome-mirror agent's job.'",
+        "added": "Counterpart-agent rule replacing the 'Bidirectional sync (PROP-061)' rule. Explains dome-mirror handles git→FUSE; together the two agents cover both directions.",
+        "removed": "Old 'Bidirectional sync (PROP-061)' rule that described workspace-sync as bidirectional."
+      }
+    }
+  },
+  "operator_action_required": {
+    "summary": "Tinker authors PROP + prompts + workspace-sync changes; operator creates the scheduled task. dome-mirror is NOT running until operator registers it.",
+    "scheduled_task_creation_recipe": {
+      "tool": "mcp__scheduled-tasks__create_scheduled_task",
+      "fields": {
+        "taskId": "dome-mirror",
+        "cronExpression": "0 * * * *",
+        "description": "Git→FUSE propagation: detect upstream commits not yet visible in the workspace FUSE mount, run monitor/scripts/sync-workspace-step4c.js to propagate, commit + push the resulting sentinel. Companion to dome-workspace-sync (which handles the FUSE→git direction). PROP-074 architectural separation.",
+        "model_hint": "Haiku — single mechanical action; cost matters at hourly cadence. If reliability needs Sonnet, operator decides.",
+        "skill_md_content": "---\nname: dome-mirror\ndescription: Git→FUSE propagation: detect upstream commits not yet in workspace FUSE mount, propagate via sync-workspace-step4c.js helper, commit + push the resulting sentinel.\n---\n\nRead your full instructions from the prompt file at `monitor/prompts/dome-mirror.md` in the \"dome-model-review\" folder in your workspace. Follow those instructions exactly — they contain your complete procedure, output schemas, and rules.\n\nYour workspace contains the \"dome-model-review\" folder with all agent prompts, outputs, and configuration. Start by reading the dome-mirror prompt file, then execute it.\n"
+      },
+      "scheduling_offset_note": "Recommend dome-mirror at `0 * * * *` and dome-workspace-sync moved to `5 * * * *` (or kept at its current hourly slot but verified ≥5 min after dome-mirror). dome-mirror updating FUSE before workspace-sync reads FUSE prevents the mtime-guard backfire where workspace-sync would otherwise revert recent commits."
+    }
+  },
+  "validation": {
+    "synthetic_test_planned": "After this PROP commits, tinker runs the dome-mirror.md prompt's Step 1 + Step 2 bash blocks manually (without the scheduled-task wrapper). Expected: PAT prelude verifies HTTP 200, fresh clone succeeds, working-tree-size check passes, sync-workspace-step4c.js invokes successfully, a sentinel is written to monitor/integrity/sync-workspace-runs-*.json with action='no-op-no-upstream-movement' OR 'auto-sync' depending on origin state at test time, commit + push succeed, cleanup removes the clone.",
+    "post_deploy_verification": "After operator creates the scheduled task, expected behavior over the first 24h: ≥20/24 hourly cycles produce a sync-workspace-runs-*.json sentinel (≥83% sentinel rate, vs ~14% under the prior in-prompt architecture). The metric to watch: count of new sync-workspace-runs files per 24h window vs cron-cycle count.",
+    "workspace_sync_regression_check": "Verify workspace-sync.md still runs its FUSE→git half reliably after the simplification. Past sentinel rate for workspace-sync's own run-reports was ~100%; should remain so."
+  },
+  "lessons_captured": [
+    "Agent self-conception filters out unfamiliar actions regardless of prompt design. Extending an agent's responsibilities beyond its established identity triggers pattern-rejection failure modes that are NOT addressable via prompt design alone.",
+    "FIRST + LAST positions execute reliably across Sonnet/Haiku; MIDDLE positions drop. This was empirically established by PROP-072 but did not generalize to 'just put the new work at FIRST position' — pattern-rejection still fired against actions inconsistent with the agent's established role.",
+    "Self-attestation backstops are gameable. PROP-072/073's AGENT_NOTES `step4c-not-invoked` required the agent to NOTICE it didn't run the action; the same pattern-rejection that caused the skip also caused the agent to not notice it skipped. Detective signal requires structural evidence (sentinel files, commit titles, file mtimes), not LLM self-report.",
+    "Stage-delta detection (PROP-073 sub-fix #1) DID work for preventing mis-titled commits. Defense-in-depth detection layers DO work; preventive prompt-design fixes for pattern-rejection do not. This is the right architecture: prevent the structural failure mode with detection layers, fix the underlying pattern-rejection with architectural separation.",
+    "Architectural separation into single-purpose agents is the structural fix when extending a multi-purpose agent triggers the pattern-rejection bug class. The cost (one more scheduled task slot, one more hourly cycle of clone + push) is acceptable when the alternative is permanent unreliability."
+  ],
+  "lifecycle_impact_on_prior_props": {
+    "PROP-066": {
+      "new_status": "partially-superseded-by-PROP-074",
+      "preserved": "monitor/scripts/sync-workspace-step4c.js helper script — sole mechanism dome-mirror invokes; PROP-074 reuses as-is",
+      "obsolete": "The in-workspace-sync Step 4c invocation block — removed by PROP-074"
+    },
+    "PROP-068": {
+      "new_status": "partially-superseded-by-PROP-074",
+      "preserved": "Collapse architecture for Step 4 (commit + capture + report + cleanup in ONE bash tool call; trap-protected; explicit final rm) — still in workspace-sync.md and remains the right structural fix for trailing-block skip",
+      "obsolete": "The 'Step 4c FIRST position' aspect of the collapse — Step 4c is gone entirely from workspace-sync"
+    },
+    "PROP-072": {
+      "new_status": "superseded-by-PROP-074",
+      "rationale": "Hoist-to-FIRST positioning was a fix for Step 4c's middle-position skip. With Step 4c removed from workspace-sync entirely, there's nothing to hoist. The empirical lesson (FIRST + LAST positions execute reliably) remains valuable for future prompt-design but the specific PROP-072 fix is obsolete."
+    },
+    "PROP-073": {
+      "new_status": "superseded-by-PROP-074",
+      "rationale": "Stage-delta gating, AGENT_NOTES self-attestation backstop, filename-ISO parse, and absolute write-path log were detective layers for the now-removed Step 4c work. With nothing to detect, the layers are obsolete. The helper script's absolute write-path log (sub-fix #3) remains in the helper itself and continues to provide value for dome-mirror runs."
+    },
+    "PROP-061": {
+      "new_status": "partially-superseded-by-PROP-074",
+      "preserved": "git→FUSE direction is still done (now by dome-mirror) using node build.js sync-workspace via the helper. The direction itself isn't going away.",
+      "obsolete": "The 'in-workspace-sync Step 4c' implementation approach — replaced by separate scheduled agent"
+    },
+    "PROP-064": {
+      "new_status": "partially-superseded-by-PROP-074",
+      "preserved": "PRE_PULL_SHA capture and PULL_MOVED signal concept — folded into helper's durable-state-derived NEED_SYNC computation",
+      "obsolete": "The in-workspace-sync inline implementation"
+    }
+  },
+  "non_goals_observed": [
+    "Did NOT delete monitor/scripts/sync-workspace-step4c.js — preserved as PROP-074's mechanism",
+    "Did NOT delete PROP-066/068/072/073 proposal files — preserved as historical record (this PROP's iteration_history captures the lesson)",
+    "Did NOT touch PROP-071 (FUSE-staleness audit) — independent work, operator review pending",
+    "Did NOT bump cadences of other agents",
+    "Did NOT bump dome-mirror's model above Haiku — operator pre-baked answer per directive Q2"
+  ],
+  "verification_pattern": "Three checks tinker (or any future audit) can run to verify PROP-074 is in effect:\n  1. grep -c '^node monitor/scripts/sync-workspace-step4c.js' monitor/prompts/workspace-sync.md → expect 0 (no INVOCATION lines remain; only REFERENTIAL mentions in counterpart-agent prose).\n  2. test -f monitor/prompts/dome-mirror.md AND wc -l monitor/prompts/dome-mirror.md → expect file present and ≥150 lines.\n  3. After operator creates the dome-mirror scheduled task, verify the post-deploy sentinel rate ≥83% (≥20 sync-workspace-runs-*.json files per 24h window of hourly dome-mirror cron cycles)."
+}

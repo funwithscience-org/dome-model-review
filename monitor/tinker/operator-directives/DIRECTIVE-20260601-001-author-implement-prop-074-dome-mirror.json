@@ -2,19 +2,43 @@
   "id": "DIRECTIVE-20260601-001",
   "filed_by": "operator-cowork-session",
   "filed_at": "2026-06-01T05:50:00Z",
-  "status": "pending",
+  "status": "completed",
   "priority": "high",
   "title": "Author PROP-074 + ship dome-mirror agent — architectural separation of git→FUSE sync into a single-purpose scheduled agent. Removes Step 4c from workspace-sync (returns it to its original FUSE→git-only identity). Solves the 6-iteration silent-skip bug class by removing the abstraction that caused it.",
   "background": "After 6 architectural iterations today (PROP-066 helper extraction → PROP-068 collapse-into-Step-4b → PROP-072 hoist-to-FIRST → PROP-072 Layer 2 self-attestation → contextual reframe to 'bidirectional FUSE↔git syncer' → PROP-073 stage-delta gating + detective layer) all failing to make workspace-sync reliably invoke Step 4c (~14% success rate post-PROP-073, with the agent pattern-matching the unfamiliar node invocation as decorative), operator has concluded the abstraction is wrong: workspace-sync's months-long established identity as a FUSE→git pusher is fundamentally incompatible with adding a git→FUSE half. Sonnet (and likely Haiku) filter the unfamiliar action out via pattern-recognition; even Opus 4.6 (operator is testing it in current run) may or may not fix this and would be cost-prohibitive permanently.\n\nArchitectural solution: extract the git→FUSE sync into its own scheduled agent, dome-mirror, with a SINGLE-ACTION prompt. When the only action in the prompt IS the helper invocation, pattern-matching can't filter it out. workspace-sync returns to its original unidirectional identity (FUSE→git only), which is the identity Sonnet/Haiku has been reliably executing for months.\n\nOperator preferences pre-baked into this directive:\n  - Agent name: dome-mirror (operator-picked)\n  - Model: Haiku (mechanical single-action; cost matters at hourly cadence; if reliability requires Sonnet/Opus, document and flag for operator decision)\n  - Cadence: hourly (matches workspace-sync; pair as complementary halves)\n  - Helper script: REUSE monitor/scripts/sync-workspace-step4c.js as-is (proven working when invoked, just couldn't be reliably invoked from workspace-sync). Optionally rename to monitor/scripts/dome-mirror-sync.js for clarity — tinker's call based on grep-radius (rename vs alias)\n  - Removal from workspace-sync.md: Step 4c block (and PROP-066/068/072/073 in-block fixes that became moot once Step 4c moved) removed entirely. workspace-sync.md opening reframed BACK from 'bidirectional' to its original 'FUSE→git pusher' identity (consistent with what the agent actually does in this new architecture).\n  - PROP-073 detective layer disposition: REMOVE from workspace-sync (no Step 4c there means no mis-titled-commit risk to detect). Keep the helper script intact (still used by dome-mirror).",
   "operator_decisions_pre_baked": {
-    "Q1_agent_name": {"answer": "dome-mirror", "rationale": "operator-picked, descriptive (mirrors git state into FUSE), single word fits the agent family."},
-    "Q2_model": {"answer": "Haiku", "rationale": "Mechanical single-action prompt. Cost matters at hourly cadence. If reliability needs Sonnet or Opus, tinker should flag for operator decision rather than silently upgrading."},
-    "Q3_cadence": {"answer": "hourly", "rationale": "Matches workspace-sync cadence as complementary halves. Same staleness window."},
-    "Q4_scheduling_offset_vs_workspace_sync": {"answer": "dome-mirror runs FIRST in the hour (e.g. :00), workspace-sync runs OFFSET later (e.g. :05 or :10)", "rationale": "dome-mirror updates FUSE from git → workspace-sync's smart_copy then compares fresh FUSE vs clone. If workspace-sync ran first with stale FUSE, smart_copy might revert recent git commits via the mtime-guard backfire. Tinker should propose exact offset minutes."},
-    "Q5_helper_script_disposition": {"answer": "REUSE sync-workspace-step4c.js as-is for v1; OPTIONALLY rename to dome-mirror-sync.js in a follow-up if grep-radius shows few callers", "rationale": "Helper script is proven correct when invoked. Renaming is cosmetic and creates rebase noise. Defer the rename decision."},
-    "Q6_workspace_sync_reframe_back": {"answer": "YES — reframe workspace-sync.md opening back to its ORIGINAL unidirectional FUSE→git identity, since that's what it actually does in this architecture", "rationale": "The 'bidirectional FUSE↔git syncer' opening I added at commit 143419813f was a hypothesis-test that failed. With Step 4c removed, the bidirectional framing becomes inaccurate. Restore the original opening (or simplify it; operator open to tinker's editorial judgment)."},
-    "Q7_prop_073_detective_layer": {"answer": "REMOVE from workspace-sync.md (stage-delta gating + AGENT_NOTES backstop + filename-ISO parse + write-path log)", "rationale": "PROP-073 was scaffolding to detect mis-titled commits when workspace-sync tried to do Step 4c work. With Step 4c removed entirely, there's nothing to detect. Keep the helper script intact (dome-mirror uses it). Mark PROP-073 superseded-by-PROP-074 in lifecycle."},
-    "Q8_lifecycle_for_prop_066_068_072": {"answer": "Mark PROP-066, PROP-068, PROP-072 as 'superseded by PROP-074 architectural separation' OR 'partially-superseded' (helper script from PROP-066 is preserved, in-prompt fixes from 068/072 are obsolete). Tinker's call on the exact framing — they remain historical records.", "rationale": "Don't delete — preserve audit trail. The 6-iteration sequence is itself a valuable architectural lesson worth documenting in PROP-074's retrospective section."}
+    "Q1_agent_name": {
+      "answer": "dome-mirror",
+      "rationale": "operator-picked, descriptive (mirrors git state into FUSE), single word fits the agent family."
+    },
+    "Q2_model": {
+      "answer": "Haiku",
+      "rationale": "Mechanical single-action prompt. Cost matters at hourly cadence. If reliability needs Sonnet or Opus, tinker should flag for operator decision rather than silently upgrading."
+    },
+    "Q3_cadence": {
+      "answer": "hourly",
+      "rationale": "Matches workspace-sync cadence as complementary halves. Same staleness window."
+    },
+    "Q4_scheduling_offset_vs_workspace_sync": {
+      "answer": "dome-mirror runs FIRST in the hour (e.g. :00), workspace-sync runs OFFSET later (e.g. :05 or :10)",
+      "rationale": "dome-mirror updates FUSE from git → workspace-sync's smart_copy then compares fresh FUSE vs clone. If workspace-sync ran first with stale FUSE, smart_copy might revert recent git commits via the mtime-guard backfire. Tinker should propose exact offset minutes."
+    },
+    "Q5_helper_script_disposition": {
+      "answer": "REUSE sync-workspace-step4c.js as-is for v1; OPTIONALLY rename to dome-mirror-sync.js in a follow-up if grep-radius shows few callers",
+      "rationale": "Helper script is proven correct when invoked. Renaming is cosmetic and creates rebase noise. Defer the rename decision."
+    },
+    "Q6_workspace_sync_reframe_back": {
+      "answer": "YES — reframe workspace-sync.md opening back to its ORIGINAL unidirectional FUSE→git identity, since that's what it actually does in this architecture",
+      "rationale": "The 'bidirectional FUSE↔git syncer' opening I added at commit 143419813f was a hypothesis-test that failed. With Step 4c removed, the bidirectional framing becomes inaccurate. Restore the original opening (or simplify it; operator open to tinker's editorial judgment)."
+    },
+    "Q7_prop_073_detective_layer": {
+      "answer": "REMOVE from workspace-sync.md (stage-delta gating + AGENT_NOTES backstop + filename-ISO parse + write-path log)",
+      "rationale": "PROP-073 was scaffolding to detect mis-titled commits when workspace-sync tried to do Step 4c work. With Step 4c removed entirely, there's nothing to detect. Keep the helper script intact (dome-mirror uses it). Mark PROP-073 superseded-by-PROP-074 in lifecycle."
+    },
+    "Q8_lifecycle_for_prop_066_068_072": {
+      "answer": "Mark PROP-066, PROP-068, PROP-072 as 'superseded by PROP-074 architectural separation' OR 'partially-superseded' (helper script from PROP-066 is preserved, in-prompt fixes from 068/072 are obsolete). Tinker's call on the exact framing — they remain historical records.",
+      "rationale": "Don't delete — preserve audit trail. The 6-iteration sequence is itself a valuable architectural lesson worth documenting in PROP-074's retrospective section."
+    }
   },
   "operator_action_required_alongside_tinker": "Operator will use mcp__scheduled-tasks__create_scheduled_task (or equivalent) to register the new dome-mirror task after tinker authors the prompt + SKILL.md content. Tinker should include explicit SKILL.md content recommendations + cron expression so operator can copy-paste during the create step.",
   "requested_work": [
@@ -45,9 +69,19 @@
     "helper_script_to_preserve": "monitor/scripts/sync-workspace-step4c.js — works correctly when invoked. PROP-074 = invoke it from a single-purpose agent.",
     "operator_opus_test_in_flight": "Operator flipped current workspace-sync run to Opus 4.6 as an experiment (~05:50Z). Results pending ~06:00Z cycle. If Opus succeeds where Sonnet failed under identical conditions, that's evidence of model-capability-bound bug. dome-mirror architectural separation remains correct regardless because (a) Opus permanently is cost-prohibitive at hourly cadence and (b) single-purpose agents are more robust than multi-purpose agents to model-substitution.",
     "scheduled_tasks_existing_pattern": "monitor/prompts/workspace-sync.md + /sessions/<id>/mnt/.scheduled/dome-workspace-sync/SKILL.md show the wrapper pattern. dome-mirror should mirror.",
-    "lessons_to_capture_in_prop_074_retrospective": ["agent self-conception filters out unfamiliar actions regardless of prompt design", "FIRST + LAST positions execute reliably across Sonnet; MIDDLE positions drop", "self-attestation backstops are gameable (agent doesn't notice it didn't run)", "stage-delta detection (PROP-073 #1) DID work for preventing mis-titled commits — defense-in-depth detection layers do work; preventive prompt-design fixes for pattern-rejection do not", "architectural separation into single-purpose agents is the structural fix; extension of multi-purpose agents triggers the bug class"]
+    "lessons_to_capture_in_prop_074_retrospective": [
+      "agent self-conception filters out unfamiliar actions regardless of prompt design",
+      "FIRST + LAST positions execute reliably across Sonnet; MIDDLE positions drop",
+      "self-attestation backstops are gameable (agent doesn't notice it didn't run)",
+      "stage-delta detection (PROP-073 #1) DID work for preventing mis-titled commits — defense-in-depth detection layers do work; preventive prompt-design fixes for pattern-rejection do not",
+      "architectural separation into single-purpose agents is the structural fix; extension of multi-purpose agents triggers the bug class"
+    ]
   },
   "expected_output": "Single commit on origin/main containing: monitor/prompts/dome-mirror.md (new) + monitor/prompts/workspace-sync.md (Step 4c removed, bidirectional framing reverted, PROP-073 detective layer removed) + monitor/tinker/proposals/PROP-074-architectural-separation-dome-mirror.json (new, status='implemented') + lifecycle updates on PROP-066/068/072/073. PLUS: this directive flipped to status='completed' with prop_id_authored AND prop_id_implemented='PROP-074'. PLUS: operator copy-paste recipe for mcp__scheduled-tasks__create_scheduled_task in tinker's run report.",
   "estimated_effort": "~60-90 min Opus. dome-mirror.md prompt is small (~100-150 lines target). workspace-sync.md edit is mostly DELETES (Step 4c block + PROP-073 instrumentation + contextual reframe). PROP-074 authoring is the bulk: design + retrospective + lifecycle updates + synthetic test.",
-  "priority_note": "HIGH — operator is testing Opus 4.6 in current workspace-sync run; result expected ~06:00Z. Regardless of Opus result, architectural separation is the right move because (a) Opus permanently is cost-prohibitive at hourly cadence, (b) single-purpose agents are robust to model substitution and pattern-rejection failures, (c) 6 iterations of preventive prompt-design fixes have failed. Worth shipping the architectural fix before any further point-fixes accumulate."
+  "priority_note": "HIGH — operator is testing Opus 4.6 in current workspace-sync run; result expected ~06:00Z. Regardless of Opus result, architectural separation is the right move because (a) Opus permanently is cost-prohibitive at hourly cadence, (b) single-purpose agents are robust to model substitution and pattern-rejection failures, (c) 6 iterations of preventive prompt-design fixes have failed. Worth shipping the architectural fix before any further point-fixes accumulate.",
+  "completed_at": "2026-06-01T05:55:00Z",
+  "completed_by_run": "tinker-2026-06-01T05-30-Z",
+  "prop_id_authored": "PROP-074",
+  "prop_id_implemented": "PROP-074"
 }
