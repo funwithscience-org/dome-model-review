@@ -1,0 +1,87 @@
+{
+  "run_id": "tinker-2026-06-01T05-55-Z",
+  "timestamp": "2026-06-01T05:55:00Z",
+  "model": "opus-4-7",
+  "mode_selected": "operator-directive",
+  "directive_completed": "DIRECTIVE-20260601-001 (PROP-074 architectural separation of git→FUSE sync into dome-mirror agent)",
+  "modes_checked": {
+    "operator_directive": "1 pending DIRECTIVE-20260601-001 (priority=high) — preempted Mode 0–4",
+    "mode_0_assigned_to_tinker": "not evaluated (operator-directive preempts)",
+    "mode_1_pipeline_health": "not evaluated (operator-directive preempts)",
+    "mode_2_infrastructure": "not evaluated (operator-directive preempts)",
+    "mode_3_cost_engineering": "not evaluated (operator-directive preempts)",
+    "mode_4_proposals": "not evaluated (operator-directive preempts)"
+  },
+  "backlog_trend_preflight": {
+    "open_issues_total": 39,
+    "open_status_count": 10,
+    "assigned_analyst_count": 13,
+    "age_ge_14d_count": 0,
+    "age_ge_30d_count": 0,
+    "oldest_open_age_days": 0.4,
+    "thresholds_fired": "none — pipeline backlog healthy"
+  },
+  "work_summary": {
+    "files_authored": [
+      "monitor/prompts/dome-mirror.md (178 lines — single-action prompt for git→FUSE propagation; PAT prelude + disk-pressure pre-flight + working-tree-size check + Step 2 helper invocation + commit/push of sentinel + trap-protected cleanup of own clone)",
+      "monitor/tinker/proposals/PROP-074-architectural-separation-dome-mirror.json (architectural-separation proposal with 6-iteration retrospective, lifecycle-impact-on-prior-props, scheduled-task-creation recipe for operator, validation plan, verification_pattern)"
+    ],
+    "files_modified": [
+      "monitor/prompts/workspace-sync.md (1476 → 1372 lines, ~104 line net reduction): reverted bidirectional opening to original FUSE→git-only identity; removed Step 4c invocation block + PROP-072 hoist instrumentation + PROP-073 stage-delta gating + PROP-073 filename-ISO parse + PROP-073 mis-titled-commit fix + AGENT_NOTES self-attestation requirements (step4c-not-invoked, step4c-mis-titled); kept PROP-068 collapse architecture, PROP-051 safety gates, universal-pusher mode, anti-reversion guard, [CLONE-DEBUG]/[CLONE-LEAK] verification logging",
+      "monitor/tinker/proposals/PROP-066-step-4c-helper-script-extraction.json (status partially-superseded-by-PROP-074, with reason field — helper script PRESERVED, in-prompt invocation removed)",
+      "monitor/tinker/proposals/PROP-068-collapse-cleanup-into-step-4b.json (status partially-superseded-by-PROP-074, with reason field — collapse architecture preserved, Step 4c position-in-collapse aspect obsolete)",
+      "monitor/tinker/proposals/PROP-072-step4c-hoist-to-first-position.json (status superseded-by-PROP-074, with reason field — hoist obsolete after Step 4c removed)",
+      "monitor/tinker/proposals/PROP-073-step4c-mis-titled-commit-and-mtime-heuristic.json (status superseded-by-PROP-074, with reason field — detective layer obsolete after Step 4c removed)",
+      "monitor/tinker/operator-directives/DIRECTIVE-20260601-001-author-implement-prop-074-dome-mirror.json (status pending → completed, prop_id_authored=prop_id_implemented=PROP-074, completed_at=2026-06-01T05:55:00Z, completed_by_run=tinker-2026-06-01T05-30-Z)"
+    ],
+    "files_preserved_unchanged": [
+      "monitor/scripts/sync-workspace-step4c.js (PROP-074 mechanism — dome-mirror's sole script invocation; renaming deferred per directive Q5)",
+      "monitor/scripts/sync-workspace-step4c.config.json (helper config — operator-curated bootstrap fallback)"
+    ],
+    "synthetic_test_results": {
+      "bash_blocks_parse": "PASS (3 blocks: PAT prelude 19 lines, Step 1 64 lines, Step 2 33 lines)",
+      "pat_prelude_http": "PASS (HTTP 200)",
+      "helper_invocation": "PASS — classification=equal, upstream_newer_than_last_sync=true, need_sync=true, action=pull-moved-auto-sync, files_copied=87, new_files=1, sync_exit_code=0",
+      "sentinel_written": "PASS — sync-workspace-runs-2026-06-01T05-39-24Z.json with all required fields"
+    },
+    "commit_pushed": "e4fa11d on main",
+    "fuse_bootstrap_sync": "PASS — workspace-sync.md + dome-mirror.md + PROP-074 + all 4 lifecycle-updated PROPs + directive all match git HEAD in FUSE"
+  },
+  "operator_action_required": {
+    "summary": "dome-mirror is NOT running until operator registers the scheduled task. Recipe below.",
+    "mcp_call": "mcp__scheduled-tasks__create_scheduled_task",
+    "fields": {
+      "taskId": "dome-mirror",
+      "cronExpression": "0 * * * *",
+      "description": "Git→FUSE propagation: detect upstream commits not yet visible in the workspace FUSE mount, run monitor/scripts/sync-workspace-step4c.js to propagate, commit + push the resulting sentinel. Companion to dome-workspace-sync (FUSE→git direction). PROP-074 architectural separation.",
+      "model": "Haiku (per directive Q2 pre-baked answer; reliability watch — flag for operator if Haiku fails reliably)",
+      "skill_md_content": "---\nname: dome-mirror\ndescription: Git→FUSE propagation — detect upstream commits not yet in workspace FUSE mount, propagate via sync-workspace-step4c.js helper, commit + push the resulting sentinel.\n---\n\nRead your full instructions from the prompt file at `monitor/prompts/dome-mirror.md` in the \"dome-model-review\" folder in your workspace. Follow those instructions exactly — they contain your complete procedure, output schemas, and rules.\n\nYour workspace contains the \"dome-model-review\" folder with all agent prompts, outputs, and configuration. Start by reading the dome-mirror prompt file, then execute it.\n"
+    },
+    "scheduling_offset_recommendation": "After creating dome-mirror with cron `0 * * * *`, consider updating dome-workspace-sync's cron to `5 * * * *` so dome-mirror updates FUSE BEFORE workspace-sync compares FUSE vs clone. This prevents the mtime-guard backfire where workspace-sync would otherwise revert recent commits (smart_copy would compare stale FUSE vs fresh clone and SKIP the copy under 'anti-reversion; FUSE matches historic commit' — same data, opposite direction)."
+  },
+  "post_deploy_validation_plan": {
+    "metric_to_watch": "Count of new sync-workspace-runs-*.json files per 24h window in monitor/integrity/",
+    "expected": "≥20 sentinels per 24h hourly cron window (≥83%)",
+    "prior_baseline": "~14% sentinel rate under PROP-073 (1 sentinel per ~7 cycles)",
+    "if_below_target": "Flag for operator review — may indicate Haiku also has reliability ceiling for this single-action prompt (escalate to Sonnet)",
+    "workspace_sync_regression_check": "Verify workspace-sync.md's FUSE→git half still runs reliably after simplification. Past rate: ~100% (run-reports written every cycle). Should remain so."
+  },
+  "lessons_captured": [
+    "Agent self-conception filters out unfamiliar actions regardless of prompt design — extending a multi-purpose agent's responsibilities beyond its established identity triggers pattern-rejection failure modes NOT addressable via prompt design alone.",
+    "FIRST + LAST positions execute reliably across Sonnet/Haiku; MIDDLE positions drop — empirically established by PROP-072 but did not generalize to 'put new work at FIRST position' because pattern-rejection still fired against actions inconsistent with agent's established role.",
+    "Self-attestation backstops are gameable (the same pattern-rejection that causes the skip causes the agent to not notice it skipped). Detective signal requires structural evidence (sentinel files, commit titles, file mtimes), not LLM self-report.",
+    "Stage-delta detection (PROP-073 sub-fix #1) DID work for preventing mis-titled commits. Defense-in-depth detection layers DO work; preventive prompt-design fixes for pattern-rejection do not.",
+    "Architectural separation into single-purpose agents is the structural fix when extending a multi-purpose agent triggers pattern-rejection. Cost (one more scheduled task slot, one more hourly cycle of clone + push) is acceptable when the alternative is permanent unreliability."
+  ],
+  "claude_md_audit_deferred": "Operator-directive run; no Mode 3 Mode-1 audit performed. Next BAU-Mode-3 tinker run should audit CLAUDE.md's Monitoring Pipeline table for dome-mirror addition (line ~table 'Thirteen scheduled agents are configured (eleven enabled' becomes 'Fourteen scheduled agents are configured (twelve enabled)' after operator registers dome-mirror). Also: PROP-074 should be cross-referenced in the FUSE-staleness mitigation paragraph (currently mentions PROP-066/067/068/072/073 chain; should note PROP-074 closes the bug class architecturally).",
+  "cleanup_actions": [
+    "rm -rf /tmp/tinker-clone (mandatory per tinker.md Cleanup section)"
+  ],
+  "findings": [
+    {
+      "category": "operator-action-pending",
+      "severity": "info",
+      "description": "dome-mirror scheduled task NOT yet registered. PROP-074 is committed and in effect on the prompt side, but the agent will not run until operator creates the scheduled task per the recipe above. Until then, git→FUSE propagation is STOPPED (workspace-sync no longer does it; dome-mirror not yet running). FUSE-staleness will accumulate at the historical pre-PROP-061 rate. Operator action urgency: HIGH within next 4-12h to avoid noticeable staleness."
+    }
+  ]
+}
