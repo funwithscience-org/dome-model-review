@@ -50,7 +50,9 @@ If you find yourself thinking "I'll use a no-checkout clone to save space": STOP
 
 ## Procedure
 
-### Step 1: Setup (disk-pressure pre-flight + fresh clone + identity)
+### Step 1: Single collapsed block — setup + helper invocation + commit + cleanup (PROP-074-fix-001, 2026-06-01)
+
+**This entire procedure runs as ONE bash block.** Reason: when split into multiple bash blocks (the original PROP-074 design), the `cd "$CLONE"` from setup did NOT persist to the helper-invocation bash call (LLM tool calls do not share shell state). The helper's `process.cwd()` resolved to the agent's startup directory (FUSE workspace) rather than the clone, causing the sentinel to land in the wrong filesystem and `git add` to stage nothing. Same cross-bash-session pattern documented for SKIP_LOG in workspace-sync.md operational notes (commit 1807d16) and for PROP-066/068/072's Step 4c invocation. The structural fix: collapse setup + invocation + commit + cleanup into a single bash block so cwd persists throughout.
 
 ```bash
 SESSION=$(pwd | grep -oP '/sessions/[^/]+')
@@ -117,13 +119,23 @@ git config user.email "russelst@melrosecastle.com"
 git config user.name "steve"
 
 git pull --rebase origin main
-```
 
-### Step 2: Invoke the helper + commit any sentinel + cleanup
+# ============================================================================
+# === Invoke the helper + commit any sentinel + cleanup (formerly "Step 2") ==
+# ============================================================================
+# The helper does the divergence detection, fast-forward merge (if
+# local-ancestor-of-remote), and `node build.js sync-workspace` invocation. It
+# always writes exactly one sentinel under `monitor/integrity/` — either a
+# `sync-workspace-runs-*.json` (success or benign no-op), a
+# `sync-workspace-non-ff-abort-*.json` (force-push refused), or a
+# `sync-workspace-step4c-crash-*.json` (script crash).
+#
+# PROP-074-fix-001 note: this code was originally a separate "### Step 2"
+# bash block. The split caused cwd to be lost between the `cd "$CLONE"` above
+# and the `node monitor/scripts/...` invocation below, so the helper resolved
+# its sentinel write path against the agent's startup directory (FUSE
+# workspace) instead of the clone. Inlining keeps cwd correct throughout.
 
-This is the entire mechanical job. The helper does the divergence detection, fast-forward merge (if local-ancestor-of-remote), and `node build.js sync-workspace` invocation. It always writes exactly one sentinel under `monitor/integrity/` — either a `sync-workspace-runs-*.json` (success or benign no-op), a `sync-workspace-non-ff-abort-*.json` (force-push refused), or a `sync-workspace-step4c-crash-*.json` (script crash).
-
-```bash
 # Defense-in-depth: EXIT trap fires the cleanup even on mid-block failure.
 # Safe inside one bash tool call (does NOT fire across LLM bash sessions —
 # see workspace-sync.md Operational Notes for the cross-bash-session lesson).
@@ -159,7 +171,7 @@ fi
 rm -rf "$CLONE"
 ```
 
-### Step 3: Report
+### Step 2: Report
 
 Output a one-line summary: which sentinel type the helper wrote (or "no sentinel" if the helper did not run). Done.
 
