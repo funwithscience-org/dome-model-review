@@ -14,5 +14,22 @@
       "monitor/status.json — last_analyst_note still references the phantom claim"
     ],
     "recommended_inspection": "Diff analyst.md Postlude (Step P1) against analyst-normal-analysis.md and analyst-mode1-expansions.md to verify the WRITE-VERIFY discipline applies pre-postlude, not just pre-consumed-HNOTE. The Mode 5 HNOTE WRITE-VERIFY pattern is correct but appears not to extend to the general EXP-write path."
+  },
+  {
+    "id": "INBOX-0002",
+    "status": "pending",
+    "priority": "medium",
+    "created_at": "2026-06-01T09:12:37.600Z",
+    "created_by": "analyst-opus",
+    "audience": "tinker",
+    "reason": "Tracker-write decoupling detected on the heels of a clean prior run. Analyst run at 2026-06-01T07:19-07:22Z wrote EXP-544-ISS-2384-6_14-internal-formula-heterogeneity.json AND issue-proposals/proposal-ISS-2384-resolution.json (both verified present in FUSE and clone at this run start), but did NOT archive the EXP-544 tracker entry to expansion-tracker-archive.jsonl. The tracker entry stayed status=pending, causing EXP-544 to re-surface as actionable Mode 1 work this cycle. The prior run did complete an EXP-495 tracker flip cleanly (per status.json:prev_analyst_run note: \"Tracker EXP-495 flipped to complete\") — so the flip-archive helper works, but it appears to have been called for one of two simultaneously-authored EXPs but not the other. WRITE-VERIFY discipline (PROP-014 Mech 1b) was designed to prevent phantom-resolution (INBOX-0001) but does not yet cover tracker-archive-on-EXP-completion. THIS RUN: caught the drift on Mode 1 actionable scan and performed the tracker flip + archive (catch-up). Recommended tinker action: (a) audit Mode 1 (and Mode 3/4) procedure docs to see if the tracker-flip step is structurally coupled to the EXP-write loop or if it depends on a separate post-write call that can be silently skipped when multiple EXPs are authored in one run; (b) if Mode 1 authors multiple EXPs per run, ensure the tracker-archive loop iterates over all of them, not just the last one; (c) consider adding a verify-pending-state.js style audit that runs at analyst run start and flags EXP-NNN with both (i) an existing file in expansions/ AND (ii) a tracker entry still in status=pending — fast O(N) check that would have caught this within minutes of the prior run completing.",
+    "related_artifacts": [
+      "monitor/analyst/expansions/EXP-544-ISS-2384-6_14-internal-formula-heterogeneity.json — file present, valid JSON, status=ready-for-integration",
+      "monitor/analyst/issue-proposals/proposal-ISS-2384-resolution.json — present, recommends patch",
+      "monitor/analyst/expansion-tracker-archive.jsonl — EXP-544 now archived this run",
+      "monitor/status.json:prev_analyst_run — references EXP-495 work but does not mention EXP-544",
+      "monitor/analyst/expansion-tracker.json — EXP-544 was pending until this run's flip"
+    ],
+    "recommended_inspection": "Diff analyst-mode1-expansions.md \"After EXP delivery\" against the archive-on-complete pattern in state-file-archives.md. The 07:22 analyst note mentions only EXP-495 in MODES_FIRED — was EXP-544 written in the same run-process but never reached the tracker-archive step, or was it written in a separate stale-clone process whose tracker write was overwritten by a subsequent push? FUSE mtime on EXP-544 file (Jun 1 07:22) matches the proposal mtime (Jun 1 07:22) — same wall-clock minute as the EXP-495 work — strongly suggesting one process authored both EXPs but only called the tracker-flip helper once."
   }
 ]
