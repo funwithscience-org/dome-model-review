@@ -1,10 +1,10 @@
 {
-  "generated_at": "2026-06-01T03:04:13.873Z",
-  "total_reviews": 281,
+  "generated_at": "2026-06-01T05:04:26.381Z",
+  "total_reviews": 282,
   "already_processed": 616,
-  "pending_count": 2,
+  "pending_count": 3,
   "severity_breakdown": {
-    "critical": 0,
+    "critical": 1,
     "major": 0,
     "moderate": 0,
     "minor": 2,
@@ -15,7 +15,7 @@
     "moderate": 0,
     "total_vulnerable": 0
   },
-  "needs_full_read_count": 0,
+  "needs_full_read_count": 1,
   "under_covered_processed": [
     {
       "win_id": "EVAL-GUIDE",
@@ -5382,6 +5382,18 @@
       ]
     },
     {
+      "win_id": "WIN-004",
+      "topic": "SAA Exponential Cell Separation — c8 change-driven review of post-c7 patches (tldr_verdict plain-text rewrite + detail_extra PRED-013 integration); audits c7 hole #1 closure scope across cohort",
+      "issues_created": 1,
+      "holes_found": 2,
+      "missing_holes": [
+        {
+          "severity": "minor",
+          "summary": "Post-c7 rewrite of detail_evidence (commit 819cb05 or earlier) introduced awkward phrasing: 'is consistent with the drift of the South Atlantic anomaly westward regime modeled by core-flow MHD but is not a specific quantitative result of this citation.' The construction 'drift of the South Atlantic "
+        }
+      ]
+    },
+    {
       "win_id": "WIN-005",
       "topic": "African SAA cell faster decay",
       "issues_created": 0,
@@ -7270,8 +7282,88 @@
       ]
     }
   ],
-  "under_covered_count": 258,
+  "under_covered_count": 259,
   "pending_reviews": [
+    {
+      "item_id": "audit-exp-tracker-gaps",
+      "win_id": "audit-exp-tracker-gaps",
+      "review_file": "monitor/curmudgeon/reviews/audit-exp-tracker-gaps.c1.json",
+      "reviewed_at": "2026-06-01T03:10:38.821Z",
+      "cycle": 1,
+      "topic": "PROP-053 deliverables: audit-exp-tracker-gaps.js + expansion-tracker-gap-semantics.md",
+      "verdict_holds": false,
+      "confidence": 0.95,
+      "recommended_action": "major_rewrite",
+      "holes": [
+        {
+          "severity": "critical",
+          "summary": "Script does NOT read monitor/analyst/expansion-tracker-archive.jsonl, only the live expansion-tracker.json. Under PROP-022 phase 4, the tracker is split: reviewed/integrated items move from items[] to the archive JSONL; only pending items remain live. The archive holds 423 entries (372 distinct IDs)",
+          "recommendation": "Add archive ingestion. Pseudo-code: const archiveIds = new Set(fs.readFileSync(ARCHIVE, \"utf8\").split(\"\n\").filter(l=>l.trim()).map(l=>JSON.parse(l).id)); then change the orphan check to . Also add an archive-only category for tracker entries that have no file (currently mis-counted under tracker_onl",
+          "affects_summary_table": false
+        },
+        {
+          "severity": "critical",
+          "summary": "Script does NOT implement the no_trace category required by PROP-053 spec. PROP-053 specified four categories — orphan_file, tracker_referenced_no_file, mentioned_only, no_trace — with no_trace being the LARGEST in the original audit (41 of 94 missing IDs, including the 33 pure phantom bulk-reservat",
+          "recommendation": "Read tracker.next_id, iterate i from 1 to next_id-1, and classify each ID by membership in (files, live, archive, mentions). Output total_slots, missing_total, missing_ranges:[{start,end,size}], and by_category with no_trace included, per PROP-053 spec.",
+          "affects_summary_table": false
+        },
+        {
+          "severity": "major",
+          "summary": "Output schema does not match PROP-053 spec. Spec requires top-level fields: total_slots, present, missing_total, missing_ranges:[{start,end,size}], by_category (with keys orphan_file, referenced_only, no_trace), and a summary string. Script emits only { ok, orphan_file, tracker_only, mentioned_only ",
+          "recommendation": "Conform the JSON output to the spec schema, or update PROP-053 + reference doc to match the actual shipped schema. Pick one direction. Either way, the spec/code/doc trio currently disagrees with itself.",
+          "affects_summary_table": false
+        },
+        {
+          "severity": "major",
+          "summary": "Reference doc canonizes the archive-blind bug as documented behavior. The doc says \"Before its introduction, EXPs were written directly to monitor/analyst/expansions/ without tracker entries\" and prescribes the heuristic \"EXP-001 through ~EXP-450 = pre-tracker, benign.\" There is NO pre-tracker era. ",
+          "recommendation": "Rewrite the reference doc against the actual architecture: tracker has always existed in this project; PROP-022 phase 4 split it into live (pending) + archive (reviewed); a real orphan_file is a file on disk that is in NEITHER live items[] NOR archive JSONL, regardless of EXP number. Drop the \"pre-t",
+          "affects_summary_table": false
+        },
+        {
+          "severity": "major",
+          "summary": "PROP-053 implementation_note misdescribes the shipped script. It claims (a) the script supports --summary and --json-out flags — actual flags are --orphans-only and --json; (b) the script \"Includes severity_hint (MODERATE if orphan_file > 5, else INFO)\" — grep for severity_hint finds zero matches in",
+          "recommendation": "Either implement the missing flags + severity_hint (mechanically simple — copy from the PROP description), or amend PROP-053 implementation_note to accurately describe what was shipped. Misleading implementation notes corrupt future audit trails.",
+          "affects_summary_table": false
+        },
+        {
+          "severity": "moderate",
+          "summary": "Cross-reference scan is too narrow. PROP-053 spec listed inputs: monitor/analyst/expansions/*, monitor/decisions/*, monitor/curmudgeon/reviews/*. The script scans EXP-NNN regex matches only inside monitor/analyst/expansions/ files. Decisions and curmudgeon reviews are ignored. This causes the mentio",
+          "recommendation": "Extend the regex scan to walk monitor/decisions/ and monitor/curmudgeon/reviews/ in addition to monitor/analyst/expansions/. The categorization logic is unchanged — only the mentionedIds set grows.",
+          "affects_summary_table": false
+        },
+        {
+          "severity": "moderate",
+          "summary": "PROP-053 listed three deliverables (script, reference doc, structure-integrity.md edit). Only two were shipped. The integrity prompt was never updated to consume the audit output. Integrity will continue to emit raw missing-IDs counts as MAJOR findings every cycle — exactly the noise PROP-053 was su",
+          "recommendation": "Either complete the structure-integrity.md edit (Section 4 of the reference doc spells it out: \"Report severity as MODERATE when orphan_file gaps > 5, otherwise INFO\") and re-test integrity output, or flip PROP-053 status from \"implemented\" back to \"partial\" / \"in_progress\" so it stays on tinker's r",
+          "affects_summary_table": false
+        },
+        {
+          "severity": "minor",
+          "summary": "Script's --orphans-only flag short-circuits before reporting tracker_only and mentioned_only buckets. The flag is plausibly designed for routine integrity scans, but if integrity adopts it the tracker_only \"complete-status-no-file\" lost-deliverable case (which the reference doc itself lists as actio",
+          "recommendation": "Either rename --orphans-only to --files-only-bucket-name-truer-to-intent, or have it emit a one-line tracker_only summary at the bottom so lost deliverables are not silently hidden.",
+          "affects_summary_table": false
+        }
+      ],
+      "worst_severity": "critical",
+      "citation_failures": [
+        "PROP-053 implementation_note: \"Includes severity_hint (MODERATE if orphan_file > 5, else INFO)\" — grep severity_hint build-scripts/audit-exp-tracker-gaps.js returns zero matches",
+        "PROP-053 implementation_note: \"Outputs JSON + optional --summary to stderr + optional --json-out for integrity persistence\" — actual flags are --json and --orphans-only",
+        "PROP-053 implementation_note: \"identified 50 orphan_file gaps\" — current head produces 380"
+      ],
+      "code_analysis_tags": {
+        "monitoring": "none",
+        "relabels_standard": false,
+        "post_hoc": false,
+        "derives_from_dome": false,
+        "reviewed": true
+      },
+      "argument_summary": "PROP-053 specified a repeatable audit script and reference doc that should classify EXP-tracker gaps into orphan_file / tracker_referenced_no_file / mentioned_only / no_trace, so integrity can stop em",
+      "stronger_arguments_count": 2,
+      "defense_survives": null,
+      "best_defense": null,
+      "preemptive_recommendation": null,
+      "needs_full_read": true
+    },
     {
       "item_id": "SEC-part2b-stratification-paragraph",
       "win_id": "SEC-part2b-stratification-paragraph",
