@@ -116,6 +116,7 @@ function resolvePlaceholders(html, context) {
     '{{UNCOUNTED_FAILURE_COUNT}}': context.uncountedFailureCount || 0,
     '{{INCL_FAILURES_ACCURACY_PCT}}': context.inclFailuresAccuracyPct || '?',
     '{{DOME_PROSPECTIVE_COUNT}}': context.domeProspectiveCount || '?',
+    '{{DOME_REFINED_COUNT}}': context.domeClaimedRefined || 4,
     '{{ACCURACY_VARIANT_LIST}}': context.accuracyVariantList || '',
     '{{ACCURACY_VARIANT_DETAIL}}': context.accuracyVariantDetail || '',
     // Silent failures (items the dome has visibly removed/suspended but excluded from his accuracy denominator)
@@ -1459,6 +1460,7 @@ function main() {
     inclFailuresAccuracyPct: ((counts.total / (counts.total + (failures.dome_claimed_failures || 0) + failures.entries.length)) * 100).toFixed(1) + '%',
     domeClaimedAccuracy: failures.dome_claimed_accuracy,
     domeProspectiveCount: failures.dome_claimed_prospective_count,
+    domeClaimedRefined: failures.dome_claimed_refined || 4,
     accuracyVariantList,
     accuracyVariantDetail,
     independentClaims,

@@ -937,6 +937,28 @@ console.log('\n── 8. Prediction Panels ──');
   assert(htmlContent.includes("getElementById('eg-evaluate');if(el)el.open=true"), 'EXP-388 ISS-1612/1642/1711: eg-evaluate auto-expand onclick must be present');
 }
 
+
+// ════════════════════════════════════════════
+// 13. EXP-481 / ISS-2411: bare-69 source regression
+// ════════════════════════════════════════════
+{
+  console.log('\n── 13. EXP-481 bare-69 source regression ──');
+  const sectionsRaw13 = fs.readFileSync('data/sections.json', 'utf8');
+
+  // EXP-481 introduced {{DOME_CONFIRMED_HEADLINE}} to template bare "69" dome-count
+  // references in sections.json prose. This test asserts the non-_meta prose does not
+  // creep above 12 bare "69" literals (expected count post EXP-481 + ISS-2411 patches).
+  //
+  // NOTE: Do NOT test bare-69 count in docs/index.html — {{DOME_CONFIRMED_HEADLINE}}
+  // resolves TO 69 in the rendered HTML, producing ~52 hits that are all correct.
+  // Testing the source (sections.json) is the meaningful regression gate.
+  const metaEnd13 = sectionsRaw13.indexOf('"part1b"');
+  const proseSection13 = metaEnd13 > 0 ? sectionsRaw13.slice(metaEnd13) : sectionsRaw13;
+  const bare69Matches = (proseSection13.match(/\b69\b/g) || []).length;
+  assert(bare69Matches <= 12,
+    'EXP-481 bare-69 source regression: sections.json non-meta prose has ' + bare69Matches + ' bare \\b69\\b occurrences (max 12)');
+}
+
 // ════════════════════════════════════════════
 // 12. PROP-041 Phase 2: audit-rewrite.js + RW schema smoke tests
 // ════════════════════════════════════════════
