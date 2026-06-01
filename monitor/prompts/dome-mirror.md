@@ -145,11 +145,20 @@ trap 'rm -rf "$CLONE" 2>/dev/null || true' EXIT
 node monitor/scripts/sync-workspace-step4c.js 2>&1 | tail -10 \
   || echo "[dome-mirror] helper exited non-zero (sentinel written; see monitor/integrity/)"
 
-# Stage and commit any sentinel files the helper wrote. The three glob
-# patterns cover all three sentinel types. Empty `git add` is a no-op.
-git add monitor/integrity/sync-workspace-runs-*.json \
-        monitor/integrity/sync-workspace-non-ff-abort-*.json \
-        monitor/integrity/sync-workspace-step4c-crash-*.json 2>/dev/null || true
+# Stage any sentinel files the helper wrote. Each sentinel TYPE gets its own
+# `git add` line — DO NOT combine globs into a single multi-pathspec add. Git's
+# default behavior with multiple pathspecs is atomic-failure: if any glob
+# matches zero files, bash hands the literal glob string to git, git errors
+# with exit 128 ("fatal: pathspec ... did not match any files"), and nothing
+# gets staged — INCLUDING the glob that DID match. The `2>/dev/null || true`
+# masks the failure silently, then `git diff --cached --quiet` reports clean
+# and the agent exits down the benign "no sentinel changes" branch. This bug
+# silently broke the audit trail for the first ~10h of dome-mirror's life
+# (2026-06-01T05:40Z to ~10:06Z, diagnosed by the Opus 4.8 session itself in
+# commit 8588fd2c). The per-glob form below is the simplest correct shape.
+git add monitor/integrity/sync-workspace-runs-*.json 2>/dev/null || true
+git add monitor/integrity/sync-workspace-non-ff-abort-*.json 2>/dev/null || true
+git add monitor/integrity/sync-workspace-step4c-crash-*.json 2>/dev/null || true
 
 # Commit only if we actually staged something. The check is `git diff --cached
 # --quiet` — exit 1 if there ARE staged changes.
