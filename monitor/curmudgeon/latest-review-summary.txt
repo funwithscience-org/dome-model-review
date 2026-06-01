@@ -1,49 +1,65 @@
-Curmudgeon run 2026-06-01T14:10Z — KILLSHOT-SH.c2 spot-check
+Curmudgeon run 2026-06-01T17:15Z — priority-queue work
+=======================================================
 
-PRIORITY TRIAGE
-- Priority 1 (queue): 3 items (qid 439/440/441 — SEC-7.11, SEC-part6, SEC-part6-6.14-heterogeneity) all already reviewed
-  earlier today (c3/EXP495-548-verify c1/c1, all queue_id-tagged). Decider pop will clean up.
-- Priority 2 (human notes): none pending.
-- Priority 3 (change-driven): drift-audit.json fresh (37.9h) but all 3 head candidates OBE
-  (WIN-007/058/004 re-reviewed c4/c6/c8 between 2026-05-31T05Z and 09Z, post-dating audit at 01:14Z).
-  §1f fallback WIN scan: 0 drifters. obe_skipped=3.
-- Priority 4 (holistic): all 9 checks status=reviewed, operator phase-2-rerun commission fully consumed
-  by 2026-05-30T13:17Z (HOL-MISSING last). Override self-cleared. No pending HOL.
-- Priority 5 (spot-check): picked KILLSHOT-SH — last reviewed 2026-04-06 (c1 only, 8 weeks ago),
-  and EXP-495 integrated parallel Sydney-Perth / SYD-BUE prose into §6.10 / §7.1 this morning
-  (commit 9f04706 at 05:24Z), creating a cross-section consistency surface worth examining.
+Queue items at run start: 2 (q442 part1 EXP-496 reading-guide, q443 part6 §6.14 TLDR)
+Processed this run: 1 (q442 — singleton per Step 8a abort-on-severity-upgrade equivalent: major finding warrants no batching)
+Deferred to next run: 1 (q443 §6.14 TLDR patch — spot-checked clean; will get its own review next fire)
 
-REVIEW: KILLSHOT-SH.c2.json (Part 5 Test 1, Sydney-Perth kill-shot)
+Review written: monitor/curmudgeon/reviews/SEC-part1-EXP496-reading-guide.c1.json
 
-HEADLINE FINDING (major): Cross-section inconsistency on V12 SYD-BUE error figure.
-- Part 5 Test 1: "−78% error: roughly 2,600 km predicted"
-- Part 6: "V12 failed by 78%"
-- §7.1 TLDR: "fails by 78% on Sydney-Buenos Aires"
-- §7.1 BODY (new today via EXP-495): "d ≈ 3,194 km — a −73% error" with explicit math
-Forward verification: cos(25.5°) × the dome's own coordinates gives 3,194 km / 73%, NOT 2,600 km / 78%.
-The "2,600 km" figure is back-derived from the dome's quoted 78% upper-bound range, not forward-
-computed from the V12 formula. To force 2,596 km out of V12 requires cos(Δθ)=0.9357 → Δθ≈20.7°,
-contradicting the dome's published Δθ=25.5°. The c1 review flagged this same inconsistency 8 weeks
-ago (h2: "73-78% depending on coordinate inputs"). EXP-495 fixed it in §7.1 but did not propagate
-to Part 5 or Part 6. Defender quote risk: "your own review computes two different V12 errors on
-the same route."
+Headline finding (MAJOR)
+------------------------
+The "Cross-tab structure" reading-guide paragraph from EXP-496 P1 is duplicated in part1.
+- data/sections.json:part1 contains the paragraph twice (substring count 2; idx 6433 and 8049)
+- Built docs/index.html mirrors the duplication (substring count 2)
 
-OTHER HOLES
-- moderate: Asymmetric fix — §7.1 added the Antarctic 125,760 vs 13,700 km rim-circumnavigation
-  argument (resolving c1 h1's recommendation) and replaced "three new free parameters" with
-  "three new structural elements" (resolving c1 h3) and added black-box-n(r) pre-empt (resolving
-  c1 h6), but Part 5 Test 1 — the kill-shot tab, most user-prominent — was not touched.
-- minor: c1 h4 (NH 7.3% / SH 10.2% no source citation) migrated verbatim from Part 5 to §7.1.
-- minor: c1 h5 ("exactly the distortion pattern of a sphere projected") migrated verbatim too.
-- minor: §7.1 TLDR/body mismatch within §7.1 itself (TLDR 78%, body 73%). Same root cause as the
-  major hole; flagged separately so the patch-author sees the TLDR pointer.
+Root cause: commit e56d4b7 ("Update review (auto-build 2026-06-01)" at 13:19 UTC) inserted the paragraph
+into sections.json directly. Then commit 08c3891 ("decider-2026-06-01: EXP-496 ..." at 15:17 UTC) ran the
+EXP-496 P1 find-replace and inserted a SECOND copy, because the find_text anchor was still unique post-e56d4b7.
 
-advocate_mode defense_survives=3 (Finsler path-dependence defense is genuinely strong — Part 5
-should pre-empt by noting that path-dependent distances mean the dome must publish both the
-railway-path and flight-path values, not pick one).
+Net irony: the paragraph specifically authored to inoculate against the "repetitive" defender charge
+appears twice. The paragraph self-falsifies until the decider removes one copy.
 
-recommended_action: minor_edit. Two paths laid out: Path A (preferred — port §7.1 strengthening
-into Part 5 Test 1 + fix §7.1 TLDR) or Path B (lean — soften all "78%" mentions to "dome's 25-78%
-range" with forward-computed 73% as our value).
+Fix (decider): remove one of the duplicate copies in data/sections.json, rebuild, verify substring count
+drops to 1 in both data/sections.json and docs/index.html. Run tests/run.sh.
 
-Cleanup: clone /sessions/.../dome-curmudgeon-clone will be removed at script exit.
+Process fix (decider, follow-up ISS recommended): investigate the auto-build pathway. e56d4b7 shows
++2 / -128 lines on sections.json, including the Cross-tab paragraph as one of the additions, with no
+synchronization to processed-proposals.json. Any future EXP that lands via both manual auto-build and
+decider self-apply could repeat this duplication.
+
+Secondary process finding (MISCLASSIFICATION)
+---------------------------------------------
+EXP-496's authored review_class is "deep-attack" (analyst rationale: "the cross-reference framing is new
+argumentative content, not refinement of existing prose"). The decider's queue push from commit 08c3891
+set class="verification". Per PROP-025, the decider must propagate the analyst's review_class at integration
+time. The downgrade made this item eligible for verify-mode handoff (gates a/b/c would have passed; only
+gate d failed because no patch landed after the prior part1 review) and for curmudgeon batching, either of
+which would likely have missed the duplication.
+
+Recommend the decider audit its review_class propagation step for EXP-496 and similar integrations.
+
+Minor findings
+--------------
+(1) Forward-looking framing overstates current state: "the cross-references above mark the canonical
+    statement, with other appearances now serving as one-line pointers" — but no spoke consolidation
+    has landed yet (EXP-496 explicitly says so in its own summary_for_decider). The eclipse cluster
+    alone still has 144 mentions in Part 4, 85 in Part 6, 13 in Part 8, 39 in Part 8b. Soften tense.
+(2) Lens enumeration: includes Part 9 ("surviving conclusions") which is a summary not a lens, and
+    omits Part 8b which IS a distinct analytical lens.
+
+Anchor mechanics
+----------------
+All 5 hub anchors verified resolving cleanly in the built docs/index.html (id count 1/1/1/1/1 for
+eclipse-analysis, section-1-5, 2-9-the-v13-coordinate-system-a-self-referential-loop,
+2b-2-relabeling-standard-physics, timestamp-error). The timestamp-error anchor is wired via
+generate-html.js line 1903, not sections.json — that is correct and the EXP correctly preempted the
+c2 hole 2 misdiagnosis.
+
+Deferral note
+-------------
+q443 (part6 §6.14 TLDR three-coexisting-ΔZ-formulas sentence) was spot-checked during this run for
+duplication-class problems; the appended sentence appears once in part6 ps-tldr at idx 118270 with no
+duplicates, the three magnitudes (~−10.7 / −28.9 / −8.4 nT) match the existing detail text downstream
+(idx 122682), and the BOU/monitor.py/inject_ai_layer.py references resolve. A full c1 review will fire
+on the next curmudgeon run.
