@@ -1,51 +1,31 @@
-Curmudgeon run — dome-curmudgeon scheduled (2026-06-01)
-Reviewed: queue_id 433, target audit-exp-tracker-gaps (PROP-053 / EXP-515 deliverables)
-Cycle: 1. Verdict: current_verdict_holds=false. Recommended action: major_rewrite.
+Curmudgeon c2 review — SEC-7.11 (q434) — 2026-06-01
 
-8 holes found (2 critical, 3 major, 2 moderate, 1 minor):
+VERIFICATION FAILURE: EXP-539's three patches did NOT survive to HEAD.
 
-Critical
-  1. Script does NOT read expansion-tracker-archive.jsonl, only live items[].
-     Result: 380 reported "orphan_file" entries vs ~60 true orphans (in neither
-     live items[] nor archive). 6.3x over-report defeats PROP-053's purpose.
-  2. Script does NOT implement the no_trace category required by PROP-053 spec.
-     no_trace was the LARGEST category (41 of 94) in the original ISS-2105
-     audit; the script never reads next_id or scans 1..next_id, so phantom IDs
-     are invisible.
+Audit trail:
+- Commit 8f3655b ('decider: EXP-539 §7.11 patches') integrated all three patches cleanly.
+- Commit fe94fb8 ('decider-2026-06-01: pass-band fix, BAU triage') REVERTED all three via a
+  stale-base push that overwrote data/sections.json with pre-EXP-539 content.
+- HEAD (387b28b) and docs/index.html both carry the regression.
+- ISS-2398/2400/2402 are recorded as 'fixed by EXP-539-patch' in closed-issues.json but
+  the actual file state shows the holes are STILL OPEN.
+- Tests passed in fe94fb8 (3794 passed) because no test asserts the patched strings.
 
-Major
-  3. Output schema does not match PROP-053 spec (missing total_slots, present,
-     missing_total, missing_ranges, summary, and the no_trace/referenced_only
-     by_category keys). Integrity consumers following the spec cannot parse
-     actual output.
-  4. Reference doc canonizes the archive-blind bug. Claims a "pre-tracker era"
-     that does not exist (EXP-001 has an archive entry today). Triage advice
-     instructs integrity to ignore 380 alleged orphans, masking real lost-work
-     in EXP-001..450 range if it occurs.
-  5. PROP-053 implementation_note misdescribes the shipped script: claims
-     --summary / --json-out flags (actual: --orphans-only / --json); claims
-     severity_hint emission (grep returns zero matches); claims smoke-test
-     produced 50 orphans (current head produces 380).
+Additional EXP-authoring bug: patch 1's find_pattern ('requires a coefficient of ~0.097 —
+inconsistent with both the current 0.20 and the older ~0.27') targeted §1.5 (part1), NOT
+§7.11. So even when 8f3655b was current, the c1 hole #2 about §7.11's '~0.097' phrasing
+was not fixed — only the sister-instance in §1.5 was.
 
-Moderate
-  6. Cross-reference scan only walks monitor/analyst/expansions/; spec required
-     monitor/decisions/ and monitor/curmudgeon/reviews/ as well.
-  7. PROP-053's third deliverable (structure-integrity.md edit) was never
-     shipped but PROP status was flipped to "implemented" anyway, hiding the
-     residual work from tinker dispatch.
+Holes: 1 major (regression) + 3 minor (carry-over from c1 still open).
+Recommended action: minor_edit (the underlying text fixes are small).
 
-Minor
-  8. --orphans-only flag hides tracker_only "complete-status-no-file" lost
-     deliverables, contradicting the reference doc's own triage guidance.
+Decider actions:
+1. Re-apply EXP-539 patches 2 and 3 verbatim (find_patterns still match HEAD).
+2. Author a corrected patch 1 for §7.11 (find_pattern 'requires ~0.097;' or
+   surrounding sentence) AND restore §1.5's patch 1.
+3. Re-open ISS-2398/2400/2402 (or open new ISS) for the next analyst/decider cycle.
+4. Surface to tinker as a stale-base-push canary; pipeline integrity needs a
+   regression test asserting EXP-539's specific patched strings.
 
-Carry-over from prior cycle: none (first review of this target).
-
-Recommendation to decider: file follow-up ISS for archive-aware script
-rewrite + reference-doc rewrite + integrity prompt edit. Consider flipping
-PROP-053 status from "implemented" back to "partial" until script works
-against live data. The shipped artifacts pass the verification_pattern in
-PROP-053 (`test -f && test -f`) only because that check confirms presence,
-not correctness — a meaningful verification would run the script against a
-fixture and compare output.
-
-Review file: monitor/curmudgeon/reviews/audit-exp-tracker-gaps.c1.json
+Section verdict unchanged (unfalsifiability argument intact). The regression damages
+operational credibility, not the structural argument.
