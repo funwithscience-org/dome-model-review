@@ -182,7 +182,14 @@ rm -rf "$CLONE"
 
 ### Step 2: Report
 
-Output a one-line summary: which sentinel type the helper wrote (or "no sentinel" if the helper did not run). Done.
+Read the sentinel JSON you just committed and report the literal values of three fields: `action`, `files_copied`, `new_files`. DO NOT paraphrase or interpret — quote the JSON values verbatim. One line, e.g. `action=pull-moved-auto-sync files_copied=87 new_files=4`. If no sentinel was committed this cycle, report `no sentinel committed`.
+
+**Sentinel-field glossary** (use this to read the JSON correctly):
+
+- `classification: "equal"` means the clone's local SHA equals origin/main's SHA AFTER `git pull --rebase`. This is the normal state on every healthy run — it does NOT mean "FUSE was already in sync" or "no work needed." Do not interpret `classification=equal` as a no-op.
+- `action: "pull-moved-auto-sync"` or `action: "auto-sync"` → the helper ran `node build.js sync-workspace` and propagated files into FUSE. This is a real sync, NOT a no-op. Look at `files_copied` and `new_files` for the work magnitude.
+- `action: "no-op-no-upstream-movement"` or `action: "benign-local-ahead"` → genuinely nothing to do this cycle. The only true no-op classes.
+- `action: "non-ff-abort"` or a `sync-workspace-step4c-crash-*.json` filename → something went wrong; surface in the one-line report.
 
 ## Rules
 
