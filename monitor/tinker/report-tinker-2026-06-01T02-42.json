@@ -1,0 +1,155 @@
+{
+  "report_id": "tinker-2026-06-01T02-42",
+  "timestamp": "2026-06-01T02:51:37.943Z",
+  "agent": "tinker",
+  "mode_selected": "Mode 3 (forward-watch on PROP-073 post-deploy invocation reliability + cost engineering snapshot)",
+  "mode_selected_reason": "No pending operator directives. No Mode 0 assigned-to-tinker items. Mode 1/2 healthy aside from background disk pressure. Prior report tinker-2026-05-31T21-31 explicitly directed this run to forward-watch PROP-073 sub-fix #1 invariant + invocation rate; that takes precedence over a generic Mode 3 audit.",
+  "modes_checked": {
+    "operator_directive_discovery": "NO PENDING DIRECTIVES (read from /tmp/tinker-clone, authoritative per FND-01-clone-first rule). 13 recent DIRECTIVE-202605* files all status=completed; no DIRECTIVE-202606* yet.",
+    "mode_0_assigned_to_tinker": "no assigned-to-tinker items pending (0 in open-issues.json, 0 in expansion-tracker.json)",
+    "mode_1_pipeline_health": "HEALTHY — all checked agent outputs fresh (latest-poll-summary 0h, tracker.json 0h, latest-decider-summary.txt 0h, expansion-tracker.json 0h). 0 stranded patches >24h non-tombstoned.",
+    "mode_2_infrastructure_fuse": "MOSTLY HEALTHY — FUSE matches GitHub on all 7 sampled files (wins.json, sections.json, digest-reviews.js, generate-html.js, index.html, CLAUDE.md, tinker.md). Auth HTTP 200. Disk at 96% root usage (414MB avail, 728MB project footprint above 500MB warning threshold). Only active /tmp/*-clone is our own tinker-clone at 312MB (fresh, age 0h). No stale clones to clean up via standing empowerment. PROP-070 observability counter: 0 orphan-integrated assigned-analyst ISSs.",
+    "mode_3_cost_engineering": "ACTIVE — primary deep work this run is PROP-073 forward-watch (highest-priority next-run item from prior report) + per-agent context load measurement (skipped last run due to directive-driven mode).",
+    "mode_4_proposals_and_fixes": "NOT this run — PROP-074 trigger threshold (0/3 cycles in next 3h) was not strictly met (best 3-cycle window post-deploy was 1/3). 5-cycle window is 1/5 (20%), clearly broken, but per the explicit threshold in prior report I am NOT authoring PROP-074 unilaterally. Flagged as major finding; operator decides on the architectural-separation move."
+  },
+  "previous_followup": {
+    "note": "Walked monitor/tinker/proposals/PROP-070/072/073 and verified status fields + grep-based verification_patterns. PROP-073 is the live one — see FND-01.",
+    "prop_070_status": "IMPLEMENTED. Verification: 0 orphan-integrated assigned-analyst ISSs counted via Step A0c sweep guard (the 48h freshness window correctly excludes new items). decider.md and tinker.md both reference PROP-070 (decider 7 hits, tinker 5 hits). Observability counter steady at 0 = expected/working.",
+    "prop_072_status": "IMPLEMENTED but EMPIRICALLY INEFFECTIVE at fixing root cause. workspace-sync.md has 11 PROP-072/FIRST-position mentions confirming hoist remains in place. However, the post-PROP-073 evidence (FND-01) shows 4/5 workspace-sync cycles still skip Step 4c entirely. PROP-072 hoist did not fix the LLM mid-block skip; PROP-073 detective layer makes the failure visible.",
+    "prop_073_status": "IMPLEMENTED (commit 15674330, status=implemented). Sub-fix #1 (stage-delta gating) confirmed working — ZERO mis-titled \"PROP-066 step4c sentinel\" commits in the 5 post-deploy cycles (vs 5 mis-titled commits in the 5 pre-deploy cycles). Sub-fix #3 (writeSentinel logging) present in script (grep finds 3 PROP-073/PROP-066-wrote-sentinel mentions). Sub-fixes #2 and #4 in place per grep. Detective scaffolding is doing its job; underlying invocation reliability is the OPEN question — see FND-01."
+  },
+  "backlog_trend": {
+    "open_issues_total": 54,
+    "open_status_count": 19,
+    "assigned_analyst_count": 16,
+    "age_ge_14d_count": 0,
+    "age_ge_30d_count": 0,
+    "oldest_open_age_days": 0.55,
+    "new_issues_velocity_7d": 54,
+    "closed_issues_velocity_7d": 190,
+    "net_velocity_7d": 136,
+    "baby_drain_count_7d": 1,
+    "verify_drain_count_7d": 0,
+    "thresholds_fired": [],
+    "tier": "healthy",
+    "comment": "open=54 (well below 200 moderate); net velocity strongly positive +136; oldest open 0.55d; age_30d=0; assigned-analyst 16 (below 50 moderate). All thresholds clean. verify_drain_count_7d=0 is structural — only 1 curmudgeon-verify subtype review exists in the entire history despite the agent being enabled and scheduled every 4h. Worth a follow-up Mode 3 dig if it persists."
+  },
+  "findings": [
+    {
+      "id": "FND-01",
+      "category": "step4c-invocation-reliability",
+      "severity": "major",
+      "title": "PROP-073 detective layer reveals 20% invocation rate (1/5) over 5 post-deploy workspace-sync cycles",
+      "description": "Post-PROP-073 deployment at commit 15674330 (2026-05-31T21:31:25Z), 5 workspace-sync cycles ran: 22:09, 23:19, 00:11, 01:20, 02:09. Of these, ONLY the 00:11 cycle invoked Step 4c (sentinel file sync-workspace-runs-2026-06-01T00-10-15Z.json present in commit ecafbc1; agent_notes contains step4c-invoked + sentinel write path + GIT_APPEND_ONLY canary block). The other 4 cycles produced minimal-schema run reports with no step4c field at all. Sub-fix #1 (stage-delta gating) is working as designed — ZERO mis-titled \"PROP-066 step4c sentinel\" commits in the post-deploy window (vs 5 in the pre-deploy window). The pathology has shifted from \"silent lying commits\" to \"silent no-op runs.\" Strict PROP-074 trigger threshold (0/3 in next 3h) was NOT met — the first 3-cycle window post-deploy (22:09, 23:19, 00:11) had 1 invocation, not 0. Every 3-cycle window across the 5 cycles has exactly 1 invocation. By the letter of the prior trigger, PROP-074 should not be authored.",
+      "evidence": [
+        "Sentinel files in monitor/integrity/sync-workspace-runs-*.json: only 1 in the 5-cycle window (sync-workspace-runs-2026-06-01T00-10-15Z.json)",
+        "Workspace-sync run reports — agent_notes field per cycle: 22:09 \"routine; soft-complaint: narrative-cite...\" (NO step4c); 23:19 \"routine soft-complaint...\" (NO step4c); 00:11 \"step4c-invoked; sentinel written to...\" (HAS step4c); 01:20 \"soft-complaint: narrative-cite...\" (NO step4c); 02:09 \"routine sync: 8 files committed...\" (NO step4c)",
+        "Two distinct report schemas observed: 00:11 used a comprehensive schema with commit_sha + files_new/modified/deleted/skipped + step4c_invoked + step4c_sentinel + git_append_only_canaries; the 4 skip cycles used a minimal schema with only run_id + timestamp + files_committed + skips_total + skip_breakdown + agent_notes + cleanup_ran. Same prompt should be producing the same schema; this divergence is itself a signal the LLM agent is not consistently following the post-PROP-072 instructions.",
+        "Zero \"PROP-066 step4c sentinel\" commit titles post-deploy (forensic: c9e1d92 / 007d0fe / b7c36cb / fb52feb8 / f1def7e were the pre-deploy mis-titled commits; sub-fix #1 successfully eliminated them)."
+      ],
+      "counterargument": "One could read this as PROP-073 working AND working: the detective layer made the failure visible (we now have ground-truth data on invocation rate), and the strict 0/3 threshold deliberately calibrated by the prior tinker run is not met. Acting now would be jumping the gun against an explicit operator-set escalation criterion. PROP-074 is a structural change to the agent fleet (new dome-step4c-sync scheduled task) and warrants operator deliberation, not unilateral authoring.",
+      "recommended_action": "Surface to operator via latest-tinker-summary.txt. HOLD on PROP-074 authoring this run. If the next 3 workspace-sync cycles (03:03, 04:03, 05:03 UTC) all skip Step 4c, that is a clean 0/3 window and the threshold fires — next tinker run (03:30 UTC tomorrow) or operator should author PROP-074. If 1+ of the next 3 invokes, hold pattern continues.",
+      "verification_pattern": "cd /tmp/tinker-clone && N=0 && echo \"sentinels_last_8:  (target ≥5/8 = 62.5% to declare invocation reliable)\""
+    },
+    {
+      "id": "FND-02",
+      "category": "workspace-sync-schema-divergence",
+      "severity": "minor",
+      "title": "workspace-sync run reports use two different schemas — symptom of the same invocation reliability problem",
+      "description": "Comparing the 00:11 report (run-2026-06-01T00-11-25Z.json) to 01:20 and 02:09 reports shows two completely different report schemas. The 00:11 report has run_ts + agent + commit_sha + files_new/modified/deleted/skipped + push_status + step4c_invoked + step4c_sentinel + git_append_only_canaries + agent_notes + notes. The 01:20 and 02:09 reports have only run_id + timestamp + files_committed + skips_total + skip_breakdown + agent_notes + cleanup_ran. The newer comprehensive schema appears to correspond to the LLM correctly following the post-PROP-073 prompt; the older minimal schema suggests the LLM is partially or wholly skipping the prompt and falling back to a simpler procedure. This is the structural-not-behavioral version of the same problem FND-01 describes. Worth noting in operator decision on PROP-074: structural separation would standardize the schema by definition (the dedicated step4c agent would always emit the comprehensive schema).",
+      "evidence": [
+        "monitor/integrity/workspace-sync-runs/run-2026-06-01T00-11-25Z.json: 13 top-level keys including step4c_invoked",
+        "monitor/integrity/workspace-sync-runs/run-2026-06-01T01-20-15Z.json: 7 top-level keys, no step4c",
+        "monitor/integrity/workspace-sync-runs/run-2026-06-01T02-09-09Z.json: 7 top-level keys, no step4c"
+      ],
+      "recommended_action": "No action this run. The schema divergence is a symptom of FND-01, not a separate problem. PROP-074 (if authored) would fix this as a side effect."
+    },
+    {
+      "id": "FND-03",
+      "category": "disk-pressure",
+      "severity": "minor",
+      "title": "Root FS at 96% used at run start (414MB free); project footprint 728MB above 500MB warning threshold",
+      "description": "df -h / showed 9.6G total, 9.2G used, 414MB available at clone time. Project-induced footprint (FUSE workspace 399MB + /tmp/tinker-clone 312MB + small /tmp scratch) = 728MB, above the 500MB warning threshold. No stale /tmp/*-clone leftovers — only our active /tmp/tinker-clone at 312MB (mtime age 0h). The standing empowerment for autonomous /tmp/*-clone cleanup requires age >24h; none of the present clones qualify. Mandatory end-of-run cleanup will reclaim 312MB and drop project footprint back to ~416MB (below warning). Consistent with prior tinker FND-03 (2026-05-31T21-34: 96% used, 443MB free). Pattern suggests the sandbox baseline has crept upward over recent days.",
+      "actions_taken": [],
+      "no_action_reason": "No actionable stale clones; end-of-run cleanup is the relief valve.",
+      "verification_pattern": "df -h / | awk \"NR==2 {print }\" | tr -d % | awk \"{if(>=95) print \"STILL_BROKEN\"; else print \"FIXED\"}\""
+    },
+    {
+      "id": "FND-04",
+      "category": "verify-mode-underutilized",
+      "severity": "info",
+      "title": "curmudgeon-verify (Sonnet, 4h cadence, enabled) has produced 1 review total since launch and 0 in last 7d",
+      "description": "Scanning monitor/curmudgeon/reviews/*.json: 12 reviews have an agent_subtype field set; exactly 1 has agent_subtype=curmudgeon-verify; that 1 is older than 7d. The agent is scheduled (every 4h offset from main curmudgeon) and enabled. Two possible explanations: (a) the dispatch criterion (class=verification AND ≤2 minor prior holes AND patches landed since prior review) genuinely matches no items in the queue; (b) the agent has a bug preventing it from claiming work. Cheap to investigate (read its latest summary file). Not urgent — the agent is Sonnet so cost is low even if pure no-op; but baby_drain (1/7d) and verify_drain (0/7d) both running near-empty suggests we are over-provisioned on consolidation-class agents post HOL Phase 2 drain.",
+      "recommended_action": "Defer to next Mode 3 run. If still 0/7d in next observation window, downgrade curmudgeon-verify schedule from 4h to daily, or convert it into an event-driven on-demand task."
+    }
+  ],
+  "context_load": {
+    "claude_md_lines": 214,
+    "per_agent": {
+      "analyst": {
+        "dispatcher": 420,
+        "references": 1180,
+        "claude_md": 214,
+        "total": 1814
+      },
+      "curmudgeon": {
+        "dispatcher": 521,
+        "references": 434,
+        "conditional": 128,
+        "claude_md": 214,
+        "base_total": 1169,
+        "max_total": 1297
+      },
+      "decider": {
+        "dispatcher": 1207,
+        "references": 2519,
+        "claude_md": 214,
+        "total": 3940
+      },
+      "tinker": {
+        "dispatcher": 473,
+        "references": 721,
+        "claude_md": 214,
+        "total": 1408
+      },
+      "integrity": {
+        "dispatcher": 719,
+        "references": 365,
+        "claude_md": 214,
+        "total": 1298
+      },
+      "workspace_sync": {
+        "dispatcher": 1476,
+        "references": 0,
+        "claude_md": 214,
+        "total": 1690
+      }
+    },
+    "trend": "Re-baselined this run (prior tinker-2026-05-31T21-31 skipped context_load due to directive-driven Mode 4). Compared to baseline tinker-2026-05-31T17-51 if recorded, decider (~3940L) remains the heaviest Opus agent and continues to merit a dispatcher-split candidate. workspace-sync at 1690L (Haiku) is also worth eyeballing — much of the bulk is Step 3-4 procedural detail and may be a candidate for further script extraction in the same pattern as PROP-066 (Step 4c → sync-workspace-step4c.js).",
+    "alerts": []
+  },
+  "claude_md_audit": {
+    "accuracy": [
+      "Schedules table in CLAUDE.md § Monitoring Pipeline lists every-4h cadence for analyst/decider/curmudgeon, but actual cron is every 2h (operator-bumped temporary cadence; revert criteria documented in each scheduled task description). CLAUDE.md acknowledges the BAU-vs-bump pattern in prose, so the table inaccuracy is technically excused but worth a note. No action this run.",
+      "CLAUDE.md correctly lists dome-sloppytoppy-score + dome-sloppytoppy-rewrite as DISABLED. Verified against list_scheduled_tasks.",
+      "File ownership table (build.js OWNERSHIP / workspace-sync.md NEVER_PUSH / CLAUDE.md File Ownership Rules) referenced; no obvious drift surfaced from this run's file touches. Full drift audit deferred."
+    ],
+    "performance": [
+      "CLAUDE.md size: 214L (stable; same as prior report)",
+      "Top sections by line count: File Ownership Rules 70L, Two-Repo Architecture 31L, Monitoring Pipeline 20L. None over-large. No extraction candidates surfaced this run."
+    ]
+  },
+  "commits_pushed": [],
+  "files_changed": [
+    "monitor/tinker/report-tinker-2026-06-01T02-42.json (this run)",
+    "monitor/tinker/latest-tinker-summary.txt (this run)",
+    "monitor/tinker/queue-history.jsonl (this run, via clone-and-push per PROP-065 git-append-only rule)"
+  ],
+  "next_tinker_run_priorities": [
+    "PRIMARY — Forward-watch: check next 3 post-PROP-073 cycles (post-02:09 = 03:03, 04:03, 05:03 UTC). Compute new 3-cycle invocation rate; if 0/3 cleanly, fire the PROP-074 trigger and either author it or hand to operator with explicit recommendation.",
+    "SECONDARY — Read latest curmudgeon-verify run summary to diagnose 0/7d drain (FND-04). Confirm whether agent is no-op-ing on empty queue (acceptable) or failing to claim work (bug).",
+    "TERTIARY — If invocation rate stabilizes ≥50% over next 8 cycles, consider this PROP-073 closure complete and shift Mode 3 focus to decider context-load reduction (3940L is the next-largest target after workspace-sync was scripted)."
+  ],
+  "cleanup_actions": [],
+  "cleanup_planned": "rm -rf /tmp/tinker-clone (final action of this session per tinker.md Cleanup step + standing empowerment)"
+}
