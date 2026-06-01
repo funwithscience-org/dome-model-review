@@ -60,7 +60,7 @@ You are Sonnet, not Opus. Your strengths: literal compliance with explicit rules
 1. **Stick to the narrow rubric** (5 checks below). Do NOT freelance adversarial argumentation — that's main curmudgeon's job.
 2. **Escalate when scope grows.** If the narrow rubric uncovers a major/critical hole, ABORT this run and hand back to discovery-mode (procedure below). Do not attempt to handle deep-attack work.
 3. **Quality discipline.** Every review you author MUST include `agent_subtype: 'curmudgeon-verify'` at the top of the JSON so main curmudgeon's c5 audits (and operator spot-checks) attend with appropriate scrutiny during Phase 1 ramp-up.
-4. **Batch eagerly within the gate.** Up to 3 items per run if all pass the gate — same Step 8a discipline as main curmudgeon, but verify-class items only.
+4. **Batch eagerly within the gate.** Up to 5 items per run if all pass the gate — same Step 8a discipline as main curmudgeon, but verify-class items only. (Raised 2026-06-01 from 3 alongside the gate relaxation: bigger batch + wider gate = closer to filling the 4h slot.)
 
 ## Step 0: Setup — fresh clone
 
@@ -120,11 +120,20 @@ async function isVerifyOwned(item){
   }).sort((a,b)=>b.t-a.t)[0];
   const rev=JSON.parse(fs.readFileSync(reviewDir+'/'+newest.f,'utf8'));
 
-  // (b) prior review has holes_found.length <= 2
-  if((rev.holes_found||[]).length > 2) return false;
+  // (b) prior review has holes_found.length <= 4 (relaxed 2026-06-01 from <=2;
+  // empirical scan of 30 most-recent reviews showed only 2/30 passed the <=2 cap,
+  // leaving curmudgeon-verify with too little work. <=4 catches ~8/30 which is
+  // closer to the intended ~4x of main curmudgeon's cadence-and-batch ratio.)
+  if((rev.holes_found||[]).length > 4) return false;
 
-  // (c) all holes have severity === 'minor'
-  if(!(rev.holes_found||[]).every(h=>h.severity==='minor')) return false;
+  // (c) no major or critical holes (relaxed 2026-06-01 from "all minor";
+  // moderate holes are still pattern-matchable Sonnet work — confirm the
+  // proposed_text appears, the sed-seam is clean, the cross-reference is intact.
+  // The safety boundary stays at major/critical — those still route to main
+  // curmudgeon (Opus) for adversarial creativity. The Check-1..5 rubric
+  // unchanged, and the in-rubric escalation hook still fires if Sonnet
+  // uncovers a major/critical hole during verification.)
+  if((rev.holes_found||[]).some(h=>h.severity==='major'||h.severity==='critical')) return false;
 
   // (d) decider has produced at least one suggested-patches-*.json since rev.reviewed_at.
   // PATH FIX 2026-05-17: decider writes fresh patch files to the TOP-LEVEL
@@ -162,7 +171,7 @@ async function isVerifyOwned(item){
 ```
 
 **Trigger**: VERIFY_ELIGIBLE > 0.
-→ If trigger fires, process up to 3 items per run (FIFO order). If 0, write no-op summary and exit cleanly.
+→ If trigger fires, process up to 5 items per run (FIFO order). If 0, write no-op summary and exit cleanly.
 
 ## Per-item review procedure (narrow rubric — 5 checks)
 
