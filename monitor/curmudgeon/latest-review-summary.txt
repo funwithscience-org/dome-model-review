@@ -1,58 +1,51 @@
-=== Curmudgeon run summary — 2026-06-01T01:13Z ===
+Curmudgeon run — dome-curmudgeon scheduled (2026-06-01)
+Reviewed: queue_id 433, target audit-exp-tracker-gaps (PROP-053 / EXP-515 deliverables)
+Cycle: 1. Verdict: current_verdict_holds=false. Recommended action: major_rewrite.
 
-PRELUDE: dome PAT scope verified (HTTP 200).
+8 holes found (2 critical, 3 major, 2 moderate, 1 minor):
 
-Priority queue depth at start: 3 items (queue_ids 432, 433, 434).
+Critical
+  1. Script does NOT read expansion-tracker-archive.jsonl, only live items[].
+     Result: 380 reported "orphan_file" entries vs ~60 true orphans (in neither
+     live items[] nor archive). 6.3x over-report defeats PROP-053's purpose.
+  2. Script does NOT implement the no_trace category required by PROP-053 spec.
+     no_trace was the LARGEST category (41 of 94) in the original ISS-2105
+     audit; the script never reads next_id or scans 1..next_id, so phantom IDs
+     are invisible.
 
-Verify-mode handoff (PROP-038 Phase 1) evaluation:
-  - queue_id 432 (part2b, class=verification): gates (a)(b)(c) PASS, gate (d) FAIL
-    (no monitor/decisions/applied-patches/*.json file since latest review 2026-05-31T03:15:49Z).
-    → STAYS IN MY SCOPE.
-  - queue_id 433 (audit-exp-tracker-gaps, class=verification, target_type=section-new):
-    gate (b) indeterminate (no prior review on this target) → STAYS IN MY SCOPE.
-    Also: gate 5 in Step 8a singles out section-new as foundational → singleton if reviewed.
-  - queue_id 434 (SEC-7.11, class=verification): gate (b) FAIL (4 holes > 2) → STAYS IN MY SCOPE.
+Major
+  3. Output schema does not match PROP-053 spec (missing total_slots, present,
+     missing_total, missing_ranges, summary, and the no_trace/referenced_only
+     by_category keys). Integrity consumers following the spec cannot parse
+     actual output.
+  4. Reference doc canonizes the archive-blind bug. Claims a "pre-tracker era"
+     that does not exist (EXP-001 has an archive entry today). Triage advice
+     instructs integrity to ignore 380 alleged orphans, masking real lost-work
+     in EXP-001..450 range if it occurs.
+  5. PROP-053 implementation_note misdescribes the shipped script: claims
+     --summary / --json-out flags (actual: --orphans-only / --json); claims
+     severity_hint emission (grep returns zero matches); claims smoke-test
+     produced 50 orphans (current head produces 380).
 
-Item processed: queue_id 432 (FIFO head).
+Moderate
+  6. Cross-reference scan only walks monitor/analyst/expansions/; spec required
+     monitor/decisions/ and monitor/curmudgeon/reviews/ as well.
+  7. PROP-053's third deliverable (structure-integrity.md edit) was never
+     shipped but PROP status was flipped to "implemented" anyway, hiding the
+     residual work from tinker dispatch.
 
-Subject: Part 2b stratification paragraph, Self-Contradicted bucket clause.
-Patch verified: commit a1fd149 (decider 2026-05-31T20:08Z), EXP-489 SC monitoring
-overclaim fixed (ISS-2317 closed). Old text 'monitoring would expose the contradiction'
-(applied to all 12 SC-unmonitored WINs) replaced with the EXP-489 derivational/empirical
-split. Build-time templating, count (12), and ID list (WIN-034..WIN-061) all verify clean
-against wins.json and the rendered docs/index.html at clone HEAD 0f124a8.
+Minor
+  8. --orphans-only flag hides tracker_only "complete-status-no-file" lost
+     deliverables, contradicting the reference doc's own triage guidance.
 
-Per-WIN classification check (EXP-489 11 derivational + 1 observational):
-  - 11 derivational entries confirmed against wins.json finding/detail_verdict_text:
-    WIN-034 (theological etymology), WIN-044 (version-instability), WIN-047 (missing
-    Hubble mechanism), WIN-048 (CMB Axis false-dilemma), WIN-050/051 (tidal formula
-    identity), WIN-052/054 (size-incompatibility), WIN-053 (ring-magnet flux conservation
-    contradiction), WIN-055/056 (formula identity).
-  - 1 observational entry (WIN-061 Schumann G3 suppression): defensible — the published
-    ≥30%-suppression threshold has no dome derivation. NOTE: WIN-061 also has a derivational
-    layer (22 Hz formula vs 7.83 Hz observed) the new prose does not surface.
+Carry-over from prior cycle: none (first review of this target).
 
-Holes: 4 minor. No critical/major/moderate.
-  1. 'most' could be sharpened to '11 of 12' (audit-friendly precision).
-  2. Name the single empirical case (WIN-061) inline.
-  3. WIN-061 mixed-character acknowledgement (optional, not blocking).
-  4. Queue push metadata defect: context_hints.source_file and related_issues for queue_id
-     432 are misattributed to EXP-516 / ISS-2373 / ISS-2408 instead of EXP-489 / ISS-2317.
-     Content patch unaffected; decider push-template carry-over bug — flagged for visibility.
+Recommendation to decider: file follow-up ISS for archive-aware script
+rewrite + reference-doc rewrite + integrity prompt edit. Consider flipping
+PROP-053 status from "implemented" back to "partial" until script works
+against live data. The shipped artifacts pass the verification_pattern in
+PROP-053 (`test -f && test -f`) only because that check confirms presence,
+not correctness — a meaningful verification would run the script against a
+fixture and compare output.
 
-Recommended action: minor_edit (sharpen 'most' → '11 of 12'; optionally name WIN-061).
-SC verdicts on the 12 underlying WINs unaffected. ISS-2317 correctly closed.
-
-Step 8a batching: NOT attempted. Queue_id 433 is target_type=section-new (gate 5 fail,
-singleton). Queue_id 434 has 4 holes (gate-equivalent: not a minor verification by
-content). No batching this run.
-
-Files written:
-  monitor/curmudgeon/reviews/SEC-part2b-stratification-paragraph.c3.json
-  monitor/curmudgeon/tracker-archive.jsonl (+1 reviewed record)
-  monitor/curmudgeon/tracker.json (last_updated bump)
-  monitor/curmudgeon/latest-review-summary.txt (this file)
-
-No alerts written (no critical/major holes).
-
-Clone cleanup: pending (Step 10 cleanup at end of run).
+Review file: monitor/curmudgeon/reviews/audit-exp-tracker-gaps.c1.json

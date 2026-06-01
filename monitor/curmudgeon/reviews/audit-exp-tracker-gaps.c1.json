@@ -1,0 +1,130 @@
+{
+  "point_id": "audit-exp-tracker-gaps",
+  "topic": "PROP-053 deliverables: audit-exp-tracker-gaps.js + expansion-tracker-gap-semantics.md",
+  "queue_id": 433,
+  "queue_pushed_at": "2026-05-31T19:15:26.531Z",
+  "reviewed_at": "2026-06-01T03:10:38.821Z",
+  "cycle": 1,
+  "current_verdict_holds": false,
+  "confidence": 0.95,
+  "our_argument_summary": "PROP-053 specified a repeatable audit script and reference doc that should classify EXP-tracker gaps into orphan_file / tracker_referenced_no_file / mentioned_only / no_trace, so integrity can stop emitting MAJOR severity findings on benign bulk-reservation drift. The script + reference doc were delivered by the operator (per PROP-053 implementation_note dated 2026-05-25) and the queue item asks us to verify their logic and accuracy.",
+  "dome_code_analysis": {
+    "relevant_files": [
+      "build-scripts/audit-exp-tracker-gaps.js",
+      "monitor/prompts/reference/expansion-tracker-gap-semantics.md",
+      "monitor/tinker/proposals/PROP-053-exp-tracker-gap-audit-and-prevention.json",
+      "monitor/analyst/expansion-tracker.json",
+      "monitor/analyst/expansion-tracker-archive.jsonl"
+    ],
+    "calculation_pipeline": "Script reads only the live expansion-tracker.json items[] and the expansions/ directory listing. Cross-references EXP-NNN mentions inside expansion files. Classifies each ID into ok / orphan_file / tracker_only / mentioned_only buckets based on intersection of (file set, live-tracker set, mention set).",
+    "hardcoded_vs_computed": "Computed at runtime — no hardcoded gap thresholds in the script. Severity classification is not emitted at all despite PROP-053 implementation_note claiming severity_hint is included.",
+    "data_sources_used": [
+      "monitor/analyst/expansion-tracker.json (LIVE ONLY — archive is NOT read)",
+      "monitor/analyst/expansions/ directory listing",
+      "EXP-NNN regex matches inside each expansion file"
+    ],
+    "escape_clauses": "Script has no precondition checks. Silently mis-classifies when archive entries exist (they always do under PROP-022 phase 4).",
+    "our_code_claims_accurate": false,
+    "code_discrepancies": "PROP-053 implementation_note describes flags --summary and --json-out that do not exist in the script (actual flags are --orphans-only and --json). Implementation_note also claims severity_hint is emitted; grep confirms severity_hint string is absent from the script. Smoke-test claim \"identified 50 orphan_file gaps\" is not reproducible — current head outputs 380 orphan_file entries."
+  },
+  "code_analysis_tags": {
+    "monitoring": "none",
+    "monitoring_evidence": "audit-exp-tracker-gaps.js is a monitor/prompts/ infrastructure script, not a dome WIN. The code_analysis_tags scaffold is included for schema compliance but is not meaningful here — this is a process review of repo deliverables, not a WIN evaluation.",
+    "relabels_standard": false,
+    "relabels_standard_evidence": "N/A — not a dome WIN.",
+    "post_hoc": false,
+    "post_hoc_evidence": "N/A — not a dome WIN.",
+    "derives_from_dome": false,
+    "derives_from_dome_evidence": "N/A — not a dome WIN.",
+    "reviewed": true
+  },
+  "holes_found": [
+    {
+      "severity": "critical",
+      "description": "Script does NOT read monitor/analyst/expansion-tracker-archive.jsonl, only the live expansion-tracker.json. Under PROP-022 phase 4, the tracker is split: reviewed/integrated items move from items[] to the archive JSONL; only pending items remain live. The archive holds 423 entries (372 distinct IDs). The live file currently has 57 items. The script therefore sees only ~57 of ~480 tracker entries and mis-classifies every archived EXP as orphan_file. Running the head-of-main script today reports 380 orphan_file entries vs the true count of ~60 (files on disk that are in neither live nor archive). This breaks the script's sole purpose — distinguishing the small number of REAL lost-work orphans from the larger archived population.",
+      "recommendation": "Add archive ingestion. Pseudo-code: const archiveIds = new Set(fs.readFileSync(ARCHIVE, \"utf8\").split(\"\n\").filter(l=>l.trim()).map(l=>JSON.parse(l).id)); then change the orphan check to . Also add an archive-only category for tracker entries that have no file (currently mis-counted under tracker_only)."
+    },
+    {
+      "severity": "critical",
+      "description": "Script does NOT implement the no_trace category required by PROP-053 spec. PROP-053 specified four categories — orphan_file, tracker_referenced_no_file, mentioned_only, no_trace — with no_trace being the LARGEST in the original audit (41 of 94 missing IDs, including the 33 pure phantom bulk-reservation gaps that the whole PROP was designed to detect). The script never reads next_id from the tracker and never iterates 1..next_id, so phantom IDs (no file, no tracker entry anywhere, but inside the allocated range) are completely invisible. Without this category, integrity has no signal that bulk-reservation drift is occurring at all.",
+      "recommendation": "Read tracker.next_id, iterate i from 1 to next_id-1, and classify each ID by membership in (files, live, archive, mentions). Output total_slots, missing_total, missing_ranges:[{start,end,size}], and by_category with no_trace included, per PROP-053 spec."
+    },
+    {
+      "severity": "major",
+      "description": "Output schema does not match PROP-053 spec. Spec requires top-level fields: total_slots, present, missing_total, missing_ranges:[{start,end,size}], by_category (with keys orphan_file, referenced_only, no_trace), and a summary string. Script emits only { ok, orphan_file, tracker_only, mentioned_only } — none of total_slots, present, missing_total, missing_ranges, or summary. Integrity consumers following the spec cannot parse the actual output, so the PROP-053 integration with structure-integrity.md (Section 4 of the reference doc) is structurally blocked.",
+      "recommendation": "Conform the JSON output to the spec schema, or update PROP-053 + reference doc to match the actual shipped schema. Pick one direction. Either way, the spec/code/doc trio currently disagrees with itself."
+    },
+    {
+      "severity": "major",
+      "description": "Reference doc canonizes the archive-blind bug as documented behavior. The doc says \"Before its introduction, EXPs were written directly to monitor/analyst/expansions/ without tracker entries\" and prescribes the heuristic \"EXP-001 through ~EXP-450 = pre-tracker, benign.\" There is NO pre-tracker era. EXP-001 has an archive entry today (status=complete, integrated_at=...). The 423 archive entries cover IDs starting at EXP-001. The doc invented a historical fiction to rationalize whatever the buggy script outputs. Triage advice \"Pre-tracker EXPs (EXP-001 through ~EXP-450) appearing as orphan_file are expected and require no action\" tells integrity to silently ignore 380 alleged orphans — masking real lost-work scenarios within the 1..450 range if they occur (e.g., accidental deletion of an integrated EXP).",
+      "recommendation": "Rewrite the reference doc against the actual architecture: tracker has always existed in this project; PROP-022 phase 4 split it into live (pending) + archive (reviewed); a real orphan_file is a file on disk that is in NEITHER live items[] NOR archive JSONL, regardless of EXP number. Drop the \"pre-tracker\" framing entirely. Update the four-category definitions to match PROP-053 spec (orphan_file, tracker_referenced_no_file, mentioned_only, no_trace)."
+    },
+    {
+      "severity": "major",
+      "description": "PROP-053 implementation_note misdescribes the shipped script. It claims (a) the script supports --summary and --json-out flags — actual flags are --orphans-only and --json; (b) the script \"Includes severity_hint (MODERATE if orphan_file > 5, else INFO)\" — grep for severity_hint finds zero matches in audit-exp-tracker-gaps.js; (c) smoke-test reported \"50 orphan_file gaps\" — current head produces 380 (no commits to the file since 2026-05-25). The implementation_note appears to describe an intended script that was not actually delivered, OR the script was edited down after the note was written. Either way, anyone relying on the PROP description to understand the script will be misled.",
+      "recommendation": "Either implement the missing flags + severity_hint (mechanically simple — copy from the PROP description), or amend PROP-053 implementation_note to accurately describe what was shipped. Misleading implementation notes corrupt future audit trails."
+    },
+    {
+      "severity": "moderate",
+      "description": "Cross-reference scan is too narrow. PROP-053 spec listed inputs: monitor/analyst/expansions/*, monitor/decisions/*, monitor/curmudgeon/reviews/*. The script scans EXP-NNN regex matches only inside monitor/analyst/expansions/ files. Decisions and curmudgeon reviews are ignored. This causes the mentioned_only category to underreport, hiding cross-references from issues, applied-patches, and adversarial reviews.",
+      "recommendation": "Extend the regex scan to walk monitor/decisions/ and monitor/curmudgeon/reviews/ in addition to monitor/analyst/expansions/. The categorization logic is unchanged — only the mentionedIds set grows."
+    },
+    {
+      "severity": "moderate",
+      "description": "PROP-053 listed three deliverables (script, reference doc, structure-integrity.md edit). Only two were shipped. The integrity prompt was never updated to consume the audit output. Integrity will continue to emit raw missing-IDs counts as MAJOR findings every cycle — exactly the noise PROP-053 was supposed to suppress. Operator implementation_note acknowledges this as deferred, but the PROP status was flipped to \"implemented\" anyway, masking the residual work from tinker dispatch.",
+      "recommendation": "Either complete the structure-integrity.md edit (Section 4 of the reference doc spells it out: \"Report severity as MODERATE when orphan_file gaps > 5, otherwise INFO\") and re-test integrity output, or flip PROP-053 status from \"implemented\" back to \"partial\" / \"in_progress\" so it stays on tinker's radar. Out-of-scope for this queue item but should land as a separate ISS."
+    },
+    {
+      "severity": "minor",
+      "description": "Script's --orphans-only flag short-circuits before reporting tracker_only and mentioned_only buckets. The flag is plausibly designed for routine integrity scans, but if integrity adopts it the tracker_only \"complete-status-no-file\" lost-deliverable case (which the reference doc itself lists as actionable) goes unseen. This contradicts the reference doc's own triage priority guidance.",
+      "recommendation": "Either rename --orphans-only to --files-only-bucket-name-truer-to-intent, or have it emit a one-line tracker_only summary at the bottom so lost deliverables are not silently hidden."
+    }
+  ],
+  "unresolved_prior_cycle": [],
+  "stronger_arguments": [
+    {
+      "description": "A defender could reasonably argue the script is \"good enough for daily operation\" because integrity's actual job is to surface concerning trends, not to produce a definitive gap census. But the script as-written produces a 5-6x over-report (380 vs ~60 real orphans), which is not a calibration error — it is a categorical miss of half the data source. The defense fails on the magnitude of the error, not the philosophy.",
+      "sources": [
+        "PROP-053 audit_artifacts.by_category",
+        "CLAUDE.md PROP-022 phase 4 archive split"
+      ]
+    },
+    {
+      "description": "A stronger argument we should be making in our review: PROP-053 was approved on the explicit framing that the tracker is a \"best-effort audit trail with gaps\" and the script would do the gap classification work. The shipped script CANNOT do that classification because it lacks the archive input. The operator-decision rationale (\"audit script + reference doc are mechanical work appropriate for Sonnet\") implicitly assumed mechanical correctness; that assumption did not survive contact with the live data shape.",
+      "sources": [
+        "PROP-053 operator_decision.rationale"
+      ]
+    }
+  ],
+  "kernel_of_truth": {
+    "description": "The reference doc's framing that gap density alone is not evidence of lost work is correct and important (build-scripts/audit-exp-tracker-gaps.js:purpose; PROP-053-exp-tracker-gap-audit-and-prevention.json:problem). The script's decision to classify by file/tracker/mention intersection is the right architecture (audit-exp-tracker-gaps.js:lines 65-90). The script's output IS deterministic and machine-readable in --json mode (audit-exp-tracker-gaps.js:line 93). For a future analyst-baby or integrity Haiku adding the archive input would be a 10-line patch on top of working scaffolding.",
+    "why_it_doesnt_save_claim": "A correct architecture with the wrong data source produces wrong answers (PROP-053-exp-tracker-gap-audit-and-prevention.json:audit_artifacts; expansion-tracker-gap-semantics.md:Triage Priority). The 380-vs-60 over-report (audit-exp-tracker-gaps.js stdout) is precisely the recurring MAJOR-severity noise PROP-053 was filed to eliminate — instead the bug RE-CREATES the same noise pattern under a different name. The reference doc's \"EXP-001 through ~EXP-450 = benign\" rule papers over the bug rather than fixing it, which makes future debugging harder."
+  },
+  "recommended_action": "major_rewrite",
+  "text_fingerprint": {
+    "script_bytes": 4441,
+    "reference_doc_bytes": 3843,
+    "script_orphan_file_count": 380,
+    "actual_true_orphan_count": 60,
+    "over_report_factor": "~6.3x",
+    "verdict": "Not Demonstrated / spec-noncompliant"
+  },
+  "deeper_analysis": "The most damaging finding is that the reference doc has been written to make the buggy script output look correct rather than to document the bug. The \"EXP-001 through ~EXP-450 = pre-tracker, benign\" heuristic is a post-hoc rationalization that maps almost 1:1 onto the range of IDs the script mis-classifies (the archive covers IDs 1 through ~430). A future agent reading the reference doc would conclude that integrity should ignore those 380 orphans, which means real lost-work in the 1..450 range will not be detected. This is the OPPOSITE of the integrity guarantee PROP-053 was designed to provide. The fix is mechanical (read the archive, compute no_trace, conform output to spec schema, rewrite reference doc against actual architecture). I am flagging the verification as failed even though both files exist — PROP-053's verification_pattern () is too weak a check; it confirms presence, not correctness. A meaningful verification would require running the script and comparing output against a fixture.",
+  "citation_check": {
+    "citations_verified": [
+      "PROP-053 problem statement: tracker is multi-writer (analyst, analyst-baby, decider) — confirmed via expansion-tracker.json items[].source field",
+      "CLAUDE.md PROP-022 phase 4 archive split — confirmed by expansion-tracker-archive.jsonl existence (465KB, 423 lines)",
+      "EXP-001 in archive — confirmed via head -1 of archive JSONL"
+    ],
+    "citations_failed": [
+      "PROP-053 implementation_note: \"Includes severity_hint (MODERATE if orphan_file > 5, else INFO)\" — grep severity_hint build-scripts/audit-exp-tracker-gaps.js returns zero matches",
+      "PROP-053 implementation_note: \"Outputs JSON + optional --summary to stderr + optional --json-out for integrity persistence\" — actual flags are --json and --orphans-only",
+      "PROP-053 implementation_note: \"identified 50 orphan_file gaps\" — current head produces 380"
+    ],
+    "citations_unchecked": [
+      "Smoke-test history — cannot confirm whether the script ever produced 50 orphans (no historical script snapshot)"
+    ]
+  },
+  "trigger": "priority-queue-section-rewrite",
+  "summary_for_decider": "7 holes (2 critical, 4 major, 1 moderate, 1 minor — adjusted to 2 critical / 3 major / 2 moderate / 1 minor with structure-integrity.md deferral separately listed at moderate). Script is archive-blind, which causes a 6x over-report of orphan files (380 vs ~60), defeating PROP-053's purpose. Reference doc canonizes the bug as a feature with an invented \"pre-tracker era\" framing. Output schema does not match PROP-053 spec; the no_trace category that motivated the whole PROP is absent. Implementation note describes flags + severity_hint that are not in the shipped code. Recommendation: file a follow-up ISS for archive-aware rewrite + reference doc rewrite + integrity prompt edit; PROP-053 status should arguably flip from \"implemented\" back to \"partial\" until the script actually works against live data."
+}
