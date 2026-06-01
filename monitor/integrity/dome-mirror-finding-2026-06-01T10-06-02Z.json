@@ -1,0 +1,11 @@
+{
+  "event": "dome-mirror-finding",
+  "timestamp": "2026-06-01T10:06:02Z",
+  "agent": "dome-mirror",
+  "severity": "medium",
+  "title": "dome-mirror.md commit block stages nothing in the normal case (multi-glob git add aborts atomically)",
+  "detail": "Step 1's commit block runs: git add monitor/integrity/sync-workspace-runs-*.json monitor/integrity/sync-workspace-non-ff-abort-*.json monitor/integrity/sync-workspace-step4c-crash-*.json 2>/dev/null. In the normal cycle the helper writes ONLY a sync-workspace-runs-*.json sentinel; the non-ff-abort and step4c-crash globs match no files, so bash passes them as literal pathspecs and 'git add' aborts the ENTIRE add with exit 128 ('fatal: pathspec ... did not match any files'), staging NOTHING. The error is swallowed by 2>/dev/null, so 'git diff --cached --quiet' is clean and the prompt reports the benign-looking 'no sentinel changes to commit'. Net effect: the per-cycle audit sentinel is NEVER committed to git in the common case. Confirmed empirically 2026-06-01: 0 sync-workspace-runs-*.json tracked on origin/main; reproduced exit 128 with multi-glob add, exit 0 + correct staging with single glob.",
+  "impact": "git->FUSE propagation (node build.js sync-workspace) still runs correctly; only the audit-trail commit is lost. prune-integrity has nothing to archive. Tinker loses the per-cycle visibility the sentinel was designed to provide.",
+  "suggested_fix": "Add each sentinel glob in its own 'git add <glob> 2>/dev/null || true' line, OR use 'git add monitor/integrity/' scoped to the sentinel filenames, OR enable shopt -s nullglob before the add so unmatched globs vanish instead of being passed literally.",
+  "this_run_action": "Committed this cycle's sync-workspace-runs sentinel via a corrected per-glob add so the audit trail is not lost for 2026-06-01T10Z."
+}
