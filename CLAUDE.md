@@ -161,7 +161,7 @@ Every file that crosses the workspace↔git boundary has exactly one authoritati
 
 ## Monitoring Pipeline
 
-Thirteen scheduled agents are configured (eleven enabled; dome-sloppytoppy-score and dome-sloppytoppy-rewrite DISABLED since 2026-05-21 pending operator decision — see workspace-sync disaster section). All prompts live in `monitor/prompts/*.md` — edit the markdown to change agent behavior. The current enabled count and exact cron schedules can be queried at any time via the `list_scheduled_tasks` tool; the table below is a snapshot for orientation.
+Fourteen scheduled agents are configured (twelve enabled; dome-sloppytoppy-score and dome-sloppytoppy-rewrite DISABLED since 2026-05-21 pending operator decision — see workspace-sync disaster section; dome-mirror added 2026-06-01 via PROP-074 for git→FUSE direction). All prompts live in `monitor/prompts/*.md` — edit the markdown to change agent behavior. The current enabled count and exact cron schedules can be queried at any time via the `list_scheduled_tasks` tool; the table below is a snapshot for orientation.
 
 | Agent | Schedule | Model | Prompt File | Purpose |
 |-------|----------|-------|-------------|--------|
@@ -178,6 +178,7 @@ Thirteen scheduled agents are configured (eleven enabled; dome-sloppytoppy-score
 | dome-social | Daily 04:30 (`30 4 * * *`) | Sonnet | `social.md` | Machine-readable layer, discoverability, search rankings |
 | dome-prune-integrity | Daily 09:00 (`0 9 * * *`) | Haiku | (script-only via SKILL.md; see `monitor/scripts/prune-integrity.js`) | PROP-051 Workstream C — archive `monitor/integrity/` per-run artifacts to JSONL on retention windows; runs from a fresh shallow clone. Created 2026-05-23 after the workspace-sync mass-delete disaster |
 | dome-workspace-sync | Hourly (`0 * * * *`) | Haiku | `workspace-sync.md` | Commits workspace-only files to git |
+| dome-mirror | Hourly (`0 * * * *`) | Haiku | `dome-mirror.md` | git→FUSE propagation (PROP-074, 2026-06-01) — runs `monitor/scripts/sync-workspace-step4c.js`; companion to workspace-sync |
 
 ### Data Flow (summary)
 

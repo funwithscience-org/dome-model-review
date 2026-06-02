@@ -1,0 +1,144 @@
+{
+  "run_id": "tinker-2026-06-02T02-40",
+  "ts": "2026-06-02T02:45:00Z",
+  "mode_selected": "Mode 3 (cost engineering + PROP-074 verification)",
+  "mode_selection_reason": "All Mode 1/2 quick-checks GREEN: no stalled agents, no stranded patches >24h, FUSE matches GitHub on sampled files, auth HTTP 200, no operator-directives, no Mode 0 assigned-to-tinker items. Backlog healthy (38 open, +193/7d net velocity). Previous run flagged FND-01 MAJOR (PROP-073 invocation rate ~20%); the operator's response was DIRECTIVE-20260601-001 which produced PROP-074 (architectural separation into dome-mirror agent) — this run's primary job is to verify that fix worked.",
+  "modes_checked": {
+    "mode_0_assigned_to_tinker": "0 items",
+    "operator_directives_pending": "0",
+    "mode_1_pipeline_health": "GREEN — all agents fresh (poller/curmudgeon/decider/integrity/analyst/baby/sloppytoppy outputs all <1h old). 0 stranded-patches >24h not-tombstoned.",
+    "mode_2_fuse_and_infra": "GREEN — FUSE matches GitHub on all 10 sampled files (wins.json, sections.json, predictions.json, uncounted-failures.json, build-scripts/*, docs/index.html, docs/llms.txt, CLAUDE.md, monitor/scripts/sync-workspace-step4c.js). Workspace .git/config dome PAT verified scope (HTTP 200). PROP-070 observability counter = 0 (no orphan-integrated assigned-analyst ISSs).",
+    "mode_2_disk": "DISK WARNING: project-induced footprint 782MB (workspace 422MB + tinker-clone 336MB + ~24MB /tmp scratch). Root partition at 97% (313MB free). Above 500MB threshold, below 1000MB critical. tinker-clone gets cleaned at exit (frees ~336MB). Underlying issue: workspace FUSE is ~422MB which is normal, but the 9.6GB container is mostly system image (/var/log 1.3GB, /var/lib 951MB, /usr/share/texlive 286MB) which the pipeline cannot shrink. No actionable stale `/tmp/*-clone` directories found (only the active tinker-clone)."
+  },
+  "previous_followup": [
+    {
+      "previous_finding_id": "FND-01 of tinker-2026-06-01T02-42 (MAJOR)",
+      "previous_concern": "PROP-073 detective layer working but underlying Step 4c invocation rate stayed at ~14-20% post-deploy. Threshold: if 0/3 invocation in next 3h → author PROP-074.",
+      "verification_pattern": "Count sync-workspace-runs-*.json sentinel files post-PROP-074-deploy, compare to expected hourly cycles. PROP-074 (architectural separation: extract Step 4c into single-purpose dome-mirror agent) was authored 2026-06-01T05:55Z by the next tinker run under DIRECTIVE-20260601-001.",
+      "verification_findings": {
+        "PROP-074_status": "implemented (per file metadata)",
+        "PROP-066_status": "partially-superseded-by-PROP-074 (correctly recorded)",
+        "PROP-068_status": "partially-superseded-by-PROP-074 (correctly recorded)",
+        "PROP-072_status": "superseded-by-PROP-074 (correctly recorded)",
+        "PROP-073_status": "superseded-by-PROP-074 (correctly recorded)",
+        "dome_mirror_scheduled_task_exists": true,
+        "dome_mirror_cron": "0 * * * * (hourly)",
+        "dome_mirror_lastRunAt": "2026-06-02T02:03:52.991Z",
+        "post_deploy_sentinel_coverage_8h": "9 sentinels / 8 expected hourly cycles since first dome-mirror commit 2026-06-01T18:04Z = ~100%",
+        "post_deploy_classification": "all 'pull-moved-auto-sync' with classification='equal' and sync_exit_code=0",
+        "no_dome_mirror_aborts": true,
+        "workspace_sync_run_reports_independent": "workspace-sync continues writing its own run reports (FUSE→git only); both agents are pushing cleanly"
+      },
+      "verdict": "FIXED — PROP-074 architectural separation closed the bug class. dome-mirror reliably invokes the helper script at 100% post-deploy because the prompt has no other competing action to pattern-match against. The earlier 6-iteration record (PROP-066/068/072/073 + contextual-reframe) is the canonical example for the operator-only-able-to-author-the-architectural-fix lesson."
+    },
+    {
+      "previous_finding_id": "FND-02 of tinker-2026-06-01T02-42 (minor)",
+      "previous_concern": "workspace-sync schema divergence between cycles (comprehensive vs minimal output). Identified as symptom of FND-01 pattern-rejection.",
+      "verdict": "FIXED — workspace-sync run reports now uniformly produced (24 in last 30h, all hourly). With PROP-074 removing Step 4c from workspace-sync's job, no schema-divergence pressure remains."
+    },
+    {
+      "previous_finding_id": "FND-03 of tinker-2026-06-01T02-42 (minor)",
+      "previous_concern": "96% disk pressure, single active tinker clone. No action; cleanup at exit was relief.",
+      "verdict": "RECURRING — Today 97% pressure with same single active tinker clone. Same root cause (system image baseline ~8GB, immovable). End-of-run cleanup will reclaim ~336MB. The standing 24h /tmp empowerment caught no stale clones this run. Continuing to track."
+    },
+    {
+      "previous_finding_id": "FND-04 of tinker-2026-06-01T02-42 (info)",
+      "previous_concern": "curmudgeon-verify produced 0/7d reviews; may be over-provisioned.",
+      "verdict": "PARTIALLY-RESOLVED — verify_drain_count_7d = 3 (up from 0). curmudgeon-verify is now producing review output. Defer re-evaluation to Mode 3 next week."
+    }
+  ],
+  "findings": [
+    {
+      "id": "FND-01",
+      "severity": "minor",
+      "category": "claude_md_audit",
+      "title": "CLAUDE.md Monitoring Pipeline table out of date: missing dome-mirror, agent count says 'Thirteen / eleven enabled'",
+      "evidence": {
+        "current_text": "Thirteen scheduled agents are configured (eleven enabled; dome-sloppytoppy-score and dome-sloppytoppy-rewrite DISABLED...)",
+        "actual_count_dome_agents": 14,
+        "actual_enabled_count": 12,
+        "missing_row": "dome-mirror",
+        "list_scheduled_tasks_evidence": "dome-mirror taskId enabled=true, cron='0 * * * *', lastRunAt 2026-06-02T02:03:52Z"
+      },
+      "action_taken": "SELF-FIX applied: updated CLAUDE.md opening sentence to 'Fourteen scheduled agents are configured (twelve enabled; ... dome-mirror added 2026-06-01 via PROP-074 for git→FUSE direction).' and added a dome-mirror row to the table. Conservative additive edit; no other content changed.",
+      "verification_pattern": "grep -c 'dome-mirror' CLAUDE.md should return >=2 (mention + row)"
+    },
+    {
+      "id": "FND-02",
+      "severity": "info",
+      "category": "backlog-trend",
+      "title": "Backlog metrics ALL GREEN; no thresholds fire",
+      "evidence": {
+        "open_issues_total": 38,
+        "age_ge_14d_count": 0,
+        "age_ge_30d_count": 0,
+        "assigned_analyst_count": 14,
+        "net_velocity_7d": 193,
+        "closed_issues_velocity_7d": 231,
+        "new_issues_velocity_7d": 38,
+        "baby_drain_count_7d": 1,
+        "verify_drain_count_7d": 3,
+        "oldest_open_age_days": 0.48,
+        "comparison_to_yesterday": "open 54→38 (-30%), net velocity +136→+193 (improving), no aged-out items"
+      },
+      "thresholds_fired": [],
+      "action_taken": "Logged to queue-history.jsonl (single appended row, PROP-065 clone-and-push path)"
+    },
+    {
+      "id": "FND-03",
+      "severity": "info",
+      "category": "disk",
+      "title": "Root partition at 97% (313MB free) — same recurring system-image baseline pressure",
+      "evidence": {
+        "df_root_used_pct": 97,
+        "df_root_free_mb": 313,
+        "project_footprint_mb": 782,
+        "fuse_workspace_mb": 422,
+        "tinker_clone_mb": 336,
+        "system_image_bottom": "/var/log 1.3GB + /var/lib 951MB + /usr/share/texlive 286MB = ~2.6GB immovable",
+        "stale_tmp_clones_24h": 0
+      },
+      "action_taken": "End-of-run cleanup will reclaim ~336MB (tinker-clone). No new mitigations proposed; the standing /tmp empowerment continues to handle cross-agent stragglers."
+    },
+    {
+      "id": "FND-04",
+      "severity": "info",
+      "category": "pipeline-health",
+      "title": "All 12 enabled dome agents producing fresh output",
+      "evidence": {
+        "freshness_check": "poller / curmudgeon / decider / integrity / analyst / analyst-baby / sloppytoppy-rewrite-summary all <1h",
+        "no_aborts_last_24h": "no workspace-sync-abort-* since 2026-05-31; no dome-mirror-abort-* ever",
+        "no_stranded_patches_24h": "0 stranded-patches >24h not-tombstoned",
+        "prop_074_dome_mirror_8h_coverage": "9/8 sentinels in post-deploy window = effective 100%"
+      },
+      "action_taken": "None needed"
+    }
+  ],
+  "cleanup_actions": [],
+  "claude_md_audit": {
+    "size_lines": 215,
+    "size_lines_after_patch": 217,
+    "accuracy_fixes_applied": [
+      "agent count Thirteen→Fourteen, eleven enabled→twelve enabled, with PROP-074 attribution",
+      "dome-mirror row added (Hourly, Haiku, dome-mirror.md, git→FUSE propagation via sync-workspace-step4c.js)"
+    ],
+    "accuracy_fixes_deferred": [
+      "Table schedule columns for dome-poller / dome-analyst / dome-curmudgeon / dome-decider show their BAU schedules; actual crons are temporarily bumped (daily 01:05 PT / every 2h / every 2h / every 2h respectively). The 'BAU, can bump to ...' annotation already documents this; no edit needed.",
+      "Section 'FUSE-staleness mitigation (PROP-066, 2026-05-31, succeeds PROP-064)' is now out of date — PROP-074 is the latest in this evolution. Defer to a future Mode 3 run or operator directive; the in-prompt comments already point to dome-mirror via workspace-sync.md."
+    ]
+  },
+  "context_load": {
+    "note": "Skipped this run due to disk pressure on the container; per-agent total context load measurement requires reading each prompt + reference files into memory + counting. Defer to next Mode 3 with healthier disk state.",
+    "tinker_md_size_lines": 474,
+    "claude_md_size_lines": 217
+  },
+  "exit_disposition": {
+    "commits_pushed": [
+      "CLAUDE.md (FND-01 self-fix)",
+      "monitor/tinker/queue-history.jsonl (PROP-030 metrics row)",
+      "monitor/tinker/report-2026-06-02T02-45.json",
+      "monitor/tinker/latest-tinker-summary.txt"
+    ],
+    "cleanup": "rm -rf /tmp/tinker-clone at end of run per PROP-060 FND-01 discipline"
+  }
+}
