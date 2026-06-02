@@ -268,8 +268,21 @@ Check `monitor/analyst/expansion-tracker.json` for signs of write collisions (co
   "
   ```
 - **Live-state predicate verification** (PROP-022 phase 5, advisory): Confirm every live item satisfies `i.integrated !== true && i.status NOT in [cancelled,superseded,subsumed]`. A live item failing this predicate means the live→archive move never fired and the writer skipped it. **Classify as moderate** (data consistency drift, not collision-imminent). The verifier and decider integration writer both move on terminal-state — a stuck terminal item in live is a writer-side bug, not data loss.
+- **Audit-script orphan_file severity** (PROP-053-rev2, ISS-2440 ship, 2026-06-02): Invoke `build-scripts/audit-exp-tracker-gaps.js --json` and parse the `severity_hint` field. Report `by_category.orphan_file.length` using the script's severity tiering: **MODERATE when orphan_file > 5, INFO when ≤ 5**. The script is archive-aware (reads `expansion-tracker-archive.jsonl`) and emits a 4-category gap classification per PROP-053 spec — use it as the canonical source for "real orphan files" instead of the integrity prompt's own walk above. The script and the integrity-prompt walk SHOULD agree; if they disagree, prefer the script (it has the no_trace and mentioned_only context the prompt's inline walk lacks). Code:
+  ```bash
+  node -e "
+  const { execSync } = require('child_process');
+  const out = JSON.parse(execSync('node build-scripts/audit-exp-tracker-gaps.js --json').toString());
+  const orphans = out.by_category.orphan_file.length;
+  const severity = out.severity_hint;  // 'MODERATE' if > 5, else 'INFO'
+  console.log('audit-script: orphan_file=' + orphans + ' (severity_hint=' + severity + ')');
+  if (orphans > 5) console.log('  → report as MODERATE per PROP-053-rev2');
+  else console.log('  → report as INFO; no structural integrity action needed');
+  "
+  ```
+  Pure bulk-reservation drift (the script's `no_trace` category) is NOT a structural integrity issue and is not surfaced as a finding. The `tracker_referenced_no_file` category is also informational (rolled into batches / archived deliverables).
 
-Classify: ID gaps, orphaned output files, `next_id` inversions, and live-archive overlaps are **major** (lost work / imminent collision / double-processing). Phantom entries, stale pending, and predicate violations are **moderate**.
+Classify: ID gaps, `next_id` inversions, and live-archive overlaps are **major** (imminent collision / double-processing). Orphaned output files from the integrity-prompt's own inline walk above are **major** when ≥ 1 (catches scenarios the audit script would also catch). The audit-script's `orphan_file` count uses the gentler **MODERATE > 5 / INFO ≤ 5** scale per PROP-053-rev2 design — this avoids re-emitting MAJOR every cycle for known stable backfill cohorts. Phantom entries, stale pending, and predicate violations are **moderate**.
 
 ### 7a.5. ISS ID-Collision Audit (PROP-063, added 2026-05-29)
 
