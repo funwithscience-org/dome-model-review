@@ -20,6 +20,9 @@ const path = require('path');
 
 const EXPANSIONS_DIR = path.join(__dirname, '..', 'monitor', 'analyst', 'expansions');
 const TRACKER_FILE   = path.join(__dirname, '..', 'monitor', 'analyst', 'expansion-tracker.json');
+// ISS-2439: also scan decisions/ and curmudgeon/reviews/ for EXP-NNN cross-references (PROP-053 spec)
+const DECISIONS_DIR  = path.join(__dirname, '..', 'monitor', 'decisions');
+const REVIEWS_DIR    = path.join(__dirname, '..', 'monitor', 'curmudgeon', 'reviews');
 
 function extractExpIds(str) {
   const matches = [];
@@ -51,14 +54,31 @@ function main() {
   const tracker = JSON.parse(fs.readFileSync(TRACKER_FILE, 'utf8'));
   const trackerIds = new Set(tracker.items.map(i => i.id).filter(id => /^EXP-\d+$/.test(id)));
 
-  // 3. Collect cross-references from all expansion files
+  // 3. Collect cross-references from all expansion files, decisions/, and reviews/
+  //    ISS-2439: PROP-053 spec requires scanning decisions/ and curmudgeon/reviews/ too
   const mentionedIds = new Set();
+  function scanDirForMentions(dir) {
+    try {
+      const entries = fs.readdirSync(dir);
+      for (const entry of entries) {
+        try {
+          const full = path.join(dir, entry);
+          if (fs.statSync(full).isFile()) {
+            const content = fs.readFileSync(full, 'utf8');
+            extractExpIds(content).forEach(id => mentionedIds.add(id));
+          }
+        } catch (e) { /* skip unreadable */ }
+      }
+    } catch (e) { /* dir not found — skip */ }
+  }
   for (const f of files) {
     try {
       const content = fs.readFileSync(path.join(EXPANSIONS_DIR, f), 'utf8');
       extractExpIds(content).forEach(id => mentionedIds.add(id));
     } catch (e) { /* skip unreadable */ }
   }
+  scanDirForMentions(DECISIONS_DIR);
+  scanDirForMentions(REVIEWS_DIR);
 
   // 4. Classify
   const results = {
@@ -103,6 +123,9 @@ function main() {
       console.log(`ORPHAN FILES (${results.orphan_file.length}):`);
       results.orphan_file.forEach(e => console.log(`  ${e.id}  ${e.file}`));
     }
+    // ISS-2441: emit one-line summaries for other buckets so lost deliverables are not silently hidden
+    if (results.tracker_only.length > 0)  console.log(`TRACKER-ONLY (no file, benign reservation drift): ${results.tracker_only.length}`);
+    if (results.mentioned_only.length > 0) console.log(`MENTIONED-ONLY (cross-referenced, no standalone record): ${results.mentioned_only.length}`);
     return;
   }
 
