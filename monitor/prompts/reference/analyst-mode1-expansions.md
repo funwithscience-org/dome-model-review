@@ -106,7 +106,21 @@ Conversely: if you're DECLARING `review_class: 'deep-attack'` on an EXP you auth
 
 ## Expansion Procedure
 
-Work **one item per run** (first pending item). After completing, continue to check for dome changes.
+Work **one item per run**. After completing, continue to check for dome changes.
+
+### Selection ordering — age-threshold guard (PROP-075, added 2026-06-02)
+
+Before applying priority-based ordering, check the age of every pending item:
+
+1. **Age-threshold sweep first.** If ANY pending item has age ≥24h (now − `created_at`), you MUST pick from the aged subset. Within the aged subset, pick the **oldest** item first (earliest `created_at`). Do this regardless of `priority`.
+2. **Priority-based ordering second.** Only when ALL pending items are <24h old does the standard "work in priority order" guidance (high > medium > low) apply.
+3. **The dispatcher snippet in `analyst.md` Mode 1 surfaces a `TOP-PICK: <EXP-id>` line** computing the deterministic pick under this rule. Follow that ID. The prose above explains why; the dispatcher tells you which one.
+
+**Rationale.** Low priority means "do this later" not "never". Without the guard, a steady arrival of priority=medium items (~1/day from curmudgeon/decider routing) starves the priority=low queue indefinitely. The 24h threshold bounds low-priority latency without invalidating the priority signal for the first day. See `monitor/tinker/proposals/PROP-075-analyst-mode1-starvation-guard.json` for the full rationale, the four concrete EXP examples that motivated the change, and the post-deployment canary.
+
+**Scope clarification.** This guard applies to **analyst Mode 1 deep-attack singleton selection only**. It does NOT apply to analyst-baby's BAU drain (baby has its own ordering rules and is fast enough that starvation isn't observed there). It does NOT introduce a new priority level. It does NOT change cadence.
+
+**OBE policy unchanged.** Aged items can still be OBE'd under the existing Mode 1 OBE rules (analyst.md Mode 1 — Phase 2). The guard only changes *selection ordering* among non-OBE items, not the OBE classification itself.
 
 ### For each expansion:
 

@@ -1,0 +1,58 @@
+{
+  "id": "PROP-075",
+  "title": "Analyst Mode 1 starvation guard — promote pending items aged ≥24h to top-of-queue regardless of priority",
+  "status": "implemented",
+  "author": "tinker",
+  "authored_at": "2026-06-02T06:11:41Z",
+  "authored_by_run": "tinker-2026-06-02T06:11:41Z",
+  "directive_ref": "DIRECTIVE-20260602-001-analyst-mode1-starvation-guard.json",
+  "operator_pre_approved": true,
+  "design_chosen": "Option (a) — hard age threshold at 24h",
+  "scope": "analyst Mode 1 deep-attack singleton selection only. Does NOT touch analyst-baby selection, does NOT introduce a new priority level, does NOT change cadence.",
+  "problem_statement": "Operator observation 2026-06-02 ~05:00 UTC: analyst's Mode 1 'first pending item' selection (analyst-mode1-expansions.md L109) plus the 'work in priority order' guidance (same file L87) combine to produce priority-starvation. The LLM-analyst, faced with a mix of priority=low and priority=medium pending items, consistently picks the medium item even when the low items are markedly older. Concrete evidence — at directive filing time:\n\n  EXP-526 (priority=low, ISS-2361, WIN-023 1000-year band): created 2026-05-31T14:49Z — pending ~38h, claimed_by=null\n  EXP-534 (priority=low, ISS-2370, WIN-066 carry-forward): created 2026-05-31T14:49Z — pending ~38h, claimed_by=null\n  EXP-552 (priority=low, ISS-2417, §8b.3 globe-infrastructure relocation): created 2026-06-01T09:14Z — pending ~20h, claimed_by=null\n  EXP-551 (priority=low, ISS-2416, §8b.3 steel-man relocation): created 2026-06-01T09:14Z — pending ~20h, claimed_by=null\n\nMeanwhile EXP-556 (priority=medium, created 2026-06-02T00:00Z, only ~5h old) was picked and authored by Opus-analyst at 03:17Z. Analyst ran ~19 times between 2026-05-31T14:49Z and 2026-06-02T05:00Z; the 4 priority=low items were eligible (not baby-owned, not blocked_on, claimed_by=null) but never selected. As long as new priority=medium items keep arriving (~1/day from curmudgeon/decider routing), the low-priority queue could sit indefinitely.",
+  "proposed_fix": {
+    "rule": "Before applying priority-based ordering, scan all pending items for age. If ANY pending item has age (now - created_at) >= 24 hours, the analyst MUST pick that item first regardless of priority. Among multiple aged items, pick the OLDEST first (earliest created_at). Only when ALL pending items are <24h old does the LLM fall back to priority-based ordering.",
+    "rationale": "Low priority means 'do this later' not 'never'. Bounding the latency of low-priority items at ~24h provides fair drain without invalidating the priority signal for the first day. Operator preferred option (a) for simplicity over options (b) soft priority boost and (c) round-robin — the rule is one threshold + one tiebreak, easy for the LLM to follow deterministically, easy to verify, easy to roll back.",
+    "deterministic_dispatch_hint": "In addition to the prose rule in the reference doc, the analyst.md filter snippet computes the deterministic pick and surfaces it via TOP-PICK output so the LLM has zero ambiguity. The LLM still reads the prose rule (which explains WHY) but follows the surfaced TOP-PICK by ID."
+  },
+  "files_touched": [
+    "monitor/prompts/reference/analyst-mode1-expansions.md (add age-threshold guard section + replace L109 'first pending item' line)",
+    "monitor/prompts/analyst.md (extend Mode 1 dispatcher bash to sort the candidate list + emit TOP-PICK)"
+  ],
+  "estimated_loc": 30,
+  "actual_loc": 32,
+  "q_ops_for_operator": [],
+  "q_ops_pre_answered_in_directive": [
+    "threshold age: 24h (operator-preferred)",
+    "design choice among (a)/(b)/(c): operator-preferred (a)",
+    "scope: analyst Mode 1 only, not baby, not other agents — explicit non-goals in directive",
+    "no new priority level — explicit non-goal in directive"
+  ],
+  "verification_pattern": {
+    "description": "grep should confirm the new age-threshold rule is in both files",
+    "commands": [
+      "grep -c 'age-threshold guard\\|PROP-075' monitor/prompts/reference/analyst-mode1-expansions.md  # expect >= 1",
+      "grep -c 'PROP-075\\|aged_24h\\|topPick\\|TOP-PICK' monitor/prompts/analyst.md  # expect >= 1"
+    ]
+  },
+  "post_deployment_canary": {
+    "expectation": "On the next scheduled analyst run (every 2h cycle: next at 04:50 or 08:50 UTC depending on slot), the dispatcher TOP-PICK should surface EXP-526 (oldest priority=low, age ~40h+ by then). The LLM-analyst should pick EXP-526 ahead of any newer-arriving priority=medium items. EXP-534 should follow next run, then EXP-551/EXP-552 (potentially consolidated per their notes-field tag).",
+    "verification_steps": [
+      "1. After 1-2 analyst runs post-deploy, check monitor/analyst/expansions/EXP-526.json exists (or the chain endpoint if consolidated).",
+      "2. Check expansion-tracker.json shows EXP-526 status='complete' or 'consolidated-into-...' with completed_at after deployment time.",
+      "3. If EXP-526 is still pending after 2 analyst cycles (~5h post-deploy), the guard is not firing — operator should investigate."
+    ],
+    "rollback_path": "If the guard causes problems (e.g., aged items have stale context and need re-routing, not authoring), revert the two file edits and re-route the items via decider HNOTE."
+  },
+  "side_effects": [
+    "Items aged >24h that are SEMANTICALLY no longer relevant (e.g., upstream context changed) will now be picked anyway. Mitigation: the analyst still has judgment to OBE (Mode 1 already has OBE policy at analyst.md L220 — 'Do NOT OBE if the item is priority: high or has any blocker/critical tag, regardless of age'). The OBE policy is unaffected; aged items can still be OBE'd if context warrants.",
+    "If many low-priority items accumulate (≥5), the analyst will drain them in age order before any new priority=medium item — slight delay for new mediums (typically ≤1 cycle, ~2h). Acceptable per operator's framing 'do this later' not 'never'."
+  ],
+  "rejected_alternatives": [
+    "(b) Soft priority boost (aged>24h → +1, aged>48h → +2): more flexible but introduces a non-obvious sort key the LLM may misapply. Operator preferred (a) for simplicity.",
+    "(c) Round-robin: alternates 'newest medium+' and 'oldest pending regardless of priority'. Stronger fairness guarantee but harder to verify and more LLM-error-prone."
+  ],
+  "implementation_commit": "PENDING-COMMIT",
+  "implementation_at": "2026-06-02T06:11:41Z",
+  "implementation_run": "tinker-2026-06-02T06:11:41Z"
+}

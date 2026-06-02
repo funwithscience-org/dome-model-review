@@ -169,7 +169,29 @@ const orphans=oi.issues.filter(i =>
   (i.severity === 'major' || i.severity === 'critical' || i.severity == null || i.severity === '')
 );
 
-if(p.length){console.log('EXPANSION MODE: '+p.length+' actionable pending (Opus-owned: deep-attack/holistic/null-judgment-required)');}
+// PROP-075 starvation guard (added 2026-06-02): compute the deterministic TOP-PICK.
+// If any item is aged >=24h, the aged subset wins (oldest first); else priority order.
+const AGE_THRESHOLD_MS = 24*3600*1000;
+const NOW = Date.now();
+function ageMs(item){ return item.created_at ? (NOW - Date.parse(item.created_at)) : 0; }
+const aged = p.filter(i => ageMs(i) >= AGE_THRESHOLD_MS);
+let topPick = null;
+if(aged.length){
+  aged.sort((a,b) => Date.parse(a.created_at||0) - Date.parse(b.created_at||0));
+  topPick = aged[0];
+} else if(p.length){
+  const prioRank = {critical:4, high:3, medium:2, low:1};
+  const ranked = p.slice().sort((a,b) => (prioRank[b.priority]||0) - (prioRank[a.priority]||0) || Date.parse(a.created_at||0) - Date.parse(b.created_at||0));
+  topPick = ranked[0];
+}
+if(p.length){
+  console.log('EXPANSION MODE: '+p.length+' actionable pending (Opus-owned: deep-attack/holistic/null-judgment-required)');
+  if(topPick){
+    const ageH = Math.floor(ageMs(topPick)/3600000);
+    const aged_24h = ageMs(topPick) >= AGE_THRESHOLD_MS;
+    console.log('  TOP-PICK: '+topPick.id+' (priority='+topPick.priority+', age='+ageH+'h'+(aged_24h?' — STARVATION GUARD: pick this regardless of priority':'')+')');
+  }
+}
 else if(orphans.length){console.log('EXPANSION MODE: '+orphans.length+' orphan ISSs (major/critical/null-severity — Opus-owned subset; PROP-029 safety net fired)');}
 else{console.log('NO ACTIONABLE EXPANSIONS (baby may have BAU work)');}
 "
