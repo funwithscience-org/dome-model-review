@@ -34,6 +34,8 @@ Sources of truth: `data/wins.json` (WINs), `data/sections.json` (prose), `data/u
 
 Before any shared-writer reads, refresh the clean clone from `origin/main`. This shrinks the stale-clone window for `monitor/analyst/expansion-tracker.json`, `monitor/curmudgeon/tracker.json`, `monitor/decisions/open-issues.json`, `monitor/decisions/human-notes.json`, and every other shared-writer file. It is a **partial substitute** for the scheduler-side workspace-sync-as-prerequisite fix (Phase 3.1, deferred to operator action) and should be replaced by it when the operator updates the scheduled-task wiring. The residual window (top-of-run pull → writes → push) is covered by the pre-push integrity gate in `reference/decider-patches-and-selfapply.md`.
 
+**CRITICAL — clone is source-of-truth for `monitor/decisions/*` and `monitor/analyst/*` reads AND writes (PROP-078, 2026-06-03).** The discipline above is implicit in the code paths below (every shared-writer file is read from `${CLEAN_CLONE}/...`); this elevates it to an explicit principle. Never read or write FUSE for `monitor/decisions/*` or `monitor/analyst/*` files. FUSE may be stale due to cross-session propagation lag from same-hour writes (PROP-077 H5; 2026-06-03T01:30Z `open-issues.json` revert). Read all open-issues / closed-issues / human-notes / expansion-tracker state from `${CLEAN_CLONE}` and push all writes from there.
+
 The self-apply block in `reference/decider-patches-and-selfapply.md` re-derives `CLONE="${SESSION}/dome-review-clean"` when it needs a clone with push credentials, so the variable name and path are shared. Do NOT `cd` into the clone here — the rest of this prompt's dispatcher logic runs from whatever cwd the scheduled task started from.
 
 ```bash

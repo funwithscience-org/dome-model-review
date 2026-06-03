@@ -1,0 +1,146 @@
+{
+  "id": "PROP-078",
+  "prop_id": "PROP-078",
+  "title": "Part B follow-up to PROP-077: integrity prompt clone-source-of-truth for monitor/decisions/* + light-touch decider audit (Q_OP_4 narrowed scope)",
+  "authored_by": "tinker",
+  "authored_at": "2026-06-03T06:00:00Z",
+  "authored_by_run": "tinker-2026-06-03T06-00",
+  "status": "implemented",
+  "category": "fuse-vs-git-race-hardening",
+  "directive": "DIRECTIVE-20260603-003-prop-077-part-b-plus-decider-audit",
+  "supersedes_prop": null,
+  "amends": null,
+  "depends_on": ["PROP-077 (Part A shipped; this PROP ships Part B per operator decision)"],
+  "related_props": [
+    "PROP-045 (anti-reversion content-hash guard in workspace-sync.smart_copy — orthogonal; PROP-045 protects ONE writer, PROP-078 closes the other)",
+    "PROP-061/064/066 (PROP-061 Step 4c git→FUSE propagation succeeded by PROP-066 — relevant because the underlying problem is cross-session FUSE staleness)",
+    "PROP-074 (dome-mirror separation — second sync agent; rule may want to extend to mirror later)"
+  ],
+  "related_directives": [
+    "DIRECTIVE-20260603-002 (PROP-077 authoring directive — Part A scope)",
+    "DIRECTIVE-20260603-003 (this directive — Part B + Q_OP answers + decider audit)"
+  ],
+  "headline_recommendation": {
+    "selected_option": "Self-apply Part B of PROP-077 per operator's Q_OP_1=YES decision in DIRECTIVE-20260603-003. Edit monitor/prompts/structure-integrity.md to add a clone-source-of-truth PROLOGUE to Section 7h (Mech-A-Bypass False-Closure Audit, the section whose self-test caused the 2026-06-03T01:30:38Z revert via 3a709c71) AND Section 7a.5 (ISS ID-Collision Audit, the only other integrity section that reads open-issues.json + writes a 'file a new ISS' instruction) AND a one-line note in the Context section establishing the clone-as-source-of-truth principle for monitor/decisions/* + monitor/analyst/* writes. Additionally, per Q_OP_4 narrowed scope (decider only), grep decider.md + reference/decider-*.md for explicit clone-source-of-truth language; if implicit, add one line near Step 0 / clone-refresh discipline.",
+    "rationale_one_paragraph": "PROP-077's H5 root cause is structurally addressed only by Part B — the workspace-sync recent-commit guard (Part A, shipped) is defense-in-depth that wouldn't have prevented the 2026-06-03 incident because integrity bypassed workspace-sync entirely. The H5 mechanism: integrity's Haiku agent runs Section 7h's self-test using a cwd-relative read of monitor/decisions/open-issues.json which resolves to the stale FUSE copy (cross-session staleness from decider's ca68cb5d commit at 01:23:55Z), appends ISS-2519 in memory, writes the modified blob to its fresh clone (overwriting the clone's already-fresh content), and pushes. The fix is to mandate that integrity (and every writer for these files) reads AND writes ONLY from its fresh clone. Decider's discipline is already strong (Step 0 refreshes clean clone; reads from CLEAN_CLONE explicitly in many code paths; PROP-076 Mech-A audit added a pre-push lint gate) but the principle isn't stated as a single explicit rule — adding one line near Step 0 closes the discoverability gap without restructuring. analyst / analyst-baby / tinker prompts are held back per Q_OP_4: revisit if recurrence shows up there.",
+    "scoped_to": "Three file edits, ~30 LOC total: (1) monitor/prompts/structure-integrity.md Context section gains a 1-line PROLOGUE note. (2) Section 7a.5 gains a PROLOGUE block (~6 LOC). (3) Section 7h gains a PROLOGUE block (~8 LOC). (4) monitor/prompts/decider.md gains a 1-line note near Step 0 (if grep reveals the rule is implicit)."
+  },
+  "executive_summary": {
+    "problem_one_line": "After PROP-077 shipped Part A (workspace-sync defense-in-depth), the structural fix (integrity must read+write monitor/decisions/* from its fresh clone) was held for operator review. Operator approved Part B via DIRECTIVE-20260603-003 Q_OP_1=YES; tinker now ships it.",
+    "evidence_one_line": "PROP-077 H5 finding documents that the 2026-06-03T01:30:38Z revert (3a709c71) was committed by integrity bypassing workspace-sync. Operator-approved scope narrowing on Q_OP_4 (decider-only audit, no analyst/baby/tinker expansion) keeps the LOC budget tight (~30 lines total).",
+    "fix_one_line": "Edit structure-integrity.md: Context one-liner + Section 7a.5 PROLOGUE + Section 7h PROLOGUE. Grep decider prompts for explicit clone-source-of-truth language; add one line if implicit (it is — discipline is strong but distributed across many specific call-outs without a single principle statement).",
+    "shape_one_line": "~30 LOC across two prompt files. structure-integrity.md grows ~22 LOC (1372→~1394, +1.6%). decider.md grows 1 LOC (1207→1208, +0.08%). Combined LOC well inside the 30-line budget."
+  },
+  "operator_q_op_decisions_consumed": {
+    "Q_OP_1_approve_part_b": "YES — implemented this PROP",
+    "Q_OP_2_revert_dome_mirror_cron": "DEFER — flagged in post_deployment_plan for re-evaluation 2026-06-06 or later",
+    "Q_OP_3_tune_recent_commit_window": "KEEP 300s — no change to PROP-077 Part A",
+    "Q_OP_4_symmetric_guards_other_writers": "Decider only; no edits to analyst / analyst-baby / tinker prompts in this PROP"
+  },
+  "phase_1_design": {
+    "scope_a_structure_integrity_intro": "Add one-line note in the Context section (between the 'Prose source of truth' paragraph and the 'Test suite' paragraph, or after the IMPORTANT line about working in a single session): 'CRITICAL — clone is source-of-truth for monitor/decisions/* and monitor/analyst/* reads AND writes. Never read or write FUSE for these files; cross-session FUSE staleness can revert a freshly-pushed file (2026-06-03T01:30Z incident, see PROP-077 H5). Use ${CLEAN_CLONE}/<path> or the fresh-clone equivalent for every read and write.'",
+    "scope_b_section_7a5_prologue": "Insert before the 'Walk monitor/decisions/closed-issues.json...' opening sentence of Section 7a.5: a PROLOGUE block explicitly stating that the closed-issues.json and open-issues.json reads MUST resolve to the fresh clone path (e.g., ${CLEAN_CLONE}/monitor/decisions/...). Note that if the 'file a new ISS' instruction is followed, the write MUST also be to the clone path, not FUSE.",
+    "scope_c_section_7h_prologue": "Insert before the 'PROP-016 Mechanism A intercepts...' opening sentence of Section 7h: a PROLOGUE block stating that BOTH the read source (closed-issues.json scan) AND the self-test write destination (open-issues.json append) MUST be the fresh clone path. Cross-reference PROP-077 H5 root cause and the 2026-06-03T01:30Z incident.",
+    "scope_d_decider_one_liner": "If grep shows decider.md / reference/decider-*.md lack a single explicit clone-source-of-truth principle, add one line near decider.md Step 0 (line ~35): 'CRITICAL — for monitor/decisions/* and monitor/analyst/* operations, the clone at ${CLEAN_CLONE} is source-of-truth; never read or write FUSE for these paths. FUSE may be stale due to cross-session propagation lag (PROP-077 H5).'",
+    "decider_audit_findings": {
+      "search_method": "grep -n -i 'clone|FUSE|source.of.truth|authoritative' across monitor/prompts/decider.md and monitor/prompts/reference/decider-*.md",
+      "findings": [
+        "decider.md L33-37 (Step 0): 'Refresh the clean clone... Before any shared-writer reads, refresh the clean clone from origin/main. This shrinks the stale-clone window for monitor/analyst/expansion-tracker.json, monitor/curmudgeon/tracker.json, monitor/decisions/open-issues.json, monitor/decisions/human-notes.json, and every other shared-writer file.' — establishes the discipline implicitly (the clone IS the read source) but does not say 'never read FUSE for these files.'",
+        "decider.md L1175: 'priority-queue.json is git-owned and FUSE writes are invisible to agents that clone fresh each run' — explicit for THAT one file.",
+        "decider-curmudgeon.md L42: 'read the CURRENT section text (from the clone, not FUSE)' — explicit for prose verification reads only.",
+        "decider-curmudgeon.md L222: 'verification_pattern against the working tree (the clone, not origin/main)' — about clone-vs-origin, not clone-vs-FUSE.",
+        "decider-patches-and-selfapply.md L599: 'against the clone, not origin/main' — same pattern, clone-vs-origin.",
+        "decider-patches-and-selfapply.md L706: 'Because you clone fresh each run, you always have the latest code.' — discipline assertion but not a principled clone-vs-FUSE rule.",
+        "decider-intake.md L351/368: priority-queue reads/writes via CLONE variable — discipline IS in the code path; principle not stated as text."
+      ],
+      "verdict": "(b) Rule is IMPLICIT but not explicitly stated as a single principle. Discipline is strong (every code path uses ${CLEAN_CLONE} or 'the clone'), but a Haiku agent re-reading the prompt looking for first-principles guidance on 'where do I read open-issues.json from?' won't find a one-shot answer. Surgical fix: add one line near Step 0 (decider.md ~line 37) elevating the implicit discipline to an explicit principle. ZERO contradictions found — there is no place where decider prompts tell the agent to read these files from FUSE."
+    }
+  },
+  "regression_check": {
+    "before": "structure-integrity.md Sections 7a.5 and 7h have implicit cwd-relative reads of monitor/decisions/*. Integrity Haiku agent's default behavior reads from FUSE when cwd is the FUSE workspace or its own session-relative path. The 2026-06-03T01:30Z incident is the canonical failure shape.",
+    "after": "Sections 7a.5 and 7h explicitly mandate clone-relative paths. Integrity must be invoked from inside its fresh clone (already true for the build-reproducibility section per existing /tmp/dome-integrity-clone wording, but not previously enforced for open-issues.json reads/writes). The PROLOGUE in each section makes the read+write path unambiguous.",
+    "preserved_behaviors": [
+      "Section 7h's audit logic (the entry-filtering pseudocode) is unchanged — only the read source and write destination are now explicit.",
+      "Section 7a.5's audit logic (duplicate-ID scan + cross-file collision check) is unchanged — only the read source is now explicit.",
+      "All other integrity sections (1-6, 7a, 7b-7g, 8-9) are not touched.",
+      "Decider.md edit is additive (1 line); existing Step 0 logic, existing clone-refresh logic, and all downstream sections are unchanged."
+    ],
+    "edge_case_first_run_integrity_no_clone": "If integrity's first-ever run has no pre-existing clone, its session is expected to fall through to /tmp/dome-integrity-clone for Section 9 (Build Reproducibility). Sections 7a.5 and 7h require a clone to read open-issues.json from; existing integrity SKILL.md / prompt setup creates the clone before running scans. If a future regression strips that setup, this PROLOGUE makes the failure mode loud (no clone → no open-issues.json read source → audit fails fast)."
+  },
+  "validation_simulation_2026_06_03_01_30_with_prop_078": {
+    "timeline_replay": [
+      "01:23:55Z — ca68cb5d decider commits open-issues.json (EXP-450 closures)",
+      "01:26:59Z — dome-mirror sentinel: 88 files copied into modest-vibrant-brahmagupta session FUSE",
+      "01:27:38Z — workspace-sync's smart_copy on open-issues.json: cmp -s short-circuit (FUSE matched git)",
+      "01:30:38Z — integrity runs Section 7h self-test. WITH PROP-078: integrity reads open-issues.json from ${CLEAN_CLONE}/monitor/decisions/open-issues.json (which has ca68cb5d's EXP-450 closures because integrity's clone was made at run start, after ca68cb5d was pushed). Integrity appends ISS-2519 to the fresh-clone content. Writes to clone. Pushes correctly. NO REVERT."
+    ],
+    "expected_diff_shape_after_prop_078": "Integrity commits after PROP-078 should be append-only on open-issues.json (e.g., +30 / -0 for an ISS-2519-shaped append). A diff shape of +0 / -130 (the 2026-06-03T01:30Z incident shape) would indicate the rule was bypassed and is a regression signal."
+  },
+  "counter_arguments_addressed": {
+    "could_part_b_be_a_lighter_implementation_e_g_one_line_only": {
+      "objection": "A single one-line note in the intro might suffice; do we really need PROLOGUEs in BOTH Section 7h AND Section 7a.5?",
+      "response": "Haiku-model integrity reads its own prompt in chunks. A Context-level rule placed 540+ lines before Section 7h's self-test won't reliably ground the agent at the moment of the write. The local PROLOGUE at the audit-write site is what closes the gap — same pattern proven by PROP-077 Part A (the recent-commit guard goes inside smart_copy, not in workspace-sync.md's intro). Section 7a.5 gets the same treatment because it's the next-most-likely surface for a similar bug; the directive explicitly named both sections."
+    },
+    "why_decider_audit_at_all_if_no_evidence_of_bug": {
+      "objection": "Decider's clone discipline is strong; why add a one-liner?",
+      "response": "Operator's Q_OP_4 narrowed scope to decider precisely because decider is the highest-prolific writer in this class. The discipline is implicit; the PROP-076 Mech-A bypass case shows that implicit-discipline-without-explicit-statement leaks under model-variation. Adding one line costs ~0 prompt budget (a 1-line statement in a 1207-line file) and elevates the rule to first-class. Cheap insurance."
+    },
+    "could_the_rule_extend_to_curmudgeon_or_other_writers": {
+      "objection": "Curmudgeon, analyst, social, etc. all read/write monitor/decisions/* and monitor/analyst/*. Why only integrity and decider?",
+      "response": "Directive non-goals #6: 'Do NOT auto-extend the clone-source-of-truth rule to monitor/curmudgeon/* or monitor/tinker/* in this run — those have different ownership patterns and the rule may not apply uniformly. Stay scoped to monitor/decisions/* + monitor/analyst/*.' Operator-set scope. Curmudgeon's discipline is also strong (clone-fresh-each-run; reads its priority-queue from clone). If recurrence shows up at curmudgeon, a follow-up directive can extend. Same logic for analyst / analyst-baby — held back pending evidence."
+    },
+    "what_if_integrity_is_invoked_outside_a_clone": {
+      "objection": "If a future operator-driven invocation runs integrity from outside a clone (e.g., directly in FUSE), the PROLOGUE rule is unenforceable.",
+      "response": "True. The PROLOGUE elevates the discipline to a rule but the runtime enforcement remains procedural (the agent must follow it). Three layers of defense converge: (a) integrity's own SKILL.md / scheduled-task wiring sets up a clone (existing); (b) the prompt's Section 9 Build Reproducibility section already uses /tmp/dome-integrity-clone; (c) the new PROLOGUEs in 7a.5 and 7h make the read+write path explicit. A runtime-enforcement gate (e.g., a pre-write check that exits if the destination is under /sessions/*/mnt) is a separate PROP if the procedural approach proves insufficient."
+    }
+  },
+  "related_mitigations": {
+    "cron_offset_dome_mirror": "Per operator Q_OP_2 = DEFER: dome-mirror cron stays at ':30' for now. Re-evaluate revert to ':00' on or after 2026-06-06 after Part B has been live for 2-3 days.",
+    "prop_077_part_a_recent_commit_guard": "Part A shipped 2026-06-03; defense-in-depth that catches a different race class. Stays in place.",
+    "decider_self_heal_on_open_issues_revert": "Decider's existing 1-2h reactive self-heal for revert detection remains as the backstop. Part B prevents the upstream cause; self-heal continues as defense-in-depth."
+  },
+  "rollout_plan": {
+    "phase_1_enforce_directly": {
+      "duration": "Permanent from this PROP's deployment.",
+      "behavior": "structure-integrity.md PROLOGUEs are textual rules read at every integrity run. The Haiku agent follows them when interpreting Sections 7a.5 and 7h. decider.md one-liner is textual and reinforces existing discipline.",
+      "rationale": "Operator pre-approved via DIRECTIVE-20260603-003 Q_OP_1=YES. No shadow-mode needed for prompt-level edits — the rule either takes effect from the next agent invocation or it doesn't, and 'doesn't' is easy to detect (a future revert-shaped commit shows up)."
+    },
+    "instrumentation": {
+      "primary_canary": "monitor/integrity/report-*.json from the next 3 integrity runs. Look at the commit each run pushes; a revert-shaped commit (high removal count vs append-only expected) indicates Part B was bypassed. Expected pattern: append-only (e.g., +30 / -0 for an ISS append).",
+      "secondary_canary": "tinker's standing soft-complaints grep over monitor/integrity/workspace-sync-runs/*.json continues to catch workspace-sync-side recent-commit-guard fires. Part A and Part B are orthogonal canaries.",
+      "tertiary_canary": "decider's existing self-heal logic: any future detected revert on open-issues.json that the integrity audit triggered is a regression signal — file a directive."
+    }
+  },
+  "success_criteria": {
+    "M1": "monitor/prompts/structure-integrity.md Section 7h has a PROLOGUE block specifying clone-relative read+write for monitor/decisions/open-issues.json. Verifier: grep -q 'PROP-078' monitor/prompts/structure-integrity.md && grep -A 10 '### 7h\\.' monitor/prompts/structure-integrity.md | grep -q 'clone.*source.of.truth\\|clone.*authoritative\\|clone-relative\\|fresh clone'",
+    "M2": "Same for Section 7a.5 (ID-collision audit). Verifier: grep -A 10 '### 7a\\.5\\.' monitor/prompts/structure-integrity.md | grep -q 'PROP-078\\|clone-relative\\|fresh clone'",
+    "M3": "Context section intro has a one-line note establishing the clone-as-source-of-truth principle. Verifier: head -60 monitor/prompts/structure-integrity.md | grep -q 'clone.*source.of.truth\\|never read or write FUSE'",
+    "M4_canary": "Next 3 integrity commits on open-issues.json (after PROP-078 deploys) have append-only or zero-delta shapes — NOT revert-shaped. Operator/tinker monitors and files a regression directive if a revert-shaped commit appears.",
+    "M5_decider_audit_outcome": "Decider audit concluded (b) — rule implicit; one line added to decider.md near Step 0 elevating to explicit principle. Verifier: grep -q 'PROP-078\\|clone.*source.of.truth' monitor/prompts/decider.md"
+  },
+  "post_deployment_plan": [
+    "Tinker next 3 runs: verify M4 canary on next 3 integrity commits affecting open-issues.json.",
+    "On or after 2026-06-06: re-evaluate Q_OP_2 (revert dome-mirror cron from :30 → :00). If 2-3 days of clean integrity commits confirm Part B is doing the work, recommend cron revert via a new directive or HNOTE to operator.",
+    "If a revert-shaped integrity commit appears in the next 7 days: file a directive for operator review; Part B's procedural enforcement is insufficient and a runtime gate (e.g., pre-write path check) may be needed.",
+    "If recurrence appears at analyst, analyst-baby, or tinker instead of integrity: extend Q_OP_4 scope per operator decision."
+  ],
+  "operator_preference_fit_table": {
+    "follows_directive_step_1": "YES — authored this PROP file per Step 1 instructions.",
+    "follows_directive_step_2": "YES — Part B self-applied to structure-integrity.md per success_criteria_part_B M1-M3.",
+    "follows_directive_step_3": "YES — decider audit performed; verdict (b) → one-line addition documented in decider_audit_findings.",
+    "follows_directive_step_4": "YES — combined LOC ~30 (within budget).",
+    "follows_directive_step_5_validation": "YES — M4 canary plan in success_criteria; validation_simulation documents expected diff shape.",
+    "follows_directive_step_6_lifecycle": "YES — this PROP at status='implemented'; DIRECTIVE-20260603-003 to be flipped to 'completed' with prop_id_implemented='PROP-078'; PROP-077 status updated from 'implemented-partial' to 'implemented' with part_b_implemented_by='PROP-078' (lineage: PROP-078 is the Part B follow-up; PROP-077 itself remains the H5-discovery PROP that shipped Part A).",
+    "follows_directive_step_7_fuse_sync": "PENDING — edited prompt files will be manually copied to FUSE after commit; dome-mirror at :30 will also propagate within 30 min."
+  },
+  "Q_OP_for_operator": [
+    "Q_OP_1_part_b_canary_monitor: tinker will track M4 canary (next 3 integrity commits on open-issues.json) and report on next 3 runs. Operator may want to also spot-check after first integrity run post-deployment (next 02:00Z run)."
+  ],
+  "notes_for_operator": [
+    "Part B is now structural — the H5 root cause is addressed where the bug actually lived (integrity's read source, not workspace-sync's write decision).",
+    "Decider audit verdict: (b) implicit. One-line addition is the surgical fix; decider's existing discipline IS strong and pre-existed this PROP — the edit just elevates it from many specific call-outs to one explicit principle.",
+    "If a future recurrence at analyst or analyst-baby surfaces (no current evidence), the directive non-goal #2 explicitly allows operator to extend scope via a new directive.",
+    "Combined LOC ~30 across two prompt files; well inside the directive's 30-line budget. structure-integrity.md grew from 732 to ~754 (+22, +3%); decider.md grew from 1207 to 1208 (+1, +0.08%)."
+  ],
+  "verification_pattern": "grep -q 'PROP-078' monitor/prompts/structure-integrity.md && grep -q 'PROP-078' monitor/prompts/decider.md"
+}
