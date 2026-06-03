@@ -427,6 +427,25 @@ smart_copy() {
     echo "SKIP (anti-reversion; FUSE matches historic commit ${match_sha:0:8}): $dst" >> "$SKIP_LOG"
     return 0
   fi
+  # PROP-077 recent-commit pre-push guard (operator-preferred design (b), 2026-06-03).
+  # Defense-in-depth: if origin's HEAD commit on this path is < 300s old, refuse to push
+  # FUSE→git regardless of mtime/anti-reversion outcome. Protects against the cross-writer
+  # race where another agent (decider, integrity, analyst) just committed this file and
+  # workspace-sync's session FUSE hasn't yet propagated that commit. FUSE write is
+  # recoverable on the next ws-sync cycle once the 5-min window elapses. NOTE: PROP-077's
+  # H5 diagnosis showed the 2026-06-03T01:30Z FUSE-revert was actually committed by
+  # INTEGRITY, not workspace-sync — this guard is defense-in-depth for the same race
+  # class at workspace-sync. The integrity-side fix is HELD for operator review per
+  # PROP-077 Part B.
+  local RECENT_COMMIT_WINDOW_SEC=300
+  local head_ts now_ts age_sec
+  head_ts=$(git log -1 --format=%ct -- "$dst" 2>/dev/null || echo 0)
+  now_ts=$(date -u +%s)
+  age_sec=$((now_ts - head_ts))
+  if [ "$head_ts" -gt 0 ] && [ "$age_sec" -lt "$RECENT_COMMIT_WINDOW_SEC" ]; then
+    echo "SKIP (recent-commit-guard; HEAD on path ${age_sec}s old, window=${RECENT_COMMIT_WINDOW_SEC}s): $dst" >> "$SKIP_LOG"
+    return 0
+  fi
   cp "$src" "$dst"
 }
 
@@ -1223,6 +1242,8 @@ RUN_REPORT_PATH="monitor/integrity/workspace-sync-runs/run-$(date -u +%Y-%m-%dT%
 SKIPS_COUNT=$([ -f "$SKIP_LOG" ] && wc -l < "$SKIP_LOG" || echo 0)
 NEVER_PUSH_COUNT=$([ -f "$SKIP_LOG" ] && grep -c "never-push" "$SKIP_LOG" || echo 0)
 MTIME_GUARD_COUNT=$([ -f "$SKIP_LOG" ] && grep -c "mtime-guard" "$SKIP_LOG" || echo 0)
+ANTI_REVERSION_COUNT=$([ -f "$SKIP_LOG" ] && grep -c "anti-reversion" "$SKIP_LOG" || echo 0)
+RECENT_COMMIT_COUNT=$([ -f "$SKIP_LOG" ] && grep -c "recent-commit-guard" "$SKIP_LOG" || echo 0)
 
 # AGENT_NOTES is the narrative field. You (the LLM) MUST fill it with a one-to-
 # few-sentence observation about the run. Required strings to include if they
@@ -1247,6 +1268,8 @@ FILES_COMMITTED="$FILES_COMMITTED" \
 SKIPS_COUNT="$SKIPS_COUNT" \
 NEVER_PUSH_COUNT="$NEVER_PUSH_COUNT" \
 MTIME_GUARD_COUNT="$MTIME_GUARD_COUNT" \
+ANTI_REVERSION_COUNT="$ANTI_REVERSION_COUNT" \
+RECENT_COMMIT_COUNT="$RECENT_COMMIT_COUNT" \
 AGENT_NOTES="$AGENT_NOTES" \
 node -e "
 const fs=require('fs');
@@ -1258,7 +1281,9 @@ const rec={
   skips_total: parseInt(process.env.SKIPS_COUNT||'0',10),
   skip_breakdown: {
     never_push: parseInt(process.env.NEVER_PUSH_COUNT||'0',10),
-    mtime_guard: parseInt(process.env.MTIME_GUARD_COUNT||'0',10)
+    mtime_guard: parseInt(process.env.MTIME_GUARD_COUNT||'0',10),
+    anti_reversion: parseInt(process.env.ANTI_REVERSION_COUNT||'0',10),
+    recent_commit_guard: parseInt(process.env.RECENT_COMMIT_COUNT||'0',10)
   },
   agent_notes: process.env.AGENT_NOTES || '',
   cleanup_ran: true
@@ -1351,6 +1376,7 @@ Output a one-line summary: how many files were new, how many modified, or "Nothi
 - **Counterpart agent for git→FUSE (PROP-074, 2026-06-01):** the reverse direction (commits landing on `origin/main` via paths other than this agent's push — operator API pushes, decider self-applies, other scheduled-agent pushes from clones) is propagated into FUSE by the `dome-mirror` scheduled agent, which runs `monitor/scripts/sync-workspace-step4c.js` as its single action. The two agents together cover both directions of the FUSE↔git boundary. Six iterations attempting to make this single agent bidirectional (PROP-066/068/072/073 + a contextual-reframe attempt) produced ~14% reliability; the architectural separation closes the bug class.
 - **GIT_APPEND_ONLY classification (PROP-065, 2026-05-31):** 15 .jsonl files are excluded from universal-pusher. These are written exclusively via clone-and-push (queue-history, calibration-audits, prop-009-shadow, integrity archives, analyst/curmudgeon/decider/social human-notes archives, expansion-tracker-archive, attention-inbox-archive, priority-queue-archive). FUSE-side staleness on these files is normal and self-resolves via Step 4c (PROP-061/064) git→FUSE sync. workspace-sync NEVER pushes FUSE→git for these files. If FUSE diverges (producer-side bug), the divergence is logged to workspace-sync-skips.jsonl with reason `git-append-only; FUSE-newer divergence — producer-bug canary`. Operator should inspect those entries — they indicate an agent wrote to FUSE instead of clone-and-push. This eliminates the FND-02 class (2026-05-30T09:11Z queue-history.jsonl destructive overwrite).
 - **Anti-reversion guard (PROP-045, enforce 2026-05-17):** `smart_copy` adds a content-hash check after the mtime guard. Even when FUSE mtime > git commit time, if the FUSE content sha1 matches any of the last 20 historic commits' versions on that path, the copy is SKIPPED with reason `anti-reversion; FUSE matches historic commit <sha>`. This catches the 2026-05-17T13:00Z failure mode where workspace-sync reverted analyst-baby's EXP-415..420 orphan-batch commit by pushing a pre-commit stale FUSE copy that had been updated mtime-wise but contained pre-baby content. Affects multi-writer files (`expansion-tracker.json`, `attention-inbox.json`, `curmudgeon/tracker.json`) where read-modify-write races between agents are common. Rescue path preserved: decider's committed-but-unpushed content is a never-pushed state with a content hash that won't match any historic commit, so it proceeds normally. Tinker's soft-complaints grep should flag any run where `anti_reversion` count > 0 (sustained >0 indicates a writer-side bug worth fixing at source).
+- **Recent-commit pre-push guard (PROP-077, enforce 2026-06-03):** `smart_copy` adds a temporal guard after the PROP-045 anti-reversion check. Before copying FUSE→clone, it looks at `git log -1 --format=%ct -- $dst` (origin's HEAD commit timestamp on this path). If that timestamp is within the last `RECENT_COMMIT_WINDOW_SEC=300` seconds (5 min), the copy is SKIPPED with reason `recent-commit-guard; HEAD on path <N>s old`. This protects against the cross-writer race where another agent (decider, integrity, analyst) just committed this file and workspace-sync's session FUSE hasn't yet propagated the commit. FUSE write is recoverable on the next ws-sync cycle once the window elapses. NOTE: PROP-077's H5 root-cause diagnosis (see proposal file) showed the 2026-06-03T01:30Z FUSE-revert that triggered DIRECTIVE-20260603-002 was actually committed by INTEGRITY, not workspace-sync; this guard is defense-in-depth against the same race class at this writer. The integrity-side fix (Part B) is HELD for operator review pending follow-up directive. Tinker's soft-complaints grep should flag any run where `recent_commit_guard` count > 0 — that means another writer recently committed within the window, which is exactly what the guard catches.
 - If git pull --rebase fails with merge conflicts, do NOT attempt to resolve. Output the error and stop. A human or the tinker agent will fix it.
 - Use your own clone directory (`dome-sync-clone`), never touch `dome-review-clean`.
 

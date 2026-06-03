@@ -1,0 +1,109 @@
+{
+  "report_id": "tinker-2026-06-03T05-30",
+  "report_date": "2026-06-03",
+  "run_at": "2026-06-03T05:30:37Z",
+  "tinker_run_id": "tinker-2026-06-03T05-30",
+  "mode_selected": "operator-directive",
+  "mode_rationale": "Pre-flight discovered high-priority pending DIRECTIVE-20260603-002 (FUSE-revert race anti-reversion fix). Operator-directive dispatcher routes preempts Mode 0/1/2/3/4 selection.",
+  "modes_checked": {
+    "operator_directive": {
+      "pending_count": 1,
+      "top_pick": "DIRECTIVE-20260603-002-fuse-revert-race-anti-reversion-fix"
+    },
+    "mode_0_assigned_to_tinker": "0 items pending",
+    "mode_1": "skipped (directive preempts)",
+    "mode_2": "skipped (directive preempts)",
+    "mode_3": "skipped (directive preempts)",
+    "mode_4": "skipped (directive preempts)"
+  },
+  "previous_followup": "Last tinker run (fc9ed95c, 2026-06-03T02:47:19Z) reported 'PROP-074/075 post-deploy verification all green' but did not surface the 01:30Z FUSE-revert that had already occurred (3a709c71 at 01:30:38Z). This run's H5 finding closes that gap retroactively.",
+  "directive_completion": {
+    "directive_id": "DIRECTIVE-20260603-002-fuse-revert-race-anti-reversion-fix",
+    "filed_at": "2026-06-03T05:05:00Z",
+    "priority": "high",
+    "status_transition": "pending → completed",
+    "prop_id_implemented": "PROP-077",
+    "scope_followed": "PARTIAL — directive's pre-approved scope was workspace-sync.md (fix directions a/b/c). Tinker implemented operator-preferred design (b) per scope (Part A, self-applied this run). Tinker ALSO discovered H5 root cause (FUSE-revert came from INTEGRITY, not workspace-sync) and proposes Part B (integrity prompt edits) for operator review — HELD per directive Step 7 condition: 'discover the underlying race needs architectural redesign rather than guard-tweak'.",
+    "steps_completed": {
+      "step_1_read_workspace_sync_md": "DONE",
+      "step_2_read_prop_045": "DONE",
+      "step_3_reconstruct_0127z_incident": "DONE — found H5: actual revert committed by integrity (3a709c71), not workspace-sync (42a4628b)",
+      "step_4_check_dome_mirror_sentinel": "DONE — confirmed dome-mirror at 01:26:59Z copied 88 files into its own session FUSE (sync_exit_code=0); cross-session FUSE staleness confirmed",
+      "step_5_diagnose_h1_h4_or_new": "DONE — H5 (new): integrity bypasses workspace-sync smart_copy entirely; PROP-045 never had a chance to fire",
+      "step_6_author_prop": "DONE — PROP-077 authored with H5 diagnosis + dual-fix proposal",
+      "step_7_self_apply_or_hold": "PARTIAL — Part A self-applied (workspace-sync.md recent-commit guard, ~27 LOC); Part B HELD for operator review",
+      "step_8_validate_simulation": "DONE — simulation documented in PROP-077 validation_simulation section; Part A alone does NOT prevent the 2026-06-03 incident (integrity bypasses workspace-sync); Part B prevents it",
+      "step_9_lifecycle": "DONE — PROP-077 status='implemented-partial'; this directive status='completed'",
+      "step_10_fuse_sync_workspace_sync_md": "PENDING — copy edited workspace-sync.md to FUSE after this clone's push lands",
+      "step_11_document_cron_offset": "DONE — recorded in PROP-077 related_mitigations.cron_offset_dome_mirror; revert condition noted"
+    }
+  },
+  "h5_finding_summary": {
+    "directive_assumption": "workspace-sync (42a4628b at 01:27:40Z) overwrote ca68cb5's open-issues.json closures with stale FUSE copy; PROP-045 anti-reversion guard failed.",
+    "actual_culprit": "INTEGRITY (3a709c717 at 01:30:38Z) wrote stale FUSE-read open-issues.json (with ISS-2519 appended) to its clone and pushed.",
+    "evidence": [
+      "open-issues.json sha at ca68cb5 = a513c66b (decider clean state with EXP-450 closures)",
+      "open-issues.json sha at 42a4628b = a513c66b (UNCHANGED — workspace-sync did not modify this file)",
+      "open-issues.json sha at 3a709c71 = e72d31ab (REVERTED — ISS-2273..2279 flipped from assigned-analyst+unblocked_at back to blocked-on-curmudgeon; last_updated reverted from 2026-06-03T01:22:51Z to 2026-06-02T23:11:25Z)",
+      "integrity report-2026-06-03T02-00.json confirms integrity added ISS-2519 (23 Mech-A-bypass candidates) per Section 7h self-test",
+      "workspace-sync-skips.jsonl at 01:27:38Z contains 43 mtime-guard skips, none for open-issues.json (FUSE was identical to git on that path — cmp -s short-circuit fired before guard ran)"
+    ],
+    "misattribution_chain": "(1) integrity committed the revert at 01:30:38Z; (2) decider's self-heal at 03:20:11Z (commit 3d6d2d19) interpreted the artifact as 'workspace-sync had overwritten ca68cb5's open-issues' — plausible reading without git-log forensics; (3) operator drafted DIRECTIVE-20260603-002 scoped to workspace-sync based on decider's self-heal note; (4) tinker is the first agent with both forensic access and the run-budget to verify against git history. Decider's self-heal note should be amended retroactively.",
+    "actual_root_cause": "Integrity's Section 7h self-test ('if the scan flags >=1 entry, write a corresponding ISS in monitor/decisions/open-issues.json') does not specify clone-vs-FUSE read source. Haiku-model integrity uses cwd-relative reads, which default to FUSE for the workspace-relative paths it walks. Read from stale FUSE, modify in memory (append ISS-2519), write to clone (replacing fresh-pull content), push. PROP-045 protects workspace-sync's smart_copy and is sound; integrity has its own push path that bypasses smart_copy entirely."
+  },
+  "self_apply_summary": {
+    "files_modified": [
+      "monitor/prompts/workspace-sync.md"
+    ],
+    "files_added": [
+      "monitor/tinker/proposals/PROP-077-anti-reversion-guard-hardening.json"
+    ],
+    "files_lifecycle_flipped": [
+      "monitor/tinker/operator-directives/DIRECTIVE-20260603-002-fuse-revert-race-anti-reversion-fix.json (pending→completed)"
+    ],
+    "loc_added_total": 27,
+    "loc_removed_total": 1,
+    "verification_pattern_passes": true,
+    "verification_pattern": "grep -q 'recent-commit-guard' monitor/prompts/workspace-sync.md && grep -q 'PROP-077' monitor/prompts/workspace-sync.md"
+  },
+  "part_b_hold_rationale": "Part B (structure-integrity.md edits) is the actual fix for the 2026-06-03 incident but expands directive scope. Per directive Step 7: 'Hold for operator review if a Q-OP needs answering or if tinker discovers the underlying race needs architectural redesign rather than guard-tweak.' The wrong-agent-identified discovery qualifies. See PROP-077 Q_OP_for_operator section (Q_OP_1) for the operator decision.",
+  "findings": [
+    {
+      "category": "directive-completion",
+      "severity": "info",
+      "description": "DIRECTIVE-20260603-002 completed with PARTIAL self-apply (Part A only) + H5 root-cause discovery surfacing the misattribution chain. Decider self-heal note in commit 3d6d2d19 should be amended to reflect integrity-side culprit if a follow-up amendment is reasonable.",
+      "tracked_under": null
+    },
+    {
+      "category": "backlog-trend",
+      "severity": "info",
+      "description": "Per PROP-030 metrics — see queue-history.jsonl append below. Routine metrics, no threshold tier fired.",
+      "tracked_under": null
+    },
+    {
+      "category": "decider-self-heal-misattribution",
+      "severity": "moderate",
+      "description": "Decider's 03:20 self-heal commit (3d6d2d19) message says 'workspace-sync had overwritten ca68cb5's open-issues with stale FUSE copy' — git-log evidence shows the revert was committed by integrity (3a709c71), not workspace-sync (42a4628b which did not touch open-issues.json). The misattribution propagated into DIRECTIVE-20260603-002. Suggested follow-up: amend decider-curmudgeon.md or decider-patches-and-selfapply.md self-heal guidance to recommend git-log-based attribution (`git log -- <path> --since=<incident-window>`) before generating self-heal commit messages.",
+      "location": "monitor/decisions/3d6d2d19 (commit message); monitor/prompts/decider-* (potential amendment surface)",
+      "suggested_fix": "Author follow-up PROP for decider self-heal attribution improvement; defer until operator decides on PROP-077 Part B",
+      "tracked_under": null
+    }
+  ],
+  "queue_history_jsonl_append": {
+    "ts": "2026-06-03T05:31:04Z",
+    "tinker_run_id": "tinker-2026-06-03T05-30",
+    "open_issues_total": 21,
+    "open_status_count": 4,
+    "assigned_analyst_count": 9,
+    "age_ge_14d_count": 0,
+    "age_ge_30d_count": 0,
+    "oldest_open_age_days": 0
+  },
+  "next_run_priorities": [
+    "Mode 0 scan: any newly-routed assigned-to-tinker items",
+    "Operator-directive scan: check if any new directive was filed in response to PROP-077 (Part B approval or rejection)",
+    "If Part B approved: author follow-up PROP (PROP-078 or amendment) for structure-integrity.md edits and self-apply per directive scope",
+    "Mode 3 (cost engineering) if pipeline healthy and no urgent directive"
+  ],
+  "summary_one_paragraph": "Tinker run executed pending high-priority DIRECTIVE-20260603-002 (FUSE-revert race anti-reversion fix). PROP-077 authored with H5 root-cause discovery: the 2026-06-03T01:30:38Z open-issues.json revert was committed by INTEGRITY (3a709c71), not workspace-sync (42a4628b which did not modify the file). PROP-045 anti-reversion guard worked correctly. The misattribution propagated through decider's 03:20 self-heal note into the directive itself. Part A (operator-preferred design (b) recent-commit pre-push guard) self-applied to workspace-sync.md as defense-in-depth (~27 LOC). Part B (the actual fix — integrity prompt edits forcing clone-source-of-truth for open-issues.json writes) HELD for operator review per directive Step 7 hold-condition. Cron-offset mitigation (dome-mirror :00→:30) documented as related operator-side mitigation."
+}

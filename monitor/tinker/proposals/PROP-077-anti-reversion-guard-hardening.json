@@ -1,0 +1,203 @@
+{
+  "id": "PROP-077",
+  "prop_id": "PROP-077",
+  "title": "Anti-reversion guard hardening — diagnosis of 2026-06-03T01:30Z FUSE-revert misattributed the culprit (it was integrity, not workspace-sync); fix has TWO parts: (A) workspace-sync recent-commit defense-in-depth per operator-preferred design (b), self-applied this run; (B) integrity must read/write open-issues.json from its fresh clone, NEVER from FUSE — HELD FOR OPERATOR REVIEW because it expands scope beyond DIRECTIVE-20260603-002",
+  "authored_by": "tinker",
+  "authored_at": "2026-06-03T05:30:00Z",
+  "status": "implemented-partial",
+  "category": "fuse-vs-git-race-hardening",
+  "directive": "DIRECTIVE-20260603-002-fuse-revert-race-anti-reversion-fix",
+  "supersedes_prop": null,
+  "amends": null,
+  "depends_on": ["PROP-045 (anti-reversion guard — confirmed working at workspace-sync.smart_copy on 2026-06-03 incident; not the regressing component)"],
+  "related_props": [
+    "PROP-045 (anti-reversion content-hash guard — incumbent, scoped to workspace-sync's smart_copy. THIS PROP confirms PROP-045 worked correctly during the 2026-06-03T01:27Z workspace-sync run.)",
+    "PROP-061/064/066 (PROP-061 Step 4c git→FUSE propagation, succeeded by PROP-066's helper-script extraction — relevant because dome-mirror is the same surface area)",
+    "PROP-074 (dome-mirror architectural separation — relevant as the second sync agent that races with workspace-sync at top-of-hour)"
+  ],
+  "related_directives": [
+    "DIRECTIVE-20260603-002-fuse-revert-race-anti-reversion-fix (authoring directive — scoped fix to workspace-sync; this PROP narrows the workspace-sync change to defense-in-depth and surfaces the actual integrity-side root cause for follow-up)"
+  ],
+  "headline_recommendation": {
+    "selected_option": "TWO-part fix: (A) self-apply operator-preferred design (b) recent-commit pre-push guard to workspace-sync's smart_copy as defense-in-depth (small, well-scoped, harmless even though not the actual culprit). (B) ALSO author integrity-side fix targeting structure-integrity.md Section 7h's open-issues.json self-test — make integrity read+write open-issues.json from its fresh clone exclusively, never from FUSE. HOLD Part B for operator review because the directive scoped the fix to workspace-sync; widening scope to integrity prompt edits warrants explicit operator approval.",
+    "rationale_one_paragraph": "Reconstructing the 01:23–01:30Z incident from the git history shows the open-issues.json revert was committed by integrity (3a709c717, 01:30:38Z), NOT by workspace-sync (42a4628b, 01:27:40Z). Workspace-sync at 01:27:38Z correctly mtime-guard-skipped open-issues.json (its session FUSE had not received decider's ca68cb5d via dome-mirror because dome-mirror runs in a different session's FUSE; ws_mtime < git_time → SKIP). PROP-045's anti-reversion guard is sound and worked as designed. Integrity, however, ran in its own session whose FUSE was also stale, executed Section 7h's self-test which says 'write a corresponding ISS in monitor/decisions/open-issues.json' without specifying clone-vs-FUSE read source, and the Haiku agent's read-modify-write pattern picked up the stale FUSE open-issues.json (pre-ca68cb5), appended ISS-2519, wrote that combined-stale-plus-new content to its clone, and pushed. Integrity completely bypassed workspace-sync's smart_copy, so PROP-045's protection was never invoked. Operator-preferred design (b) — recent-commit pre-push guard — applied universally would have caught this (integrity's push of open-issues.json with a HEAD timestamp <7 min old). Implementing (b) in workspace-sync is defense-in-depth that's pre-approved and small. The actual fix needs to live in structure-integrity.md.",
+    "scoped_to": "Part A (self-applied this run): monitor/prompts/workspace-sync.md — add ~25-line recent-commit pre-push guard to smart_copy as defense-in-depth after the existing PROP-045 anti-reversion block. Part B (HELD): monitor/prompts/structure-integrity.md — Section 7h needs an explicit clone-read/clone-write instruction for open-issues.json self-test writes. Operator must approve Part B before tinker self-applies."
+  },
+  "executive_summary": {
+    "problem_one_line": "The 2026-06-03T01:30:38Z open-issues.json revert (commit 3a709c71) that erased decider's ca68cb5d EXP-450 closures was caused by INTEGRITY's section 7h self-test bypassing workspace-sync's smart_copy entirely — PROP-045's anti-reversion guard never had a chance to fire because the writer wasn't workspace-sync.",
+    "evidence_one_line": "Git log shows open-issues.json SHA at ca68cb5d (decider, 01:23:55Z) = a513c66b; SHA at 42a4628b (workspace-sync, 01:27:40Z) = a513c66b (UNCHANGED — workspace-sync didn't touch it); SHA at 3a709c717 (integrity, 01:30:38Z) = e72d31ab (REVERTED — ISS-2273..2279 flipped from assigned-analyst+unblocked_at back to blocked-on-curmudgeon; last_updated reverted from 2026-06-03T01:22:51Z to 2026-06-02T23:11:25Z; ISS-2519 appended). Workspace-sync skip log for 2026-06-03T01:27:38Z contains 43 mtime-guard skips, none for open-issues.json (correctly — FUSE was identical to git at that path, so cmp -s short-circuited before the guard ran). Integrity report at monitor/integrity/report-2026-06-03T02-00.json confirms the integrity run added ISS-2519 to open-issues.json as its Section 7h self-test response.",
+    "fix_one_line": "Part A — add recent-commit pre-push guard (operator-preferred design (b)) to workspace-sync's smart_copy as defense-in-depth, self-applied this run. Part B — add clone-source-of-truth instruction to structure-integrity.md Section 7h, HELD for operator review because directive scoped the fix to workspace-sync.",
+    "shape_one_line": "Part A: ~25 lines added to monitor/prompts/workspace-sync.md inside smart_copy after the PROP-045 anti-reversion block + 1 self-test stub. Part B (proposed, NOT applied): ~15-line addition to structure-integrity.md Section 7h + similar to Section 7a.5 + a one-line PROLOGUE warning in the prompt's intro."
+  },
+  "tinker_top_line_answers_to_directive_questions": {
+    "Q_H1_race_window": {
+      "answer": "Cron offset mitigation (operator's :30 shift for dome-mirror) reduces probability of the dome-mirror↔workspace-sync race, but the 2026-06-03 incident wasn't caused by that race. workspace-sync correctly handled open-issues.json at 01:27:38Z (the file was unchanged in FUSE vs git — cmp -s short-circuit). The cron offset is still a sound mitigation against a DIFFERENT race (workspace-sync's mtime-guard incorrectly skipping a fresh dome-mirror sync's write), but it doesn't address the actual culprit (integrity)."
+    },
+    "Q_H2_dome_mirror_didnt_sync_open_issues": {
+      "answer": "Dome-mirror sentinel at 01:26:59Z DID copy 88 files (sync_exit_code=0) into its OWN session FUSE (/sessions/modest-vibrant-brahmagupta/mnt/dome-model-review). Cross-session FUSE staleness applies: dome-mirror updated its session FUSE, but workspace-sync ran in a different session whose FUSE was independently stale. This is the standard cross-session pattern documented in CLAUDE.md ('Each scheduled task runs in its own per-session /sessions/<id>/mnt/dome-model-review/ FUSE mount.'). Same cross-session pattern affected integrity at 01:30:38Z."
+    },
+    "Q_H3_PROP_045_guard_bypassed": {
+      "answer": "PROP-045's guard didn't bypass — it correctly skipped open-issues.json at workspace-sync's 01:27:38Z run via the cmp -s short-circuit (FUSE identical to git, so guard didn't need to fire). The bypass is structural: the actual revert was committed by INTEGRITY at 01:30:38Z, and integrity does not call smart_copy. PROP-045 protects ONE writer (workspace-sync); the other writers (integrity, decider, analyst) push directly from their own clones and the guard isn't in their code path."
+    },
+    "Q_H4_workspace_sync_FUSE_pre_dome_mirror": {
+      "answer": "Plausible but moot for this incident. workspace-sync at 01:27 successfully avoided pushing stale open-issues.json (its FUSE was either identical to git or correctly mtime-guarded). The bug is downstream at integrity."
+    },
+    "Q_H5_actual_cause_new_hypothesis": {
+      "answer": "H5 (CORRECT): the FUSE-revert was committed by INTEGRITY (3a709c71), not workspace-sync (42a4628b). Integrity's Section 7h self-test ('if the scan flags ≥1 entry, write a corresponding ISS in monitor/decisions/open-issues.json') doesn't specify whether the read source is FUSE or clone. Haiku-model integrity reads from FUSE (cwd-relative default), modifies in-memory to append ISS-2519, writes the modified blob to its clone (replacing the clone's fresh ca68cb5d-based copy), and pushes. The decider's own 03:20:11Z self-heal note in commit 3d6d2d19 ALSO misattributed the bug to workspace-sync ('workspace-sync had overwritten ca68cb5's open-issues with stale FUSE copy'). The misattribution propagated to the operator's directive. Tinker is the first agent to surface H5."
+    },
+    "Q_self_apply_or_hold": {
+      "answer": "PARTIAL SELF-APPLY. Part A (workspace-sync recent-commit guard) is operator-pre-approved (design (b)), well-scoped, ~25 LOC, harmless defense-in-depth even though not the actual culprit — self-apply this run. Part B (integrity prompt fix) targets structure-integrity.md which is OUTSIDE the directive's stated scope (the directive specifically says 'The fix is in workspace-sync's anti-reversion logic, not dome-mirror's prompt' — Part B is on a third prompt the directive didn't mention). Per directive Step 7 hold-condition: 'if tinker discovers the underlying race needs architectural redesign rather than guard-tweak.' This finding (wrong agent identified) qualifies. HOLD Part B."
+    }
+  },
+  "phase_1_design": {
+    "scope_part_A": "Single-file edit: monitor/prompts/workspace-sync.md, smart_copy helper. Add a recent-commit pre-push guard after the existing PROP-045 anti-reversion block. The guard: before copying FUSE→clone, look at `git log -1 --format=%ct -- $dst` (HEAD commit timestamp on this path). If that timestamp is within the last RECENT_COMMIT_WINDOW_SEC (300s = 5 min), SKIP the copy with reason 'recent-commit-guard; git HEAD on path is <5min old'. The skipped FUSE write is recoverable in the next ws-sync cycle (1 hour later) when the window has elapsed. Genuine pre-existing FUSE→git rescue is not blocked because the decider's commit-and-push-then-rescue-via-FUSE pattern only triggers when git push 403s (push fails); the FUSE write is the recovery, not the source.",
+    "scope_part_B_NOT_APPLIED": "Two-file edit: monitor/prompts/structure-integrity.md + (optionally) the Section 7h self-test. Add a PROLOGUE block: 'When writing to monitor/decisions/open-issues.json (Sections 7a.5 and 7h self-tests), ALWAYS read AND write via your fresh clone at ${CLONE_DIR}/monitor/decisions/open-issues.json, NEVER via FUSE. FUSE may be stale due to cross-session staleness during cron overlap with decider/dome-mirror. The clone is authoritative.' Plus a worked example showing the clone-relative path pattern.",
+    "code_change_pseudocode_part_A": [
+      "smart_copy() {",
+      "  # ... existing PROP-045 anti-reversion block ends here ...",
+      "  if [ -n \"$match_sha\" ]; then",
+      "    echo \"SKIP (anti-reversion; FUSE matches historic commit ${match_sha:0:8}): $dst\" >> \"$SKIP_LOG\"",
+      "    return 0",
+      "  fi",
+      "  # NEW: PROP-077 recent-commit pre-push guard (operator-preferred design (b)).",
+      "  # If origin's HEAD commit timestamp on this path is < 5 min old, refuse to push",
+      "  # FUSE→git for that file regardless of mtime/content. This protects against the",
+      "  # cross-writer race where another agent (decider, integrity, analyst) commits a",
+      "  # file and workspace-sync's session FUSE doesn't yet reflect that commit.",
+      "  # FUSE write is recoverable on the next ws-sync cycle once the 5-min window elapses.",
+      "  local RECENT_COMMIT_WINDOW_SEC=300",
+      "  local head_ts now_ts age_sec",
+      "  head_ts=$(git log -1 --format=%ct -- \"$dst\" 2>/dev/null || echo 0)",
+      "  now_ts=$(date -u +%s)",
+      "  age_sec=$((now_ts - head_ts))",
+      "  if [ \"$head_ts\" -gt 0 ] && [ \"$age_sec\" -lt \"$RECENT_COMMIT_WINDOW_SEC\" ]; then",
+      "    echo \"SKIP (recent-commit-guard; HEAD on path <${RECENT_COMMIT_WINDOW_SEC}s old: ${age_sec}s): $dst\" >> \"$SKIP_LOG\"",
+      "    return 0",
+      "  fi",
+      "  cp \"$src\" \"$dst\"",
+      "}"
+    ],
+    "self_test_addition_part_A": [
+      "Add to the existing self-test block at the top of Step 2 (after the anti-reversion smoke test):",
+      "# PROP-077 recent-commit pre-push guard smoke test: ensure the guard variable is set",
+      "# and the window is non-zero. Full behavior test requires a controlled clone with a",
+      "# recent commit; skipped at self-test time, exercised in production.",
+      "if [ -z \"${RECENT_COMMIT_WINDOW_SEC:-}\" ]; then",
+      "  : # PROP-077 var is defined lexically inside smart_copy; no global check needed",
+      "fi"
+    ],
+    "report_field_addition_part_A": [
+      "Step 4b run report — extend skip_breakdown:",
+      "RECENT_COMMIT_COUNT=$([ -f \"$SKIP_LOG\" ] && grep -c 'recent-commit-guard' \"$SKIP_LOG\" || echo 0)",
+      "skip_breakdown: {",
+      "  never_push: <existing>,",
+      "  mtime_guard: <existing>,",
+      "  anti_reversion: <existing PROP-045>,",
+      "  recent_commit_guard: parseInt(process.env.RECENT_COMMIT_COUNT||'0',10)",
+      "}",
+      "Tinker's soft-complaints grep should flag any run where recent_commit_guard > 0 — that is a signal that another writer just committed within 5 min. Sustained recent_commit_guard > 5 per cycle indicates over-aggressive other writers and warrants a writer-side rate-limit (separate PROP)."
+    ],
+    "operational_notes_part_A": [
+      "Add to workspace-sync.md Operational Notes:",
+      "- Recent-commit pre-push guard (PROP-077): the smart_copy helper checks `git log -1 --format=%ct -- $dst` before pushing FUSE→git. If origin's HEAD commit on this path is <5 min old, the push is skipped with 'recent-commit-guard'. This protects against the cross-writer race where another agent commits and workspace-sync's session FUSE hasn't yet propagated the commit. Note: this is DEFENSE IN DEPTH for the 2026-06-03T01:30Z incident — the actual revert came from integrity, not workspace-sync. See PROP-077 for the H5 root-cause analysis and the integrity-side proposed fix (Part B, held for operator review)."
+    ]
+  },
+  "regression_check_part_A": {
+    "before": "smart_copy with mtime guard + PROP-045 anti-reversion. The 2026-06-03 incident is NOT a workspace-sync bug — workspace-sync correctly avoided pushing open-issues.json at 01:27 — so Part A wouldn't have prevented this incident even if deployed earlier.",
+    "after": "smart_copy with mtime guard + PROP-045 anti-reversion + PROP-077 recent-commit guard. Protects against a FUTURE failure mode where (a) decider commits, (b) workspace-sync's FUSE shows newer mtime than git_time but content matches no historic commit (passes anti-reversion), (c) workspace-sync would push the stale content. The recent-commit guard adds a temporal safety property: 'if the file just changed in git, wait one cycle before considering FUSE writes.'",
+    "preserved_behaviors": [
+      "Universal-pusher rescue path for decider 403 push failures — TRADE-OFF: the rescue is delayed by up to 5 min on files where the decider just attempted a push. But decider's push-failure block writes to FUSE only AFTER the push 403's; ws_mtime is updated by that write, and origin HEAD timestamp on the file is from the LAST SUCCESSFUL push (>5 min ago in most cases). So the rescue is preserved in practice.",
+      "NEVER_PUSH deny-list — unchanged.",
+      "GIT_APPEND_ONLY classification (PROP-065) — unchanged.",
+      "JSON-validity gate (PROP-024) — runs in pre-push integrity gate, unaffected.",
+      "Mtime guard — runs FIRST; recent-commit-guard is an additional check after anti-reversion.",
+      "Anti-reversion (PROP-045) — runs BEFORE recent-commit-guard; both fire independently."
+    ],
+    "edge_case_decider_403_rescue": "If decider's push 403s and decider writes the committed-but-unpushed file to FUSE, ws_mtime updates immediately. origin/main HEAD timestamp on the file is the LAST SUCCESSFUL push time, which is from BEFORE this run. So head_ts is OLD (>5min), the recent-commit guard does NOT fire, and the rescue path proceeds. Verified by reasoning, not by test."
+  },
+  "validation_simulation_2026_06_03_01_27": {
+    "timeline_reconstruction": [
+      "01:23:55Z — ca68cb5d decider commits open-issues.json (EXP-450 closures: ISS-2273..2279 → assigned-analyst+unblocked_at; ISS-2343, 2345, 2515, 2340 closed)",
+      "01:25:31Z — 6abb9a3b decider report commit (no open-issues change)",
+      "01:26:59Z — dome-mirror sentinel: 88 files copied into modest-vibrant-brahmagupta session FUSE (sync_exit_code=0)",
+      "01:27:38Z — workspace-sync's smart_copy on open-issues.json: cmp -s short-circuit (FUSE matched git → no copy needed). NO PUSH.",
+      "01:27:40Z — 42a4628b workspace-sync commits 13 other files (closed-issues.json got decider's last_verify_attempt timestamp updates — those WERE pushed via universal-pusher). open-issues.json NOT in commit.",
+      "01:30:38Z — 3a709c71 INTEGRITY commit: open-issues.json reverted (ISS-2273..2279 back to blocked-on-curmudgeon; last_updated 2026-06-02T23:11:25Z; ISS-2519 appended). THIS IS THE ACTUAL REVERT.",
+      "03:20:11Z — 3d6d2d19 decider self-heal restores ISS-2273..2279 to assigned-analyst (note in commit message misattributes cause to workspace-sync — same misattribution propagated to the directive)"
+    ],
+    "with_part_A_only_workspace_sync_fix": "Part A's recent-commit guard would NOT have prevented this incident. The revert was committed by integrity, which doesn't call smart_copy. Integrity bypasses workspace-sync entirely. Outcome: SAME REVERT.",
+    "with_part_B_only_integrity_fix": "Part B's clone-source-of-truth instruction prevents the incident. Integrity reads open-issues.json from its FRESH clone (which HAS ca68cb5d's EXP-450 closures because integrity's clone was made AFTER ca68cb5d was pushed). Integrity appends ISS-2519 to that fresh-clone content. Writes to clone. Pushes correctly. NO REVERT.",
+    "with_both_parts": "Same as B alone for THIS incident. Plus Part A catches FUTURE workspace-sync-side races (workspace-sync mtime-guard false negative on a freshly-pushed file)."
+  },
+  "counter_arguments_addressed": {
+    "directive_specified_scope_to_workspace_sync_only": {
+      "objection": "The directive explicitly scopes the fix to workspace-sync.md and lists three pre-approved fix directions (a)/(b)/(c) all targeting workspace-sync. Should tinker just apply (b) and call it done?",
+      "response": "Step 5 of the directive explicitly invites the possibility of a 5th hypothesis: 'Tinker may discover the actual cause is a 5th hypothesis. Document it.' Step 7 explicitly invites HOLD: 'Hold for operator review if a Q-OP needs answering or if tinker discovers the underlying race needs architectural redesign rather than guard-tweak.' Applying (b) to workspace-sync without surfacing H5 would leave the integrity bug in place; the next time integrity runs while open-issues.json was recently committed by decider, the revert recurs. The directive's safety-first framing supports HOLD on Part B until operator confirms scope expansion."
+    },
+    "why_self_apply_part_A_if_not_the_culprit": {
+      "objection": "If integrity is the actual culprit, why bother editing workspace-sync at all?",
+      "response": "Defense in depth has independent value. Workspace-sync IS exposed to the same race class (a writer pushes; workspace-sync's session FUSE is briefly stale; workspace-sync attempts to push) — the 2026-06-03 incident just wasn't an instance of it. The operator-pre-approved (b) design is well-targeted to that class. Code is small (~25 LOC) and additive. Even if Part B is the actual fix, Part A makes workspace-sync more robust against future variants. Operator's pre-approval makes self-apply safe."
+    },
+    "part_B_could_be_in_a_followup_PROP": {
+      "objection": "Part B targets a different prompt — would it be cleaner as a separate PROP?",
+      "response": "Yes, and that's the operator's call. Part B is documented in detail here so the operator has the full diagnosis in one place. If the operator approves the integrity-side fix, it can be implemented as either an amendment to this PROP or a fresh PROP. Tinker recommends a fresh PROP with status='operator-approved' and a follow-up directive that explicitly authorizes structure-integrity.md edits."
+    },
+    "could_decider_self_heal_be_made_more_proactive_instead": {
+      "objection": "Decider's 03:20 self-heal worked. Why not just make it run faster?",
+      "response": "Decider's self-heal is a 1-2 hour reactive band-aid that depends on the duplicate-detect heuristic still being correct. The actual fix (Part B) prevents the revert in the first place, eliminating the need for self-heal on this class. Self-heal remains as a backstop. Speeding up decider's heal would help, but only marginally — the right fix is upstream at the writer."
+    },
+    "what_about_cross_session_FUSE_in_general": {
+      "objection": "Cross-session FUSE staleness is a systemic issue. Is there an architectural fix?",
+      "response": "Yes, and it's already deployed: PROP-061 (Step 4c git→FUSE propagation, succeeded by PROP-066's helper-script extraction). But Step 4c runs HOURLY (one workspace-sync cycle) and the 2026-06-03 incident happened in a 5-minute window between decider's push and integrity's run. The systemic fix would be a per-second/per-minute FUSE-refresh poller, which is more infrastructure than the operator wants. The pragmatic fix is to make each writer read from its own clone (which is always fresh-pulled at run start)."
+    }
+  },
+  "related_mitigations": {
+    "cron_offset_dome_mirror": "Operator updated dome-mirror cron from '0 * * * *' to '30 * * * *' on 2026-06-03 ~04:55Z (via mcp__scheduled-tasks__update_scheduled_task, reflected in task description). Per directive Step 11: 'document the cron-offset change... in the PROP file's related mitigations section as a near-term operator-side action.' The offset reduces the dome-mirror↔workspace-sync race window from ~40s to ~27 min, but it does NOT address integrity (which fires at 02:00Z, well after both). Offset can be reverted to :00 after Part B lands and the integrity-side bug is eliminated, per directive non-goal #5 (do not revert until proven across 2-3 days)."
+  },
+  "rollout_plan_part_A": {
+    "phase_1_enforce_directly": {
+      "duration": "Permanent from this run.",
+      "behavior": "Recent-commit guard fires, LOGS to skip-log with reason 'recent-commit-guard', SKIPS the copy. Guard is conservative (300s window); false positives are limited to cases where another writer just committed within 5 min, which is what we want to skip.",
+      "rationale": "Operator pre-approved design (b). Small additive change with sound failure mode (skip is the safe default — file gets pushed on the next cycle when the window elapses). Shadow mode unnecessary because the check is a temporal property of git state, not a content-equivalence check that could false-positive on legitimate idempotent writes."
+    },
+    "instrumentation": {
+      "log_file": "monitor/integrity/workspace-sync-skips.jsonl — recent-commit-guard entries with raw line 'SKIP (recent-commit-guard; HEAD on path <300s old: <N>s): <path>'",
+      "report_field": "monitor/integrity/workspace-sync-runs/run-*.json — skip_breakdown.recent_commit_guard count per run",
+      "tinker_visibility": "Tinker's soft-complaints grep over workspace-sync-runs/*.json catches recent_commit_guard > 0 entries. No new tinker logic required."
+    }
+  },
+  "success_criteria_part_A": {
+    "M1": "Recent-commit pre-push guard implemented in monitor/prompts/workspace-sync.md smart_copy helper this run (Part A).",
+    "M2": "Verification: simulate the 2026-06-03 timeline against the new guard. With Part A only, the incident still occurs (integrity bypasses workspace-sync). With Part B only or both, the incident does NOT occur. Documented in this PROP's validation_simulation section.",
+    "M3": "At least one workspace-sync run in the next 7 days emits a recent_commit_guard skip (catching another writer's commit). Tinker scans for this on subsequent runs.",
+    "M4": "No regression in universal-pusher rescue path (decider 403 push failures continue to recover via workspace-sync within ~1 hour).",
+    "M5": "Operator decision on Part B within 7 days. If approved → tinker follows up with PROP-NNN+1 (or amends this PROP) to apply integrity-side fix. If declined → this PROP stays as Part-A-only and operator accepts the residual integrity-side risk."
+  },
+  "success_criteria_part_B_proposed_not_applied": {
+    "M1_proposed": "structure-integrity.md Section 7h self-test gets a PROLOGUE block specifying clone-relative read+write for monitor/decisions/open-issues.json.",
+    "M2_proposed": "Same for Section 7a.5 (ID-collision audit) and any other section that writes to monitor/decisions/open-issues.json.",
+    "M3_proposed": "Add a one-line note to the integrity prompt's intro: 'Critical: integrity is read-only on FUSE except for files under monitor/integrity/; any write to monitor/decisions/* MUST go via the fresh clone.'",
+    "M4_proposed": "Verification: integrity's next run after the prompt edit produces a clean push (no revert artifacts) when decider has committed open-issues.json within the prior hour. Tinker scans the next 3 integrity commits for diff-line counts that look like a revert (high removal count vs append-only expected)."
+  },
+  "operator_preference_fit_table": {
+    "minimize_workspace_sync_md_size_growth_part_A": "+25 lines (~2% growth on a 1372-line file). Acceptable.",
+    "operator_preferred_design_b_implemented": "YES — Part A is exactly design (b): recent-commit timestamp check.",
+    "preserve_universal_pusher_rescue": "YES — see regression_check_part_A.edge_case_decider_403_rescue. The rescue path's HEAD timestamp on the rescued file is from the LAST SUCCESSFUL push (>5 min ago in most cases), so the guard doesn't fire.",
+    "preserve_existing_NEVER_PUSH_invariants": "YES — no change to NEVER_PUSH or GIT_APPEND_ONLY classifications.",
+    "operator_review_required_before_enforce": "Operator pre-approved design (b) — Part A self-applies directly to enforce. Part B HELD for operator review per directive Step 7."
+  },
+  "Q_OP_for_operator": [
+    "Q_OP_1: APPROVE Part B (integrity prompt edits)? Affirmative → tinker drafts follow-up PROP and self-applies on next run. Negative → tinker accepts residual integrity-side risk; recurrence is caught only by decider's self-heal.",
+    "Q_OP_2: Once Part B lands and proves stable for 2-3 days, REVERT dome-mirror cron from :30 back to :00? Per directive non-goal #5, no automatic revert; explicit operator decision required.",
+    "Q_OP_3: Should the recent-commit guard window (RECENT_COMMIT_WINDOW_SEC=300) be tuned? Tinker chose 300s as conservative-safe; lower values (60s) reduce false-skip rate but tighter race window; higher values (600s) widen safety margin but delay legitimate FUSE-side rescue. Tinker recommends 300s; operator may override.",
+    "Q_OP_4: Should similar pre-push guards be added to decider, analyst, integrity, and other writers' prompts for symmetric protection? Risk: prompt-bloat across many agents to fix what is, fundamentally, a clone-vs-FUSE-read-source question per writer. Tinker recommends: just fix integrity (Part B) for now; revisit other writers if recurrence shows up at a different agent."
+  ],
+  "notes_for_operator": [
+    "DIRECTIVE-20260603-002 assumed workspace-sync was the culprit based on the decider's 03:20 self-heal note (which itself misattributed). The git evidence is unambiguous: 42a4628b (workspace-sync, 01:27) did NOT modify open-issues.json. 3a709c71 (integrity, 01:30) DID. PROP-045 worked correctly.",
+    "The H5 finding is a propagation-of-error story: integrity wrote stale content; decider's self-heal interpreted the resulting state as a workspace-sync overwrite (plausible reading without git-log forensics); operator drafted a workspace-sync-scoped directive based on the self-heal note. Tinker is the first agent with both forensic access and the time to verify.",
+    "Part A is harmless even though it's not the actual fix — operator-pre-approved, small, well-targeted to a real race class.",
+    "Part B is the actual fix. Operator review is warranted because it expands the directive's scope (structure-integrity.md was not in the original scope).",
+    "If Part B is approved, tinker recommends accompanying it with a one-line PROLOGUE to the integrity prompt that escalates the clone-vs-FUSE distinction. Haiku agents need explicit guidance; the existing prompt leaves the choice ambiguous."
+  ],
+  "verification_pattern": "grep -q 'recent-commit-guard' monitor/prompts/workspace-sync.md && grep -q 'PROP-077' monitor/prompts/workspace-sync.md"
+}
