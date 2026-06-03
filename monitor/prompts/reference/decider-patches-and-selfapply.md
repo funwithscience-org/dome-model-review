@@ -410,6 +410,24 @@ if [ $? -ne 0 ]; then
   exit 1
 fi
 
+# PROP-076 PRE-PUSH LINT GATE (2026-06-03): refuses to push when newly-added
+# closed-issues entries violate the PROP-059 discipline (every decider-driven
+# close must carry verification_pattern OR audit_grandfathered). Catches the
+# bypass class where the LLM writes an inline close-record with a bespoke
+# fixed_by string (e.g. 'decider-self-apply-EXP-450-H1-wuhan-removed') and
+# omits verification_pattern. PROP-059's prompt rule has been in place since
+# 2026-05-25; the integrity audit catches violations the next morning. This
+# gate catches them at push time so they never reach origin/main.
+if [ -f monitor/scripts/lint-close-records.js ]; then
+  if ! node monitor/scripts/lint-close-records.js; then
+    echo "PRE-PUSH GATE: PROP-076 lint-close-records reported violations. Aborting push."
+    echo "PRE-PUSH GATE: re-write the violating close-records with either a non-empty"
+    echo "PRE-PUSH GATE: verification_pattern OR audit_grandfathered, re-stage, amend,"
+    echo "PRE-PUSH GATE: re-run this script. Do NOT push until lint passes."
+    exit 1
+  fi
+fi
+
 # Push ONCE. Do NOT retry, sleep, or run split-push diagnostics on 403.
 #
 # History: 2026-04-25 added a 30s sleep + 1 retry; 2026-04-26 added a
@@ -574,7 +592,7 @@ echo "SELF-APPLY FAILED: tests did not pass. Patch file left for human review."
 
 This is critical. You own the full lifecycle now. Don't leave zombie issues or stale patch files.
 
-**PROP-014 Mech 1a — WRITE-VERIFY discipline (added 2026-05-02, hardened 2026-05-25 per PROP-059).** Per `monitor/prompts/reference/state-verification.md` Discipline 1a (push-verify), you MUST write `status: 'fixed-pending-verification'` with a non-empty `verification_pattern` for every close where `fixed_by` starts with `decider-self-apply` OR where the close is driven by the same decider run that applied the patch (i.e., not operator-direct or burndown-migrated closures). **Direct writes of `status: 'fixed'` from a decider self-apply run are FORBIDDEN** — they are a prompt-level violation and the integrity agent will flag any such entry as a Mech-A-bypass false-closure candidate (see `monitor/prompts/structure-integrity.md`). The workspace-sync verifier (`monitor/scripts/verify-pending-state.js`) flips `fixed-pending-verification` to `fixed` once verification passes against `origin/main`.
+**PROP-014 Mech 1a — WRITE-VERIFY discipline (added 2026-05-02, hardened 2026-05-25 per PROP-059).** Per `monitor/prompts/reference/state-verification.md` Discipline 1a (push-verify), you MUST write `status: 'fixed-pending-verification'` with a non-empty `verification_pattern` for every close where `fixed_by` starts with `decider-self-apply` OR where the close is driven by the same decider run that applied the patch (i.e., not operator-direct or burndown-migrated closures). **Direct writes of `status: 'fixed'` from a decider self-apply run are FORBIDDEN** — they are a prompt-level violation and the integrity agent will flag any such entry as a Mech-A-bypass false-closure candidate (see `monitor/prompts/structure-integrity.md`). The workspace-sync verifier (`monitor/scripts/verify-pending-state.js`) flips `fixed-pending-verification` to `fixed` once verification passes against `origin/main`. **PROP-076 (2026-06-03) hardens this rule with a pre-push lint gate** (`monitor/scripts/lint-close-records.js`, called from the pre-push block above): any newly-added `closed-issues.json` entry with `fixed_by` starting `decider-` and missing BOTH `verification_pattern` AND `audit_grandfathered` causes the push to abort. Bespoke `fixed_by` suffixes are allowed (e.g. `decider-self-apply-EXP-NNN-<descriptor>`), but the field requirement still applies — design-intentional bulk-close paths that genuinely have no per-entry fingerprint MUST set `audit_grandfathered: '<reason-string>'` instead of leaving the verification_pattern blank.
 
 **PROP-059 fingerprint requirement (2026-05-25 — closes the describe-without-doing hallucination class).** The `verification_pattern` MUST contain a fingerprint substring (≥20 characters) that did NOT appear in the target file before the patch — typically taken verbatim from the patch's `replace` text. A fingerprint that ALREADY existed in the file pre-patch would pass verification even for a hallucinated close (provably observed in ISS-2106, where the LLM's claimed from→to substitution had `'69 dome-claimed wins'` on both sides). For deletion-only patches (no replace text), use the inverse pattern: `! git show origin/main:<file> | grep -qF '<unique-deleted-substring>'` to assert absence. Why this matters: PROP-016 Mechanism A intercepts NEVER_PUSH file commits at `git push` time, but it can't catch the case where the LLM writes a fake `fix_description` without invoking any tool to modify the file — `git status --porcelain` is empty, Mech A has nothing to flag, the close proceeds. The fingerprint requirement is the close-write-time defense Mech A can't be.
 
