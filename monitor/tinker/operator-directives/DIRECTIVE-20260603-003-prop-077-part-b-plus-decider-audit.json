@@ -1,0 +1,55 @@
+{
+  "id": "DIRECTIVE-20260603-003",
+  "filed_by": "operator-cowork-session",
+  "filed_at": "2026-06-03T05:55:00Z",
+  "status": "pending",
+  "priority": "high",
+  "title": "PROP-077 Q_OP answers + ship Part B (integrity clone-source-of-truth) + light-touch decider audit for the same clone-source rule",
+  "background": "Tinker's PROP-077 (DIRECTIVE-20260603-002 implementation) shipped Part A (recent-commit pre-push guard in workspace-sync.md) and held Part B for operator review. PROP-077's H5 root-cause discovery was that the 2026-06-03T01:30Z open-issues.json revert was committed by INTEGRITY, not workspace-sync — the actual fix is to force integrity to read/write monitor/decisions/* from its clone, never from FUSE.\n\nOperator has reviewed PROP-077's 4 Q_OPs and answers all 4 in this directive. Tinker should consume these answers, ship Part B as a follow-up implementation, and bundle the light-touch decider audit (Q_OP_4 scope narrowed to decider only).",
+  "operator_decisions_on_prop_077_q_ops": {
+    "Q_OP_1_approve_part_b": {
+      "answer": "YES",
+      "rationale": "Part B is the actual fix per the H5 root cause. Without it, integrity keeps reading/writing monitor/decisions/* from FUSE; recurrence is high-probability. Decider's auto-heal is the safety net but took 2h on 2026-06-03 and is heuristic-based."
+    },
+    "Q_OP_2_revert_dome_mirror_cron_to_00": {
+      "answer": "DEFER",
+      "rationale": "Hold off on cron revert until Part B has been live for 2-3 days and proven stable. The :30 offset costs nothing operationally and adds defense-in-depth. Tinker should flag this Q_OP as 're-evaluate 2026-06-06 or later' in the proposal's post-deployment plan."
+    },
+    "Q_OP_3_tune_recent_commit_window": {
+      "answer": "KEEP 300s",
+      "rationale": "Tinker's recommended default is correctly conservative. Cost of false-skip is low (next workspace-sync cycle catches up); cost of false-allow is the revert incident class. 300s balances correctly. Do not retune in this directive."
+    },
+    "Q_OP_4_symmetric_guards_other_writers": {
+      "answer": "NO heavy guards. YES light-touch audit, scope narrowed to DECIDER ONLY (analyst / analyst-baby / tinker held back).",
+      "rationale": "The heavy workspace-sync-style 27-LOC guard would bloat prompts across N writers. The actual fix is lighter: a one-line rule in each writer's prompt saying 'clone is source-of-truth for monitor/decisions/* and monitor/analyst/* — never read or write FUSE for these files.' Decider is the highest-risk single writer (most prolific state writer + we just saw Mech-A bypass evidence that close-paths drift). If audit reveals decider's prompt already has this rule explicitly, no edit needed. If missing, add a one-liner. Tinker should NOT pre-emptively edit analyst/analyst-baby/tinker prompts in this run — wait for evidence of recurrence on those surfaces before expanding scope."
+    }
+  },
+  "requested_work": [
+    "Step 1 — Author monitor/tinker/proposals/PROP-077-rev2-part-b-integrity-clone-source-of-truth.json (or whatever PROP-NNN tinker prefers for the follow-up). Specify the integrity prompt edits exactly: Section 7h PROLOGUE block + Section 7a.5 same treatment + intro one-line note per PROP-077 success_criteria_part_B M1-M3. Operator pre-approves the design directions documented in PROP-077's part_b spec; tinker may adopt them verbatim or refine if a clearer wording surfaces.",
+    "Step 2 — Self-apply Part B per the PROP-070/072/073/PROP-076/077-Part-A pattern: edit monitor/prompts/structure-integrity.md to add the clone-source-of-truth rule for monitor/decisions/* and any monitor/analyst/* writes the integrity prompt touches. Verify with the PROP file's M1-M3 success-criteria pattern + M4 next-3-commits-diff-line-count canary plan.",
+    "Step 3 — DECIDER AUDIT (Q_OP_4 narrowed scope): grep monitor/prompts/decider.md AND monitor/prompts/reference/decider-*.md for explicit clone-source-of-truth language for monitor/decisions/* and monitor/analyst/*. Report findings in the PROP file:\n  (a) If the rule is already present and explicit, document the search-match line(s) and conclude 'NO EDIT NEEDED for decider — rule already in place at <file:line>.'\n  (b) If the rule is implicit (e.g., decider's clone-fresh-each-run discipline is documented but no explicit clone-source-of-truth-for-FUSE rule is stated), add ONE LINE to monitor/prompts/decider.md or the most relevant reference doc: 'CRITICAL — clone is source-of-truth for monitor/decisions/* and monitor/analyst/*. Never read or write FUSE for these files; clone IS the canonical state.' Place near the existing clone-discipline section.\n  (c) If the rule is contradicted anywhere (e.g., a reference doc says 'read from FUSE for X'), flag as Q_OP_for_operator with the contradiction quote.",
+    "Step 4 — Tinker self-applies both Step 2 (Part B) and Step 3 (decider audit + any one-line addition). Combined LOC budget: ~30 lines total across integrity + decider prompts. If scope grows beyond that, hold for operator review.",
+    "Step 5 — Validation:\n  (a) For Part B: scan next 3 integrity commits after deploy for diff-line counts. A revert-shaped commit has high removal count (e.g., -130 +0); an append-only commit has low/zero removal. Document expected pattern in PROP's verification section.\n  (b) For decider audit: verify the grep that the rule is present in decider's prompt surface (either pre-existing or newly added).",
+    "Step 6 — Lifecycle: flip new PROP-NNN.json status='implemented' with commit/at/run. Flip this directive to status='completed' with prop_id_implemented set. Flip PROP-077 status from 'implemented-partial' to 'implemented' (since Part B now ships) OR keep as 'implemented-partial' with a 'part_b_implemented_by' pointer to the new PROP — tinker's choice based on cleanest lineage.",
+    "Step 7 — Manually copy edited monitor/prompts/structure-integrity.md and (if changed) decider prompt files to FUSE. dome-mirror will propagate within ~30 min on its new :30 cron, but manual sync is the safe bootstrap path."
+  ],
+  "non_goals": [
+    "Do NOT touch the workspace-sync.md Part A changes from PROP-077. Part A is shipped and stable; this directive is the Part B follow-up.",
+    "Do NOT broaden Q_OP_4 to analyst / analyst-baby / tinker prompt audits in this directive. Per operator decision: decider-only for now; revisit if recurrence shows up on other surfaces.",
+    "Do NOT tune RECENT_COMMIT_WINDOW_SEC (already decided in Q_OP_3 = 300s).",
+    "Do NOT revert the dome-mirror :30 cron (Q_OP_2 deferred until 2026-06-06 or later, separate decision then).",
+    "Do NOT modify decider's existing clone-discipline section — only add the one-liner if it's missing or implicit. Surgical addition, not restructure.",
+    "Do NOT auto-extend the clone-source-of-truth rule to monitor/curmudgeon/* or monitor/tinker/* in this run — those have different ownership patterns and the rule may not apply uniformly. Stay scoped to monitor/decisions/* + monitor/analyst/*."
+  ],
+  "context_pointers": {
+    "prop_077": "monitor/tinker/proposals/PROP-077-anti-reversion-guard-hardening.json — Part A details, Part B spec under success_criteria_part_B_proposed_not_applied, Q_OPs under Q_OP_for_operator",
+    "h5_root_cause": "PROP-077's commit message + body documents the H5 discovery: 01:30:38Z revert was committed by integrity (3a709c71), NOT workspace-sync (42a4628b). cmp -s short-circuit fired in workspace-sync before PROP-045 guard needed to run.",
+    "integrity_prompt": "monitor/prompts/structure-integrity.md — Sections 7h and 7a.5 are the specific touch points per PROP-077 part_b spec",
+    "decider_prompts": "monitor/prompts/decider.md + monitor/prompts/reference/decider-*.md — surface to audit for clone-source-of-truth language",
+    "prior_directives": "DIRECTIVE-20260603-001 (Mech-A bypass → PROP-076) and DIRECTIVE-20260603-002 (FUSE-revert → PROP-077) both shipped earlier today. This is the Part B + Q_OP-answers follow-up.",
+    "cron_offset_state": "dome-mirror cron currently at '30 * * * *' (operator change 2026-06-03 ~04:55Z). Documented in the task description field. Revert decision deferred per Q_OP_2."
+  },
+  "expected_output": "(1) New PROP-NNN file (likely PROP-078 or PROP-077-rev2 — tinker's choice) with status='implemented'. (2) Edit to monitor/prompts/structure-integrity.md adding clone-source-of-truth language for monitor/decisions/* and monitor/analyst/* writes. (3) Either (3a) decider audit confirms rule already present (document the line) OR (3b) one-line addition to decider's prompt surface. (4) This directive at status='completed'. (5) PROP-077 status updated per Step 6 (tinker's choice on lineage). (6) Edited prompt files FUSE-synced.",
+  "estimated_effort": "~30-45 min Opus. Most of the work is the integrity prompt edit (Step 1-2, ~20 min). Decider audit (Step 3) is mostly read+grep (~10 min) with minimal write. Validation + lifecycle (~10 min).",
+  "priority_note": "HIGH — the ACTUAL fix for the 2026-06-03 incident class. Part A was defense-in-depth; Part B is the structural fix. Worth shipping in the next 1-2 tinker runs to close the open recurrence risk."
+}
