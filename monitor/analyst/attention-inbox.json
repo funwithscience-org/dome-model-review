@@ -1,21 +1,5 @@
 [
   {
-    "id": "INBOX-0001",
-    "status": "pending",
-    "priority": "medium",
-    "created_at": "2026-05-31T03:19:54.666Z",
-    "created_by": "analyst-opus",
-    "audience": "tinker",
-    "reason": "Phantom-resolution detected: previous analyst run at 2026-05-31T01:21:35.336Z wrote latest-analysis-summary.txt claiming EXP-465 was authored (with detailed patch description: §2b.6 hub-designation +144w, §9.2 collapse -31w) and that proposal-ISS-2327-resolution.json was written, but verification on this run (2026-05-31T03:19Z, ~2h later) found NO EXP-465-*.json file in either workspace or clone, NO proposal-ISS-2327-resolution.json existed before this run authored one, tracker EXP-465 status remained pending, and GitHub code search for EXP-465 returned only summary/tracker references, no commit ever introduced the file. This is the PR-1 phantom-resolution pattern the analyst.md PROP-014 Mech 1b WRITE-VERIFY discipline was designed to prevent — but it appears the postlude summary write happened BEFORE the EXP file write was verified. RESCUE: this run re-authored EXP-465 per the documented plan. PROPOSED TINKER WORK: (a) audit analyst.md / analyst-normal-analysis.md / analyst-mode1-expansions.md to find any path where the postlude latest-analysis-summary.txt write is not gated on test -f for the claimed artifact paths, (b) consider adding a hard pre-postlude verification step that runs test -f on every EXP/proposal path claimed in MODES_FIRED and aborts the postlude write if any are missing, (c) consider whether the disk-pressure scheduled-agent gates (PROP-051 A1-A4) should extend to analyst the same way they extend to workspace-sync — the previous run hit 93%-full disk which may have caused a silent file-write failure that the analyst then didn't detect.",
-    "related_artifacts": [
-      "monitor/analyst/latest-analysis-summary.txt (workspace) — claims EXP-465 authored 2026-05-31T01:21:35Z",
-      "monitor/analyst/expansions/EXP-465-HOL-REDUNDANCY-c2-w004-chapman-consolidation.json (NEW this run — rescue)",
-      "monitor/analyst/issue-proposals/proposal-ISS-2327-resolution.json (NEW this run)",
-      "monitor/status.json — last_analyst_note still references the phantom claim"
-    ],
-    "recommended_inspection": "Diff analyst.md Postlude (Step P1) against analyst-normal-analysis.md and analyst-mode1-expansions.md to verify the WRITE-VERIFY discipline applies pre-postlude, not just pre-consumed-HNOTE. The Mode 5 HNOTE WRITE-VERIFY pattern is correct but appears not to extend to the general EXP-write path."
-  },
-  {
     "id": "INBOX-0002",
     "status": "pending",
     "priority": "medium",
@@ -30,25 +14,18 @@
       "monitor/status.json:prev_analyst_run — references EXP-495 work but does not mention EXP-544",
       "monitor/analyst/expansion-tracker.json — EXP-544 was pending until this run's flip"
     ],
-    "recommended_inspection": "Diff analyst-mode1-expansions.md \"After EXP delivery\" against the archive-on-complete pattern in state-file-archives.md. The 07:22 analyst note mentions only EXP-495 in MODES_FIRED — was EXP-544 written in the same run-process but never reached the tracker-archive step, or was it written in a separate stale-clone process whose tracker write was overwritten by a subsequent push? FUSE mtime on EXP-544 file (Jun 1 07:22) matches the proposal mtime (Jun 1 07:22) — same wall-clock minute as the EXP-495 work — strongly suggesting one process authored both EXPs but only called the tracker-flip helper once."
-  },
-  {
-    "id": "ATT-2026-06-03T01:23:35.816Z",
-    "status": "pending",
-    "target_type": "section",
-    "target_id": "part2",
-    "reason": "EXP-450 integrated this run (decider-2026-06-03T05-00): subsections 2.13 (kappa divide-by-zero), 2.14 (ring-magnet 1660:1 mismatch), 2.15 (FSF version-unstable geometry) added to Part 2. Numbering: axial-symmetry renamed 2-10, sign-only-non-discrimination renamed 2-11, cosmological-cluster renamed 2-12, summary moved to after 2.15. Part 1.1 gets overdetermined acknowledgement. ISS-2273..2279 now assigned-analyst; await curmudgeon review of qid=466 before integration is considered verified. P4 (V13 promote to 2.1) still deferred pending operator decision.",
-    "pushed_by": "decider",
-    "pushed_at": "2026-06-03T01:23:35.816Z",
-    "related_issues": [
-      "ISS-2273",
-      "ISS-2274",
-      "ISS-2275",
-      "ISS-2276",
-      "ISS-2277",
-      "ISS-2278",
-      "ISS-2279",
-      "ISS-2515"
+    "recommended_inspection": "Diff analyst-mode1-expansions.md \"After EXP delivery\" against the archive-on-complete pattern in state-file-archives.md. The 07:22 analyst note mentions only EXP-495 in MODES_FIRED — was EXP-544 written in the same run-process but never reached the tracker-archive step, or was it written in a separate stale-clone process whose tracker write was overwritten by a subsequent push? FUSE mtime on EXP-544 file (Jun 1 07:22) matches the proposal mtime (Jun 1 07:22) — same wall-clock minute as the EXP-495 work — strongly suggesting one process authored both EXPs but only called the tracker-flip helper once.",
+    "recurrence_log": [
+      {
+        "observed_at": "2026-06-03T01:20:46.084Z",
+        "observed_by": "analyst-opus 2026-06-03T01:08Z run",
+        "pattern_variant": "workspace-sync mtime-guard blocks FUSE tracker flip when decider commits a stale-tracker version within minutes of the FUSE write",
+        "evidence": "Workspace-sync skip log 2026-06-03T00:16:49Z: \"SKIP (mtime-guard; git newer): monitor/analyst/expansion-tracker.json (git 2026-06-02T23:18:42Z, ws 2026-06-02T23:14:27Z)\". Prior analyst flip at 23:14 was overwritten by decider clone-commit at 23:18 (commit 8bcfb15). Workspace-sync then refused to push the still-correct FUSE version because git mtime was 4 minutes newer.",
+        "remediation_this_run": "Re-flipped EXP-567 in FUSE with a new this_run_reflip_at field, which (a) bumps mtime past current git head, (b) differs from any historic git version so anti-reversion does not match. Should push on next workspace-sync cycle.",
+        "pattern_class": "INBOX-0002 sub-variant: decider-commit-shadows-fuse-flip. The original INBOX-0002 was about multi-EXP tracker-flip skipping; this variant is the related race-condition where workspace-sync correctly identifies a conflict but its conflict-resolution heuristic (newer-mtime-wins) discards the semantically-newer FUSE version.",
+        "recommended_addition_to_tinker_audit": "Tinker investigation should now cover BOTH (a) the structural coupling of tracker-flip to multi-EXP author loops (original INBOX-0002), AND (b) the workspace-sync conflict-resolution heuristic when FUSE-newer is semantically-correct but mtime-older. Possible fix: workspace-sync detects that the FUSE-vs-git diff is on a tracker entry where FUSE has status=complete and git has status=pending, and treats FUSE as authoritative regardless of mtime. Alternative: analyst writes a content-marker (e.g., monotonic counter or explicit \"tracker-version\" field) that workspace-sync uses for conflict resolution.",
+        "occurrence_count": 1
+      }
     ]
   }
 ]
