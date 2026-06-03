@@ -120,3 +120,20 @@ Commented out in `generate-html.js`. Content preserved for potential reinstateme
 
 ## V6 Restructure (2026-04-07)
 All sections were renumbered. Translation map: `monitor/v6-restructure-map.json`. Flag any agent outputs still using old-style section numbers.
+## Commit Message Convention
+
+Use explicit prefixes to distinguish hole-fix commits from patch-integration commits — these are different operations and confusing the two disrupts pipeline audit trails.
+
+**Hole-fix commit** (fixing text errors in proposal or evidence before integration begins):
+```
+EXP-N: hole H_i text fix — <brief description>
+```
+Example: `EXP-450: hole H7 radius value corrected (12,600 → 12,614 km)`
+
+**Patch-integration commit** (applying analyst-authored patches into data/ files):
+```
+EXP-N patches P_i integrated into data/ — <brief description>
+```
+Example: `EXP-450 patches P1/P2/P3 integrated into data/ — Part 2 sections 2.13/2.14/2.15`
+
+Never use shorthand like "self-applied" for integration commits — it implies a different operation (decider self-applying a patch suggestion, not integrating an analyst EXP).
