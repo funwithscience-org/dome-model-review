@@ -698,8 +698,8 @@ console.log('\n── 8. Prediction Panels ──');
 
   // EXP-208: Stance statement present in HTML
   assert(htmlContent.includes('class="ds-stance-statement"'), 'EXP-208: .ds-stance-statement element missing from docs/index.html');
-  assert(htmlContent.includes('The world is a globe.'), 'EXP-208: stance-statement text "The world is a globe." missing');
-  assert(htmlContent.includes('That does not prevent us from engaging'), 'EXP-208: stance-statement continuation text missing');
+  assert(htmlContent.includes('Our conclusion, stated up front'), 'EXP-208: stance-statement text "Our conclusion, stated up front" missing (EXP-589 P5)');  // EXP-589: P5 reframes stance as conclusion-from-evidence
+  assert(htmlContent.includes('we do not assume it as a starting premise'), 'EXP-208: stance-statement continuation text missing (EXP-589 P5)');  // EXP-589: P5 new continuation
   assert(/\.ds-stance-statement\{/.test(htmlContent), 'EXP-208: .ds-stance-statement CSS rule missing');
 
   // EXP-209: Verdict bar chart section present

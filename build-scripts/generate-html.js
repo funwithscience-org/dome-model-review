@@ -1560,7 +1560,7 @@ ${CSS}
 <div class="ds-tab-content active" id="overview">
 
 <div class="ds-title-block">
-<p class="ds-stance-statement">The world is a globe. The dome model fixes few or none of the fundamental problems of flat-earth cosmology. That does not prevent us from engaging with the specific claims it does make — and that is what this document does. The evidence is set out in the twelve tabs below.</p>
+<p class="ds-stance-statement"><strong>Our conclusion, stated up front:</strong> the world is a globe, and the dome model fixes few or none of the fundamental problems of flat-earth cosmology. We arrive at this conclusion from the evidence reviewed in the twelve tabs below, applied through the audit criteria in the Evaluation Guide; we do not assume it as a starting premise. Stating the conclusion in the first paragraph is a courtesy to the reader, not a procedural shortcut.</p>
 <h1 style="border:none">Critical Review</h1>
 <h1 style="border:none;font-size:1.6rem;font-weight:400">Ovoid Cavity Cosmological Model ${DOME_VERSION}</h1>
 <p class="ds-subtitle">(formerly Dome Cosmological Model V50.6)</p>
@@ -1605,7 +1605,7 @@ ${generateVerdictBarChart(tally, wins.length, collisionWins.length)}
 
 <section class="ds-falsifiability-module" aria-labelledby="ds-fm-heading">
 <h2 id="ds-fm-heading" class="ds-fm-heading">What would change our verdict</h2>
-<p class="ds-fm-caption">Four conditions assessed against the dome's ${counts.total} claimed wins — any one is sufficient to upgrade a verdict. <a class="ds-fm-jump" href="#eg-falsifiability" onclick="showTab('evaluate');return false">Full criteria &rarr;</a></p>
+<p class="ds-fm-caption">Four pre-committed conditions — set before the data, satisfiable by any future dome derivation. We will upgrade the relevant verdict if any one is met. <a class="ds-fm-jump" href="#eg-falsifiability" onclick="showTab('evaluate');return false">Full criteria &rarr;</a></p>
 <ol class="ds-fm-rows">
 <li class="ds-fm-row">
 <div class="ds-fm-condition">Discriminating prediction from dome geometry</div>
@@ -1615,7 +1615,7 @@ ${generateVerdictBarChart(tally, wins.length, collisionWins.length)}
 <li class="ds-fm-row">
 <div class="ds-fm-condition">Genuine prospective prediction</div>
 <div class="ds-fm-desc">Specific, quantitative, station-named, timestamped before the data &mdash; with the prediction document independently timestamped separately from any observation data.</div>
-<div class="ds-fm-status ds-fm-status-partial" role="status" aria-label="Status: 1 partial; eclipse August 12, 2026 approaches the standard with methodological issues"><span class="ds-fm-status-num">1 partial</span><span class="ds-fm-status-sub">eclipse Aug 12, 2026</span></div>
+<div class="ds-fm-status ds-fm-status-partial" role="status" aria-label="Status: 1 partial; eclipse August 12, 2026 approaches the standard with methodological issues"><span class="ds-fm-status-num">1 partial</span><span class="ds-fm-status-sub">eclipse Aug 12, 2026 · ~1 nT discriminating window</span></div>
 </li>
 <li class="ds-fm-row">
 <div class="ds-fm-condition">Derive 7.83 Hz from dome geometry</div>
@@ -1666,7 +1666,7 @@ ${generateVerdictBarChart(tally, wins.length, collisionWins.length)}
 <h3 id="accuracy-math-heading" class="ams-heading">Accuracy math — supporting detail</h3>
 <div class="ams-grid">
 <div class="ams-col ams-col-arith">
-<p class="ams-p"><strong>Honest accuracy ${honestAccuracy}, not the headline ${failures.dome_claimed_accuracy}.</strong> Computed as ${counts.total} confirmed &divide; (${counts.total} + ${failures.dome_claimed_failures} acknowledged + ${silentFailures} silent), where the silent-failure set is the list of claims the dome has removed from its predictions page or suspended without counting as failures in its own accuracy denominator. <a href="#p3-failures" onclick="showTab('wins');return false">See the failure list &rarr;</a></p>
+<p class="ams-p"><strong>Honest accuracy ${honestAccuracy}, not the headline ${failures.dome_claimed_accuracy}.</strong> Computed as ${counts.total} confirmed &divide; (${counts.total} + ${failures.dome_claimed_failures} acknowledged + ${silentFailures} silent), where the silent-failure set is the list of claims the dome has visibly marked <code>[REMOVED]</code> or <code>[SUSPENDED]</code> but excluded from its own accuracy denominator. Each silent-failure entry is named individually with the dome's own removal-action commit referenced in the failure list — the criterion is observable on the dome's public surface, not imputed from absence of result. <a href="#p3-failures" onclick="showTab('wins');return false">See the failure list &rarr;</a></p>
 ${accuracyVariantList ? `<p class="ams-p ams-variant">Internal queries return ${accuracyVariantList} depending on which data source and counting method is used; the dome's public denominator includes only ${failures.dome_claimed_failures} acknowledged falsifications and excludes unresolved open problems and below-detection-threshold entries.</p>` : ''}
 </div>
 <div class="ams-col ams-col-source">
@@ -1839,6 +1839,8 @@ ${sectionNav(null, null, 'evaluate', 'Evaluation Guide')}
 <p>A review that finds zero valid predictions in a set of ${counts.total} should invite scrutiny. We agree. Here are four concrete, independently verifiable conditions under which we would upgrade a verdict. Any single condition is sufficient:</p>
 
 <p><strong>Condition 1: Derive a discriminating prediction from dome geometry.</strong> Use the model's own stated parameters — H(r) = 8,537 × exp(−r/8,619), disc radius 20,015 km, κ = 1.67 nT/μGal — to derive a quantitative prediction that <em>differs</em> from what standard physics predicts for the same observable. Then confirm it with independent measurement. Currently only 2 of ${counts.total} claims produce a quantitative dome-specific derivation (WIN-044, WIN-057), and both fail: WIN-044's derivation contradicts the dome's own other equations (Self-Contradicted), and WIN-057's best result (6.2% RMSE) is 600× worse than standard geodesy's sub-0.01% precision over similar distances (Misleading).</p>
+
+<p><strong>What Condition 1 satisfaction would look like (worked example).</strong> Suppose the dome cavity, treated as a flat-plate quarter-wave resonator under the linear-radial-averaged effective-height convention H_eff = H₀·(L/R)·(1−exp(−R/L)) ≈ 3,316 km derived from the published exponentially-decaying firmament profile H(r) = 8,537·exp(−r/8,619) km, predicts a Schumann fundamental of 22.6 Hz from disc radius and firmament height alone — no globe radius input. (The averaging convention is named explicitly to avoid the formula-switching pattern the dome itself uses: H(0) = 8,537 km gives the unambiguous pole-floor 8.77 Hz; the area-weighted disc average gives ≈ 35 Hz; the 22.6 Hz value is the linear-radial result — these are the three conventions worked through in §2.1.) Suppose further that the dome registered this 22.6 Hz prediction before any Schumann measurement was made, and that independent measurement subsequently returned 22.6 Hz. That sequence would satisfy Condition 1: derived from dome geometry under a named averaging convention, discriminating from standard physics (which predicts 7.83 Hz from the globe-radius cavity eigenvalue), and confirmed by measurement. We have constructed this scenario to demonstrate the condition is operationalizable — it is not a logically empty test. The reason no actual WIN satisfies it is that the observed Schumann fundamental is 7.83 Hz, and the dome can only reproduce 7.83 Hz by importing the globe radius (6,371 km) into a spherical-cavity eigenvalue formula derived from spherical geometry. The dome cavity on its own dimensions predicts 8.77–35 Hz across the three named conventions, all of which the data refutes. The conditions are demanding because the dome's own geometry refuses to cooperate, not because the conditions were designed to be unmeetable.</p>
 
 <p><strong>Condition 2: Produce a genuine prospective prediction.</strong> Register a specific quantitative prediction (value ± uncertainty, named observable, named measurement station) <em>before</em> the confirming data exists, with the prediction document independently timestamped separately from any observation data. The dome's August 2026 eclipse predictions approach this standard but have methodological issues documented in our <a href="#timestamp-error" onclick="showTab('timestamp');return false">Timestamp Error analysis</a>.</p>
 
