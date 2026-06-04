@@ -1,18 +1,103 @@
-dome-curmudgeon-verify run summary
-Run timestamp: 2026-05-31T23:37:53Z
-Agent: dome-curmudgeon-verify (PROP-038 Phase 1)
+Run timestamp: 2026-06-04T00:30:00Z
+Agent: dome-curmudgeon-verify (Sonnet, PROP-038 Phase 1)
 
-Dispatcher result: VERIFY_ELIGIBLE=0 items
+== RESULT: NO-OP — VERIFY_ELIGIBLE=0 ==
 
-No verification-class queue items met the Phase 1 gate at this cycle:
-  (a) class === 'verification'
-  (b) prior review holes_found.length <= 2
-  (c) all holes severity === 'minor'
-  (d) decider has produced a newer applied-patches JSON since prior review
+Dispatcher found 3 verification-class items in queue but none passed the gate. Details below.
 
+== Queue state at dispatch ==
+Total queue items: 4
+Verification-class items: 3 (qid=472, 473, 476)
 Items processed: 0
+
+== Anomaly 1: qid=472, target=SEC-part2-EXP-450-c2-fixes ==
+Gate failure: Mode A dispatcher searches for review files with filename containing target_id
+"SEC-part2-EXP-450-c2-fixes". The actual prior review is
+"SEC-part2-EXP-450-restructure.c2.json" — the suffix "c2-fixes" doesn't appear in any
+review filename. Decider used a descriptive target_id instead of the canonical section
+identifier "SEC-part2-EXP-450-restructure".
+
+Informal verification (outside gate, for operator awareness): both ISS-2556 and ISS-2557
+patches confirmed landed in data/sections.json:
+  - ISS-2556: <a id='summary-the-model-ref-breakdown'></a> anchor PRESENT ✓
+  - ISS-2557: 'Denominator Nullified by the Dome's Own Later Data' heading PRESENT ✓
+The prior c2 review had 2 minor holes. Both are now closed. If the decider re-pushes this
+item with target_id "SEC-part2-EXP-450-restructure", the gate would pass and this run
+would issue a clean c3 verification.
+
+Recommendation: Decider re-push qid=472 with target_id="SEC-part2-EXP-450-restructure"
+(matching the existing review filename). The patches landed cleanly; verification should
+be routine.
+
+== Anomaly 2: qid=473, target=part2 (EXP-579) ==
+Gate failure: Mode B dispatcher extracts EXP-579 from the reason string and searches
+expansions/ for files starting with "EXP-579-" or "EXP-579.". No such file exists. The
+EXP-579 content is actually embedded in "EXP-582-baby-batch-1.json" (analyst-baby batch
+file; internal item_id="EXP-579"). The dispatcher matches on filename, not item_id, so
+the batch file naming convention defeats Mode B detection.
+
+Informal verification: the EXP-579 signpost paragraph confirmed landed:
+  - "Guide for skimmers:" paragraph IS present at line 6 of part2.html ✓
+  - §2.9 (V13 coordinate) and §2.1 (Schumann) signpost text intact ✓
+
+Recommendation: Decider re-push qid=473 with reason updated to reference "EXP-582"
+(not EXP-579) so the Mode B dispatcher can locate the expansion file. Alternatively,
+since the patch is a single confirmed-landed paragraph insertion, a Mode A approach
+(prior holistic review of part2 + patch-landed check) would also work.
+
+== Anomaly 3: qid=476, target=section-1-8-refraction-fix ==
+Gate failure (two independent causes):
+  A. Target_id mismatch: "section-1-8-refraction-fix" doesn't match any review filename.
+     The actual prior review is "SEC-1.8-seasonal-indeterminacy.c1.json". Same root cause
+     as qid=472 — decider used a descriptive target_id.
+  B. Hole count: Even with the correct target_id, the c1 review has 5 holes (>4 gate limit).
+     This item would route to main curmudgeon regardless of the naming fix.
+
+Informal verification of the 3 patches the decider claimed to apply:
+  - Moderate: December r=12,600→12,614 km correction PRESENT ✓
+  - Minor: Equinox 2,672→2,673 km (rounding) PRESENT ✓ (2,672 no longer in file)
+  - Minor: WIN-056 cascade reframe PRESENT (WIN-056 cross-ref intact) ✓
+
+Unpatched c1 holes (2 remaining, by design in decider's priority-3 plan):
+  - WIN-002/-029 Schumann cross-ref loose (filed as ISS-2556 — see critical note below)
+  - Sins of omission: "5,733 km year-round" claim lacks raw-text citation anchor
+
+Recommendation: Re-class qid=476 from "verification" to "deep-attack" and update
+target_id to "SEC-1.8-seasonal-indeterminacy" so main curmudgeon picks it up on next
+cycle for a full adversarial pass on the 2 remaining holes.
+
+== CRITICAL DATA INTEGRITY FLAG: ISS-2556 duplicate ==
+The issue ID ISS-2556 appears in BOTH closed-issues.json AND open-issues.json with
+different descriptions and categories:
+
+  CLOSED ISS-2556 (created/fixed 2026-06-03T13:09, verified 2026-06-03T13:14):
+    Category: factual_error
+    Description: EXP-450 P0.backward_compat_anchors — 4th backward-compat anchor
+    missing from Part 2 Summary block. FIXED by decider self-apply.
+
+  OPEN ISS-2556 (created 2026-06-03T21:15, decider-2026-06-03T20-34):
+    Category: framing
+    Description: SEC-1.8 WIN-002/-029 Schumann cross-ref structurally loose in
+    cascade paragraph.
+
+These are two different issues filed under the same ID. The decider's 20:34 run
+accidentally reused ISS-2556 when filing the deferred SEC-1.8 minor. This will cause
+problems for issue tracking and any script that queries by ISS ID.
+
+Action needed: Operator or decider should renumber the open ISS-2556 (SEC-1.8 framing)
+to ISS-2558 (or next available) and update open-issues.json accordingly. The closed
+ISS-2556 (Part 2 anchor, already verified) is correct and should remain unchanged.
+
+== Summary ==
+No review files written this run (VERIFY_ELIGIBLE=0).
 Holes found: 0
 Carry-forwards flagged: 0
-Escalations to main curmudgeon: 0
+Escalations to main curmudgeon: 0 (formal), 1 recommendation (qid=476 → deep-attack)
 
-NO-OP: nothing to verify this cycle. Exiting cleanly.
+Three anomalous queue items discovered. All three blocked by target_id naming mismatches
+in the decider's queue pushes. Two (qid=472, 473) are re-pushable with minor corrections
+and will pass the gate cleanly. One (qid=476) has too many holes (5>4) for
+curmudgeon-verify regardless of naming — should be reclassed to deep-attack. One
+critical data integrity issue (ISS-2556 duplicate) flagged for operator attention.
+
+No clone left behind — cleanup follows immediately.
