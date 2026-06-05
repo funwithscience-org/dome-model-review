@@ -1,0 +1,58 @@
+{
+  "run_id": "tinker-2026-06-05T02-44",
+  "ts": "2026-06-05T02:44:08Z",
+  "agent": "tinker",
+  "mode_selected": "Mode 3 — Cost Engineering & Architecture (CLAUDE.md accuracy audit)",
+  "mode_selection_reason": "Pre-flight clean (no pending operator-directives, no Mode 0 assigned-to-tinker items). Backlog GREEN (open_issues_total=5, no backlog threshold fires). Mode 1/2 quick-checks: all agents live and on-cadence, FUSE matches GitHub byte-for-byte, auth HTTP 200, velocity strongly positive. Two housekeeping flags surfaced (stale stranded-patch sentinel, disk WARNING) but neither is a true 'red' requiring remediation. Defaulted to Mode 3 productive state.",
+  "modes_checked": {
+    "directive_discovery": "NO PENDING DIRECTIVES",
+    "mode_0_assigned_to_tinker": "no items pending (open-issues status=assigned-tinker: 0; expansion-tracker assigned_to=tinker: 0)",
+    "mode_1_pipeline_health": "GREEN — recent commits show poller(00:11), decider(01:16), integrity(01:18 FAIL→handled by decider 01:16), curmudgeon-verify(23:45), workspace-sync(02:08), dome-mirror(02:34) all on-cadence. status.json fresh (poller 00:09Z, 17 consecutive quiet polls, manual-commit drought d=48.5). FLAG: 1 untombstoned stranded-patch sentinel >24h.",
+    "mode_2_infra": "GREEN on FUSE+auth. FUSE: data/wins.json, data/sections.json, build-scripts/digest-reviews.js, generate-html.js, docs/index.html all match GitHub. Auth HTTP 200. FLAG: disk WARNING — project footprint 929MB (≥500MB), root partition 99% full (99MB free).",
+    "backlog_trend": "open_issues_total=5 (down 12→5 since yesterday), open_status=1, assigned_analyst=0, age_ge_14d=0, age_ge_30d=0, oldest_open=0.2d, net_velocity_7d=+360. NO threshold fires (all tiers clear)."
+  },
+  "findings": [
+    {
+      "id": "TF-001",
+      "category": "claude_md_audit",
+      "severity": "minor",
+      "title": "CLAUDE.md Monitoring Pipeline table cron expressions drifted from live scheduled-task config (5 rows)",
+      "evidence": "Cross-checked CLAUDE.md table (lines 168-181) against list_scheduled_tasks live config. Drifts: dome-poller table='0 */12 * * *' (12h) vs live='0 1 * * *' (daily, throttled 2026-05-28 per 48.5d manual drought); dome-mirror table='0 * * * *' vs live='30 * * * *' (shifted to :30 on 2026-06-03 to fix FUSE-revert race with workspace-sync); dome-analyst table minute '50' vs live '0'; dome-curmudgeon table='30 3,7,11,15,19,23' vs live='0 1,5,9,13,17,21' (2026-06-03 weekend safety throttle offset); dome-decider table minute '10' vs live '0'.",
+      "classification": "DURABLE drift (reconcile regardless): dome-poller (semi-permanent throttle), dome-mirror (indefinite race-fix). TEMPORARY drift (reverts ~2026-06-06 on operator return per task-description REVERT notes): dome-analyst, dome-curmudgeon, dome-decider weekend safety throttle.",
+      "recommendation": "Do NOT self-edit CLAUDE.md during the 2026-06-03→06 unsupervised window. 3 of 5 drifts are explicitly temporary and revert tomorrow; a piecemeal edit now creates churn and leaves the table half-correct. Operator should fold the table update into the throttle-revert on return, AND separately correct the two durable rows (poller→'0 1 * * *', mirror→'30 * * * *') so they aren't lost when the temporary rows revert. Counts/enabled-status/models all verified CORRECT (14 configured, 12 enabled, sloppytoppy-score+rewrite DISABLED).",
+      "self_fix_applied": false
+    },
+    {
+      "id": "TF-002",
+      "category": "pipeline-health",
+      "severity": "minor",
+      "title": "Stale untombstoned stranded-patch sentinel — underlying ISS already fixed",
+      "evidence": "monitor/decisions/stranded-patches-2026-05-31T05-35-55Z.json (age ~5d, tombstone_status absent). Targets EXP-477 P4 text fix in build-scripts/generate-html.js (NEVER_PUSH), related ISS-2351. VERIFIED: ISS-2351 status='fixed' in closed-issues.json; neither the patch's find-text nor replace-text present in current generate-html.js (paragraph reworded via another path). The 6 older stranded-patches sentinels are all tombstone_status='applied' (correctly skipped).",
+      "recommendation": "Operator should tombstone (tombstone_status='applied') the 2026-05-31 sentinel — the work it represents is OBE (ISS-2351 closed=fixed). Until tombstoned it will keep tripping the Mode 1 >24h stranded-patch check on every tinker run.",
+      "self_fix_applied": false,
+      "note": "Tinker does not directly tombstone (operator-owned action per decider-patches-and-selfapply.md tombstone convention)."
+    },
+    {
+      "id": "TF-003",
+      "category": "infrastructure",
+      "severity": "info",
+      "title": "Disk WARNING — non-actionable (own active clone + FUSE), but root partition tight",
+      "evidence": "Project footprint 929MB (≥500MB WARNING tier). Breakdown: /tmp/tinker-clone=410MB (this run's own fresh clone, age 0h), FUSE mount=518MB. Only /tmp/*-clone present is tinker's own (not stale). /tmp/kev-repo=95MB belongs to a different project and is out of the *-clone glob scope. Root partition 99% full (99MB free) — dominated by ~8GB system-image baseline per Mode 2 note.",
+      "recommendation": "No stale-clone cleanup action available (the 24h /tmp/*-clone empowerment finds nothing eligible). End-of-run cleanup of /tmp/tinker-clone reclaims 410MB. Root-partition tightness is mostly unshrinkable system baseline; monitor but not actionable by tinker.",
+      "self_fix_applied": false,
+      "cleanup_actions": []
+    }
+  ],
+  "claude_md_audit": {
+    "size_lines": 215,
+    "size_chars": 40124,
+    "est_tokens": 10031,
+    "accuracy": "Monitoring Pipeline table cron drift (see TF-001). Agent counts/models/enabled-status all correct. Ownership table and file map not re-audited this run (no new files detected in git log since last audit).",
+    "performance": "CLAUDE.md ~10k tokens, read by every agent every session. No growth flagged vs prior baseline; no sections recommended for relocation this run."
+  },
+  "context_load": {
+    "note": "Full per-agent context-load measurement deferred — no Opus agent prompt growth signal in this run's git log. tinker.md self-size not re-measured (no recent edits)."
+  },
+  "previous_followup": "Not re-walked in full this run (Mode 3 focused on CLAUDE.md accuracy). Prior PROP verification_pattern walk deferred — pipeline GREEN and no PROP flagged STILL_BROKEN in recent reports. Note: integrity 01:18 FAIL (ISS-2579 Mech-A bypass, EXP-584 orphan) was already remediated by decider 01:16 commit (ISS-2579/2580 patches + EXP-584 stale-status fix) — loop closed normally.",
+  "queue_history_appended": true
+}
