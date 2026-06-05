@@ -1,0 +1,45 @@
+{
+  "id": "DIRECTIVE-20260605-001",
+  "filed_by": "operator-cowork-session",
+  "filed_at": "2026-06-05T22:55:00Z",
+  "status": "pending",
+  "priority": "high",
+  "title": "Author + implement PROP-NNN: update integrity's PROP-059 Mech-A-bypass audit to recognize audit_grandfathered field (mirror PROP-076 lint gate); close ISS-2581 on re-run",
+  "background": "ISS-2581 (critical, surfaced 2026-06-05) flagged 7 closures (ISS-2571..2577) by decider-self-apply-decider-2026-06-04T13-06 as 'missing both verification_pattern and closure_reason'. Operator inspected: all 7 are actually annotated with `audit_grandfathered: 'PROP-059-same-run-close-2026-06-04'`. PROP-076's lint gate correctly passed them (the gate filter is `verification_pattern OR audit_grandfathered`).\n\nDIAGNOSIS: integrity's PROP-059 audit script and PROP-076's lint gate disagree on what constitutes compliance. The audit checks `verification_pattern` and `closure_reason` (per its body text) but NOT `audit_grandfathered`. The lint gate is the authoritative discipline check; integrity should mirror its filter exactly.\n\nEvidence trail:\n  - The 7 ISSs in closed-issues.json all have `audit_grandfathered: 'PROP-059-same-run-close-2026-06-04'` set\n  - ISS-2581's body acknowledges 'Patches appear correct in sections.json (spot-checked: 3758km line)' — integrity SAW the work was correct but fired anyway because it checked the wrong field names\n  - PROP-076's monitor/scripts/lint-close-records.js Mech-A filter (4 conditions): status in {fixed, fixed-pending-verification}, fixed_by startsWith 'decider-', NOT one of the exception strings (operator-direct, burndown, etc.), AND verification_pattern null/empty AND audit_grandfathered absent/empty. If integrity's audit mirrored this, the 7 would not have been flagged.\n\nThis is the second integrity-vs-decider-discipline disagreement in 4 days (the first was ISS-2519 itself, which led to PROP-076's lint gate). Aligning the two scripts on a single filter prevents the recurrence.",
+  "operator_decision": {
+    "approve_alignment": "YES",
+    "rationale": "Single source of truth for Mech-A compliance is the lint gate (PROP-076). Integrity's audit should be a downstream check that mirrors the gate's filter exactly. Decider's same-run-close pattern is correct work (patch authored + ISS filed + ISS closed all in one run, with audit_grandfathered explaining the pattern) — no decider-side change needed."
+  },
+  "requested_work": [
+    "Step 1 — Locate integrity's PROP-059 audit code. Likely surface: monitor/prompts/structure-integrity.md (a Section X self-test that walks closed-issues.json), or a dedicated script in monitor/scripts/. The audit is invoked by dome-integrity's daily run. Identify the EXACT filter expression that produced ISS-2581's 7-ID match.",
+    "Step 2 — Read monitor/scripts/lint-close-records.js (PROP-076) to extract its canonical Mech-A filter. The 4 conditions are documented in the script's header comment: (a) status in {fixed, fixed-pending-verification}, (b) fixed_by startsWith 'decider-', (c) fixed_by does NOT contain any of {operator-direct, burndown, sweep, wontfix, -OBE-, EXP-integrated, exp-integrated}, (d) verification_pattern null/empty AND audit_grandfathered absent/empty.",
+    "Step 3 — Author monitor/tinker/proposals/PROP-NNN-integrity-audit-mirror-lint-gate.json. Required sections: title, problem statement (cite this directive + ISS-2581 + the divergence between lint-gate filter and integrity-audit filter), proposed fix (the specific edit to integrity's filter to add audit_grandfathered check), Q-OPs if any, verification_pattern (grep proving the new filter is in place), files_touched list, estimated_loc.",
+    "Step 4 — Operator pre-approves the following design directions; tinker should adopt the cleanest:\n  (a) PREFERRED: Replace integrity's filter with the exact same 4-condition filter from lint-close-records.js (verbatim copy of the four checks). Simplest; guarantees alignment.\n  (b) Alternative: Have integrity invoke lint-close-records.js directly via `node monitor/scripts/lint-close-records.js --audit-mode` (add an --audit-mode flag that reports rather than blocks). More invasive but creates a true single source of truth.\n  Operator preference: (a) for surgical-fix simplicity. (b) is over-engineering for a one-time alignment.",
+    "Step 5 — Tinker self-applies per the PROP-076/077/078 pattern: write proposal, implement same run if total LOC <50 in integrity's prompt/script, verification_pattern grep passes.",
+    "Step 6 — Close ISS-2581 with closure_resolution citing the PROP-NNN + this directive + audit_grandfathered field. Operator approves either (a) `audit_grandfathered: 'PROP-NNN-prior-lint-gate-passed-integrity-out-of-sync'` annotation, OR (b) full verification_pattern derived from the lint gate's logic. (a) is simpler.",
+    "Step 7 — Validate: simulate the next integrity run against the corrected filter. The 7 ISSs (ISS-2571..2577) should NOT re-fire (they have audit_grandfathered set). Document the expected pattern in the PROP's verification section.",
+    "Step 8 — Lifecycle: flip PROP-NNN.json status='implemented'. Flip this directive to status='completed' with prop_id_implemented set. Manually copy edited prompt/script files to FUSE so the next integrity run uses the new filter."
+  ],
+  "non_goals": [
+    "Do NOT change PROP-076's lint gate. It worked correctly; the 7 ISSs were properly grandfathered and the gate let them through as designed.",
+    "Do NOT change decider's same-run-close pattern. It's a legitimate operational pattern (decider integrates patch + immediately files an ISS marking it audit-tracked + closes it) — the audit_grandfathered field is the correct annotation. Decider's discipline is sound.",
+    "Do NOT add new fields to closed-issues.json schema (no new closure_reason mandate). The existing trio (verification_pattern, closure_reason, audit_grandfathered) is sufficient; alignment is the fix.",
+    "Do NOT expand to other integrity-vs-discipline mismatches unless they surface in this audit. Stay scoped to the PROP-059 Mech-A check.",
+    "Do NOT block on retroactive re-audit of the 7 ISSs. Closing ISS-2581 + fixing the filter is sufficient; the 7 are already correctly grandfathered."
+  ],
+  "context_pointers": {
+    "iss_2581": "monitor/decisions/open-issues.json — the critical that surfaced from dome-integrity overnight",
+    "the_7_iss_ids": ["ISS-2571","ISS-2572","ISS-2573","ISS-2574","ISS-2575","ISS-2576","ISS-2577"],
+    "lint_gate": "monitor/scripts/lint-close-records.js (PROP-076) — the canonical filter to mirror",
+    "integrity_audit_surface": "monitor/prompts/structure-integrity.md — likely where the PROP-059 Mech-A audit logic lives (or a dedicated audit script invoked by integrity)",
+    "decider_same_run_pattern": "decider-self-apply-decider-2026-06-04T13-06 commit (caa948e4? — tinker confirms): closed 7 ISSs with audit_grandfathered='PROP-059-same-run-close-2026-06-04'. Same-run create-and-close pattern.",
+    "prior_props": {
+      "PROP-076": "Mech-A-bypass synchronous lint gate (shipped 2026-06-03) — the gate that correctly passed these 7",
+      "PROP-077_PROP-078": "FUSE-revert race-condition fixes — unrelated to this; just notable as the recent integrity-prompt edit context"
+    },
+    "evidence_of_misdiagnosis": "ISS-2581 body says 'missing both verification_pattern and closure_reason' but never mentions audit_grandfathered. All 7 ISSs have audit_grandfathered set."
+  },
+  "expected_output": "(1) monitor/tinker/proposals/PROP-NNN-integrity-audit-mirror-lint-gate.json with status='implemented'. (2) Edit to integrity's audit code (likely 1-line filter addition to recognize audit_grandfathered). (3) ISS-2581 closed in open-issues.json with closure_resolution citing PROP-NNN + this directive. (4) This directive at status='completed'. (5) FUSE-synced prompt/script edits.",
+  "estimated_effort": "~30-45 min Opus. Most of the work is finding the existing audit code (Step 1, ~15 min). Implementation (Step 5) is ~1-line filter edit. Validation + lifecycle (~15 min).",
+  "priority_note": "HIGH — open critical from integrity. Recurrence prevention requires the filter alignment; the 7 ISSs are correctly grandfathered, so no data corruption, but the alarm-fatigue cost compounds if more same-run closes happen in coming days."
+}
