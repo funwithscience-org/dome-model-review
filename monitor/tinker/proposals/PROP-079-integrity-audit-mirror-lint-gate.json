@@ -1,0 +1,52 @@
+{
+  "id": "PROP-079",
+  "title": "Align integrity §7h Mech-A-bypass audit filter with the PROP-076 lint gate (status-set widening) — with corrected diagnosis of the ISS-2581 firing",
+  "authored_by": "tinker-2026-06-06T05-04",
+  "authored_at": "2026-06-06T05:30:00Z",
+  "status": "implemented",
+  "implemented_at": "2026-06-06T05:30:00Z",
+  "directive": "DIRECTIVE-20260605-001",
+  "problem_statement": "DIRECTIVE-20260605-001 (high) asked tinker to align integrity's PROP-059 Mech-A-bypass audit (structure-integrity.md §7h) with PROP-076's lint gate (monitor/scripts/lint-close-records.js), on the diagnosis that integrity 'checked the wrong field names' (verification_pattern + closure_reason but NOT audit_grandfathered) and therefore false-fired ISS-2581 on 7 entries (ISS-2571..2577) that 'are actually annotated with audit_grandfathered'. Forensic reconstruction during implementation shows that diagnosis is incorrect — but a REAL filter divergence does exist (status-set scope), and it is fixed by this PROP per the directive's pre-approved design direction (a): mirror the gate's filter verbatim.",
+  "corrected_diagnosis": {
+    "summary": "ISS-2581 was a TRUE positive, not an audit-filter bug. The audit_grandfathered tags did not exist when integrity fired; they were applied ~12h later in response to integrity's own suggested_fix. Integrity's §7h has recognized audit_grandfathered since 2026-05-26 (commit 5ffd91cc-era skip-rule update, commit 5ffd21cc). The PROP-076 lint gate did NOT 'correctly pass' the 7 entries — at push time they lacked BOTH verification_pattern AND audit_grandfathered, so a gate that executed would have blocked the push. The gate evidently did not run (or its abort was ignored) on that decider push.",
+    "forensic_timeline": [
+      "2026-05-26: commit 5ffd21cc adds the audit_grandfathered skip-rule to structure-integrity.md §7h. Integrity has recognized the field ever since.",
+      "2026-06-04T13:18Z: commit 38deae25 ('Decider self-apply: SEC-1.8 + SEC-2.16 patches', run decider-2026-06-04T13-06) lands ISS-2571..2577 in closed-issues.json with status='fixed', verification_pattern=null, closure_reason=null, audit_grandfathered ABSENT (verified via raw.githubusercontent.com at that SHA: 7 entries present, 0 with audit_grandfathered). This violates BOTH the decider-intake.md Step 1d.3 same-run-close contract (which mandates fixed-pending-verification + verification_pattern, and FORBIDS direct status='fixed') AND should have been blocked by the PROP-076 pre-push lint gate.",
+      "2026-06-05T01:17Z: dome-integrity §7h fires on the 7 entries — correctly, because audit_grandfathered was genuinely absent. Its ISS body explicitly states 'No audit_grandfathered field present' (it checked the right field). Files ISS-2579 (renamed ISS-2581 after ID collision).",
+      "2026-06-05T13:14Z: commit 4bcec5a1 (decider-2026-06-05T13-11) applies audit_grandfathered='PROP-059-same-run-close-2026-06-04' + audit_grandfathered_at + note to all 7, per integrity's suggested_fix (verified: 0-of-7 tagged at bfde69bb 05:18Z, 7-of-7 tagged at 4bcec5a1 13:13Z; each entry carries audit_grandfathered_at='2026-06-05T13:14:25Z').",
+      "2026-06-05T22:55Z: operator inspects the now-tagged entries and files DIRECTIVE-20260605-001 on the reasonable-but-wrong inference that the tags predated the integrity run."
+    ],
+    "gate_bypass_evidence": "Three decider pushes in two days landed vp-less ag-less decider- prefixed close-records on origin/main, which lint-close-records.js exit-1s on by construction: 38deae25 (ISS-2571..2577), f52d3ae0 2026-06-05T01:16Z (ISS-2579/2580 closes), 196dde8d 2026-06-05T09:13Z (ISS-2587 close). The gate is invoked only via a prompt-procedural bash block (decider-patches-and-selfapply.md Step 5, ~L421); push-via-api.js does not invoke it. This is the PROP-066 skip-by-omission failure class. dome-integrity has already re-fired this morning on the latter three (ISS-2594, 2026-06-06T01:13Z) — recurrence is driven by the decider-side skip, not by integrity's filter.",
+    "directive_premise_disposition": "Directive Step 1's target edit (add audit_grandfathered recognition) was already in place since 2026-05-26 — no edit needed for that field. Directive's pre-approved design (a) ('replace integrity's filter with the exact 4-condition filter from lint-close-records.js, verbatim') still has one real delta to apply: the status-set."
+  },
+  "real_divergence_found_and_fixed": {
+    "field": "status condition",
+    "gate": "status in {'fixed','fixed-pending-verification'}",
+    "integrity_before": "status === 'fixed' (terminal, not fixed-pending-verification)",
+    "integrity_after": "status is 'fixed' OR 'fixed-pending-verification' (gate-aligned)",
+    "why_it_matters": "The canonical PROP-059 close path REQUIRES verification_pattern at pending-verification time. A fixed-pending-verification entry with neither vp nor ag is the same hallucination shape; the gate audits it, integrity (pre-PROP-079) silently passed it. Live example: ISS-2563 (fixed_by='decider-self-apply', fixed_at=2026-06-04T05:14Z, vp=null, ag=null, status=fixed-pending-verification) — invisible to the old filter, flagged by the gate-aligned filter.",
+    "conditions_unchanged": "fixed_by startsWith 'decider-'; OBE substring exclusions (operator-direct, burndown, sweep, wontfix, -OBE-, EXP-integrated, exp-integrated); vp null/empty AND ag absent/empty; integrity-only fixed_at >= 2026-05-25T15:00Z cutoff (gate doesn't need it — it audits only newly-added entries; integrity scans the whole file, so the cutoff stays)."
+  },
+  "files_touched": [
+    "monitor/prompts/structure-integrity.md (§7h scan-condition bullet, 1 line replaced)",
+    "monitor/decisions/open-issues.json + closed-issues.json (ISS-2581 closed per directive Step 6)",
+    "monitor/tinker/operator-directives/DIRECTIVE-20260605-001-integrity-prop059-audit-mirror-lint-gate.json (status -> completed)",
+    "monitor/tinker/proposals/PROP-079-integrity-audit-mirror-lint-gate.json (this file)"
+  ],
+  "estimated_loc": 1,
+  "verification_pattern": "git show origin/main:monitor/prompts/structure-integrity.md | grep -qF \"gate-aligned 2026-06-06 per PROP-079\"",
+  "expected_next_integrity_run": {
+    "will_not_fire_on": "ISS-2571..2577 (audit_grandfathered set 2026-06-05T13:14Z) — simulated against current closed-issues.json: 0 of 7 flagged.",
+    "will_fire_on": "ISS-2563 (new, via status-set widening — TRUE positive) plus ISS-2579/ISS-2580/ISS-2587 (already firing under the OLD filter; already tracked under ISS-2594 created 2026-06-06T01:13Z — integrity's 24h-dedup / tracked_under should suppress duplicates).",
+    "simulation_note": "Run-time simulation 2026-06-06T05:1xZ: current filter flags {ISS-2579, ISS-2580, ISS-2587}; aligned filter flags those + ISS-2563; the 7 grandfathered entries flag under neither."
+  },
+  "q_ops": [],
+  "follow_up_recommended": "The actual recurrence driver is the decider skipping the PROP-076 gate invocation (3 pushes in 2 days). Candidate structural fixes, NOT implemented here because DIRECTIVE-20260605-001 non_goals forbid touching the gate and decider's close pattern, and operator's 'decider discipline is sound' premise should be re-decided against the corrected forensics: (a) add a GitHub Actions CI job running lint-close-records.js in audit mode on every push to main (server-side, unskippable, report-only or blocking); (b) fold the lint invocation into push-via-api.js and into a single push-helper script the decider calls (PROP-066 helper-extraction pattern). Escalated to operator via latest-tinker-summary.txt; awaiting directive.",
+  "non_goals_honored": [
+    "PROP-076 lint gate logic unchanged.",
+    "Decider same-run-close pattern unchanged (but see corrected_diagnosis — the 2026-06-04/05 closes violated the written Step 1d.3 contract; operator should re-review the 'decider discipline is sound' premise).",
+    "No new closed-issues.json schema fields.",
+    "No retroactive re-audit of the 7 grandfathered entries.",
+    "ISS-2594 (this morning's new firing on ISS-2579/2580/2587) left in the normal pipeline — underlying patch verification is judgment work outside this directive."
+  ]
+}

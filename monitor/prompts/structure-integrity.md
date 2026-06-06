@@ -602,7 +602,7 @@ PROP-016 Mechanism A intercepts decider commits that would push NEVER_PUSH files
 
 **Scan:** read `monitor/decisions/closed-issues.json`. For each entry where ALL of:
 
-- `status === 'fixed'` (terminal, not `fixed-pending-verification`)
+- `status` is `'fixed'` OR `'fixed-pending-verification'` (gate-aligned 2026-06-06 per PROP-079: `lint-close-records.js` audits both statuses — a `fixed-pending-verification` entry missing its `verification_pattern` is the same PROP-059 discipline violation, since the canonical close path REQUIRES the fingerprint at pending-verification time. Pre-PROP-079 text audited `'fixed'` only, which let vp-less pending-verification closes pass silently, e.g. ISS-2563.)
 - `fixed_by` starts with `'decider-'` (any decider-driven close — `decider-self-apply`, `decider-self-apply-stranded-patch`, `decider-self-apply-generate-html`, and timestamped `decider-2026-...` run-IDs)
 - `fixed_by` does **NOT** contain any of these mechanism substrings: `'operator-direct'`, `'burndown'`, `'sweep'`, `'wontfix'`, `'-OBE-'`, `'EXP-integrated'`, `'exp-integrated'` (these are operator-direct / migration / integration paths, not decider self-applies, and don't require a verification_pattern)
 - `verification_pattern` is `null`, empty, or missing (absent → decider closed without writing the fingerprint, which is the exact hallucination shape PROP-059 catches)
