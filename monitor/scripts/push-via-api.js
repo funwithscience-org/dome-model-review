@@ -57,6 +57,25 @@ if (files.length === 0) {
   process.exit(2);
 }
 
+// PROP-080 (2026-06-06): this script is the fallback push path that BYPASSES
+// git's pre-push hook (it never runs `git push`). To keep the PROP-076
+// close-record lint structural on BOTH push paths, run the lint here whenever
+// closed-issues.json is among the files being pushed. No skip flag is
+// provided on purpose — if the lint fails, fix the close-records (the lint
+// prints the recovery procedure), do not route around the gate.
+if (files.includes('monitor/decisions/closed-issues.json')) {
+  const lintPath = path.join(process.cwd(), 'monitor', 'scripts', 'lint-close-records.js');
+  if (fs.existsSync(lintPath)) {
+    const r = require('child_process').spawnSync('node', [lintPath], { stdio: 'inherit' });
+    if (r.status !== 0) {
+      console.error('push-via-api: PROP-076/PROP-080 lint-close-records FAILED (exit ' + r.status + '). Refusing to push closed-issues.json.');
+      process.exit(1);
+    }
+  } else {
+    console.error('push-via-api: WARNING — lint-close-records.js not found at ' + lintPath + '; pushing without close-record lint (degraded).');
+  }
+}
+
 let pat = process.env[patEnv];
 if (!pat) {
   // Try to extract from local git remote (same pattern as workspace-sync.md Step 1).

@@ -118,6 +118,24 @@ echo "PRE-FLIGHT: dome PAT scope verified (HTTP $SCOPE_HTTP)."
 # build the clone URL from the verified PAT explicitly).
 git clone "https://x-access-token:${DOME_PAT}@github.com/funwithscience-org/dome-model-review.git" ${CLONE}
 cd ${CLONE}
+
+# PROP-080 (2026-06-06): STRUCTURAL pre-push enforcement of the PROP-076
+# close-record lint. Three documented bypasses in two days (38deae25,
+# f52d3ae0, 196dde8d) proved the prompt-level lint invocation further down
+# this file is skippable (same LLM skip-by-omission class as the PROP-074
+# Step-4c saga). This hook is enforced by git itself: EVERY `git push` from
+# this clone runs the lint, regardless of which bash blocks the agent
+# executed. Install it IMMEDIATELY after the clone — these four lines are
+# part of clone setup, not optional hardening. Do NOT remove, edit, or
+# bypass the hook (--no-verify is FORBIDDEN); if the hook blocks your push,
+# the close-records are wrong — fix THEM (see recovery text the lint prints).
+cat > .git/hooks/pre-push <<'HOOK'
+#!/bin/sh
+# PROP-080: structural enforcement of PROP-076 lint-close-records.
+exec node "$(git rev-parse --show-toplevel)/monitor/scripts/lint-close-records.js"
+HOOK
+chmod +x .git/hooks/pre-push
+
 npm install
 
 # Set git author identity to the operator (steve) (added 2026-04-25 — diagnostic
@@ -418,6 +436,10 @@ fi
 # omits verification_pattern. PROP-059's prompt rule has been in place since
 # 2026-05-25; the integrity audit catches violations the next morning. This
 # gate catches them at push time so they never reach origin/main.
+# PROP-080 (2026-06-06): this prompt-level call is now LAYER 1 (catches
+# violations early, with full recovery context). LAYER 2 is the pre-push git
+# hook installed at clone setup (step 0) — it runs the same lint on every
+# `git push` whether or not this block was executed. Never use --no-verify.
 if [ -f monitor/scripts/lint-close-records.js ]; then
   if ! node monitor/scripts/lint-close-records.js; then
     echo "PRE-PUSH GATE: PROP-076 lint-close-records reported violations. Aborting push."

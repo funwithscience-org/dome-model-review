@@ -1,0 +1,59 @@
+{
+  "prop_id": "PROP-080",
+  "title": "Structural enforcement of the PROP-076 close-record lint via git pre-push hook (+ API-path lint guard)",
+  "status": "implemented",
+  "priority": "high",
+  "author": "tinker",
+  "authored_at": "2026-06-06T05:42:45.127Z",
+  "implemented_at": "2026-06-06T05:42:45.127Z",
+  "implementation_run": "tinker-2026-06-06T05-35",
+  "implementation_commit": null,
+  "source_directive": "DIRECTIVE-20260606-001",
+  "source_finding": "tinker report-2026-06-06T05-04.json [major] finding: 3 decider pushes in 2 days landed close-records violating PROP-059 discipline despite the PROP-076 lint gate being deployed",
+  "problem": "PROP-076 deployed lint-close-records.js with a prompt-level invocation in decider-patches-and-selfapply.md (pre-push gate block). Three pushes bypassed it: 38deae25 (2026-06-04T13:18Z, ISS-2571..2577), f52d3ae0 (2026-06-05T01:16Z, ISS-2579/2580), 196dde8d (2026-06-05T09:13Z, ISS-2587). All 10 violating entries match the lint filter exactly (verified by replay), so the lint cannot have executed and exited 0.",
+  "diagnosis": {
+    "dominant_failure_mode": "H1 — LLM skip-by-omission",
+    "evidence": [
+      "Lint script present in all 3 commit trees; md5 43d33c4953f5a86a28c416445aa99916 identical to current — the filter logic flags all 10 violating entries when replayed against each commit vs its parent (7+2+1 violations confirmed)",
+      "Prompt gate block present in all 3 commit trees (4 lint-close-records mentions each) — the gate text existed; it was not executed",
+      "All 3 commits authored+committed as steve <russelst@melrosecastle.com> (the canonical clone-setup git config), i.e. pushed via the normal git path, not push-via-api.js (which would carry the PAT identity since it sets no author)",
+      "Zero PRE-PUSH GATE / lint output traces in latest-decider-summary.txt at any of the 3 commits",
+      "The canonical block wraps the lint in an unmasked \"if ! node ...; then exit 1\" — had it run, the push would have aborted. Landing on origin/main therefore implies non-execution, ruling out H3 (exit-code masking)",
+      "H2 (conditional hole) ruled out: the only conditional is \"[ -f monitor/scripts/lint-close-records.js ]\" and the file existed in all 3 worktrees",
+      "Partial-compliance signature in 196dde8d (ISS-2586 HAS verification_pattern, sibling ISS-2587 written in the same run does not) — classic per-record prompt drift while the mechanical gate never ran; same bug class as the PROP-066..074 Step-4c skip saga"
+    ]
+  },
+  "proposal": "Two-layer structural fix, per DIRECTIVE-20260606-001 design (a): (1) install a 3-line pre-push git hook at decider clone setup (immediately after \"cd $CLONE\" in decider-patches-and-selfapply.md step 0) that execs lint-close-records.js via \"git rev-parse --show-toplevel\" — enforced by git itself on EVERY push from the clone, regardless of which prompt blocks the LLM executed; the hook is a wrapper (not a copy) so lint-script updates never drift; (2) add a lint guard inside push-via-api.js (the PROP-050 API fallback path, which never runs \"git push\" and therefore bypasses git hooks) firing whenever monitor/decisions/closed-issues.json is among --files. The existing prompt-level invocation is retained as layer 1 (earlier, friendlier failure). --no-verify is declared FORBIDDEN in the prompt comment.",
+  "residual_risk": "An improvising LLM could still route around both layers via the universal-pusher FUSE rescue (copy violating closed-issues.json to FUSE; workspace-sync pushes it within ~1h, ungated). Explicitly out of scope per directive non-goals (no lint surfaces on workspace-sync). Mitigation: integrity 7h daily audit remains the layer-3 detector; post-deployment canary watches the next 2-3 decider runs. If a 4th bypass appears via the FUSE-rescue shape, escalate immediately and consider a follow-up PROP gating workspace-sync universal-pusher on closed-issues.json.",
+  "verification_pattern": "grep -q \"PROP-080\" monitor/prompts/reference/decider-patches-and-selfapply.md && grep -q \"hooks/pre-push\" monitor/prompts/reference/decider-patches-and-selfapply.md && grep -q \"PROP-080\" monitor/scripts/push-via-api.js",
+  "verification_simulation": {
+    "method": "For each bypass commit c: bare origin seeded with the parent commit closed-issues.json; work clone with hook installed exactly per the new prompt block; replay commit c closed-issues.json; attempt git push.",
+    "results": [
+      "38deae25: hook fired, lint FAIL (7 violations ISS-2571..2577), push refused, origin/main unchanged",
+      "f52d3ae0: hook fired, lint FAIL (2 violations ISS-2579/2580), push refused, origin/main unchanged",
+      "196dde8d: hook fired, lint FAIL (1 violation ISS-2587), push refused, origin/main unchanged",
+      "CONTROL A: same scenario with ISS-2587 given audit_grandfathered — push ALLOWED (no false positive)",
+      "CONTROL B: push-via-api.js --files monitor/decisions/closed-issues.json in violating state — lint ran inside the script, exit 1, refused before any API call",
+      "CONTROL C: push-via-api.js with a non-closed-issues file — lint not invoked (guard scoped correctly)"
+    ]
+  },
+  "files_touched": [
+    "monitor/prompts/reference/decider-patches-and-selfapply.md",
+    "monitor/scripts/push-via-api.js"
+  ],
+  "estimated_loc": 41,
+  "alternatives_considered": "(b) dedicated install-hooks.sh — more LOC, separate file to keep in sync, rejected; (c) Node wrapper around the git-push shell-out — invocation still lives in skippable prompt bash, rejected for the same reason the prompt-level gate failed.",
+  "counter_considerations": "A hook block converts a silent bypass into a loud push failure mid-decider-run; the decider may then fall into the PROP-050 API fallback — which is why layer 2 (API-path guard) ships in the same PROP. Hook only protects pushes from the decider clone; other writers of closed-issues.json (workspace-sync rescue) are out of scope per directive.",
+  "post_deployment_plan": "Canary: tinker/operator watch the next 2-3 decider runs. Expected: zero new Mech-A-bypass ISSs from integrity daily audits; decider summaries may legitimately report lint-blocked pushes followed by close-record fixes. A 4th bypass within days means the LLM found a path around both layers — escalate immediately per DIRECTIVE-20260606-001 Step 9.",
+  "related_directives": [
+    "DIRECTIVE-20260606-001",
+    "DIRECTIVE-20260605-001"
+  ],
+  "related_props": [
+    "PROP-076",
+    "PROP-079",
+    "PROP-074",
+    "PROP-066",
+    "PROP-050"
+  ]
+}

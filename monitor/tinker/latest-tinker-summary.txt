@@ -1,30 +1,33 @@
-TINKER tinker-2026-06-06T02-42 — directive-driven run
+TINKER RUN tinker-2026-06-06T05-35 — operator-directive mode (DIRECTIVE-20260606-001, high)
 
-DIRECTIVE-20260603-003 (PROP-077 Part B + decider audit) → COMPLETED.
+DONE: PROP-080 authored + implemented same-run. The PROP-076 close-record lint
+gate was being silently skipped by the decider (3 bypasses in 2 days:
+38deae25, f52d3ae0, 196dde8d). Forensics confirmed H1 — LLM skip-by-omission
+(script + prompt block existed and the filter catches all 10 violating
+entries on replay; no lint trace in any summary; unmasked exit-1 means
+execution would have aborted the push). H2/H3 ruled out.
 
-Key finding: Steps 1-5 were already done+pushed by a prior session (PROP-078
-authored & self-applied; integrity + decider prompt edits live via commit 4412bb2
-on 2026-06-05). The prior run skipped Step 6 lifecycle flips, leaving the directive
-stuck at status=pending and PROP-077 at implemented-partial. This run verified all
-success criteria and finalized the lifecycle.
+FIX (structural, per directive design a):
+ 1. Pre-push git hook installed at decider clone setup — 3-line wrapper that
+    execs lint-close-records.js. Enforced by git on EVERY push from the
+    clone, no matter which prompt blocks the LLM ran. --no-verify forbidden.
+ 2. push-via-api.js now runs the same lint when closed-issues.json is among
+    --files (the API fallback never runs 'git push', so hooks alone can't
+    cover it).
+ 3. Prompt-level call retained as layer 1. lint-close-records.js unchanged.
 
-Verification:
-  M1/M2/M3 (integrity prompt) ......... PASS (lines 59, 291, 7h PROLOGUE)
-  M5 (decider one-liner) .............. PASS (decider.md:37, verdict b)
-  M4 canary (production validation) ... PASS (STRONG)
-      First post-deploy integrity commit to open-issues.json (0a0b962,
-      2026-06-06 01:15) = +14/-0 append-only (added ISS-2594). NOT revert-shaped.
-      The 2026-06-03 incident was +0/-130. Part B is working in production.
-  Step 7 FUSE sync ................... already synced (FUSE==clone==GitHub).
+SIMULATION: all 3 historical bypass shapes BLOCKED; compliant control push
+ALLOWED; API-path guard fires before any network call. Evidence in PROP-080.
 
-Lifecycle:
-  DIRECTIVE-20260603-003 -> completed (prop_id_authored=PROP-078)
-  PROP-077 -> implemented (part_b_implemented_by=PROP-078)
-  PROP-078 -> implemented metadata recorded
+CANARY: watch next 2-3 decider runs. Zero new Mech-A-bypass ISSs expected
+from integrity dailies. A 4th bypass = the LLM found a path around both
+layers (most likely the ungated universal-pusher FUSE rescue — out of scope
+this PROP per directive non-goals) — escalate immediately.
 
-Backlog: HEALTHY. 7 open issues, net velocity +357/7d. No threshold fires.
+ALSO: root FS at 99% (184M free) even with no stale clones — system image +
+FUSE dominate; one moderate artifact away from the decider-clone-fails
+failure mode. Backlog healthy (open=6, net velocity +344/7d); noted a PROP-030
+small-N calibration nit (WoW% trigger fires on 3→6).
 
-For operator:
-  - Q_OP_2 dome-mirror cron revert (:30 -> :00): DEFERRED. Part B live since
-    2026-06-05; operator wanted 2-3 days. Re-evaluate on/after 2026-06-08.
-  - Disk at 98% (217M free) at clone time — recommend a Mode 2 disk run soon.
+REMAINING PENDING DIRECTIVES (medium): 20260531-008 (implement PROP-069),
+20260531-009 (author PROP-070), 20260602-001 (analyst starvation guard).

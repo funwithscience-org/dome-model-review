@@ -2,7 +2,7 @@
   "id": "DIRECTIVE-20260606-001",
   "filed_by": "operator-cowork-session",
   "filed_at": "2026-06-06T05:30:00Z",
-  "status": "pending",
+  "status": "completed",
   "priority": "high",
   "title": "Author + implement PROP-NNN: investigate why PROP-076 pre-push lint gate is being silently skipped by decider; harden invocation (likely via git hook structural enforcement)",
   "background": "Tinker's run at 2026-06-06T05-04 (commit 58b47ae1) discovered the actual driver behind the recurring PROP-059 critical alarms — and it's NOT what the operator suspected. The original directive (DIRECTIVE-20260605-001) was filed assuming integrity's filter was out of sync with the lint gate; tinker's forensics showed integrity's §7h has correctly recognized `audit_grandfathered` since 2026-05-26 (commit 5ffd21cc). The real bug is upstream:\n\n**PROP-076's pre-push lint gate (`monitor/scripts/lint-close-records.js`) was SKIPPED on 3 decider pushes in 2 days.** Per the tinker report's [major] finding:\n\n  - commit `38deae25` (2026-06-04T13:18Z) — ISS-2571..2577 closed without verification_pattern or audit_grandfathered\n  - commit `f52d3ae0` (2026-06-05T01:16Z) — ISS-2579/2580 closed without either\n  - commit `196dde8d` (2026-06-05T09:13Z) — ISS-2587 closed without either\n\nEach of these landed decider-prefixed close-records with neither verification_pattern nor audit_grandfathered set — the exact shape `lint-close-records.js` is designed to exit-1 on. **The lint gate did not block.** This is the structural defense PROP-076 was meant to be.\n\nPattern parallel — this is the SAME bug class as the PROP-074 saga (LLM agent silently skipping a multi-step prompt action). For PROP-074 we tried six prompt-level iterations before architectural separation via dome-mirror finally fixed it. The lesson from that saga: structural enforcement beats prompt-level enforcement every time, because the LLM can be cajoled into skipping any line of prompt but cannot bypass git's own hook machinery.\n\nThe lint gate's invocation site is documented in `monitor/prompts/reference/decider-patches-and-selfapply.md` (per PROP-076's deploy). Three suspected failure modes:\n\n  H1 — LLM skip-by-omission: the bash block invoking `node monitor/scripts/lint-close-records.js` is in the prompt's middle position and the LLM pattern-matches it as commentary rather than action. Same shape as PROP-074's Step 4c skip.\n\n  H2 — Conditional invocation: the lint is gated on some condition (e.g., 'invoke only if commits touched closed-issues.json') and the condition logic has a hole. Decider's close-record commits sometimes batch with other writes and the check misses.\n\n  H3 — Exit-1 not actually blocking: the lint runs and exits 1 but the surrounding bash either masks the exit code (`|| true`, `2>/dev/null`, similar) or the next bash invocation pushes anyway. Lint output may be visible in run logs as a 'warning' rather than a hard block.\n\nThe fix direction operator pre-approves is **structural enforcement via git hook**, mirroring PROP-074's lesson. Specifically: install a `pre-push` git hook in decider's clone setup that invokes `lint-close-records.js`. If the hook exits non-zero, git refuses the push. This is enforced by git itself; the LLM cannot bypass it short of removing the hook (which would be detectable).",
@@ -30,7 +30,11 @@
   ],
   "context_pointers": {
     "tinker_diagnosis_report": "monitor/tinker/report-2026-06-06T05-04.json — the [major] finding documenting the 3 bypass commits",
-    "bypass_commits": ["38deae25 (2026-06-04T13:18Z, ISS-2571..2577)", "f52d3ae0 (2026-06-05T01:16Z, ISS-2579/2580)", "196dde8d (2026-06-05T09:13Z, ISS-2587)"],
+    "bypass_commits": [
+      "38deae25 (2026-06-04T13:18Z, ISS-2571..2577)",
+      "f52d3ae0 (2026-06-05T01:16Z, ISS-2579/2580)",
+      "196dde8d (2026-06-05T09:13Z, ISS-2587)"
+    ],
     "lint_script": "monitor/scripts/lint-close-records.js (PROP-076) — the canonical filter; design is correct",
     "lint_invocation_site": "monitor/prompts/reference/decider-patches-and-selfapply.md — where the LLM is supposed to invoke the lint before push (apparent failure point)",
     "prop_076": "monitor/tinker/proposals/PROP-076-mech-a-bypass-audit-fix.json — the original synchronous-gate proposal",
@@ -40,5 +44,9 @@
   },
   "expected_output": "(1) monitor/tinker/proposals/PROP-NNN-lint-gate-structural-enforcement.json with status='implemented'. (2) Edit to monitor/prompts/reference/decider-patches-and-selfapply.md (or monitor/prompts/decider.md) installing the pre-push hook per design (a). (3) Optionally: a small install-hooks.sh or hook wrapper if the inline cp+chmod is too messy. (4) PROP-NNN's verification section documenting the simulation result for all 3 bypass scenarios. (5) This directive at status='completed'. (6) FUSE-synced files.",
   "estimated_effort": "~45-60 min Opus. Forensic diagnosis (Step 1, ~15 min) is the longest piece. Proposal authoring (Step 2, ~15 min). Implementation (Steps 3, 5) is short (~10 min, ~20-30 lines of prompt edit + maybe a 5-line hook wrapper). Simulation validation (Step 4, ~15 min). Lifecycle (Steps 7-8, ~10 min).",
-  "priority_note": "HIGH — structural defense being silently bypassed. Every day this isn't fixed risks new same-class violations + alarm fatigue from integrity re-firing the same critical. Worth shipping in the next 1-2 tinker runs."
+  "priority_note": "HIGH — structural defense being silently bypassed. Every day this isn't fixed risks new same-class violations + alarm fatigue from integrity re-firing the same critical. Worth shipping in the next 1-2 tinker runs.",
+  "completed_at": "2026-06-06T05:42:45.127Z",
+  "completed_by_run": "tinker-2026-06-06T05-35",
+  "prop_id_authored": "PROP-080",
+  "prop_id_implemented": "PROP-080"
 }

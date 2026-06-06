@@ -9,7 +9,6 @@
   "implementation_commit": "<filled at push time>",
   "implementation_run": "tinker-2026-06-03T05-03",
   "source_finding": "DIRECTIVE-20260603-001 + ISS-2519 (integrity-2026-06-03T02-00 Mech-A-bypass audit found 23 post-cutoff decider-driven close-records lacking verification_pattern AND audit_grandfathered).",
-
   "problem": {
     "summary": "PROP-059 (2026-05-25) established the rule: every decider-self-apply* close must carry a non-empty verification_pattern, OR be explicitly grandfathered. The rule is enforced as: (a) prompt-level FORBIDDEN language at write sites; (b) daily integrity audit (structure-integrity.md Step 7h) that flags violators. Despite (a) and (b), the LLM keeps bypassing the rule. Between 2026-05-26 and 2026-06-02 the LLM accumulated 23 violations across 14 distinct fixed_by paths — all custom inline strings (e.g. 'decider-self-apply-EXP-450-H1-wuhan-removed', 'decider-selfapply-prev-run-571a3d6', 'decider-archive-terminal-exps') that the prompt's canonical template doesn't produce. The 23 violations were committed to origin/main and survived ~10 days before integrity caught them.",
     "root_cause": "PROP-059's enforcement is asynchronous (next-day integrity audit). The LLM's failure mode is improvising the close-record inline rather than copy-pasting the canonical Step 1 template — which produces a custom fixed_by string AND drops the verification_pattern field as a single forgetting-action. Prompt-level FORBIDDEN language has not stopped this; the LLM reads the discipline, agrees with it, then narrates a close-record that doesn't follow it. The only reliable defense is a synchronous, machine-enforced gate at push time.",
@@ -62,7 +61,6 @@
       }
     }
   },
-
   "proposal": {
     "change_1_lint_script": {
       "location": "monitor/scripts/lint-close-records.js (NEW)",
@@ -91,9 +89,7 @@
       "description": "ISS-2519 (the integrity finding that surfaced the 23) closed with closure_resolution citing PROP-076 + DIRECTIVE-20260603-001 + the retroactive annotation."
     }
   },
-
   "verification_pattern": "grep -q 'PROP-076 PRE-PUSH LINT GATE' monitor/prompts/reference/decider-patches-and-selfapply.md && test -f monitor/scripts/lint-close-records.js && node -e 'process.exit(require(\"./monitor/scripts/lint-close-records.js\") ? 0 : 0)' 2>/dev/null; test -f monitor/scripts/lint-close-records.js",
-
   "files_touched": [
     "monitor/scripts/lint-close-records.js (new, 123 lines)",
     "monitor/prompts/reference/decider-patches-and-selfapply.md (+19 lines, ~1 line modified)",
@@ -103,7 +99,6 @@
     "monitor/decisions/open-issues.json (ISS-2519 removal)",
     "monitor/tinker/operator-directives/DIRECTIVE-20260603-001-mech-a-bypass-audit-fix.json (status pending→completed)"
   ],
-
   "estimated_loc": {
     "script": 123,
     "prompt_edits": 21,
@@ -111,7 +106,6 @@
     "prompt_edit_loc_only": 21,
     "under_self_apply_budget": "yes (prompt-edit LOC 21 << 80; script LOC is not prompt-edit and is self-contained)"
   },
-
   "alternatives_considered": [
     {
       "alt": "Stronger prompt-only language (CAPS, bold, multiple repetitions)",
@@ -134,22 +128,20 @@
       "rejected_because": "Git hooks must be installed per-clone. Scheduled agents clone fresh each run; the hook would need to be `git config core.hooksPath` plus a committed hooks directory, which is more moving parts than calling the lint script directly from the existing PRE-PUSH GATE block. The prompt-driven invocation reuses existing pattern."
     }
   ],
-
   "counter_considerations": {
     "what_if_decider_can't_construct_verification_pattern": "Per change_3, the prompt now documents the audit_grandfathered escape valve explicitly. Decider should set audit_grandfathered='<reason>' rather than ship a bare close-record. The lint script accepts either field.",
     "what_if_the_lint_script_itself_has_a_bug": "The script is 123 lines of straightforward stream-process logic. The bug class is bounded: false positive (refuses legitimate push) → operator notices via daily integrity report's lack of new closures and unblocks. False negative (silently allows a violation) → the daily integrity audit (PROP-059 change_2) still fires the next morning, identical to the pre-PROP-076 baseline. The lint is additive, not replacing, integrity's check.",
     "what_about_operator_direct_pushes_with_bare_status_fixed": "OBE substring filter excludes operator-direct, burndown, sweep, wontfix, -OBE-, EXP-integrated, exp-integrated — these are recognized non-decider paths. Operator pushing 'fixed_by: operator-direct-PROP-XXX-completion' is unaffected.",
     "what_if_a_close_path_uses_a_fixed_by_outside_the_OBE_allowlist_but_legitimately_has_no_fingerprint": "Set audit_grandfathered='<reason>' to bypass the lint. Future PROP-NNN could narrow the OBE allowlist if a pattern emerges."
   },
-
   "related_directives": [
     "DIRECTIVE-20260603-001 (this PROP's source)",
     "DIRECTIVE-20260603-002 (FUSE-revert race; PARALLEL — same surface area but independent fix; not merged per non-goal #4 in 001)"
   ],
-
   "related_props": [
     "PROP-016 (Mechanism A — git-status-based NEVER_PUSH intercept; PROP-076 extends to fingerprint-based intercept)",
     "PROP-059 (mandatory pending-verification rule; this PROP enforces it synchronously)",
     "PROP-050 (push-via-api fallback; PROP-076 runs BEFORE both git-push and API-push, so both paths are gated)"
-  ]
+  ],
+  "status_note": "2026-06-06 (PROP-080): the prompt-level invocation of this lint was bypassed 3x in 2 days (38deae25, f52d3ae0, 196dde8d — LLM skip-by-omission). PROP-080 ships structural enforcement: a pre-push git hook installed at decider clone setup + a lint guard inside push-via-api.js. This PROP remains the canonical filter spec; lint-close-records.js is unchanged."
 }
