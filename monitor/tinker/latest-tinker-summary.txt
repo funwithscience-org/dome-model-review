@@ -1,33 +1,31 @@
-TINKER RUN tinker-2026-06-06T05-35 — operator-directive mode (DIRECTIVE-20260606-001, high)
+TINKER RUN tinker-2026-06-07T02-40 (2026-06-07T02:58:00Z)
 
-DONE: PROP-080 authored + implemented same-run. The PROP-076 close-record lint
-gate was being silently skipped by the decider (3 bypasses in 2 days:
-38deae25, f52d3ae0, 196dde8d). Forensics confirmed H1 — LLM skip-by-omission
-(script + prompt block existed and the filter catches all 10 violating
-entries on replay; no lint trace in any summary; unmasked exit-1 means
-execution would have aborted the push). H2/H3 ruled out.
+MODE: operator-directive DIRECTIVE-20260606-002 (high) — required-artifacts meta-audit. COMPLETED.
 
-FIX (structural, per directive design a):
- 1. Pre-push git hook installed at decider clone setup — 3-line wrapper that
-    execs lint-close-records.js. Enforced by git on EVERY push from the
-    clone, no matter which prompt blocks the LLM ran. --no-verify forbidden.
- 2. push-via-api.js now runs the same lint when closed-issues.json is among
-    --files (the API fallback never runs 'git push', so hooks alone can't
-    cover it).
- 3. Prompt-level call retained as layer 1. lint-close-records.js unchanged.
+SHIPPED (PROP-081, self-applied, 147 LOC):
+  * monitor/scripts/lint-required-artifacts.js — shared pre-push lint (generalizes PROP-080)
+  * prune-integrity.js now SELF-WRITES its run report and SELF-INSTALLS the pre-push hook
+    (the 2026-06-06 narrated-but-skipped report case can no longer happen; LLM out of loop)
+  * tinker.md clone setup now installs the hook for tinker's own 3 required artifacts
+    (live-tested this run: push refused without them, allowed with — SIM-4)
+  * curmudgeon-verify summary rescue gap FIXED (was the only agent summary with no FUSE->git path)
+  * CLAUDE.md: verify-summary ownership classified + 5 stale crons in pipeline table corrected
+  * Classification of all 12 agents + 14-day forensic replay: see PROP-081. Zero additional
+    silent skips found (tinker 12/12, integrity 14/14 clean). 2 Q-OPs for operator:
+    Q-OP-1 strict-name hook for workspace-sync (recommend yes after 7 clean days);
+    Q-OP-2 hook for integrity agent (recommend defer, 0 observed skips).
 
-SIMULATION: all 3 historical bypass shapes BLOCKED; compliant control push
-ALLOWED; API-path guard fires before any network call. Evidence in PROP-080.
+MAJOR FINDING (F1, needs operator attention + PROP-082 next run):
+  prune <-> workspace-sync RE-ADD LOOP: prune deletes old run-files in git; FUSE cannot
+  unlink, so universal-pusher re-pushes them within the hour. Proof: run-2026-04-26T17-05-12Z.json
+  deleted 08:06Z 2026-06-06 (b8e3c000), re-added 08:22Z (73f18678). ~1,400 files/day churn,
+  892 files in a dir that should hold <=170, archives accumulating duplicate records daily.
+  Retention will NEVER converge until the pusher becomes prune-policy-aware.
 
-CANARY: watch next 2-3 decider runs. Zero new Mech-A-bypass ISSs expected
-from integrity dailies. A 4th bypass = the LLM found a path around both
-layers (most likely the ungated universal-pusher FUSE rescue — out of scope
-this PROP per directive non-goals) — escalate immediately.
+ALSO: root FS 99% at run start (F5) — a second concurrent clone would not fit; F1 fix helps.
+  /tmp/dome-pat.txt scratch file flagged for operator inspection (F6).
+  Record correction: 2026-06-06 prune report was RESCUED at 20:07Z, not permanently lost (F7).
 
-ALSO: root FS at 99% (184M free) even with no stale clones — system image +
-FUSE dominate; one moderate artifact away from the decider-clone-fails
-failure mode. Backlog healthy (open=6, net velocity +344/7d); noted a PROP-030
-small-N calibration nit (WoW% trigger fires on 3→6).
-
-REMAINING PENDING DIRECTIVES (medium): 20260531-008 (implement PROP-069),
-20260531-009 (author PROP-070), 20260602-001 (analyst starvation guard).
+BACKLOG: GREEN. open=8 (down from 59 WoW), net velocity +353/7d, zero >=30d items.
+PENDING DIRECTIVES REMAINING: 20260531-008 (PROP-069 impl), 20260531-009 (PROP-070 authoring),
+  20260602-001 (analyst starvation guard) — all medium; next runs.

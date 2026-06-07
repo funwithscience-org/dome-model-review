@@ -1,0 +1,89 @@
+{
+  "run_id": "tinker-2026-06-07T02-40",
+  "timestamp": "2026-06-07T02:58:00Z",
+  "mode_selected": "operator-directive (DIRECTIVE-20260606-002, priority=high) \u2014 overrides Mode 0-4 per dispatcher rules. Mode 0 scan: no assigned-to-tinker items. 3 other pending directives remain (20260531-008, 20260531-009, 20260602-001, all medium) for next runs.",
+  "modes_checked": {
+    "mode1_quick": "No stalled agents detected during forensics: poller/analyst/baby/curmudgeon/decider/integrity summaries all fresh in git within cadence. No stranded-patches >24h checked this run (directive preempted full Mode 1).",
+    "mode2_quick": "Root FS 99% (185MB free) at run start \u2014 project-induced footprint ~470MB of which 465MB is this run's own clone (removed at run end); no stale /tmp/*-clone found. FUSE staleness: prune-integrity.js stale on FUSE (314 vs 348 lines, md5 mismatch) \u2014 see F4.",
+    "mode0": "no assigned-to-tinker items",
+    "backlog_trend": "GREEN \u2014 open_issues_total=8 (was 59 a week ago), net_velocity_7d=+353, age_ge_30d=0. No thresholds fire."
+  },
+  "directive_work": "See monitor/tinker/proposals/PROP-081-required-artifacts-structural-enforcement.json \u2014 12-agent classification table, 14-day forensic replay, shared lint script + structural fixes shipped + 2 Q-OPs. Directive flipped to completed.",
+  "findings": [
+    {
+      "id": "F1",
+      "category": "architecture",
+      "severity": "major",
+      "title": "prune <-> workspace-sync re-add loop: pruned files resurrect within the hour, retention never converges",
+      "evidence": "monitor/integrity/workspace-sync-runs/run-2026-04-26T17-05-12Z.json (policy: 7d retention, keep 20) deleted by prune commit b8e3c000 2026-06-06T08:06Z, RE-ADDED by workspace-sync commit 73f18678 at 08:22Z \u2014 16 minutes later. Same file also deleted 0901036d (06-04) and re-added ecd8f909. Dir holds 892 files vs expected ~20-170; oldest is 42 days old. Mechanism: prune deletes in git from its clone, but FUSE cannot unlink, so FUSE copies persist forever; universal-pusher sees file-in-FUSE-absent-in-git and pushes it back. Affects ALL pruned categories (~1,400 files/day delete+re-add churn per daily prune summaries: 1348 on 06-04, 1440 on 06-06), plus duplicate records appended to archive JSONLs every cycle (archives grow unboundedly with dupes).",
+      "recommendation": "Needs own PROP next run (suggest PROP-082): make workspace-sync's universal-pusher policy-aware \u2014 skip pushing files whose filename-embedded timestamp is older than the prune retention window for that category (reuse parseFilenameTimestamp + the policies table), OR have prune write a pruned-manifest deny-list the pusher consults. Operator-side alternative: allow_cowork_file_delete + rm of FUSE copies (proven 2026-05-19) but that is manual and ~5,000 files. Related: DIRECTIVE-20260521-002 (audit-files no-round-trip) is the same defect family."
+    },
+    {
+      "id": "F2",
+      "category": "agent-conformance",
+      "severity": "moderate",
+      "title": "workspace-sync run-report filename improvisation (6 instances)",
+      "evidence": "run-2026-06-03T0723Z.json, run-2026-06-04T03:10:14Z.json (colons), run-20260601T072501Z.json, 'sync-run-2026-06-05T12- 09- 53Z.json' (contains spaces). Improvised names evade prune-integrity.js patterns (never archived) and downstream greps.",
+      "recommendation": "Q-OP-1 in PROP-081: strict-glob pre-push hook for workspace-sync after 7 days of clean PROP-081 behavior."
+    },
+    {
+      "id": "F3",
+      "category": "coverage-gap",
+      "severity": "moderate",
+      "status": "FIXED-THIS-RUN",
+      "title": "curmudgeon-verify per-run summary had no FUSE->git rescue path",
+      "evidence": "Not in workspace-sync smart_copy list; FUSE copy 2026-06-06T23:38Z vs last git landing 2026-06-06T01:09Z; historical landings only every 1-2 days (incidental). ~5 runs' summaries lost to FUSE overwrite.",
+      "fix": "smart_copy line added to workspace-sync.md + CLAUDE.md ownership bullet (PROP-081)."
+    },
+    {
+      "id": "F4",
+      "category": "fuse-staleness",
+      "severity": "moderate",
+      "title": "prune-integrity.js stale on FUSE (314-line/6-policy version vs git 348-line/9-policy)",
+      "evidence": "md5 mismatch FUSE vs clone; other checked files (tinker.md, workspace-sync.md, lint-close-records.js, CLAUDE.md, build.js) all match. Isolated gap \u2014 dome-mirror/sync-workspace-step4c copy list may not cover monitor/scripts/ additions post-dating its whitelist.",
+      "recommendation": "Manually synced this run (Step 9). Integrity's PROP-064 prompt-staleness audit covers monitor/prompts/ only \u2014 consider extending to monitor/scripts/."
+    },
+    {
+      "id": "F5",
+      "category": "infrastructure",
+      "severity": "info",
+      "title": "Root FS at 99% (185MB free) at run start",
+      "evidence": "df: 9.4G/9.6G used. Project footprint only ~470MB (this run's clone, removed at end); remainder is system-image baseline creep per the 2026-04-26 operator directive on project-relative measurement. No stale clones to reap. NOTE: a second concurrent full clone would NOT fit \u2014 agents colliding at this fill level will degrade (2026-05-09 pattern).",
+      "recommendation": "operator awareness; F1's fix (stopping 1,400-file/day churn) also reduces clone size growth."
+    },
+    {
+      "id": "F6",
+      "category": "hygiene",
+      "severity": "info",
+      "title": "/tmp/dome-pat.txt (94 bytes, mode 0600, mtime 2026-06-06 15:08)",
+      "evidence": "Does not contain github_pat/x-access-token prefixes per grep. Some agent left a credential-named scratch file in /tmp. Not covered by tinker's clone-cleanup empowerment (not a *-clone dir) \u2014 left in place.",
+      "recommendation": "operator may inspect/remove; if it IS a PAT in another encoding, rotate per CLAUDE.md."
+    },
+    {
+      "id": "F7",
+      "category": "record-correction",
+      "severity": "info",
+      "title": "Directive's 'permanently lost' prune report was actually rescued",
+      "evidence": "run-2026-06-06T08-06-36Z.json landed via workspace-sync universal-pusher commit e1f32c57 at 2026-06-06T20:07:55Z, 12h after the run. The skip was real; the loss was not. Recorded in PROP-081 problem_statement."
+    }
+  ],
+  "previous_followup": {
+    "PROP-080": "VERIFIED WORKING \u2014 0 new close-record bypasses since hook shipped 2026-06-06T05:43Z; generalized (not superseded) by PROP-081 this run.",
+    "DIRECTIVE-20260606-001": "completed by run 2026-06-06T05-35 (per its lifecycle fields); no regression observed.",
+    "note": "Full proposals-dir verification_pattern walk deferred \u2014 directive preempted; next non-directive run should resume the standard walk."
+  },
+  "claude_md_audit": {
+    "accuracy": [
+      "FIXED: latest-verify-summary.txt was unclassified in File Ownership (added as workspace-owned with smart_copy rescue)",
+      "FIXED: 5 cron drifts in Monitoring Pipeline table (poller daily-01:00 not 12h; analyst 0,4,8...; curmudgeon 1,5,9... not 3,7,11...; decider 2,6,10... at :00 not :10; dome-mirror :30 not :00)"
+    ],
+    "performance": "not measured this run (directive preempted); CLAUDE.md grew +2 lines this run"
+  },
+  "cleanup_actions": [
+    {
+      "path": "/tmp/tinker-clone",
+      "reason": "own working clone, removed at run end per mandatory cleanup",
+      "age_hours": 0
+    }
+  ]
+}
