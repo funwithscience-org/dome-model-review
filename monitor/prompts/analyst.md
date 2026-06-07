@@ -338,6 +338,30 @@ Purpose: produce a concise, scientific JSON artifact suitable for OpenTimestamps
 
 **Mode 5 HNOTE consumption (PROP-014 Mech 1b WRITE-VERIFY).** When you've delivered the EXP and are about to mark the operator's Mode 5 HNOTE consumed in `monitor/analyst/human-notes.json`, follow the discipline in `monitor/prompts/reference/analyst-mode1-expansions.md` (Human Notes → Mech 1b block): set `verification_artifact_path: 'monitor/analyst/expansions/EXP-NNN-frozen-pred-...json'`, run `test -f` on it, write `consumed` only if it passes (otherwise `consumed-pending-verification`). Phantom-resolution PR-1 (HNOTE marked resolved with `resolved_with_exp: 'EXP-283'` before the file existed) is the exact failure mode this discipline prevents.
 
+**Mode 6 — Random Look** (fallthrough; operator-added 2026-06-07)
+
+Triggers ONLY when the rest of the dispatcher found nothing — Modes 0/1/1b/2/2b/3/4/5 all produced no work AND no operator HNOTE is pending. The point: prevent no-op cycles from wasting an Opus pass when the inbound queue is empty. Fresh-eyes pass on something you haven't recently looked at — surfaces drift the deterministic drift-audit may miss (stylistic issues, stale citations, broken cross-refs, evidence that has aged out).
+
+Selection (pick ONE at random, weight toward older):
+- Random integrated EXP from `monitor/analyst/expansion-tracker.json` where `status='complete'` AND `integrated_at` older than 14 days.
+- Random WIN ID from `data/wins.json`.
+- Random section ID from `data/sections.json` keys.
+
+Examination procedure:
+- For an EXP: read the integrated text in `data/sections.json` at the EXP's target anchor + read the EXP's `prose_patches[]`. Does the integrated text still match the EXP's intent? Has anything drifted post-integration?
+- For a WIN: read the current WIN entry in `data/wins.json` + the latest curmudgeon review for it (newest c-cycle in `monitor/curmudgeon/reviews/`). Does the current evidence still support the verdict? Any new dome-side updates that change the picture?
+- For a section: read the section entry in `data/sections.json` + scan for prose-level issues — broken cross-refs (does `#anchor-name` exist?), stale citations (does `(file.json:anchor)` resolve?), inconsistencies vs other sections.
+
+Outcomes:
+- If you find a real issue → author an EXP (or issue-proposal if the fix is narrow). Same artifact discipline as Mode 1.
+- If you find no issue → write a brief note to `monitor/analyst/attention-inbox.json` with `audience='operator'`, `priority='low'`, `body='Mode 6 random-look examined <target>, no action needed.'` This gives the operator a visible trail that the analyst is actively looking even when nothing fires.
+
+Frequency limit:
+- At most ONE Mode 6 examination per run. Mode 6 NEVER consumes the entire run — it is fallthrough work, not primary.
+- Postlude reports Mode 6 in the summary like any other mode: `Mode(s) fired: Mode 6 → examined <target>`.
+
+This is exploratory, not deep audit. The drift-audit (curmudgeon's job) catches mechanical fingerprint changes; Mode 6 catches what fresh LLM eyes notice.
+
 **Normal — Dome Site Change Analysis**
 Trigger: `changes_pending_analysis > 0` in status.json, or new external reports on GitHub.
 → Read `monitor/prompts/reference/analyst-normal-analysis.md`, execute that procedure.
