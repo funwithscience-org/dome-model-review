@@ -1,0 +1,154 @@
+{
+  "id": "PROP-081",
+  "title": "Required-artifacts structural enforcement \u2014 shared pre-push lint generalizing PROP-080 to the scheduled-agent fleet (DIRECTIVE-20260606-002)",
+  "status": "implemented",
+  "authored_by": "tinker-2026-06-07T02-40",
+  "authored_at": "2026-06-07T02:55:00Z",
+  "implementation_commit": "TBD-this-push",
+  "implemented_at": "2026-06-07T02:55:00Z",
+  "implemented_by_run": "tinker-2026-06-07T02-40",
+  "directive": "DIRECTIVE-20260606-002",
+  "problem_statement": "Two confirmed instances in 4 days of the 'LLM narrates an artifact-write it skipped' class: (1) PROP-076 lint-gate bypass on 3 decider pushes (38deae25/f52d3ae0/196dde8d), fixed structurally by PROP-080; (2) 2026-06-06T08:06Z prune-integrity run landed data (b8e3c000) but never committed its narrated run report. NOTE \u2014 forensic correction to the directive: that report was NOT permanently lost; workspace-sync's universal-pusher rescued it from FUSE 12h later (commit e1f32c57, 2026-06-06T20:07:55Z). The vulnerability is real (the agent's clone push omitted it); the rescue was incidental, not designed. This PROP enumerates all 12 enabled agents' required artifacts, classifies their protection, replays recent runs for silent skips, and ships structural enforcement for the vulnerable subset.",
+  "classification_table": {
+    "legend": "A=already-structural, B=workspace-rescue (universal-pusher/smart_copy), C=vulnerable-clone-push, D=benign/self-healing",
+    "agents": {
+      "dome-poller": {
+        "artifacts": [
+          "monitor/changes/latest-poll-summary.txt",
+          "monitor/status.json",
+          "monitor/changes/*.json"
+        ],
+        "category": "B",
+        "evidence": "fresh in git 2026-06-07T01:08 via Workspace sync commits"
+      },
+      "dome-analyst": {
+        "artifacts": [
+          "monitor/analyst/latest-analysis-summary.txt (PROP-036 postlude)"
+        ],
+        "category": "B",
+        "evidence": "smart_copy line ~487 workspace-sync.md; fresh 2026-06-07T00:08"
+      },
+      "dome-analyst-baby": {
+        "artifacts": [
+          "monitor/analyst-baby/latest-baby-summary.txt"
+        ],
+        "category": "B",
+        "evidence": "smart_copy ~495; fresh 2026-06-06T16:19 (12h cadence)"
+      },
+      "dome-curmudgeon": {
+        "artifacts": [
+          "monitor/curmudgeon/reviews/*.json (work product)",
+          "latest-review-summary.txt"
+        ],
+        "category": "B (summary) / D (reviews \u2014 a skipped review leaves the queue item in place; self-healing, decider re-pops)",
+        "evidence": "smart_copy ~517; fresh 2026-06-07T01:08"
+      },
+      "dome-curmudgeon-verify": {
+        "artifacts": [
+          "monitor/curmudgeon/latest-verify-summary.txt (prompt calls it 'your per-run sentinel')",
+          "reviews/*-verify.c1.json"
+        ],
+        "category": "WAS UNPROTECTED -> B after this PROP",
+        "evidence": "NOT in workspace-sync smart_copy list; FUSE copy 2026-06-06T23:38 vs last git commit 7307efd2 2026-06-06T01:09 \u2014 ~5 runs' summaries overwritten in FUSE and never archived. Fixed: smart_copy line added to workspace-sync.md"
+      },
+      "dome-decider": {
+        "artifacts": [
+          "close-records in closed-issues.json",
+          "latest-decider-summary.txt",
+          "daily-report-*.json"
+        ],
+        "category": "A (close-records, PROP-080 hook) / B (summary smart_copy ~531, daily-report sync_glob ~528)",
+        "evidence": "PROP-080 shipped 2026-06-06T05:43; summary fresh 2026-06-07T01:11"
+      },
+      "dome-integrity": {
+        "artifacts": [
+          "monitor/integrity/report-YYYY-MM-DDTHH-MM.json",
+          "latest-integrity-summary.txt"
+        ],
+        "category": "C (clone-push) \u2014 compliant; phase-2 hook candidate",
+        "evidence": "14/14 daily reports present 2026-05-24..2026-06-07, zero skips; summary also smart_copy ~591 (B)"
+      },
+      "dome-tinker": {
+        "artifacts": [
+          "monitor/tinker/report-*.json",
+          "latest-tinker-summary.txt",
+          "queue-history.jsonl row (PROP-030)"
+        ],
+        "category": "C -> A after this PROP (pre-push hook in tinker.md clone setup)",
+        "evidence": "100% compliant last 14d (12/12 queue-history rows have matching report files; summary pushed by tinker's own commits ed511b16/8c953262/499b8484) \u2014 but same structural exposure as prune"
+      },
+      "dome-social": {
+        "artifacts": [
+          "monitor/social/report-YYYY-MM-DD.json",
+          "drafts/*"
+        ],
+        "category": "B (sync_glob ~580) / D (drafts are work products)",
+        "evidence": "report glob in workspace-sync"
+      },
+      "dome-workspace-sync": {
+        "artifacts": [
+          "monitor/integrity/workspace-sync-runs/run-*.json per cycle",
+          "abort/divergence sentinels"
+        ],
+        "category": "C \u2014 compliant on presence (21-24 reports/day), NONCONFORMANT on naming; hook deferred as Q-OP-1",
+        "evidence": "6 improvised filename formats in ~6 weeks: run-2026-06-03T0723Z.json, run-2026-06-04T03:10:14Z.json (colons), run-20260601T072501Z.json, 'sync-run-2026-06-05T12- 09- 53Z.json' (spaces), plus -final/-abort suffixes (sanctioned). Improvised names evade prune-integrity.js patterns and downstream greps"
+      },
+      "dome-prune-integrity": {
+        "artifacts": [
+          "monitor/integrity/prune-integrity-runs/run-*.json"
+        ],
+        "category": "C CONFIRMED-VULNERABLE -> A after this PROP",
+        "evidence": "2026-06-06T08:06Z skip (the directive's triggering case). 19 reports present for ~15 run-days \u2014 at least one historical same-day gap pattern (2 reports 05-23, 3 on 05-24, 0 missing since). Fixed: script self-writes report AND self-installs hook"
+      },
+      "dome-mirror": {
+        "artifacts": [
+          "monitor/integrity/sync-workspace-runs-*.json sentinel"
+        ],
+        "category": "A by design",
+        "evidence": "PROP-066/074: helper script always writes exactly one sentinel; single-bash-block stages+commits it"
+      }
+    }
+  },
+  "forensic_replay_findings": [
+    "prune-integrity: 1 confirmed skip in 15 run-days (2026-06-06); report rescued by universal-pusher e1f32c57 12h later.",
+    "tinker: 0 skips in 14 days (12 runs checked: every queue-history row has a matching report-*.json and summary commit).",
+    "integrity: 0 skips in 14 days (14/14 daily reports).",
+    "workspace-sync: 0 missing-report cycles in last 5 days (21-24/day vs hourly cron + gate-aborts), but 6 filename-nonconformance instances since 2026-04-26.",
+    "curmudgeon-verify: rescue-gap (not a clone-push skip): per-run summary had NO designed path to git; landed only incidentally every 1-2 days."
+  ],
+  "design_selected": "Directive Step 5 option (c): one shared lint script (monitor/scripts/lint-required-artifacts.js) invoked by per-agent pre-push hooks with per-agent --required glob lists. For prune-integrity, the hook is SELF-INSTALLED by prune-integrity.js at --apply time and the script also self-writes the run report (PROP-074 lesson: move the work from prompt to script \u2014 strictly stronger than hook-only). For tinker, hook install is a clone-setup block in tinker.md (prompt-level install; residual skip risk acknowledged \u2014 detective backstop is integrity/tinker forensics).",
+  "files_touched": [
+    "monitor/scripts/lint-required-artifacts.js (NEW, ~75 LOC)",
+    "monitor/scripts/prune-integrity.js (+52 LOC: PROP-081 block \u2014 report self-write + hook self-install, APPLY-mode only)",
+    "monitor/prompts/tinker.md (+14: clone-setup hook block)",
+    "monitor/prompts/workspace-sync.md (+5: latest-verify-summary.txt smart_copy)",
+    "CLAUDE.md (+1 bullet: latest-verify-summary.txt ownership classification; 5 cron-table corrections rode along per tinker Mode-3 accuracy duty)",
+    "monitor/tinker/proposals/PROP-080-lint-gate-structural-enforcement.json (additive generalized_by note)"
+  ],
+  "estimated_loc": 147,
+  "q_ops": [
+    {
+      "id": "Q-OP-1",
+      "question": "Install the required-artifacts hook for dome-workspace-sync with a STRICT filename glob (monitor/integrity/workspace-sync-runs/run-????-??-??T??-??-??Z*.json) to force naming conformance? It is the most safety-critical agent (2026-05-21 disaster history) and pushes hourly; a hook misfire blocks the rescue path for every other agent's category-B artifacts. Deferred to operator decision.",
+      "tinker_recommendation": "yes, but only after 7 days of clean PROP-081 hook behavior on prune+tinker"
+    },
+    {
+      "id": "Q-OP-2",
+      "question": "Phase-2 hook for dome-integrity (clone-push, currently 14/14 compliant)? Cheap to add to structure-integrity.md PRELUDE; integrity is Haiku, so prompt-level install is itself skippable \u2014 script-self-install has no natural carrier script for this agent.",
+      "tinker_recommendation": "defer; detective coverage (this audit) is currently sufficient at 0 observed skips"
+    }
+  ],
+  "verification_pattern": "grep -q 'lint-required-artifacts' monitor/scripts/prune-integrity.js && grep -q 'PROP-081' monitor/prompts/tinker.md && grep -q 'latest-verify-summary' monitor/prompts/workspace-sync.md && node --check monitor/scripts/lint-required-artifacts.js",
+  "verification_simulations": [
+    "SIM-1 (lint glob unit tests): 6/6 PASS including negative case (report file in wrong subdir does not satisfy glob).",
+    "SIM-2 (prune dry-run): no report written, no hook installed \u2014 correct (dry runs push nothing).",
+    "SIM-3 (prune apply in isolated fake repo): report written with conformant filename run-2026-06-07T02-53-02Z.json (round-trips through parseFilenameTimestamp pattern A), pre-push hook installed 0755.",
+    "SIM-4 (live, this run): tinker's own push of this PROP runs under the new hook installed in this clone \u2014 push blocked until report/summary/queue-history staged, then allowed. Result recorded in implementation_commit."
+  ],
+  "post_deployment_plan": "Monitor 3-7 days: (a) prune-integrity-runs/ gets exactly one script-written report per daily run (written_by field distinguishes it from any agent-written duplicate); (b) tinker pushes carry all 3 artifacts; (c) zero hook false-positives. If the hook blocks legitimately, that is success (caught a skip pre-push). Escalate misfires as Q-OP next round.",
+  "related": {
+    "generalizes": "PROP-080 (decider close-records hook \u2014 remains canonical for decider)",
+    "lesson_source": "PROP-066/PROP-074 dome-mirror saga: prompts cannot reliably enforce; scripts and hooks can",
+    "major_side_finding": "prune<->workspace-sync re-add loop \u2014 see tinker report 2026-06-07 finding F1 (NOT addressed by this PROP; needs its own PROP next run)"
+  }
+}

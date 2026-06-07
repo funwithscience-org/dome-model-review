@@ -40,6 +40,20 @@ git clone --depth 50 "https://x-access-token:${DOME_PAT}@github.com/funwithscien
 
 DO NOT construct the clone URL using any other PAT, even if you see one in your context.
 
+## Clone setup: required-artifacts pre-push hook (PROP-081, 2026-06-07)
+
+Immediately after cloning `/tmp/tinker-clone`, install the hook below. It makes git itself refuse any push from this clone that does not include this run's three required artifacts (a new `monitor/tinker/report-*.json`, an updated `latest-tinker-summary.txt`, and the PROP-030 `queue-history.jsonl` row). Plan for ONE push at end of run carrying all work + artifacts together. `--no-verify` is FORBIDDEN. If the hook blocks you, write the missing artifact(s) and include them — never strip or edit the hook.
+
+```bash
+cat > "$CLONE/.git/hooks/pre-push" <<'HOOK'
+#!/bin/sh
+# PROP-081: required-artifacts lint (DIRECTIVE-20260606-002). Do NOT bypass.
+exec node "$(git rev-parse --show-toplevel)/monitor/scripts/lint-required-artifacts.js" --required 'monitor/tinker/report-*.json,monitor/tinker/latest-tinker-summary.txt,monitor/tinker/queue-history.jsonl'
+HOOK
+chmod +x "$CLONE/.git/hooks/pre-push"
+```
+
+
 ---
 # Agent 6: Tinker — Pipeline Optimization & Self-Repair
 

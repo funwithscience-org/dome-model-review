@@ -515,6 +515,10 @@ smart_copy "${WORKSPACE}/monitor/curmudgeon/tracker-archive.jsonl" monitor/curmu
 # operator human notes were not being round-tripped to git.
 smart_copy "${WORKSPACE}/monitor/curmudgeon/alerts.txt" monitor/curmudgeon/alerts.txt
 smart_copy "${WORKSPACE}/monitor/curmudgeon/latest-review-summary.txt" monitor/curmudgeon/latest-review-summary.txt
+# Curmudgeon-verify per-run sentinel (PROP-081, 2026-06-07): this was the only
+# enabled agent's per-run summary NOT in the rescue list — its FUSE copy was
+# 22h+ newer than git when the gap was found (2026-06-07 tinker forensics).
+smart_copy "${WORKSPACE}/monitor/curmudgeon/latest-verify-summary.txt" monitor/curmudgeon/latest-verify-summary.txt
 smart_copy "${WORKSPACE}/monitor/curmudgeon/human-notes.json" monitor/curmudgeon/human-notes.json
 # PROP-022 phase 2 (2026-05-06): archive sibling for curmudgeon human-notes
 smart_copy "${WORKSPACE}/monitor/curmudgeon/human-notes-archive.jsonl" monitor/curmudgeon/human-notes-archive.jsonl

@@ -346,3 +346,55 @@ if (!APPLY) {
   console.log('');
   console.log('Pass --apply to actually archive and delete.');
 }
+
+// --- PROP-081: structural run-report write + pre-push hook (2026-06-07) ---
+//
+// DIRECTIVE-20260606-002: on 2026-06-06T08:06Z the prune agent narrated a
+// run-report write that never reached git (commit b8e3c000 carried the data
+// work; the report was rescued 12h later by workspace-sync only because a
+// FUSE copy existed). Same LLM skip-by-omission class as PROP-076/PROP-080.
+// Two structural defenses, both APPLY-mode only:
+//   1. The SCRIPT writes the per-run report (the LLM is out of the loop).
+//   2. The script self-installs a pre-push hook so git itself refuses any
+//      push from this clone that lacks a new prune-integrity-runs/run-*.json
+//      in the outgoing diff (shared lint: lint-required-artifacts.js).
+// The agent SKILL.md may also write its own report; duplicate reports are
+// harmless and either satisfies the hook.
+if (APPLY) {
+  const RUNS_DIR = path.join(INTEGRITY_DIR, 'prune-integrity-runs');
+  try {
+    if (!fs.existsSync(RUNS_DIR)) fs.mkdirSync(RUNS_DIR, { recursive: true });
+    const ts = new Date().toISOString().split('.')[0] + 'Z';
+    const fname = 'run-' + ts.replace(/:/g, '-') + '.json';
+    const report = {
+      event: 'prune-integrity-run',
+      timestamp: ts,
+      written_by: 'prune-integrity.js structural self-write (PROP-081)',
+      results: results.map(r => ({ policy: r.policy, matched: r.matched, eligible: r.eligible, archived: r.archived, deleted: r.deleted, bytes_reclaimed: r.bytes_reclaimed, capped: r.capped })),
+      total_bytes_reclaimed: totalBytes
+    };
+    fs.writeFileSync(path.join(RUNS_DIR, fname), JSON.stringify(report, null, 2) + String.fromCharCode(10));
+    console.log('');
+    console.log('run report written: monitor/integrity/prune-integrity-runs/' + fname);
+    console.log('(commit it together with the archive/delete changes — the pre-push hook enforces this)');
+  } catch (e) {
+    console.warn('PROP-081 report-write failed: ' + e.message);
+  }
+  try {
+    const gitDir = path.join(REPO_ROOT, '.git');
+    if (fs.existsSync(gitDir)) {
+      const hookDir = path.join(gitDir, 'hooks');
+      fs.mkdirSync(hookDir, { recursive: true });
+      const hook = [
+        '#!/bin/sh',
+        '# PROP-081: required-artifacts lint (DIRECTIVE-20260606-002). Do NOT bypass.',
+        'exec node "$(git rev-parse --show-toplevel)/monitor/scripts/lint-required-artifacts.js" --required ' + String.fromCharCode(39) + 'monitor/integrity/prune-integrity-runs/run-*.json' + String.fromCharCode(39),
+        ''
+      ].join(String.fromCharCode(10));
+      fs.writeFileSync(path.join(hookDir, 'pre-push'), hook, { mode: 0o755 });
+      console.log('pre-push hook installed (PROP-081 required-artifacts lint).');
+    }
+  } catch (e) {
+    console.warn('PROP-081 hook-install failed: ' + e.message);
+  }
+}

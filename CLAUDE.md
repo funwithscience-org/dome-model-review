@@ -126,6 +126,7 @@ Every file that crosses the workspace↔git boundary has exactly one authoritati
 - `monitor/status.json`, `monitor/review-state.json` — live pipeline state.
 - `monitor/decisions/latest-decider-summary.txt` — decider's human-facing latest-run summary (overwritten every decider run; ~6×/day post-2026-04-27 cadence change). Renamed from morning-briefing.txt on 2026-05-09 — the morning framing dated from when decider ran daily.
 - `monitor/analyst-baby/latest-baby-summary.txt` — baby's human-facing latest-run summary (PROP-034 Phase 1, 2026-05-13). Overwritten every 2h cycle. Workspace-owned; workspace-sync rescues to git on hourly cycle.
+- `monitor/curmudgeon/latest-verify-summary.txt` — curmudgeon-verify's per-run sentinel (PROP-038 Phase 1). Overwritten each 4h run; FUSE-canonical. Workspace-owned; added to workspace-sync smart_copy 2026-06-07 (PROP-081) after tinker found it was the only agent summary with no FUSE→git rescue path.
 - `monitor/sloppytoppy/latest-score-summary.txt` — sloppytoppy-score's per-run summary (PROP-039 Phase 1, 2026-05-16). Daily cadence. Workspace-owned.
 - `monitor/sloppytoppy/latest-rewrite-summary.txt` — sloppytoppy-rewrite's per-run summary (PROP-041 Phase 2, 2026-05-16). Every 2 days at 05:00 UTC. Workspace-owned; workspace-sync rescues to git on hourly cycle.
 - `monitor/sloppytoppy/scores.json` — single-writer (sloppytoppy-score). Phase 1 sole-writer; Phase 2 sloppytoppy-rewrite reads but does not write. Classified git so build.js publish copies git→workspace if anyone edits from a clone; sloppytoppy-score writes from its clone and pushes, so workspace gets updated via the git path. Effectively git-owned-with-clone-writer.
@@ -165,20 +166,20 @@ Fourteen scheduled agents are configured (twelve enabled; dome-sloppytoppy-score
 
 | Agent | Schedule | Model | Prompt File | Purpose |
 |-------|----------|-------|-------------|--------|
-| dome-poller | Every 12h (`0 */12 * * *`) | Sonnet | `poller.md` | Detect changes on dome site, track prediction test windows |
-| dome-analyst | Every 4h (`50 0,4,8,12,16,20 * * *`); BAU, can bump to 30m | Opus | `analyst.md` | New WIN onboarding, deep-attack/holistic expansions, defense neutralization, fingerprints |
+| dome-poller | Daily (`0 1 * * *` local; throttled 2026-05-28 from 12h) | Sonnet | `poller.md` | Detect changes on dome site, track prediction test windows |
+| dome-analyst | Every 4h (`0 0,4,8,12,16,20 * * *` local); BAU, can bump to 30m | Opus | `analyst.md` | New WIN onboarding, deep-attack/holistic expansions, defense neutralization, fingerprints |
 | dome-analyst-baby | Twice daily (`20 4,16 * * *`); 04:20/16:20 UTC | Sonnet | `analyst-baby.md` | Mode 1 BAU tracker drain — verification-class consolidations (PROP-034 Phase 1) |
-| dome-curmudgeon | Every 4h (`30 3,7,11,15,19,23 * * *`); BAU, can bump to 30m | Opus | `curmudgeon.md` | Adversarial self-review; change-driven + holistic reviews; discovery-mode (PROP-038) |
+| dome-curmudgeon | Every 4h (`0 1,5,9,13,17,21 * * *` local); BAU, can bump to 30m | Opus | `curmudgeon.md` | Adversarial self-review; change-driven + holistic reviews; discovery-mode (PROP-038) |
 | dome-curmudgeon-verify | Every 4h (`30 4,8,12,16,20,0 * * *`) | Sonnet | `curmudgeon-verify.md` | Narrow verification of patched reviews (PROP-038 Phase 1) — class='verification' items with ≤2 minor prior holes |
 | dome-sloppytoppy-score | Daily 03:30 (`30 3 * * *`) — **DISABLED** (pending operator decision after 2026-05-21 disaster) | Sonnet | `sloppytoppy-score.md` | Readability scoring (PROP-039 Phase 1) — two-axis rubric (length + understandability) for flat-earth-level reader |
 | dome-sloppytoppy-rewrite | Every 2 days 05:00 (`0 5 */2 * *`) — **DISABLED** (pending operator decision after 2026-05-21 disaster) | Opus | `sloppytoppy-rewrite.md` | Readability rewriter (PROP-041 Phase 2) — drafts RW-NNN.json proposals for below-floor surfaces with first-class content-preservation audit. Propose-only; decider integrates after audit-script + curmudgeon-on-rewrite verification (class='rewrite-verify') |
-| dome-decider | Every 4h (`10 2,6,10,14,18,22 * * *`); BAU, can bump to 1h | Opus | `decider.md` | Triage, patches, new WIN commits, expansion integration |
+| dome-decider | Every 4h (`0 2,6,10,14,18,22 * * *` local); BAU, can bump to 1h | Opus | `decider.md` | Triage, patches, new WIN commits, expansion integration |
 | dome-integrity | Daily 02:00 (`0 2 * * *`) | Haiku | `structure-integrity.md` | Site health: links, tabs, build drift, data-prose consistency |
 | dome-tinker | Daily 03:30 (`30 3 * * *`) | Opus | `tinker.md` | Pipeline ops: audit, trace handoffs, cost engineering |
 | dome-social | Daily 04:30 (`30 4 * * *`) | Sonnet | `social.md` | Machine-readable layer, discoverability, search rankings |
 | dome-prune-integrity | Daily 09:00 (`0 9 * * *`) | Haiku | (script-only via SKILL.md; see `monitor/scripts/prune-integrity.js`) | PROP-051 Workstream C — archive `monitor/integrity/` per-run artifacts to JSONL on retention windows; runs from a fresh shallow clone. Created 2026-05-23 after the workspace-sync mass-delete disaster |
 | dome-workspace-sync | Hourly (`0 * * * *`) | Haiku | `workspace-sync.md` | Commits workspace-only files to git |
-| dome-mirror | Hourly (`0 * * * *`) | Haiku | `dome-mirror.md` | git→FUSE propagation (PROP-074, 2026-06-01) — runs `monitor/scripts/sync-workspace-step4c.js`; companion to workspace-sync |
+| dome-mirror | Hourly at :30 (`30 * * * *`, shifted 2026-06-03) | Haiku | `dome-mirror.md` | git→FUSE propagation (PROP-074, 2026-06-01) — runs `monitor/scripts/sync-workspace-step4c.js`; companion to workspace-sync |
 
 ### Data Flow (summary)
 
