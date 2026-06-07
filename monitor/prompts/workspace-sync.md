@@ -352,6 +352,68 @@ fi
 # from this session (Path B) or write an operator recipe (Path A).
 declare -A NEVER_PUSH_STRANDS
 
+# PROP-082 (2026-06-07, DIRECTIVE-20260607-001): policy-aware universal-pusher.
+# Breaks the prune <-> workspace-sync re-add loop (tinker F1, report-2026-06-07T02-40):
+# prune-integrity.js deletes aged monitor/integrity/ artifacts from git, but FUSE
+# cannot unlink() so the FUSE copies persist forever; the next hourly cycle saw
+# "file in FUSE, absent in git" and resurrected them (~1,400 files/day churn;
+# smoking gun: prune b8e3c000 08:06Z -> re-add fc74aae 09:08Z on 2026-06-06).
+# Fix: before rescuing a dst-absent file, parse the filename-embedded timestamp
+# and match against prune-integrity.js's per-category retention windows (table
+# mirrored inline below — if you change monitor/scripts/prune-integrity.js
+# policies, update this table too). If the file is older than its category's
+# window, SKIP the push (reason 'older-than-prune-retention').
+# Conservative by design: (a) categories without retention_days use a window
+# derived from keep_last_n x cadence with 2x margin (narrative-cite-audit:
+# keep_last_n=7 daily -> 14d window); (b) date parsing is day-granular, so the
+# comparison adds +1 day slack — we only skip files STRICTLY past the window;
+# (c) unparseable filenames and non-matching paths fall through to the normal
+# rescue (fail-open). Files outside these categories (open-issues.json,
+# data/wins.json, etc.) are entirely unaffected.
+is_prune_expired() {
+  local dst="$1" days
+  case "$dst" in
+    monitor/integrity/workspace-sync-runs/run-*.json)          days=7  ;;
+    monitor/integrity/verify-pending-run-*.json)                days=14 ;;
+    monitor/integrity/narrative-cite-audit-*.json)              days=14 ;;
+    monitor/integrity/push-failure-*.json)                      days=14 ;;
+    monitor/integrity/report-[0-9][0-9][0-9][0-9]-*.json)       days=90 ;;
+    monitor/integrity/workspace-sync-abort-*.json)              days=30 ;;
+    monitor/integrity/git-to-fuse-divergence-*.json)            days=14 ;;
+    monitor/integrity/sync-workspace-non-ff-abort-*.json)       days=90 ;;
+    monitor/integrity/sync-workspace-runs-*.json)               days=14 ;;
+    *) return 1 ;;
+  esac
+  local base d file_ts cutoff
+  base=$(basename "$dst")
+  d=$(echo "$base" | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}' | head -1)
+  if [ -z "$d" ]; then
+    # undashed legacy variant (-YYYYMMDDTHHMMSS)
+    d=$(echo "$base" | grep -oE '[0-9]{8}T' | head -1 | sed -E 's/([0-9]{4})([0-9]{2})([0-9]{2})T/\1-\2-\3/')
+  fi
+  [ -z "$d" ] && return 1
+  file_ts=$(date -u -d "$d" +%s 2>/dev/null || echo 0)
+  [ "$file_ts" -le 0 ] && return 1
+  cutoff=$(( $(date -u +%s) - (days + 1) * 86400 ))
+  [ "$file_ts" -lt "$cutoff" ]
+}
+
+# PROP-082 self-test: a 2026-05-17 narrative-cite-audit file (the empirical
+# canary set from DIRECTIVE-20260607-001) must be expired; a today-dated one
+# must NOT be. Failure means the filter was broken by an edit — abort loudly.
+if ! is_prune_expired 'monitor/integrity/narrative-cite-audit-2026-05-17T0006Z.json'; then
+  echo "FATAL: is_prune_expired self-test failed (42-day-old narrative-cite-audit must be expired)"
+  exit 1
+fi
+if is_prune_expired "monitor/integrity/narrative-cite-audit-$(date -u +%Y-%m-%d)T0000Z.json"; then
+  echo "FATAL: is_prune_expired self-test failed (today's narrative-cite-audit must NOT be expired)"
+  exit 1
+fi
+if is_prune_expired 'monitor/decisions/open-issues.json'; then
+  echo "FATAL: is_prune_expired self-test failed (open-issues.json must never match — universal-pusher rescue path)"
+  exit 1
+fi
+
 smart_copy() {
   local src="$1"
   local dst="$2"
@@ -391,6 +453,13 @@ smart_copy() {
     return 0
   fi
   if [ ! -f "$dst" ]; then
+    # PROP-082: do not resurrect files that prune-integrity.js deleted on
+    # purpose. FUSE cannot unlink, so a FUSE copy older than its category's
+    # retention window is a pruned file, not a fresh agent-authored one.
+    if is_prune_expired "$dst"; then
+      echo "SKIP (older-than-prune-retention; pruned artifact, do not resurrect): $dst" >> "$SKIP_LOG"
+      return 0
+    fi
     cp "$src" "$dst"
     return 0
   fi
@@ -589,6 +658,13 @@ smart_copy "${WORKSPACE}/monitor/social/human-notes-archive.jsonl" monitor/socia
 
 # Integrity + Tinker reports and proposals
 sync_glob monitor/integrity '*.json'
+# PROP-082: explicit glob for the workspace-sync-runs subdir so per-run reports
+# route through smart_copy (and its older-than-prune-retention filter) instead
+# of any improvised recursive copy. Recent (<7d) runs already in git are no-ops
+# via the cmp -s identity check; pruned (>7d) runs are skipped by the filter.
+# Do NOT cp -r this directory wholesale — that is what resurrected 710 pruned
+# run reports in commit 73f18678 (2026-06-06T08:22Z).
+sync_glob monitor/integrity/workspace-sync-runs '*.json' 
 # PROP-017 gap fills (2026-05-05): integrity's session-summary outputs and the
 # PROP-009 shadow log (.jsonl, missed by the *.json glob above).
 smart_copy "${WORKSPACE}/monitor/integrity/alerts.txt" monitor/integrity/alerts.txt
@@ -624,6 +700,10 @@ if [ -s "$SKIP_LOG" ]; then
   echo "    deny-list (build.js artifacts, source code, clone-internal generated files,"
   echo "    semantic flags, monitor/prompts/*.md). Investigate which agent wrote to the wrong"
   echo "    side of the boundary. These files must be edited via git only."
+  echo "  'older-than-prune-retention' = PROP-082 filter WORKING. A FUSE copy of an artifact"
+  echo "    that prune-integrity.js already deleted from git (past its retention window) was"
+  echo "    NOT resurrected. Expected on every cycle after a prune run; volume should decay"
+  echo "    as the backlog converges. No action needed."
 
   # Persist skip records to monitor/integrity/ so the structure-integrity agent
   # (Section 7d, Phase 1 Change 1.8) can detect sustained patterns across

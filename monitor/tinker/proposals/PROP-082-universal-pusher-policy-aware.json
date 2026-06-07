@@ -1,0 +1,65 @@
+{
+  "id": "PROP-082",
+  "title": "Policy-aware universal-pusher: stop workspace-sync from resurrecting files prune-integrity.js deleted (break the prune ↔ workspace-sync re-add loop)",
+  "authored_by": "tinker",
+  "authored_at": "2026-06-07T06:10:00Z",
+  "authored_by_run": "tinker-2026-06-07T06-01",
+  "status": "implemented",
+  "directive": "DIRECTIVE-20260607-001",
+  "surfacing_report": "monitor/tinker/report-2026-06-07T02-40.json finding F1 [major]",
+  "problem_statement": "prune-integrity.js (PROP-051 Workstream C) deletes aged monitor/integrity/ per-run artifacts from git daily at ~08:06Z. FUSE cannot unlink(), so the FUSE copies of every pruned file persist forever. workspace-sync's hourly universal-pusher saw 'file in FUSE, absent in git' in smart_copy's dst-absent branch and unconditionally cp'd the file back — resurrecting it within ~16-60 min of every prune. Retention never converged: monitor/integrity/ held 892+ top-level files vs the ~20-170 the policy targets; archive JSONLs accreted duplicate records every cycle; prune+pusher churned ~1,000-1,500 file ops/day (06-01=1157, 06-02=633, 06-03=1291, 06-04=1348, 06-05=732, 06-06=1440 staged deletes). Smoking gun: prune commit b8e3c000 (2026-06-06T08:06:24Z, 1,440 deletions) → workspace-sync commit 73f18678 (08:22:18Z) re-added 710 workspace-sync-runs/ files, and commit fc74aae (09:08:36Z) re-added the top-level integrity artifacts including all 23 narrative-cite-audit-2026-05-17T*.json files (42 days old, policy keeps last 7). Same defect family as the unactioned DIRECTIVE-20260521-002: the pusher cannot distinguish 'workflow-deleted, do not rescue' from 'agent-authored, please rescue'.",
+  "evidence": {
+    "prune_policies_mirrored": {
+      "source": "monitor/scripts/prune-integrity.js policies[] (PROP-051/PROP-054)",
+      "table": [
+        {"category": "workspace-sync-runs", "path": "monitor/integrity/workspace-sync-runs/run-*.json", "retention_days": 7, "keep_last_n": 20, "filter_window_days": 7},
+        {"category": "verify-pending-run", "path": "monitor/integrity/verify-pending-run-*.json", "retention_days": 14, "keep_last_n": 20, "filter_window_days": 14},
+        {"category": "narrative-cite-audit", "path": "monitor/integrity/narrative-cite-audit-*.json", "retention_days": null, "keep_last_n": 7, "filter_window_days": 14, "note": "keep_last_n-only policy; daily cadence ~7d, filter uses 2x margin so it never blocks a file prune would keep"},
+        {"category": "push-failure", "path": "monitor/integrity/push-failure-*.json", "retention_days": 14, "keep_last_n": 20, "filter_window_days": 14},
+        {"category": "report-daily", "path": "monitor/integrity/report-YYYY-MM-DD*.json", "retention_days": 90, "keep_last_n": 20, "filter_window_days": 90},
+        {"category": "workspace-sync-abort", "path": "monitor/integrity/workspace-sync-abort-*.json", "retention_days": 30, "keep_last_n": 10, "filter_window_days": 30},
+        {"category": "git-to-fuse-divergence", "path": "monitor/integrity/git-to-fuse-divergence-*.json", "retention_days": 14, "keep_last_n": 20, "filter_window_days": 14},
+        {"category": "sync-workspace-non-ff-abort", "path": "monitor/integrity/sync-workspace-non-ff-abort-*.json", "retention_days": 90, "keep_last_n": 10, "filter_window_days": 90},
+        {"category": "sync-workspace-runs", "path": "monitor/integrity/sync-workspace-runs-*.json", "retention_days": 14, "keep_last_n": 20, "filter_window_days": 14}
+      ]
+    },
+    "universal_pusher_decision_point": "monitor/prompts/workspace-sync.md smart_copy(): the `if [ ! -f \"$dst\" ]; then cp ...` dst-absent branch is the exact resurrect point. Once re-added, subsequent cycles no-op via the cmp -s identity check, so the loop is purely prune-delete → dst-absent-rescue."
+  },
+  "proposed_fix": {
+    "design": "Operator-pre-approved option (a): make the universal-pusher policy-aware. New bash function is_prune_expired() inline in workspace-sync.md (policies table mirrored from prune-integrity.js — no safe require() path exists because prune-integrity.js executes top-level CLI code on import). The dst-absent branch of smart_copy calls it before cp: if the dst path matches a prune category AND its filename-embedded date is strictly older than the category's retention window (+1 day slack for day-granular parsing), the push is skipped and logged to workspace-sync-skips.jsonl with reason 'older-than-prune-retention'.",
+    "why_inline_not_import": "prune-integrity.js has no module.exports and runs its main flow at top level (incl. process.exit paths); require() would execute a prune. Modifying it is barred by the directive's non-goals. Inline table + a mirror-maintenance comment is the cleaner LOC and the safer runtime.",
+    "conservatism": [
+      "Fail-open: unparseable filenames and paths outside the 9 categories fall through to the normal rescue. data/wins.json, open-issues.json, priority-queue.json etc. are untouched.",
+      "Day-granular date parse adds +1 day slack: files are skipped only STRICTLY past the window, so the filter never blocks a file prune would keep on days-based policies.",
+      "narrative-cite-audit (keep_last_n-only, no retention_days) uses a derived 14d window (2x the 7-file daily-cadence floor). Files aged 7-14d may still round-trip once more (~7 files/day residual churn vs ~1,400 before, >99% reduction) and converge at 14d.",
+      "Three FATAL self-tests guard the function (42d-old canary must skip; today-dated file must push; open-issues.json must never match), mirroring the existing NEVER_PUSH/GIT_APPEND_ONLY self-test pattern."
+    ],
+    "additional_hardening": "Explicit `sync_glob monitor/integrity/workspace-sync-runs '*.json'` added so the subdir routes through the sanctioned, filtered smart_copy path. The 710-file re-add in 73f18678 had NO sanctioned sync_glob — the Haiku agent improvised a recursive copy. Giving it the explicit, filtered path channels it away from improvisation (same skip-by-omission psychology as PROP-066)."
+  },
+  "files_touched": [
+    "monitor/prompts/workspace-sync.md (+80 lines: is_prune_expired() + self-tests; 4-line guard in smart_copy dst-absent branch; explicit workspace-sync-runs sync_glob; skip-type explainer)"
+  ],
+  "estimated_loc": 80,
+  "q_ops": [],
+  "verification_pattern": "grep -c 'is_prune_expired' monitor/prompts/workspace-sync.md  # expect >=8 (def + 3 self-tests x2 lines + smart_copy call). Simulation: source the function from the prompt, run against all monitor/integrity/narrative-cite-audit-2026-05-17T*.json paths — every one must return expired. Negative: open-issues.json, data/wins.json, today-dated audit, 3d-old verify-pending-run, 40d non-ff-abort (90d window) must all return not-expired.",
+  "verification_results": {
+    "run_at": "2026-06-07T06:08:00Z",
+    "canary_set": "23/23 narrative-cite-audit-2026-05-17T*.json files → SKIP (older-than-prune-retention)",
+    "workspace_sync_runs_sample": "run-2026-04-26T17-05-12Z.json + run-2026-04-26T18-05-21Z.json (both re-added in 73f18678) → SKIP; 2d-old run report → PUSH",
+    "negative_controls": "open-issues.json, data/wins.json, today-dated narrative-cite-audit, 3d-old verify-pending-run, alerts.txt, analyst expansion, 10d-old abort sentinel (30d window), 40d-old non-ff-abort (90d window) → all PUSH",
+    "pattern_variants": "20d undashed-legacy push-failure (-YYYYMMDDTHHMMSS) → SKIP (parser fallback works); garbage filename → PUSH (fail-open)",
+    "self_test_block": "executes clean (exit 0) when sourced exactly as the agent will run it",
+    "example_skip_jsonl_record": {"timestamp": "2026-06-07T09:09:00Z", "run_id": "ws-sync-20260607T090900Z-12345", "path": "monitor/integrity/narrative-cite-audit-2026-05-17T0006Z.json", "reason": "older-than-prune-retention; pruned artifact, do not resurrect"}
+  },
+  "post_deployment_plan": {
+    "canary_expectation": "Today's prune fires ~08:06Z and will delete the (re-resurrected) aged artifacts again. The 09:0xZ workspace-sync cycle must NOT re-add any file older than its category window — specifically, zero narrative-cite-audit-2026-05-17T*.json files on origin/main after the 09:0xZ cycle, and workspace-sync-skips.jsonl should show 'older-than-prune-retention' records instead. If even ONE pruned file resurrects, the filter has a hole → immediate amendment.",
+    "monitor": "operator watches the 09:0xZ cycle (per DIRECTIVE-20260607-001 Step 9); tinker's next daily run greps workspace-sync-skips.jsonl for the new reason string and re-checks origin/main for the canary set",
+    "convergence": "with the loop broken, normal daily prune cycles drain the ~6-week backlog within 5-7 days (no retroactive mass-delete — explicitly out of scope per directive non-goals)"
+  },
+  "cross_references": {
+    "DIRECTIVE-20260521-002": "Same defect family (audit-files no-round-trip). Its surface — audit files that write to git but don't round-trip to FUSE — remains UNACTIONED and is NOT in scope here; needs its own proposal (different file shapes, multiple-write patterns).",
+    "PROP-077_PROP-078": "Parallel work on FUSE-revert race; NOT superseded — different surface (recent-commit guard vs prune-retention filter).",
+    "PROP-066": "Helper-extraction precedent consulted; inline bash chosen here instead because the filter lives INSIDE smart_copy which the agent already executes verbatim as one block — no new step exists for the LLM to skip."
+  },
+  "non_goals_honored": ["prune-integrity.js untouched", "no deny-list file (option b rejected per operator decision)", "filter scoped to the 9 prune categories only", "no retroactive cleanup of accumulated files", "dome-mirror untouched"]
+}
