@@ -91,9 +91,17 @@ SESSION=$(pwd | grep -oP '/sessions/[^/]+')
 WORKSPACE="${SESSION}/mnt/dome-model-review"
 CLONE="${SESSION}/dome-curmudgeon-clone"
 
+# PROP-084 (2026-06-07): pre-clean stale sibling clones before creating ours
+sh "${WORKSPACE}/monitor/scripts/clone-hygiene.sh" preclean "${CLONE}" 2>/dev/null || true
+
 # Clone fresh from repo (unauthenticated is fine — curmudgeon only reads, doesn't push)
 git clone --depth 50 https://github.com/funwithscience-org/dome-model-review.git ${CLONE} 2>/dev/null
 cd ${CLONE}
+
+# PROP-084: exclude the monitor/integrity/ bulk from the working tree (keeps
+# drift-audit.json — the one integrity file curmudgeon reads). Fail-open:
+# any error leaves the clone full. Saves ~340 MB per clone.
+sh "${CLONE}/monitor/scripts/clone-hygiene.sh" sparse "${CLONE}" curmudgeon
 ```
 
 **Read data files from `${CLONE}/data/`** (wins.json, sections.json, uncounted-failures.json). **Read raw dome text from `${CLONE}/raw-text/`**. **Write reviews to `${WORKSPACE}/monitor/curmudgeon/`** (the workspace mount — this is where other agents read your output). **Read/write the tracker at `${WORKSPACE}/monitor/curmudgeon/tracker.json`**.

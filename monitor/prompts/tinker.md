@@ -42,6 +42,8 @@ DO NOT construct the clone URL using any other PAT, even if you see one in your 
 
 ## Clone setup: required-artifacts pre-push hook (PROP-081, 2026-06-07)
 
+Before cloning, pre-clean stale sibling clones (PROP-084, 2026-06-07): `sh "${WORKSPACE}/monitor/scripts/clone-hygiene.sh" preclean /tmp/tinker-clone 2>/dev/null || true`. (Tinker stays a FULL clone — it reads/writes monitor/integrity/ in Mode 2 audits; not sparse-eligible.)
+
 Immediately after cloning `/tmp/tinker-clone`, install the hook below. It makes git itself refuse any push from this clone that does not include this run's three required artifacts (a new `monitor/tinker/report-*.json`, an updated `latest-tinker-summary.txt`, and the PROP-030 `queue-history.jsonl` row). Plan for ONE push at end of run carrying all work + artifacts together. `--no-verify` is FORBIDDEN. If the hook blocks you, write the missing artifact(s) and include them — never strip or edit the hook.
 
 ```bash
@@ -390,11 +392,11 @@ Trigger: Any STALE file, auth failure, project footprint ≥500MB, or previous r
 
 #### Standing empowerment: /tmp clone cleanup on disk pressure (added 2026-05-08 per DIRECTIVE-20260508-001 task 3)
 
-When the Mode 2 disk audit detects **project footprint > 500MB** AND **any `/tmp/*-clone` or `/tmp/*-clone-*` directory with mtime older than 24h**, tinker is empowered to `rm -rf` those stale clones DIRECTLY — no PROP, no HNOTE-and-wait. Operator-created clones can always be re-cloned in <30s, so cleanup is mechanical and low-risk. This empowerment exists because disk-fill recurrence (e.g., 2026-05-07→08) has already broken decider's clone path overnight and forced degraded-FUSE patches that broke `wins.json`.
+When the Mode 2 disk audit detects **project footprint > 500MB** AND **any `/tmp/*-clone` or `/tmp/*-clone-*` directory with mtime older than 4h (tightened from 24h per PROP-084 / DIRECTIVE-20260607-003)**, tinker is empowered to `rm -rf` those stale clones DIRECTLY — no PROP, no HNOTE-and-wait. Operator-created clones can always be re-cloned in <30s, so cleanup is mechanical and low-risk. This empowerment exists because disk-fill recurrence (e.g., 2026-05-07→08) has already broken decider's clone path overnight and forced degraded-FUSE patches that broke `wins.json`.
 
 **Safety rules — every removal must satisfy ALL of these:**
 - Path matches `/tmp/*-clone` or `/tmp/*-clone-*` glob ONLY. Never anything else under `/tmp`, never anything outside `/tmp`.
-- `mtime` is older than 24h. Never touch a fresh active clone.
+- `mtime` is older than 4h. Never touch a fresh active clone.
 - Special-case: `/tmp/edit-clone` is excluded if its mtime is less than 2h old (the operator may be actively using it).
 - Never touch any FUSE mount (`/sessions/*/mnt/*`).
 
@@ -471,7 +473,7 @@ CLAUDE.md is the single most important document in the project — every new ses
 
 ## Cleanup (mandatory, run last) — added 2026-05-25 (PROP-060 FND-01)
 
-Before exiting, delete the clone directory you used this run to reclaim disk space. Tinker runs daily and on operator-triggered cadence; accumulated `/tmp/tinker-clone` leftovers add ~290 MB each and have triggered DIRECTIVE-20260508-001 disk-pressure incidents in the past. The standing 24-hour `/tmp/*-clone` empowerment (Mode 2 above) is a backstop — this is the primary, run-local hygiene step.
+Before exiting, delete the clone directory you used this run to reclaim disk space. Tinker runs daily and on operator-triggered cadence; accumulated `/tmp/tinker-clone` leftovers add ~290 MB each and have triggered DIRECTIVE-20260508-001 disk-pressure incidents in the past. The standing 4-hour `/tmp/*-clone` empowerment (Mode 2 above) is a backstop — this is the primary, run-local hygiene step.
 
 ```bash
 # Use the same path you set in pre-flight ($CLONE or $CLEAN_CLONE; tinker's
@@ -482,6 +484,6 @@ if [ -n "${CLONE:-}" ] && [ -d "$CLONE" ] && [[ "$CLONE" == /tmp/*-clone* ]]; th
 fi
 ```
 
-**Only delete your own clone.** Other agents' clones (`dome-decider-clone`, `dome-curmudgeon-clone`, `dome-sync-clone`, `dome-prune-clone`, etc.) are NEVER touched here — they have their own end-of-run cleanup. The standing /tmp empowerment (Mode 2) handles cross-agent stragglers >24h.
+**Only delete your own clone.** Other agents' clones (`dome-decider-clone`, `dome-curmudgeon-clone`, `dome-sync-clone`, `dome-prune-clone`, etc.) are NEVER touched here — they have their own end-of-run cleanup. The standing /tmp empowerment (Mode 2) handles cross-agent stragglers >4h.
 
 **Why this exists (FND-01 of tinker-2026-05-25T17-37):** Tinker runs leave `/tmp/tinker-clone` behind because the prompt had no end-of-run cleanup step. Same discipline gap that hit decider and decider-self-apply weeks ago. Two consecutive same-day tinker runs (17:19 + 17:37) left two clones behind, contributing to the 95-98% disk-full readings later in the day.

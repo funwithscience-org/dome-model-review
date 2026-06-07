@@ -2,7 +2,7 @@
   "id": "DIRECTIVE-20260607-003",
   "filed_by": "operator-cowork-session",
   "filed_at": "2026-06-07T10:30:00Z",
-  "status": "pending",
+  "status": "completed",
   "priority": "medium",
   "title": "Author + implement PROP-NNN: add per-agent sparse-checkout (exclude monitor/integrity/ for agents that don't write there) + tighten stale-clone cleanup window from 24h to 4h + add startup pre-clean step to clone-using agents",
   "background": "Repo's working tree on disk is currently ~574 MB. The vast majority is monitor/integrity/ which is in the process of draining from 892 stale source files down toward expected ~20-170 per retention policy (PROP-082 shipped 2026-06-07T06:08Z broke the prune↔workspace-sync re-add loop; natural drain estimated at 7-10 days). Even at post-drain steady-state (~100 MB working tree), every agent that clones the full repo pays the cost for the integrity directory it doesn't write to.\n\nAgent classification by integrity-write surface:\n\n  - **WRITES to monitor/integrity/**: integrity, prune-integrity, tinker (run reports), workspace-sync (skips log, run reports, audit files). These NEED the full directory.\n  - **DOES NOT write to monitor/integrity/**: decider, analyst (Opus), analyst-baby, curmudgeon, curmudgeon-verify, dome-mirror, poller, social. These 8 agents could use sparse-checkout to exclude the integrity directory (or most of it) and reclaim per-clone headroom.\n\nReading-side nuance: decider's intake DOES read `monitor/integrity/report-*.json` (daily integrity reports) to triage Mech 2/3 findings. Sparse-checkout patterns must include the daily reports while excluding the per-cycle audit files (`narrative-cite-audit-*.json`, `verify-pending-run-*.json`, `workspace-sync-runs/`, `*-archive.jsonl`).\n\nAdditional headroom optimization: CLAUDE.md's per-session-clone-discipline section notes tinker's auto-cleanup catches clones older than 24h. Yesterday's empirical evidence showed a 208 MB `/tmp/tinker-clone` had survived from a crashed prior run for hours without being cleaned. Dropping the auto-cleanup window to 4h + adding a startup pre-clean step to each clone-using agent's prompt would catch same-session accumulation.",
@@ -41,8 +41,22 @@
   "context_pointers": {
     "current_clone_size": "Working tree on operator session ~574 MB. Per-agent clones range 70-300 MB depending on whether stale clones accumulated. Even with PROP-082's drain, expected post-drain working tree is ~100-200 MB.",
     "prop_082_drain_timeline": "Day 0 (today) through Day 7-10: prune drains historical accumulation without resurrection.",
-    "the_8_sparse_eligible_agents": ["decider", "analyst", "analyst-baby", "curmudgeon", "curmudgeon-verify", "dome-mirror", "poller", "social"],
-    "the_4_full_clone_agents": ["integrity", "prune-integrity", "tinker", "workspace-sync"],
+    "the_8_sparse_eligible_agents": [
+      "decider",
+      "analyst",
+      "analyst-baby",
+      "curmudgeon",
+      "curmudgeon-verify",
+      "dome-mirror",
+      "poller",
+      "social"
+    ],
+    "the_4_full_clone_agents": [
+      "integrity",
+      "prune-integrity",
+      "tinker",
+      "workspace-sync"
+    ],
     "prop_051_safety_gates": "CLAUDE.md sections on workspace-sync.md safety gates A1-A4 + monitor/scripts/prune-integrity.js — explicit bans on --filter=blob:none and --no-checkout for the WS-sync-disaster surface.",
     "tinker_auto_cleanup_section": "monitor/prompts/tinker.md — the current 24h auto-cleanup logic to tighten",
     "claude_md_per_session_discipline": "CLAUDE.md 'Per-session clone discipline' section — the canonical location to update with new cleanup windows + sparse-checkout policy notes",
@@ -50,5 +64,8 @@
   },
   "expected_output": "(1) monitor/tinker/proposals/PROP-NNN-clone-headroom-sparse-checkout.json with status='implemented'. (2) Edits to 8 agent prompts (decider.md, analyst.md, analyst-baby.md, curmudgeon.md, curmudgeon-verify.md, dome-mirror.md, poller.md, social.md or their relevant reference docs) installing sparse-checkout in the clone-setup step. (3) Edit to monitor/prompts/tinker.md tightening the auto-cleanup window from 24h to 4h. (4) Per-agent startup pre-clean step added. (5) Update to CLAUDE.md's per-session-clone-discipline section. (6) Per-agent validation simulation in PROP-NNN. (7) This directive at status='completed'. (8) FUSE-synced files.",
   "estimated_effort": "~90-120 min Opus. Per-agent read-surface audit (Step A1, ~25 min). Sparse-checkout pattern design + implementation (Steps A2-A3, ~30 min). Cleanup window changes (Step B, ~15 min). Per-agent validation (~20 min). Lifecycle + FUSE sync (~10 min). The 8-agent scope is the longest step.",
-  "priority_note": "MEDIUM — quality-of-life improvement, not blocking anything. The 7-10 day natural drain from PROP-082 addresses the immediate bloat; this directive prevents the post-drain steady-state from still carrying the cost of an unused directory. Worth shipping in the next 1-2 tinker runs but no rush."
+  "priority_note": "MEDIUM — quality-of-life improvement, not blocking anything. The 7-10 day natural drain from PROP-082 addresses the immediate bloat; this directive prevents the post-drain steady-state from still carrying the cost of an unused directory. Worth shipping in the next 1-2 tinker runs but no rush.",
+  "completed_at": "2026-06-07T10:44:50.747Z",
+  "completed_by_run": "tinker-2026-06-07T10-35",
+  "prop_id_authored": "PROP-084"
 }

@@ -95,6 +95,16 @@ if [ -d "${CLEAN_CLONE}/.git" ]; then
 else
   echo "PRELUDE: no existing clone at ${CLEAN_CLONE}; skipping rebase (first run or ephemeral session)"
 fi
+
+# PROP-084 (2026-06-07): clone hygiene — pre-clean stale sibling clones and
+# exclude the monitor/integrity/ bulk from the working tree (neither analyst
+# nor analyst-baby reads monitor/integrity/). Fail-open; no-op when no clone.
+HYG="${CLEAN_CLONE}/monitor/scripts/clone-hygiene.sh"
+[ -f "$HYG" ] || HYG=$(find /sessions/*/mnt/dome-model-review/monitor/scripts/clone-hygiene.sh 2>/dev/null | head -1)
+if [ -n "$HYG" ] && [ -f "$HYG" ]; then
+  sh "$HYG" preclean "${CLEAN_CLONE}" 2>/dev/null || true
+  sh "$HYG" sparse "${CLEAN_CLONE}" analyst 2>/dev/null || true
+fi
 ```
 
 ## Step 0: Authenticate `gh` CLI

@@ -122,10 +122,20 @@ echo "PRE-FLIGHT: dome PAT scope verified (HTTP $SCOPE_HTTP)."
 # below — and 17 close-records bypassed the lint gate on 2026-06-06
 # (ISS-2621). Create only if absent; the hook install below now runs on
 # EVERY pass through this block, clone-create or reuse alike.
+# PROP-084 (2026-06-07): pre-clean stale sibling clones (never ${CLONE} itself —
+# clone-reuse per PROP-083 is preserved).
+sh "${WORKSPACE}/monitor/scripts/clone-hygiene.sh" preclean "${CLONE}" 2>/dev/null || true
 if [ ! -d "${CLONE}/.git" ]; then
   git clone "https://x-access-token:${DOME_PAT}@github.com/funwithscience-org/dome-model-review.git" ${CLONE}
 fi
 cd ${CLONE}
+
+# PROP-084: exclude the monitor/integrity/ bulk from the working tree, keeping
+# the families decider reads/writes: report-*.json, latest-integrity-summary.txt,
+# alerts.txt, prop-009-shadow.jsonl. New sentinel files written into the excluded
+# dir (verify-pending-run-*.json, push-failure-*.json) still commit normally —
+# sparse-checkout only governs which TRACKED files materialize. Fail-open.
+sh "${CLONE}/monitor/scripts/clone-hygiene.sh" sparse "${CLONE}" decider
 
 # PROP-080 (2026-06-06): STRUCTURAL pre-push enforcement of the PROP-076
 # close-record lint. Three documented bypasses in two days (38deae25,

@@ -76,6 +76,9 @@ CLEAN_CLONE="${CLEAN_CLONE:-${SESSION}/dome-curmudgeon-verify-clone}"
 WORKSPACE=$(find /sessions/*/mnt/dome-model-review -maxdepth 0 2>/dev/null | head -1)
 AUTH_URL=$(git -C "${WORKSPACE}" remote get-url origin 2>/dev/null)
 
+# PROP-084 (2026-06-07): pre-clean stale sibling clones (never our own reused clone)
+sh "${WORKSPACE}/monitor/scripts/clone-hygiene.sh" preclean "${CLEAN_CLONE}" 2>/dev/null || true
+
 if [ -d "${CLEAN_CLONE}/.git" ]; then
   if ! (cd "${CLEAN_CLONE}" && git fetch origin main --quiet && git pull --rebase origin main); then
     echo "PRELUDE: rebase failed in ${CLEAN_CLONE}. STOP."
@@ -86,6 +89,10 @@ else
 fi
 
 cd "${CLEAN_CLONE}"
+
+# PROP-084: exclude monitor/integrity/ from the working tree (verify-mode reads
+# nothing there). Idempotent on clone-reuse; fail-open — errors leave clone full.
+sh "${CLEAN_CLONE}/monitor/scripts/clone-hygiene.sh" sparse "${CLEAN_CLONE}" curmudgeon-verify
 ```
 
 You write review files to `${CLEAN_CLONE}/monitor/curmudgeon/reviews/` (relative to the clone). Workspace-sync will push them on its hourly cycle. **Do not write to FUSE directly** — same anti-staleness discipline as main curmudgeon.
