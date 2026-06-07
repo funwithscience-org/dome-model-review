@@ -116,7 +116,15 @@ echo "PRE-FLIGHT: dome PAT scope verified (HTTP $SCOPE_HTTP)."
 
 # Use the verified $DOME_PAT for the clone (don't trust $AUTH_URL further —
 # build the clone URL from the verified PAT explicitly).
-git clone "https://x-access-token:${DOME_PAT}@github.com/funwithscience-org/dome-model-review.git" ${CLONE}
+# PROP-083 (2026-06-07): clone-reuse-safe. The clone persists across runs;
+# the previous unconditional `git clone` errored on the existing path, the
+# agent skipped the whole setup block — INCLUDING the PROP-080 hook install
+# below — and 17 close-records bypassed the lint gate on 2026-06-06
+# (ISS-2621). Create only if absent; the hook install below now runs on
+# EVERY pass through this block, clone-create or reuse alike.
+if [ ! -d "${CLONE}/.git" ]; then
+  git clone "https://x-access-token:${DOME_PAT}@github.com/funwithscience-org/dome-model-review.git" ${CLONE}
+fi
 cd ${CLONE}
 
 # PROP-080 (2026-06-06): STRUCTURAL pre-push enforcement of the PROP-076
@@ -129,6 +137,10 @@ cd ${CLONE}
 # part of clone setup, not optional hardening. Do NOT remove, edit, or
 # bypass the hook (--no-verify is FORBIDDEN); if the hook blocks your push,
 # the close-records are wrong — fix THEM (see recovery text the lint prints).
+# PROP-083 (2026-06-07): this install is IDEMPOTENT (cat-overwrite + chmod)
+# and now executes on every run because the clone step above is reuse-safe.
+# decider.md's prelude ALSO re-installs the hook on clone-reuse cycles —
+# defense in depth; both paths write identical hook content.
 cat > .git/hooks/pre-push <<'HOOK'
 #!/bin/sh
 # PROP-080: structural enforcement of PROP-076 lint-close-records.

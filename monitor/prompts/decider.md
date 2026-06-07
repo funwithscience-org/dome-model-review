@@ -101,6 +101,28 @@ else
   # which is the same behavior as before Phase 1.
   echo "PRELUDE: no existing clone at ${CLEAN_CLONE}; skipping rebase (first run or ephemeral session)"
 fi
+
+# PROP-083 (2026-06-07): IDEMPOTENT pre-push hook install — runs EVERY cycle.
+# PROP-080 installed the hook only inside the self-apply clone-creation block
+# (decider-patches-and-selfapply.md step 0). This clone persists across runs
+# (${SESSION}/dome-review-clean), so every post-deploy run reused the clone,
+# never executed clone-setup, and never got the hook — 17 close-records were
+# pushed past the lint gate on 2026-06-06 (ISS-2621). This block closes the
+# hole: whenever the clone exists, ensure the hook is present, executable,
+# and points at lint-close-records. Safe to re-run. --no-verify is FORBIDDEN.
+if [ -d "${CLEAN_CLONE}/.git" ]; then
+  if [ ! -x "${CLEAN_CLONE}/.git/hooks/pre-push" ] || ! grep -q 'lint-close-records' "${CLEAN_CLONE}/.git/hooks/pre-push" 2>/dev/null; then
+    cat > "${CLEAN_CLONE}/.git/hooks/pre-push" <<'HOOK'
+#!/bin/sh
+# PROP-080: structural enforcement of PROP-076 lint-close-records.
+exec node "$(git rev-parse --show-toplevel)/monitor/scripts/lint-close-records.js"
+HOOK
+    chmod +x "${CLEAN_CLONE}/.git/hooks/pre-push"
+    echo "PRELUDE: PROP-083 pre-push hook (re)installed in ${CLEAN_CLONE}"
+  else
+    echo "PRELUDE: PROP-083 pre-push hook present and current"
+  fi
+fi
 ```
 
 ## Step 0b: Setup

@@ -1,27 +1,37 @@
-TINKER RUN 2026-06-07T06:01Z (operator-triggered, pre-prune deadline run)
-MODE: operator-directive — DIRECTIVE-20260607-001 (high, time-sensitive)
+TINKER RUN tinker-2026-06-07T06-10 (operator-directive mode)
+=========================================================
+DIRECTIVE-20260607-002 (PROP-080 hook persistence) — COMPLETED.
 
-DONE: PROP-082 authored + implemented same run. workspace-sync's universal-pusher
-is now policy-aware: smart_copy's dst-absent rescue branch checks the file's
-filename-embedded timestamp against the prune-integrity retention windows
-(9-category table mirrored inline) and SKIPs resurrection of pruned artifacts
-(skip reason 'older-than-prune-retention'). Verified by simulation: all 23
-narrative-cite-audit-2026-05-17 canary files skip; open-issues.json, wins.json,
-fresh artifacts, and within-window files all still rescue normally. 3 FATAL
-self-tests added in the prompt guard the filter against future edit breakage.
-FUSE copy of workspace-sync.md synced manually so the 09:0xZ cycle (first after
-today's ~08:06Z prune) runs the new logic. Directive → completed.
+ROOT CAUSE (forensically confirmed): operator's H1 was RIGHT this time,
+with a sharper mechanism. PROP-080 put the hook install immediately after
+an UNCONDITIONAL `git clone` in the self-apply block. Decider's clone
+persists across runs -> every post-deploy run hit "destination path already
+exists", skipped the whole block, and pushed hook-less. decider.md's
+existing-clone prelude branch never had an install step. The hook never
+existed in the pushing clone on ANY post-deploy run.
+  Ruled out: H2 (lint replay fires 11/11 on a4e464f entries, md5-identical
+  script), H3 (api path is lint-patched + unused that day), H4 (no
+  --no-verify), H6 (violations on every run = persistence, not race).
+  H5 moot, covered defensively by the fix anyway.
 
-WATCH (operator + next tinker run): after the 09:0xZ workspace-sync cycle,
-zero 2026-05-17 narrative-cite-audit files should exist on origin/main and
-workspace-sync-skips.jsonl should show older-than-prune-retention records.
-If even one pruned file resurrects, the filter has a hole → amend immediately.
+FIX (PROP-083, implemented + validated this run):
+  - decider.md prelude: per-cycle idempotent hook install (content+exec check)
+  - selfapply.md: clone step reuse-safe -> hook install runs every pass
+  - Sims: install-on-reuse PASS, idempotent no-op PASS, exec-bit heal PASS,
+    lint blocks the 11 historical violations PASS.
 
-NOTE: F3 [minor] — the 710-file workspace-sync-runs/ re-add in 73f18678 had NO
-sanctioned sync_glob; the Haiku agent improvised a recursive copy. PROP-082
-adds the explicit filtered glob to channel it, but if unsanctioned bulk copies
-persist, a staged-paths allowlist gate is the follow-up PROP.
+DATA: 937 pre-deploy + 17 post-deploy violating close-records bulk-
+grandfathered per pre-approval. closed-issues.json now lints clean (0
+violations). ISS-2621 (critical) CLOSED. Integrity should NOT re-fire.
+NOTE: ISS-2563 was pre-deploy (in the 937); ISS-2600 is wontfix (lint
+correctly ignores it) — integrity's 18/19-ID listing was slightly over-broad.
 
-BACKLOG: healthy — 9 open (-81.6% WoW), net velocity +309/7d. No thresholds.
-PENDING DIRECTIVES REMAINING: 20260531-008 (PROP-069 impl), 20260531-009
-(PROP-070 — possibly OBE, check next run), 20260602-001 (analyst starvation guard).
+QUEUE: open=8, net velocity +310/7d. Healthiest on record. No thresholds.
+
+INFRA (moderate): root FS hit 100% at run start; recovered by sparse-clone
+strategy. monitor/integrity = 382MB is the repo-size driver — candidate
+future PROP on prune-integrity retention. /tmp/edit-clone (469MB, fresh)
+left untouched per safety rules.
+
+REMAINING PENDING DIRECTIVES (next runs): 20260531-008 (PROP-069 impl),
+20260531-009 (PROP-070 author), 20260602-001 (analyst starvation guard).
