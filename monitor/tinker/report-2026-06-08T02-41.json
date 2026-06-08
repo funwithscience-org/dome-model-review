@@ -1,0 +1,86 @@
+{
+  "run_id": "tinker-2026-06-08T02-41",
+  "ts": "2026-06-08T02:41:00Z",
+  "agent": "dome-tinker",
+  "mode_selected": "Mode 2 — Infrastructure & FUSE (trigger: DISK CRITICAL — project-footprint metric 1064MB >= 1000MB; root FS 98% used, 284MB free at run start)",
+  "modes_checked": {
+    "preflight_directives": "NO PENDING DIRECTIVES (scanned from fresh clone per FND-01 2026-05-31 rule)",
+    "preflight_mode0": "no assigned-to-tinker items in open-issues.json or expansion-tracker.json",
+    "mode1_quick": "GREEN — all agent outputs fresh (changes 2h, tracker 1h, decider summary 1h, expansion-tracker 1h, status 2h, integrity 0h, baby 10h, verify 2h; all within 2x cadence). Zero non-tombstoned stranded-patches >24h.",
+    "mode2_quick": "TRIGGERED — FUSE hash check: all 5 key files match git HEAD. Auth: HTTP 200. Disk: project-footprint metric 1064MB (CRITICAL >=1000MB) but see FND-01 for decomposition; root FS 98%/284MB free. No stale /tmp clones >4h (cleanup empowerment had nothing to do).",
+    "mode4_pending": "PROP-085 authored this run (see findings)"
+  },
+  "previous_followup": {
+    "prop_084_status": "IMPLEMENTED, post-deploy evidence INDIRECT-POSITIVE. No '[clone-hygiene]' echo lines surface in agent summaries (stdout-only), but all four post-deploy indicators are good: (1) zero leftover agent clones in /tmp at this run's start — preclean and end-of-run rm working; (2) decider 2026-06-08T01:06 run cloned, committed, pushed cleanly; (3) curmudgeon-verify 2026-06-07T23:43 pushed review 9ae2599; (4) workspace-sync 02:12 push exit=0 and dome-mirror step4c sentinels present hourly through 02:35. No fail-open messages, no integrity-read anomalies. Rollback not needed.",
+    "tf_001_claude_md_cron_drift": "DEFERRED — Mode 3 item (CLAUDE.md pipeline-table cron refresh), not touched this run; carry forward.",
+    "tf_002_stale_stranded_patch": "FIXED — zero non-tombstoned stranded-patches >24h found this run.",
+    "tf_003_disk_warning": "ESCALATED — recurring disk finding from 06-01 (FND-03) and 06-05 (TF-003) now root-caused; see FND-01. This was previously classified 'non-actionable (own clone + FUSE)'; that classification was incomplete — log growth is the real driver and it is NOT cleanable from inside the sandbox.",
+    "step4c_invocation_reliability": "FIXED (carry-over from 06-01 FND-01) — dome-mirror sentinels now land hourly (00:34, 01:35, 02:35 today). PROP-066/074 chain working."
+  },
+  "findings": [
+    {
+      "id": "FND-01",
+      "severity": "major",
+      "category": "infrastructure",
+      "title": "Root FS at 98% (284MB free) — driver is system log growth that is NOT cleanable from inside the sandbox; ~1-2 weeks to clone-failure threshold without operator/host action",
+      "evidence": [
+        "df / at run start: 9.6G total, 9.3G used, 284M free (98%)",
+        "Decomposition: /usr 6209MB (system image), /var 2461MB, /tmp 458MB (this run's own tinker-clone 453MB, deleted at run end)",
+        "/var/log/journal = 914MB; /var/log/syslog.1 = 206MB (single week of rotation, dated Jun 7); syslog active 30MB + ~27MB of older .gz",
+        "Growth rate estimate: journal ~13MB/day (914MB since Mar 30) + syslog ~30MB/day => ~45MB/day combined",
+        "Cleanability test: uid 5120, sudo blocked (no-new-privileges), /var/log/journal drwxr-sr-x nobody:nogroup NOT writable, syslog.1 rw-r----- nobody:nogroup not readable/deletable. journalctl --vacuum-* requires write access — IMPOSSIBLE from pipeline.",
+        "PROJ_MB metric conflation: the Mode 2 quick-check sums /sessions/*/mnt (610MB FUSE) into 'project footprint' 1064MB, but FUSE content does not live on the root partition — the metric overstates pipeline-induced root-disk pressure and fired CRITICAL on a number that is ~57% not-on-this-disk."
+      ],
+      "impact": "At ~45MB/day log growth, post-cleanup headroom (~737MB after this run deletes its clone) erodes in ~10-16 days. When free space drops below a full-clone transient (integrity/prune/tinker need ~455MB; sparse agents ~110MB), clone-based agents fail in the documented 2026-05-07/08 cascade mode.",
+      "recommendation": "Operator/host-level action required (pipeline cannot self-serve): either (a) vacuum journald on the sandbox host / set SystemMaxUse in journald.conf, (b) recycle the sandbox VM, or (c) accept and monitor via PROP-085 watchdog. PROP-085 authored this run adds root_fs_free_mb trending + escalation thresholds so this is caught structurally, not anecdotally.",
+      "prop_ref": "PROP-085"
+    },
+    {
+      "id": "FND-02",
+      "severity": "minor",
+      "category": "workspace-sync-schema-divergence",
+      "title": "Malformed workspace-sync sentinel filename with embedded spaces + three coexisting naming schemes in monitor/integrity/workspace-sync-runs/",
+      "evidence": [
+        "'monitor/integrity/workspace-sync-runs/sync-run-2026-06-05T12- 09- 53Z.json' — literal spaces in filename (breaks naive shell loops; demonstrated by this run's own scan erroring on it)",
+        "Three naming schemes coexist: run-2026-06-08T02-12-28Z.json (ISO-dashed), run-20260601T072501Z.json (compact), sync-run-...Z.json (prefixed)",
+        "Recurrence of 06-01 FND-02 (schema divergence in the same directory) — the Haiku agent improvises the filename format each run"
+      ],
+      "impact": "Cosmetic-to-minor: any consumer globbing this directory with unquoted paths errors; archive tooling (prune-integrity) appears to handle it but it is a latent footgun.",
+      "recommendation": "Pin an exact strftime format string for the sentinel filename in workspace-sync.md (e.g. run-$(date -u +%Y-%m-%dT%H-%M-%SZ).json) or fold sentinel-writing into a helper script per the PROP-066 extraction pattern. One-line prompt fix; fold into next workspace-sync.md touch rather than its own PROP. The single spaced file can be renamed by the next agent that touches the directory from a clone (FUSE can't unlink, but git mv in clone works)."
+    },
+    {
+      "id": "FND-03",
+      "severity": "info",
+      "category": "pipeline-health",
+      "title": "Pipeline otherwise GREEN across all surfaces — best backlog on record continues",
+      "evidence": [
+        "Backlog (PROP-030): open 9 (WoW -76.9% from 39), net velocity +259/7d, zero items >=14d, oldest open 0.1d",
+        "verify_drain_count_7d=21 — curmudgeon-verify now pulling real weight (was flagged underutilized at 1-total on 06-01)",
+        "FUSE hash check 5/5 match; auth 200; no abort sentinels since 2026-06-04 (last: workspace-sync-abort-2026-06-04T17-19-15Z, already known)",
+        "workspace-sync 02:12 agent_notes 'routine', push exit=0; narrative-cite soft-complaint counters (claim-uncited=1841, resolve-rate 50.6%) are pre-existing tracked metrics, not new errors"
+      ],
+      "impact": "none — recorded so next run has context",
+      "recommendation": "none"
+    }
+  ],
+  "backlog_trend": {
+    "metrics": {
+      "ts": "2026-06-08T02:41:39.497Z",
+      "tinker_run_id": "tinker-2026-06-08T02-41",
+      "open_issues_total": 9,
+      "open_status_count": 4,
+      "assigned_analyst_count": 1,
+      "age_ge_14d_count": 0,
+      "age_ge_30d_count": 0,
+      "oldest_open_age_days": 0.1,
+      "new_issues_velocity_7d": 7,
+      "closed_issues_velocity_7d": 266,
+      "net_velocity_7d": 259,
+      "baby_drain_count_7d": 0,
+      "verify_drain_count_7d": 21
+    },
+    "thresholds_fired": "none (info tier requires growth >5% WoW; backlog shrank 76.9%)"
+  },
+  "cleanup_actions": [],
+  "notes": "Run executed by interactive-session scheduled invocation; one mode (Mode 2), one push at end per PROP-081 hook discipline. baby_drain_count_7d=0 reflects no analyst-baby completions in window (baby ran 10h ago; tracker shows no completed_at within 7d attributed to baby) — consistent with low backlog, not a stall."
+}

@@ -1,0 +1,31 @@
+{
+  "id": "PROP-085",
+  "title": "Root-FS headroom watchdog: trend root_fs_free_mb in queue-history, escalation thresholds, and de-conflate the PROJ_MB metric",
+  "status": "proposed",
+  "authored_by": "tinker",
+  "authored_at": "2026-06-08T02:41:00Z",
+  "priority": "medium-high",
+  "problem": "Root FS pressure is the documented #1 pipeline-killer (2026-05-07/08 decider cascade, 2026-05-09 near-miss, 2026-05-21 disaster contributing factor), yet the pipeline has no trended measurement of actual root-partition headroom. The Mode 2 quick-check's PROJ_MB metric sums /sessions/*/mnt FUSE content (610MB as of 2026-06-08) into 'project footprint', but FUSE mounts do not consume the root partition — the metric fired DISK CRITICAL on 1064MB of which ~57% is not on this disk, while the REAL risk (system log growth) was invisible. Empirical facts established 2026-06-08: /var/log/journal=914MB + syslog rotation ~260MB, growing ~45MB/day combined; sandbox uid 5120 has no sudo (no-new-privileges) and cannot write /var/log — journal vacuum is IMPOSSIBLE from inside the pipeline. Headroom erodes to clone-failure threshold in ~10-16 days without operator/host action.",
+  "changes": [
+    {
+      "n": 1,
+      "file": "monitor/prompts/tinker.md",
+      "change": "In the PROP-030 pre-flight metrics block, add root_fs_free_mb (from `df -m / | awk 'NR==2{print $4}'`) to the per-run queue-history.jsonl row. Cheap, single command, gives WoW trend and growth-rate estimation for free."
+    },
+    {
+      "n": 2,
+      "file": "monitor/prompts/tinker.md",
+      "change": "In the Mode 2 disk quick-check: (a) keep PROJ_MB but EXCLUDE /sessions/*/mnt from the sum (rename intent: 'clone-leak footprint' — /tmp/*-clone + /tmp/dome-* only; thresholds 500MB warn / 1000MB critical unchanged, now measuring what they were designed to catch); (b) report FUSE mnt size as a separate informational line; (c) add root_fs_free_mb thresholds: <500MB free => major finding in report, <350MB free => operator_escalation line in latest-tinker-summary.txt (350MB chosen because a sparse-agent clone transient is ~110MB and integrity/prune/tinker full-clone transient is ~455MB; below 350MB the full-clone agents are already at risk)."
+    },
+    {
+      "n": 3,
+      "file": "monitor/prompts/tinker.md",
+      "change": "Add a short 'Known immutable: system log growth' note in Mode 2: /var/log/journal and /var/log/syslog* are owned by nobody:nogroup, sandbox uid has no sudo (no-new-privileges flag), journalctl --vacuum-* requires write access and FAILS. Do not re-investigate cleanability each run; the lever is operator/host-level (journald SystemMaxUse, host vacuum, or VM recycle)."
+    }
+  ],
+  "non_goals": "No attempt to clean system logs from inside the pipeline (impossible, verified). No change to the standing /tmp/*-clone cleanup empowerment. No new agent.",
+  "verification_pattern": "grep -c 'root_fs_free_mb' monitor/prompts/tinker.md  # expect >=2 (metrics block + threshold block); tail -1 monitor/tinker/queue-history.jsonl | grep -o 'root_fs_free_mb'  # expect present after first post-apply run",
+  "rollback": "Revert the tinker.md hunks; queue-history rows with the extra field are forward-compatible (readers ignore unknown fields).",
+  "risk": "low — prompt-only change to tinker's own dispatcher, no cross-agent surface, no data files touched.",
+  "operator_decision_needed": "Approve self-apply on next tinker run, or apply operator-side. ALSO (outside this PROP's scope but urgent): decide host-level action for the existing 1.1GB log bloat — at ~45MB/day the sandbox hits clone-failure pressure in ~10-16 days. Options: (a) host journald vacuum / SystemMaxUse cap, (b) sandbox VM recycle, (c) accept and let the watchdog warn."
+}
