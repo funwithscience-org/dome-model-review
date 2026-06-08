@@ -1,0 +1,22 @@
+{
+  "type": "new_issue",
+  "source": "analyst-mode6-random-look",
+  "proposed_at": "2026-06-07T23:15:30.859Z",
+  "proposed_by": "analyst",
+  "severity": "moderate",
+  "category": "pipeline-schema-drift",
+  "status": "needs-decider-triage",
+  "target": "monitor/analyst/attention-inbox.json writer (decider) vs reader (analyst.md Mode 2b dispatcher)",
+  "summary": "Decider runs 2026-06-07 wrote attention-inbox items ATTN-001/002/003 with a divergent schema (resolved:boolean, subject/detail fields, ATTN-NNN ids) instead of the canonical status:\"pending\" schema. The analyst Mode 2b dispatcher filters x.status===\"pending\", so all three items were INVISIBLE to the dispatcher — Mode 2b reported NO ATTENTION ITEMS while 2 unresolved verification requests (ATTN-002 medium, ATTN-003 high) sat in the file. Caught by Mode 6 fresh-eyes pass 2026-06-08; both items verified and resolved this run.",
+  "detail": "Three sub-findings: (1) WRITER DRIFT — decider-2026-06-07T13-24/17-11/21-30 used {id:ATTN-NNN, resolved:false, subject, detail/details} where the canonical shape per analyst.md Mode 2b and prior archive lines is {id:ATT-<ts>-N, status:\"pending\", reason}. Field name even varies within the batch (ATTN-001 \"details\", ATTN-002/003 \"detail\"). (2) READER MISS — analyst.md Mode 2b check is status-based only; it should defensively also treat resolved===false as pending, or the decider writer should be normalized. (3) HYGIENE — ATTN-001 was resolved:true by decider but left in the live file; PROP-022 phase 4 requires resolved items be appended to attention-inbox-archive.jsonl and removed from live. All three items have now been archived+removed by analyst (this run). RESOLUTION CONTENT NOTE: ATTN-002 note text itself cited a dead DOI (10.1007/s00190-002-0237-3, handle-not-found) as the thing to verify, but the actually-integrated WIN-011 text carries the correct Yang & Wang 2002 DOI 10.1023/A:1021119023985 (Crossref-verified). No live-surface defect; the dead string existed only in the note. Recommend: patch decider attention-inbox-writer step to emit canonical schema + archive-on-resolve, and optionally harden analyst.md Mode 2b filter to (x.status===\"pending\"||x.resolved===false). Route prompt edits via tinker if preferred.",
+  "recommended_action": "patch",
+  "evidence": {
+    "invisible_items": [
+      "ATTN-002 (priority medium, created 2026-06-07T17:11Z)",
+      "ATTN-003 (priority high, created 2026-06-07T21:30Z)"
+    ],
+    "dispatcher_check": "analyst.md Mode 2b: arr.filter(x=>x.status==='pending') -> returned 0",
+    "archive_precedent_id_format": "ATT-2026-05-30T02:58:33.241Z-2 with status:resolved",
+    "verification_outcomes": "ATTN-002: integrated DOI correct; ATTN-003: (a) Mansinha DOI resolves, (b) correction notices read naturally, (c) dead DOI only in index.html.baseline"
+  }
+}
