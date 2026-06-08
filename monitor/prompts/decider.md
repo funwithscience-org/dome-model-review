@@ -809,6 +809,8 @@ if(leaks.length>0){
 
 **After** self-applying patches but **before** queue management, check whether any of your patches this run affect content the analyst previously analyzed. If you patched a WIN's evidence or verdict text, or modified a section the analyst wrote an expansion for, append an item to `monitor/analyst/attention-inbox.json`:
 
+**SCHEMA — DO NOT DEVIATE.** The JSON below is the canonical, load-bearing schema. Field names (`id`, `status`, `target_type`, `target_id`, `reason`, `pushed_by`, `pushed_at`, `related_issues`) and the id format (`ATT-<ISO-timestamp>` — NOT `ATTN-NNN` or any other prefix) are read by the analyst's Mode 2b dispatcher, which filters on `status === 'pending'` and parses `reason`/`target_*`/`related_issues` by name. Using alternate field names like `resolved`/`subject`/`detail`/`details` or a sequential `ATTN-NNN` id will silently strand items — the dispatcher will not recognize the record and analyst Mode 2b will skip it. If during a run you find yourself reaching for "cleaner" or "more consistent" field names, **STOP**. The right channel for schema improvement is an issue-proposal or operator-attention note, not in-flight divergence. (PROP-fwd 2026-06-08, after baby caught 3 stranded items.)
+
 ```json
 {
   "id": "ATT-<ISO-timestamp>",

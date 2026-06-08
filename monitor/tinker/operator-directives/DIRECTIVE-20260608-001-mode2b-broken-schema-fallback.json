@@ -1,0 +1,30 @@
+{
+  "directive_id": "DIRECTIVE-20260608-001",
+  "for": "tinker",
+  "status": "pending",
+  "priority": "medium",
+  "created_at": "2026-06-08T05:30:00.000Z",
+  "created_by": "operator",
+  "title": "analyst.md Mode 2b dispatcher — accept broken-schema attention-inbox items as a fallback (structural layer 2 of two-fold defense)",
+  "context": "2026-06-08: baby's 04:20Z verification run (EXP-605) confirmed that the decider improvised against documented spec when writing the attention-inbox. Decider wrote {id: ATTN-NNN, resolved: false, subject, detail} instead of the canonical {id: ATT-<ISO-timestamp>, status: 'pending', reason} schema documented in decider.md Step A (lines 810-836). The analyst's Mode 2b dispatcher filters strictly on status === 'pending' and reads target_*/reason/related_issues by name, so the divergent records were silently stranded. 3 items (ATTN-001/002/003) accumulated unseen until analyst Mode 6's random-look pass (2026-06-07T23:15Z) noticed the orphans (and improvised a deletion-cleanup that itself bypassed PROP-022 archive-on-resolve — separately addressed by the Mode 6 read-only guard committed in this same change).",
+  "two_fold_defense_rationale": "We've now relied on the prompt-layer + structural-layer defense pattern three times (Mech-A bypass / PROP-076 + PROP-080, required-artifacts / PROP-081, FUSE-revert race / PROP-077 + PROP-078). The pattern: layer 1 is a prose constraint in the relevant prompt; layer 2 is a script-level or dispatcher-level guard that catches the failure mode if the LLM ignores layer 1. The prompt-layer fix is being applied today (decider.md Step A DO-NOT-DEVIATE block). This directive commissions the structural layer.",
+  "task": "Propose a structural hardening of analyst.md Mode 2b so a future decider schema-improvisation event does not silently strand items.",
+  "constraints": [
+    "Do NOT make Mode 2b silently accept arbitrary keys — that would mask the bug instead of catching it.",
+    "The fallback should accept the specific broken-schema pattern observed (resolved === false, ATTN-NNN id format) as an equivalent of {status: 'pending'}, BUT emit a structure-integrity finding so the schema-drift is surfaced to the operator/tinker via the next integrity run.",
+    "Consider whether the right place is Mode 2b at all, or whether the integrity agent should pre-walk attention-inbox.json on every run and synthesize ATT-<ISO> records from any non-canonical entries before Mode 2b reads.",
+    "Mode 2b read path uses node JSON.parse + filter — keep the helper script extraction pattern (PROP-050/066/080/081/082/084 precedent) rather than burying tolerance logic in a bash heredoc inside the prompt."
+  ],
+  "deliverable": "A proposal JSON in monitor/tinker/proposals/ with: (1) target file change list, (2) the divergent-record translator's exact behavior (what gets accepted, what gets flagged), (3) the integrity surface (where the finding is written), (4) a test fixture demonstrating that an ATTN-NNN/resolved:false record routes through Mode 2b as if it were ATT-<ISO>/status:pending AND produces an integrity finding. As with PROP-080/081/082/084, propose-only — operator will review before implementation.",
+  "background_artifacts": {
+    "baby_finding": "monitor/analyst/expansions/EXP-605-baby-batch-1.json",
+    "baby_proposal": "monitor/analyst/issue-proposals/proposal-ISS-2661-resolution.json",
+    "decider_md_step_a": "monitor/prompts/decider.md (Step A, ~line 810)",
+    "analyst_md_mode_2b": "monitor/prompts/analyst.md (Mode 2b section)",
+    "two_fold_defense_precedents": ["PROP-076 + PROP-080 (Mech-A bypass)", "PROP-081 (required-artifacts)", "PROP-077 + PROP-078 (FUSE-revert race)"]
+  },
+  "not_in_scope": [
+    "Investigating WHY decider improvised — that's a separate question (no obvious pressure trigger, decider.md Step A schema is documented correctly). Worth holding aside as an open question but not blocking this hardening.",
+    "Fixing the Mode 6 archive-before-remove gap — already addressed by the read-only guard in analyst.md committed alongside this directive."
+  ]
+}

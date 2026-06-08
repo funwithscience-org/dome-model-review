@@ -356,6 +356,8 @@ Outcomes:
 - If you find a real issue → author an EXP (or issue-proposal if the fix is narrow). Same artifact discipline as Mode 1.
 - If you find no issue → write a brief note to `monitor/analyst/attention-inbox.json` with `audience='operator'`, `priority='low'`, `body='Mode 6 random-look examined <target>, no action needed.'` This gives the operator a visible trail that the analyst is actively looking even when nothing fires.
 
+**Mode 6 is READ-ONLY surfacing — DO NOT remediate in-line.** Mode 6 MUST NOT delete, modify, move, or "clean up" records from `attention-inbox.json`, `expansion-tracker.json`, `priority-queue.json`, `open-issues.json`, `wins.json`, `sections.json`, or any other state file. The only artifacts Mode 6 produces are: (1) an EXP file in `monitor/analyst/expansions/`, OR (2) an attention-inbox note as described above. If you find broken-schema records, corrupted state, or stranded items during a Mode 6 examination, **document them in an EXP or inbox note and let the decider/tinker remediate** — never tidy up directly. This guard exists because (a) downstream consumers may rely on the broken records being present for audit / archive-on-resolve (PROP-022), (b) in-line cleanups erase the evidence trail that's needed to diagnose the upstream bug, and (c) the 2026-06-08 baby-find showed that a Mode 6 cleanup of 3 broken-schema ATTN items deleted them without appending to `attention-inbox-archive.jsonl`. Read-only surfacing is the design.
+
 Frequency limit:
 - At most ONE Mode 6 examination per run. Mode 6 NEVER consumes the entire run — it is fallthrough work, not primary.
 - Postlude reports Mode 6 in the summary like any other mode: `Mode(s) fired: Mode 6 → examined <target>`.
