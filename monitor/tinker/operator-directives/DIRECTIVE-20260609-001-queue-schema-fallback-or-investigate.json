@@ -1,0 +1,27 @@
+{
+  "directive_id": "DIRECTIVE-20260609-001",
+  "for": "tinker",
+  "status": "pending",
+  "priority": "medium",
+  "created_at": "2026-06-09T05:30:00.000Z",
+  "created_by": "operator",
+  "title": "Investigate verify's 2026-06-09T02:37Z queue-schema complaint — real schema-drift or verify-dispatcher false-flag?",
+  "context": "Curmudgeon-verify's 2026-06-09T02:37Z run (latest-verify-summary.txt) reported that qid=511 (target=WIN-013) and qid=512 (target=WIN-011) were 'not eligible this run' because 'both have target=... but no target_id field in the queue schema, so the dispatcher's Mode A gate (which reads item.target_id) found no matching review files.' That would be the same class of failure as DIRECTIVE-20260608-002 (decider writing attention-inbox items with ATTN-NNN/resolved instead of ATT-<ISO>/status:pending) — a decider schema-improvisation against the canonical priority-queue item schema.\\n\\nHOWEVER: the current state of monitor/curmudgeon/priority-queue.json (commit c08b533, pushed by decider's 2026-06-09T04:03Z run, ~85 min after the verify run) shows qid 511 with target_id=WIN-011 (not WIN-013) and qid 512 with target_id=part6-6.15 (not WIN-011). The current items have proper target_id, no `target` field, no schema drift. So either: (a) the verify ran on a now-superseded queue snapshot where decider's earlier 06-08 16:22 run (commit 6dc8cf9) had pushed qid 511/512 with broken schema, and decider's 06-09 04:03 run popped+replaced them; (b) verify's dispatcher misread the queue file and emitted a false 'no target_id' complaint when the items were actually fine; (c) some other transient state.",
+  "task": "Investigate which of (a)/(b)/(c) is true and act accordingly.",
+  "investigation_steps": [
+    "1. git show 6dc8cf9:monitor/curmudgeon/priority-queue.json — inspect what verify actually saw at 02:37Z (the queue state at commit 6dc8cf9, which was the most recent commit before verify's 02:37 run). If qid 511/512 in that snapshot have target='WIN-013'/'WIN-011' and no target_id, case (a) is confirmed.",
+    "2. If case (a): decider's 06-08 16:22 run pushed broken-schema items, and decider's 06-09 04:03 run pushed proper-schema items at the same qid numbers. Both are bugs: (i) the original broken-schema push is a decider schema-improvisation against monitor/prompts/reference/DATA-SCHEMAS.md § priority-queue.json item schema; (ii) re-using qid 511/512 violates qid uniqueness (or the prior items were popped and the next_queue_id was rewound). Both deserve a fix.",
+    "3. If case (b): verify-dispatcher's Mode A gate has a bug — it's reading queue items and erroneously concluding target_id is absent when it isn't. Fix the dispatcher's eligibility check in monitor/prompts/curmudgeon-verify.md.",
+    "4. If case (c): file findings as appropriate and report back."
+  ],
+  "if_case_a_followup": "DIRECTIVE-20260608-002 commissioned a structural layer-2 hardening of analyst Mode 2b to accept attention-inbox broken-schema records as a fallback. If priority-queue items are now ALSO being written with broken schema by decider, the right answer might be a generalized 'decider-write-site schema lint' that runs at decider commit time, NOT per-surface fallbacks at each reader. Three same-class events in two days (ATTN, qid 511, qid 512) suggests the failure is systemic to decider, not surface-specific. Worth proposing a meta-fix.",
+  "if_case_b_followup": "Single dispatcher bug — straightforward fix to curmudgeon-verify.md. No directive amendment needed.",
+  "background_artifacts": {
+    "verify_summary": "monitor/curmudgeon/latest-verify-summary.txt (mtime 2026-06-09T03:43Z)",
+    "queue_at_verify_time": "git show 6dc8cf9:monitor/curmudgeon/priority-queue.json",
+    "queue_now": "monitor/curmudgeon/priority-queue.json (commit c08b533)",
+    "related_directive": "DIRECTIVE-20260608-002-mode2b-broken-schema-fallback.json (attention-inbox surface)",
+    "schema_doc": "monitor/prompts/reference/DATA-SCHEMAS.md § priority-queue.json"
+  },
+  "deliverable": "Either: (a) PROP-NNN proposal for the decider-side schema-lint + qid-uniqueness fix; (b) prompt edit to curmudgeon-verify.md fixing the dispatcher false-flag; (c) status='superseded' close with explanation. Propose-only; operator integrates after review."
+}

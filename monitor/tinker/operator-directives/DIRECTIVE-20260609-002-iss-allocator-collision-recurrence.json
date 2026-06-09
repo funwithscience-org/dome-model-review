@@ -1,0 +1,31 @@
+{
+  "directive_id": "DIRECTIVE-20260609-002",
+  "for": "tinker",
+  "status": "pending",
+  "priority": "medium",
+  "created_at": "2026-06-09T05:35:00.000Z",
+  "created_by": "operator",
+  "title": "ISS-2663 and ISS-2664 duplicate-ID allocations 2026-06-08 — PROP-063 should have prevented these but didn't",
+  "context": "Integrity's 2026-06-09T01:16Z run flagged: 'ISS-2663 + ISS-2664 duplicate IDs — tracked_under: PROP-063. Two new allocator collisions on 2026-06-08 (two decider runs allocated same IDs to different issues). ISS-2664[0] also missing fixed_at/fixed_by. PROP-063 retroactive dedup umbrella applies.' Two new collisions in a single day suggests PROP-063 is either: (a) a retroactive dedup pass (cleans up collisions after the fact) but NOT a prevent-at-allocation guard; (b) a prevention mechanism that's silently failing under some condition; or (c) something else.",
+  "task": "Determine why two new ISS-ID collisions landed on 2026-06-08 despite PROP-063 being in place, and propose a fix that genuinely prevents future collisions at allocation time.",
+  "investigation_steps": [
+    "1. Read PROP-063 (monitor/tinker/proposals/PROP-063*.json) — understand whether it's prevention or retroactive dedup. If retroactive, this directive is well-founded: we need a prevention layer.",
+    "2. Identify the ISS allocator. Most likely candidates: decider's intake step that assigns next_iss_id, or some helper script. Check open-issues.json for a next_iss_id field or equivalent.",
+    "3. Reproduce the failure mode. Two concurrent decider runs reading next_iss_id, both seeing the same value, both writing back — classic check-then-write race. Look at decider lastRunAt timestamps on 2026-06-08 — were there overlapping runs?",
+    "4. Propose a true prevention. Options: (i) file-locking around allocation; (ii) compare-and-swap via git (push with --force-with-lease semantics); (iii) atomic allocation via a script that reads-then-writes in a single shell pipeline; (iv) shift to UUID/timestamp-based IDs so collisions are mathematically impossible. Each has trade-offs vs. PROP-063's design constraints.",
+    "5. Also fix ISS-2664[0] missing fixed_at/fixed_by — separately track as low-severity finding."
+  ],
+  "constraints": [
+    "Don't break PROP-063's retroactive dedup behavior — the prevention layer should be ADDITIVE, not a replacement.",
+    "The pipeline is currently working (overnight runs cleanly produced EXP-608 + 7 SEC patches). Don't introduce a fix that requires stopping the pipeline.",
+    "Keep the fix simple. Two collisions in 24h is bad but not catastrophic — a complex fix that takes weeks to implement is worse than a simple one that takes days."
+  ],
+  "background_artifacts": {
+    "integrity_summary": "monitor/integrity/latest-integrity-summary.txt (mtime 2026-06-09T02:18Z)",
+    "integrity_report": "monitor/integrity/report-2026-06-09T01-16.json",
+    "prop_063": "monitor/tinker/proposals/PROP-063*.json (locate via filename)",
+    "open_issues_now": "monitor/decisions/open-issues.json",
+    "closed_issues_now": "monitor/decisions/closed-issues.json (for the duplicated ISS-2663/ISS-2664 entries)"
+  },
+  "deliverable": "A PROP-NNN proposal in monitor/tinker/proposals/ with the diagnosed root cause and proposed prevention. Propose-only; operator integrates after review."
+}
