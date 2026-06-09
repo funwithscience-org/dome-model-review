@@ -1,0 +1,150 @@
+{
+  "id": "PROP-086",
+  "title": "Mode 2b broken-schema fallback: shared normalize-attention-inbox.js translator + integrity schema-drift surface (structural layer-2 of the two-fold defense for attention-inbox schema drift)",
+  "status": "proposed",
+  "authored_by": "tinker",
+  "authored_at": "2026-06-09T02:45:00Z",
+  "directive": "DIRECTIVE-20260608-002",
+  "propose_only": true,
+  "operator_review_required": true,
+  "problem_statement": "On 2026-06-08 baby's 04:20Z verification run (EXP-605) confirmed the decider improvised against the documented attention-inbox schema, writing {id: 'ATTN-NNN', resolved: false, subject, detail} instead of the canonical {id: 'ATT-<ISO-timestamp>', status: 'pending', reason} schema documented in decider.md Step A (lines ~810-836). The analyst's Mode 2b dispatcher filters strictly on status === 'pending' and reads target_*/reason/related_issues by name, so the three divergent records (ATTN-001/002/003) were silently stranded and accumulated unseen until analyst Mode 6's random-look pass (2026-06-07T23:15Z) noticed the orphans. This is the same failure class addressed three times before with a two-fold (prompt-layer + structural-layer) defense: Mech-A bypass (PROP-076 + PROP-080), required-artifacts (PROP-081), FUSE-revert race (PROP-077 + PROP-078). Layer-1 (decider.md Step A DO-NOT-DEVIATE prose) was applied 2026-06-08. This proposal commissions the structural layer-2.",
+  "objective": "Harden the read path so a future decider (or any writer) schema-improvisation event does NOT silently strand attention items, while LOUDLY surfacing the drift to the operator rather than masking it.",
+  "design_decision_where": {
+    "question_from_directive": "Should the tolerance live in analyst Mode 2b, or should the integrity agent pre-walk attention-inbox.json and synthesize canonical records before Mode 2b reads?",
+    "chosen": "Option C — a single shared helper script consumed by BOTH surfaces (analyst Mode 2b for anti-stranding, integrity for drift-surfacing), read/normalize-only (does not rewrite the live file).",
+    "alternatives_considered": [
+      {
+        "option": "A — tolerance only in analyst Mode 2b",
+        "pro": "Anti-stranding is immediate: the analyst's next run sees the divergent record with no dependency on integrity's daily cadence. (A record written at 06:00Z would otherwise wait until the next integrity run.)",
+        "con": "Analyst-only means the operator-visible drift signal has no durable home; the schema drift would be handled but never surfaced, which violates directive constraint 'emit a structure-integrity finding so the schema-drift is surfaced'.",
+        "verdict": "Insufficient alone — solves stranding, not surfacing."
+      },
+      {
+        "option": "B — integrity pre-walk synthesizes canonical records, rewrites attention-inbox.json, then Mode 2b reads only canonical records",
+        "pro": "Integrity is the natural operator-surfacing surface; analyst needs no change.",
+        "con": "(1) Latency hole: integrity is daily (~02:00Z); a divergent record written at 06:00Z stays invisible to Mode 2b for up to ~20h unless Mode 2b ALSO tolerates it. (2) attention-inbox.json is FUSE-canonical / workspace-owned and the analyst is its writer; making integrity a SECOND writer to it adds a multi-writer race to a file the ownership table currently keeps single-writer. (3) Auto-rewriting the divergent record on disk would self-heal silently and weaken the recurrence signal — directly against directive constraint 1 (do not mask the bug).",
+        "verdict": "Rejected as sole mechanism — introduces a latency hole AND a multi-writer surface AND risks masking."
+      },
+      {
+        "option": "C — shared helper, both surfaces, read-only (CHOSEN)",
+        "detail": "One translator script is the single source of truth for the tolerated-divergence rules. Analyst Mode 2b calls it to get a dispatch list (immediate anti-stranding, no cadence dependency). Integrity calls the SAME script in a read-only check and emits a schema_drift finding whenever the translator had to map (or could not map) a record (durable operator surface). The helper never rewrites attention-inbox.json; the on-disk record self-heals only through the analyst's existing archive-on-resolve write path when the item is actually processed. The integrity finding therefore persists every run until the inbox is clean — which is the intended LOUD recurrence signal, not a masked one.",
+        "verdict": "Chosen — closes stranding immediately, surfaces drift durably, adds no new writer to the FUSE-canonical file, and refuses arbitrary keys (constraint 1)."
+      }
+    ]
+  },
+  "translator_behavior": {
+    "helper": "monitor/scripts/normalize-attention-inbox.js (NEW)",
+    "export": "normalizeAttentionInbox(rawArray) -> { dispatch: [...], drift: [...], unrecognized: [...] }",
+    "cli": "node monitor/scripts/normalize-attention-inbox.js <path-to-attention-inbox.json> prints { pending_count, drift_count, unrecognized_count, drift, unrecognized } as JSON to stdout. Both callers read what they need from the same invocation.",
+    "principle": "Recognize ONLY the specific observed divergence pattern. Anything outside that pattern is NOT silently accepted — it is routed to unrecognized[] and produces a higher-severity finding. This is the explicit guard against directive constraint 1 (no blanket key tolerance).",
+    "accepted_as_pending_or_resolved": {
+      "id_divergence": "id matching /^ATTN-\\d+$/ is accepted (the exact observed format). A canonical synthesized id is attached for archive traceability: synth_id = 'ATT-' + (record.pushed_at || record.created_at || file_mtime_ISO) + '-normalized-from-' + rawId. The raw record is preserved on the normalized object as _raw and flagged _schema_drift: true. The original rawId is preserved as _raw_id.",
+      "status_divergence": "record lacks a string status but has resolved === false  ->  status: 'pending'; resolved === true  ->  status: 'resolved'. (Only the boolean resolved field observed in the ATTN batch is recognized.)",
+      "content_divergence": "record lacks reason but has subject and/or detail and/or details  ->  reason: [subject, detail || details].filter(Boolean).join(' — '). (subject/detail/details are the exact alternate field names observed.)",
+      "passthrough": "records that already carry a string status (canonical) pass through untouched and produce NO drift entry."
+    },
+    "routed_to_unrecognized_NOT_dispatched": [
+      "record with neither a string status NOR a boolean resolved field (cannot infer pending vs resolved)",
+      "record with no reason AND no subject/detail/details (no dispatchable content)",
+      "record whose id matches neither /^ATT-/ nor /^ATTN-\\d+$/ (unknown id shape)"
+    ],
+    "dispatch_semantics": "dispatch[] = canonical-passthrough records with status==='pending'  PLUS  recognized-drift records mapped to status==='pending'. Resolved records (canonical or recognized-drift resolved:true) are excluded from dispatch exactly as today. unrecognized[] records are NEVER added to dispatch — they are genuinely stranded by design and MUST be loud (major finding) so a human looks.",
+    "no_live_file_write": "The helper is pure (no fs writes to attention-inbox.json). On-disk normalization happens only when the analyst processes a recognized-drift item and writes the canonical-shaped record (_schema_drift normalized form) to attention-inbox-archive.jsonl via the EXISTING Mode 2b archive-on-resolve path, then removes the raw record. No new writer is introduced."
+  },
+  "integrity_surface": {
+    "where": "monitor/prompts/structure-integrity.md — NEW read-only check 'attention_inbox_schema'.",
+    "behavior": "Each integrity run invokes monitor/scripts/normalize-attention-inbox.js against monitor/analyst/attention-inbox.json. If drift_count > 0 OR unrecognized_count > 0, emit an issues_found[] finding.",
+    "finding_shape": {
+      "category": "schema_drift",
+      "severity": "moderate when only drift_count > 0 (recognized, auto-handled by analyst); major when unrecognized_count > 0 (item genuinely stranded, needs a human)",
+      "location": "monitor/analyst/attention-inbox.json",
+      "description": "Names the count and the suspected writer: e.g. 'N attention-inbox records use a non-canonical schema (ATTN-NNN / resolved / subject+detail). Writer to check: decider.md Step A (~line 810). M recognized-and-translated, K unrecognized-and-stranded.'",
+      "suggested_fix": "Confirm the writer (decider Step A) emits canonical {id:'ATT-<ISO>', status:'pending', reason}. Recognized-drift items will drain via analyst Mode 2b; unrecognized items require manual reshaping into canonical form.",
+      "tracked_under": "annotate ISS-2661 if still open (per integrity's existing tracked_under loop, to avoid spawning a duplicate ISS each run). If ISS-2661 is closed and drift recurs, create ONE new ISS category 'schema_drift' severity per above (mirrors the single-ISS id_integrity_finding pattern), tracked thereafter."
+    },
+    "report_checks_addition": "Add an attention_inbox_schema block to the integrity report checks{} object: { status: 'pass|warn|fail', drift_count, unrecognized_count, details }. status='warn' on drift-only, 'fail' on any unrecognized.",
+    "recurrence_is_intended": "Because the helper does not rewrite the live file, the finding fires every run until the inbox is clean. That persistent signal is the loud recurrence indicator the directive's constraint 1 wants — not a masked auto-heal."
+  },
+  "files_touched": [
+    {
+      "file": "monitor/scripts/normalize-attention-inbox.js",
+      "change": "NEW (~70 LOC). The translator helper described above. Pure function + CLI. Fail-open: on read/parse error of the inbox, prints {pending_count:0, drift_count:0, unrecognized_count:0, drift:[], unrecognized:[]} and exits 0 so it never blocks a dispatch.",
+      "ownership": "git-owned source code. Add to workspace-sync.md NEVER_PUSH list AND build.js OWNERSHIP map ('monitor/scripts/normalize-attention-inbox.js': 'git'), same classification as audit-rewrite.js / push-via-api.js / sync-workspace-step4c.js."
+    },
+    {
+      "file": "monitor/prompts/analyst.md",
+      "change": "Mode 2b (~lines 234-236): replace the inline `node -e` pending-count filter with a call to normalize-attention-inbox.js; dispatch against dispatch[]. Add one sentence: recognized-drift items are processed normally and, on resolve, written to attention-inbox-archive.jsonl in canonical form via the existing archive-on-resolve path; unrecognized items are LEFT IN PLACE (not dispatched) for integrity to surface — analyst does not attempt to repair unknown shapes."
+    },
+    {
+      "file": "monitor/prompts/structure-integrity.md",
+      "change": "Add the attention_inbox_schema check (invoke helper, emit schema_drift finding), the checks{} report block, and a one-line severity-guidelines entry (schema_drift: moderate drift-only / major if any unrecognized)."
+    },
+    {
+      "file": "monitor/prompts/reference/DATA-SCHEMAS.md",
+      "change": "Under the attention-inbox.json schema section, add a 'Tolerated read-side divergences' note: readers MUST normalize via normalize-attention-inbox.js; the canonical schema remains the ONLY permitted WRITE schema (writers must not diverge — the read-side tolerance is a safety net, not a license)."
+    },
+    {
+      "file": "monitor/scripts/__fixtures__/attention-inbox-drift.json",
+      "change": "NEW test fixture (see test_fixture below). git-owned (NEVER_PUSH)."
+    },
+    {
+      "file": "test.js",
+      "change": "Add a test that loads the fixture, runs normalizeAttentionInbox, and asserts the dispatch/drift/unrecognized partition + the integrity finding-builder output (see test_fixture.assertions)."
+    },
+    {
+      "file": "CLAUDE.md",
+      "change": "Note the new git-owned script in the File Ownership prose alongside push-via-api.js / audit-rewrite.js; one line referencing PROP-086."
+    }
+  ],
+  "test_fixture": {
+    "path": "monitor/scripts/__fixtures__/attention-inbox-drift.json",
+    "content": [
+      {
+        "id": "ATTN-001",
+        "resolved": false,
+        "subject": "WIN-042 evidence patched",
+        "detail": "decider edited detail_evidence per a curmudgeon finding; re-check the science"
+      },
+      {
+        "id": "ATT-2026-06-08T12:00:00.000Z",
+        "status": "pending",
+        "target_type": "section",
+        "target_id": "SEC-3.2",
+        "reason": "canonical record that must pass through untouched",
+        "pushed_by": "decider",
+        "pushed_at": "2026-06-08T12:00:00.000Z",
+        "related_issues": ["ISS-9001"]
+      },
+      {
+        "id": "ATT-2026-06-07T23:15:48.452Z-mode6",
+        "status": "resolved",
+        "reason": "already-resolved canonical record; excluded from dispatch",
+        "resolved_at": "2026-06-07T23:20:00.000Z"
+      },
+      {
+        "id": "WEIRD-7",
+        "note": "no status, no resolved, no reason/subject/detail — genuinely unparseable"
+      }
+    ],
+    "assertions": [
+      "dispatch[] length === 2: the canonical pending SEC-3.2 record AND the translated ATTN-001 (now status==='pending', reason==='WIN-042 evidence patched — decider edited detail_evidence per a curmudgeon finding; re-check the science').",
+      "the translated ATTN-001 dispatch object carries _schema_drift===true, _raw_id==='ATTN-001', and a synthesized id matching /^ATT-.*-normalized-from-ATTN-001$/.",
+      "drift[] length === 1 and references ATTN-001 only.",
+      "unrecognized[] length === 1 and references WEIRD-7 only; WEIRD-7 is NOT present in dispatch[].",
+      "the resolved canonical record is excluded from dispatch[] (length stays 2) and produces NO drift entry.",
+      "feeding {drift, unrecognized} to the integrity finding-builder yields exactly one finding with category==='schema_drift', severity==='major' (because unrecognized_count===1), location==='monitor/analyst/attention-inbox.json'.",
+      "a second fixture variant WITHOUT the WEIRD-7 record yields a finding with severity==='moderate' (drift-only)."
+    ]
+  },
+  "constraints_compliance": {
+    "no_arbitrary_key_acceptance": "Only the exact observed divergences (ATTN-NNN id, boolean resolved, subject/detail/details) are recognized. Everything else routes to unrecognized[] and fires a MAJOR finding — the bug is caught, not masked.",
+    "fallback_emits_integrity_finding": "Yes — every translated record produces a schema_drift finding on the next integrity run; unrecognized records escalate to major.",
+    "right_place_considered": "design_decision_where documents Mode-2b-only vs integrity-pre-walk vs the chosen shared-helper-both-surfaces design, with the latency-hole / multi-writer / masking trade-offs.",
+    "helper_script_extraction": "Tolerance logic lives in monitor/scripts/normalize-attention-inbox.js, not in a bash heredoc inside the prompt — matching PROP-050/066/080/081/082/084 precedent."
+  },
+  "open_question_out_of_scope": {
+    "why_decider_improvised": "Per directive not_in_scope: WHY the decider diverged despite a correctly-documented Step A schema is held aside as an open question (no obvious pressure trigger). Layer-1 (Step A DO-NOT-DEVIATE prose) was applied 2026-06-08; this proposal is the layer-2 structural backstop and does not depend on the root-cause answer.",
+    "mode6_archive_gap": "The separate Mode 6 archive-before-remove gap (ATTN-001/002/003 deleted without archiving) is per directive ALREADY addressed by the analyst.md Mode 6 read-only guard committed alongside DIRECTIVE-20260608-002; not re-addressed here."
+  },
+  "verification_pattern": "After implementation: (1) `node test.js 2>&1 | grep -i attention` shows the new test passing; (2) `node monitor/scripts/normalize-attention-inbox.js monitor/scripts/__fixtures__/attention-inbox-drift.json` prints drift_count:1, unrecognized_count:1; (3) grep analyst.md Mode 2b for the helper invocation (inline node -e pending filter gone); (4) grep structure-integrity.md for 'attention_inbox_schema'."
+}
