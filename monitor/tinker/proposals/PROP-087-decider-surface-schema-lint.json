@@ -1,0 +1,68 @@
+{
+  "prop_id": "PROP-087",
+  "title": "Decider-write-site schema lint: pre-push validation of priority-queue, attention-inbox, and open-issues record shapes (+ qid-reuse guard)",
+  "status": "proposed",
+  "authored_by": "tinker-2026-06-10T02-41",
+  "authored_at": "2026-06-10T02:41:00Z",
+  "directive": "DIRECTIVE-20260609-001",
+  "priority": "medium-high",
+  "problem": "Four decider schema-improvised records landed in ~2 days across two surfaces despite canonical templates AND explicit prompt-level warnings: (1) attention-inbox items written as ATTN-NNN/resolved instead of ATT-<ISO>/status:pending (DIRECTIVE-20260608-002, 3 stranded items); (2) priority-queue qids 510/511/512 pushed by decider's 2026-06-09T00:19:46Z run (commit 3d9675d) with improvised field names — target/type/priority/added_at/added_by instead of the canonical target_id/target_type/pushed_at/pushed_by/context_hints — AND without bumping next_id (left at 510 while items 510-512 were live). The improvised queue push happened ~8h AFTER the 'SCHEMA — DO NOT DEVIATE' warning was added to decider.md line 812 on 2026-06-08. Prompt exhortation is empirically insufficient for this failure class — the same lesson as PROP-076→PROP-080→PROP-083 (close-records lint, where the LLM bypassed a prompt-level gate three times before the hook made bypass impossible).",
+  "investigation_summary": {
+    "directive_question": "Was verify's 2026-06-09T02:37Z 'no target_id on qid 511/512' complaint real schema-drift (case a), a verify-dispatcher false-flag (case b), or transient (case c)?",
+    "answer": "Case (a) — real decider schema-drift — with one provenance correction: the directive guessed the broken items came from decider's 06-08T16:22 run (commit 6dc8cf9), but 6dc8cf9's queue is clean (qids 505-509, canonical schema). The broken items were pushed by decider's 2026-06-09T00:19:46Z run (commit 3d9675d), which was HEAD when verify ran at 02:37Z. Verify's dispatcher behaved CORRECTLY: its Mode A gate reads item.target_id, which was genuinely absent. No change to curmudgeon-verify.md is needed.",
+    "evidence": [
+      "git show 3d9675d:monitor/curmudgeon/priority-queue.json — qids 510/511/512 carry {target, type, priority, added_at, added_by}, no target_id/target_type/pushed_at; top-level next_id stuck at 510.",
+      "git show 6dc8cf9:monitor/curmudgeon/priority-queue.json — qids 505-509 all canonical; no 511/512 present. Directive's case-a commit attribution corrected.",
+      "priority-queue-archive.jsonl 2026-06-09T04:14:14.665Z — three entries popped_by 'decider-queue-corruption-cleanup', pop_reason 'purged_corrupted_entry_undefined_target'.",
+      "git diff 3d9675d c08b533 — decider's 04:03Z run purged the broken items, then pushed NEW, different work items REUSING qids 511 (WIN-011/EXP-608 deep-attack) and 512 (part6-6.15 verification), setting next_id=513.",
+      "Archive now contains two generations of queue_id 511 and 512 (broken gen popped 04:14Z; replacement gen popped 06:13Z and 10:21Z respectively) — qid uniqueness violated; audit consumers must dedupe by (queue_id, pushed_at).",
+      "Dropped work: broken qid 511's intent was 'verify patch from WIN-013.c10.json (narrowed kappa parenthetical, removed WIN-012 over-attribution)'. After the purge it was never re-pushed: reviews/ has no WIN-013 review after c10 (2026-06-08T22:43Z) and no live/archived queue item covers it. The other two intents were rescued incidentally (qid 510's SEC-part6-6.14 verify got review .c2; WIN-011 got deeper coverage via the EXP-608 re-push)."
+    ],
+    "secondary_damage": [
+      "qid 511/512 reuse — permanent duplicate qids in append-only archive (documented, not rewritten).",
+      "WIN-013.c10 patch-verify intent silently dropped — remediation HNOTE filed (see remediation_actions).",
+      "next_id desync at push time (510 while 510-512 live) — the proximate trigger for the 04:03Z run's collision-prone recovery."
+    ]
+  },
+  "why_producer_side_lint_not_reader_fallbacks": "DIRECTIVE-20260608-002 commissioned a reader-side fallback for attention-inbox; the directive's own follow-up note anticipated that a THIRD same-class event would argue for a generalized producer-side fix instead. That threshold is met (now four events). Reader fallbacks multiply per-surface complexity, normalize broken records, and mask the producer bug; a single push-time lint at the producer makes the bad write impossible to publish. Same philosophy as PROP-065 ('the deny is the primary defense, the sentinel is the canary') and the PROP-080/083 hook lineage.",
+  "proposal": {
+    "changes": [
+      {
+        "id": "C1",
+        "what": "New script monitor/scripts/lint-decider-surfaces.js",
+        "detail": "Diff-aware pre-push lint mirroring lint-close-records.js mechanics (compare local HEAD vs origin/main; validate only NEW or MODIFIED records — legacy entries grandfathered). Checks: (a) priority-queue.json live items: required fields queue_id:int, target_type:string, target_id:string, class in {verification, deep-attack, holistic, rewrite-verify}, reason:string, pushed_by:string, pushed_at:ISO-parseable; FORBIDDEN improvised keys {target, type, added_at, added_by, priority} at item level (the observed drift vocabulary); intra-queue queue_id uniqueness; next_id > max(live queue_id); newly-pushed queue_ids must NOT already exist in priority-queue-archive.jsonl (qid-reuse guard). (b) attention-inbox.json new records: id matches ^ATT-<ISO-timestamp>, status field present with legal value, field names per decider.md:812 canonical schema (target_type/target_id/reason/pushed_by/pushed_at/related_issues; reject resolved/subject/detail/details/ATTN-NNN). (c) open-issues.json: ISS id uniqueness within the file (additive partial guard; the allocation-race root cause remains DIRECTIVE-20260609-002 / PROP-063-successor scope). Exit 0 = pass, exit 1 = block push with per-violation explanation and a pointer to the canonical template in decider.md 'How to push items onto the queue'."
+      },
+      {
+        "id": "C2",
+        "what": "Chain the lint into decider's existing PROP-083 idempotent pre-push hook",
+        "detail": "Update the PROP-083 hook block in decider.md (~line 105) so the installed hook runs BOTH lints: lint-close-records.js then lint-decider-surfaces.js (sh: node A && exec node B). Update the idempotency grep to require both script names so existing clones get the upgraded hook on next run. --no-verify remains FORBIDDEN; when the lint blocks, the fix is to repair the record using the canonical template, never to strip or edit the hook."
+      },
+      {
+        "id": "C3",
+        "what": "Classify the new script",
+        "detail": "Add monitor/scripts/lint-decider-surfaces.js as git-owned source code in build.js OWNERSHIP and workspace-sync.md NEVER_PUSH, and note it in CLAUDE.md File Ownership rules — same classification as push-via-api.js / audit-rewrite.js / lint-close-records.js."
+      },
+      {
+        "id": "C4",
+        "what": "Decider prompt cross-reference",
+        "detail": "One-paragraph note in decider.md 'How to push items onto the queue' and in the attention-inbox SCHEMA block (line ~812): pushes that violate the canonical shapes will be mechanically blocked at push time by lint-decider-surfaces.js; the canonical templates are the only supported write paths."
+      }
+    ],
+    "explicitly_out_of_scope": [
+      "ISS allocation-time race prevention (two concurrent deciders allocating the same ISS id) — that is DIRECTIVE-20260609-002's deliverable. C1's uniqueness check catches within-file duplicates at push time, which is partial, additive coverage only.",
+      "Rewriting the duplicate-qid archive entries — archive is append-only; the two generations of 511/512 stay as historical record. Consumers dedupe by (queue_id, pushed_at), which PROP-009r2 shadow-log already does.",
+      "Any change to curmudgeon-verify.md — case (b) was disconfirmed; the verify dispatcher is working as designed."
+    ]
+  },
+  "remediation_actions": [
+    "HNOTE-TINKER-REPUSH-WIN013-VERIFY-001 filed to monitor/decisions/human-notes.json (dual-written FUSE + clone per CLAUDE.md Human Notes Rule): decider should re-push the dropped WIN-013 patch-verify (class=verification, target win-detail-rewrite/WIN-013, verifying the WIN-013.c10 patch: narrowed kappa parenthetical + WIN-012 over-attribution removal)."
+  ],
+  "verification_pattern": "node monitor/scripts/lint-decider-surfaces.js --replay 3d9675d must exit 1 flagging qids 510/511/512 (forbidden keys target/type/added_at/added_by/priority; missing target_id/target_type/pushed_at; next_id 510 <= max live qid 512). Replay of c08b533's push must exit 1 on qid-reuse (511/512 already in archive). Lint at current HEAD must exit 0. After deploy: zero broken-schema queue/inbox records in integrity reports for 14 consecutive days AND no duplicate queue_id in archive entries with popped_at after deploy date.",
+  "estimated_effort": "Script ~150-200 lines (clone lint-close-records.js skeleton); decider.md hook-block edit ~10 lines; build.js OWNERSHIP + workspace-sync.md NEVER_PUSH one line each; CLAUDE.md note one line. Single operator-reviewed integration commit.",
+  "risks": [
+    "False-positive blocks on legitimate operator direct pushes (operator pushes also flow through clones with hooks only if operator installs them — operator pushes are NOT gated by this hook, so no operator friction; the lint binds only decider's clone).",
+    "A lint bug could block all decider pushes — mitigation: lint validates only new/changed records, exits 0 on parse failure of ARCHIVE (warn-only there), and the operator can hotfix the script via direct push since the hook lives only in decider's clone.",
+    "Drift vocabulary is enumerated (target/type/added_at/added_by/priority) — future improvisations may use new field names; the required-fields check (not the forbidden-keys check) is the primary defense, forbidden-keys is belt-and-suspenders."
+  ],
+  "operator_decision": null
+}
