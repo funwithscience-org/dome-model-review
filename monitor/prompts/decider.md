@@ -111,16 +111,20 @@ fi
 # hole: whenever the clone exists, ensure the hook is present, executable,
 # and points at lint-close-records. Safe to re-run. --no-verify is FORBIDDEN.
 if [ -d "${CLEAN_CLONE}/.git" ]; then
-  if [ ! -x "${CLEAN_CLONE}/.git/hooks/pre-push" ] || ! grep -q 'lint-close-records' "${CLEAN_CLONE}/.git/hooks/pre-push" 2>/dev/null; then
+  if [ ! -x "${CLEAN_CLONE}/.git/hooks/pre-push" ] || ! grep -q 'lint-decider-surfaces' "${CLEAN_CLONE}/.git/hooks/pre-push" 2>/dev/null; then
     cat > "${CLEAN_CLONE}/.git/hooks/pre-push" <<'HOOK'
 #!/bin/sh
-# PROP-080: structural enforcement of PROP-076 lint-close-records.
-exec node "$(git rev-parse --show-toplevel)/monitor/scripts/lint-close-records.js"
+# PROP-080/083: PROP-076 lint-close-records (close-record audit).
+# PROP-087/089: lint-decider-surfaces (queue + attention-inbox + ISS schema).
+# Both run; refuse the push if either fails. --no-verify is FORBIDDEN.
+REPO="$(git rev-parse --show-toplevel)"
+node "${REPO}/monitor/scripts/lint-close-records.js" || exit 1
+exec node "${REPO}/monitor/scripts/lint-decider-surfaces.js"
 HOOK
     chmod +x "${CLEAN_CLONE}/.git/hooks/pre-push"
-    echo "PRELUDE: PROP-083 pre-push hook (re)installed in ${CLEAN_CLONE}"
+    echo "PRELUDE: PROP-083/087/089 pre-push hook (re)installed in ${CLEAN_CLONE}"
   else
-    echo "PRELUDE: PROP-083 pre-push hook present and current"
+    echo "PRELUDE: PROP-083/087/089 pre-push hook present and current"
   fi
 fi
 ```

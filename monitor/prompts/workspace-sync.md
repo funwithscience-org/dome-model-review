@@ -242,6 +242,15 @@ NEVER_PUSH=(
   # is operator-curated; git-owned and edit-via-clone-only.
   'monitor/scripts/sync-workspace-step4c.js'
   'monitor/scripts/sync-workspace-step4c.config.json'
+  # PROP-087/089 (2026-06-10): lint-decider-surfaces.js is the pre-push lint
+  # script for decider's write surfaces (priority-queue, attention-inbox,
+  # open-issues + cross-file ISS uniqueness); allocate-iss-ids.js is the
+  # canonical ISS-id minter that closes the ISS-2663/2664 allocator-race
+  # surface. Both are git-owned source code, invoked from decider's clone;
+  # NEVER round-trip from FUSE. Same classification as audit-rewrite.js
+  # / push-via-api.js / prune-integrity.js / lint-close-records.js.
+  'monitor/scripts/lint-decider-surfaces.js'
+  'monitor/scripts/allocate-iss-ids.js'
   # All .md files under monitor/prompts/ are operator-edited (dynamic rule
   # in is_never_push() below). Covers monitor/prompts/sloppytoppy-rewrite.md
   # and monitor/prompts/reference/sloppytoppy-rewrite-rubric.md automatically.

@@ -42,9 +42,9 @@ DO NOT construct the clone URL using any other PAT, even if you see one in your 
 
 ## Clone setup: required-artifacts pre-push hook (PROP-081, 2026-06-07)
 
-Before cloning, pre-clean stale sibling clones (PROP-084, 2026-06-07): `sh "${WORKSPACE}/monitor/scripts/clone-hygiene.sh" preclean /tmp/tinker-clone 2>/dev/null || true`. (Tinker stays a FULL clone — it reads/writes monitor/integrity/ in Mode 2 audits; not sparse-eligible.)
+Before cloning, pre-clean stale sibling clones (PROP-084, 2026-06-07): `sh "${WORKSPACE}/monitor/scripts/clone-hygiene.sh" preclean ${SESSION}/tinker-clone 2>/dev/null || true`. (Tinker stays a FULL clone — it reads/writes monitor/integrity/ in Mode 2 audits; not sparse-eligible.)
 
-Immediately after cloning `/tmp/tinker-clone`, install the hook below. It makes git itself refuse any push from this clone that does not include this run's three required artifacts (a new `monitor/tinker/report-*.json`, an updated `latest-tinker-summary.txt`, and the PROP-030 `queue-history.jsonl` row). Plan for ONE push at end of run carrying all work + artifacts together. `--no-verify` is FORBIDDEN. If the hook blocks you, write the missing artifact(s) and include them — never strip or edit the hook.
+Immediately after cloning `${SESSION}/tinker-clone`, install the hook below. It makes git itself refuse any push from this clone that does not include this run's three required artifacts (a new `monitor/tinker/report-*.json`, an updated `latest-tinker-summary.txt`, and the PROP-030 `queue-history.jsonl` row). Plan for ONE push at end of run carrying all work + artifacts together. `--no-verify` is FORBIDDEN. If the hook blocks you, write the missing artifact(s) and include them — never strip or edit the hook.
 
 ```bash
 cat > "$CLONE/.git/hooks/pre-push" <<'HOOK'
@@ -94,7 +94,7 @@ Before evaluating Mode 1–4 triggers, scan `monitor/tinker/operator-directives/
 
 ```bash
 # CORRECT pattern (from a fresh clone):
-# cd /tmp/tinker-clone && node -e "...scan as below..."
+# cd ${SESSION}/tinker-clone && node -e "...scan as below..."
 
 node -e "
 const fs=require('fs');
@@ -473,17 +473,23 @@ CLAUDE.md is the single most important document in the project — every new ses
 
 ## Cleanup (mandatory, run last) — added 2026-05-25 (PROP-060 FND-01)
 
-Before exiting, delete the clone directory you used this run to reclaim disk space. Tinker runs daily and on operator-triggered cadence; accumulated `/tmp/tinker-clone` leftovers add ~290 MB each and have triggered DIRECTIVE-20260508-001 disk-pressure incidents in the past. The standing 4-hour `/tmp/*-clone` empowerment (Mode 2 above) is a backstop — this is the primary, run-local hygiene step.
+Before exiting, delete the clone directory you used this run to reclaim disk space. Tinker runs daily and on operator-triggered cadence; accumulated `${SESSION}/tinker-clone` leftovers add ~290 MB each and have triggered DIRECTIVE-20260508-001 disk-pressure incidents in the past. The standing 4-hour `/tmp/*-clone` empowerment (Mode 2 above) is a backstop — this is the primary, run-local hygiene step.
 
 ```bash
-# Use the same path you set in pre-flight ($CLONE or $CLEAN_CLONE; tinker's
-# canonical name is /tmp/tinker-clone). Skip silently if the variable is unset
-# or the path is unexpectedly empty — never `rm -rf /` on a typo.
-if [ -n "${CLONE:-}" ] && [ -d "$CLONE" ] && [[ "$CLONE" == /tmp/*-clone* ]]; then
+# PROP-090 (2026-06-10): tinker's clone now lives at ${SESSION}/tinker-clone
+# (was /tmp/tinker-clone). Per-session storage means leftovers are session-
+# bounded, but discipline still matters — each run still costs ~290 MB.
+# Skip silently if the variable is unset or the path is unexpectedly empty —
+# never `rm -rf /` on a typo. Accept either the new ${SESSION}/*-clone path
+# or the legacy /tmp/*-clone path during the transition.
+if [ -n "${CLONE:-}" ] && [ -d "$CLONE" ] && {
+     [[ "$CLONE" == /sessions/*/tinker-clone ]] ||
+     [[ "$CLONE" == /tmp/*-clone* ]];
+   }; then
   rm -rf "$CLONE"
 fi
 ```
 
 **Only delete your own clone.** Other agents' clones (`dome-decider-clone`, `dome-curmudgeon-clone`, `dome-sync-clone`, `dome-prune-clone`, etc.) are NEVER touched here — they have their own end-of-run cleanup. The standing /tmp empowerment (Mode 2) handles cross-agent stragglers >4h.
 
-**Why this exists (FND-01 of tinker-2026-05-25T17-37):** Tinker runs leave `/tmp/tinker-clone` behind because the prompt had no end-of-run cleanup step. Same discipline gap that hit decider and decider-self-apply weeks ago. Two consecutive same-day tinker runs (17:19 + 17:37) left two clones behind, contributing to the 95-98% disk-full readings later in the day.
+**Why this exists (FND-01 of tinker-2026-05-25T17-37):** Tinker runs leave `${SESSION}/tinker-clone` behind because the prompt had no end-of-run cleanup step. Same discipline gap that hit decider and decider-self-apply weeks ago. Two consecutive same-day tinker runs (17:19 + 17:37) left two clones behind, contributing to the 95-98% disk-full readings later in the day.

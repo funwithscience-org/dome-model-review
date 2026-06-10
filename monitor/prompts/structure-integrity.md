@@ -632,12 +632,12 @@ Classify: Schedule mismatches and missing file map entries are **moderate**. Har
 
 Run `node build.js html` and diff the output against the current `docs/index.html`. If they differ, the published site doesn't match the source data. This is a critical finding.
 
-**Clone location:** The workspace FUSE mount cannot run `git clone` (no unlink). If you need a fresh clone for this check, use `/tmp/dome-integrity-clone` (NOT `/tmp/ghclone` — that name is owned by prior sessions whose files cannot be deleted from our session).
+**Clone location:** The workspace FUSE mount cannot run `git clone` (no unlink). If you need a fresh clone for this check, use `${SESSION}/dome-integrity-clone` (NOT `/tmp/ghclone` — that name is owned by prior sessions whose files cannot be deleted from our session).
 
 **Cleanup (mandatory, run last):** Before exiting, delete any clone you created:
 
 ```bash
-rm -rf /tmp/dome-integrity-clone
+rm -rf ${SESSION}/dome-integrity-clone
 ```
 
 Do NOT leave clones in `/tmp`. They accumulate across runs — each adds ~40MB — and cannot be cleaned up from other sessions due to Linux user-ownership. Our 9.6G sandbox has only ~1.8G headroom; five un-cleaned clones will fill it and break every agent.
