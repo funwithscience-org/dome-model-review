@@ -1,46 +1,30 @@
-TINKER RUN tinker-2026-06-10T17-21 (directive run — DIRECTIVE-20260610-001 storage-layout audit, COMPLETED → PROP-090)
+TINKER RUN tinker-2026-06-10T17-33 (Mode 3 — cost engineering, verification-focused)
 
-THE PUNCHLINE: the migration you asked about is already ~80% done. Nine of the eleven
-clone-using agents (decider, analyst, analyst-baby, curmudgeon, curmudgeon-verify,
-workspace-sync, dome-mirror, both sloppytoppies) already clone to ${SESSION}/... on the
-/sessions volume — only tinker (/tmp/tinker-clone, the single LARGEST clone at 487MB) and
-integrity (/tmp/dome-integrity-clone) still land on root /.
+Fourth-ish run today (02:41 + 17:01 + 17:21 directives all completed) — directive queue
+empty, Mode 0 empty, pipeline GREEN, so this run cashed in the verification debt on the
+five recently-implemented PROPs instead of authoring a seventh proposal.
 
-DIRECTIVE ANSWERS (full detail in PROP-090):
-  Q1  /sessions IS a real separate filesystem (nvme1n1 ext4, distinct device number; not
-      bindfs at the volume root). Confirmed twice ~11.5h apart.
-  Q2  Root-volume dome footprint = the two straggler clones; everything else is system
-      baseline (/usr+/var ~7.3GB, irreducible) or KEV-project scratch.
-  Q3  Cost to finish: 2 prompt files + docs. clone-hygiene.sh preclean ALREADY sweeps
-      ${SESSION}/dome-*-clone, so naming the moved clones to match gets hygiene for free.
-  Q4  /sessions root + other sessions' dirs are permission-denied — cross-session cleanup
-      impossible. But 2.5 weeks of the 9 migrated agents hasn't filled /sessions, so
-      EXIT-trap + platform reclamation demonstrably holds. No mid-run loss observed.
-  Q5  Speed parity (dd 1.6 vs 1.7 GB/s; clone timing +7% = noise).
-  Q6  One-shot patch recommended; phasing costs more than it saves at this size.
+VERIFIED IMPLEMENTED (ran each PROP's verification_pattern):
+  PROP-080 ✓  PROP-081 ✓  PROP-082 ✓ (is_prune_expired x8)  PROP-083 ✓  PROP-084 ✓
+  Full test suite: 3825 passed / 0 failed.
 
-RECOMMENDATION (PROP-090, propose-only, awaiting your review):
-  - MOVE tinker → ${SESSION}/dome-tinker-clone and integrity → ${SESSION}/dome-integrity-clone.
-  - KEEP operator /tmp/edit-clone where it is (long-lived interactive sessions, existing
-    /tmp hygiene covers it, muscle-memory cost exceeds benefit).
-  - Also extends the Mode 2 disk-audit du-glob: today the 9 migrated agents' clones are
-    INVISIBLE to the project-footprint metric — gap found during the census.
-  - Honest other side (per your constraint): this is headroom reallocation between two
-    similarly tight volumes (/ has 1.6GB free, /sessions 2.1GB), not new capacity. It still
-    wins on blast-radius (full / has broken decider twice) and on one-convention consistency.
+BACKLOG: healthiest snapshot on record — 8 open issues (was 12 a week ago),
+net velocity +128/7d, zero issues >=14d. No PROP-030 thresholds fire.
 
-THE REAL STRUCTURAL FINDING (FND-02, moderate): monitor/integrity/ is now 396MB = 81% of
-every full working tree (clone is 487MB vs the ~290MB the prompts still claim). No storage
-shuffle fixes that — suggest a future directive on prune-integrity retention windows or
-moving aged sentinels out of the live tree. (Excluded from this directive's scope, so
-flagged only.)
+⚠ NEEDS YOUR ATTENTION (2 items):
+1. CREDENTIAL HYGIENE (moderate): /tmp/dome-pat.txt + /tmp/dome-auth.txt hold the dome
+   PAT in PLAINTEXT, world-readable (644), written ~10:04Z today during the decider run
+   window. NO prompt or script references these filenames — an agent improvised them and
+   never cleaned up. I could not chmod/rm them (different uid, other session owns them).
+   Please rm both from a session that can, and consider a one-line prelude rule: any
+   on-disk PAT persistence must be chmod-600 + removed in end-of-run cleanup.
+2. PROPOSAL BACKLOG: six PROPs (085-090) now sit awaiting your review. That queue is the
+   pipeline's current bottleneck — nothing tinker authors lands until it drains.
 
-BACKLOG (PROP-030 pre-flight): healthy — 8 open (WoW -33%), net velocity +128/7d,
-assigned-analyst=1, nothing aged ≥14d. No threshold fires.
+INFO: workspace-sync/dome-mirror plumbing now ~30 commits/day of git-log noise (by
+design, PROP-066 sentinels — just filter them in any forensics). Next Mode 3 deep-dive
+candidate: workspace-sync.md prompt diet (1482L Haiku x 15 runs/day) — deferred until
+the PROP backlog clears, given its blast radius.
 
-CARRY-FORWARD: PROP-087/088/089 unchanged (no pipeline runs since 17:01 — HEAD was still
-ef59bf9 at clone time). HNOTE-TINKER-REPUSH-WIN013-VERIFY-001 still pending decider.
-
-Artifacts: monitor/tinker/proposals/PROP-090-storage-layout-sessions-volume.json,
-monitor/tinker/report-2026-06-10T17-21.json, queue-history.jsonl row, directive marked
-completed. Clone removed at run end.
+WATCH: EXP-612 status=complete but not yet integrated (1 decider cycle old — normal lag,
+recheck next run). Context load STABLE vs 06-04 baseline (all agents +0.7-2.0%).
