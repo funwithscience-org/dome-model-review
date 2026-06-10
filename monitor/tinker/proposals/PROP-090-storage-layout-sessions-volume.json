@@ -1,0 +1,87 @@
+{
+  "prop_id": "PROP-090",
+  "title": "Storage layout — finish the /sessions migration for the two straggler agents (tinker, integrity); do NOT move operator-side /tmp/edit-clone",
+  "status": "proposed",
+  "priority": "low",
+  "authored_by": "tinker",
+  "authored_at": "2026-06-10T17:25:00Z",
+  "directive_reference": "DIRECTIVE-20260610-001-storage-layout-audit",
+  "related_props": ["PROP-083 (clone reuse)", "PROP-084 (sparse-checkout + preclean)", "PROP-051 (clone hygiene workstreams)", "DIRECTIVE-20260607-003 (4h tightening)", "DIRECTIVE-20260508-001 (disk-pressure empowerment)"],
+  "findings": {
+    "Q1_separate_filesystem": {
+      "verdict": "CONFIRMED — real, not illusory",
+      "evidence": "/proc/mounts: /dev/nvme0n1p1 / ext4 (stat dev=10302) vs /dev/nvme1n1 /sessions ext4 (stat dev=10301). Two distinct NVMe block devices, both plain ext4 — no bindfs at the /sessions volume root (bindfs appears only inside per-session mnt/ subtrees). /tmp lives on / (dev=10302). df at audit time: / = 8.1G/9.6G/85% (includes this run's live 487MB tinker clone); /sessions = 7.3G/9.8G/79%. Matches the directive's 05:50Z snapshot devices exactly — persistent across at least two observations ~11.5h apart."
+    },
+    "Q2_usage_survey": {
+      "root_volume_project_induced": "Dominated by clones and scratch: /tmp/tinker-clone 487MB (live, this run), /tmp/rhel-fixstate 104MB (KEV-project scratch, not dome), remainder <5MB total (ws-sync-* scratch files ~1MB each). System baseline: /usr 6.2GB + /var 1.0GB (snapd 370MB, apt 298MB) ≈ 7.3GB irreducible. Conclusion: the ONLY meaningful dome-side / consumers left are tinker's clone and integrity's occasional /tmp/dome-integrity-clone.",
+      "clone_size_note": "Working-tree clone is now 487MB (was ~290MB when prompts were written). monitor/integrity/ alone is 396MB (81%) of it; .git (depth 50) is 31MB. The growth driver is integrity-sentinel accumulation, not git history.",
+      "sessions_volume": "4,167 per-session dirs exist. du from inside the sandbox cannot size them (permission denied on other sessions' dirs — their ~1MB du readings are an artifact, not a measurement). /sessions usage cannot be attributed from inside; only df totals are trustworthy."
+    },
+    "Q3_migration_cost_census": {
+      "headline": "THE MIGRATION IS ALREADY ~80% DONE. The directive's premise (agent clones land on /) is outdated: 9 of 11 clone-using agents already clone to ${SESSION}/... on the /sessions volume.",
+      "already_on_sessions_volume": {
+        "decider + decider-self-apply": "${SESSION}/dome-review-clean (decider.md:47, reference/decider-patches-and-selfapply.md)",
+        "analyst": "${SESSION}/dome-review-clean (analyst.md:86)",
+        "analyst-baby": "${SESSION}/dome-review-clean (analyst-baby.md:218)",
+        "curmudgeon": "${SESSION}/dome-curmudgeon-clone (curmudgeon.md:92)",
+        "curmudgeon-verify": "${SESSION}/dome-curmudgeon-verify-clone (curmudgeon-verify.md:74,360)",
+        "workspace-sync": "${SESSION}/dome-sync-clone (workspace-sync.md:31)",
+        "dome-mirror": "${SESSION}/dome-mirror-clone (dome-mirror.md:60)",
+        "sloppytoppy-score": "${SESSION}/dome-sloppytoppy-score-clone (sloppytoppy-score.md:69) [agent DISABLED]",
+        "sloppytoppy-rewrite": "${SESSION}/dome-sloppytoppy-rewrite-clone (sloppytoppy-rewrite.md:73) [agent DISABLED]"
+      },
+      "still_on_root_volume": {
+        "tinker": "/tmp/tinker-clone — tinker.md lines 45, 47, 97, 476, 480, 489 (6 operative refs + cleanup-block glob guard `[[ \"$CLONE\" == /tmp/*-clone* ]]` at line 482). THE LARGEST single clone in the pipeline (487MB full working tree, non-sparse-eligible per PROP-084) and it runs daily-plus.",
+        "integrity": "/tmp/dome-integrity-clone — structure-integrity.md lines 635, 640 (conditional fresh clone for one check; not every run).",
+        "operator": "/tmp/edit-clone — CLAUDE.md per-session clone discipline section (one operative reference; ~700 historical mentions in reports/proposals are inert). Also tinker.md line 400 (the <2h edit-clone exclusion in the standing /tmp empowerment).",
+        "misc_scratch": "workspace-sync /tmp/ws-sync-* scratch (~1MB, immaterial); decider /tmp/decider-mode-state (immaterial); prune-integrity runs from a shallow clone whose path follows its SKILL.md (not surveyed line-by-line; immaterial size)."
+      },
+      "cost_estimate": "2 prompt files (tinker.md, structure-integrity.md) + 1 comment-level touch to clone-hygiene.sh docs + 1 CLAUDE.md paragraph + Mode 2 disk-audit du-glob extension. No helper-script code changes required: clone-hygiene.sh preclean ALREADY sweeps ${SESSION}/dome-*-clone in the current session (PROP-084), so naming the moved clones to match that glob gets hygiene for free."
+    },
+    "Q4_sessions_writability_and_recycling": {
+      "writable": "Per-session dir only. /sessions root: permission denied. Other sessions' dirs: permission denied (read AND write).",
+      "critical_implication": "Cross-session cleanup is IMPOSSIBLE — proven by direct test, and already acknowledged by clone-hygiene.sh's deliberate narrowing ('cross-session deletion could race a live agent'). A clone leaked into a dead session's dir can never be removed by any agent. The compensating controls are (a) each agent's own end-of-run rm + EXIT trap, (b) preclean of the CURRENT session's dome-*-clone dirs, and (c) whatever platform-side session-dir reclamation exists — which cannot be verified from inside the sandbox.",
+      "empirical_safety_evidence": "The 9 migrated agents have cloned several hundred MB into ${SESSION}/ paths multiple times daily since PROP-051/083/084 (≥2.5 weeks) and /sessions sits at 74-79% — if dead-session clones leaked at any meaningful rate, the 9.8GB volume would have filled long ago. Inference: platform reclamation works, or the EXIT-trap discipline is near-perfect. Either way the pattern is field-proven.",
+      "mid_run_loss": "No observed case of a session's dir being reclaimed mid-run across the migrated agents' history. A session's storage lives at least as long as its run."
+    },
+    "Q5_speed": {
+      "verdict": "Parity — negligible difference",
+      "evidence": "dd 256MB fdatasync: / = 1.6 GB/s (169ms), /sessions = 1.7 GB/s (157ms). Local --no-hardlinks git clone of the 487MB tree: to /tmp 1.58s, to /sessions 1.69s (+7%, noise-level). Both NVMe-backed ext4."
+    }
+  },
+  "recommendation": {
+    "verdict": "MOVE THE TWO STRAGGLERS ONLY (tinker, integrity). Do not move operator-side /tmp/edit-clone. Do not build any new shared-/sessions infrastructure (impossible anyway — /sessions root is unwritable).",
+    "reasoning": "The directive asks whether the move is worth coordination overhead. For 9 of 11 agents the coordination was already paid — the convention exists, is documented in clone-hygiene.sh, and is field-proven. Finishing it costs 2 prompt edits and makes /-volume clone explosions structurally impossible for ALL scheduled agents, because the only remaining scheduled-agent clone on / is also the single largest one (tinker's 487MB full tree). Integrity's conditional clone comes along for one more line. The operator-side /tmp/edit-clone should STAY: interactive cowork sessions are long-lived (mid-session reclamation risk profile unknown for week-long interactive sessions), /tmp hygiene (preclean + 4h empowerment + 2h edit-clone exclusion) already covers it, and rewriting ~CLAUDE.md discipline plus the muscle memory of every historical doc for a path the operator manually types is the one place where coordination cost exceeds benefit.",
+    "honest_other_side": "The do-nothing case is respectable: / at 79-85% is stable, the post-PROP-084 hygiene has contained the leak problem (no disk incident since 2026-05-09), and moving tinker's 487MB to /sessions consumes headroom on the volume hosting ALL session state — 2.1GB free there vs 1.6GB on /, so the volumes are comparably tight and this is partly pressure-shuffling, not pressure-relief. Two rebuttals tip it to MOVE anyway: (1) blast-radius asymmetry — a full / breaks decider clones and has twice produced bad-patch incidents (2026-05-07→08, 2026-05-09), while /sessions pressure is shared with the platform's own reclamation; (2) consistency — one convention instead of two makes every future hygiene fix apply everywhere. And the REAL fix for both volumes is neither: it is the monitor/integrity bulk (396MB, 81% of working tree, still growing) — flagged below as follow-up, out of this directive's scope.",
+    "explicitly_rejected_options": [
+      "Shared /sessions/tmp clone area — impossible, /sessions root is unwritable.",
+      "Moving operator /tmp/edit-clone — cost exceeds benefit (see reasoning).",
+      "Sparse-checkout for tinker — banned per PROP-084 (tinker reads/writes monitor/integrity in Mode 2)."
+    ]
+  },
+  "migration_plan": {
+    "approach": "One-shot operator-side patch (the change is 2 prompts + docs; phasing would cost more coordination than it saves). Propose-only — operator integrates after review.",
+    "diff_sketch": [
+      "tinker.md line 45: preclean arg `/tmp/tinker-clone` → `${SESSION}/dome-tinker-clone` (name chosen to match clone-hygiene.sh's existing ${SESSION}/dome-*-clone preclean glob — hygiene for free).",
+      "tinker.md line 47 + 97: `/tmp/tinker-clone` → `${SESSION}/dome-tinker-clone` (derive SESSION first: `SESSION=$(pwd | grep -oP '/sessions/[^/]+' | head -1)`).",
+      "tinker.md lines 476-489 (cleanup block): path guard `[[ \"$CLONE\" == /tmp/*-clone* ]]` → `[[ \"$CLONE\" == /tmp/*-clone* || \"$CLONE\" == /sessions/*/dome-*-clone ]]` (keep both during transition; never matches FUSE because guard also excludes */mnt/*  — add explicit `[[ \"$CLONE\" != */mnt/* ]]` for belt-and-braces).",
+      "structure-integrity.md lines 635, 640: `/tmp/dome-integrity-clone` → `${SESSION}/dome-integrity-clone`.",
+      "tinker.md Mode 2 disk audit: extend the du glob from `${SESSION}/mnt /tmp/*-clone /tmp/dome-*` to also include `${SESSION}/dome-*-clone ${SESSION}/*-clone` — closes an existing observability gap where the 9 migrated agents' clones are invisible to the project-footprint metric.",
+      "tinker.md line 400 standing-empowerment text: note that ${SESSION}-resident clones in the CURRENT session are also sweepable under the same age rules (cross-session remains forbidden — permission-denied anyway).",
+      "clone-hygiene.sh header comment: add tinker + integrity to the known ${SESSION} residents list (no code change needed).",
+      "CLAUDE.md per-session clone discipline: one paragraph noting scheduled agents are now 100% /sessions-resident and /tmp/edit-clone remains the operator-side convention."
+    ],
+    "rollback": "Single-line path reverts in tinker.md and structure-integrity.md. No data migration, no state, no schema — clones are ephemeral by definition. Worst case mid-transition: one orphan clone in either location, swept by the (kept-dual) preclean globs.",
+    "verification_after_apply": "Next tinker run: confirm clone lands at ${SESSION}/dome-tinker-clone, run completes, push succeeds, end-of-run rm fires, and `du -sm /tmp/*-clone` shows nothing tinker-owned. Next integrity run that needs a clone: same check."
+  },
+  "cost_benefit_summary": "Cost: ~8 small edits across 4 files, zero new infrastructure, zero behavior change for 9 agents. Benefit: every scheduled-agent clone moves off the volume whose exhaustion has actually broken the pipeline twice; the convention unifies; the Mode 2 footprint metric finally sees all clones. Residual honest caveat: this is headroom reallocation between two similarly-sized volumes, not new capacity — the structural fix is integrity-bulk retention (follow-up below).",
+  "followup_flag_out_of_scope": "monitor/integrity/ is 396MB of a 487MB working tree and growing — it is the dominant term in EVERY clone on EITHER volume (except the 4 sparse agents). Suggest a future directive consider tightening prune-integrity retention windows or moving aged sentinels out of the live tree entirely. Out of scope here per directive not_in_scope.",
+  "verification_pattern": "grep -c '/tmp/tinker-clone' monitor/prompts/tinker.md → 0 operative refs (historical 'why this exists' prose may retain the old path as history); grep -c 'dome-tinker-clone' monitor/prompts/tinker.md → ≥4; grep -c '/tmp/dome-integrity-clone' monitor/prompts/structure-integrity.md → 0.",
+  "estimated_effort": "30-45 min operator-side, single sitting",
+  "risks": [
+    "Leaked clone in a dead scheduled-agent session is permanently unreclaimable by agents (cross-session permission denied). Mitigated by EXIT traps + same-session preclean + field evidence that the 9 migrated agents haven't filled /sessions in 2.5 weeks.",
+    "/sessions free space (2.1GB) is comparable to / (1.6GB); tinker's 487MB transient clone consumes ~23% of it during runs. If /sessions ever trips pressure, the platform's own session machinery shares the volume — monitor df on both volumes in Mode 2 (the proposed du-glob extension covers this).",
+    "PROP-081 pre-push hook and PROP-083 clone-reuse semantics are path-agnostic — verified no path assumptions in lint-required-artifacts.js invocation (uses git rev-parse --show-toplevel)."
+  ],
+  "operator_decision": null
+}

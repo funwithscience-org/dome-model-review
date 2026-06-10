@@ -1,38 +1,46 @@
-Tinker run 2026-06-10T17:01Z — DIRECTIVE-20260609-002 (ISS-2663/2664 allocator collisions) COMPLETED
+TINKER RUN tinker-2026-06-10T17-21 (directive run — DIRECTIVE-20260610-001 storage-layout audit, COMPLETED → PROP-090)
 
-ANSWER: PROP-063 was BYPASSED, not broken. Two distinct events on 2026-06-08:
+THE PUNCHLINE: the migration you asked about is already ~80% done. Nine of the eleven
+clone-using agents (decider, analyst, analyst-baby, curmudgeon, curmudgeon-verify,
+workspace-sync, dome-mirror, both sloppytoppies) already clone to ${SESSION}/... on the
+/sessions volume — only tinker (/tmp/tinker-clone, the single LARGEST clone at 487MB) and
+integrity (/tmp/dome-integrity-clone) still land on root /.
 
-1. 01:18/01:27 — true concurrent-allocation race: integrity (d3ff587) and decider
-   (bfe0bca) both minted ISS-2657/8/9. Git's non-FF rejection caught it; decider
-   renumbered its three to 2662/3/4 and bumped next_id to 2665 — correct outcome,
-   but via improvised, unwritten procedure. (NBSP entries became ISS-2663/2664.)
-2. 05:33 (the actual duplicate-creator) — decider EXP-604 integration run (19ee875)
-   allocated SIX ids 2663-2668 via an improvised max(open-ids)+1 scan, ignoring
-   next_id=2665 in its own freshly-pulled state AND closed-issues.json. Fingerprint
-   of the bypass: post-run next_id still 2665 while ids reached 2668. Had the
-   PROP-063 self-heal block actually run, it would have allocated from 2665 and
-   prevented both duplicates. 5th write-discipline improvisation event in ~3 days
-   (cf. PROP-087's four).
+DIRECTIVE ANSWERS (full detail in PROP-090):
+  Q1  /sessions IS a real separate filesystem (nvme1n1 ext4, distinct device number; not
+      bindfs at the volume root). Confirmed twice ~11.5h apart.
+  Q2  Root-volume dome footprint = the two straggler clones; everything else is system
+      baseline (/usr+/var ~7.3GB, irreducible) or KEV-project scratch.
+  Q3  Cost to finish: 2 prompt files + docs. clone-hygiene.sh preclean ALREADY sweeps
+      ${SESSION}/dome-*-clone, so naming the moved clones to match gets hygiene for free.
+  Q4  /sessions root + other sessions' dirs are permission-denied — cross-session cleanup
+      impossible. But 2.5 weeks of the 9 migrated agents hasn't filled /sessions, so
+      EXIT-trap + platform reclamation demonstrably holds. No mid-run loss observed.
+  Q5  Speed parity (dd 1.6 vs 1.7 GB/s; clone timing +7% = noise).
+  Q6  One-shot patch recommended; phasing costs more than it saves at this size.
 
-ALSO: directive step 5 (ISS-2664[0] missing fixed_at/fixed_by) is RESOLVED-OBE —
-the 06-09 reconcile re-IDed the NBSP generation to ISS-2678/2679 (wontfix,
-closed_at present). Zero duplicate ISS ids currently live; no retroactive work.
+RECOMMENDATION (PROP-090, propose-only, awaiting your review):
+  - MOVE tinker → ${SESSION}/dome-tinker-clone and integrity → ${SESSION}/dome-integrity-clone.
+  - KEEP operator /tmp/edit-clone where it is (long-lived interactive sessions, existing
+    /tmp hygiene covers it, muscle-memory cost exceeds benefit).
+  - Also extends the Mode 2 disk-audit du-glob: today the 9 migrated agents' clones are
+    INVISIBLE to the project-footprint metric — gap found during the census.
+  - Honest other side (per your constraint): this is headroom reallocation between two
+    similarly tight volumes (/ has 1.6GB free, /sessions 2.1GB), not new capacity. It still
+    wins on blast-radius (full / has broken decider twice) and on one-convention consistency.
 
-ACTION: PROP-089 authored (propose-only, awaiting operator review):
-- C1: monitor/scripts/allocate-iss-ids.js — single write-path for minting ISS ids
-  (PROP-063 max-walk semantics, atomic, --verify mode). Script-extraction pattern
-  per PROP-066/050 — prose blocks get skipped; script invocations don't.
-- C2: replace ALL inline allocation sites (decider-reporting Step 5, integrity 7h,
-  decider integration path) with script calls.
-- C3: push-time cross-file ISS uniqueness + next_id invariant in the pre-push lint
-  (extends PROP-087 C1(c)); installed for decider AND integrity — bypasses become
-  non-landable.
-- C4: written recovery procedure for the residual concurrent-clone race (rebase →
-  --verify → re-mint own ids → re-push). Canonicalizes what 01:27 improvised.
-Suggested apply order: PROP-087 first (hook plumbing), PROP-089 as extension.
+THE REAL STRUCTURAL FINDING (FND-02, moderate): monitor/integrity/ is now 396MB = 81% of
+every full working tree (clone is 487MB vs the ~290MB the prompts still claim). No storage
+shuffle fixes that — suggest a future directive on prune-integrity retention windows or
+moving aged sentinels out of the live tree. (Excluded from this directive's scope, so
+flagged only.)
 
-BACKLOG TREND: healthy — 8 open (25 a week ago, -68% WoW), net_velocity_7d +135,
-nothing aged >=14d, no thresholds fired.
+BACKLOG (PROP-030 pre-flight): healthy — 8 open (WoW -33%), net velocity +128/7d,
+assigned-analyst=1, nothing aged ≥14d. No threshold fires.
 
-STILL PENDING: DIRECTIVE-20260610-001 (storage-layout audit, low) — next run's
-top candidate. PROP-087 + PROP-089 + PROP-088 await operator review.
+CARRY-FORWARD: PROP-087/088/089 unchanged (no pipeline runs since 17:01 — HEAD was still
+ef59bf9 at clone time). HNOTE-TINKER-REPUSH-WIN013-VERIFY-001 still pending decider.
+
+Artifacts: monitor/tinker/proposals/PROP-090-storage-layout-sessions-volume.json,
+monitor/tinker/report-2026-06-10T17-21.json, queue-history.jsonl row, directive marked
+completed. Clone removed at run end.

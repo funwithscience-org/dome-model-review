@@ -1,0 +1,72 @@
+{
+  "run_id": "tinker-2026-06-10T17-21",
+  "ts": "2026-06-10T17:21:00Z",
+  "agent": "tinker",
+  "mode_selected": "operator-directive (DIRECTIVE-20260610-001 storage-layout audit, priority=low) — preempts Mode 0-4 per dispatcher rules. Mode 0 scan: no assigned-to-tinker items. Only pending directive in queue; the 17:01 run deferred it here after completing DIRECTIVE-20260609-002. Deliverable: PROP-090 authored.",
+  "modes_checked": {
+    "directive_scan": "1 pending: DIRECTIVE-20260610-001 (low) — taken as primary task",
+    "mode0": "no assigned-to-tinker items in open-issues.json or expansion-tracker.json",
+    "mode1": "not evaluated (directive preempts); no stalled-agent signal encountered incidentally — HEAD ef59bf9 is the 17:01 tinker run, consistent with no scheduled slots between 17:09Z and now (analyst/curmudgeon/decider off-peak slots are UTC 00-11)",
+    "mode2": "incidental observations recorded as findings FND-02/FND-03 (root FS 85% with this run's live clone; clone working tree now 487MB, integrity bulk 396MB)",
+    "mode3_mode4": "not evaluated (directive preempts)"
+  },
+  "directive_execution": {
+    "directive": "DIRECTIVE-20260610-001-storage-layout-audit",
+    "outcome": "completed",
+    "deliverable": "monitor/tinker/proposals/PROP-090-storage-layout-sessions-volume.json",
+    "headline_answers": {
+      "Q1": "CONFIRMED separate filesystem — /dev/nvme1n1 ext4 at /sessions (stat dev 10301) vs /dev/nvme0n1p1 at / (dev 10302); not bindfs at volume root; persisted across the directive's 05:50Z snapshot and this 17:2xZ audit.",
+      "Q2": "Root-volume dome footprint = tinker clone (487MB live) + occasional integrity clone; everything else <5MB. System baseline /usr+/var ≈ 7.3GB irreducible. /sessions per-session dirs unsizeable from inside (permission denied) — du readings of other sessions are artifacts.",
+      "Q3": "Migration ~80% already done: 9 of 11 clone-using agents already clone to ${SESSION}/ (decider, analyst, analyst-baby, curmudgeon, curmudgeon-verify, workspace-sync, dome-mirror, both sloppytoppies). Stragglers: tinker (/tmp/tinker-clone, 6 operative refs), integrity (/tmp/dome-integrity-clone, 2 refs), operator (/tmp/edit-clone, CLAUDE.md).",
+      "Q4": "Per-session dir writable; /sessions root and other sessions' dirs permission-denied — cross-session cleanup impossible, but 2.5 weeks of field evidence from the 9 migrated agents shows the pattern doesn't accumulate (platform reclamation and/or EXIT-trap discipline holds). No observed mid-run reclamation.",
+      "Q5": "Speed parity: dd 1.6 vs 1.7 GB/s; local 487MB clone 1.58s vs 1.69s (+7%, noise).",
+      "Q6": "One-shot operator-side patch recommended (2 prompts + docs); phasing costs more than it saves at this size."
+    },
+    "recommendation_one_line": "Move tinker + integrity clones to ${SESSION}/dome-*-clone (matching the established 9-agent convention and the existing preclean glob); keep operator /tmp/edit-clone where it is; reject any shared-/sessions scheme (root unwritable)."
+  },
+  "findings": [
+    {
+      "id": "FND-01",
+      "category": "directive-deliverable",
+      "severity": "info",
+      "title": "PROP-090 authored — finish /sessions migration for tinker + integrity; don't move operator edit-clone",
+      "detail": "Directive's premise was outdated in the best way: most of the proposed migration already happened via the PROP-051/083/084 lineage. PROP-090 closes the gap for the two stragglers (one of which, tinker, owns the single largest clone in the pipeline) and extends the Mode 2 disk-audit du-glob so ${SESSION}-resident clones are finally visible to the project-footprint metric — an observability gap found during Q3.",
+      "evidence": "monitor/tinker/proposals/PROP-090-storage-layout-sessions-volume.json; prompt line refs therein"
+    },
+    {
+      "id": "FND-02",
+      "category": "infrastructure",
+      "severity": "moderate",
+      "title": "Clone working tree has grown to 487MB — monitor/integrity/ is 396MB (81%) of it",
+      "detail": "Prompts still describe clones as ~290MB. The growth driver is integrity-sentinel accumulation in the live tree, which dominates every full clone on either volume and erodes the value of any storage-layout shuffle. Out of DIRECTIVE-20260610-001 scope (it excludes retention changes), but this is the structural term: suggest a future directive on tightening prune-integrity retention windows or moving aged sentinels out of the live tree.",
+      "evidence": "du -sm /tmp/tinker-clone/monitor/integrity = 396MB; .git (depth 50) = 31MB; docs = 6MB"
+    },
+    {
+      "id": "FND-03",
+      "category": "infrastructure",
+      "severity": "info",
+      "title": "Root FS 85% used at mid-run (1.6GB free) — includes this run's live 487MB clone; no action",
+      "detail": "Project-induced footprint at audit: tinker-clone 487MB (this run, removed at cleanup) + /tmp/rhel-fixstate 104MB (KEV-project scratch, not dome-owned — left alone per cleanup safety rules: doesn't match the *-clone glob). df / at run start was 80%, consistent with the directive's 79% observation.",
+      "evidence": "df -h /: 8.1G/9.6G/85% mid-run; du -sm /tmp/* survey in run transcript"
+    },
+    {
+      "id": "FND-04",
+      "category": "backlog-trend",
+      "severity": "none",
+      "title": "PROP-030 pre-flight: no threshold fires — backlog healthy and shrinking",
+      "detail": "open_issues_total=8 (WoW -33.3% vs 2026-06-04 baseline of 12), net_velocity_7d=+128, assigned-analyst=1, zero issues ≥14d, zero negative-velocity runs in last 7 rows. Row appended to queue-history.jsonl.",
+      "evidence": "queue-history.jsonl row ts=2026-06-10T17:21:41.878Z"
+    }
+  ],
+  "cleanup_actions": [],
+  "previous_followup": {
+    "carry_forward_basis": "HEAD at clone time was ef59bf9 (the 17:01 tinker run's own commit) — zero pipeline pushes between 17:09Z and this run, so the 17:01 report's verification statuses cannot have changed and are carried forward without re-running verification_patterns. Next non-directive run should re-verify normally.",
+    "PROP-087": "status=proposed, awaiting operator review (unchanged since 17:01 run)",
+    "PROP-088": "status=proposed, awaiting operator review (unchanged)",
+    "PROP-089": "status=proposed, authored by 17:01 run for DIRECTIVE-20260609-002; awaiting operator review",
+    "HNOTE-TINKER-REPUSH-WIN013-VERIFY-001": "decider action still pending (no decider run since HNOTE filed); check next run",
+    "DIRECTIVE-20260610-001": "completed this run → PROP-090"
+  },
+  "claude_md_audit": "not run — directive run, not Mode 3. One accuracy note captured incidentally: CLAUDE.md's per-session clone discipline section describes clones as ~290MB; actual full working tree is now 487MB (FND-02). Fold into next Mode 3 audit.",
+  "context_load": "not measured this run (directive preempts Mode 3)"
+}
