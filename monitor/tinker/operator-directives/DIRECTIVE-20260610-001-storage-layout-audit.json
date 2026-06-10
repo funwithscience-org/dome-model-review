@@ -1,0 +1,36 @@
+{
+  "directive_id": "DIRECTIVE-20260610-001",
+  "for": "tinker",
+  "status": "pending",
+  "priority": "low",
+  "created_at": "2026-06-10T06:00:00.000Z",
+  "created_by": "operator",
+  "title": "Storage layout audit — should clone/temp work move from root / to /sessions/ now that /sessions appears to be a separate 9.8 GB volume?",
+  "context": "Operator observation (2026-06-10): root / is at 79% used (7.5 GB of 9.6 GB), the lowest 'used' headline figure we've recorded. Investigation revealed /sessions appears to be a separate filesystem (nvme1n1, 9.8 GB total, 74% used) — distinct from / (nvme0n1p1, 9.6 GB). It is unclear whether /sessions has always been a separate volume or whether this is recent (possibly from a Claude client update). Per `df -h`:\\n\\n  /dev/nvme0n1p1   9.6G  7.5G  2.1G  79%  /\\n  /dev/nvme1n1     9.8G  6.8G  2.5G  74%  /sessions\\n\\nIf /sessions is reliably available as a separate volume, the operator-side standard `/tmp/edit-clone` path (and equivalent agent-side clone paths in decider/curmudgeon/curmudgeon-verify/analyst/analyst-baby/tinker) lands on root /. Moving them to `/sessions/intelligent-brave-lamport/tmp/edit-clone` or similar would mean clone explosions on / become structurally impossible — clones land on a different physical volume.",
+  "task": "Audit the storage layout, determine if a move is worth the cost, and propose a path forward.",
+  "investigation_questions": [
+    "Q1: Is /sessions reliably a separate filesystem? Confirm with `df -h /sessions` vs `df -h /` over a few runs. Check if `mount` or `cat /proc/mounts` shows them as distinct devices (already confirmed in initial observation; verify it persists). If /sessions is bindfs-backed (i.e., a different path on the same underlying volume), the move is illusory and we should skip.",
+    "Q2: What currently uses / vs /sessions storage? Survey: (a) /tmp clones (which agents create them, what paths); (b) prune-integrity working space (does it use / or /sessions); (c) helper-script intermediate files (audit-rewrite.js, push-via-api.js, sync-workspace-step4c.js); (d) any node_modules or build artifacts not on FUSE; (e) /var/lib + /usr/lib (3.4 GB of /usr/lib is irreducible system; /var/lib's 771 MB may have cleanable bits).",
+    "Q3: What's the cost of moving clone paths to /sessions? List every agent prompt + helper script that hardcodes `/tmp/edit-clone` or similar — operator estimate is ~5-6 prompts (decider, curmudgeon, curmudgeon-verify, analyst, analyst-baby, tinker) plus operator-side discipline in CLAUDE.md.",
+    "Q4: Is /sessions reliably writable for this purpose? It's per-session, isolated, and gets recycled — clones landing there get cleaned up automatically at session boundary, which is BETTER than /tmp clones lingering. But verify the recycle behavior doesn't cause mid-run clone loss (e.g., another agent's session ending while our clone is in use).",
+    "Q5: Speed comparison — is /sessions slower than / for git operations? If both are local NVMe (looks like it from /dev/nvme0n1 vs /dev/nvme1n1), probably negligible. Worth a quick `git clone --depth 50` timing comparison.",
+    "Q6: If we move, what's the migration plan? One-shot operator-side patch to all the agent prompts at once, OR phased (start with operator-side /tmp/edit-clone discipline, then migrate one agent at a time as it's edited for other reasons)?"
+  ],
+  "deliverable": "A PROP-NNN proposal in monitor/tinker/proposals/ with: (1) findings on Q1-Q5, (2) recommendation (move / don't move / move some agents but not others), (3) if move, the migration plan including per-prompt diff sketch + rollback path, (4) cost-benefit argument honest about whether 9.8 GB on a separate volume is worth the coordination overhead vs just disciplining the existing /tmp cleanup further. Propose-only; operator integrates after review.",
+  "constraints": [
+    "Don't actually MOVE anything in this directive — proposal only.",
+    "Don't break the existing clone-hygiene.sh / EXIT-trap / preclean discipline that's already containing the problem; whatever we do should be additive.",
+    "Honor the other-side argument: the recent low disk usage (79%) may mean this isn't even a problem worth solving. The directive's job is to determine whether it's worth the move at all, not to assume yes."
+  ],
+  "background_artifacts": {
+    "observation_session_ts": "2026-06-10T05:50Z",
+    "prior_related_work": ["PROP-082 (prune/sync re-add loop fix)", "PROP-084 (sparse-checkout headroom)", "DIRECTIVE-20260607-003 (clone-hygiene tightening)"],
+    "current_clone_path_convention": "/tmp/edit-clone (operator-side), <agent>-clone variants for scheduled agents",
+    "df_h_snapshot": "/ = 7.5G/9.6G/79%; /sessions = 6.8G/9.8G/74%; /tmp lives on /"
+  },
+  "not_in_scope": [
+    "Anything about FUSE / bindfs at /sessions/intelligent-brave-lamport/mnt/ — that's separate and not at issue here.",
+    "Changing prune-integrity retention windows — orthogonal concern.",
+    "/var/lib cleanup speculation — out of agent reach."
+  ]
+}
