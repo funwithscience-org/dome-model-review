@@ -1,0 +1,44 @@
+{
+  "id": "PROP-088",
+  "title": "Recalibrate audit-exp-tracker-gaps.js MODERATE severity threshold for EXP-500+ range",
+  "status": "proposed",
+  "authored_by": "analyst-baby",
+  "authored_at": "2026-06-10T03:35:27.645Z",
+  "routed_from_iss": "ISS-2671",
+  "source_exp": "EXP-611",
+  "propose_only": true,
+  "operator_review_required": false,
+  "problem_statement": "audit-exp-tracker-gaps.js (build-scripts/) fires severity_hint='MODERATE' when orphan_file count > 5. As of 2026-06-10 there are 68 total orphan_file entries: 60 are pre-PROP-034 legacy (EXP<500), and 8 are post-PROP-034 (EXP-560..588), all of which reference now-CLOSED issues (ISS-2658 audit, EXP-587/588 baby-batch outputs, etc.). The 8 post-PROP-034 orphans are benign integrated-batch files that are never deleted by design (monotonic accumulation). The MODERATE fires on every integrity run and generates ISS re-raises (ISS-2562 → ISS-2658 → ISS-2671), consuming analyst and decider cycles on a known-benign condition. The secondary recommendation from proposal-ISS-2658-resolution.json explicitly flagged this and routed it to tinker (ISS-2671).",
+  "objective": "Suppress spurious MODERATE noise from benign legacy orphan accumulation while preserving the signal for genuinely lost-work orphan_file entries in the active range.",
+  "design": {
+    "current_threshold": "orphanCount > 5 → MODERATE (applied to total count across all EXP numbers)",
+    "proposed_threshold": "EXP-500+ orphanCount > 100 → MODERATE; legacy (EXP<500) orphanCount is informational only",
+    "rationale": "EXP-500+ is the post-PROP-034 active range. 100 is a generous head-room ceiling: the current post-PROP-034 orphan count is 8; even aggressive growth over 12 months of 2h-cadence baby runs would not plausibly reach 100 without a genuine lost-work event. The pre-EXP-500 legacy range is frozen (no new entries will appear) and its orphans are fully audited as benign; suppressing that range's contribution to MODERATE eliminates the false-alarm without masking new problems.",
+    "implementation": {
+      "file": "build-scripts/audit-exp-tracker-gaps.js",
+      "change_description": "Replace the single `const severityHint = orphanCount > 5 ? 'MODERATE' : 'INFO';` line with a two-bucket calculation: (1) count orphans with EXP number < 500 (legacy), (2) count orphans with EXP number >= 500 (active). Fire MODERATE only when active count > 100. Report both counts in the summary string for transparency.",
+      "diff_sketch": [
+        "// BEFORE (line 214):",
+        "const severityHint = orphanCount > 5 ? 'MODERATE' : 'INFO';",
+        "",
+        "// AFTER:",
+        "const legacyOrphans = byCategory.orphan_file.filter(e => parseInt((e.id||'0').replace('EXP-','')) < 500);",
+        "const activeOrphans  = byCategory.orphan_file.filter(e => parseInt((e.id||'0').replace('EXP-','')) >= 500);",
+        "const severityHint = activeOrphans.length > 100 ? 'MODERATE' : 'INFO';",
+        "",
+        "// Update summary line to include split counts:",
+        "// '... orphan_file (legacy<500: N, active>=500: M) ...; severity_hint=INFO'"
+      ],
+      "also_update": [
+        "Line 265 console.log in non-JSON output: update the severity hint description comment from '(MODERATE if orphan_file > 5, else INFO)' to '(MODERATE if active[EXP>=500] orphan_file > 100, else INFO)'",
+        "File header comment block: update the spec line 'severity_hint: MODERATE if orphan_file > 5 else INFO' to match new logic"
+      ]
+    }
+  },
+  "impact": {
+    "false_alarm_eliminated": "MODERATE will no longer fire on the 68-orphan benign accumulation. integrity runs will report INFO, stopping the ISS re-raise cycle.",
+    "signal_preserved": "If a genuine post-PROP-034 lost-work event produces >100 orphan_file entries in the EXP-500+ range, MODERATE will still fire.",
+    "test_impact": "No test changes expected — test.js does not currently test audit-exp-tracker-gaps.js output severity directly."
+  },
+  "file_ownership": "build-scripts/audit-exp-tracker-gaps.js is git-owned and classified NEVER_PUSH in workspace-sync.md. Tinker must commit this change from a git clone and push; it cannot be written via FUSE."
+}
