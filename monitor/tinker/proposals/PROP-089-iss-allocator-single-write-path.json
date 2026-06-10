@@ -1,0 +1,77 @@
+{
+  "prop_id": "PROP-089",
+  "title": "ISS allocator single-write-path: allocate-iss-ids.js helper script + cross-file push-time uniqueness enforcement + canonical collision-recovery procedure",
+  "status": "proposed",
+  "priority": "medium",
+  "authored_by": "tinker (DIRECTIVE-20260609-002 execution, run tinker-2026-06-10T17-01)",
+  "authored_at": "2026-06-10T17:05:00Z",
+  "directive_reference": "DIRECTIVE-20260609-002 — ISS-2663 and ISS-2664 duplicate-ID allocations 2026-06-08; PROP-063 should have prevented these but didn't. Filed 2026-06-09T05:35Z by operator, priority=medium.",
+  "related_props": {
+    "PROP-063": "Deployed the archive-aware next_id self-heal as a PROMPT-LEVEL code block in decider-reporting.md Step 5 (verified present on origin/main, lines 123-151) plus the retroactive dedup (applied, final_state duplicate_ids_remaining=0 as of 2026-05-29). This PROP is ADDITIVE: it does not change PROP-063's allocation semantics, it moves them into an unskippable script and adds push-time enforcement.",
+    "PROP-087": "Authored 2026-06-10 (run T02-41), proposed. Its C1(c) adds WITHIN-open-issues.json ISS-id uniqueness to the decider pre-push lint and explicitly scopes the allocation race + cross-file check OUT to this directive. PROP-089 C3 extends that check; if PROP-087 is applied first, C3 is a small diff on lint-decider-surfaces.js; if PROP-089 is applied first, fold C3 into PROP-087's C1(c) at apply time.",
+    "PROP-066_PROP-050_pattern": "Helper-script extraction as the fix for LLM skip-by-omission of prompt-level code blocks — proven by push-via-api.js (PROP-050), audit-rewrite.js (PROP-041), sync-workspace-step4c.js (PROP-066), prune-integrity.js (PROP-051C). This PROP applies the same pattern to ISS allocation."
+  },
+  "root_cause_answer_to_directive": {
+    "question": "Why did two new ISS-ID collisions land on 2026-06-08 despite PROP-063 being in place?",
+    "answer": "PROP-063 is BOTH retroactive dedup AND a prevention guard — but the guard is a prompt-level code block that only protects allocations which actually execute it. The 2026-06-08 collisions came from a write-site that bypassed the block entirely. PROP-063 was not silently failing; it was never invoked. This is the directive's hypothesis (b) refined: not a failing mechanism, but an advisory mechanism with no enforcement, bypassed by LLM improvisation — the same defect class as the queue-schema improvisations that produced PROP-087 (5th schema/procedure-improvisation event in ~3 days).",
+    "event_reconstruction": {
+      "event_1_concurrent_run_race_0118_0127": "integrity run (commit d3ff587, 2026-06-08T01:18Z) and decider run (commit bfe0bca, 01:27Z) cloned from near-identical bases and BOTH allocated ISS-2657/2658/2659. The decider hit the non-FF push rejection (git's built-in compare-and-swap), saw integrity's entries on rebase, and renumbered its own three to ISS-2662/2663/2664 — commit message: 'renumbered 2657/8/9→2662/3/4 (collision w/ integrity run)'. It correctly bumped next_id to 2665 and its self-applied NBSP closes put ISS-2663 (WIN-042 NBSP) + ISS-2664 (WIN-012 NBSP) into closed-issues.json. Outcome: race DETECTED and recovered, but via improvised, unwritten procedure.",
+      "event_2_allocator_bypass_0533": "decider run 2026-06-08T05 (commit 19ee875, 05:33Z, EXP-604 WIN-011 v3 integration) allocated SIX new ISS ids 2663-2668 starting at max(open-issue ids)+1 = 2662+1 = 2663 — an improvised max-open-only scan. It ignored both o.next_id (which was 2665 in its own freshly-pulled state, verified at parent commit 61a2091) and closed-issues.json (which held the NBSP ISS-2663/2664). The PROP-063 self-heal, had it run, would have computed safeNext = max(next_id=2665, maxOpen+1=2663, maxClosed+1=2665) = 2665 and prevented both collisions. Fingerprint of the bypass: post-run next_id was UNCHANGED at 2665 while ids up to ISS-2668 now existed — the canonical path always ends with o.next_id++ write-back. Three of the six new ids (2663/2664/2665) were immediately closed via expansion-integration (fixed_at 2026-06-08T05:25:47Z), re-colliding 2663/2664 with the NBSP entries. ISS-2665 did not become a visible duplicate only because the NEXT canonical allocation's self-heal clamped past it (next_id now 2695).",
+      "why_only_2663_2664_duplicated": "Event 2 created potential collisions on 2663, 2664, 2665. The NBSP entries occupied 2663/2664 in closed-issues.json; nothing else had used 2665, so it landed clean. Integrity's 2026-06-09T01:16Z run found exactly 2 duplicate ids — consistent with this reconstruction."
+    },
+    "evidence": [
+      "git show d3ff587:monitor/decisions/open-issues.json → next_id=2653 pre-decider; integrity's new ISS-2657/8/9 present (its own allocation event)",
+      "git show bfe0bca:monitor/decisions/open-issues.json → next_id=2665; closed-issues gains ISS-2663 (NBSP WIN-042) + ISS-2664 (NBSP WIN-012); commit message documents the renumber",
+      "git show 61a2091:... (workspace-sync 05:09Z, decider 05:33's effective base) → next_id=2665, NBSP 2663/2664 in closed-issues — the colliding run STARTED from a fully-correct state",
+      "git show 19ee875:... → next_id STILL 2665; closed-issues gains second ISS-2663 (WIN-011 intermittency), second ISS-2664 (WIN-011 rewrite), ISS-2665, ISS-2667, ISS-2668; open gains ISS-2666. Allocation base = max(open)+1 = 2663, next_id never written back.",
+      "integrity report-2026-06-09T01-16.json iss_id_collision check: '2 duplicate ISS IDs ... Both allocated by separate decider runs on 2026-06-08 to different issues.' (correct on the count; this PROP refines 'separate decider runs' — the first 2663/2664 generation came from the 01:27 renumber, the second from the 05:33 bypass)"
+    ]
+  },
+  "retroactive_state": {
+    "dedup_already_done": "The 2026-06-09 reconcile pass re-IDed the NBSP generation to ISS-2678 (ex-2663[NBSP WIN-042]) and ISS-2679 (ex-2664[NBSP WIN-012]), both closed wontfix with closed_at=2026-06-09T06:10:40Z and a description documenting the dedup. closed-issues.json currently has ZERO duplicate ISS ids (verified this run). No retroactive work remains.",
+    "iss_2664_missing_fixed_at_fixed_by": "RESOLVED-OBE (directive investigation step 5): the entry missing fixed_at/fixed_by was the NBSP generation of ISS-2664, now ISS-2679 with status=wontfix + closed_at (fixed_at/fixed_by are not applicable to wontfix closes). The surviving ISS-2664 (WIN-011 rewrite) carries fixed_at=2026-06-08T05:25:47.026Z and fixed_by=expansion-integration. No patch needed."
+  },
+  "proposal": {
+    "design_principle": "Same trade as PROP-066: move logic the LLM keeps skipping out of prose and into a script invocation that is structurally hard to skip, then back it with mechanical enforcement at push time so a bypass cannot land on origin/main. Phase 1 does NOT make concurrent-run collisions mathematically impossible (two clones from the same base can still reserve the same ids locally); it makes every collision (a) impossible to push unnoticed and (b) mechanically recoverable via a written procedure. Given observed frequency (~2 events/day at worst, usually ~0) and the directive's keep-it-simple constraint, detect-and-recover at the git boundary is the right cost point.",
+    "changes": [
+      {
+        "id": "C1",
+        "what": "New script monitor/scripts/allocate-iss-ids.js — the ONLY supported way to mint ISS ids",
+        "detail": "Usage: node monitor/scripts/allocate-iss-ids.js <count> [--json]. Behavior: (1) read monitor/decisions/open-issues.json; (2) PROP-063 archive-aware max-walk: max ISS-number across open-issues.json issues[], closed-issues.json, closure-ledger.jsonl; (3) safeNext = max(next_id, maxOpen+1, maxClosed+1) — warn on clamp exactly as the current prompt block does; (4) reserve <count> contiguous ids starting at safeNext; (5) write open-issues.json back with next_id = safeNext+count (atomic tmp-file + rename, same discipline as expansion-tracker writers); (6) print the reserved ids (one per line, or JSON array with --json). The script reserves ids by bumping next_id only — the caller then pushes its issue objects using those exact ids. A crash between reserve and entry-write leaves an id GAP, which is harmless (gaps are already normal); reuse is the only disease. Also: --verify mode runs the invariant checks only (duplicate ISS ids within open, within closed, across open∪closed; next_id > max(all ISS ids)) and exits 1 with per-violation detail — shared by C3 and usable ad hoc.",
+        "classification": "git-owned source code: add to build.js OWNERSHIP, workspace-sync.md NEVER_PUSH, and the CLAUDE.md File Ownership list — same as push-via-api.js / audit-rewrite.js / sync-workspace-step4c.js."
+      },
+      {
+        "id": "C2",
+        "what": "Replace every inline/prose ISS-allocation site with a script invocation",
+        "detail": "Write-sites identified this run: (a) decider-reporting.md Step 5 'Issue ID Assignment' — replace the PROP-063 inline code block with `IDS=$(node monitor/scripts/allocate-iss-ids.js N)` + prose: 'NEVER assign ISS-NNNN any other way; never scan max(open) yourself; never reuse a freed id.' Keep the PROP-063 rationale paragraph, repointed at the script. (b) structure-integrity.md Section 7h self-test ISS-append path (integrity allocated 2657/8/9 in event 1) — same replacement. (c) decider.md / decider-patches-and-selfapply.md expansion-integration path (the event-2 offender) — add an explicit cross-reference at the point where integration closes findings into ISS records: ids come from the script, allocated ONCE per run, not per-finding improvisation. (d) CLAUDE.md gains one line in Lessons Learned pointing at the script as the single ISS mint. Audit command for the apply step: grep -rn \"next_id\" monitor/prompts/ and verify every ISS-related hit is either the script reference or EXP/queue allocators (out of scope).",
+        "rationale": "Event 2 proved the prompt block gets skipped under integration-heavy runs. Four prior PROPs prove the script-extraction pattern sticks where prose does not."
+      },
+      {
+        "id": "C3",
+        "what": "Push-time enforcement: cross-file ISS uniqueness + next_id invariant in the pre-push lint",
+        "detail": "Extend lint-decider-surfaces.js C1(c) (PROP-087) — or land as its own small lint if PROP-087 is still unapplied — to run `allocate-iss-ids.js --verify` semantics diff-aware: for NEW or MODIFIED records in the push (local HEAD vs origin/main), fail on (i) any ISS id duplicated within open-issues.json, within closed-issues.json, or ACROSS the two; (ii) next_id <= max(all ISS ids in open ∪ closed ∪ closure-ledger). Legacy/grandfathered duplicates (none currently live; 29 historical were deduped by PROP-063, 2 by the 06-09 reconcile) never fire because diff-aware scope only inspects records the push itself introduces or touches. Install in BOTH the decider's PROP-083 hook chain AND integrity's pre-push path — event 1 shows integrity allocates too. Exit 1 = block push, print the colliding ids + the C4 recovery procedure.",
+        "rationale": "This is the layer that makes a future bypass non-landable: even if a run improvises allocation, the collision cannot reach origin/main. PROP-087's within-file check alone would NOT have caught event 2 (the two 2663 generations lived in the same file only after the push landed; cross-file next_id invariant WOULD have fired: 2663 < next_id 2665... and the duplicate-within-closed check fires on the merged state at the second pusher's rebase)."
+      },
+      {
+        "id": "C4",
+        "what": "Canonical concurrent-collision recovery procedure (written, mechanical)",
+        "detail": "Add to decider-reporting.md (and cross-reference from structure-integrity.md): when a push is rejected non-FF, after `git pull --rebase`, re-run `node monitor/scripts/allocate-iss-ids.js --verify`. If it reports duplicates involving ids YOUR run minted: (1) run allocate-iss-ids.js <k> to mint k fresh ids; (2) rename your k colliding new records to the fresh ids — including every reference in files touched by this same commit (attention-inbox, queue items, report text); (3) re-run --verify (must pass); (4) re-push. Never renumber the OTHER writer's entries (they won the race by landing first); never decrement next_id; never delete the gap ids. This canonicalizes exactly what the 01:27 run improvised correctly, so the next race resolves identically regardless of which agent or model hits it.",
+        "rationale": "Event 1's recovery was correct but unwritten. Unwritten procedures executed by LLMs are variance generators (cf. the three improvised-schema events PROP-087 documents)."
+      }
+    ],
+    "explicitly_out_of_scope": [
+      "UUID/timestamp ISS ids (directive option iv): rejected — breaks the ISS-\\d+ convention parsed by integrity checks, lint-close-records.js, digest tooling, and human workflow; massively larger blast radius than the defect.",
+      "File locking (option i): rejected — no shared filesystem between agent clones/sessions; the only shared medium is git, and git's non-FF rejection already provides the CAS (option ii) — C3/C4 just make its detection and recovery mechanical.",
+      "EXP / queue_id / ATT allocators: EXP already has archive-aware self-heal + integrity audit (PROP-022 phase 5); queue_id reuse is PROP-087 C1(a) scope. If operator wants, allocate-iss-ids.js can grow sibling modes later — not now (keep-it-simple constraint).",
+      "Any change to PROP-063's retroactive dedup output — constraint honored: prevention layer is additive."
+    ]
+  },
+  "verification_pattern": "git show origin/main:monitor/scripts/allocate-iss-ids.js >/dev/null 2>&1 && git show origin/main:monitor/prompts/reference/decider-reporting.md | grep -qF 'allocate-iss-ids.js' && node /tmp/verify-clone/monitor/scripts/allocate-iss-ids.js --verify",
+  "estimated_effort": "Script ~120 lines (half exists as the PROP-063 inline block); prompt edits 4 files, ~40 lines net; lint extension ~30 lines. One apply session. No pipeline stop: changes are backwards-compatible (script reproduces current canonical semantics; lint is diff-aware so legacy state never fires).",
+  "risks": [
+    "Hook-chain growth: decider pre-push now runs three lints (close-records, decider-surfaces, ISS verify). Each is <1s on current file sizes; acceptable, but tinker should watch hook wall-time in Mode 3 if closed-issues.json grows past ~10k entries.",
+    "Script bypass remains possible for operator cowork sessions that hand-edit open-issues.json — C3's lint only guards agent clones with the hook installed. Mitigation: CLAUDE.md note (C2d) + integrity's existing daily iss_id_collision check stays as the final detector.",
+    "If PROP-087 is rejected, C3 needs its own hook-chain insertion point — covered in C3 detail."
+  ],
+  "operator_decision": "Propose-only per directive deliverable spec. Apply order suggestion: PROP-087 first (it carries the hook-chain plumbing), then PROP-089 as a small extension; or both in one session."
+}

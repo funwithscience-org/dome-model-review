@@ -1,32 +1,38 @@
-Tinker run 2026-06-10T02:41Z — DIRECTIVE-20260609-001 (queue-schema complaint) COMPLETED
+Tinker run 2026-06-10T17:01Z — DIRECTIVE-20260609-002 (ISS-2663/2664 allocator collisions) COMPLETED
 
-ANSWER: Case (a) — real decider schema-drift, NOT a verify-dispatcher bug.
-- Provenance corrected vs the directive's guess: broken qids 510/511/512 came from
-  decider's 2026-06-09T00:19Z run (commit 3d9675d), not the 06-08T16:22 run (6dc8cf9,
-  whose queue was clean). Items used improvised fields (target/type/priority/added_at/
-  added_by), omitted target_id/target_type/pushed_at, and next_id wasn't bumped.
-- Verify behaved CORRECTLY (Mode A gate reads target_id, which was absent). No
-  curmudgeon-verify.md change.
-- Decider's 04:03Z run purged them but (i) REUSED qids 511/512 for different work —
-  archive now permanently holds two generations of each; (ii) silently DROPPED the
-  WIN-013.c10 patch-verify intent. No WIN-013 review exists after c10.
+ANSWER: PROP-063 was BYPASSED, not broken. Two distinct events on 2026-06-08:
 
-ACTIONS:
-1. PROP-087 authored (propose-only, awaiting operator review): generalized decider-
-   write-site schema lint chained onto the existing PROP-083 pre-push hook. Validates
-   new/changed priority-queue items, attention-inbox records, ISS-id uniqueness;
-   blocks qid reuse against the archive. Rationale: 4th schema-improvisation event in
-   ~2 days, one landing ~8h AFTER the decider.md:812 DO-NOT-DEVIATE warning — prompt
-   exhortation is empirically insufficient; producer-side enforcement per the
-   directive's if_case_a_followup.
-2. HNOTE-TINKER-REPUSH-WIN013-VERIFY-001 filed → decider should re-push the dropped
-   WIN-013 patch-verify (class=verification) via the canonical template.
-3. Directive marked completed (prop_id_authored=PROP-087).
+1. 01:18/01:27 — true concurrent-allocation race: integrity (d3ff587) and decider
+   (bfe0bca) both minted ISS-2657/8/9. Git's non-FF rejection caught it; decider
+   renumbered its three to 2662/3/4 and bumped next_id to 2665 — correct outcome,
+   but via improvised, unwritten procedure. (NBSP entries became ISS-2663/2664.)
+2. 05:33 (the actual duplicate-creator) — decider EXP-604 integration run (19ee875)
+   allocated SIX ids 2663-2668 via an improvised max(open-ids)+1 scan, ignoring
+   next_id=2665 in its own freshly-pulled state AND closed-issues.json. Fingerprint
+   of the bypass: post-run next_id still 2665 while ids reached 2668. Had the
+   PROP-063 self-heal block actually run, it would have allocated from 2665 and
+   prevented both duplicates. 5th write-discipline improvisation event in ~3 days
+   (cf. PROP-087's four).
 
-BACKLOG TREND: healthy — 6 open issues (9 prev run, 25 a week ago, -76% WoW),
-net_velocity_7d +335, assigned-analyst 2, nothing aged ≥14d. No thresholds fired.
+ALSO: directive step 5 (ISS-2664[0] missing fixed_at/fixed_by) is RESOLVED-OBE —
+the 06-09 reconcile re-IDed the NBSP generation to ISS-2678/2679 (wontfix,
+closed_at present). Zero duplicate ISS ids currently live; no retroactive work.
 
-STILL PENDING: DIRECTIVE-20260609-002 (ISS-2663/2664 allocator collisions despite
-PROP-063) — top candidate for next run. PROP-087's open-issues uniqueness check gives
-partial push-time coverage but the allocation-race root cause remains that directive's
-scope.
+ACTION: PROP-089 authored (propose-only, awaiting operator review):
+- C1: monitor/scripts/allocate-iss-ids.js — single write-path for minting ISS ids
+  (PROP-063 max-walk semantics, atomic, --verify mode). Script-extraction pattern
+  per PROP-066/050 — prose blocks get skipped; script invocations don't.
+- C2: replace ALL inline allocation sites (decider-reporting Step 5, integrity 7h,
+  decider integration path) with script calls.
+- C3: push-time cross-file ISS uniqueness + next_id invariant in the pre-push lint
+  (extends PROP-087 C1(c)); installed for decider AND integrity — bypasses become
+  non-landable.
+- C4: written recovery procedure for the residual concurrent-clone race (rebase →
+  --verify → re-mint own ids → re-push). Canonicalizes what 01:27 improvised.
+Suggested apply order: PROP-087 first (hook plumbing), PROP-089 as extension.
+
+BACKLOG TREND: healthy — 8 open (25 a week ago, -68% WoW), net_velocity_7d +135,
+nothing aged >=14d, no thresholds fired.
+
+STILL PENDING: DIRECTIVE-20260610-001 (storage-layout audit, low) — next run's
+top candidate. PROP-087 + PROP-089 + PROP-088 await operator review.
