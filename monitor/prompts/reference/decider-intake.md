@@ -158,7 +158,7 @@ Check `monitor/analyst/new-wins/` for WIN-NNN.json files.
 For each:
 1. **Read and validate.** All required fields present, verdict defensible.
 2. **Append to `data/wins.json`.** Verify ID doesn't collide.
-3. **Add to curmudgeon tracker as `pending`** (for normal cycle rotation) AND **push to priority queue** (for urgent first-review). The tracker entry ensures the WIN is eventually re-reviewed in Phase 1 cycles; the queue entry gets it reviewed NOW:
+3. **Add to curmudgeon tracker as `pending`** (for normal cycle rotation) AND **push to priority queue** (for urgent first-review). The tracker entry ensures the WIN is eventually re-reviewed in Phase 1 cycles; the queue entry gets it reviewed NOW. **Dedup check required before any queue push (PROP-048, ISS-2693):** before pushing `target_type: 'win-new'`, verify (a) `data/wins.json` does not already contain the WIN id, AND (b) `monitor/curmudgeon/reviews/` contains no `WIN-NNN.c*.json` file. If both conditions are met, the WIN has already been onboarded and reviewed — use `target_type: 'win-detail-rewrite'` for re-reviews instead. The code block below implements this check in the `winExists && reviewExists` branch.
 ```bash
 node -e "
 const fs=require('fs');
