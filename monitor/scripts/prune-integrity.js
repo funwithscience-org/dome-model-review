@@ -111,6 +111,10 @@ function parseFilenameTimestamp(name) {
 const NOW = Date.now();
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+// NOTE (PROP-091, 2026-06-11): the retention windows below are mirrored in
+// monitor/scripts/sync-workspace-step4c.js DELETE_PATTERNS and the
+// is_prune_expired() helper in monitor/prompts/workspace-sync.md. If you
+// add a category here or change retention_days, propagate to all three.
 const policies = [
   {
     name: 'workspace-sync-runs',

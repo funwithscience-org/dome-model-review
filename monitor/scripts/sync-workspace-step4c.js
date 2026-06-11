@@ -72,6 +72,146 @@ function writeSentinel(name, body) {
   return p;
 }
 
+// ---- PROP-091 (2026-06-11) delete-propagation pass ----------------------
+//
+// FUSE-side reconciliation: prune-integrity deletes per-run artifacts from
+// origin/main, but sync-workspace-step4c only PROPAGATES copies git→FUSE
+// (build.js syncToWorkspace is create-only). So FUSE accumulates whatever
+// prune deletes. This pass identifies orphans by three guards and (when
+// enabled) unlinks them.
+//
+// Three-guard candidate rule:
+//   (1) Path matches an allow-listed prune-managed pattern.
+//   (2) Path is ABSENT from git ls-files HEAD (authoritative "belongs in
+//       git" test).
+//   (3) Path is past per-pattern retention window per the date embedded in
+//       the filename. (1)+(2) alone would delete fresh unpushed FUSE-born
+//       sentinels; the age guard is what protects the audit trail.
+//
+// Config gate: monitor/scripts/sync-workspace-step4c.config.json
+//   "delete_propagation": { "enabled": false, "per_cycle_cap": 200,
+//     "abort_abs": 500, "abort_pct_of_category": 50 }
+//
+// Phase 0 ships with enabled=false (manifest-only): every cycle writes
+// delete_propagation.candidates + sample into the run sentinel; no
+// unlinks. Operator reviews ≥3 days of manifests, then flips enabled to
+// true via clone-and-push.
+//
+// EPERM fallback: if FUSE refuses unlink (cross-session permission, no
+// allow_cowork_file_delete grant), the pass records
+// 'unlink-unsupported-on-fuse' in the sentinel and stops. Manifest-only
+// mode is still net positive — converts invisible accumulation into a
+// visible deletion queue.
+//
+// PATTERN TABLE — mirrored in workspace-sync.md is_prune_expired() and
+// prune-integrity.js POLICIES. Edit one → edit all three.
+const DELETE_PATTERNS = [
+  { re: /^monitor\/integrity\/workspace-sync-runs\/run-.*\.json$/, days: 7 },
+  { re: /^monitor\/integrity\/verify-pending-run-.*\.json$/, days: 14 },
+  { re: /^monitor\/integrity\/narrative-cite-audit-.*\.json$/, days: 14 },
+  { re: /^monitor\/integrity\/push-failure-.*\.json$/, days: 14 },
+  { re: /^monitor\/integrity\/git-to-fuse-divergence-.*\.json$/, days: 14 },
+  { re: /^monitor\/integrity\/sync-workspace-runs-.*\.json$/, days: 14 }
+  // Deliberately EXCLUDED: report-*.json (90d), workspace-sync-abort-*.json
+  // (30d), sync-workspace-non-ff-abort-*.json (90d) — low volume, high
+  // forensic value; operator deletes manually if ever needed.
+];
+
+function dateFromFilename(rel) {
+  const b = path.basename(rel);
+  let m = b.match(/(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return m[1] + '-' + m[2] + '-' + m[3];
+  m = b.match(/(\d{4})(\d{2})(\d{2})T/);
+  return m ? m[1] + '-' + m[2] + '-' + m[3] : null;
+}
+
+function deletePropagationPass(fuseRoot) {
+  const out = {
+    ran: false, mode: null, candidates: 0, deleted: 0, errors: 0,
+    truncated: false, aborted: null, sample: [], category_total: 0
+  };
+  let cfg = { enabled: false, per_cycle_cap: 200, abort_abs: 500, abort_pct_of_category: 50 };
+  try {
+    const c = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+    if (c && typeof c.delete_propagation === 'object') {
+      cfg = { ...cfg, ...c.delete_propagation };
+    }
+  } catch (e) { /* fall back to defaults */ }
+  out.mode = cfg.enabled ? 'delete' : 'manifest-only';
+
+  // HEAD-membership set — authoritative "belongs in git" test.
+  let tracked;
+  try {
+    tracked = new Set(sh('git ls-files monitor/integrity').split('\n').filter(Boolean));
+  } catch (e) {
+    out.aborted = 'git-ls-files-failed: ' + e.message;
+    return out;
+  }
+
+  // Walk FUSE monitor/integrity/, collect allow-listed entries.
+  const fuseDir = path.join(fuseRoot, 'monitor/integrity');
+  const fuseFiles = [];
+  function walk(d) {
+    let entries;
+    try { entries = fs.readdirSync(d, { withFileTypes: true }); }
+    catch (e) { return; }
+    for (const e of entries) {
+      const full = path.join(d, e.name);
+      if (e.isDirectory()) walk(full);
+      else if (e.isFile()) fuseFiles.push(path.relative(fuseRoot, full));
+    }
+  }
+  try { walk(fuseDir); }
+  catch (e) {
+    out.aborted = 'fuse-walk-failed: ' + e.message;
+    return out;
+  }
+
+  const inCategory = fuseFiles.filter(r => DELETE_PATTERNS.some(p => p.re.test(r)));
+  out.category_total = inCategory.length;
+  const nowMs = Date.now();
+  const candidates = inCategory.filter(rel => {
+    if (tracked.has(rel)) return false;                            // still in git HEAD — keep
+    const pat = DELETE_PATTERNS.find(p => p.re.test(rel));
+    const d = dateFromFilename(rel);
+    if (!d) return false;                                          // undated — never touch
+    const ageMs = nowMs - Date.parse(d);
+    return isFinite(ageMs) && ageMs > (pat.days + 1) * 86400000;   // past retention (+1d slack)
+  });
+  out.candidates = candidates.length;
+  out.sample = candidates.slice(0, 20);
+
+  // Safety gates (PROP-051 lineage, 2026-05-21 disaster sensitivity).
+  const pctCap = Math.floor(inCategory.length * cfg.abort_pct_of_category / 100);
+  if (candidates.length > cfg.abort_abs ||
+      (inCategory.length > 0 && candidates.length > pctCap)) {
+    out.aborted = 'delete-sanity gate: ' + candidates.length + ' candidates exceeds abort_abs=' +
+      cfg.abort_abs + ' or ' + cfg.abort_pct_of_category + '% of category (' + pctCap +
+      '); zero deletions this cycle';
+    return out;
+  }
+
+  out.ran = true;
+  if (!cfg.enabled) return out;                                    // manifest-only
+
+  // Phase-2 path: actually delete (capped).
+  for (const rel of candidates.slice(0, cfg.per_cycle_cap)) {
+    try {
+      fs.unlinkSync(path.join(fuseRoot, rel));
+      out.deleted++;
+    } catch (e) {
+      out.errors++;
+      if (/EPERM|EACCES|ENOTSUP|not permitted/i.test(String(e.message))) {
+        out.aborted = 'unlink-unsupported-on-fuse: ' + e.message +
+          ' — falling back to manifest-only';
+        break;                                                     // FUSE refuses; stop trying
+      }
+    }
+  }
+  out.truncated = candidates.length > cfg.per_cycle_cap;
+  return out;
+}
+
 // State holders (visible to crash handler).
 let state = { local_sha: null, remote_sha: null, last_sentinel_at: null, classification: null, need_sync: null };
 let finalSentinelWritten = false;
@@ -250,11 +390,24 @@ const filesCopied = copiedMatch ? parseInt(copiedMatch[1], 10) : 0;
 const newFiles = newMatch ? parseInt(newMatch[1], 10) : 0;
 const action = (classification === 'local-ancestor-of-remote') ? 'auto-sync' : 'pull-moved-auto-sync';
 
+// PROP-091 (2026-06-11): delete-propagation pass — only after a successful sync.
+// fuseRoot is parsed from build.js's own output line ("Sync to workspace (<path>)..."),
+// so the helper agrees with build.js on which workspace was targeted.
+let delResult = { ran: false, mode: null, aborted: 'sync-failed' };
+if (syncExit === 0) {
+  const fuseRootMatch = syncOut.match(/Sync to workspace \(([^)]+)\)/);
+  const fuseRoot = fuseRootMatch ? fuseRootMatch[1] : null;
+  delResult = fuseRoot
+    ? deletePropagationPass(fuseRoot)
+    : { ran: false, mode: null, aborted: 'no-fuse-workspace-resolved-from-build-output' };
+}
+
 writeSentinel(`sync-workspace-runs-${TS_FILE}.json`, {
   ...basePayload(action),
   files_copied: filesCopied,
   new_files: newFiles,
   sync_exit_code: syncExit,
+  delete_propagation: delResult,
   output_tail: syncOut.split('\n').slice(-20).join('\n')
 });
 finalSentinelWritten = true;

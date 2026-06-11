@@ -379,6 +379,12 @@ declare -A NEVER_PUSH_STRANDS
 # (c) unparseable filenames and non-matching paths fall through to the normal
 # rescue (fail-open). Files outside these categories (open-issues.json,
 # data/wins.json, etc.) are entirely unaffected.
+#
+# NOTE (PROP-091, 2026-06-11): this pattern table is mirrored in
+# monitor/scripts/sync-workspace-step4c.js DELETE_PATTERNS and
+# monitor/scripts/prune-integrity.js POLICIES. If you edit one, edit all three.
+# (Drift between the three would degrade to FUSE-side accumulation — never to
+# over-deletion — but the lint signal of mismatch should still be addressed.)
 is_prune_expired() {
   local dst="$1" days
   case "$dst" in
