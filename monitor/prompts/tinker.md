@@ -316,8 +316,13 @@ TOKEN=$(git -C "${WORKSPACE}" remote get-url origin 2>/dev/null | grep -oP 'x-ac
 SESSION=$(pwd | grep -oP '/sessions/[^/]+')
 PROJ_MB=$(du -sm "${SESSION}/mnt" /tmp/*-clone /tmp/dome-* 2>/dev/null | awk '{s+=$1} END{print s+0}')
 echo "DISK: project-induced footprint ${PROJ_MB}MB (FUSE workspaces + ephemeral agent clones + agent scratch)"
-if [ "$PROJ_MB" -ge 1000 ]; then echo "DISK CRITICAL: project footprint ≥1000MB — likely accumulated clone leak"; fi
-if [ "$PROJ_MB" -ge 500 ]; then echo "DISK WARNING: project footprint ≥500MB — investigate clone cleanup"; fi
+if [ "$PROJ_MB" -ge 1500 ]; then echo "DISK CRITICAL: project footprint ≥1500MB — likely accumulated clone leak"; fi
+if [ "$PROJ_MB" -ge 800 ]; then echo "DISK WARNING: project footprint ≥800MB — investigate clone cleanup"; fi
+# PROP-088/091 lineage (raised 2026-06-12 per tinker FND-03): baselines bumped
+# while monitor/integrity/narrative-cite-audit (currently ~380MB on git HEAD)
+# drains through PROP-091 Phase 2. Expected post-drain steady state: full clone
+# ~95MB + FUSE workspace ~250MB ≈ 350MB. Re-tune (~400/~700) once PROP-091
+# Phase 2 has converged the working tree back to its steady-state footprint.
 # PROP-070 observability counter (added 2026-05-31): count status='assigned-analyst' ISSs
 # whose EXP-chain endpoint is integrated=true (excluding amendment-noted hold-back).
 # Expected to be 0 after Step A0c sweep deploys. >0 means there are pre-existing cases
@@ -473,12 +478,13 @@ CLAUDE.md is the single most important document in the project — every new ses
 
 ## Cleanup (mandatory, run last) — added 2026-05-25 (PROP-060 FND-01)
 
-Before exiting, delete the clone directory you used this run to reclaim disk space. Tinker runs daily and on operator-triggered cadence; accumulated `${SESSION}/tinker-clone` leftovers add ~290 MB each and have triggered DIRECTIVE-20260508-001 disk-pressure incidents in the past. The standing 4-hour `/tmp/*-clone` empowerment (Mode 2 above) is a backstop — this is the primary, run-local hygiene step.
+Before exiting, delete the clone directory you used this run to reclaim disk space. Tinker runs daily and on operator-triggered cadence; accumulated `${SESSION}/tinker-clone` leftovers add ~480 MB each as of 2026-06-12 (working tree inflated by monitor/integrity/narrative-cite-audit at ~380MB pending PROP-091 Phase 2 drain; pre-drain baseline was ~290MB and will return there once PROP-091 converges). Past leftover-clone accumulation has triggered DIRECTIVE-20260508-001 disk-pressure incidents. The standing 4-hour `/tmp/*-clone` empowerment (Mode 2 above) is a backstop — this is the primary, run-local hygiene step.
 
 ```bash
 # PROP-090 (2026-06-10): tinker's clone now lives at ${SESSION}/tinker-clone
 # (was /tmp/tinker-clone). Per-session storage means leftovers are session-
-# bounded, but discipline still matters — each run still costs ~290 MB.
+# bounded, but discipline still matters — each run still costs ~480 MB as of
+# 2026-06-12 (PROP-091 Phase 2 drain pending; baseline ~290 MB post-drain).
 # Skip silently if the variable is unset or the path is unexpectedly empty —
 # never `rm -rf /` on a typo. Accept either the new ${SESSION}/*-clone path
 # or the legacy /tmp/*-clone path during the transition.
