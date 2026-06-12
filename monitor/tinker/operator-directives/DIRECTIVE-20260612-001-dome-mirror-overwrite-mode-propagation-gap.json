@@ -1,0 +1,30 @@
+{
+  "directive_id": "DIRECTIVE-20260612-001",
+  "for": "tinker",
+  "status": "pending",
+  "priority": "medium",
+  "created_at": "2026-06-12T05:30:00.000Z",
+  "created_by": "operator",
+  "title": "dome-mirror's git→FUSE sync misses overwrite-mode file updates — sibling to PROP-091 addressing the create-or-overwrite half of the same multi-session FUSE divergence problem",
+  "context": "2026-06-12 morning operator-side dig revealed a second class of multi-session FUSE divergence beyond PROP-091's delete-propagation gap. dome-mirror's sync-workspace-step4c.js (and the build.js sync-workspace step it invokes) propagates git→FUSE for files that are NEW on FUSE (create-mode), but its smart_copy mtime guard SKIPS files that already exist on the FUSE destination. For overwrite-mode files (same filename, content rewritten each run on git side — e.g. monitor/tinker/latest-tinker-summary.txt, monitor/decisions/latest-decider-summary.txt, monitor/analyst/latest-analysis-summary.txt, and similar latest-*-summary.txt rescue surfaces), this means the FUSE-side copy in any OTHER session's mount becomes permanently stale at whichever version that session last wrote.\n\nOperator-observed symptom 2026-06-12: tinker's June 11 and June 12 nightly runs produced report-*.json files (which propagated cleanly via dome-mirror's create-mode copy) AND a refreshed latest-tinker-summary.txt (which did NOT propagate to the operator-cowork session's FUSE). The operator's view of latest-tinker-summary.txt was stuck at the June 10 18:38 version from when the cowork session last wrote it; the report-*.json files were correctly synced. This led to a misread of the morning state ('tinker hasn't run since June 10') that the operator caught by manually fetching origin's content.\n\nThis is structurally a sibling of PROP-091's delete-propagation gap. PROP-091 addresses 'origin removes a file, FUSE doesn't notice'. This directive addresses 'origin rewrites an existing file, FUSE keeps its older copy'. Both arise from sync-workspace-step4c.js / build.js syncToWorkspace using create-only copy semantics.",
+  "task": "Propose a safe fix for the overwrite-mode propagation gap. Likely shape: extend dome-mirror's sync to detect 'file present on both sides but git side is newer-mtime / different content' and copy git→FUSE for an allow-listed set of overwrite-mode latest-*-summary.txt files. Honor the same disaster-sensitivity gates as PROP-091.",
+  "investigation_questions": [
+    "Q1: Content-hash diff (correct but expensive) vs git-commit-time-vs-FUSE-mtime (cheap but has PROP-082 cross-session-mtime issues). Recommend content-hash given small allow-list.",
+    "Q2: Allow-list enumerated explicitly OR derived from CLAUDE.md OWNERSHIP workspace-owned filter. Operator leaning explicit.",
+    "Q3: Workspace-owned vs FUSE-canonical reframe — canonicalness is per-session; cross-session canonical is whichever session most recently wrote (lands in git via workspace-sync). dome-mirror's job is replicating that authoritative version to other sessions' FUSE.",
+    "Q4: Single PROP unifying with PROP-091, or sibling PROP. Operator open to either; recommend whichever ships safer."
+  ],
+  "deliverable": "A PROP-NNN in monitor/tinker/proposals/ mirroring PROP-091's Phase 0 inert → Phase 1 observe → Phase 2 enable shape. Same propose-only discipline.",
+  "constraints": [
+    "Honor PROP-051 disaster sensitivity: any FUSE write needs safety gates analogous to PROP-091's delete gates.",
+    "Do NOT change PROP-091's logic; this is purely additive.",
+    "Stay within the FULL-clone constraint for dome-mirror.",
+    "Allow-list enumerated and reviewable; no implicit 'sync anything in monitor/' clauses.",
+    "Same propose-only discipline as PROP-091."
+  ],
+  "background_artifacts": {
+    "sibling_prop": "PROP-091 dome-mirror delete-propagation (Phase 0 landed 2026-06-11)",
+    "trigger_observation_date": "2026-06-12",
+    "related_prop_lineage": ["PROP-051", "PROP-074", "PROP-082", "PROP-091"]
+  }
+}

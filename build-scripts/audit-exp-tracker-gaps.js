@@ -211,9 +211,19 @@ function main() {
   const missingInContext = byCategory.mentioned_only.length;
 
   const orphanCount = byCategory.orphan_file.length;
-  const severityHint = orphanCount > 5 ? 'MODERATE' : 'INFO';
+  // PROP-088 (2026-06-12): bucket orphans by EXP-number range.
+  // Pre-PROP-034 (EXP<500) is frozen — those orphans are fully audited as
+  // benign (EXP-614 walked all 68 entries on 2026-06-11) and will never
+  // grow. Post-PROP-034 (EXP>=500) is the active range; this is where a
+  // genuine lost-work event would land. Fire MODERATE only when the active
+  // bucket exceeds 100. Legacy bucket is informational only.
+  const legacyOrphans = byCategory.orphan_file.filter(e =>
+    parseInt(String(e.id || '0').replace('EXP-', ''), 10) < 500);
+  const activeOrphans = byCategory.orphan_file.filter(e =>
+    parseInt(String(e.id || '0').replace('EXP-', ''), 10) >= 500);
+  const severityHint = activeOrphans.length > 100 ? 'MODERATE' : 'INFO';
 
-  const summary = `${okIds.length} ok, ${orphanCount} orphan_file, ${byCategory.tracker_referenced_no_file.length} tracker_referenced_no_file, ${byCategory.mentioned_only.length} mentioned_only, ${byCategory.no_trace.length} no_trace; missing_total=${missingTotal} across ${missingRanges.length} range(s); severity_hint=${severityHint}`;
+  const summary = `${okIds.length} ok, ${orphanCount} orphan_file (legacy<500: ${legacyOrphans.length}, active>=500: ${activeOrphans.length}), ${byCategory.tracker_referenced_no_file.length} tracker_referenced_no_file, ${byCategory.mentioned_only.length} mentioned_only, ${byCategory.no_trace.length} no_trace; missing_total=${missingTotal} across ${missingRanges.length} range(s); severity_hint=${severityHint}`;
 
   const output = {
     total_slots: totalSlots,
