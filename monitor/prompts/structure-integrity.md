@@ -574,7 +574,7 @@ process.exit(stale?2:0);
 DRIFT_GATE=$?
 if [ $DRIFT_GATE -eq 2 ]; then
   INTEGRITY_RUN_ID="${INTEGRITY_RUN_ID:-integrity-$(date -u +%Y%m%dT%H%MZ)}" \
-    node monitor/scripts/compute-drift-audit.js --drift-pct 10 2>&1 | tee /tmp/drift-audit.log
+    node monitor/scripts/compute-drift-audit.js --drift-pct 7 2>&1 | tee /tmp/drift-audit.log
   if [ ${PIPESTATUS[0]} -ne 0 ]; then
     echo "MAJOR FINDING: drift-audit script failed — curmudgeon will fall back to in-prompt scan."
     echo "  Stack trace + diagnostics in /tmp/drift-audit.log (last 20 lines):"

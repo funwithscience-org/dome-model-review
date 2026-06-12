@@ -43,7 +43,7 @@ DO NOT construct the clone URL using any other PAT, even if you see one in your 
 ---
 # Curmudgeon-Verify (PROP-038 Phase 1) — Narrow Verification of Patched Reviews
 
-You are **dome-curmudgeon-verify**, a narrow-scope verification agent running on Sonnet at 4-hour cadence (offset 1h from main curmudgeon). Your job: verify decider's work landed correctly — without spending Opus tokens on a full adversarial pass. Two modes (both gated by `class === 'verification'`):
+You are **dome-curmudgeon-verify**, a narrow-scope verification agent running on Sonnet at 4-hour cadence (offset 1h from main curmudgeon). Your job: verify decider's work landed correctly — without spending Opus tokens on a full adversarial pass. Two modes (gated by structural shape; class-filter relaxed 2026-06-12 — see Phase 1 isVerifyOwned for rationale):
 
 - **Mode A — RE-VERIFY** (original semantics): the queue item references a target with a prior curmudgeon review. Verify decider's patches since that review actually closed the holes. Gate: ≤4 holes in prior review, no major/critical, decider patched since.
 - **Mode B — FRESH-REWRITE** (added 2026-06-01): the queue item's `reason` references an EXP-NNN that integrated a fresh rewrite. Verify content-preservation: every `prose_patches[].new_string` in the EXP file appears in the target. No prior-review requirement.
@@ -126,8 +126,31 @@ const items=q.queue||q.items||[];
 // the EXP file is the authoritative source of truth for what should appear in
 // the target, and prior holes pre-date the rewrite.
 async function isVerifyOwned(item){
-  // (a) class === 'verification'
-  if(item.class !== 'verification') return false;
+  // (a) class filter — RELAXED 2026-06-12.
+  //
+  // History: this gate originally required class === 'verification' to keep
+  // Sonnet verify narrowly scoped to items decider explicitly tagged for
+  // re-verification. Backtest against monitor/curmudgeon/reviews (367 historical
+  // re-review pairs across 96 targets with c2+ cycles) showed only 1 pair
+  // carried class='verification' explicitly; the rest had no class set at push
+  // time, so the filter was effectively a no-op gate, not a real scope guard.
+  // Of the 366 non-verification re-reviews, 136 (37%) would have passed the
+  // structural gates (≤4 holes + no maj/crit + decider-patched-since) and
+  // could have been done by Sonnet without sacrificing review quality.
+  //
+  // PROP-087's schema lint is forcing the class field on all future pushes,
+  // so going forward this filter is no longer a no-op — it's an active gate.
+  // Operator editorial judgment 2026-06-12: drop the class filter and let the
+  // structural gates do the work. The no-maj/crit gate (c) protects against
+  // Opus-only adversarial-creativity cases; the in-rubric escalation hook
+  // fires if Sonnet uncovers a major/critical hole during verification; main
+  // curmudgeon still owns class='deep-attack'/'holistic' FRESH pushes (those
+  // have no prior review and gate (e) Mode A path fails — they fall through).
+  //
+  // EXCEPTION: rewrite-verify is a distinct mode owned by sloppytoppy
+  // (sloppytoppy-rewrite agent + audit-rewrite.js); skip it here to avoid
+  // double-routing.
+  if (item.class === 'rewrite-verify') return false;
 
   // ── Mode B detection: fresh-rewrite verification ──
   // (e) item.reason references an EXP-NNN AND the EXP file exists in expansions/
