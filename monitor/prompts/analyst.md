@@ -235,16 +235,18 @@ FUSE had 60 resolved, causing the agent to plan against stale state and discover
 the mismatch only when it tried to write. Always read AND write `${WORKSPACE}/monitor/analyst/attention-inbox.json` for this mode; never the relative path.
 
 ```bash
-cat "${WORKSPACE}/monitor/analyst/attention-inbox.json" 2>/dev/null | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const a=JSON.parse(d);const arr=Array.isArray(a)?a:(a.items||[]);const p=arr.filter(x=>x.status==='pending');console.log(p.length?'ATTENTION ITEMS: '+p.length+' pending':'NO ATTENTION ITEMS')}catch(e){console.log('NO ATTENTION ITEMS')}})"
+cat "${WORKSPACE}/monitor/analyst/attention-inbox.json" 2>/dev/null | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const a=JSON.parse(d);const arr=Array.isArray(a)?a:(a.items||[]);const p=arr.filter(x=>(x.status==='pending'||x.status==='open')&&x.audience!=='operator');console.log(p.length?'ATTENTION ITEMS: '+p.length+' visible':'NO ATTENTION ITEMS')}catch(e){console.log('NO ATTENTION ITEMS')}})"
 ```
 Trigger: The decider (or human) flagged something for the analyst to re-examine. This is the "take a look at this" inbox — items that changed in ways that might affect your prior analysis, or new content the decider wants scientific review on before committing.
+
+**Item visibility (PROP-093 C1, 2026-06-13).** The live filter accepts `status: "pending"` AND `status: "open"` (back-compat transition — writers have emitted both variants; canonical is `"pending"`, see decider.md §816). The filter also EXCLUDES `audience: "operator"` items — those are Mode 6 random-look FYI notes (analyst's own writes), not analyst work, and Mode 2b must not process them. When iterating items in Phase 1/2/3 below, treat `status: "open"` identically to `status: "pending"`. When the canonical `reason` field is absent (the divergent writer variant emits `body` instead), fall back to `body` for the ISS-N/EXP-N/WIN-NNN/SEC-X.Y token regex and length checks. C2 (writer normalization in decider.md) and C3 (operator-FYI routing decision) are follow-ups; this guard is the immediate unblock.
 
 **Process in three phases per run** (added 2026-04-26 to drain a 71-item / 14-day backlog accumulated during the dispatcher-shape silent-skip bug; mirrors curmudgeon Step 8a pattern):
 
 **Phase 1 — OBE triage (up to 10 items, no analysis).** Many old items reference an ISS or EXP whose state has since moved on (closed / integrated). For each pending item, run mechanical checks. If any pass, mark `status: "resolved"`, set `resolved_at` to the **actual current time at the moment of resolution** (`new Date().toISOString()` — never a batch-rounded or template/nominal timestamp; each OBE'd item gets its own per-item timestamp even if 10 items resolve within the same run, so the audit trail reflects when each was actually evaluated), set `resolved_by: "mode2b-obe-triage"`, and `resolved_reason: "OBE: <one-liner>"` — no expansion or proposal written. Limit: 10 OBEs per run so a bad heuristic can't dismiss the whole inbox.
 
 OBE criteria — any ONE triggers dismissal:
-- Item references `ISS-N` (regex `\bISS-\d+\b` in reason); look up N in `monitor/decisions/closed-issues.json`. **Closure date field: `fixed_at` is canonical** (present on ~74% of closed issues). For older entries fall back through `closed_at` → `fix_date` → `resolved_at` if `fixed_at` is absent. If found AND closure date ≥3 days ago, OBE: `"OBE: ISS-N closed <date>"`. If the issue is in closed-issues but no closure date can be parsed, treat the *file-presence* itself as evidence of closure and OBE with `"OBE: ISS-N in closed-issues (date field missing)"` — being in closed-issues is the structural fact; the date is decoration.
+- Item references `ISS-N` (regex `\bISS-\d+\b` in reason||body — per PROP-093 C1 field-shim); look up N in `monitor/decisions/closed-issues.json`. **Closure date field: `fixed_at` is canonical** (present on ~74% of closed issues). For older entries fall back through `closed_at` → `fix_date` → `resolved_at` if `fixed_at` is absent. If found AND closure date ≥3 days ago, OBE: `"OBE: ISS-N closed <date>"`. If the issue is in closed-issues but no closure date can be parsed, treat the *file-presence* itself as evidence of closure and OBE with `"OBE: ISS-N in closed-issues (date field missing)"` — being in closed-issues is the structural fact; the date is decoration.
 - Item references `EXP-N`; look up N in `monitor/analyst/expansion-tracker.json`. If `status: "integrated"` AND `integrated_at` ≥3 days ago, OBE: `"OBE: EXP-N integrated <date>"`. **Tracker-staleness fallback (added 2026-04-27 per analyst report):** if `status: "ready-for-integration"` BUT the EXP's content can be cross-checked against current `data/wins.json` or `data/sections.json` and is found to be already integrated (decider's tracker update lagged), treat as OBE with `"OBE: EXP-N integrated despite stale tracker (content present in <file>)"`. Specific known-stale entries to spot-check: EXP-227, EXP-232 (per analyst note 2026-04-27).
 - Item is >14 days old AND references a state token (WIN-NNN, SEC-X.Y) that no longer exists in current `data/wins.json` or `data/sections.json` (renumbered/removed). OBE: `"OBE: target no longer exists post-renumber"`.
 - Item is >7 days old AND the affected WIN/section has had a newer curmudgeon review file in `monitor/curmudgeon/reviews/` (filename mtime > item's created_at). OBE: `"OBE: superseded by curmudgeon review <filename>"` — curmudgeon caught anything that mattered.
@@ -252,16 +254,16 @@ OBE criteria — any ONE triggers dismissal:
 Do NOT OBE if the item is `priority: high` or has any "blocker" / "critical" tag, regardless of age. Substantive items with closed-issue references still warrant the singleton path (Phase 3).
 
 **Phase 2 — Small-item batch (up to 3 items, quick verification).** After OBE, look at remaining pending items. Batch up to 3 per run if ALL of:
-1. `reason` field <300 chars (long reasons usually mean substantive re-examination needed)
+1. `reason` field (or `body` if `reason` absent, per PROP-093 C1) <300 chars (long reasons usually mean substantive re-examination needed)
 2. References a single ISS or EXP only (no cross-cutting impact)
 3. Verification is empirical — comparing a stated claim against a data file value (numeric or string check), not a prose-rewrite or re-analysis
-4. `priority` not in {`high`, `blocker`} and reason doesn't contain "verdict change", "promoted to", "neutralization"
+4. `priority` not in {`high`, `blocker`} and reason||body doesn't contain "verdict change", "promoted to", "neutralization"
 5. Doesn't require touching `data/sections.json` or `data/wins.json` or writing a new EXP
 
 For each batched item: do the empirical verification (one bash/node check), mark resolved with `resolved_by: "mode2b-batch"` and `resolved_reason: "<one-liner of what was verified>"`. Set `resolved_at` to the actual current time at resolution (`new Date().toISOString()`) — per-item, not a batch-rounded timestamp. If verification fails (claim doesn't match data), abort batch — write a normal expansion or issue-proposal for that one and STOP for this run.
 
 **Phase 3 — Singleton substantive (1 item per run, original procedure).** If anything remains after OBE and batch, process ONE per the original procedure:
-- Read the `reason` field to understand what changed
+- Read the `reason` field (or `body` if `reason` absent, per PROP-093 C1) to understand what changed
 - Re-examine the affected WIN/section/prediction with fresh eyes
 - If your prior analysis still holds, mark the item `"status": "resolved"` with `resolved_by: "mode2b-singleton"` and a brief note
 - If your analysis needs updating, write an expansion or patch proposal as usual, then mark resolved
