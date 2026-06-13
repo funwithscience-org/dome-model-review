@@ -1,0 +1,43 @@
+{
+  "directive_id": "DIRECTIVE-20260613-002",
+  "for": "tinker",
+  "status": "pending",
+  "priority": "medium",
+  "created_at": "2026-06-13T06:50:00.000Z",
+  "created_by": "operator",
+  "title": "Decider runtime creep — 2026-06-13 UTC 06:00 slot took ~32 min (vs expected ~10-20). Diagnose trend + propose mitigation.",
+  "context": "Operator observation 2026-06-13T06:45Z: the 06:00 UTC decider slot ran from lastRunAt=2026-06-13T06:03:59Z (start) through the summary commit 43921db at 06:35:58Z, a wall-clock span of ~32 minutes. Steve flagged this as longer than expected. The work delivered was reasonable but not extraordinary: EXP-620 integration (4 patches to data/wins.json + test.js P4 regression anchor), 1 self-apply (ISS-2741), 3 ISS closures (2728, 2739, 2740), 1 queue push (qid=528), test suite (3831/3831 pass), and EXP-612 explicitly deferred. The throughput / runtime ratio looks worse than recent baseline, which is why operator is asking for diagnosis rather than just accepting it.\\n\\nRecent additions to decider's hot path (any of which could be contributing — tinker should empirically attribute, not guess):\\n  - PROP-083 idempotent pre-push hook (installed every clone; chains lint-close-records + lint-decider-surfaces). Each push invocation fires both linters.\\n  - PROP-087/089 lint-decider-surfaces.js (480 LoC; reads priority-queue + attention-inbox + open-issues + closed-issues archive).\\n  - PROP-089 allocate-iss-ids.js cross-file ISS allocation (reads open + closed each call).\\n  - PROP-022 archive scanning at intake (human-notes archives across 4 agents, priority-queue archive, expansion-tracker archive).\\n  - PROP-009r2 shadow audit (reads priority-queue-archive.jsonl, recently grown — workspace-sync just committed a 23,435-line narrative-cite-audit and similar files).\\n  - The 3831 test count itself — has the suite grown lately and is `node test.js` non-trivial?\\n\\nIndependent contributor possibilities (not from PROPs):\\n  - Increased file sizes (open-issues.json, priority-queue.json, attention-inbox.json) as backlog churn produces more entries.\\n  - More frequent `git pull --rebase` retries during decider runs because of concurrent workspace-sync / dome-mirror pushes (peak-shift scheduling currently has heavy 06-12Z overlap).\\n  - Multiple smaller push attempts that each re-run the hook chain (instead of one consolidated push).",
+  "task": "Diagnose what's slowing decider, propose a fix that cuts runtime back toward 10-20 min, propose-only.",
+  "investigation_questions": [
+    "Q1 — Runtime trend over the last 14 days. Plot decider per-run wall-clock (compute from first 'decider: ...' commit to 'decider: status + summary ...' commit per run). Was the 32-min run a one-off (EXP-620 was substantive) or part of a multi-day creep trend?",
+    "Q2 — Where is the time actually going? Decider runs from a fresh clone, so a useful proxy is the count of git push attempts per run (each one fires the pre-push hook chain). Did the 06:00 slot push more times than typical (e.g., one push per closure + one for summary)? lint-decider-surfaces.js is 480 LoC + reads several JSONL archives; per-push cost matters at scale.",
+    "Q3 — Is `node test.js` part of the per-run hot path, or only run when patches touch data files? If always-on, that's a steady tax; if conditional, check whether recent runs are hitting it more often. Test count is 3831 — confirm the run-time of `node test.js` empirically (one cold invocation) and see if it dominates.",
+    "Q4 — Are decider's intake reads (PROP-022 archive scans) growing with archive size? human-notes-archive.jsonl, priority-queue-archive.jsonl, expansion-tracker-archive.jsonl. Daily appends accumulate; some readers may scan O(N) of the archive even when only the tail matters.",
+    "Q5 — Concurrent-push rebase churn. workspace-sync and dome-mirror both fire at :00 and :30 every hour in the active window. If decider pushes mid-cycle, it may hit the rebase-then-push retry path multiple times. Count `pull --rebase` invocations in recent decider runs (look at the stderr capture if any, or infer from commit timestamps clustering).",
+    "Q6 — Is the lint-decider-surfaces.js reading the entire priority-queue-archive.jsonl per invocation (for the qid-uniqueness cross-check)? The archive should be ~1-2 MB by now; reading it on every push, twice per push (record-validation + qid-cross-check) compounds. If yes, the fix could be archive-tail-only reads or a memoized first-pass scan."
+  ],
+  "deliverable": "A PROP-NNN with: (1) timing attribution — which contributor is responsible for the bulk of the runtime growth, with evidence (numbers, not narrative); (2) proposed fix — script optimization (memoization, archive-tail-only reads, single-push consolidation), prompt restructure, or hook chain tuning; (3) projected speedup; (4) any rollout caveats (especially around the PROP-083 hook chain — the lints are load-bearing, do not weaken them, only make them faster).",
+  "constraints": [
+    "Do NOT weaken the PROP-083 hook chain enforcement. PROP-087 + PROP-089 are recent (2026-06-10) and were authored after the 2026-06-09 decider schema-improv incident — they are doing real work. Speedup comes from making them faster, not optional.",
+    "Do NOT remove the test.js invocation if it is currently guarding integration correctness. If the suite is too slow, propose splitting fast/slow (with the fast subset run on every push and the slow subset gated to nightly).",
+    "Honor the other-side: maybe the 06:00 slot was legitimately 32-min work (EXP-620 was substantive). The directive's job is to determine whether this is a creep TREND or a one-off, not assume the worst."
+  ],
+  "background_artifacts": {
+    "observed_run": "decider-2026-06-13T10-00 (work commit 8e8cb8b1 06:35:04Z, summary commit 43921db 06:35:58Z, lastRunAt 06:03:59Z; ~32 min wall-clock)",
+    "scheduled_task_id": "dome-decider",
+    "cron": "0 3,7,11 * * * (local UTC+1 = UTC 02/06/10)",
+    "recent_decider_path_additions": [
+      "monitor/scripts/lint-close-records.js (PROP-083, 123 LoC)",
+      "monitor/scripts/lint-decider-surfaces.js (PROP-087/089, 480 LoC)",
+      "monitor/scripts/lint-required-artifacts.js (PROP-081, 76 LoC)",
+      "monitor/scripts/allocate-iss-ids.js (PROP-089)"
+    ],
+    "decider_prompt_size_today": "1237 LoC (monitor/prompts/decider.md)",
+    "related_prop_lineage": ["PROP-083", "PROP-087", "PROP-089", "PROP-022", "PROP-009r2"]
+  },
+  "not_in_scope": [
+    "Changes to the test suite (test.js) — only propose split if Q3 finds it dominant.",
+    "Loosening any of the lint enforcement — only making them faster.",
+    "Cron / cadence changes — tinker's prior PEAK-SHIFT is recent; runtime is not a scheduling problem unless contention is dominant (Q5 finding)."
+  ]
+}
