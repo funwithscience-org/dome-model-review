@@ -1,0 +1,99 @@
+{
+  "report_id": "tinker-2026-06-13T05-06",
+  "timestamp": "2026-06-13T05:18:58.711Z",
+  "agent": "tinker",
+  "mode_selected": "Mode 4 (directive-driven) — PROP authoring",
+  "mode_selected_reason": "Pre-flight operator-directive discovery (from the fresh clone, authoritative per FND-01) found a pending directive DIRECTIVE-20260612-001 (priority medium). Per the dispatcher priority order, a pending operator-directive preempts Mode 0 and Mode 1-4. The directive asks for a PROP proposing a safe fix for dome-mirror's overwrite-mode git->FUSE propagation gap (sibling to PROP-091's delete-propagation gap). Routed to Mode 4 (proposal authorship).",
+  "modes_checked": {
+    "operator_directive": "PENDING: DIRECTIVE-20260612-001 (overwrite-mode propagation gap). Selected as primary task this run.",
+    "mode_0_assigned_to_tinker": "1 item pending (ISS-2725, major, class_hint=verification — attention-inbox status-vocabulary mismatch stranding 3 analyst verification items). DEFERRED: operator-directive preempts Mode 0 per dispatcher priority order. Will be top-pick next run if no higher-priority directive lands.",
+    "mode_1_pipeline_health": "Not run. Spot signals from data: open-issues=10 (all pending-human/assigned-analyst/assigned-tinker, 0 in 'open' status, 0 aged >=14d), net velocity +103/7d. Healthy. (No full staleness/stranded-patch sweep this run — directive-driven.)",
+    "mode_2_infra_fuse": "Not run. PAT-scope PRELUDE verified dome PAT (HTTP 200). No full FUSE-hash or disk sweep this run.",
+    "mode_3_cost_eng": "Not run (directive preempts). CLAUDE.md accuracy/perf audit deferred to next Mode 3 run.",
+    "mode_4_proposals": "RUN. Authored PROP-092 per directive."
+  },
+  "previous_followup": [
+    {
+      "ref": "PROP-091 (sibling, delete-propagation)",
+      "verification_pattern": "grep -q 'deletePropagationPass' monitor/scripts/sync-workspace-step4c.js",
+      "result": "FIXED — Phase 0 landed (deletePropagationPass present; config delete_propagation.enabled=false, manifest-only). Phase 1 observation in progress. This PROP-092 is its overwrite-mode sibling and deliberately does not touch PROP-091's logic or config key.",
+      "note": "Most recent sync-workspace-runs sentinel present in THIS --depth-50 clone is 2026-06-07 (no delete_propagation key) — that is a shallow-clone/pruned-integrity artifact, NOT evidence Phase 0 isn't emitting manifests. Phase-0 manifest observation should be verified against the live FUSE workspace sentinels, not the clone."
+    },
+    {
+      "ref": "report-2026-06-12 FND-05 (operator nudge)",
+      "result": "STILL OPEN — ISS-2341 (now ~14d, EXP-452-P1 generate-html.js) and ISS-2543 (now ~10d, EXP-450 handoff workflow gap) both remain status=pending-human. Carried forward; operator action still required.",
+      "severity": "moderate"
+    },
+    {
+      "ref": "report-2026-06-12 FND-01 (decider integrity-step skip watch)",
+      "result": "NOT RE-VERIFIED this run (directive-driven; deferred). The watch action (check next decider summary for a SECOND consecutive integrity misstatement) should be picked up on the next Mode 1/3 run.",
+      "severity": "info"
+    }
+  ],
+  "backlog_trend": {
+    "open_issues_total": 10,
+    "open_status_count": 0,
+    "assigned_analyst_count": 4,
+    "age_ge_14d_count": 0,
+    "age_ge_30d_count": 0,
+    "net_velocity_7d": 103,
+    "closed_issues_velocity_7d": 110,
+    "new_issues_velocity_7d": 7,
+    "wow_baseline": "2026-06-06 open_total=7",
+    "wow_growth_pct": 42.9,
+    "nominal_tier_by_formula": "major (>20% WoW)",
+    "assessed_severity": "info",
+    "assessment_rationale": "The >20% WoW tier fires purely on the 7->10 absolute move, which is noise at this volume. All health signals are green: 0 issues in 'open' status, 0 aged >=14d, net velocity strongly positive (+103/7d; 110 closed vs 7 new). The percent-based PROP-030 tiers are noise-dominated below ~50 total issues. Recording the formula tier for transparency but assessing as info — emitting a 'major backlog-trend' alarm here would be a false positive. Row appended to queue-history.jsonl.",
+    "queue_history_row_appended": true
+  },
+  "findings": [
+    {
+      "id": "FND-01",
+      "category": "operator-directive-completed",
+      "severity": "info",
+      "title": "Authored PROP-092 — dome-mirror overwrite-propagation (DIRECTIVE-20260612-001)",
+      "detail": "Authored monitor/tinker/proposals/PROP-092-dome-mirror-overwrite-propagation.json. Proposes an overwritePropagationPass() in sync-workspace-step4c.js mirroring PROP-091's Phase 0/1/2 shape and PROP-051 safety gates. Two-guard candidate rule (content-hash diff AND git-last-commit-time > lastSentinelAt), explicit 12-entry allow-list of latest-*-summary.txt surfaces, config-gated enabled=false (manifest-only), EPERM->manifest-only fallback. Answers directive Q1 (content-hash, not FUSE-mtime per PROP-082), Q2 (explicit allow-list — OWNERSHIP-derivation rejected because it would miss the append_only_glob frozen case, the directive's own headline example latest-tinker-summary.txt), Q3 (canonical = latest-in-git; OWNERSHIP unchanged; direction guard protects local unpushed writes), Q4 (sibling PROP, not folded into PROP-091, ranked by ship-safety). Propose-only — no script/config edited this run. Embedded code passes node --check.",
+      "evidence": "monitor/tinker/proposals/PROP-092-dome-mirror-overwrite-propagation.json (25KB, JSON-valid); verification_pattern: grep -q 'overwritePropagationPass' monitor/scripts/sync-workspace-step4c.js"
+    },
+    {
+      "id": "FND-02",
+      "category": "root-cause-clarification",
+      "severity": "info",
+      "title": "The overwrite-mode gap is broader than the directive's framing and spans BOTH OWNERSHIP categories",
+      "detail": "Directive framed the gap as 'smart_copy mtime guard skips existing files'. The actual mechanism in build.js syncToWorkspace (what dome-mirror invokes) is two distinct create-only behaviors: (a) category==='workspace' files (latest-decider/baby/score/rewrite-summary.txt) are skipped WHOLESALE — never copied git->FUSE at all; (b) append_only/append_only_glob .txt files are either filtered out (walkAppendOnly copies '.json' only) or copied ONCE then frozen ('if (fs.existsSync(dst)) continue'). The directive's headline example (latest-tinker-summary.txt) is sub-case (b)-frozen, NOT a 'workspace' file. All 12 latest-*-summary.txt surfaces are affected. PROP-092's allow-list covers both sub-cases; an OWNERSHIP-derived list would have missed (b).",
+      "evidence": "build.js syncToWorkspace lines ~401-446 (copyIfExists unconditional for 'git'; 'skip (workspace-owned)' branch; walkAppendOnly 'if exists continue' + '.json'-only globExt)."
+    },
+    {
+      "id": "FND-03",
+      "category": "mode-0-deferral",
+      "severity": "moderate",
+      "title": "ISS-2725 (assigned-tinker, major) deferred — attention-inbox status-vocabulary mismatch stranding 3 analyst verification items",
+      "detail": "Mode 0 scan found ISS-2725 (severity major, class_hint=verification): attention-inbox status-vocabulary mismatch leaves 3 items at status=open (ATT-...-exp608 ~4d-class). Correctly deferred this run because a pending operator-directive preempts Mode 0. Flagging so it is not lost: next tinker run with no higher-priority directive should take it as Mode 0 top-pick (class_hint=verification -> Mode 1 mechanical-close or escalate).",
+      "evidence": "monitor/decisions/open-issues.json ISS-2725 status=assigned-tinker"
+    },
+    {
+      "id": "FND-04",
+      "category": "backlog-trend",
+      "severity": "info",
+      "title": "Backlog WoW +42.9% (7->10) trips the formula 'major' %-tier but is a low-volume false positive",
+      "detail": "See backlog_trend block. Assessed info, not major: absolute total 10, 0 in 'open' status, 0 aged, net velocity +103/7d. PROP-030 percent tiers are noise-dominated below ~50 issues. Recommend a future calibration note: gate the WoW-percent tiers behind an absolute-volume floor (e.g. only evaluate %-growth tiers when open_issues_total >= 50) to suppress these noise alarms. Not authored as a PROP this run (single-directive discipline).",
+      "evidence": "queue-history.jsonl rows 2026-06-06 (7) .. 2026-06-13 (10)"
+    }
+  ],
+  "context_load": {
+    "note": "Not measured this run (directive-driven, not Mode 3). Per-agent context-load + CLAUDE.md accuracy/perf audit deferred to next Mode 3 run."
+  },
+  "claude_md_audit": {
+    "note": "Deferred — runs every Mode 3 run; this was a Mode 4 directive run. No CLAUDE.md edits made."
+  },
+  "wasted_compute": {
+    "note": "One regen of the PROP generator due to an output-path typo and one run-id env-var miss on the queue-history append (both fixed in-session, no bad artifact shipped). Otherwise lean — single clone, single planned push."
+  },
+  "next_run_priorities": [
+    "Mode 0: take ISS-2725 (assigned-tinker, major, verification) unless a higher-priority directive lands.",
+    "Re-verify FND-01-watch from 06-12: did the decider integrity-step skip recur? (second consecutive miss -> PROP for artifact-gated integrity step).",
+    "Operator nudge still live: ISS-2341 (~14d) and ISS-2543 (~10d) pending-human.",
+    "When PROP-092 reaches operator review: pair its Phase-1 manifest observation with PROP-091's (same helper, same sentinel).",
+    "Consider PROP for PROP-030 %-tier absolute-volume floor (FND-04) to stop low-volume WoW false positives."
+  ]
+}
