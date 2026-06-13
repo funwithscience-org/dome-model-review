@@ -1,0 +1,95 @@
+{
+  "id": "PROP-093",
+  "title": "Attention-inbox schema reconciliation + audience routing: fix the status-vocabulary AND field-schema divergence that strands analyst Mode 2b items (closes ISS-2725; subsumes 2 analyst issue-proposals)",
+  "created_at": "2026-06-13T05:28:16.277Z",
+  "authored_by": "tinker",
+  "authored_by_run": "tinker-2026-06-13T05-21",
+  "status": "proposed",
+  "source_iss": "ISS-2725",
+  "category": "prompt_fix + schema_reconciliation",
+  "target": "monitor/analyst/attention-inbox.json: writers (decider.md attention-inbox-writer step + analyst.md Mode 6) vs reader (analyst.md Mode 2b dispatcher)",
+  "problem": "ISS-2725 (major, decider-routed to tinker class_hint=verification) reports that audience=analyst attention-inbox items sit at status=open while analyst.md Mode 2b filters status==='pending' only, so they are invisible to every analyst run. Investigation shows the issue is BROADER than the status vocabulary: the 5 currently-live items use a THIRD schema variant entirely. Three schemas have now been observed in this one file: (1) CANONICAL, documented in decider.md ~L816 'SCHEMA - DO NOT DEVIATE': {id:ATT-<ts>, status:'pending', target_type, target_id, reason, pushed_by, pushed_at, related_issues} -- this is what Mode 2b actually parses (it reads reason/target_*/related_issues by name); (2) ATTN-NNN DRIFT (2026-06-07, already archived): {id:ATTN-NNN, resolved:bool, subject, detail/details} -- caught by proposal-attention-inbox-schema-drift.json, items archived; (3) CURRENT NOTIFICATION STYLE (all 5 live items, 2026-06-07..06-12): {id:ATT-<ts>-suffix, created_by, audience, priority, body, status:'open'} -- written by analyst-mode6 (audience=operator) and decider (audience=analyst). The current variant diverges on THREE axes simultaneously: (A) STATUS VOCAB: writers emit status:'open', Mode 2b matches status:'pending' (the ISS-2725 finding); (B) FIELD DIVERGENCE: created_by/pushed_by, body/reason, plus audience+priority which canonical lacks, AND it omits target_type/target_id/reason entirely -- so even if the status filter were widened, Mode 2b's reason/target_* parsing would read undefined; (C) AUDIENCE MISROUTING: 2 of the 5 items are audience=operator (Mode 6 'random-look, no action needed' FYI logs) which are NOT analyst work at all and should never enter the analyst's Mode 2b queue. PROP-022 phase 4 (analyst.md L269) muddies this further by asserting the live file 'holds only status pending or status open items', directly contradicting decider.md's canonical schema which says only 'pending' is valid and anything else 'will silently strand items'. So decider.md and PROP-022 disagree on the live-status vocabulary, and the actual writers honor neither.",
+  "why_iss2725_option_b_insufficient": "ISS-2725 offers two candidate fixes: (a) decider always writes status=pending; (b) analyst Mode 2b filter widens to pending||open. Option (b) ALONE is insufficient and partly wrong: widening only the status filter would make Mode 2b ingest all 5 live items, but (i) the 2 audience=operator items are not analyst work and would generate spurious/empty re-examination cycles; (ii) all 5 items lack target_type/target_id/reason, so Mode 2b's field parsing yields undefined -- the dispatcher would have no WIN/section/prediction target to re-examine. The durable fix requires reader hardening (audience guard + body||reason tolerance), writer normalization (one schema, status=pending), AND an explicit decision about where operator-FYI notes belong. That is a structural reconciliation, not a one-line filter widen -- hence a tinker PROP rather than a self-applied conservative fix.",
+  "current_live_items": {
+    "note": "Snapshot at authoring; all 5 at status=open, FUSE-canonical attention-inbox.json",
+    "audience_operator_FYI": [
+      "ATT-2026-06-07T23:15:48.452Z-mode6 (Mode 6 random-look WIN-064, no action needed)",
+      "ATT-2026-06-11T00:12:34.028Z-mode6-win027 (Mode 6 random-look WIN-027, no action needed)"
+    ],
+    "audience_analyst_context": [
+      "ATT-2026-06-09T04:18:25.007Z-exp608 (EXP-608 integrated into WIN-011, 'if you revisit, keep framing')",
+      "ATT-2026-06-12T02:18:20.000Z-win044-selfapply (decider self-applied WIN-044 c6 holes 3+4, 'build on top')",
+      "ATT-2026-06-12T06:16:43.995Z-exp617-integration (EXP-617 integrated into WIN-044, 'EXP-612 date-gated')"
+    ],
+    "operational_harm_assessment": "All 5 describe work ALREADY DONE (integrations complete, Mode-6 looks closed) -- none is a hard re-examination trigger currently starved of action. So the live operational harm is LOW (no genuine analyst work is blocked right now). The real risk is forward: the next time a writer emits a genuine 're-examine this WIN' item in this notification schema, it will be silently stranded exactly as ATTN-002/003 were on 2026-06-07."
+  },
+  "proposed_fix": {
+    "summary": "Reconcile to ONE canonical attention-inbox schema with audience as a first-class router; normalize all writers to it; harden the Mode 2b reader with a back-compat transition window; route operator-FYI out of the analyst work queue; drain the 5 current items.",
+    "changes": [
+      {
+        "id": "C1-reader-harden",
+        "path": "monitor/prompts/analyst.md",
+        "change": "Mode 2b dispatcher quick-check (L238) and the Phase 1/2/3 'for each pending item' loops: change the live-item filter from arr.filter(x=>x.status==='pending') to arr.filter(x=>(x.status==='pending'||x.status==='open') && x.audience!=='operator'). Add a field-access shim: treat (x.reason||x.body) as the reason text and tolerate missing target_type/target_id (fall back to parsing WIN-/SEC-/PRED- tokens out of the reason/body text, same regex Mode 2b already uses elsewhere). The pending||open clause is the BACK-COMPAT transition window so already-written open items are not lost; once C2 lands and all writers emit pending, a later cleanup can drop the ||open clause.",
+        "rationale": "Honors PROP-022 phase 4's stated intent (open is live) while fixing the audience misrouting and field divergence that a naive widen would miss."
+      },
+      {
+        "id": "C2-writer-normalize",
+        "path": "monitor/prompts/decider.md",
+        "change": "Locate the decider code path that writes the created_by/audience/body/status:'open' variant (the §816 documented schema block already says status:'pending' with reason/pushed_by/target_* -- but the self-apply/integration-notify writes observed 2026-06-09..06-12 use the divergent variant, so there is a SECOND undocumented write site). Normalize that site to the canonical block PLUS a required audience field: {id:ATT-<ISO>, status:'pending', audience:'analyst', target_type, target_id, reason, pushed_by:'decider', pushed_at, related_issues}. If decider intends a pure FYI ('built on top, no re-examine needed'), it should set audience accordingly or use a non-Mode-2b channel (see C3).",
+        "rationale": "Single source of the status:'open' + body-schema divergence. decider.md's own §816 warns this strands items; the warning was correct but a different write site bypasses the documented block."
+      },
+      {
+        "id": "C3-operator-FYI-routing",
+        "path": "monitor/prompts/analyst.md (Mode 6)",
+        "change": "Mode 6 'random-look, no action needed' summaries currently land in attention-inbox.json with audience=operator. Decide ONE of: (a) keep them in attention-inbox with audience:'operator', status:'pending', and rely on C1's audience!=='operator' guard so Mode 2b ignores them, with a separate lightweight operator-sweep (or just archive-on-write) to retire them; OR (b) redirect Mode 6 FYI to the operator-facing latest-analysis summary / a dedicated operator-notes channel instead of the analyst work inbox. Recommend (b): the attention-inbox is documented as the analyst's 'something changed under you' work queue, not a general operator log; co-mingling operator FYI inflates the 'N open items' signal and was a contributor to this confusion.",
+        "rationale": "Separates the two genuinely different uses (analyst work vs operator FYI) that got conflated into one file."
+      },
+      {
+        "id": "C4-analyst-baby-noop",
+        "path": "monitor/prompts/analyst-baby.md",
+        "change": "NO CHANGE. Verified this run: analyst-baby Phase 1 is Mode 1 BAU drain ONLY and explicitly does NOT process the attention-inbox (analyst-baby.md L46, L178 'No Mode 2b (attention-inbox) - Phase 2 expansion, separate amendment'). ISS-2725's note to 'check analyst-baby.md for same filter' resolves to: not applicable, baby has no attention-inbox filter to fix.",
+        "rationale": "Documents the verification so a future run does not re-investigate."
+      },
+      {
+        "id": "C5-drain-current-5",
+        "path": "monitor/analyst/attention-inbox.json (analyst write-domain; tinker does NOT mutate)",
+        "change": "After C1 lands, the next analyst Mode 2b run will see the 3 audience=analyst items (C1 makes them visible) and can OBE-drain them (all 3 describe completed integrations: EXP-608, WIN-044 self-apply, EXP-617 -- OBE-eligible by the 'EXP integrated >=3 days ago / referenced work done' criteria). The 2 audience=operator items are retired per C3's chosen routing (archived as acknowledged FYI). Tinker does NOT touch this file directly -- this is the analyst's write-domain; this change describes the expected drain, it is not a tinker action.",
+        "rationale": "Closes the actual stranded backlog once the reader fix makes the items reachable."
+      }
+    ],
+    "decision_A_vs_B": "BOTH option (a) writer-normalize AND option (b) reader-widen are needed, not one. Reader changes (C1) are required regardless because of the field divergence and audience misrouting; writer normalization (C2) is required to make status=pending durable so the ||open back-compat clause can eventually be removed. ISS-2725 framed them as mutually exclusive; investigation shows they are complementary."
+  },
+  "open_questions_for_decider": [
+    "Where exactly is decider's second (divergent) attention-inbox write site? The §816 block is canonical-correct; a different code path emits created_by/audience/body/status:open. C2 needs that site located before patching (grep for 'audience' / 'body' near attention-inbox writes in decider.md and any decider helper scripts).",
+    "C3 routing choice (a vs b) is a design call the decider/operator should confirm. Recommend (b) - dedicated operator channel - but (a) is lower-effort if a separate channel is unwanted.",
+    "Should PROP-022 phase 4's 'pending OR open' language be amended to match the reconciled vocabulary (pending=live, resolved=archived, open=deprecated-back-compat)? Recommend yes, to stop the doc-level contradiction with decider.md §816."
+  ],
+  "test_plan": [
+    "T1 reader-visibility: after C1, run the Mode 2b quick-check against a fixture inbox with 1 audience=analyst status=open item -> it is counted (was 0 before).",
+    "T2 operator-guard: fixture with 1 audience=operator status=open item -> Mode 2b counts 0 (guard excludes it).",
+    "T3 field-shim: fixture audience=analyst item with body (no reason) and a WIN-NNN token in body -> Mode 2b resolves the target via the token-regex fallback.",
+    "T4 writer-normalize: after C2, trigger a decider self-apply-notify path in a scratch run -> emitted item has status:'pending', audience:'analyst', reason (not body), pushed_by:'decider'.",
+    "T5 no-regression: existing canonical pending items (target_*/reason present) still processed identically.",
+    "T6 baby-noop: grep analyst-baby.md confirms no attention-inbox filter added (C4 is documentation-only)."
+  ],
+  "rollout_plan": [
+    "Phase 1: land C1 (reader harden) FIRST - it is the unblock, makes the 3 stranded analyst items reachable, and is safe (additive filter + back-compat ||open).",
+    "Phase 2: land C2 (writer normalize) once the divergent decider write site is located; then the next analyst run drains the 3 items (C5).",
+    "Phase 3: land C3 (operator-FYI routing) + amend PROP-022 phase 4 doc language; retire the 2 operator items.",
+    "Phase 4: after >=7 days with all writers on the canonical schema and 0 open-status items observed, drop the ||open back-compat clause from C1 (tinker Mode 3 verification)."
+  ],
+  "tradeoffs": "Gain: closes a recurring silent-strand class (this is the THIRD time the attention-inbox schema has drifted -- ATTN-NNN in 2026-06-07, status:open now; same defect family each time) and reconciles the decider.md-vs-PROP-022 doc contradiction. Cost / the-other-side: (1) the CURRENT 5 stranded items are all low-harm (work already done), so an observer could argue 'no live breakage, defer'; the case for fixing now is that the failure mode is forward-looking (the next genuine re-examine item WILL be lost) and cheap to close, and leaving two doc sources contradicting each other guarantees the drift recurs. (2) C2 requires finding an undocumented decider write site -- if it cannot be cleanly located, C1 alone (reader harden, with ||open kept permanently) still closes the visibility gap, just less tidily. (3) Adding an audience field is mild schema growth; the alternative (a fully separate operator-notes file, C3 option b) is cleaner long-term but is a bigger change. Conservative path: ship C1+C4 (reader + baby-noop doc) immediately, treat C2/C3 as follow-ups. Residual risk is low: all changes are to prompt logic / docs, none touch wins.json or sections.json, and the back-compat ||open clause means no currently-written item is lost during transition.",
+  "estimated_impact": "Unblocks analyst Mode 2b for the audience=analyst notification-schema items (3 currently stranded, oldest ~4d); prevents forward silent-strand of genuine re-examination requests; eliminates one documented doc-level contradiction (decider.md §816 vs analyst.md PROP-022 phase 4). No compute/disk impact - prompt + doc edits only.",
+  "requires_human_judgment": true,
+  "why_human_needed": "Three design calls need decider/operator confirmation: (1) locating + normalizing the divergent decider write site (C2); (2) the operator-FYI routing choice (C3 a vs b); (3) whether to amend PROP-022 phase 4's vocabulary. C1 (reader harden) + C4 (baby-noop doc) are safe enough to apply without those answers and should ship first.",
+  "verification_pattern": "grep -qE \"status==='open'.*audience|audience.*status==='open'|status==='pending'\\\\|\\\\|x.status==='open'\" monitor/prompts/analyst.md && echo FIXED || echo STILL_BROKEN",
+  "cross_references": [
+    "ISS-2725 (source; major; decider-routed assigned-tinker class_hint=verification)",
+    "proposal-attn-inbox-open-status-starvation.json (analyst, 2026-06-13 -> became ISS-2725)",
+    "proposal-attention-inbox-schema-drift.json (analyst, 2026-06-07; ATTN-NNN drift; recommended reader-harden + writer-normalize -- this PROP subsumes that recommendation)",
+    "decider.md ~L816 (canonical SCHEMA-DO-NOT-DEVIATE block; status:'pending', reason/target_*/pushed_by)",
+    "analyst.md Mode 2b (L238 dispatcher filter, L244/266/269 phases; PROP-022 phase 4 'pending OR open' contradiction)",
+    "analyst-baby.md (L46/L178 -- attention-inbox explicitly out of Phase 1 scope; C4 no-op)",
+    "PROP-022 (phase 4 archive-on-resolve; live-status vocabulary statement to be amended)"
+  ]
+}
