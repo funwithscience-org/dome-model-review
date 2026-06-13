@@ -1033,10 +1033,10 @@ console.log('\n── 14. EXP-618 WIN-014 sensitivity-floor regression ──');
     assert(drasticMatches === 1,
       'EXP-618 ISS-2726: WIN-014.detail_evidence contains "drastic changes in the weather" exactly once (got ' + drasticMatches + ')');
 
-    // P1 anchor: '4\u201325\xd7' (4–25×) must appear exactly once
-    const fourTwentyFiveMatches = (ev14.match(/4–25×/g) || []).length;
-    assert(fourTwentyFiveMatches === 1,
-      'EXP-618 ISS-2726: WIN-014.detail_evidence contains "4\u201325\xd7" exactly once (got ' + fourTwentyFiveMatches + ')');
+    // EXP-620 anchor: '2\xd7 to 8\xd7' (2× to 8×) must appear exactly once — supersedes the prior '4–25×' anchor after the spring-floor re-derivation from Wang 2000’s ±3–4 µGal band (ISS-2728)
+    const twoToEightMatches = (ev14.match(/2× to 8×/g) || []).length;
+    assert(twoToEightMatches === 1,
+      'EXP-620 ISS-2728: WIN-014.detail_evidence contains "2\xd7 to 8\xd7" exactly once (got ' + twoToEightMatches + ')');
   }
 
   // P3 anchor in sections.json: 'progressively disavowed by its own discoverers across three publications' exactly once
