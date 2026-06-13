@@ -1,0 +1,104 @@
+{
+  "id": "PROP-094",
+  "title": "Fix the surviving prune <-> workspace-sync re-add loop: PROP-082's is_prune_expired() uses a 14-day window for narrative-cite-audit but prune's policy is count-based (keep_last_n=7), so workspace-sync resurrects ~2-to-14-day-old files prune deleted",
+  "authored_by": "tinker",
+  "authored_at": "2026-06-13T06:19:37Z",
+  "authored_by_run": "tinker-2026-06-13T06-19",
+  "status": "pending",
+  "directive": "DIRECTIVE-20260613-001",
+  "priority": "high",
+  "propose_only": true,
+  "surfacing_report": "monitor/tinker/report-2026-06-13T06-19.json",
+
+  "executive_summary": "The directive's framing -- 'dome-prune-integrity reports success but doesn't actually push deletes' -- is INCORRECT, and the operator's own constraint #3 ('honor the other side: maybe some OTHER agent is re-adding') turns out to be the real story. prune-integrity DOES push its deletes successfully every single day (commits 4859086a/0e563948/c87f03cb/a24366f3/73a977af/4eedc7f4 for Jun 7-12, each landing on origin/main with the run sentinel committed alongside). The files reappear because dome-workspace-sync re-adds them ~1 hour later, every day, via its universal-pusher rescue path. This is the SAME re-add loop PROP-082 (2026-06-07) was built to stop -- PROP-082's fix is deployed and its self-test passes, but its is_prune_expired() proxy is mis-tuned for exactly the category that dominates the backlog (narrative-cite-audit), so the loop survives for that category. Net effect matches the directive's measured backlog (308 narrative-cite-audit of 457 total).",
+
+  "root_cause": {
+    "chosen_from": "Q4 (workspace-sync re-adding files prune deleted) -- confirmed; the directive's primary framing (Q1/Q2/Q3 = prune not pushing) is REFUTED by commit history.",
+    "mechanism": "prune-integrity.js's narrative-cite-audit policy is COUNT-based: retention_days=null, keep_last_n=7 (monitor/scripts/prune-integrity.js POLICIES). eligibleForArchive() therefore deletes EVERY narrative-cite-audit file except the 7 newest, regardless of age. With an observed cadence of ~150-220 narrative-cite-audit files/day (counted from narrative-cite-audit-archive.jsonl, Jun 2-7), 'keep last 7' retains only the most recent few MINUTES of files -- so prune legitimately deletes files anywhere from minutes to weeks old. workspace-sync's PROP-082 is_prune_expired() (monitor/prompts/workspace-sync.md) cannot express a count-based policy, so it substitutes a DATE proxy of 14 days for narrative-cite-audit (the inline comment states the assumption: 'keep_last_n=7 daily -> 14d window'). That assumption is wrong twice over: (1) the cadence is not daily, it is ~150-220/day, so keep-last-7 is ~minutes not 7 days; (2) a more generous window makes the filter MORE permissive, i.e. it resurrects MORE. Result: every narrative-cite-audit file in the ~2-to-15-day band that prune deletes is judged 'not yet expired' (newer than the 15-day cutoff) by workspace-sync and gets re-pushed FUSE->git on the next hourly cycle. FUSE cannot unlink(), so the FUSE copies persist as the resurrection source; dome-mirror (git->FUSE) cannot delete them from FUSE either (the PROP-091 gap). The loop is self-sustaining until the operator manually drains FUSE with allow_cowork_file_delete (exactly what happened 2026-06-13T06:14Z).",
+    "why_prop_082_self_test_did_not_catch_it": "is_prune_expired()'s self-test only asserts a 42-day-old narrative-cite-audit file IS expired and a today-dated one is NOT. It never tests a file in the 2-to-14-day band -- the entire bug surface. The test gives false confidence: the function 'works' at the extremes and fails across the middle.",
+    "secondary_leak_date_based_categories": "verify-pending-run (72 in backlog) and workspace-sync-runs/legacy (76) also accumulated, for a milder reason: prune deletes them at retention_days (14d / 7d) while workspace-sync suppresses re-add only past days+1 (15d / 8d), leaving a rolling ~1-day boundary band resurrected for one extra cycle. Small steady-state; most of the 72/76 is pre-PROP-082 residue the operator's catchup swept. The robust fix below closes the boundary leak too."
+  },
+
+  "evidence": [
+    {
+      "claim": "prune pushes deletes successfully every day",
+      "proof": "GitHub commits API, path=monitor/integrity/prune-integrity-runs: 4859086a (2026-06-07 'archive+delete 1494 sources'), 0e563948 (06-08, 308), c87f03cb (06-09, 1624), a24366f3 (06-10, 1680), 73a977af (06-11, 346), 4eedc7f4 (06-12, 340). Commit 4eedc7f4 stats: additions=429, deletions=7,136,509, 298 files removed (all narrative-cite-audit-*.json), 1 added (run sentinel), 1 modified (narrative-cite-audit-archive.jsonl)."
+    },
+    {
+      "claim": "workspace-sync re-adds the exact files ~1h later, every day (smoking gun)",
+      "proof": "Full git history of one file deleted by prune -- monitor/integrity/narrative-cite-audit-2026-05-29T0006Z.json: DELETE 4eedc7f4 (prune, 06-12T08:07Z) -> RE-ADD 222e3465 (Workspace sync, 06-12T08:21Z, +14min). Same delete->workspace-sync-readd pair repeats 06-11 (73a977af->b2085a5e), 06-10 (a24366f3->0681dea4), 06-09 (c87f03cb->789fcf0b), 06-08 (0e563948->e2bb2bfd), 06-07 (4859086a->bc51e2b2), 06-06 (b8e3c000->fc74aaeb). All re-adds 06-08..06-12 POSTDATE PROP-082 deployment (DIRECTIVE-20260607-001 completed 2026-06-07)."
+    },
+    {
+      "claim": "the run sentinels DID commit to git (refutes directive Q3)",
+      "proof": "GitHub contents API @ref=4eedc7f4 (Jun 12 prune commit, parent of operator catchup): run-2026-06-12T08-06-56Z.json = HTTP 200, run-2026-06-11T08-10-57Z.json = 200, run-2026-06-10T08-06-24Z.json = 200. Sentinels were committed by the prune agent; never resurrected because never deleted. Only the narrative-cite-audit DELETES were undone."
+    },
+    {
+      "claim": "the proxy/policy mismatch is the precise failure point",
+      "proof": "prune narrative-cite-audit policy {retention_days:null, keep_last_n:7}. workspace-sync is_prune_expired() case 'narrative-cite-audit-*.json) days=14'. cutoff = now-(14+1)*86400. A 2026-05-29 file evaluated 2026-06-12 is 14 days old < 15-day cutoff -> is_prune_expired returns FALSE -> NOT skipped -> resurrected. ~150-220 files/day cadence means keep-last-7 deletes files only minutes old, so virtually the entire 14-day window is in the resurrection band."
+    }
+  ],
+
+  "investigation_questions_answered": {
+    "Q1_procedure_breakdown": "NO. Agent reaches and completes push every day -- 6 consecutive daily prune commits on origin prove it. No early-exit, no swallowed abort.",
+    "Q2_silent_push_failure": "NO. Pushes succeed; commits land. Deletes are real on origin at push time. The problem is downstream resurrection, not push failure.",
+    "Q3_run_report_not_committing": "NO. Run sentinels for Jun 10/11/12 present in git at the prune commit (HTTP 200 @ref=4eedc7f4). The 'sentinels FUSE-only' observation was an artifact of inspecting HEAD after-the-fact rather than the prune commits; the FUSE-side duplicate (SKILL.md's own report write) coexists with the committed one.",
+    "Q4_workspace_sync_readd": "YES -- ROOT CAUSE. PROP-082's is_prune_expired() is mis-tuned for narrative-cite-audit (14-day date proxy vs count-based keep_last_n=7). Filter is present and self-test-passing but does not fire across the 2-to-14-day band, where ~85% of the backlog lives.",
+    "Q5_pre_push_hook_failure": "NO. The PROP-081 hook requires a prune-integrity-runs/run-*.json in the outgoing diff; the script self-writes it and it is present in every prune commit, so the hook passed. (prune-integrity-runs/run-*.json is itself NOT in is_prune_expired()'s case list -- fail-open -- which is correct: those sentinels must never be suppressed.)",
+    "Q6_scheduled_task_lastrunat_lie": "NO. The runs really executed and did real work (sentinels written, deletes committed). lastRunAt is truthful here; the Fable-dispatch-failure pattern does not apply."
+  },
+
+  "proposed_fix": {
+    "primary": {
+      "name": "Replace the per-category date-proxy with a git-deletion-authority check (policy-agnostic, drift-proof)",
+      "where": "monitor/prompts/workspace-sync.md, smart_copy dst-absent branch -- the same call site PROP-082 guards.",
+      "design": "Once per run (Step 1, before the smart_copy loop), build a set of paths git deleted in the retention window: git log --diff-filter=D --name-only --since='95 days ago' --pretty=format: -- monitor/integrity/ | sort -u > /tmp/git-deleted-set. In the dst-absent branch, if the candidate path is in that set, treat git's deletion as authoritative and SKIP the rescue (reason 'git-deleted-authoritative'), UNLESS the FUSE file content differs from the last-deleted git blob AND the FUSE mtime is newer than the deleting commit's timestamp (the genuine 'producer re-created it after prune' rescue case). Needs no retention math, no policy mirror; immune to the 3-way drift PROP-082's own comment warns about (prune-integrity.js POLICIES / sync-workspace-step4c.js DELETE_PATTERNS / workspace-sync.md is_prune_expired). Generalizes to ALL nine prune categories, closing the count-based hole AND the date-based boundary leak in one mechanism.",
+      "cost": "One extra git log --diff-filter=D per run (~0.2s on a depth-50 clone). Set membership check is O(1) per file.",
+      "conservatism": "Fail-open preserved: a path NOT in the git-deleted set falls through to normal rescue, so producer-push-failure rescue (the universal-pusher's reason for existing) still works for any file git never deleted. data/wins.json, open-issues.json, priority-queue.json are never deleted by prune so never in the set -- untouched. PROP-051 safety gates A1-A4 NOT modified."
+    },
+    "minimal_stopgap_if_primary_too_invasive": {
+      "name": "Make is_prune_expired() count-aware for narrative-cite-audit only",
+      "design": "For the narrative-cite-audit case, instead of days=14, list all narrative-cite-audit-*.json in monitor/integrity/ (git clone side), sort newest-first, and return 'expired' for any candidate NOT in the newest keep_last_n=7. Mirrors prune's eligibleForArchive floor exactly. Smaller blast radius (one category) but re-introduces the policy-mirror drift risk the primary removes, and only fixes narrative-cite-audit -- leaves the date-boundary leak.",
+      "recommendation": "Prefer the primary. Use this only if the operator wants the absolute-minimum-LOC change this cycle."
+    },
+    "rejected_alternatives": [
+      "NEVER_PUSH the narrative-cite-audit pattern outright: loses the legitimate producer-push-failure rescue for a fresh file; the git-deletion-authority check keeps that rescue.",
+      "Modify prune-integrity.js eligibility: barred by directive constraint #2 ('script's eligibility logic is correct'). Not touched.",
+      "Tune the 14-day number down: still a date proxy for a count policy; brittle and cadence-dependent. Cadence already swung 220->56/day in one week (Jun 2->Jun 9), so any fixed number is wrong as soon as cadence shifts."
+    ]
+  },
+
+  "backfill_plan": {
+    "status": "Mostly done by operator. git side drained by commit f3d8c46 (457 deletes / 387.62 MB). FUSE side drained 2026-06-13T06:14Z via allow_cowork_file_delete + rm of 462 orphans (441->52 MB).",
+    "remaining": "None required before the fix lands. After deploy, watch the first 2-3 dome-prune-integrity runs (next 2026-06-13T08:05Z, then daily 09:05 local) and confirm via the detection check that the post-prune file count does NOT rebound on the following workspace-sync cycle. If FUSE re-accumulates before the fix lands, the operator may need one more allow_cowork_file_delete drain -- a holding action, not part of this PROP."
+  },
+
+  "detection_mechanism": {
+    "name": "Resurrection canary: compare prune's archived-delete ledger against git HEAD presence N+1 days later",
+    "design": "Add a cheap daily check (suggested home: dome-integrity's structure-integrity.md, or tinker Mode 2 quick-check) that reads the per-category archive JSONL filenames prune wrote in the last 24h (the archive IS the tombstone ledger -- every deleted filename is recorded there), and tests whether any is present in git HEAD again. ANY hit = the re-add loop is live for that category. Emit a finding severity=major with the offending category + sample filenames. This is the exact signal missing for ~6 days: prune's run sentinel reported 'archived+deleted N' truthfully, but nothing checked the deletes STAYED deleted.",
+    "also": "Optionally bound each category in git HEAD: after a prune run, count files matching each pattern; alert if count > keep_last_n + (retention_days * max_observed_daily_cadence). For narrative-cite-audit that ceiling is ~7 (count policy) so a HEAD count of hundreds is an immediate red flag."
+  },
+
+  "files_touched": [
+    "monitor/prompts/workspace-sync.md (primary fix: git-deletion-authority check in smart_copy dst-absent branch; retire or supplement is_prune_expired)",
+    "monitor/prompts/reference/structure-integrity.md OR monitor/prompts/tinker.md (detection canary -- operator's choice of home)"
+  ],
+  "estimated_loc": "~35-50 (primary fix ~25, detection canary ~15-25)",
+
+  "constraints_honored": [
+    "PROP-051 safety gates A1-A4 untouched (delete-sanity HARD_CAP, tree-population check, disk-pressure gate, degraded-mode prohibition all preserved).",
+    "prune-integrity.js eligibility logic untouched (directive constraint #2).",
+    "Other-side honored: investigation proved it IS the other side (workspace-sync), exactly as constraint #3 hypothesized; prune is exonerated.",
+    "Propose-only; operator integrates after review."
+  ],
+
+  "cross_references": [
+    "PROP-082 (the partial fix this completes -- same loop, narrative-cite-audit category uncovered)",
+    "PROP-091 (dome-mirror git->FUSE delete propagation -- the FUSE-side complement; if PROP-091 ships a real FUSE delete via allow_cowork_file_delete, the FUSE resurrection source disappears and this loop dies from the other end too. Belt-and-suspenders.)",
+    "PROP-054 (prune filename-timestamp parsing -- prune side correct)",
+    "PROP-081 (required-artifacts pre-push hook -- confirmed passing, not implicated)",
+    "DIRECTIVE-20260607-001 (PROP-082 authoring directive)",
+    "DIRECTIVE-20260613-001 (this directive)"
+  ],
+
+  "verification_pattern": "After deploy: (1) run workspace-sync self-tests (must pass). (2) Pick a narrative-cite-audit file deleted by the next prune run; on the following workspace-sync cycle, confirm via git log --oneline -- <path> that the most recent action is the prune DELETE with NO subsequent 'Workspace sync' re-add. (3) Run the resurrection canary; expect zero RESURRECTED hits. (4) Confirm monitor/integrity/ git HEAD narrative-cite-audit file count stays <= ~7 across 3 consecutive days."
+}

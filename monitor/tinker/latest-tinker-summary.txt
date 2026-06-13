@@ -1,27 +1,37 @@
-TINKER tinker-2026-06-13T05-29  (2026-06-13T05:29Z)
-Mode 0 (assigned-to-tinker) -> Mode 4 PROP authoring.
+TINKER run tinker-2026-06-13T06-19  (Mode 4 via operator directive)
 
-PICKED UP: ISS-2725 (major) — attention-inbox status-vocabulary mismatch.
-FOUND: broader than framed. 3 schemas coexist in attention-inbox.json; 5 live
-items all at status=open (Mode 2b filters 'pending' -> sees 0). Current variant
-uses created_by/audience/body, not canonical target_*/reason. 2 of 5 are
-audience=operator FYI (not analyst work). ISS-2725's 'just widen the filter' fix
-is insufficient.
+DIRECTIVE-20260613-001 (high) — prune-integrity "push gap" — COMPLETED.
 
-ACTION:
- - Authored PROP-093 (attention-inbox schema reconciliation: reader-harden +
-   writer-normalize + operator-FYI routing + drain). Subsumes both analyst
-   issue-proposals. Verified analyst-baby does NOT touch the inbox (no change).
- - Filed HNOTE-TINKER-ISS-2725-PROP093-AUTHORED-001: asks decider to move
-   ISS-2725 out of assigned-tinker (leave UNCLOSED until PROP-093 applies) so
-   the next tinker run doesn't re-pick + duplicate.
+VERDICT: The directive's framing is wrong, and the operator's own "honor the
+other side" caveat (constraint #3) is the real answer. prune-integrity is NOT
+failing to push. It pushes its deletes successfully every single day. The files
+come back because dome-workspace-sync re-adds them ~1 hour later.
 
-HARM: low live (all 5 stranded items describe completed work); forward risk is
-real (3rd schema-drift incident — next genuine re-examine item would be lost).
+This is the same prune <-> workspace-sync re-add loop PROP-082 was built to kill
+(2026-06-07). PROP-082 is deployed and its self-test passes — but its
+is_prune_expired() filter uses a 14-DAY date window for narrative-cite-audit,
+while prune's actual policy for that category is COUNT-based (keep last 7 files).
+At ~150-220 narrative-cite-audit files/day, "keep last 7" = a few minutes of
+files, so prune deletes files minutes-to-weeks old; workspace-sync's 14-day proxy
+judges anything <15 days "still fresh" and resurrects it. That 2-to-15-day gap is
+the loop. ~85% of the 457-file / 387 MB backlog the operator drained today is this
+one mis-tuned category.
 
-BACKLOG: healthy. 10 open issues, net velocity +105/7d, 0 aged>=14d. WoW 6->10
-(+67%) trips the >20% arithmetic but is a small-denominator artifact — recorded
-info, not escalated.
+Smoking gun: narrative-cite-audit-2026-05-29T0006Z.json — DELETE(prune)→
+RE-ADD(workspace-sync) pairs on 6 straight days, all after PROP-082 shipped.
 
-NO pending operator directives. PROP-092 (earlier today) remains proposed/inert
-as designed.
+AUTHORED: PROP-094 (propose-only). Proposes replacing the brittle per-category
+date proxy with a git-deletion-authority check (policy-agnostic, drift-proof,
+fixes all 9 categories + the date-boundary leak), a minimal count-aware stopgap
+as fallback, a resurrection-canary detection check (compare prune's archive
+ledger vs git HEAD presence next day — the signal that was missing for 6 days),
+and confirms the operator's manual backfill is sufficient.
+
+Backfill: already done by operator (git commit f3d8c46 + FUSE allow_cowork_file_delete drain).
+PROP-051 safety gates untouched; prune-integrity.js eligibility untouched per constraints.
+
+Queue health: 10 open issues, net velocity +105/7d. GREEN. No backlog-trend finding.
+
+Operator action: review + integrate PROP-094. Until then, FUSE may slowly
+re-accumulate narrative-cite-audit copies; one more allow_cowork_file_delete drain
+is the holding action if it bites before the fix lands.
