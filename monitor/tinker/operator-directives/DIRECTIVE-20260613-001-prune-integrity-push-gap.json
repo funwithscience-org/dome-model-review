@@ -1,0 +1,46 @@
+{
+  "directive_id": "DIRECTIVE-20260613-001",
+  "for": "tinker",
+  "status": "pending",
+  "priority": "high",
+  "created_at": "2026-06-13T06:15:00.000Z",
+  "created_by": "operator",
+  "title": "dome-prune-integrity reports success but doesn't actually push deletes — 3-day backlog discovered (~387 MB git working tree, ~389 MB FUSE)",
+  "context": "Operator-side investigation 2026-06-13T05:30-06:10Z surfaced a sustained gap between what dome-prune-integrity reports doing and what actually lands on origin/main. Evidence chain:\\n\\n(1) Scheduled task state at audit time: dome-prune-integrity lastRunAt=2026-06-12T08:06:11Z (yesterday morning), enabled=true, cron=`0 9 * * *`. Per scheduled-task layer the task has been firing daily.\\n\\n(2) Prior tinker run summary (2026-06-13T05:06Z, this morning's Opus catch-up) reported the agent ran cleanly with capped=0 across all policies and archived 1,680 files in one run.\\n\\n(3) BUT git HEAD as of 2026-06-13T05:30Z (before any operator action) still contained 308 narrative-cite-audit-*.json files (oldest 2026-05-27, 17 days past the 7-day-keep-last-7 policy), 72 verify-pending-run-*.json past the 14-day retention, 76 workspace-sync-runs/* (legacy prefix) past 7-day retention, and 1 sync-workspace-runs-* past 14-day retention. Total: 457 files / 387.51 MB that the scheduled agent should have removed but didn't.\\n\\n(4) FUSE state matched git state exactly (931 files in matching patterns, zero FUSE-only orphans) — so this is NOT a FUSE-vs-git divergence; the git side itself never received the deletes.\\n\\n(5) Operator manual rescue: running `node monitor/scripts/prune-integrity.js --apply` from a fresh clone (commit fc98cdf, immediately after the PROP-092 push), then `git add -A` → commit → push (commit f3d8c46), reclaimed 387.62 MB across 457 deletes in one push. The pre-push lint and PROP-051 safety gates all passed cleanly. So the SCRIPT IS CORRECT — the gap is somewhere in the agent's commit+push step.\\n\\n(6) Sample of FUSE-side prune-integrity-runs/run-*.json sentinels for June 7/8/10/11/12 exist on FUSE but were never in git HEAD — strongly suggests the agent's runs DID complete the file-ops (archive write + source delete) locally in its clone, AND wrote its run-report sentinel, but somewhere between script-exit and origin/main something prevented the commit from landing.",
+  "task": "Investigate why dome-prune-integrity has been running but not pushing deletes, then propose a fix.",
+  "investigation_questions": [
+    "Q1 — Where does the agent's procedure break down? Step 3 of SKILL.md is the script invocation; Step 4 is `git add -A` + sanity gate; Steps 5+ are commit + push. Walk the procedure literally: does the agent reach the push? Audit by reading the SKILL.md procedure end-to-end and comparing to what we see actually landing on origin. Look for early-exits, missing `set -e`, or aborts the agent might treat as success.",
+    "Q2 — Is the agent's commit being created but failing to push silently? Check for any `2>/dev/null` or `|| true` patterns that swallow push errors. The 2026-05-21 workspace-sync mass-delete disaster taught us that LLM agents under disk pressure improvise around errors; check if prune's procedure has analogous improvisation potential. Cross-check the dome-prune-integrity run output capture (Step 3's `tee /tmp/prune-output.log`) against what subsequent agents log when they observe the file count.",
+    "Q3 — Is the run report writing locally but not committing? Step 3's script writes monitor/integrity/prune-integrity-runs/run-<ts>.json. The June 7/8/10/11/12 sentinels exist on FUSE (someone wrote them) but are absent from git HEAD as of this morning. Either (a) the agent's commit step never ran, (b) the commit ran but missed those files, or (c) the commit ran and pushed, but a subsequent push reverted it. Check FUSE-side mtimes against the agent's lastRunAt timestamps to disambiguate.",
+    "Q4 — Is workspace-sync (or any other agent) re-adding deleted files after prune pushes them? PROP-082 was supposed to close the prune-↔-workspace-sync re-add loop. Audit by inspecting workspace-sync-runs-*.json sentinels in the 1-hour window after each scheduled prune run for the past 5 days; look for any FUSE→git pushes of narrative-cite-audit or verify-pending-run files immediately after a successful prune. If PROP-082's filter is incomplete, that's the root cause.",
+    "Q5 — Pre-push hook failure? Step 4's lint-required-artifacts hook (PROP-081) requires the prune-integrity-runs/run-*.json artifact in the outgoing diff. If the hook fails (e.g., the agent's clone didn't include the latest hook code, or the artifact pattern changed), the push fails and the agent exits cleanly with a misleading 'capped=0' summary. Test: try to reproduce by replaying the agent's procedure with the hook intentionally failing.",
+    "Q6 — Is the scheduled-task layer reporting a lastRunAt that doesn't match real run-completion? We learned 2026-06-13 morning that the Fable model substitution caused scheduled runs to FAIL DISPATCH while still updating lastRunAt. If a similar pattern applies (the task fires, the LLM session starts, but exits early without doing real work), lastRunAt would lie. Worth ruling out by comparing prune-integrity-runs/ sentinel write timestamps against lastRunAt for the past 7 days."
+  ],
+  "deliverable": "A PROP-NNN proposal in monitor/tinker/proposals/ with: (1) chosen root cause from Q1-Q6 + supporting evidence, (2) the fix (script change, prompt change, hook update, or scheduler change), (3) a backfill plan if state needs cleanup beyond what the operator already did manually, (4) a detection mechanism so this gap surfaces next time it happens (e.g., an integrity check that compares prune's reported eligible count against actual git HEAD count for the same patterns N+1 days later). Propose-only; operator integrates after review.",
+  "constraints": [
+    "Disaster sensitivity: 2026-05-21 workspace-sync mass-delete taught us that automated multi-file-delete operations need safety gates. Whatever the fix is, do NOT REMOVE existing PROP-051 safety gates (delete-sanity HARD_CAP, tree population check, etc.) in the process.",
+    "Do NOT modify prune-integrity.js's retention policies — operator manually validated 387.62 MB reclaim with the current policies. The fix is in the AGENT's execution of the script, not the script's eligibility logic.",
+    "Honor the other-side: maybe the prune agent has been working correctly and some OTHER agent is re-adding the files between prune runs. PROP-082 audit (Q4) is the way to rule this out. The directive's framing currently assumes prune is at fault — keep the investigation open to the alternative."
+  ],
+  "background_artifacts": {
+    "audit_session_ts": "2026-06-13T05:30Z to 2026-06-13T06:10Z",
+    "operator_rescue_commit": "f3d8c46 (prune-integrity manual catchup: 457 deletes / 387.62 MB reclaimed)",
+    "rescue_run_report": "monitor/integrity/prune-integrity-runs/run-2026-06-13T06-04-11Z.json",
+    "scheduled_task_id": "dome-prune-integrity",
+    "scheduled_task_path": "/sessions/intelligent-brave-lamport/mnt/.scheduled/dome-prune-integrity/SKILL.md",
+    "prune_script_path": "monitor/scripts/prune-integrity.js",
+    "fuse_drain_followup": "Operator-side mcp__cowork__allow_cowork_file_delete + xargs rm of 462 FUSE orphans (389 MB) completed 2026-06-13T06:14Z, brings host monitor/integrity/ from 441 MB → 52 MB.",
+    "related_prop_lineage": [
+      "PROP-051 (workspace-sync safety + prune-integrity Workstream C)",
+      "PROP-054 (prune-integrity filename-timestamp fix)",
+      "PROP-081 (lint-required-artifacts pre-push hook)",
+      "PROP-082 (prune ↔ workspace-sync re-add loop fix — load-bearing if Q4 hypothesis correct)",
+      "PROP-091 (dome-mirror delete-propagation — sibling: FUSE side of the prune story)"
+    ]
+  },
+  "not_in_scope": [
+    "Cleanup of the current backlog — operator has manually drained both git (commit f3d8c46) and FUSE (allow_cowork_file_delete + rm). The directive is about preventing recurrence.",
+    "Changes to prune-integrity retention policies (script's eligibility logic is correct).",
+    "PROP-091/PROP-092 Phase rollout decisions (separate observation windows, separate directives)."
+  ]
+}
