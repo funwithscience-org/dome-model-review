@@ -1011,6 +1011,41 @@ if (fs.existsSync(REWRITES_DIR)) {
   });
 }
 
+
+// ════════════════════════════════════════════
+// 14. EXP-618 regression: WIN-014 sensitivity-floor defense neutralization (ISS-2726)
+// ════════════════════════════════════════════
+
+console.log('\n── 14. EXP-618 WIN-014 sensitivity-floor regression ──');
+
+{
+  // Load fresh from disk each time
+  const winsRaw14 = fs.readFileSync(path.join(ROOT, 'data', 'wins.json'), 'utf8');
+  const wins14 = JSON.parse(winsRaw14);
+  const win014 = wins14.find(w => w.id === '014');
+  assert(win014, 'EXP-618: WIN-014 exists in wins.json');
+
+  if (win014) {
+    const ev14 = win014.detail_evidence || '';
+
+    // P1 anchor: 'drastic changes in the weather' must appear exactly once
+    const drasticMatches = (ev14.match(/drastic changes in the weather/g) || []).length;
+    assert(drasticMatches === 1,
+      'EXP-618 ISS-2726: WIN-014.detail_evidence contains "drastic changes in the weather" exactly once (got ' + drasticMatches + ')');
+
+    // P1 anchor: '4\u201325\xd7' (4–25×) must appear exactly once
+    const fourTwentyFiveMatches = (ev14.match(/4–25×/g) || []).length;
+    assert(fourTwentyFiveMatches === 1,
+      'EXP-618 ISS-2726: WIN-014.detail_evidence contains "4\u201325\xd7" exactly once (got ' + fourTwentyFiveMatches + ')');
+  }
+
+  // P3 anchor in sections.json: 'progressively disavowed by its own discoverers across three publications' exactly once
+  const sectRaw14 = fs.readFileSync(path.join(ROOT, 'data', 'sections.json'), 'utf8');
+  const disavowedMatches = (sectRaw14.match(/progressively disavowed by its own discoverers across three publications/g) || []).length;
+  assert(disavowedMatches === 1,
+    'EXP-618 ISS-2726: sections.json contains "progressively disavowed by its own discoverers across three publications" exactly once (got ' + disavowedMatches + ')');
+}
+
 // ════════════════════════════════════════════
 // Results
 // ════════════════════════════════════════════
