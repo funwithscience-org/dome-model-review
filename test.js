@@ -1037,6 +1037,11 @@ console.log('\n── 14. EXP-618 WIN-014 sensitivity-floor regression ──');
     const twoToEightMatches = (ev14.match(/2× to 8×/g) || []).length;
     assert(twoToEightMatches === 1,
       'EXP-620 ISS-2728: WIN-014.detail_evidence contains "2\xd7 to 8\xd7" exactly once (got ' + twoToEightMatches + ')');
+
+    // EXP-621 anchor: smoothed-curve disposal clause must appear exactly once — addresses c14 H2 (ISS-2729) by acknowledging Wang 2000's 10-min smoothed-curve sigmas (5.3/6.8 µGal, ~3.8/4.9σ) and disposing them via the autocorrelation-inflation argument
+    const smoothedCurveMatches = (ev14.match(/smoothed-curve values of 5.3 ± 1.4/g) || []).length;
+    assert(smoothedCurveMatches === 1,
+      'EXP-621 ISS-2729: WIN-014.detail_evidence contains "smoothed-curve values of 5.3 ± 1.4" exactly once (got ' + smoothedCurveMatches + ')');
   }
 
   // P3 anchor in sections.json: 'progressively disavowed by its own discoverers across three publications' exactly once
