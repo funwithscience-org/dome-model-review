@@ -328,6 +328,20 @@ console.log('M3 self-test: '+carryovers.length+'/'+carryovers.length+' carry-ove
 
 # 3a. If ALL tests pass AND PATCHES_STRANDED=0 → commit, run pre-push integrity gate, then push
 # (If PATCHES_STRANDED=1, skip the commit/push of step 3a — the stranded-file commit above is the only commit this run.)
+#
+# **PROP-095 (2026-06-13) fast-path:** the deterministic add → manual-gate-lints → commit
+# → push → one-shot rebase retry → PROP-050 API fallback → sync-workspace ceremony below
+# is bundled into `monitor/scripts/decider-commit-push.sh`. Run it as ONE bash call:
+#
+#   bash monitor/scripts/decider-commit-push.sh "Decider self-apply: <brief summary>"
+#
+# The wrapper fails loud per stage (echo "STAGE N: FAIL"), preserves all PROP-080/081/083
+# bypass-forbidden semantics, runs lints as manual gates AND the pre-push hook still re-runs
+# them (defense in depth), and is ~9-10x faster wall-clock because it collapses ~25
+# round-trips into 1 (happy path) or 2-3 (with rebase retry / fallback). The detailed
+# inline procedure below remains the documented fallback for: first-run / debugging /
+# when the wrapper itself is broken / when the agent needs to interleave manual edits
+# between stages. See PROP-095 for cost attribution.
 if [ "${PATCHES_STRANDED:-0}" = "0" ]; then
 git add data/ docs/ downloads/ monitor/
 git commit -m "Decider self-apply: <brief summary of patches>

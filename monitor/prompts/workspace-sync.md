@@ -251,6 +251,14 @@ NEVER_PUSH=(
   # / push-via-api.js / prune-integrity.js / lint-close-records.js.
   'monitor/scripts/lint-decider-surfaces.js'
   'monitor/scripts/allocate-iss-ids.js'
+  # PROP-095 (2026-06-13): decider-commit-push.sh + decider-setup.sh are the
+  # round-trip-consolidation wrappers (clone-invoked only). They collapse the
+  # decider's commit/push ceremony (~25 round-trips) and PRELUDE/clone-setup
+  # (~21 round-trips) into 1-2 bash invocations each. Same classification as
+  # the other clone-invoked scripts above — git-owned source code, NEVER
+  # round-trip from FUSE.
+  'monitor/scripts/decider-commit-push.sh'
+  'monitor/scripts/decider-setup.sh'
   # All .md files under monitor/prompts/ are operator-edited (dynamic rule
   # in is_never_push() below). Covers monitor/prompts/sloppytoppy-rewrite.md
   # and monitor/prompts/reference/sloppytoppy-rewrite-rubric.md automatically.
