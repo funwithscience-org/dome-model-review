@@ -1,37 +1,27 @@
-TINKER run tinker-2026-06-13T06-19  (Mode 4 via operator directive)
+TINKER tinker-2026-06-13T07-59 — DIRECTIVE-20260613-002 (decider runtime creep) → PROP-095
 
-DIRECTIVE-20260613-001 (high) — prune-integrity "push gap" — COMPLETED.
+HEADLINE: Decider's 32-min run is ROUND-TRIP COUNT, not script cost.
+  - Observed run (decider-2026-06-13T10-00, session local_40acb957): ~131 bash + 4 Read
+    round-trips in ~32 min ⇒ ~14s/round-trip (model gen + MCP latency).
+  - Every recently-added script is sub-50ms: lint-decider-surfaces 0.03s, lint-close-records
+    0.04s, allocate-iss-ids 0.02s, and node test.js = 0.16s for all 3831 tests. Even parsing
+    the 3.07 MB closed-issues.json = ~25ms. Total script CPU per run < 2s.
+  - The hook chain fired ONCE — single consolidated push confirmed (Q2 multi-push = FALSE).
+  - Cause: fixed-overhead round-trips have crept up as PROP-081/083/087/089 each added a
+    mandatory step the agent runs as its own bash call. PRELUDE/clone-setup ~21 calls;
+    commit/push ceremony ~25 calls = ~46-round-trip floor paid EVERY run regardless of work.
 
-VERDICT: The directive's framing is wrong, and the operator's own "honor the
-other side" caveat (constraint #3) is the real answer. prune-integrity is NOT
-failing to push. It pushes its deletes successfully every single day. The files
-come back because dome-workspace-sync re-adds them ~1 hour later.
+FIX (PROP-095, propose-only, medium): two wrapper scripts collapse the deterministic
+  ceremonies into 1-3 round-trips each — decider-commit-push.sh (add→lint→commit→push→
+  api-fallback→sync) and decider-setup.sh (PAT-verify→rebase→hook-install→digest). Lints are
+  RUN not weakened; the git pre-push hook stays as the independent backstop. Projected
+  ~9-10 min/run saved (32→~22 min heavy; light runs toward the 10-min target).
 
-This is the same prune <-> workspace-sync re-add loop PROP-082 was built to kill
-(2026-06-07). PROP-082 is deployed and its self-test passes — but its
-is_prune_expired() filter uses a 14-DAY date window for narrative-cite-audit,
-while prune's actual policy for that category is COUNT-based (keep last 7 files).
-At ~150-220 narrative-cite-audit files/day, "keep last 7" = a few minutes of
-files, so prune deletes files minutes-to-weeks old; workspace-sync's 14-day proxy
-judges anything <15 days "still fresh" and resurrects it. That 2-to-15-day gap is
-the loop. ~85% of the 457-file / 387 MB backlog the operator drained today is this
-one mis-tuned category.
+OTHER SIDE: the 06:00 run did real work (EXP-620 + self-apply + 3 closures + queue push);
+  32 min isn't pathological for that load. This is a fixed-FLOOR creep, not a runaway.
 
-Smoking gun: narrative-cite-audit-2026-05-29T0006Z.json — DELETE(prune)→
-RE-ADD(workspace-sync) pairs on 6 straight days, all after PROP-082 shipped.
+BACKLOG: GREEN. 9 open / 0 open-status / 3 assigned-analyst / net velocity +103 (7d). No
+  threshold fires. The runtime issue is cost/efficiency, not throughput.
 
-AUTHORED: PROP-094 (propose-only). Proposes replacing the brittle per-category
-date proxy with a git-deletion-authority check (policy-agnostic, drift-proof,
-fixes all 9 categories + the date-boundary leak), a minimal count-aware stopgap
-as fallback, a resurrection-canary detection check (compare prune's archive
-ledger vs git HEAD presence next day — the signal that was missing for 6 days),
-and confirms the operator's manual backfill is sufficient.
-
-Backfill: already done by operator (git commit f3d8c46 + FUSE allow_cowork_file_delete drain).
-PROP-051 safety gates untouched; prune-integrity.js eligibility untouched per constraints.
-
-Queue health: 10 open issues, net velocity +105/7d. GREEN. No backlog-trend finding.
-
-Operator action: review + integrate PROP-094. Until then, FUSE may slowly
-re-accumulate narrative-cite-audit copies; one more allow_cowork_file_delete drain
-is the holding action if it bites before the fix lands.
+WATCH (not actionable yet): closed-issues.json 3.07 MB / 45,336 lines — fine at 25ms today;
+  revisit rotation if it crosses ~30-50 MB.

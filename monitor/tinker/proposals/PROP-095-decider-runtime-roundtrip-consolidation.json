@@ -1,0 +1,107 @@
+{
+  "id": "PROP-095",
+  "title": "Decider runtime creep is round-trip count, not script cost — consolidate the deterministic clone-setup and commit/push ceremonies into wrapper scripts to cut ~20-30 sequential bash round-trips per run",
+  "authored_by": "tinker",
+  "authored_at": "2026-06-13T08:10:00.000Z",
+  "authored_by_run": "tinker-2026-06-13T07-59",
+  "status": "pending",
+  "directive": "DIRECTIVE-20260613-002",
+  "priority": "medium",
+  "propose_only": true,
+  "surfacing_report": "monitor/tinker/report-2026-06-13T07-59.json",
+  "executive_summary": "DIRECTIVE-20260613-002 asked why the 2026-06-13 UTC 06:00 decider slot ran ~32 min (lastRunAt 06:03:59Z -> summary commit 43921db 06:35:58Z) and to propose a speedup without weakening the PROP-083 hook chain. Empirical attribution shows the cause is NOT any script: every recently-added pre-push step is sub-50ms, test.js is 0.16s for all 3831 tests, the hook chain fired exactly ONCE (single consolidated push, not per-closure), and even parsing the 3.07 MB closed-issues.json takes ~25ms. The 32 minutes is explained almost entirely by the COUNT of sequential agent<->tool round-trips: the observed-run transcript (session local_40acb957) contains ~131 mcp__workspace__bash calls + 4 Read across the run, i.e. ~14s of model-generation + MCP latency per round-trip * ~135 calls. The 'creep' is that each PROP adding a mandatory step (PROP-081 hook, PROP-083 hook chain, PROP-087/089 lint + allocator, PROP-022 archive scans, the A0/A0b/A0c sweeps) tends to be executed as its own round-trip, so the FIXED per-run overhead floor has risen even though every individual script is fast. Fix: bundle the deterministic, judgment-free tails (PRELUDE/clone-setup and the add->lint->commit->push->fallback->sync ceremony) into two wrapper scripts the agent invokes in ONE round-trip each, collapsing ~20-30 round-trips to ~3-5. Lints are RUN, not weakened; the pre-push hook remains the independent structural backstop.",
+  "root_cause": {
+    "mechanism": "Interactive-agent wall-clock is dominated by the number of sequential tool round-trips, each of which costs ~10-15s (model generation of the next command + MCP bash tool latency), NOT by the CPU time of the scripts those commands run. The decider prompt has accreted many discrete, deterministic bash steps (PRELUDE PAT-verify, clone refresh, hook install, digest gen, end-of-run sweeps A0/A0b/A0c/A/B, then the add/lint/commit/push/api-fallback/sync ceremony). The agent executes each as its own bash call. As PROPs added steps, the round-trip floor rose linearly while per-script CPU stayed negligible.",
+    "why_it_looks_like_creep": "PROP-081/083/087/089 all landed 2026-06-07..06-10 and each added at least one mandatory pre-push step. None is individually slow, but each is a fresh round-trip. The observed run's commit/push phase alone was ~25 round-trips; the PRELUDE/clone-setup phase was ~21. That ~46-round-trip fixed overhead (~11 min at 14s/call) is now paid on EVERY run regardless of how much content work it does.",
+    "other_side_honored": "The 06:00 run did substantive work (EXP-620: 4 patches to wins.json + test.js regression re-anchor, ISS-2741 self-apply, 3 closures ISS-2728/2739/2740, queue push qid=528, EXP-612 deferral). 32 min is not pathological for that workload, and backlog throughput is healthy (net velocity +103/7d). This is a creep in the FIXED-overhead floor, not a runaway. A light run still pays the ~46-round-trip ceremony, which is the real inefficiency the directive is sensing in the throughput/runtime ratio."
+  },
+  "evidence": {
+    "observed_run": "decider-2026-06-13T10-00, session local_40acb957-29ac-4942-9454-b96ffa3c636f, lastRunAt 2026-06-13T06:03:59Z, summary commit 43921db 06:35:58Z (~32 min).",
+    "roundtrip_count": "~131 mcp__workspace__bash + 4 Read = ~135 tool round-trips in one run (counted from full transcript). At ~32 min wall-clock => ~14s/round-trip. Phase breakdown: PRELUDE/clone-setup ~21 calls; reference-file reads ~14; EXP-620 patch+test+build ~22; open-issues ledger ~22; H3 self-apply + ledgers ~18; commit/push ceremony ~25; sweeps+status ~6.",
+    "single_push_confirmed": "Transcript contains exactly one 'Push succeeded'. The hook chain fired ONCE. Q2's multi-push hypothesis is FALSE.",
+    "script_timings_empirical": {
+      "node test.js (3831 tests, cold)": "0.16s",
+      "lint-decider-surfaces.js (no local changes)": "0.02-0.04s",
+      "lint-decider-surfaces.js (open-issues modified -> forces 3MB closed-issues cross-file ISS-uniqueness parse)": "0.03s",
+      "lint-close-records.js": "0.04s",
+      "allocate-iss-ids.js --dry-run (reads 3MB closed-issues for max-ISS)": "0.02s",
+      "node startup baseline": "~0.00s",
+      "total_script_cpu_per_run": "well under 2 seconds across the entire run"
+    },
+    "file_sizes": {
+      "closed-issues.json": "3.07 MB / 45,336 lines (parses in ~25ms; not a current cost but a slow-growing future watch-item)",
+      "priority-queue-archive.jsonl": "91 KB / 400 lines (Q6 concern is unfounded at current size)",
+      "expansion-tracker-archive.jsonl": "528 KB / 479 lines",
+      "open-issues.json": "11.7 KB / 167 lines"
+    },
+    "lints_run_twice_today": "decider-patches-and-selfapply.md invokes lint-close-records both as a manual pre-push gate (~line 465) AND via the hook on push (6 mentions total). Harmless cost-wise (~0.04s) but a candidate for de-dup inside a wrapper."
+  },
+  "investigation_questions_answered": {
+    "Q1_trend_vs_oneoff": "Mixed. The 32-min run was a genuinely heavy content run (EXP-620 + self-apply + 3 closures + queue push). Commit-to-commit git span is a useless proxy here because decider consolidates to one end-of-run push (span ~0 for almost every run in the 15-day window). The real signal is round-trip count, which scales with both fixed overhead (~46 calls) and work volume. So: not a runaway trend, but the fixed floor HAS crept up with PROP-081/083/087/089.",
+    "Q2_push_count_and_lint_cost": "ONE push. Per-push hook chain cost ~0.07s. lint-decider-surfaces is 480 LoC but runs in ~0.03s. Not the cause.",
+    "Q3_testjs_hotpath": "node test.js = 0.16s for 3831 tests. Negligible. It is run ~1-2x per run (once targeted block, once full when data files change). NOT dominant; no split needed (honors not_in_scope).",
+    "Q4_archive_growth": "Archives are not a cost. Even the 3.07MB closed-issues.json parses in ~25ms. priority-queue-archive is 91KB. Daily appends are not creating O(N) drag at current sizes.",
+    "Q5_rebase_contention": "Plausible secondary contributor, not dominant. Decider's push at ~06:35Z lands just after dome-mirror's :30 and workspace-sync's :00 runs in the same active hour, so a pull --rebase-then-push-once may occur. The push succeeded on the run examined. The proposed wrapper internalizes the single rebase-retry loop (decider-patches-and-selfapply.md lines 360/632) so any retry costs zero EXTRA round-trips instead of becoming 2-4 manual ones.",
+    "Q6_lint_reads_whole_archive": "lint-decider-surfaces does cross-check live qids against priority-queue-archive.jsonl and ISS-uniqueness against closed-issues.json, but both reads are ~tens of ms. No archive-tail-only optimization is warranted yet; revisit if closed-issues.json crosses ~30-50 MB."
+  },
+  "proposed_fix": {
+    "summary": "Two wrapper scripts that each collapse a deterministic multi-step ceremony into a single bash round-trip. The agent calls each once; the script runs the staged sub-steps internally, prints a clear staged log, and exits non-zero (naming the failing stage) on any failure. No lint is removed or made optional; the pre-push hook stays as the independent enforcement backstop.",
+    "phase_1_commit_push_wrapper": {
+      "file": "monitor/scripts/decider-commit-push.sh",
+      "does_in_one_round_trip": [
+        "git add data/ docs/ downloads/ monitor/",
+        "node monitor/scripts/lint-close-records.js (manual gate; print recovery text on fail)",
+        "node monitor/scripts/lint-decider-surfaces.js (manual gate)",
+        "git commit -m \"$1\" (message passed as arg)",
+        "git push origin main (pre-push hook re-runs both lints — defense in depth preserved)",
+        "on push rejection: git pull --rebase origin main && git push origin main (exactly once, mirrors current lines 360/632)",
+        "on push failure: invoke PROP-050 Git Data API fallback (monitor/scripts/push-via-api.js) exactly as today",
+        "node build.js sync-workspace (best-effort; warn on fail)"
+      ],
+      "replaces": "~15-25 separate bash round-trips in the commit/push phase with 1 (happy path) to ~3 (if the agent must read lint output, fix a ledger, and re-invoke).",
+      "guardrails": "Fail-loud: each stage echoes 'STAGE x: ...'; on any non-zero the script stops and exits non-zero with the stage name so the agent knows exactly what to fix. NEVER passes --no-verify. Does NOT swallow lint output — prints it verbatim."
+    },
+    "phase_2_setup_wrapper": {
+      "file": "monitor/scripts/decider-setup.sh",
+      "does_in_one_round_trip": [
+        "PRELUDE PAT-scope verify (the curl 200 check)",
+        "clone refresh: git -C $CLEAN_CLONE pull --rebase origin main (or note first-run/ephemeral)",
+        "idempotent pre-push hook (re)install (PROP-083 block)",
+        "digest gen: node build-scripts/digest-reviews.js from the clone"
+      ],
+      "replaces": "~21 PRELUDE/clone-setup round-trips with 1-2.",
+      "note": "Keep the abort-on-bad-PAT and abort-on-conflicted-rebase semantics exactly as decider.md Step 0 specifies; the wrapper just runs them in one shell."
+    },
+    "phase_3_optional_dedup": "Inside the commit-push wrapper, lint-close-records currently runs as both a manual gate and the hook. Keep both for now (cost ~0.04s, defense-in-depth) OR drop the manual gate and rely on the hook + capture its output. Low priority; not required for the speedup."
+  },
+  "projected_speedup": "Fixed-overhead round-trips drop from ~46 (21 setup + ~25 commit/push) to ~5 (2 setup + 3 commit/push). At ~14s/round-trip that is ~41 fewer round-trips * 14s ~= ~9-10 min saved on EVERY run regardless of workload. The observed 32-min run would land near ~22 min; a light/no-content run drops from its current ~12-15 min floor toward the 10-min target. Content-work round-trips (patch application, ledger judgment edits) are unchanged — those are genuine agent work, not ceremony.",
+  "constraints_honored": [
+    "Does NOT weaken the PROP-083 hook chain: both lints still run, and the git pre-push hook remains the independent structural enforcement (the wrapper's manual gate is additive, not a replacement).",
+    "Does NOT remove or split test.js: it is 0.16s and not in the hot path's cost; not_in_scope respected.",
+    "No cron/cadence change: the fix is round-trip consolidation, not scheduling; contention (Q5) is a secondary contributor handled by internalizing the existing single rebase-retry, not by re-timing agents.",
+    "Speedup comes from running the load-bearing lints FASTER-IN-FEWER-ROUND-TRIPS, never from making them optional."
+  ],
+  "rollout_caveats": [
+    "Wrapper must be fail-loud and print lint output verbatim; a wrapper that hides which stage failed would make decider debugging worse, not better.",
+    "The git pre-push hook must remain installed and unmodified — the wrapper's internal lint calls are belt-and-suspenders, the hook is the suspenders.",
+    "Wrapper scripts are git-owned source code: add to build.js OWNERSHIP and workspace-sync.md NEVER_PUSH (same class as push-via-api.js, audit-rewrite.js).",
+    "Decider.md and decider-patches-and-selfapply.md must be edited to CALL the wrappers instead of listing the inline steps; keep the inline steps documented in a comment block in the script so the procedure stays auditable.",
+    "Validate on one decider run after deploy: confirm round-trip count drops and the single-push + hook-fires-once behavior is preserved (tinker Mode 3 follow-up reading the next decider transcript)."
+  ],
+  "files_touched": [
+    "monitor/scripts/decider-commit-push.sh (NEW)",
+    "monitor/scripts/decider-setup.sh (NEW)",
+    "monitor/prompts/decider.md (Step 0 + commit/push references -> call wrappers)",
+    "monitor/prompts/reference/decider-patches-and-selfapply.md (commit/push ceremony -> call wrapper)",
+    "build.js (OWNERSHIP: classify both new scripts git-owned)",
+    "monitor/prompts/workspace-sync.md (NEVER_PUSH: add both new scripts)"
+  ],
+  "estimated_loc": "~120-160 LoC across two new shell scripts; ~40 lines net REMOVED from the two prompt files (inline steps -> single wrapper calls).",
+  "detection_mechanism": "After deploy, tinker Mode 3 reads the next heavy decider run's transcript and counts mcp__workspace__bash round-trips; success = fixed-overhead phase round-trips (setup + commit/push) drop from ~46 to <=10, with single-push and hook-fires-once preserved.",
+  "verification_pattern": "Read the most recent dome-decider session transcript via mcp__session_info__read_transcript; count '(called mcp__workspace__bash)' in the PRELUDE/clone-setup and commit/push phases. STILL_BROKEN if those phases still exceed ~30 combined round-trips after the wrappers are deployed; FIXED if <=10 and lints/hook intact.",
+  "cross_references": ["DIRECTIVE-20260613-002", "PROP-081", "PROP-083", "PROP-087", "PROP-089", "PROP-022", "PROP-050", "PROP-009r2"],
+  "operator_decision": null,
+  "operator_decision_at": null,
+  "operator_decision_by": null,
+  "operator_decision_rationale": null
+}
