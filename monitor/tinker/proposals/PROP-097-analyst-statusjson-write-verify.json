@@ -1,0 +1,107 @@
+{
+  "id": "PROP-097",
+  "title": "Generalized WRITE-VERIFY for analyst status.json artifact-delivery claims (sibling to PROP-014 Mech 1b) + root-cause path-anchoring fix",
+  "created_at": "2026-06-13T14:26:37.077Z",
+  "authored_by": "tinker",
+  "authored_by_run": "tinker-2026-06-13T14-24",
+  "status": "proposed",
+  "source_directive": "DIRECTIVE-20260613-004",
+  "category": "state-reliability",
+  "target": [
+    "monitor/prompts/analyst.md (postlude P1/P2)",
+    "monitor/prompts/reference/analyst-normal-analysis.md (artifact-write paths)"
+  ],
+  "problem": "The 2026-06-13T08:14:16Z scheduled analyst run (Opus, UTC-08 slot) updated monitor/status.json with last_analyst_run=08:14:16Z and a cheerful last_analyst_mode='Mode 1 — deep-attack singleton (EXP-621 ISS-2729 ... 1 EXP + 1 issue-proposal; pure string_patch +414 chars)', but NO EXP-621 file, NO proposal-ISS-2729 file, NO latest-analysis-summary.txt update, and NO expansion-tracker flip ever landed in git OR FUSE. The status update reached origin via workspace-sync (FUSE->git) commit 09e06aa at 09:21:39Z and was inherited by downstream consumers as a delivery that never happened. PROP-014 Mech 1b WRITE-VERIFY does not cover this surface — its scope is HNOTE consumption claims (verification_artifact_path -> test -f -> consumed), not analyst status.json mode-string artifact-delivery claims.",
+  "investigation_findings": {
+    "q1_root_cause": {
+      "chosen_mechanism": "(b) write-skip / write-misdirection — NOT (a) push-loss and NOT a clean (c) tail-truncation",
+      "evidence": [
+        "Analyst is FUSE-only by prompt rule ('Do NOT attempt git clone, git commit, or git push. Write outputs to workspace.') so push-loss (a) is structurally impossible — the surviving status write rode the SAME workspace-sync FUSE->git channel (commit 09e06aa, 09:21:39Z) that any FUSE-written EXP file would have ridden. The EXP file's absence from git therefore means it was never written to FUSE, not that a push dropped it.",
+        "Postlude order is P1 (write latest-analysis-summary.txt) THEN P2 (write status.json last_analyst_run+last_analyst_mode). A clean tail-truncation (c) that exited after the work but before the postlude would have lost P2 too (P2 is the LAST step). Yet P2 persisted and P1 did not — so the survival pattern is inverted vs a simple early-exit.",
+        "PATH-ANCHORING ASYMMETRY is the single unifying cause: P2 writes to the absolute ${WORKSPACE}/monitor/status.json path (analyst.md Step P2 explicitly: 'Use ${WORKSPACE}/monitor/status.json (FUSE-canonical)'). EVERY other analyst write uses a RELATIVE path — P1 summary (fs.writeFileSync('monitor/analyst/latest-analysis-summary.txt',...)), EXP files, proposals (fs.writeFileSync('monitor/analyst/issue-proposals/proposal-'+Date.now()+'.json',...)), and expansion-tracker.json. A relative-path write executed from a working directory that was NOT the FUSE workspace lands in an ephemeral/throwaway location and silently 'succeeds', while the one absolute-${WORKSPACE} write (P2) lands correctly. Result: exactly what we observe — status field survives, all artifacts orphaned.",
+        "Corroborating same-day context: the poller's 2026-06-13 status note recorded session/permission weirdness ('git clone had stale permissions (owned by prior session); files written to FUSE for workspace-sync rescue'), consistent with a non-canonical working directory on 06-13 runs."
+      ],
+      "alternative_not_excluded": "LLM step-omission — the agent ran P2 but skipped P1 and all artifact writes. Less parsimonious (it would have to skip many steps but execute the last one) and less likely for an Opus run, but NOT excludable without the run transcript, which is not retained. Both this alternative and the cwd-misdirection mechanism are addressed by the same fix below, so the residual ambiguity does not change the remedy.",
+      "note_on_last_analyst_note": "last_analyst_note stayed at the prior EXP-620 text. This is NOT additional evidence — last_analyst_note is a LEGACY field written by NO current prompt (grep of monitor/prompts/ returns zero writers). Its staleness is expected and unrelated."
+    },
+    "q2_did_status_land_on_origin": {
+      "answer": "YES. The 08:14Z status update reached origin/main at commit 09e06aa (2026-06-13T09:21:39Z, 'Workspace sync') carrying last_analyst_run=2026-06-13T08:14:16.100Z and the EXP-621 last_analyst_mode string. This disambiguates: the status write itself did not fail; it was the artifact writes that never reached FUSE. No silent push failure was involved (analyst does not push)."
+    },
+    "q3_runtime_context": {
+      "answer": "Scheduled UTC-08 slot analyst run (Opus). dome-analyst cron is '0 1,5,9 * * *' local = UTC 00/04/08, model Opus. 08:14:16Z aligns with the 08:00-UTC slot (jitter ~473s + dispatch latency). It updated the MAIN analyst status fields (last_analyst_run/last_analyst_mode), not the baby fields (last_analyst_baby_run/mode), so it was a main-analyst Opus run, not a Sonnet analyst-baby run, and not one of the day's manual cowork-claude catch-up runs (those were at 09:35Z EXP-623 and 09:52Z recovery)."
+    },
+    "q6_backfill_7d": {
+      "window": "2026-06-06 -> 2026-06-13 (34 status.json commits scanned via git history, depth 400)",
+      "method": "For every status.json commit in window, extracted last_analyst_mode, pulled all EXP-NNN references, and checked whether monitor/analyst/expansions/EXP-NNN(.json|-*.json) existed in git history and/or FUSE.",
+      "true_phantoms": 1,
+      "true_phantom_detail": "EXP-621 @ 08:14Z is the SOLE true phantom in the window (status claimed delivery; artifact absent from git AND FUSE; recovered by the 09:52Z re-author run, file monitor/analyst/expansions/EXP-621-win014-smoothed-curve-disposal-clause.json now exists status=complete).",
+      "adjacent_non_phantom": "EXP-622 (claimed authored @ run 10:38:27Z, status synced to git 11:08Z) is NOT a phantom: the real file EXP-622.json (16,513 bytes, status=complete) EXISTS in FUSE with mtime 13:10:01Z but is absent from git HEAD only because workspace-sync is in its daytime-skip window (cron '0 0-12,22-23'; last run 11:04Z, next 21:00Z). It will sync tonight. This is benign sync-lag, not a delivery phantom — but it illustrates that 'absent from git' alone is insufficient to declare a phantom; FUSE must also be checked.",
+      "all_other_claimed_exps_verified": "EXP-601,603,604,605,606,608,609,612,614,615,616,617,618,620,621,623 all have real files in git (note: several are EXP-NNN.json with NO descriptive suffix — a glob of EXP-NNN-*.json alone yields false 'missing' hits; the verify logic MUST match both EXP-NNN.json and EXP-NNN-*.json).",
+      "conclusion": "First-of-class over 7 days. NOT a recurring pattern. Per the directive constraint, this justifies a lighter-weight fix than a recurring failure would."
+    }
+  },
+  "proposed_fix": {
+    "summary": "Two complementary mechanisms, both analyst-only for Phase 1. Mechanism 1 removes the root cause (path-anchoring asymmetry). Mechanism 2 is the generalized WRITE-VERIFY discipline the directive requested — a sibling to PROP-014 Mech 1b, NOT an in-place extension of it.",
+    "mechanism_1_path_normalization": {
+      "what": "Anchor ALL analyst output writes on the absolute ${WORKSPACE} path, exactly as P2 already does — P1 summary, EXP files, proposals, and expansion-tracker.json.",
+      "why": "This is the actual cause of the survival asymmetry. If every write is ${WORKSPACE}-anchored, a non-canonical working directory can no longer orphan relative-path writes while sparing the one absolute write. Cheap, mechanical, zero behavioral change in the happy path.",
+      "edits": [
+        "analyst.md Step P1: change fs.writeFileSync('monitor/analyst/latest-analysis-summary.txt',...) to use process.env.WORKSPACE (or the ${WORKSPACE} bash var the postlude already resolves) + '/monitor/analyst/latest-analysis-summary.txt'.",
+        "analyst-normal-analysis.md: same absolute-anchor treatment for issue-proposals/proposal-*.json, expansions/EXP-*.json, and expansion-tracker.json writes.",
+        "Add a one-line postlude guard: at run start, resolve and export WORKSPACE once; assert it points at a FUSE mount (path contains '/mnt/dome-model-review') before any write; if it cannot be resolved, abort with a sentinel rather than writing to an unknown cwd."
+      ]
+    },
+    "mechanism_2_write_verify": {
+      "what": "Before P2 writes the artifact-claiming last_analyst_mode string, verify each claimed artifact exists at its absolute FUSE path; if any is missing, write a DOWNGRADED status and a stranded-artifact sentinel instead of the cheerful claim.",
+      "conservative_shape_chosen": "Downgraded-status + sentinel (directive Q4 option b), NOT hard-abort (option a). Rationale: the status write is the operator's primary is-the-analyst-alive liveness signal; a hard abort that exits before writing any status would lose liveness entirely and make a partial run indistinguishable from a no-fire. The downgrade preserves liveness while loudly flagging the failure and routing it to tinker. No auto-remediation (directive constraint: surface, don't remediate).",
+      "verify_inputs": "Reuse the arrays P1 already computes this run: exps[], proposals[], trackerComplete[]. No new bookkeeping.",
+      "verify_logic_sketch": [
+        "const missing=[];",
+        "for(const id of exps){ const g=fs.readdirSync(WS+'/monitor/analyst/expansions').some(f=>f===id+'.json'||f.startsWith(id+'-')); if(!g) missing.push(id+' (expansion file)'); }",
+        "for(const p of proposals){ if(!fs.existsSync(WS+'/monitor/analyst/issue-proposals/'+p)) missing.push(p); }",
+        "// summary-this-run check: re-read latest-analysis-summary.txt, confirm its embedded '=== Analyst run <TS> ===' TS equals this run's now (catches P1 not having landed this run)",
+        "if(missing.length){ last_analyst_mode='INCOMPLETE — claimed '+claimStr+' but missing at FUSE canonical path: '+missing.join(', ')+'. Possible partial-run/write-misdirection (PROP-097). Stranded sentinel written.'; write monitor/integrity/analyst-artifact-verify-fail-<ts>.json {run, claimed:exps/proposals, missing, mode_attempted}; } else { last_analyst_mode=normalClaimStr; }"
+      ],
+      "suffix_variance_guard": "EXP existence check MUST accept BOTH EXP-NNN.json and EXP-NNN-<suffix>.json (the 7d backfill found both naming conventions live). A naive EXP-NNN-*.json glob produces false downgrades on suffixless files.",
+      "sentinel": "monitor/integrity/analyst-artifact-verify-fail-<ISO-ts>.json — append-only (monitor/integrity/ is append_only in build.js OWNERSHIP). Tinker scans for these next run (same pattern as workspace-sync-abort-*.json / sync-workspace-non-ff-abort-*.json). Operator reviews; NO auto-clean."
+    }
+  },
+  "q5_cross_agent_scope": {
+    "phase_1": "analyst-only — both mechanisms. The path-anchoring asymmetry and FUSE-only write model are most acute for the analyst (the one agent forbidden from cloning/pushing).",
+    "phase_2": "Port Mechanism 2 (WRITE-VERIFY on status-summary artifact claims) to decider, curmudgeon, integrity IF the design ports cleanly. IMPORTANT OVERLAP CHECK before Phase 2: decider/curmudgeon already CLONE and have pre-push artifact lint gates (PROP-076 lint-close-records, PROP-080 pre-push hook, PROP-081 required-artifacts, PROP-083 idempotent hook, PROP-089 lint-decider-surfaces) that already block pushes missing required artifacts for GIT-pushed state. Phase 2 must NOT duplicate those — it should target ONLY the residual surface: status-summary strings (last_decider_summary, curmudgeon latest-review-summary, integrity report claims) that assert FUSE-only or not-yet-pushed artifact state. If that residual surface is empty for an agent (everything it claims is git-pushed and already lint-gated), that agent needs no Phase 2 work.",
+    "phase_2_gate": "Author Phase 2 only after Phase 1 has run >=14 days with zero false-positive downgrades, confirming the verify logic is stable."
+  },
+  "open_questions_for_decider": [
+    "Ship both mechanisms, or Mechanism 1 (path normalization) alone? Mechanism 1 alone fixes the observed cause and is near-zero-risk; Mechanism 2 adds per-run verification overhead (a handful of existsSync calls) to catch true partial-runs that Mechanism 1 cannot. Given Q6 shows first-of-class (1 event / 7d), Mechanism 1 alone is a defensible minimal fix. Tinker recommends BOTH (Mechanism 2's overhead is trivial and the cost of a silent phantom inheriting into the decider is high), but flags the minimal option explicitly.",
+    "Should the summary-this-run freshness check (re-read embedded run TS) be in scope, or is artifact-existence verification sufficient? The freshness check is what would have caught THIS event most directly (summary stayed at the prior 05:16 run)."
+  ],
+  "test_plan": [
+    "Unit: simulate a run that computes exps=['EXP-999'] with no EXP-999 file present -> assert last_analyst_mode is downgraded AND a sentinel is written.",
+    "Unit: run with all artifacts present -> assert normal cheerful mode string, no sentinel.",
+    "Suffix-variance: EXP-NNN.json (suffixless) present -> assert NOT flagged missing.",
+    "Path-normalization: run from a deliberately-wrong cwd (e.g. /tmp) -> assert summary + EXP + proposal still land under ${WORKSPACE} (absolute anchoring), reproducing-then-fixing the 08:14Z failure mode.",
+    "Regression: confirm the postlude still writes a liveness status on a genuine no-op run (no downgrade false-positive when exps/proposals are empty)."
+  ],
+  "rollout_plan": {
+    "phase_1": "Operator applies Mechanism 1 + Mechanism 2 edits to analyst.md + analyst-normal-analysis.md from a clone; build.js publish syncs prompts FUSE-ward; first scheduled analyst run validates.",
+    "phase_2": "Deferred; gated on 14d clean Phase 1 + cross-agent overlap audit above.",
+    "monitoring": "Tinker scans monitor/integrity/analyst-artifact-verify-fail-*.json each run and reports any hits; counts false-positive downgrades to validate the verify logic."
+  },
+  "tradeoffs": {
+    "for": "Closes a confirmed false-state injection into the decider's inherited pipeline state. Mechanism 1 is a genuine root-cause fix at near-zero cost. Mechanism 2 generalizes the proven PROP-014 WRITE-VERIFY discipline to a surface it didn't cover.",
+    "against": "First-of-class event (1/7d) — risk of over-engineering. Mechanism 2 adds per-run logic and a (small) false-positive-downgrade risk if path resolution or suffix-matching is wrong. Mitigated by suffix-variance guard + test plan + the minimal-fix fallback (Mechanism 1 alone).",
+    "other_side": "It is plausible this was a one-off artifact of 06-13's documented session/permission weirdness and will never recur, in which case Mechanism 1 (which neutralizes exactly that weirdness) is sufficient and Mechanism 2 is insurance. The decider should weigh Mechanism 2's standing complexity against the realized rate."
+  },
+  "estimated_impact": "Eliminates the relative-path orphaning failure mode for all analyst writes (Mechanism 1) and converts any future artifact-claim phantom from a silent false-state into a loud, tinker-routed downgrade (Mechanism 2). No happy-path behavior change.",
+  "requires_human_judgment": true,
+  "why_human_needed": "Propose-only per directive. Operator chooses both-vs-minimal scope and integrates. No agent self-applies analyst.md edits.",
+  "verification_pattern": "After Phase 1 integration: grep analyst.md + analyst-normal-analysis.md for ${WORKSPACE}-anchored writes on summary/EXP/proposal/tracker (Mechanism 1 present) AND for the verify-before-status-write block + analyst-artifact-verify-fail sentinel path (Mechanism 2 present). FAILED if analyst status-mode artifact claims can still be written without an existence check.",
+  "cross_references": [
+    "PROP-014 (WRITE-VERIFY Mech 1a/1b — this is a SIBLING discipline for a new surface, not an extension; per directive constraint do NOT modify PROP-014's HNOTE-specific machinery)",
+    "PROP-036 (analyst summary-write canonical fix / postlude P1+P2)",
+    "PROP-022 (state-file-archives)",
+    "DIRECTIVE-20260613-004 (this work)",
+    "monitor/analyst/expansions/EXP-621-win014-smoothed-curve-disposal-clause.json (recovery artifact)",
+    "git commit 09e06aa 2026-06-13T09:21:39Z (status.json carrying the phantom claim FUSE->git)"
+  ]
+}
