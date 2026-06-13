@@ -468,9 +468,41 @@ smart_copy() {
     return 0
   fi
   if [ ! -f "$dst" ]; then
-    # PROP-082: do not resurrect files that prune-integrity.js deleted on
-    # purpose. FUSE cannot unlink, so a FUSE copy older than its category's
-    # retention window is a pruned file, not a fresh agent-authored one.
+    # PROP-094 (2026-06-13): git-deletion-authority check (PRIMARY).
+    # If git deleted this exact path within the retention window, treat git's
+    # deletion as authoritative and skip the rescue. Policy-agnostic — does
+    # NOT mirror prune's per-category retention math. Closes the count-vs-date
+    # mismatch that survived PROP-082: narrative-cite-audit is count-based
+    # (keep_last_n=7) while PROP-082 used a 14-day date proxy; at ~150-220
+    # files/day cadence the 2-to-14-day band was resurrected every hourly
+    # cycle, accumulating to the 387 MB / 308-file backlog the operator
+    # drained on 2026-06-13 (commit f3d8c46). Generalizes to all 9 prune
+    # categories AND closes the +1-day boundary leak on the categories
+    # PROP-082 handled correctly. Producer-fresh exception: if FUSE content
+    # differs from the parent-of-deleting-commit blob, the producer
+    # genuinely re-created the file with new content after prune deleted
+    # it — fall through to rescue.
+    if grep -qFx "$dst" "$GIT_DELETED_SET" 2>/dev/null; then
+      local last_del_sha last_blob_hash fuse_hash
+      last_del_sha=$(git log --diff-filter=D --format=%H -n 1 -- "$dst" 2>/dev/null)
+      if [ -n "$last_del_sha" ]; then
+        last_blob_hash=$(git show "${last_del_sha}^:$dst" 2>/dev/null | sha1sum | cut -d' ' -f1)
+        fuse_hash=$(sha1sum "$src" 2>/dev/null | cut -d' ' -f1)
+        if [ -n "$last_blob_hash" ] && [ "$fuse_hash" != "$last_blob_hash" ]; then
+          echo "RESCUE (PROP-094 git-deleted-but-content-differs; producer recreation): $dst" >> "$SKIP_LOG"
+          # fall through to cp below
+        else
+          echo "SKIP (PROP-094 git-deleted-authoritative; pruned artifact, do not resurrect): $dst" >> "$SKIP_LOG"
+          return 0
+        fi
+      else
+        echo "SKIP (PROP-094 git-deleted-authoritative; pruned artifact, do not resurrect): $dst" >> "$SKIP_LOG"
+        return 0
+      fi
+    fi
+    # PROP-082 fallback (SECONDARY): date-based filter for paths git didn't
+    # delete in the 95-day window (never-tracked, or beyond retention horizon).
+    # Kept as belt-and-suspenders; the PROP-094 primary catches the common case.
     if is_prune_expired "$dst"; then
       echo "SKIP (older-than-prune-retention; pruned artifact, do not resurrect): $dst" >> "$SKIP_LOG"
       return 0
@@ -532,6 +564,23 @@ smart_copy() {
   fi
   cp "$src" "$dst"
 }
+
+# PROP-094 (2026-06-13): build the git-deleted-paths set ONCE per run.
+# Used by smart_copy's dst-absent branch above to authoritatively skip rescue
+# of files git deleted within the 95-day retention horizon. Cost ~0.2s on a
+# depth-50 clone. The 95-day window comfortably exceeds the longest prune
+# retention (report-daily at 90 days) so no genuine prune deletion is missed.
+# An empty set is fine (e.g., fresh clone with no delete history in this
+# horizon) — every smart_copy then falls through to PROP-082's date-proxy
+# fallback as before. Restricting --since='95 days ago' bounds the git log
+# cost; widening it later if any prune retention exceeds 95d is one number
+# change here. Path restricted to monitor/integrity/ because that's the
+# only directory tree prune ever touches.
+GIT_DELETED_SET="/tmp/git-deleted-set-$$-${RANDOM}.txt"
+git log --diff-filter=D --name-only --since='95 days ago' --pretty=format: \
+  -- monitor/integrity/ 2>/dev/null | sort -u > "$GIT_DELETED_SET" 2>/dev/null || true
+GIT_DELETED_COUNT=$(wc -l < "$GIT_DELETED_SET" 2>/dev/null || echo 0)
+echo "[PROP-094] git-deleted set built: ${GIT_DELETED_COUNT} paths (since 95d ago, monitor/integrity/)"
 
 # Iterate over each file the workspace might author and smart_copy it
 sync_glob() {
