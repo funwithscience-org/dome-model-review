@@ -1,0 +1,43 @@
+{
+  "directive_id": "DIRECTIVE-20260613-003",
+  "for": "tinker",
+  "status": "pending",
+  "priority": "medium",
+  "created_at": "2026-06-13T08:55:00.000Z",
+  "created_by": "operator",
+  "title": "human-notes.json status-vocabulary drift — same family as PROP-093 (attention-inbox). Writers emit `active`, reader filters `pending`, items silently stranded. Reconcile.",
+  "context": "Operator-side investigation 2026-06-13T08:30Z surfaced the EXACT structural sibling of the attention-inbox vocabulary issue PROP-093 just fixed, in a different file:\\n\\n(1) HNOTE-OPERATOR-FABLE-MACRO-REVIEW-FOLLOWUPS-001 (commissioned 2026-06-10T05:50Z) was authored with `status: 'active'`. It sat for 3 days unactioned. Operator initially attributed this to Fable substitution + medium priority and bumped to `priority: 'high'` at 2026-06-13T05:22Z. The priority bump was a no-op for visibility.\\n\\n(2) Root cause: analyst.md L223 dispatcher quick-check filters on `status === 'pending'`:\\n```\\nconst p=n.notes?n.notes.filter(x=>x.status==='pending'):[];\\n```\\nMode 5's filter (L312) also requires `status === 'pending'`. Notes authored with `status: 'active'` are STRUCTURALLY INVISIBLE to analyst regardless of priority. The dispatcher cleanly reports 'NO NOTES' — silent strand, same failure mode as the attention-inbox case before PROP-093 C1.\\n\\n(3) Current vocabulary distribution across 7 live notes (snapshot 2026-06-13T08:30Z):\\n  - 2 notes: `status: 'consumed'` (resolution state)\\n  - 1 note: `status: 'consumed-pending-verification'` (PROP-014 Mech 1b WRITE-VERIFY intermediate state)\\n  - 2 notes: `status: 'active'` (silently stranded — drift)\\n  - 2 notes: no status field at all (also invisible to the `=== 'pending'` filter)\\n  - 0 notes: `status: 'pending'` (canonical live state per the analyst filter)\\n\\nSo of 7 notes, 4 (57%) are stranded by the status vocabulary mismatch. Two genuinely needed analyst attention (the Fable-followups + one other 'active' note); the other two missing-status entries may be defensible old format.\\n\\n(4) Immediate operator fix landed in commit (next): flipped the Fable-followup HNOTE to `status: 'pending'` so tonight's UTC 08:00 analyst run picks it up. The other 'active' and missing-status entries remain stranded pending tinker's structural reconciliation.",
+  "task": "PROP-093-style reconciliation for monitor/analyst/human-notes.json. Decide on canonical schema, harden reader, normalize writers, drain backlog.",
+  "investigation_questions": [
+    "Q1 — Which writer sites emit `status: 'active'` instead of `status: 'pending'`? Grep across all writer prompts (analyst.md Mode 6 if it self-files? operator-side HNOTE-authoring sessions like cowork-claude's? other agents that write to this file?). Map every site so C2 (writer normalization) is complete.",
+    "Q2 — Should the reader filter be widened (`pending || active`) as a back-compat shim, or should the writers be normalized exclusively? PROP-093 C1 chose BOTH (reader widening + writer normalization with eventual back-compat clause drop). Recommend the same here unless evidence argues otherwise.",
+    "Q3 — Are the 2 missing-status notes legitimately old format (pre-status convention) or also drift? Decide whether to backfill them with `status: 'pending'` (re-surface for analyst) or `status: 'consumed'` (retire as historical). Operator review needed if the title/body indicates substantive work was meant to happen.",
+    "Q4 — Where else does this drift family live? Check monitor/decisions/human-notes.json, monitor/curmudgeon/human-notes.json, monitor/social/human-notes.json — do their reader-side filters also require `status: 'pending'`, and do their notes drift to `'active'`? If yes, the PROP should generalize.",
+    "Q5 — Is `consumed-pending-verification` (PROP-014 Mech 1b) a transitional state that should also be visible to a subsequent analyst run (e.g., for verification follow-up), or is it a terminal resolution state? Tinker should reconcile this with PROP-014 Mech 1b's intent before C1 widens the filter and accidentally re-surfaces verified items."
+  ],
+  "deliverable": "A PROP-NNN proposal in monitor/tinker/proposals/ with the same shape as PROP-093: (C1) reader-harden in analyst.md to accept the legitimate vocabulary set + new visibility note; (C2) writer normalization — locate every site emitting `status: 'active'`, change to `'pending'`; (C3) backfill plan for the 2 missing-status and 2 'active' notes currently live; (C4) cross-file check for the same drift in the other 3 human-notes files. Propose-only; operator integrates after review.",
+  "constraints": [
+    "Do NOT mass-flip historical resolved items — only the live-state-confused ones (current 'active' + missing-status). The 'consumed' and 'consumed-pending-verification' resolution states are intentional and must remain.",
+    "Honor the other-side: PROP-093's C2 (writer normalization in decider.md) is still pending — that case turned out hard to locate the divergent write site. This directive's C2 may face the same hunt. Set ship-conservative scope (C1 + backfill) as Phase 1; C2 as follow-up if writer site is hard to find.",
+    "Do NOT change the analyst.md L223 OR L312 filter semantics without considering interaction with PROP-014 Mech 1b's `consumed-pending-verification` state (Q5)."
+  ],
+  "background_artifacts": {
+    "operator_immediate_fix_commit": "Pending in this batch — flips HNOTE-OPERATOR-FABLE-MACRO-REVIEW-FOLLOWUPS-001 status active->pending so tonight's UTC 08:00 analyst run can pick it up.",
+    "sibling_prop": "PROP-093 (attention-inbox status-vocabulary reconciliation) — same shape, just landed C1+C4 in commit 3ebfcd8 / 6f7bbe8 today",
+    "stranded_count": "4 of 7 notes (57%) silently stranded by the vocabulary mismatch as of audit ts",
+    "reader_filter_locations": [
+      "monitor/prompts/analyst.md L223 (dispatcher quick-check)",
+      "monitor/prompts/analyst.md L312 (Mode 5 filter)"
+    ],
+    "related_prop_lineage": [
+      "PROP-014 (Mech 1b WRITE-VERIFY for HNOTE consumption)",
+      "PROP-022 (state-file-archives — human-notes-archive convention)",
+      "PROP-093 (attention-inbox vocabulary reconciliation; pattern this PROP mirrors)"
+    ]
+  },
+  "not_in_scope": [
+    "Cross-agent human-notes audit (decisions/curmudgeon/social variants) BEYOND noting whether the same drift exists — those are separate writer/reader pairs; address in a separate PROP if drift confirmed.",
+    "Changes to the consumed / consumed-pending-verification resolution state semantics — only the live-state vocabulary is in scope.",
+    "Re-running stranded notes' substantive work — that's analyst's job once tinker's PROP makes them visible again."
+  ]
+}
