@@ -1,27 +1,32 @@
-TINKER tinker-2026-06-13T07-59 — DIRECTIVE-20260613-002 (decider runtime creep) → PROP-095
+TINKER run 2026-06-13T09-50 — Directive-driven (Mode 4 PROP authoring)
 
-HEADLINE: Decider's 32-min run is ROUND-TRIP COUNT, not script cost.
-  - Observed run (decider-2026-06-13T10-00, session local_40acb957): ~131 bash + 4 Read
-    round-trips in ~32 min ⇒ ~14s/round-trip (model gen + MCP latency).
-  - Every recently-added script is sub-50ms: lint-decider-surfaces 0.03s, lint-close-records
-    0.04s, allocate-iss-ids 0.02s, and node test.js = 0.16s for all 3831 tests. Even parsing
-    the 3.07 MB closed-issues.json = ~25ms. Total script CPU per run < 2s.
-  - The hook chain fired ONCE — single consolidated push confirmed (Q2 multi-push = FALSE).
-  - Cause: fixed-overhead round-trips have crept up as PROP-081/083/087/089 each added a
-    mandatory step the agent runs as its own bash call. PRELUDE/clone-setup ~21 calls;
-    commit/push ceremony ~25 calls = ~46-round-trip floor paid EVERY run regardless of work.
+DIRECTIVE-20260613-003 (medium): human-notes.json status-vocabulary drift — same family as PROP-093 (attention-inbox). COMPLETED.
+  -> Authored PROP-096 (propose-only). Directive marked completed, prop_id_authored=PROP-096.
 
-FIX (PROP-095, propose-only, medium): two wrapper scripts collapse the deterministic
-  ceremonies into 1-3 round-trips each — decider-commit-push.sh (add→lint→commit→push→
-  api-fallback→sync) and decider-setup.sh (PAT-verify→rebase→hook-install→digest). Lints are
-  RUN not weakened; the git pre-push hook stays as the independent backstop. Projected
-  ~9-10 min/run saved (32→~22 min heavy; light runs toward the 10-min target).
+WHAT WAS WRONG: analyst.md Mode 2 dispatcher (L223) + Mode 5 (L312) filter live human-notes on status==='pending'.
+Notes authored status:'active' or with NO status field are structurally invisible — silent strand (same failure mode
+PROP-093 just fixed for attention-inbox). The operator's priority-bump on the Fable note was a no-op because priority
+is never read when status!=='pending'.
 
-OTHER SIDE: the 06:00 run did real work (EXP-620 + self-apply + 3 closures + queue push);
-  32 min isn't pathological for that load. This is a fixed-FLOOR creep, not a runaway.
+LIVE HARM (higher than PROP-093): 2 genuine route-to-analyst work items have been silently stranded since 2026-06-11
+in analyst/human-notes.json (both NO status field):
+  - HNOTE-DECIDER-...227 = ISS-2698: podaac.jpl.nasa.gov timing out (HTTP 000, 3rd consecutive integrity run) — needs a
+    verified replacement URL + sections.json patch. This is a LIVE BROKEN LINK on the published site.
+  - HNOTE-DECIDER-...228 = ISS-2699: orphan_file=68 (> 5 tolerance) — needs orphan triage + tracker update.
+Once PROP-096 C1 lands, the next analyst Mode 2 run picks both up automatically (isLive treats missing-status as live).
 
-BACKLOG: GREEN. 9 open / 0 open-status / 3 assigned-analyst / net velocity +103 (7d). No
-  threshold fires. The runtime issue is cost/efficiency, not throughput.
+PROP-096 shape (mirrors PROP-093): C1 reader-harden (widen to pending||active||missing + note-text field shim, EXCLUDING
+consumed & consumed-pending-verification — the latter is non-terminal-but-already-worked, re-surfacing it would cause
+redo/race); C2 writer-normalize (decider route-to-analyst HNOTE site — location is an open question, same hunt PROP-093
+C2 is still blocked on — plus operator/agent 'active'->'pending' convention + CLAUDE.md Human Notes Rule amend); C3 backfill
+plan for the stranded items (propose-only, operator integrates); C4 cross-file generalize.
 
-WATCH (not actionable yet): closed-issues.json 3.07 MB / 45,336 lines — fine at 25ms today;
-  revisit rotation if it crosses ~30-50 MB.
+CROSS-FILE (Q4): drift also CONFIRMED in decisions/human-notes.json (2 'active' notes). curmudgeon.md + social.md readers
+use the same strict-pending filter (latent; both files empty now). Recommend generalizing the canonical-vocabulary note.
+
+OPERATOR ACTIONS NEEDED: (1) approve C1 reader-harden (safe, ship first); (2) confirm intent of the 'active' notes
+(EXP-450-P4-DEFER reads as a deliberate defer marker); (3) help locate the decider route-to-analyst human-note write site
+for C2. Propose-only per directive — nothing applied to prompts this run.
+
+PIPELINE HEALTH: open_issues=9, status=open:0, assigned-analyst:3, age>=14d:0, net_velocity_7d=+94, verify_drain_7d=13.
+WoW 6->9 (+50%) is a small-denominator artifact, not a real backlog problem. Tier: info. Pipeline GREEN.
