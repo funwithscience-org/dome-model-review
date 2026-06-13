@@ -1,0 +1,42 @@
+{
+  "directive_id": "DIRECTIVE-20260613-004",
+  "for": "tinker",
+  "status": "pending",
+  "priority": "medium",
+  "created_at": "2026-06-13T11:30:00.000Z",
+  "created_by": "operator",
+  "title": "Analyst phantom-resolution: 08:14Z run reported EXP-621 + ISS-2729 proposal delivered, but neither artifact ever landed in git or FUSE. PROP-014 Mech 1b WRITE-VERIFY scope-gap.",
+  "context": "Operator-side investigation 2026-06-13T11:25Z, prompted by the 09:52Z analyst run's `process_note_to_tinker` self-report:\\n\\n(1) The 08:14:16Z analyst run wrote a status update to `monitor/status.json` (clone-side) claiming 'EXP-621 ISS-2729 ... 1 EXP + 1 issue-proposal; pure string_patch +414 chars'. The 09:35:43Z FUSE-side analyst run (the EXP-623 Commission 2 run) correctly listed EXP-621 as 'carry-over (deferred to next runs)'. So two status sources disagreed: clone-side at 08:14Z asserted delivery; FUSE-side at 09:35Z asserted deferral.\\n\\n(2) Reality check: NO `EXP-621*.json` existed in git HEAD or FUSE at 08:30Z when the next analyst run was supposed to inherit the state. NO `proposal-ISS-2729-resolution.json` existed either. The 08:14Z status update was a phantom.\\n\\n(3) The 09:52Z analyst run caught the phantom itself, re-authored EXP-621 properly (the file `monitor/analyst/expansions/EXP-621-win014-smoothed-curve-disposal-clause.json` now exists with status='complete'), and embedded a request for tinker investigation in its `process_note_to_tinker` field. This directive operationalizes that request.\\n\\n(4) PROP-014 Mech 1b WRITE-VERIFY is the structural defense the analyst summary referenced — but its scope is HNOTE consumption only. It says: when marking an HNOTE consumed, set `verification_artifact_path` and run `test -f` before writing `consumed`. It does NOT cover the general case of analyst's status.json updates that announce EXP delivery / issue-proposal authoring. So Mech 1b would not have caught this phantom — it operates on a different write surface.",
+  "task": "Diagnose the 08:14Z phantom-resolution mechanism, propose a fix that extends the WRITE-VERIFY discipline beyond HNOTE consumption to cover all artifact-delivery claims in analyst status.json.",
+  "investigation_questions": [
+    "Q1 — What actually happened in the 08:14:16Z run? Three candidate mechanisms (analyst's own process_note_to_tinker enumerated them): (a) push-loss to git after status update — status was committed and pushed, EXP file failed to be added before push and the agent didn't notice; (b) write-skip in the pipeline — status updated but the file-write step never ran (early exit, exception swallowed, conditional skipped); (c) partial run — the run exited between status update and file write (timeout, OOM, dispatch interruption). Pick the one supported by evidence (commit history, status.json diff, prior analyst summaries for that run if any) and document.",
+    "Q2 — Did the 08:14Z status.json update actually land on origin? If it did, find the commit. If it didn't, what happened — was there a push that failed silently? This is the disambiguator between (a) and (b)/(c).",
+    "Q3 — Was the 08:14Z run an Opus catch-up like other manual runs today, or a Sonnet baby run, or a scheduled run? Different runtime contexts could differ in their write-then-status sequencing.",
+    "Q4 — Generalize Mech 1b: design a WRITE-VERIFY discipline for analyst status.json updates that mention EXPs, issue-proposals, expansion-tracker flips, attention-inbox resolutions. The principle is the same as PROP-014 Mech 1b — before status.json reports 'EXP-NNN authored', run `test -f` on the actual artifact path. If absent, either (a) abort with a stranded-artifact sentinel for tinker review, or (b) write a downgraded status like 'EXP-NNN intended but artifact-write failed' instead of the cheerful 'EXP-NNN delivered'. Choose the conservative shape.",
+    "Q5 — Are other agents affected? Decider, curmudgeon, integrity also write status updates that reference artifacts. Same WRITE-VERIFY discipline arguably should apply universally. Scope decision: PROP analyst-only for Phase 1, generalize to all agents for Phase 2 if Q4's design ports cleanly.",
+    "Q6 — Detection mechanism for past phantoms: is the 08:14Z event the FIRST of its class, or have there been others we missed? Audit by comparing every analyst status.json EXP-N delivery claim from the past 7 days against the actual presence of `monitor/analyst/expansions/EXP-N*.json` files in git history at that timestamp. Any mismatch is a phantom."
+  ],
+  "deliverable": "A PROP-NNN proposal in monitor/tinker/proposals/ with: (1) chosen root cause from Q1 with evidence; (2) generalized WRITE-VERIFY design (analyst.md prompt edits — either a status-write helper that bundles test-f + write, or an inline pattern to wrap every EXP/proposal/tracker reference in status.json updates); (3) backfill analysis from Q6 (count of past phantoms if any, sample examples); (4) rollout plan with Phase 1 analyst-only and Phase 2 cross-agent. Propose-only; operator integrates after review.",
+  "constraints": [
+    "Do NOT extend the existing PROP-014 Mech 1b in-place — that's HNOTE consumption-specific (with consumed-pending-verification intermediate state and other PROP-014-specific machinery). The new WRITE-VERIFY discipline is a sibling, not an extension.",
+    "Honor the other-side: the 08:14Z phantom might have been a one-off (Fable substitution carryover, manual run partial-completion, etc.). Q6's audit is critical — if no other phantoms in 7 days, the fix can be lighter-weight than if this is a recurring pattern.",
+    "Do NOT add a sweep that auto-cleans 'phantom' status entries — manual operator review of any past phantom is required. Surface, don't remediate."
+  ],
+  "background_artifacts": {
+    "audit_session_ts": "2026-06-13T11:25Z",
+    "phantom_run_ts": "2026-06-13T08:14:16Z (clone-side status update; not yet pinpointed in git history)",
+    "recovery_run": "2026-06-13T09:52Z analyst run authored real EXP-621 + embedded process_note_to_tinker",
+    "real_exp_file": "monitor/analyst/expansions/EXP-621-win014-smoothed-curve-disposal-clause.json (status=complete)",
+    "scope_limitation_of_mech_1b": "PROP-014 Mech 1b WRITE-VERIFY targets HNOTE consumption only (verification_artifact_path → test -f → consumed). Not a defense against general status.json artifact-claim phantoms.",
+    "related_prop_lineage": [
+      "PROP-014 (HNOTE WRITE-VERIFY Mech 1b — sibling pattern; this PROP generalizes the discipline)",
+      "PROP-022 (state-file-archives; archive-on-resolve)",
+      "PROP-036 (analyst summary-write canonical fix — earlier related work on status reliability)"
+    ]
+  },
+  "not_in_scope": [
+    "Re-running the 08:14Z phantom's work — already done by the 09:52Z run.",
+    "Changes to PROP-014 Mech 1b's HNOTE-specific machinery — only the GENERALIZED discipline is new.",
+    "Decider / curmudgeon / integrity audit of their own status-write phantoms — Phase 2 follow-up if Q4's design is portable."
+  ]
+}
