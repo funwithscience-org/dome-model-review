@@ -42,7 +42,8 @@ const entry={
   kernel_of_truth: '...',
   created_at: new Date().toISOString()
 };
-fs.writeFileSync('monitor/analyst/new-wins/WIN-NNN.json', JSON.stringify(entry, null, 2));
+// PROP-097 Mech 1 (2026-06-13): absolute ${WORKSPACE} anchor.
+fs.writeFileSync(process.env.WORKSPACE + '/monitor/analyst/new-wins/WIN-NNN.json', JSON.stringify(entry, null, 2));
 "
 ```
 
@@ -66,8 +67,10 @@ const proposal={
   affected_wins:[id.replace('WIN-','')],
   created_at:new Date().toISOString()
 };
-fs.mkdirSync('monitor/analyst/issue-proposals',{recursive:true});
-fs.writeFileSync('monitor/analyst/issue-proposals/proposal-'+id+'-'+Date.now()+'.json',JSON.stringify(proposal,null,2));
+// PROP-097 Mech 1 (2026-06-13): absolute ${WORKSPACE} anchor.
+const W=process.env.WORKSPACE;
+fs.mkdirSync(W+'/monitor/analyst/issue-proposals',{recursive:true});
+fs.writeFileSync(W+'/monitor/analyst/issue-proposals/proposal-'+id+'-'+Date.now()+'.json',JSON.stringify(proposal,null,2));
 "
 ```
 

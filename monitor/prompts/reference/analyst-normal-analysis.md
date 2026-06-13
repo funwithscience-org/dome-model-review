@@ -89,8 +89,10 @@ const proposal={
   affected_wins:['NNN'],
   created_at:new Date().toISOString()
 };
-fs.mkdirSync('monitor/analyst/issue-proposals',{recursive:true});
-fs.writeFileSync('monitor/analyst/issue-proposals/proposal-'+Date.now()+'.json',JSON.stringify(proposal,null,2));
+// PROP-097 Mech 1 (2026-06-13): absolute ${WORKSPACE} anchor.
+const W=process.env.WORKSPACE;
+fs.mkdirSync(W+'/monitor/analyst/issue-proposals',{recursive:true});
+fs.writeFileSync(W+'/monitor/analyst/issue-proposals/proposal-'+Date.now()+'.json',JSON.stringify(proposal,null,2));
 "
 ```
 
@@ -98,7 +100,9 @@ fs.writeFileSync('monitor/analyst/issue-proposals/proposal-'+Date.now()+'.json',
 ```bash
 node -e "
 const fs=require('fs');
-const path='monitor/analyst/expansion-tracker.json';
+// PROP-097 Mech 1 (2026-06-13): absolute ${WORKSPACE} anchor on read AND write
+// (read and write must agree — otherwise we'd read clone-side and write workspace-side).
+const path=process.env.WORKSPACE+'/monitor/analyst/expansion-tracker.json';
 const t=JSON.parse(fs.readFileSync(path,'utf8'));
 // ID allocation: ALWAYS use t.next_id, NEVER t.items.length+1. The length formula
 // collides on gaps (renames, concurrent allocation, or cross-writer allocation).

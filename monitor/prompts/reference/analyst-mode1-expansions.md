@@ -15,7 +15,7 @@ After incorporating: set note `status` to `"consumed"`, add `consumed_at` timest
 Pattern:
 ```bash
 # Step 1: write the artifact (your normal expansion / revision flow)
-# ... node -e "fs.writeFileSync('monitor/analyst/expansions/EXP-NNN.json', ...)"
+# ... node -e "fs.writeFileSync(process.env.WORKSPACE+'/monitor/analyst/expansions/EXP-NNN.json', ...)"
 
 # Step 2: self-verify with test -f BEFORE marking note consumed
 ARTIFACT_PATH="monitor/analyst/expansions/EXP-NNN.json"
@@ -181,7 +181,8 @@ const exp={
     {objection: '...', response: '...'}
   ]
 };
-fs.writeFileSync('monitor/analyst/expansions/EXP-NNN.json', JSON.stringify(exp, null, 2));
+// PROP-097 Mech 1 (2026-06-13): absolute ${WORKSPACE} anchor.
+fs.writeFileSync(process.env.WORKSPACE + '/monitor/analyst/expansions/EXP-NNN.json', JSON.stringify(exp, null, 2));
 "
 ```
 Use hand-written JSON only when the content is short and obviously correct. For anything with nested arrays or multi-paragraph string fields, use the `JSON.stringify` pattern.

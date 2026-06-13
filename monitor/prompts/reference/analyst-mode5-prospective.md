@@ -82,7 +82,8 @@ const obj = {
   },
   action_for_decider: 'Add new_entry to predictions.json and push PROS-NNN to curmudgeon priority queue'
 };
-fs.writeFileSync('monitor/analyst/expansions/PROS-assessment-PROS-NNN.json', JSON.stringify(obj, null, 2));
+// PROP-097 Mech 1 (2026-06-13): absolute ${WORKSPACE} anchor.
+fs.writeFileSync(process.env.WORKSPACE + '/monitor/analyst/expansions/PROS-assessment-PROS-NNN.json', JSON.stringify(obj, null, 2));
 // Validate
 JSON.parse(fs.readFileSync('monitor/analyst/expansions/PROS-assessment-PROS-NNN.json','utf8'));
 console.log('valid');
@@ -153,8 +154,10 @@ const obj = {
   action_for_decider: 'Process status-change files; add new PROS entries from assessment files',
   next_audit_recommended: new Date(Date.now()+7*86400000).toISOString()
 };
-fs.writeFileSync('monitor/analyst/expansions/MODE5-audit-'+new Date().toISOString().slice(0,10)+'.json', JSON.stringify(obj,null,2));
-fs.writeFileSync('monitor/analyst/expansions/MODE5-audit-latest.json', JSON.stringify(obj,null,2));
+// PROP-097 Mech 1 (2026-06-13): absolute ${WORKSPACE} anchor (both writes).
+const W=process.env.WORKSPACE;
+fs.writeFileSync(W+'/monitor/analyst/expansions/MODE5-audit-'+new Date().toISOString().slice(0,10)+'.json', JSON.stringify(obj,null,2));
+fs.writeFileSync(W+'/monitor/analyst/expansions/MODE5-audit-latest.json', JSON.stringify(obj,null,2));
 JSON.parse(fs.readFileSync('monitor/analyst/expansions/MODE5-audit-latest.json','utf8'));
 console.log('valid');
 "

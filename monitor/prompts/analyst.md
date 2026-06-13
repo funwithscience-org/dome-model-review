@@ -111,6 +111,17 @@ fi
 
 ```bash
 WORKSPACE=$(find /sessions/*/mnt/dome-model-review -maxdepth 0 2>/dev/null | head -1)
+# PROP-097 Mech 1 (2026-06-13): WORKSPACE-guard. The 08:14Z phantom traced to
+# relative-path writes being orphaned to a non-canonical cwd while only the
+# absolute-path status write survived. Every analyst write in this prompt + the
+# referenced analyst-*.md files now uses ${WORKSPACE}/... anchoring. If WORKSPACE
+# cannot be resolved or doesn't point at a FUSE mount, abort BEFORE any write —
+# writing to an unknown cwd is the root cause of the phantom-resolution class.
+if [ -z "$WORKSPACE" ] || [[ "$WORKSPACE" != *"/mnt/dome-model-review"* ]]; then
+  echo "PROP-097-ABORT: WORKSPACE not resolvable or not a FUSE mount ('$WORKSPACE'). Refusing to write — would orphan artifacts."
+  exit 1
+fi
+export WORKSPACE  # propagate into all node -e child processes
 AUTH_URL=$(git -C "${WORKSPACE}" remote get-url origin 2>/dev/null)
 TOKEN=$(echo "$AUTH_URL" | grep -oP 'x-access-token:\K[^@]+')
 if [ -n "$TOKEN" ]; then
@@ -436,7 +447,10 @@ const summary = \`=== Analyst run \${now} ===\n\` +
   \`  Attention-inbox→resolved: \${inboxResolved.length} (\${inboxResolved.join(', ')})\n\n\` +
   \`Carry-over: \${carryOver.length ? carryOver.join(', ') : 'none'}\n\n\` +
   \`Queue state: pending-tracker=\${pT} pending-inbox=\${pI} assigned-analyst-major+=\${aA}\n\`;
-fs.writeFileSync('monitor/analyst/latest-analysis-summary.txt', summary);
+// PROP-097 Mech 1 (2026-06-13): absolute ${WORKSPACE} anchor for the summary write.
+// The 08:14Z phantom traced to relative-path writes being orphaned to a non-canonical
+// cwd while the only absolute-path write (status.json) survived. Anchor all writes.
+fs.writeFileSync(process.env.WORKSPACE + '/monitor/analyst/latest-analysis-summary.txt', summary);
 console.log('postlude: wrote latest-analysis-summary.txt');
 "
 ```
