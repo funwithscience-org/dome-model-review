@@ -1,0 +1,69 @@
+{
+  "evidence_for_directive": "DIRECTIVE-20260613-002",
+  "created_at": "2026-06-13T07:15:00.000Z",
+  "created_by": "operator-cowork-session",
+  "title": "Pre-tinker measurements + session-view command-count evidence for the 2026-06-13T06:00Z decider run",
+  "purpose": "Operator-side lightweight option (a) executed to give tinker focused signal: lints + test.js measured in isolation, plus the live session-view command-count breakdown that the operator captured from the actual run. This shortens tinker's Q2/Q3 investigation by ruling out the script-cost hypothesis.",
+  "key_finding": "Lints + test.js are NOT the runtime bottleneck. Total per-push hook chain cost is ~1 second wall-clock. The dominant contributor is tool-call COUNT during decider's session — operator counted approximately 133 tool calls in the 2026-06-13T06:00Z run from the session view (see breakdown below). At a typical Opus tool-call round-trip of ~5-15 seconds (LLM inference + tool execution + network), 133 calls account for 11-33 minutes — which matches the observed 32-min runtime. The optimization target is tool-call CONSOLIDATION (parallel batching, fewer ledger micro-operations), not script execution.",
+  "isolated_script_timings": {
+    "measurement_method": "time node <script> on a fresh /tmp clone at HEAD, executed by operator-cowork-session 2026-06-13T07:10Z",
+    "scripts": [
+      {"name": "node test.js", "real_seconds": 0.180, "notes": "3831 tests pass; ~50 microseconds/test. Not a bottleneck."},
+      {"name": "node monitor/scripts/lint-required-artifacts.js --required 'monitor/integrity/prune-integrity-runs/run-*.json'", "real_seconds": 0.777, "notes": "Slowest of the lints due to git operations; still sub-second."},
+      {"name": "node monitor/scripts/lint-close-records.js", "real_seconds": 0.051, "notes": "Trivial cost."},
+      {"name": "node monitor/scripts/lint-decider-surfaces.js", "real_seconds": 0.029, "notes": "Trivial cost despite 480 LoC."}
+    ],
+    "per_push_hook_chain_total_seconds": 1.05,
+    "implication": "Even invoked 5 times per run (one per push attempt), the lint chain accounts for <10 seconds of the 32-minute runtime. Q2/Q3 of the directive can be deprioritized — lints and test.js are not the lever."
+  },
+  "archive_file_sizes_at_audit_ts": {
+    "measurement_ts": "2026-06-13T07:10Z",
+    "files": [
+      {"path": "monitor/decisions/open-issues.json", "size_bytes": 12288, "size_human": "12KB"},
+      {"path": "monitor/decisions/closed-issues.json", "size_bytes": 3145728, "size_human": "3.0MB"},
+      {"path": "monitor/curmudgeon/priority-queue.json", "size_bytes": 3994, "size_human": "3.9KB"},
+      {"path": "monitor/analyst/attention-inbox.json", "size_bytes": 4915, "size_human": "4.8KB"},
+      {"path": "monitor/curmudgeon/priority-queue-archive.jsonl", "size_bytes": 91136, "size_human": "89KB"},
+      {"path": "monitor/decisions/human-notes-archive.jsonl", "size_bytes": 129024, "size_human": "126KB"},
+      {"path": "monitor/analyst/expansion-tracker-archive.jsonl", "size_bytes": 528384, "size_human": "516KB"}
+    ],
+    "note": "closed-issues.json at 3.0 MB is the largest live JSON; lints that load it (lint-decider-surfaces for cross-file ISS uniqueness check, PROP-022 archive readers) pay an in-memory cost. expansion-tracker-archive.jsonl at 516 KB is the largest JSONL — if any decider intake reader scans it full instead of tail-only, that compounds across runs."
+  },
+  "session_view_command_count_breakdown": {
+    "source": "Operator captured this from the live cowork-session view of decider-2026-06-13T10-00 (lastRunAt 06:03:59Z, summary commit 43921db 06:35:58Z)",
+    "phases_in_order": [
+      {"phase": "PRELUDE — clone + PAT scope verify", "command_count": 21, "notes": "PRELUDE setup includes fresh clone, PAT extraction, working-tree-population check, identity config. Some of this is unavoidable per run."},
+      {"phase": "Read reference files for curmudgeon/expansion handling", "command_count": 2, "notes": "Two reference reads (analyst-mode1-expansions.md, similar)."},
+      {"phase": "Read context — part10 section + RW files + others", "command_count": 14, "notes": "Reading current state of wins/sections/part10 + RW integration status. Some of these reads could potentially be parallelized in a single tool batch."},
+      {"phase": "Read self-apply reference", "command_count": 3, "notes": "decider-patches-and-selfapply.md + 2 others."},
+      {"phase": "Find-string uniqueness verify (EXP-620)", "command_count": 1, "notes": "Single grep — fine."},
+      {"phase": "Apply EXP-620 patches (P1–P4) + read 1 file", "command_count": "14 + 1 read", "notes": "4 patches to wins.json + test.js update; ~14 tool calls is suspicious for 4 patches. Possibly Edit-then-Read cycles per patch?"},
+      {"phase": "Tests + build", "command_count": 5, "notes": "node test.js + build.js + verify + commit-prep. test.js itself is 0.18s; the 5 commands here are setup/verify, not test execution."},
+      {"phase": "Rebuild HTML", "command_count": 2, "notes": "build.js html + sanity check."},
+      {"phase": "Open-issues ledger work (alloc IDs + close ISS-2728 + create ISS-2736/7/8)", "command_count": 22, "notes": "22 tool calls for ledger ops is the standout. Each alloc-id / read / modify / write / lint is a separate tool call. Strong candidate for consolidation."},
+      {"phase": "H3 self-apply + ledger updates", "command_count": 18, "notes": "18 calls for one self-apply + multi-ledger update. Similar pattern to the open-issues phase."},
+      {"phase": "Commit and push", "command_count": 25, "notes": "25 calls for a single commit + push suggests multiple `git pull --rebase` retries due to concurrent workspace-sync/dome-mirror pushes at :00/:30/etc. on a busy active-window hour. Strong evidence for Q5 (rebase churn)."},
+      {"phase": "End-of-run sweeps", "command_count": 1, "notes": "Single sweep — fine."},
+      {"phase": "Status report + cleanup", "command_count": 5, "notes": "Summary write + status.json + final cleanup."}
+    ],
+    "approximate_total_tool_calls": 133,
+    "tool_call_overhead_estimate": {
+      "low_per_call_seconds": 5,
+      "high_per_call_seconds": 15,
+      "low_total_minutes": 11.1,
+      "high_total_minutes": 33.3,
+      "observed_runtime_minutes": 32,
+      "fit": "Top end of the range matches observed. Tool-call count is consistent with the dominant contributor."
+    }
+  },
+  "narrowed_questions_for_tinker": [
+    "Q-Narrow-1 (from Q5 + commit-and-push 25-call phase): Is the 25-call commit-and-push phase dominated by rebase retries (workspace-sync :00 + dome-mirror :30 ⊕ decider 06:00 active-window overlap)? If yes, the fix is push-window coordination — e.g., dome-mirror pauses :30 when decider lastRunAt is within active 30min window, or decider holds its push until the next minute-bucket clear of other agents.",
+    "Q-Narrow-2 (from the 22-call open-issues ledger phase): Can the ledger micro-ops be consolidated into a single transactional helper? E.g., the alloc-N-IDs + close-1 + create-3 + lint-then-commit sequence could be one helper script that does all of it in-process, replacing ~15 of the 22 tool calls. Risk: cross-file ISS uniqueness check (PROP-089) must still fire — the helper would re-invoke it.",
+    "Q-Narrow-3 (from the 14-call read-context phase): Are the 14 sequential context reads parallelizable in a single tool-message batch? If decider's prompt currently issues them one-by-one (read-then-react pattern), a `read these 14 files in parallel` instruction at intake could halve the elapsed time."
+  ],
+  "constraints_unchanged_from_directive": [
+    "PROP-083/087/089 enforcement must remain — they're load-bearing.",
+    "PROP-051 safety gates untouched.",
+    "Honor the other-side: 32-min on this specific run included EXP-620 (substantive integration); proof requires multi-day trend (Q1 in the directive)."
+  ]
+}
