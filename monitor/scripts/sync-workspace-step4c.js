@@ -212,6 +212,131 @@ function deletePropagationPass(fuseRoot) {
   return out;
 }
 
+// ---- PROP-092 (2026-06-13) overwrite-propagation pass --------------------
+// Sibling to PROP-091's delete pass. PROP-091 handles "origin removed a file,
+// FUSE kept it". This pass handles "origin REWROTE an existing file, FUSE
+// kept its older copy". Scope: an explicit allow-list of overwrite-mode
+// human-facing latest-*-summary.txt rescue surfaces. These are written
+// per-run by global pipeline agents and rescued FUSE→git by workspace-sync,
+// but NOTHING brings the most-recent version back DOWN into other sessions'
+// FUSE mounts:
+//   - 'workspace'-classified ones (latest-decider/baby/score/rewrite-summary)
+//     are skipped wholesale by build.js syncToWorkspace.
+//   - append_only / append_only_glob ones (.txt under monitor/changes,
+//     monitor/integrity, monitor/tinker, etc.) are either filtered out
+//     (.json-only walker) or copied ONCE then frozen (create-only "if exists
+//     continue"). monitor/tinker/latest-tinker-summary.txt is the frozen case
+//     the operator hit 2026-06-12 (FUSE stuck at the version the cowork
+//     session last wrote; misread as "tinker hasn't run since June 10").
+//
+// Two-guard candidate rule (per directive Q1 = content-hash):
+//   (1) Path is in the explicit OVERWRITE_ALLOWLIST (enumerated, reviewable,
+//       no directory globs).
+//   (2a) git HEAD content != FUSE content (content-hash diff → there IS work).
+//   (2b) DIRECTION GUARD: the file's last git-commit time is NEWER than the
+//        last successful sync sentinel (lastSentinelAt). This proves git is
+//        the authoritative-newer side. A FUSE copy that differs only because
+//        THIS session wrote a fresher-but-unpushed version has an OLDER
+//        last-git-commit time → it is NOT overwritten; workspace-sync
+//        rescues it up first, and a later cycle propagates it down. Uses
+//        git commit time + the durable sentinel baseline, NEVER raw FUSE
+//        mtime (PROP-082).
+//
+// Loop-safety: after this copies git→FUSE, FUSE byte-matches git HEAD, so
+// workspace-sync's smart_copy "cmp -s" content-equality short-circuit returns
+// without pushing. No git↔FUSE ping-pong.
+//
+// Config gate: monitor/scripts/sync-workspace-step4c.config.json
+//   "overwrite_propagation": { "enabled": false, "per_cycle_cap": 20,
+//     "abort_abs": 20 }
+// enabled=false → manifest-only: list candidates + per-file hashes/decision
+// in the sentinel, write nothing. Mandatory Phase-0 state.
+//
+// FUSE overwrite feasibility note: unlike PROP-091's delete pass (blocked by
+// FUSE's missing unlink()), an in-place fs.copyFileSync truncate-write of an
+// EXISTING FUSE file works — it is exactly what build.js copyIfExists already
+// does every publish for git-owned files like CLAUDE.md. So Phase 2 is
+// genuinely viable here, not just-a-manifest. EPERM-class errors still fall
+// back to manifest-only defensively.
+//
+// ALLOW-LIST — enumerated, reviewable. Each entry is a per-run overwrite-mode
+// summary of a GLOBAL pipeline agent (one logical decider/tinker/etc. across
+// whichever session the scheduler picked), so cross-session canonical = latest
+// in git. If you add an agent summary, add it here.
+const OVERWRITE_ALLOWLIST = [
+  'monitor/tinker/latest-tinker-summary.txt',          // directive's named case (frozen)
+  'monitor/decisions/latest-decider-summary.txt',      // workspace-owned (skipped)
+  'monitor/analyst/latest-analysis-summary.txt',       // unclassified dir (never copied)
+  'monitor/analyst/analysis-records/latest-analysis-summary.txt',
+  'monitor/analyst-baby/latest-baby-summary.txt',      // workspace-owned (skipped)
+  'monitor/curmudgeon/latest-review-summary.txt',      // unclassified dir (never copied)
+  'monitor/curmudgeon/latest-verify-summary.txt',      // unclassified dir (never copied)
+  'monitor/integrity/latest-integrity-summary.txt',    // append_only .json-walker skips .txt
+  'monitor/changes/latest-poll-summary.txt',           // append_only .json-walker skips .txt
+  'monitor/social/latest-summary.txt',                 // unclassified dir (never copied)
+  'monitor/sloppytoppy/latest-score-summary.txt',      // workspace-owned (agent DISABLED)
+  'monitor/sloppytoppy/latest-rewrite-summary.txt'     // workspace-owned (agent DISABLED)
+];
+function hashFile(p) {
+  try { return require('crypto').createHash('sha256').update(fs.readFileSync(p)).digest('hex'); }
+  catch (e) { return null; }
+}
+function overwritePropagationPass(fuseRoot, lastSentinelIso) {
+  const out = { ran: false, mode: null, candidates: 0, written: 0, errors: 0,
+                truncated: false, aborted: null, items: [] };
+  let cfg = { enabled: false, per_cycle_cap: 20, abort_abs: 20 };
+  try {
+    const c = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+    if (c && typeof c.overwrite_propagation === 'object') cfg = { ...cfg, ...c.overwrite_propagation };
+  } catch (e) { /* defaults */ }
+  out.mode = cfg.enabled ? 'overwrite' : 'manifest-only';
+  const lastMs = Date.parse(lastSentinelIso);
+  const candidates = [];
+  for (const rel of OVERWRITE_ALLOWLIST) {
+    const gitPath = path.join(ROOT, rel);     // clone is at HEAD post-ff-merge
+    const fusePath = path.join(fuseRoot, rel);
+    if (!fs.existsSync(gitPath)) continue;     // not in git HEAD → nothing to push down
+    const gitHash = hashFile(gitPath);
+    const fuseHash = fs.existsSync(fusePath) ? hashFile(fusePath) : null;
+    if (gitHash && fuseHash && gitHash === fuseHash) continue;  // already in sync
+    let gitCommitIso = null;
+    try { gitCommitIso = sh('git log -1 --format=%cI -- ' + JSON.stringify(rel)); } catch (e) {}
+    const gitCommitMs = Date.parse(gitCommitIso);
+    const gitIsNewer = isFinite(gitCommitMs) && isFinite(lastMs) && gitCommitMs > lastMs;
+    const decision = (fuseHash === null) ? 'fuse-absent-create'
+                   : gitIsNewer ? 'git-newer-overwrite'
+                   : 'fuse-ahead-skip';   // local unpushed write — leave for workspace-sync
+    candidates.push({ path: rel, git_hash: gitHash ? gitHash.slice(0,12) : null,
+      fuse_hash: fuseHash ? fuseHash.slice(0,12) : null, git_commit: gitCommitIso,
+      last_sentinel: lastSentinelIso, decision });
+  }
+  const toWrite = candidates.filter(c => c.decision === 'git-newer-overwrite' || c.decision === 'fuse-absent-create');
+  out.candidates = toWrite.length;
+  out.items = candidates;   // includes fuse-ahead-skip rows for audit visibility
+  if (toWrite.length > cfg.abort_abs) {
+    out.aborted = 'overwrite-sanity gate: ' + toWrite.length + ' would-write exceeds abort_abs=' + cfg.abort_abs + '; zero writes';
+    return out;
+  }
+  out.ran = true;
+  if (!cfg.enabled) return out;   // manifest-only
+  for (const c of toWrite.slice(0, cfg.per_cycle_cap)) {
+    try {
+      const dst = path.join(fuseRoot, c.path);
+      fs.mkdirSync(path.dirname(dst), { recursive: true });
+      fs.copyFileSync(path.join(ROOT, c.path), dst);   // truncate-write; no unlink needed
+      out.written++;
+    } catch (e) {
+      out.errors++;
+      if (/EPERM|EACCES|ENOTSUP|not permitted/i.test(String(e.message))) {
+        out.aborted = 'copy-unsupported-on-fuse: ' + e.message + ' — falling back to manifest-only';
+        break;
+      }
+    }
+  }
+  out.truncated = toWrite.length > cfg.per_cycle_cap;
+  return out;
+}
+
 // State holders (visible to crash handler).
 let state = { local_sha: null, remote_sha: null, last_sentinel_at: null, classification: null, need_sync: null };
 let finalSentinelWritten = false;
@@ -391,14 +516,19 @@ const newFiles = newMatch ? parseInt(newMatch[1], 10) : 0;
 const action = (classification === 'local-ancestor-of-remote') ? 'auto-sync' : 'pull-moved-auto-sync';
 
 // PROP-091 (2026-06-11): delete-propagation pass — only after a successful sync.
+// PROP-092 (2026-06-13): overwrite-propagation pass — sibling, same conditions.
 // fuseRoot is parsed from build.js's own output line ("Sync to workspace (<path>)..."),
 // so the helper agrees with build.js on which workspace was targeted.
 let delResult = { ran: false, mode: null, aborted: 'sync-failed' };
+let ovwResult = { ran: false, mode: null, aborted: 'sync-failed' };
 if (syncExit === 0) {
   const fuseRootMatch = syncOut.match(/Sync to workspace \(([^)]+)\)/);
   const fuseRoot = fuseRootMatch ? fuseRootMatch[1] : null;
   delResult = fuseRoot
     ? deletePropagationPass(fuseRoot)
+    : { ran: false, mode: null, aborted: 'no-fuse-workspace-resolved-from-build-output' };
+  ovwResult = fuseRoot
+    ? overwritePropagationPass(fuseRoot, lastSentinelAt)
     : { ran: false, mode: null, aborted: 'no-fuse-workspace-resolved-from-build-output' };
 }
 
@@ -408,6 +538,7 @@ writeSentinel(`sync-workspace-runs-${TS_FILE}.json`, {
   new_files: newFiles,
   sync_exit_code: syncExit,
   delete_propagation: delResult,
+  overwrite_propagation: ovwResult,
   output_tail: syncOut.split('\n').slice(-20).join('\n')
 });
 finalSentinelWritten = true;
