@@ -843,6 +843,86 @@ if(leaks.length>0){
 
 Keep this lightweight. The analyst already has a full mode dispatcher; the attention inbox is for "hey, something changed under you" signals, not a second work queue.
 
+## End-of-Run Step A0d: close_iss_batch HNOTE Handler (PROP-098, added 2026-06-14)
+
+**Why this exists:** Tinker (and operator-cowork sessions) file `action: "close_iss_batch"` HNOTEs as the Mode-0 mechanism to close issues whose underlying content fix has shipped (e.g., a structural fix that resolves N tracked ISSs at once). The PROP-060 convention was shipped without its decider-side handler — so every such HNOTE accumulated as a no-op, stranding the ISSs as "open" indefinitely (ISS-2725 sat 3 runs). This step is the consumer that PROP-058 follow-up was supposed to deliver.
+
+Place this AFTER Step A0c (assigned-analyst chain-aware close sweep) and BEFORE Step B (curmudgeon priority queue management). Models HNOTE lifecycle on Step E1's `set_curmudgeon_mode` pattern (L852) and close mechanics on Step A0's open→closed migration (L446).
+
+```bash
+node -e "
+const fs=require('fs');
+const CLONE='${CLEAN_CLONE}';
+const RUN_ID=process.env.RUN_ID || 'decider-unknown';
+const livePath=CLONE+'/monitor/decisions/human-notes.json';
+const archivePath=CLONE+'/monitor/decisions/human-notes-archive.jsonl';
+const ledgerPath=CLONE+'/monitor/decisions/closure-ledger.jsonl';
+const oiPath=CLONE+'/monitor/decisions/open-issues.json';
+const ciPath=CLONE+'/monitor/decisions/closed-issues.json';
+const notes=JSON.parse(fs.readFileSync(livePath,'utf8'));
+const arr=notes.notes||notes;
+// PROP-093/096 vocabulary tolerance: accept status in {pending, active} as live.
+const liveBatch=arr.filter(n=>(n.status==='pending'||n.status==='active')&&n.action==='close_iss_batch');
+if(liveBatch.length===0){ console.log('Step A0d: no close_iss_batch HNOTEs to process'); process.exit(0); }
+const oi=JSON.parse(fs.readFileSync(oiPath,'utf8'));
+const ci=JSON.parse(fs.readFileSync(ciPath,'utf8'));
+const oiList=oi.issues||oi;
+const ciList=ci.issues||ci;
+const oiIdx=new Map(oiList.map((v,i)=>[v.id,i]));
+const ciIds=new Set(ciList.map(v=>v.id));
+const nowIso=new Date().toISOString();
+const ledger=[];
+let migratedTotal=0, dupSkipTotal=0, notFoundTotal=0;
+for(const note of liveBatch){
+  const ids=note.iss_ids||[];
+  const perNoteWarn=[];
+  for(const id of ids){
+    if(oiIdx.has(id)){
+      const i=oiIdx.get(id);
+      const e=oiList[i];
+      e.status='fixed';
+      e.fixed_by='close_iss_batch-hnote';
+      e.fixed_at=nowIso;
+      e.close_reason=(note.note_text||note.body||note.subject||'').slice(0,400);
+      e.closed_by_hnote=note.id;
+      ciList.push(e);
+      ciIds.add(id);
+      oiList.splice(i,1);
+      // re-index after splice (cheap: rebuild map)
+      oiIdx.clear(); oiList.forEach((v,k)=>oiIdx.set(v.id,k));
+      ledger.push({ts:nowIso,run_id:RUN_ID,iss:id,action:'close_iss_batch',hnote:note.id});
+      migratedTotal++;
+    } else if(ciIds.has(id)){
+      dupSkipTotal++;  // idempotent: already closed, just consume the note
+    } else {
+      perNoteWarn.push(id);
+      notFoundTotal++;
+    }
+  }
+  if(perNoteWarn.length) console.log('Step A0d WARN: not-found ids for '+note.id+': '+perNoteWarn.join(','));
+  // PROP-022 consumed-note lifecycle (same as set_curmudgeon_mode)
+  note.status='consumed';
+  note.consumed_at=nowIso;
+  note.consumed_by='decider — close_iss_batch action';
+  fs.appendFileSync(archivePath, JSON.stringify(note)+'\n');
+  if(notes.notes){
+    notes.notes=notes.notes.filter(n=>n.id!==note.id);
+    notes.last_updated=nowIso;
+  } else {
+    const idx=arr.findIndex(n=>n.id===note.id);
+    if(idx>=0) arr.splice(idx,1);
+  }
+}
+fs.writeFileSync(oiPath, JSON.stringify(oi,null,2));
+fs.writeFileSync(ciPath, JSON.stringify(ci,null,2));
+fs.writeFileSync(livePath, JSON.stringify(notes,null,2));
+if(ledger.length) fs.appendFileSync(ledgerPath, ledger.map(JSON.stringify).join('\n')+'\n');
+console.log('Step A0d: consumed '+liveBatch.length+' HNOTE(s); migrated='+migratedTotal+', dup-skipped='+dupSkipTotal+', not-found='+notFoundTotal);
+"
+```
+
+Idempotency: keyed on (a) note already-archived (PROP-022 consumed-note lifecycle removes from live), (b) iss already in closed-issues (skip migrate, still consume the note). Safe to re-run.
+
 ## End-of-Run Step B: Curmudgeon Priority Queue Management
 
 **After** all other work (patches applied, commits made, report written), manage the curmudgeon priority queue and throughput mode. This is a mandatory end-of-run step.
