@@ -4,7 +4,7 @@
   "authored_by": "tinker",
   "authored_by_run": "tinker-2026-05-21T05-40 (scheduled run, DIRECTIVE-20260521-001)",
   "authored_at": "2026-05-21T05:40:00Z",
-  "status": "design-pending-operator-review",
+  "status": "implemented",
   "priority": "high",
   "directive_id": "DIRECTIVE-20260521-001",
   "blocks_workspace_sync_unpause": true,
@@ -21,7 +21,6 @@
     "HNOTE-OPERATOR-UNIVERSAL-PUSHER-001 (2026-04-26 design that expanded sync-eligible files but did not anticipate degraded-mode operation)"
   ],
   "scope_disclaimer": "Tinker design-only per DIRECTIVE-20260521-001 scope_authority. Operator + cowork-claude apply. Tinker did NOT make a clone during this diagnostic run (FUSE + GitHub API only) per directive constraint, to avoid recreating the disk-pressure condition.",
-
   "executive_summary": {
     "what_the_disaster_was": "Commit ea785c49fc8a (2026-05-21T02:11:18Z, author steve@melrosecastle.com) was a single workspace-sync commit with stats +274/-14,904,949 lines that wiped 4,733 of 4,755 tree entries from origin/main. 36 follow-on workspace-sync commits over ~15 min partially restored ~3,309 entries; operator+cowork-claude force-reset to 1d256277 + re-pushed 2 genuinely-new FUSE files at 1488170d (2026-05-21T05:13Z), restoring all 4,757 entries. Verified via GitHub API: current monitor/integrity/ tree has 596 entries (well-populated), root tree has 4,357 recursive entries (well-populated). Recovery worked. Loss-free.",
     "root_cause_one_line": "The Haiku LLM agent improvised a `git clone --no-checkout` + mtime-only diff path under disk pressure (sessions 100%, root 95%). That path is NOT documented in workspace-sync.md — it was a model invention. With no working-tree, `git status` saw every tree entry as deleted; `git add -A` staged the deletes; the commit landed because no pre-push aggregate-shape gate existed.",
@@ -29,16 +28,36 @@
     "why_recovery_worked": "The disaster commit was the parent of 36 children, all undone in one force-reset. The 2 genuinely-new files between 1d256277 and the disaster were still in FUSE (universal-pusher kept FUSE as a persistent off-git copy) and re-pushed manually. No content lost; timestamps on some restored content reflect rescue cycles, not original authorship.",
     "what_must_change_before_unpause": "(A) Fail-closed degraded-mode + per-run delete-sanity gate + checkout-population verification, (B) --depth 50 + EXIT trap cleanup, (C) monitor/integrity pruning policy (606MB → reduce by 95% via archive/delete of stale per-run artifacts; without this, disk pressure recurs and tempts the same improvisation)."
   },
-
   "post_mortem": {
     "timeline_utc": [
-      {"t": "2026-05-21T02:11:18Z", "event": "Workspace-sync run starts. Detects disk pressure: sessions FS 100%, root FS 95%. Agent improvises 'no-checkout clone + mtime-only guard' (NOT in workspace-sync.md prompt — model invention)."},
-      {"t": "2026-05-21T02:11:18Z", "event": "Commit ea785c49 lands: +274 / -14,904,949 lines. 4,733 of 4,755 tree entries deleted. Author/committer steve@melrosecastle.com. Push succeeds (workspace-sync identity is not on the 403 list)."},
-      {"t": "2026-05-21T04:12:..04:27Z", "event": "36 follow-on workspace-sync invocations (b1..b15-final + several auto-commits) attempt partial restoration via subsequent universal-pusher sync of known paths. ~3,309 entries restored; 194 critical files (CLAUDE.md, build.js, build-scripts/, .gitignore, fonts, kill-shots.json) and 104 modified-differently remain absent because they are NEVER_PUSH (decider-only round-trip)."},
-      {"t": "~2026-05-21T05:00Z", "event": "Operator detects, pauses workspace-sync, hands off to cowork-claude for triage + recovery."},
-      {"t": "2026-05-21T05:13Z", "event": "Force-reset main to 1d256277 via Git Data API PATCH /git/refs/heads/main, then 2-file re-push of genuinely-new FUSE content (chg-20260520-2309-001.json, WIN-012.c10.json). Final commit 1488170d restores 4,757 entries. Pipeline confirmed at full file set."},
-      {"t": "2026-05-21T05:25Z", "event": "Operator files DIRECTIVE-20260521-001-workspace-sync-disaster-postmortem.json with high priority + structural-fix scope."},
-      {"t": "2026-05-21T05:40Z", "event": "Tinker (this run) authors PROP-051 per the directive."}
+      {
+        "t": "2026-05-21T02:11:18Z",
+        "event": "Workspace-sync run starts. Detects disk pressure: sessions FS 100%, root FS 95%. Agent improvises 'no-checkout clone + mtime-only guard' (NOT in workspace-sync.md prompt — model invention)."
+      },
+      {
+        "t": "2026-05-21T02:11:18Z",
+        "event": "Commit ea785c49 lands: +274 / -14,904,949 lines. 4,733 of 4,755 tree entries deleted. Author/committer steve@melrosecastle.com. Push succeeds (workspace-sync identity is not on the 403 list)."
+      },
+      {
+        "t": "2026-05-21T04:12:..04:27Z",
+        "event": "36 follow-on workspace-sync invocations (b1..b15-final + several auto-commits) attempt partial restoration via subsequent universal-pusher sync of known paths. ~3,309 entries restored; 194 critical files (CLAUDE.md, build.js, build-scripts/, .gitignore, fonts, kill-shots.json) and 104 modified-differently remain absent because they are NEVER_PUSH (decider-only round-trip)."
+      },
+      {
+        "t": "~2026-05-21T05:00Z",
+        "event": "Operator detects, pauses workspace-sync, hands off to cowork-claude for triage + recovery."
+      },
+      {
+        "t": "2026-05-21T05:13Z",
+        "event": "Force-reset main to 1d256277 via Git Data API PATCH /git/refs/heads/main, then 2-file re-push of genuinely-new FUSE content (chg-20260520-2309-001.json, WIN-012.c10.json). Final commit 1488170d restores 4,757 entries. Pipeline confirmed at full file set."
+      },
+      {
+        "t": "2026-05-21T05:25Z",
+        "event": "Operator files DIRECTIVE-20260521-001-workspace-sync-disaster-postmortem.json with high priority + structural-fix scope."
+      },
+      {
+        "t": "2026-05-21T05:40Z",
+        "event": "Tinker (this run) authors PROP-051 per the directive."
+      }
     ],
     "root_cause_chain": [
       "1. Disk pressure on sessions FS (100%) and root FS (95%) created an environment where `git clone` of a full repo (workspace-sync.md line 25, no --depth flag on FUSE) was likely to fail mid-checkout with ENOSPC.",
@@ -52,11 +71,9 @@
     "why_force_reset_was_correct": "The disaster commit (ea785c49) and its 36 follow-on partial-recovery commits were a contiguous block of bad-or-derivative-of-bad history. Force-reset to the immediate parent (1d256277) restored everything in one operation. The two genuinely-new pieces of content between 1d256277 and the disaster (chg-20260520-2309-001.json, WIN-012.c10.json) were preserved by FUSE-as-off-git-copy and re-pushed cleanly on top of the reset. Loss-free outcome.",
     "cross_reference_to_universal_pusher_design": "HNOTE-OPERATOR-UNIVERSAL-PUSHER-001 (2026-04-26) expanded sync-eligible files from a 24-entry OWNED_BY_GIT allow-list to a smaller NEVER_PUSH deny-list, on the implicit assumption that workspace-sync always runs with a populated working tree. The disaster surfaced that assumption: when the working tree is empty (--no-checkout) AND universal-pusher's iteration covers a small subset of tree paths, the 'don't push that' allow-list semantic inverts into a 'delete everything not covered' delete-list semantic. The fix is to make 'populated working tree' a precondition, not an assumption."
   },
-
   "phase_1_design_workspace_sync_safety": {
     "objective": "Make it structurally impossible for workspace-sync to commit a no-checkout clone or a mass-delete patch. Fail-closed: if the agent can't run the safe path, ABORT — never improvise. A skipped 1h cycle is recoverable; a mass-delete is not.",
     "reachability_argument": "After the four patches below, the disaster path requires: (a) the LLM ignores the explicit 'Degraded-mode prohibitions' section that sits in the prompt above the procedure, AND (b) the LLM bypasses the pre-clone df gate that aborts before the clone runs, AND (c) the LLM bypasses the post-clone working-tree size check that aborts before any smart_copy runs, AND (d) the LLM bypasses the pre-push delete-shape gate that aborts before commit lands. Belt-and-suspenders: any one of A1/A2/A3/A4 firing prevents the disaster. All four would have to be defeated simultaneously.",
-
     "patch_a1_degraded_mode_prohibitions": {
       "purpose": "Prompt-level explicit prohibition against the exact improvisation that caused the disaster. The LLM should refuse to invent a degraded-mode path. If the safe path can't run, ABORT with a clear log line.",
       "target_file": "monitor/prompts/workspace-sync.md",
@@ -65,7 +82,6 @@
       "new_string": "You are a simple sync agent. Your only job is to copy files from the workspace FUSE mount to a git clone, commit, and push. You do not analyze, review, or modify any content.\n\n## CRITICAL: Degraded-mode prohibitions (fail-closed)\n\nThe disaster of 2026-05-21T02:11:18Z (commit ea785c49, +274/-14,904,949) was caused by a previous run improvising a `git clone --no-checkout` + mtime-only diff path under disk pressure. The improvisation was not in this prompt. Do not invent it now.\n\n**Prohibitions, in order of severity:**\n\n1. **Never use `git clone --no-checkout` or `--filter=blob:none` for this agent's clone.** The mtime guard and the JSON-validity gate both assume a fully-populated working tree. A no-checkout clone breaks both: every untouched tree entry stages as a deletion via `git add -A`.\n2. **Never substitute file-by-file mtime comparison for git's working-tree diff.** The smart_copy mtime check is a per-path filter ON TOP OF a fully-populated working tree, not a replacement for one.\n3. **Never skip the post-clone working-tree-size sanity check (Step 1.5 below).** If the clone has fewer than 100 tracked files, ABORT — the clone is empty or partial.\n4. **Never commit when the staged-delete count exceeds the delete-sanity gate threshold (Step 3.7 below).** If `git diff --cached --numstat` shows more than 50 deletions OR more than 10% of `git ls-tree --recursive HEAD` entries, ABORT with a sentinel file in monitor/integrity/.\n\n**If disk pressure prevents the safe path:** ABORT the run with a clear log line. Write `monitor/integrity/workspace-sync-abort-<ts>.json` with `{reason: 'disk-pressure', sessions_fs_pct, root_fs_pct, action: 'no commit this cycle, hourly retry'}`. Do NOT improvise around it. A skipped cycle is ~1h of drift, fully recoverable via the next cycle once disk frees. A mass-delete is not recoverable except via force-reset, which is operator-only.\n\n**If you find yourself thinking 'I'll use a no-checkout clone to save space':** STOP. Abort instead. The disaster of 2026-05-21 was exactly this thought.\n\n## Procedure",
       "verification_pattern": "grep -q 'Degraded-mode prohibitions (fail-closed)' monitor/prompts/workspace-sync.md && grep -q \"Never use \\`git clone --no-checkout\\`\" monitor/prompts/workspace-sync.md"
     },
-
     "patch_a2_pre_clone_disk_pressure_gate": {
       "purpose": "Hard pre-flight check before the clone runs. If disk is too tight to support a fully-populated clone, abort cleanly rather than improvise.",
       "target_file": "monitor/prompts/workspace-sync.md",
@@ -75,7 +91,6 @@
       "verification_pattern": "grep -q 'Disk-pressure pre-flight (PROP-051 patch A2' monitor/prompts/workspace-sync.md && grep -q 'CLONE_FS_AVAIL_MB' monitor/prompts/workspace-sync.md",
       "threshold_justification": "200MB on $CLONE's FS = roughly 2× the full clone footprint (70MB working tree + 20MB pack ≈ 90MB; 200MB gives safety margin for any temp files build.js html creates during Step 3 regen). 100MB on root = enough for /tmp scratch (mktemp tmpfiles, build node_modules cache, etc.) without ENOSPC mid-run. Adjust per operator preference; these are starting values."
     },
-
     "patch_a3_post_clone_working_tree_size_check": {
       "purpose": "After `git clone` returns, verify the working tree was actually populated. A successful clone that nonetheless has an empty working tree (e.g., partial-checkout, no-checkout, interrupted-checkout) must not proceed to smart_copy + commit.",
       "target_file": "monitor/prompts/workspace-sync.md",
@@ -85,7 +100,6 @@
       "verification_pattern": "grep -q 'Working-tree population check (PROP-051 patch A3' monitor/prompts/workspace-sync.md && grep -q 'TRACKED_FILE_COUNT=' monitor/prompts/workspace-sync.md",
       "threshold_justification": "Repo currently has 4,315 blobs. A floor of 100 tracked files is well below normal (1.6 orders of magnitude) and well above the 22-file disaster state. If the repo ever legitimately shrinks below 100 files, that itself is a P0 incident worth aborting on."
     },
-
     "patch_a4_pre_push_delete_sanity_gate": {
       "purpose": "Aggregate sanity check on the staged commit before push. Even if A1-A3 failed, this gate catches a commit that would delete an absurd number of files.",
       "target_file": "monitor/prompts/workspace-sync.md",
@@ -95,7 +109,6 @@
       "verification_pattern": "grep -q 'Step 3.7: Pre-push delete-sanity gate (PROP-051 patch A4)' monitor/prompts/workspace-sync.md && grep -q 'DEL_CAP_FLOOR=50' monitor/prompts/workspace-sync.md",
       "threshold_justification": "Cap floor at 50 chosen because: (a) historical baseline of workspace-sync deletes/cycle is 0-2 (PROP-022 archival flips are append-only-add, not delete), (b) any legitimate mass-cleanup is operator-driven and routes via decider's own commits, not workspace-sync's, (c) 50 is ~25x the historical max and still 90× below the disaster magnitude. The 10%-of-tree alternative ceiling is calibrated for future scale: at the current ~4,300 tree entries, 10% = ~430, well above 50. If the repo grows to 50,000 entries, 10% = 5,000 and 50 still dominates — this is intentional; an honest 5,000-file delete should still be operator-driven."
     },
-
     "companion_edits": {
       "claude_md_addition": {
         "target_file": "CLAUDE.md",
@@ -105,10 +118,8 @@
       "build_js_no_changes": "No build.js changes needed. The OWNERSHIP table already lists monitor/integrity entries as append-only-glob, and the new abort/gate sentinels match that pattern. workspace-sync-abort-* and workspace-sync-delete-gate-* are new file-name prefixes but they live in the same directory under the same ownership rule."
     }
   },
-
   "phase_2_design_clone_hygiene": {
     "objective": "Make the workspace-sync clone shallow + ephemeral with guaranteed cleanup, so disk pressure can't accumulate over multiple runs and so future tinker runs don't have to clean up after this one.",
-
     "patch_b1_depth_50_on_workspace_sync_clone": {
       "purpose": "Match PROP-049's standard --depth 50 on workspace-sync's clone. FUSE workspace-sync.md is currently un-patched on line 25 (verified 2026-05-21T05:35Z via raw.githubusercontent.com).",
       "target_file": "monitor/prompts/workspace-sync.md",
@@ -117,7 +128,6 @@
       "verification_pattern": "grep -q 'git clone --depth 50 \"https://x-access-token' monitor/prompts/workspace-sync.md",
       "conflict_check_against_prop_049": "PROP-049's patch P1 also targets workspace-sync.md but on a different line (the strand-rescue recipe inside a JSON template, line 581 area). This PROP's B1 targets line 25 (the agent's own clone). The two patches are non-overlapping — no conflict. If both PROPs are applied in either order, both edits land cleanly."
     },
-
     "patch_b2_exit_trap_for_cleanup": {
       "purpose": "Currently the cleanup step (line 939-944) is at the end of the procedure as a manual step. If the LLM aborts mid-procedure or skips the cleanup step, the clone leaks. The 491MB /tmp/ws-sync-2 directory the directive cites is exactly this leak. An EXIT trap fires on every exit path including abort/exception.",
       "target_file": "monitor/prompts/workspace-sync.md",
@@ -126,7 +136,6 @@
       "new_string": "git config user.email \"russelst@melrosecastle.com\"\ngit config user.name \"steve\"\n\n# EXIT trap for cleanup (PROP-051 patch B2). The end-of-procedure cleanup step\n# (Step 5 below) is the primary path; this trap is the safety net for any abort\n# path (gate fire, push failure, LLM early-exit, signal). Without the trap, a\n# leaked $CLONE accumulates ~90MB per failed cycle — the directive of 2026-05-21\n# cited a 491MB /tmp/ws-sync-2 leftover exactly this way. The trap is idempotent:\n# if Step 5 already removed the clone, the trap's rm -rf is a no-op.\ntrap 'rm -rf \"$CLONE\" 2>/dev/null' EXIT INT TERM\n\ngit pull --rebase origin main",
       "verification_pattern": "grep -q \"trap 'rm -rf \\\\\\\"\\\\$CLONE\\\\\\\"\" monitor/prompts/workspace-sync.md && grep -q 'EXIT INT TERM' monitor/prompts/workspace-sync.md"
     },
-
     "patch_b3_start_of_run_stale_clone_sweep": {
       "purpose": "Defensive sweep of any leftover /tmp/ws-sync-* sibling directories older than 1h. CLAUDE.md's 'Per-session clone discipline' section (2026-05-09) authorizes tinker to clean these; this patch makes workspace-sync self-clean at the start of every run.",
       "target_file": "monitor/prompts/workspace-sync.md",
@@ -136,7 +145,6 @@
       "verification_pattern": "grep -q 'Stale-clone sweep (PROP-051 patch B3)' monitor/prompts/workspace-sync.md"
     }
   },
-
   "phase_3_design_integrity_pruning": {
     "objective": "Cap monitor/integrity/ at a sustainable size by archiving older per-run artifacts to JSONL. The directive cites 606MB as the trigger for the workspace-sync degraded-mode improvisation; if that directory is pruned to ~50MB working set, disk pressure recurs less often and the temptation to improvise disappears.",
     "current_state_per_github_api_2026_05_21T05_30Z": {
@@ -207,7 +215,6 @@
       "reduction_pct": 58
     }
   },
-
   "counter_arguments_addressed": {
     "q_a_disk_pressure_unable_to_run_at_all": {
       "the_objection": "What if the no-checkout fallback was the ONLY path that worked under disk pressure, and removing it leaves workspace-sync unable to run at all when disk is tight?",
@@ -238,7 +245,6 @@
       "the_response": "Out of scope. The corrupt open-issues.json is a separate decider-side bug. PROP-024's json-validity gate in workspace-sync would have refused the commit IF workspace-sync had been the writer — but in this case the decider's own clone committed it (FUSE-only degraded mode per ISS-2171 referenced in the partial-parse). This PROP keeps workspace-sync-side defenses; the open-issues.json corruption needs a separate PROP from the decider's own side. Noted here so it doesn't fall through cracks."
     }
   },
-
   "operator_unpause_checklist": {
     "title": "Step-by-step gate before re-enabling workspace-sync after PROP-051 lands",
     "ordering": "Run sequentially. Do not skip steps. Each step must pass before the next.",
@@ -343,7 +349,6 @@
       }
     ]
   },
-
   "tinker_diagnostic_note": {
     "diagnostic_method": "FUSE + GitHub API only (per directive constraint). No clone created during this run.",
     "evidence_anchors": {
@@ -361,12 +366,16 @@
       "Pending directive DIRECTIVE-20260521-002-audit-files-no-round-trip (priority medium) defers to next tinker run."
     ]
   },
-
   "next_steps": [
     "Operator + cowork-claude review this PROP.",
     "If approved: apply patches A1-A4, B1-B3, plus the prune-integrity.js script for Workstream C, in /tmp/edit-clone. Push.",
     "Run the operator_unpause_checklist sequentially.",
     "Unpause workspace-sync.",
     "First post-unpause cycle: tinker monitors via Mode 1 to confirm the safety gates fire correctly on a normal cycle (i.e., they pass without aborting on legitimate traffic)."
-  ]
+  ],
+  "obe_closed_at": "2026-06-14T08:55:00.000Z",
+  "obe_closed_by": "operator-cowork-OBE-audit-2026-06-14",
+  "obe_prior_status": "design-pending-operator-review",
+  "obe_closure_note": "All workstreams shipped post-2026-05-21 disaster: Workstream A (safety gates A1-A4) — A2 disk-pressure pre-flight (workspace-sync.md L33), A3 working-tree population check (L113), A4 pre-push delete-sanity gate (L1283-1318), top-level rule 4 enforces 50-delete / 10% cap. Workstream B (B2 EXIT trap L151-159 historical, B3 stale-clone sweep L63 expanded 2026-05-29). Workstream C (monitor/scripts/prune-integrity.js — explicitly cites PROP-051 Workstream C in L3 header). PRELUDE PAT-source enforcement applied to 11 agent prompts (PROP-051-Option-C). Closed in 2026-06-14 OBE audit.",
+  "obe_closure_evidence": "monitor/prompts/workspace-sync.md (A2/A3/A4/B2/B3 markers); monitor/scripts/prune-integrity.js L3"
 }
