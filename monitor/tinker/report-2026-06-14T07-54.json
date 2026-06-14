@@ -1,0 +1,56 @@
+{
+  "run_id": "tinker-2026-06-14T07-54",
+  "ts": "2026-06-14T07:57:03Z",
+  "mode_selected": "operator-directive (OBE close-out). Dispatcher surfaced 13 pending directives; the two highest (DIRECTIVE-20260607-002, DIRECTIVE-20260603-003, both priority=high, both undated) were the top-picks after today's 06:50 run completed the freshest dated high (DIRECTIVE-20260613-001). Forensic check showed BOTH undated highs were already OBE-complete: their entire requested work had landed in prior runs (PROP-083 implemented 2026-06-07T06:19; PROP-078 implemented 2026-06-03) but neither directive was ever flipped status=completed. Ran the OBE close-out: verified completeness, flipped both to completed, and self-applied the root-cause prompt hardening.",
+  "modes_checked": {
+    "operator_directives": "13 pending found. Top 2 (undated high) both OBE-complete-but-unflipped. Flipped both this run.",
+    "mode_0_assigned_to_tinker": "not evaluated — pending directive preempts Mode 0-4 per dispatcher priority order.",
+    "mode_1_health": "spot-checked via PROP-030: open_issues=10, oldest open 0.4d, no stalled agents observed in directive scan.",
+    "mode_2_infra": "not run; today's 06:50 run already covered Mode-2-adjacent prune/workspace-sync infra (DIRECTIVE-20260613-001, PROP-099). PAT prelude verified HTTP 200 dome scope.",
+    "mode_3_cost": "deferred — directive work preempts.",
+    "mode_4_proposals": "performed inline self-fix to tinker.md (write-side FND-01 guard)."
+  },
+  "backlog_trend": {
+    "open_issues_total": 10,
+    "open_status_count": 5,
+    "assigned_analyst_count": 0,
+    "age_ge_14d_count": 2,
+    "age_ge_30d_count": 0,
+    "new_issues_velocity_7d": 6,
+    "closed_issues_velocity_7d": 88,
+    "net_velocity_7d": 82,
+    "baby_drain_count_7d": 0,
+    "verify_drain_count_7d": 14,
+    "tier_fired": "none",
+    "note": "Pipeline healthy. No threshold fires. Net velocity strongly positive (+82/7d). queue-history.jsonl row appended (101 valid lines, 0 blanks)."
+  },
+  "findings": [
+    {
+      "id": "FND-01",
+      "category": "directive-lifecycle-stranding",
+      "severity": "moderate",
+      "title": "Two completed high-priority directives stayed git-pending for 7-11 days (zombie-pending), re-preempting the dispatcher every run.",
+      "evidence": "DIRECTIVE-20260607-002: requested PROP-083 + ISS-2621 close + 937/17 grandfather + idempotent hook. All landed by 2026-06-07T06:19 (PROP-083 status=implemented; ISS-2621 status=fixed; 1039 audit_grandfathered entries in closed-issues.json; decider hook-install idempotent per PROP-083 annotation in decider-patches-and-selfapply.md ~line 150 + decider.md prelude re-install). Directive stayed status=pending in git. DIRECTIVE-20260603-003: requested PROP-078 + integrity clone-source language + decider audit. PROP-078 status=implemented; structure-integrity.md carries the language (lines 59/293/599); decider.md line 39 carries the explicit principle. Directive stayed status=pending in git.",
+      "root_cause": "FND-01 write-side trap (read-side already guarded in the dispatcher, write-side was not): operator-directives/ is append_only in build.js OWNERSHIP, so build.js sync-workspace's walkAppendOnly skips existing files. A status flip written to FUSE by the completing run never propagates to git; the directive stays git-pending. The completing runs (2026-06-03, 2026-06-07) did the substantive work and authored the PROPs but their Step-9 flip either targeted FUSE or was never pushed.",
+      "resolution": "Both directives flipped to status=completed this run (completed_by_run=tinker-2026-06-14T07-54, prop_id_authored set, progress note documenting OBE). Flip written from the git clone and pushed, not FUSE.",
+      "self_fix": "Hardened tinker.md dispatcher flip instruction (line 123) to mandate clone-write+push for directive lifecycle flips, citing both stranded directives as the canonical failure shape. Prevents recurrence."
+    }
+  ],
+  "self_fixes_applied": [
+    {
+      "file": "monitor/prompts/tinker.md",
+      "change": "Added write-side FND-01 guard to the directive-completion-flip bullet (line 123): flips MUST be written from the git clone and pushed, never FUSE, because append_only sync skips existing files. ~1 sentence + failure-shape citation.",
+      "loc": 3,
+      "certainty": "high — mechanical, matches existing read-side FND-01 guard already in the same dispatcher section; no behavioral risk."
+    }
+  ],
+  "directive_flips": [
+    {"directive": "DIRECTIVE-20260607-002", "from": "pending", "to": "completed", "prop": "PROP-083", "obe": true},
+    {"directive": "DIRECTIVE-20260603-003", "from": "pending", "to": "completed", "prop": "PROP-078", "obe": true}
+  ],
+  "previous_followup": {
+    "tinker-2026-06-14T06-50": "DIRECTIVE-20260613-001 completed (PROP-099 authored). That run flagged a STILL-LIVE prune-resurrection bug for verify-pending-run (284 undrained files in HEAD; PROP-094 depth-gap). Status: UNCHANGED this run — those are operator action items in PROP-099, not tinker-self-fixable (workspace-sync.md is disaster-sensitive, propose-only). Left for operator. The PROP-099 canary (check-prune-resurrection.js) is referenced in this run's tinker.md Mode-2 quick-check block (lines ~395-410) — confirmed present.",
+    "note": "Did NOT re-run the PROP-099 canary this run (Mode 2 not selected; directive close-out preempted). Operator should action the 3 PROP-099 items from the 06:50 summary."
+  },
+  "remaining_pending_directives_after_this_run": "11 (was 13). Next-highest after the 2 OBE flips: DIRECTIVE-20260531-008 (medium, implement PROP-069) and a cluster of medium directives (mode2b fallback, queue-schema, iss-allocator collision, dome-mirror gaps, decider runtime creep, human-notes vocab, analyst phantom-resolution, expansion-tracker collisions) + 1 low (storage-layout audit). Several mediums (20260609-002 iss-allocator, 20260614-001 expansion-tracker collisions) look related and may warrant a consolidated root-cause run."
+}
