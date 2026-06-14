@@ -74,6 +74,8 @@ For HNOTEs that genuinely don't imply an artifact (e.g., a cross-cutting note yo
   "orphan_routed_by_run": [<unique routed_by_run values from the orphan set>],
   "action_recommended": "tinker investigates: did decider tracker-write fail, or was this a manual operator reroute? Either way, root-cause and patch the decoupling.",
   "action_taken_this_run": "<N> orphans grouped into <M> EXP entries and worked normally; tracker decoupling root-cause TBD.",
+  "status": "pending",
+  "target_mode": "tinker",
   "resolved": false
 }
 ```

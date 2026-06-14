@@ -150,6 +150,24 @@ cat monitor/status.json | node -e "process.stdin.on('data',d=>{const s=JSON.pars
 Trigger: Dome has more WINs than our wins.json.
 → Read `monitor/prompts/reference/analyst-mode0-onboarding.md`, execute that procedure.
 
+**Mode 0.5 — Operator Commission** (PROP-043, between Mode 0 and Mode 1)
+
+Operator-explicit time-sensitive commission. Trigger: pending HNOTE in `monitor/analyst/human-notes.json` with `commission: true`. One commission per run, then drop to normal mode order.
+
+```bash
+node -e "const fs=require('fs');const W=process.env.WORKSPACE||'.';try{const h=JSON.parse(fs.readFileSync(W+'/monitor/analyst/human-notes.json','utf8'));const arr=h.notes||(Array.isArray(h)?h:Object.values(h));const c=arr.filter(n=>n.status==='pending'&&n.commission===true);console.log(c.length?'COMMISSION MODE: '+c.length+' pending — '+c.map(n=>n.id).join(', '):'NO COMMISSION HNOTES')}catch(e){console.log('NO COMMISSION HNOTES')}"
+```
+
+Trigger: At least one HNOTE with `status: 'pending'` AND `commission: true`. **Strict precedence over Mode 1.**
+
+Procedure: Read the HNOTE body. If `commission_type` is `'frozen-prediction'`, delegate to Mode 5 procedure (the existing frozen-pred section below). If `commission_type` is `'compression'`, see PROP-042 procedure (TBD — landing in a separate amendment). Otherwise (absent or `'other'`/`'custom-rewrite'`), execute the commission per the HNOTE body using the most appropriate existing analyst tooling (Mode 2-style expansion in `monitor/analyst/expansions/EXP-NNN-<slug>.json`). Process **one** commission per run, then STOP commission work (drop into the normal Mode 1 dispatch if you want to do additional non-commission work, or end the run).
+
+Mark the HNOTE consumed via the standard PROP-014 Mech 1b WRITE-VERIFY pattern: `verification_artifact_path` set to the EXP file path, `test -f` it, write `consumed` only if it passes. Same archive-on-resolve flow as Mode 2.
+
+**Discipline:** `commission: true` is reserved for operator-explicit time-sensitive work. Routine guidance HNOTEs use plain `priority: 'high'|'medium'|'low'` WITHOUT the commission flag and land at Mode 2. See CLAUDE.md "Commission HNOTE discipline (PROP-043)" for the operator-side rule.
+
+→ Mode 0.5 is self-contained in this dispatcher block; no separate reference file needed for the generic-commission case. Frozen-pred commissions follow Mode 5 procedure (see below); compression commissions follow PROP-042 procedure (when authored).
+
 **Mode 1 — Section Expansion Queue**
 
 **PROP-034 Phase 1 — Mode 1 BAU drain is delegated to `dome-analyst-baby` (Sonnet, 2h cadence).** You (Opus analyst) handle ONLY Mode 1 **deep-attack singletons** and **holistic items**. Filter the tracker pending list to exclude baby-owned entries — those are: `review_class === 'verification'`, OR (`review_class` is null AND `source` IN {`decider-bau-route`, `decider-m1-route`, `decider-m3-carry-over`}). Orphan ISSs of severity `minor`/`moderate` also belong to baby. See `monitor/prompts/analyst-baby.md` for the full hybrid rule.

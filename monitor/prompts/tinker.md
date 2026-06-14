@@ -232,6 +232,16 @@ metrics.baby_drain_count_7d = /* count of baby-completed tracker items in last 7
 // PROP-038 Phase 1 (2026-05-16): verify-mode curmudgeon throughput. Count curmudgeon/reviews/*.json files
 // where agent_subtype='curmudgeon-verify' AND reviewed_at within last 7d. Same single-pass shape as baby_drain_count_7d.
 metrics.verify_drain_count_7d = /* count of curmudgeon-verify reviews in last 7d, per agent_subtype field */;
+// PROP-043 (2026-06-14): commission HNOTE telemetry. Read monitor/analyst/human-notes.json,
+// count pending notes with commission===true. Surface as info/moderate/major finding per thresholds.
+// Threshold tiers: info >= 3, moderate >= 5, major >= 10 (per PROP-043 design).
+let commissionCount = 0;
+try{
+  const h = JSON.parse(fs.readFileSync('monitor/analyst/human-notes.json','utf8'));
+  const arr = h.notes || (Array.isArray(h) ? h : Object.values(h));
+  commissionCount = arr.filter(n => n.status === 'pending' && n.commission === true).length;
+}catch(_){}
+metrics.pending_commission_hnotes_count = commissionCount;
 // PROP-085 (2026-06-14): root-FS headroom. The single most-correlated metric
 // with pipeline failure (2026-05-07/08 cascade, 2026-05-09 near-miss, 2026-05-21
 // disaster contributing factor). Cheap: one shell call. Gives WoW trend +

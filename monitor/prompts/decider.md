@@ -825,6 +825,7 @@ if(leaks.length>0){
 {
   "id": "ATT-<ISO-timestamp>",
   "status": "pending",
+  "target_mode": "analyst-mode-2b",
   "target_type": "win" | "section" | "prediction",
   "target_id": "WIN-NNN" | "SEC-X.Y" | "PRED-NNN",
   "reason": "Brief description of what changed and why the analyst should re-examine",

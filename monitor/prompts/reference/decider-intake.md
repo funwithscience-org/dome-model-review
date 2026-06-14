@@ -267,6 +267,8 @@ For each assessment file found:
          action_recommended: 'Re-run analyst if fresh assessment needed; otherwise leave as-is.',
          created_by: 'decider-stale-skip',
          created_at: new Date().toISOString(),
+         status: 'pending',
+         target_mode: 'analyst-mode-1b',
          resolved: false
        });
        skippedAssessments.push(assessment.prediction_id);
