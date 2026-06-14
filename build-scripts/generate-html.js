@@ -822,6 +822,19 @@ function escapeHtml(text) {
     .replace(/'/g, '&#39;');
 }
 
+// Auto-link bare URLs inside ALREADY-escaped HTML. Must be called AFTER escapeHtml.
+// Avoids double-linking by skipping URLs already inside an <a ...>...</a> wrapper
+// (we operate on escaped output where `<` is `&lt;`, so any pre-existing tags are
+// inert text — making this safe to apply to any escapeHtml result).
+// Trailing punctuation (.,;:)] etc.) is excluded from the link target.
+function autolinkUrls(escapedText) {
+  if (!escapedText) return '';
+  return escapedText.replace(
+    /(https?:\/\/[^\s<>"'()]+[^\s<>"'.,;:!?)\]])/g,
+    (url) => `<a href="${url}" target="_blank" rel="noopener">${url}</a>`
+  );
+}
+
 function computeVerdictTallies(wins) {
   const tally = {};
   wins.forEach(win => {
@@ -1017,11 +1030,13 @@ function formatPredictionDetail(pred) {
   };
   const badgeGlyph = badgeGlyphs[verdict] || badgeGlyphs['pending'];
 
-  // TLDR: prefer dedicated tldr field, fall back to detail_reasoning, then generic
+  // TLDR: prefer dedicated tldr field, fall back to detail_reasoning, then generic.
+  // Auto-link bare URLs so https:// references in prose render as clickable links
+  // (PRED-073 had inline DOI URLs in detail_reasoning that escapeHtml left as text).
   const tldr = pred.tldr
-    ? escapeHtml(pred.tldr)
+    ? autolinkUrls(escapeHtml(pred.tldr))
     : pred.detail_reasoning
-      ? escapeHtml(pred.detail_reasoning)
+      ? autolinkUrls(escapeHtml(pred.detail_reasoning))
       : (verdict === 'pending' ? 'Awaiting assessment — test window has not yet closed.' : escapeHtml(verdictLabel));
 
   // ── Summary bar (always visible, kill-shot pattern) ──
@@ -1066,7 +1081,7 @@ function formatPredictionDetail(pred) {
     ? `<a class="ds-verdict-link" href="#${_predTagDefId}" aria-label="See definition of ${escapeHtml(verdictLabel)}">${_predTagChip}</a>`
     : _predTagChip;
   if (pred.detail_reasoning) {
-    html += `<p>${_predTagWrapped} ${escapeHtml(pred.detail_reasoning)}</p>\n`;
+    html += `<p>${_predTagWrapped} ${autolinkUrls(escapeHtml(pred.detail_reasoning))}</p>\n`;
   } else if (verdict !== 'pending') {
     html += `<p>${_predTagWrapped}</p>\n`;
   } else {
