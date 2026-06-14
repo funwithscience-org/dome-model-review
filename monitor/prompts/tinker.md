@@ -263,6 +263,27 @@ If ANY threshold fires → add a finding object to the run's report.findings[] w
 
 If the operator_escalation tier fires, ALSO write a one-line note to `monitor/tinker/latest-tinker-summary.txt` so the operator sees it in the morning summary.
 
+### Pre-flight: PROP Lifecycle Auto-Close (PROP-102, every run, added 2026-06-14)
+
+Walk every PROP in `monitor/tinker/proposals/` and apply two mechanisms:
+
+- **Mechanism A** — auto-close on `verification_pattern` PASS. PROP whose status is in the eligible whitelist (`proposed`, `design-pending-operator-review`, `pending-operator-review`, `implementation-pending-operator-review`), not field-gated (`requires_human_judgment` or `do_not_auto_close`), and whose grade-A verification_pattern exits 0 with `FIXED` → flip status to `implemented` with `obe_*` closure metadata.
+- **Mechanism B** — deliberate-supersedes graph. If a sibling PROP declares `supersedes_props: ['PROP-Y']` AND that sibling is terminal-implemented, OR if PROP-Y itself has `superseded_by_props: ['PROP-X', 'PROP-Z']` and all listed superseding PROPs are terminal-implemented, flip PROP-Y to `superseded-by-PROP-X`.
+
+Phase 0 (shadow): every run is dry-run; the script appends ledger rows with `dryrun: true` but writes ZERO changes to PROP files. Surface count of would-close candidates in `latest-tinker-summary.txt`.
+
+Phase 1 (enforce): gated by presence of `monitor/tinker/prop-auto-close-enforce.flag`. When the flag exists, status flips are written to PROP files via clone-and-push. Same convention as `monitor/decisions/prop-009-enforce.flag` (PROP-009r2).
+
+```bash
+TINKER_RUN_ID="${RUN_ID}" node monitor/scripts/prop-auto-close.js --workspace "${CLONE}" 2>&1 | tee /tmp/prop-auto-close.log
+```
+
+The script logs a JSON summary of `{props_walked, has_vp, grade_{A,B,C}, eligible_for_autoclose, field_gated, mechA_would_close, mechA_grade_B_passed_soft, mechB_would_close, actually_closed}`. Surface the would-close + actually-closed counts in `latest-tinker-summary.txt`.
+
+The script is non-fatal. If it fails internally it exits 0 and the pipeline proceeds. Closure metadata schema matches today's operator-cowork bulk-close pattern (`obe_closed_at`, `obe_closed_by`, `obe_prior_status`, `obe_closure_note`, `obe_closure_evidence`) so auto-closes and manual closes are schema-uniform.
+
+For retroactive supersession (PROPs that should have been closed but weren't), use `node monitor/scripts/mark-prop-superseded.js PROP-Y by PROP-X1 PROP-X2`. The next tinker run will auto-close PROP-Y if all listed superseding PROPs are terminal-implemented.
+
 ### Priority order:
 
 **Mode 1 — Pipeline Health** (run if any agent is stalled or handoff is broken)

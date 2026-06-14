@@ -283,6 +283,13 @@ NEVER_PUSH=(
   # compute-curmudgeon-dispatcher-state.js / push-via-api.js / etc.
   'monitor/scripts/compute-run-cost.js'
   'monitor/scripts/write-self-cost.sh'
+  # PROP-102 Phase 0 (2026-06-14): PROP-lifecycle auto-close + supersession.
+  # prop-auto-close.js walks PROPs, grades verification_patterns, applies
+  # Mechanism A (auto-close on VP pass) + Mechanism B (supersedes graph).
+  # mark-prop-superseded.js is the operator-side helper for backfilling
+  # superseded_by_props on older PROPs. Both git-owned source code.
+  'monitor/scripts/prop-auto-close.js'
+  'monitor/scripts/mark-prop-superseded.js'
   # All .md files under monitor/prompts/ are operator-edited (dynamic rule
   # in is_never_push() below). Covers monitor/prompts/sloppytoppy-rewrite.md
   # and monitor/prompts/reference/sloppytoppy-rewrite-rubric.md automatically.
@@ -329,6 +336,10 @@ GIT_APPEND_ONLY=(
   'monitor/social/cost-history.jsonl'
   'monitor/dome-mirror/cost-history.jsonl'
   'monitor/workspace-sync/cost-history.jsonl'
+  # PROP-102 Phase 0 (2026-06-14): PROP-lifecycle auto-close ledger. Tinker
+  # appends one row per cycle (shadow-mode dryrun:true or enforce dryrun:false).
+  # Same git-append-only discipline as the cost-history files above.
+  'monitor/tinker/prop-auto-close-ledger.jsonl'
 )
 
 is_git_append_only() {

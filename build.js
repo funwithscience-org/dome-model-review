@@ -178,6 +178,16 @@ const OWNERSHIP = {
   'monitor/dome-mirror/cost-history.jsonl': 'git-append-only',
   'monitor/workspace-sync/cost-history.jsonl': 'git-append-only',
 
+  // PROP-102 Phase 0 (2026-06-14): PROP-lifecycle auto-close infrastructure.
+  // - prop-auto-close-ledger.jsonl: tinker appends one row per Phase-0 dryrun
+  //   candidate and per Phase-1 actual close. Same git-append-only discipline
+  //   as the cost-history files above.
+  // - prop-auto-close-enforce.flag: gates Phase 1 enforce mode (presence =
+  //   enforce, absence = shadow). Same convention as prop-009-enforce.flag.
+  //   Git-owned so build.js publish copies operator-side flag toggle to FUSE.
+  'monitor/tinker/prop-auto-close-ledger.jsonl': 'git-append-only',
+  'monitor/tinker/prop-auto-close-enforce.flag': 'git',
+
   // PROP-066 Phase 1 (2026-05-31): sync-workspace-step4c.js helper script
   // and its operator-curated bootstrap config. Both git-owned; edited via
   // clone-and-push. Same source-code classification as monitor/scripts/
