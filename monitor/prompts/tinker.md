@@ -391,6 +391,23 @@ echo "PROP-070 observability: ${ORPHAN_INTEGRATED} orphan-integrated assigned-an
 if [ "${ORPHAN_INTEGRATED}" -gt 0 ] 2>/dev/null; then
   echo "PROP-070 SOFT-COMPLAINT: ${ORPHAN_INTEGRATED} ISSs whose EXP-chain endpoint is integrated should have been closed by Step A0c sweep"
 fi
+
+# PROP-099 (2026-06-14) prune-resurrection canary. Cheap, read-only,
+# git-depth-independent (reads archive JSONL tombstones, not git log).
+# Catches the prune <-> workspace-sync re-add loop class for ALL prune
+# categories, including the ones PROP-094's GIT_DELETED_SET misses when
+# the deleting commit is older than workspace-sync's shallow clone depth
+# (the live verify-pending-run leak found 2026-06-14T03:09 was exactly
+# this case). RC=3 → emit findings[] category='prune-resurrection'
+# severity=major; RC=0 → clean. Window default 48h; widen if needed.
+RESURRECT=$(node "${WORKSPACE}/monitor/scripts/check-prune-resurrection.js" --hours 48 2>/dev/null)
+RESURRECT_RC=$?
+if [ "${RESURRECT_RC}" = "3" ]; then
+  echo "PROP-099 CANARY: prune-readd loop LIVE — emit finding category=prune-resurrection severity=major"
+  echo "$RESURRECT" | head -40
+else
+  echo "PROP-099 CANARY: clean (no resurrected pruned artifacts in last 48h)"
+fi
 ```
 Trigger: Any STALE file, auth failure, project footprint ≥500MB, or previous report flagged FUSE/infra issues.
 → Read `monitor/prompts/reference/tinker-infrastructure.md`, execute that procedure.

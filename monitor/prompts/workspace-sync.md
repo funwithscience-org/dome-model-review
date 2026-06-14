@@ -259,6 +259,11 @@ NEVER_PUSH=(
   # round-trip from FUSE.
   'monitor/scripts/decider-commit-push.sh'
   'monitor/scripts/decider-setup.sh'
+  # PROP-099 (2026-06-14): check-prune-resurrection.js is the read-only,
+  # git-depth-independent resurrection canary tinker runs in its Mode 2
+  # quick-checks. Reads prune archive JSONL tombstones + working tree.
+  # Same classification as the other clone-invoked scripts above.
+  'monitor/scripts/check-prune-resurrection.js'
   # All .md files under monitor/prompts/ are operator-edited (dynamic rule
   # in is_never_push() below). Covers monitor/prompts/sloppytoppy-rewrite.md
   # and monitor/prompts/reference/sloppytoppy-rewrite-rubric.md automatically.
@@ -573,22 +578,48 @@ smart_copy() {
   cp "$src" "$dst"
 }
 
-# PROP-094 (2026-06-13): build the git-deleted-paths set ONCE per run.
-# Used by smart_copy's dst-absent branch above to authoritatively skip rescue
-# of files git deleted within the 95-day retention horizon. Cost ~0.2s on a
-# depth-50 clone. The 95-day window comfortably exceeds the longest prune
-# retention (report-daily at 90 days) so no genuine prune deletion is missed.
-# An empty set is fine (e.g., fresh clone with no delete history in this
-# horizon) — every smart_copy then falls through to PROP-082's date-proxy
-# fallback as before. Restricting --since='95 days ago' bounds the git log
-# cost; widening it later if any prune retention exceeds 95d is one number
-# change here. Path restricted to monitor/integrity/ because that's the
-# only directory tree prune ever touches.
+# PROP-094 (2026-06-13) + PROP-099 depth-gap fix (2026-06-14): build the
+# git-deleted-paths set ONCE per run from the prune archive ledger.
+# Used by smart_copy's dst-absent branch above to authoritatively skip
+# rescue of files prune-integrity tombstoned.
+#
+# DEPTH-GAP FIX: the original PROP-094 implementation used `git log
+# --diff-filter=D --since='95 days ago'` against the workspace-sync
+# clone's git history. In a shallow clone (depth=50 or similar) the
+# deleting commit is invisible once it falls off the depth horizon —
+# any older delete is missed, GIT_DELETED_SET is incomplete, and the
+# fallback (PROP-082's date proxy) takes over. That's exactly how the
+# verify-pending-run re-add loop survived: prune deletes from 2026-05
+# were 66+ commits back, beyond the shallow horizon, so PROP-094 saw
+# them as "not deleted" and re-adds slipped through. Tinker's PROP-099
+# canary (2026-06-14) caught a live resurrection (3 verify-pending-run
+# + 3 narrative-cite) that proved the gap.
+#
+# Fix: read prune's archive JSONL files instead of git log. The archives
+# (monitor/integrity/*-archive.jsonl) record every tombstoned filename
+# at prune time. No depth limit. Source-of-truth is the same producer
+# (prune-integrity.js) that performs the delete, so the set is exact.
+# Cost: ~ms per archive file read; sub-second total. Falls through to
+# PROP-082 date proxy if the archive files don't exist yet (fresh repo).
 GIT_DELETED_SET="/tmp/git-deleted-set-$$-${RANDOM}.txt"
-git log --diff-filter=D --name-only --since='95 days ago' --pretty=format: \
-  -- monitor/integrity/ 2>/dev/null | sort -u > "$GIT_DELETED_SET" 2>/dev/null || true
+: > "$GIT_DELETED_SET"
+for archive in monitor/integrity/*-archive.jsonl; do
+  [ -f "$archive" ] || continue
+  # Extract the .file field from each tombstone record (jq if available,
+  # node fallback). Output one path per line. Prepend "monitor/integrity/"
+  # to bare basenames since smart_copy passes full repo-relative paths.
+  if command -v jq >/dev/null 2>&1; then
+    jq -r 'select(.file != null) | .file' "$archive" 2>/dev/null
+  else
+    node -e "
+      const fs=require('fs');
+      const lines=fs.readFileSync('$archive','utf8').split(String.fromCharCode(10));
+      for(const l of lines){if(!l.trim())continue;try{const r=JSON.parse(l);if(r.file)console.log(r.file);}catch(e){}}
+    " 2>/dev/null
+  fi
+done | awk '{ if($0 ~ /\//) print $0; else print "monitor/integrity/" $0 }' | sort -u > "$GIT_DELETED_SET"
 GIT_DELETED_COUNT=$(wc -l < "$GIT_DELETED_SET" 2>/dev/null || echo 0)
-echo "[PROP-094] git-deleted set built: ${GIT_DELETED_COUNT} paths (since 95d ago, monitor/integrity/)"
+echo "[PROP-094+PROP-099] git-deleted set built from archive ledger: ${GIT_DELETED_COUNT} paths (depth-independent)"
 
 # Iterate over each file the workspace might author and smart_copy it
 sync_glob() {
