@@ -1,0 +1,194 @@
+{
+  "id": "PROP-102",
+  "title": "PROP-lifecycle auto-close: Mechanism A (close on verification_pattern pass) + Mechanism B (deliberate-supersedes graph) — close the one-sided-write defect on the PROP-closure side (same family as PROP-098 close_iss_batch)",
+  "created_at": "2026-06-14T16:37:58.785Z",
+  "authored_by": "tinker",
+  "authored_by_run": "tinker-2026-06-14T16-33",
+  "status": "design-pending-operator-review",
+  "category": "pipeline-lifecycle-gap",
+  "severity": "moderate",
+  "source_directive": "DIRECTIVE-20260614-003",
+  "target": [
+    "monitor/prompts/tinker.md",
+    "monitor/prompts/reference/tinker-proposals-and-fixes.md",
+    "monitor/scripts/prop-auto-close.js",
+    "monitor/scripts/mark-prop-superseded.js",
+    "build.js",
+    "monitor/prompts/workspace-sync.md",
+    "CLAUDE.md"
+  ],
+  "requires_human_judgment": false,
+  "do_not_auto_close": true,
+  "do_not_auto_close_reason": "This PROP introduces the auto-close machinery itself and additionally proposes an operator policy decision (the A/B integration boundary, the shadow-audit window length). It must be operator-integrated; it must never auto-close itself even after its own verification_pattern passes. Demonstrates the Q5 opt-out flag in situ.",
+  "problem": "Tinker's PROP-lifecycle handling is one-sided. Per monitor/prompts/reference/tinker-proposals-and-fixes.md ('PROP Lifecycle Verification'), every run walks each PROP's verification_pattern and reports STILL_BROKEN when it FAILS — but does NOTHING when it PASSES. There is no writer on the closure side of the lifecycle. Consequence: implementation work ships via decider patches / operator-cowork / amendment integrations, the PROP's verification_pattern starts returning FIXED, but the status field stays at 'proposed' / 'design-pending-operator-review' indefinitely. This is the SAME one-sided-write defect family as PROP-098 (close_iss_batch HNOTEs had no decider consumer; items sat 3+ runs). Operator surfaced it 2026-06-14T16:20Z at the end of a 54-PROP sweep in which ~27 of 54 (~50%) closures were 'already implemented — status was just stale'. Secondary harm: the apparently-deep unactioned-PROP pile is a structural demotivator for tinker authoring NEW proposals, even though much of the pile was already shipped.",
+  "two_shapes": {
+    "case_1_verification_passes": "Status stale despite the ORIGINAL PROP's own verification_pattern now passing against shipped code. Examples from today's sweep: PROP-020 (drift-audit shipped via compute-drift-audit.js + structure-integrity.md §7g; status stayed 'proposed' >1yr), PROP-037 (decider-intake.md L66 literally says 'PROP-037 generalization (landed 2026-05-16)'; status stayed 'design-pending-operator-review' ~4wk), PROP-088 (split-by-ID-range live in audit-exp-tracker-gaps.js L220-226), PROP-091/092 (Phase 0 manifest-only logic live in sync-workspace-step4c.js). Mechanism A handles this.",
+    "case_2_deliberate_supersede": "The underlying problem was solved via a DIFFERENT path; the original verification_pattern stays at STILL_BROKEN because the original spec never landed verbatim. Examples: PROP-008 (curmudgeon Priority-3 cooldown intent addressed by PROP-019 reduced-set fingerprint + PROP-020 precompute), PROP-012, PROP-063. Mechanism A misses these entirely — the original VP genuinely still fails. Mechanism B handles this via a machine-readable supersedes graph."
+  },
+  "mechanism_A": {
+    "name": "Auto-close on verification_pattern pass",
+    "summary": "Each tinker run, walk every PROP whose status is in the auto-flippable whitelist, grade its verification_pattern, run grade-A patterns, and on a clean FIXED flip status to 'implemented' with full obe_* closure metadata. Idempotent.",
+    "Q1_eligible_status": {
+      "whitelist": [
+        "proposed",
+        "design-pending-operator-review",
+        "pending-operator-review",
+        "implementation-pending-operator-review"
+      ],
+      "denylist_explicit": [
+        "operator-approved",
+        "approved",
+        "integrated",
+        "implemented",
+        "applied",
+        "self-applied",
+        "completed",
+        "superseded",
+        "wont-fix-not-worth-it"
+      ],
+      "denylist_pattern": [
+        "approved-*",
+        "superseded-*",
+        "superseded-by-*",
+        "deferred-*",
+        "partially-*",
+        "phase-*-implemented-phase-*-pending-*",
+        "phase-*-deferred",
+        "c1-implemented-*",
+        "*-implemented-*-deferred"
+      ],
+      "denylist_field_gates": [
+        "requires_human_judgment===true",
+        "do_not_auto_close===true"
+      ],
+      "rationale": "Only flip from statuses that mean 'awaiting a decision/landing that verification can confirm'. Terminal operator decisions (operator-approved, integrated) and partial-phase statuses must NOT be overridden by a passing verification — a partial-phase PROP whose Phase-1 VP passes is NOT done. The whitelist is deliberately narrow; when in doubt the PROP stays open and tinker emits at most a soft finding."
+    },
+    "Q2_pattern_grading": {
+      "grade_A_trust_for_autoclose": "Content-inspection command (grep / wc / awk / node -e) that emits BOTH 'FIXED' and 'STILL_BROKEN' on mutually-exclusive branches. PASS := stdout contains 'FIXED' AND does NOT contain 'STILL_BROKEN'. Unambiguous pass/fail. This is the only grade that may auto-close.",
+      "grade_B_soft_finding_only": "File-existence-only ('test -f X', '[ -f X ]'), OR one-sided echo (only FIXED or only STILL_BROKEN present), OR a pattern that references an unset shell/env var at tinker-run time (e.g. ${CLEAN_CLONE} — set inside decider's clone, not tinker's). On PASS, emit a soft finding 'PROP-NNN verification passed but pattern is grade-B (ambiguous: <reason>); manual review recommended.' Never auto-close.",
+      "grade_C_never": "Network-dependent (curl/wget/http/nc/ping — non-reproducible, can pass/fail for environmental reasons), OR no recognizable FIXED/STILL_BROKEN tokens, OR a multi-statement script whose exit semantics are not a clean single FIXED/STILL_BROKEN emission. Skip for closure entirely. (Grade-C still participates in the existing STILL_BROKEN failure-reporting path; this rubric only governs the new auto-CLOSE path.)",
+      "measured_distribution_2026_06_14": "Of 80 PROPs carrying a verification_pattern: 37 grade-A, 3 grade-B, 40 grade-C. The large grade-C share (half) is the core safety argument: blindly auto-closing on any passing pattern would be wrong ~half the time; grade-gating is mandatory. Pattern QUALITY rewrites are explicitly OUT OF SCOPE (separate PROPs) — Q2 only grades, never rewrites."
+    }
+  },
+  "mechanism_B": {
+    "name": "Deliberate-supersedes graph",
+    "summary": "Introduce a machine-readable supersession graph so PROPs solved via a sibling path can be auto-closed even though their own verification_pattern still fails.",
+    "Q9_forward_declaration": {
+      "convention": "NEW PROPs declare supersedes_props: ['PROP-008', ...] at authorship time when their work deliberately subsumes an earlier PROP's structural intent.",
+      "autoclose_rule": "Tinker walks the graph: if PROP-X is in a terminal-implemented status (implemented / integrated / applied / self-applied) AND PROP-X.supersedes_props includes PROP-Y AND PROP-Y is in the Mechanism-A whitelist (not opted-out), auto-close PROP-Y as status 'superseded-by-PROP-X' with closure metadata pointing at PROP-X.",
+      "reverse_form": "Also honor superseded_by_props: ['PROP-019','PROP-020'] written retroactively onto the OLDER PROP (PROP-008). If every listed superseding PROP is in a terminal-implemented status, auto-close. This is what the Q10 manual tool writes.",
+      "discipline_cost": "Requires PROP authors to declare supersedes_props diligently. Worth it: it converts operator-memory ('PROP-008 was really fixed by 19+20') into a machine-checkable, auto-closable edge, eliminating the manual sweep cost next time. Where authors forget, the manual Q10 tool backfills."
+    },
+    "Q10_manual_tool": {
+      "script": "monitor/scripts/mark-prop-superseded.js",
+      "usage": "node monitor/scripts/mark-prop-superseded.js PROP-008 by PROP-019 PROP-020",
+      "writes": "Sets superseded_by_props:['PROP-019','PROP-020'] on PROP-008.json plus the standard obe_* closure metadata (obe_closed_by:'operator-mark-prop-superseded', obe_prior_status, obe_closure_note, obe_closure_evidence listing the superseding PROPs and their statuses). Lower-friction than hand-editing JSON. Optional but cuts the cost of the next manual sweep.",
+      "priority": "optional / nice-to-have; ships in Phase 1 or later"
+    }
+  },
+  "Q3_closure_metadata": {
+    "schema_mirrors_todays_bulk_close": "Uses the exact obe_* field set the operator-cowork sweep wrote (see PROP-098 obe_closed_at/obe_closed_by/obe_prior_status/obe_closure_note/obe_closure_evidence) so auto-closures and manual closures are schema-uniform and indistinguishable to downstream readers except by the obe_closed_by value.",
+    "fields": {
+      "obe_closed_at": "ISO timestamp of the auto-close",
+      "obe_closed_by": "'tinker-auto-close-'+RUN_ID (Mechanism A) or 'tinker-auto-supersede-'+RUN_ID (Mechanism B) or 'operator-mark-prop-superseded' (Q10 tool)",
+      "obe_prior_status": "the status before the flip",
+      "obe_closure_note": "Mech A: 'Auto-closed via verification_pattern at tinker-<RUN_ID>; grade-A pattern exited 0 with FIXED in output.' Mech B: 'Auto-closed: superseded by <PROP-X...> (terminal-implemented); original verification_pattern intentionally not required.'",
+      "obe_closure_evidence": "Mech A: the literal verification_pattern command + its captured stdout. Mech B: the supersession edge + each superseding PROP's current status.",
+      "new_status_value": "Mech A -> 'implemented'. Mech B -> 'superseded-by-PROP-X' (single) or 'superseded-by-multiple' with the list in obe_closure_evidence."
+    }
+  },
+  "Q4_audit_log": {
+    "path": "monitor/tinker/prop-auto-close-ledger.jsonl",
+    "classification": "git-append-only (PROP-065). Register in build.js OWNERSHIP, workspace-sync.md GIT_APPEND_ONLY array + is_git_append_only helper, and CLAUDE.md File Ownership git-append-only list. Written exclusively via tinker's clone-and-push; FUSE is a downstream replica only.",
+    "row_schema": {
+      "ts": "ISO",
+      "run_id": "tinker-<RUN_ID>",
+      "prop_id": "PROP-NNN",
+      "mechanism": "'A' | 'B'",
+      "prior_status": "string",
+      "new_status": "string",
+      "verification_pattern": "string (Mech A) | null (Mech B)",
+      "verification_output": "string (Mech A) | null",
+      "superseded_by": "array (Mech B) | null",
+      "pattern_grade": "'A' | 'B' | 'C' | null",
+      "dryrun": "bool — true in shadow mode (Phase 0), false in enforce mode (Phase 1)"
+    },
+    "purpose": "Mirrors PROP-026 closure-ledger.jsonl. Tinker reads it on subsequent runs to detect over-eager closes (cross-check against operator complaints). In shadow mode it is the operator's audit surface."
+  },
+  "Q5_opt_out": {
+    "flag": "do_not_auto_close: true on the PROP JSON itself.",
+    "semantics": "Tinker honors it: such PROPs are never auto-closed by Mechanism A or B even if verification passes / supersession edges resolve. For PROPs that pass verification mechanically but carry substantive operator-decision content (e.g. a PROP proposing BOTH an implementation AND an operator policy change — the implementation can ship without the policy decision being made).",
+    "documentation": "Document the flag in CLAUDE.md where the PROP schema is canonicalized so authors know about it. This PROP-102 sets do_not_auto_close:true on ITSELF as the in-situ example.",
+    "relationship_to_requires_human_judgment": "requires_human_judgment:true ALSO blocks auto-close (Q1 field gate). do_not_auto_close is the narrower, closure-specific opt-out: a PROP can be mechanically verifiable AND not require human judgment to verify, yet still want to stay open pending an orthogonal operator decision."
+  },
+  "Q6_rollout": {
+    "pattern": "Shadow-then-enforce, mirroring PROP-009r2 (prop-009-enforce.flag) and PROP-026.",
+    "phase_0_shadow": "Tinker walks PROPs every run, grades + runs grade-A verifications and resolves supersession edges, and logs what it WOULD close to prop-auto-close-ledger.jsonl with dryrun:true. ZERO writes to PROP files. Also surfaces the would-close count in latest-tinker-summary.txt. Operator audits the ledger.",
+    "operator_audit_window": "Recommend 7 days (>= 7 tinker runs). Long enough to catch a mis-grade or a coincidental-pass before any canonical PROP state is mutated.",
+    "phase_1_enforce": "Gated by presence of monitor/tinker/prop-auto-close-enforce.flag (presence = enforce, absence = shadow — identical convention to monitor/decisions/prop-009-enforce.flag). In enforce mode tinker writes the status flip + obe_* metadata to the PROP file (from its clone, pushed) and logs the ledger row with dryrun:false.",
+    "flag_classification": "prop-auto-close-enforce.flag classified 'git' in build.js OWNERSHIP + workspace-sync.md NEVER_PUSH, exactly like prop-009-enforce.flag and decider-mode.json."
+  },
+  "Q7_frequency": {
+    "decision": "Every run, in the pre-flight (placed after Mode 0 assigned-to-tinker scan, before Mode 1-4 trigger evaluation), regardless of selected mode.",
+    "cost_estimate": "Eligibility is gated to whitelist statuses only. Post-sweep the eligible set is 0; steady-state expectation 0-5 PROPs/run. Each eligible PROP costs one grade-A verification_pattern exec (grep/wc/node, sub-100ms). Worst case a few hundred ms/run. Negligible vs an Opus run. The full-corpus grade pass (115 file reads) is also sub-second.",
+    "visibility": "Surface 'auto-close: N closed (M shadow-candidates)' in latest-tinker-summary.txt every run so the operator has continuous visibility without added cost.",
+    "code_sharing": "PROP-101 Step 4b already walks each PROP's verification_pattern for cost-instrumentation. Recommend extracting a shared helper monitor/scripts/prop-walk.js (read PROP, extract VP from top-level or proposed_fix, grade, optionally exec) that both Step 4b and this auto-close pre-flight call. Reduces drift between the two walkers. Implementation detail; either shared or separate is acceptable."
+  },
+  "Q8_out_of_scope": [
+    "Auto-closing PROPs that require an operator decision beyond verification (requires_human_judgment:true, do_not_auto_close:true, or multiple recommendation branches the operator must choose between).",
+    "Verification-pattern QUALITY rewrites — Q2 grades patterns but never rewrites them; the ~40 grade-C patterns stay as-is. Pattern improvements are separate PROPs.",
+    "Generalizing auto-close to other artifact classes (ISS / EXP / ATT). Different lifecycle mechanisms, different writers; explicitly excluded.",
+    "Retroactively closing today's ~27 stale-status PROPs — that was operator-cowork-driven 2026-06-14 and is already done."
+  ],
+  "phase_0_shadow_dryrun_first_result": {
+    "run": "tinker-2026-06-14T16-33",
+    "props_walked": 115,
+    "pattern_grade_distribution_of_80_with_vp": {
+      "A": 37,
+      "B": 3,
+      "C": 40
+    },
+    "eligible_status_in_whitelist_not_optedout": 0,
+    "would_auto_close_mechanismA": 0,
+    "grade_B_passed_soft_finding": 0,
+    "mechanismB_supersede_edges_resolved": 0,
+    "interpretation": "Matches the directive's predicted ~0-3. The 2026-06-14 operator sweep already flipped every whitelist-status PROP to a terminal status, so there is nothing left to auto-close at design time. This is the EXPECTED and DESIRED result — it confirms the design is conservative (it would not have spuriously closed anything) and that the interesting test is forward-looking: when the decider patches a referenced code path in the next 30 days, does Mechanism A catch the resulting verification PASS without operator intervention. The shadow ledger will record that first real candidate when it occurs."
+  },
+  "ab_split_decision": {
+    "chosen": "Single PROP (PROP-102) covering both mechanisms.",
+    "rationale": "Mechanisms A and B share the closure-metadata schema (Q3), the audit ledger (Q4), the opt-out flag (Q5), the shadow-then-enforce rollout (Q6), and the per-run frequency/visibility (Q7). Splitting would duplicate all five across two files and force the operator to keep two rollouts in sync.",
+    "other_side": "The directive offered an A/B split. Counter-argument for splitting: Mechanism A is mechanical and low-risk (it only confirms a PROP's OWN verification); Mechanism B depends on author discipline (supersedes_props declarations) and a new graph-walk, so it is higher-risk and could warrant its own slower rollout. Mitigation kept within the single PROP: the rollout is staged so the operator MAY integrate Mechanism A first (flip enforce flag for A) and hold Mechanism B in shadow longer, or integrate B in a follow-up. The A/B boundary is preserved as a clean seam (separate code paths, separate ledger 'mechanism' field) so a split at integration time costs nothing."
+  },
+  "constraints_honored": [
+    "Never auto-close from 'operator-approved' or 'integrated' (Q1 denylist).",
+    "Shadow phase is mandatory and first (Q6 Phase 0); no enforcement without the enforce flag.",
+    "Other-side honored: demotivation is multi-factor; some PROPs genuinely sit unactioned (e.g. PROP-021). Auto-close addresses ONLY the stale-status-despite-shipped-work factor, not all unactioned PROPs.",
+    "Idempotency (PROP-098 discipline): check current status before flipping; only flip if currently in the whitelist; second run sees the terminal status and no-ops. Ledger keyed on (prop_id, run flip) so re-runs do not double-write.",
+    "Audit-log writes via clone-and-push (PROP-065 git-append-only); registered in build.js OWNERSHIP + workspace-sync.md GIT_APPEND_ONLY + CLAUDE.md."
+  ],
+  "proposed_fix": {
+    "summary": "Add a prop-auto-close pre-flight to tinker.md (after Mode 0, before Mode 1-4), backed by monitor/scripts/prop-auto-close.js implementing both mechanisms with grade-gating, idempotency, shadow/enforce toggle, and ledger append. Add monitor/scripts/mark-prop-superseded.js (Q10). Register prop-auto-close-ledger.jsonl (git-append-only) and prop-auto-close-enforce.flag (git) in build.js + workspace-sync.md + CLAUDE.md. Document do_not_auto_close and supersedes_props/superseded_by_props in CLAUDE.md PROP schema.",
+    "verification_pattern": "test -f monitor/scripts/prop-auto-close.js && grep -q 'prop-auto-close' monitor/prompts/tinker.md && grep -q 'prop-auto-close-ledger.jsonl' build.js && echo FIXED || echo STILL_BROKEN"
+  },
+  "estimated_impact": "Eliminates the PROP-closure-side one-sided-write gap permanently. Future shipped-but-stale PROPs auto-close within one tinker run of their verification passing (Mechanism A) or their superseding PROP landing (Mechanism B), removing the recurring manual-sweep cost and the false-depth demotivator on the PROP pile.",
+  "rollout_plan": "Propose-only this run. Operator integrates after review: (1) add monitor/scripts/prop-auto-close.js + mark-prop-superseded.js; (2) add the pre-flight block to tinker.md; (3) register ledger + flag in build.js OWNERSHIP, workspace-sync.md, CLAUDE.md; (4) document do_not_auto_close + supersedes_props in CLAUDE.md; (5) run >=7 days in shadow (no enforce flag), audit prop-auto-close-ledger.jsonl dryrun rows; (6) create monitor/tinker/prop-auto-close-enforce.flag to enable Phase 1. Optionally stage Mechanism A enforce before Mechanism B.",
+  "cross_references": [
+    "DIRECTIVE-20260614-003",
+    "PROP-098",
+    "PROP-026",
+    "PROP-009",
+    "PROP-009r2",
+    "PROP-065",
+    "PROP-101",
+    "PROP-060",
+    "PROP-020",
+    "PROP-037",
+    "PROP-088",
+    "PROP-091",
+    "PROP-092",
+    "PROP-008",
+    "PROP-012",
+    "PROP-019",
+    "PROP-063"
+  ]
+}
