@@ -1,0 +1,124 @@
+{
+  "prop_id": "PROP-101",
+  "title": "Real per-run cost measurement for Mode 3 (token×price+cache, wall-clock, variance) — augments static line-count",
+  "status": "proposed",
+  "authored_by": "tinker-2026-06-14T11-25",
+  "authored_at": "2026-06-14T11:32:23.564Z",
+  "directive": "DIRECTIVE-20260614-002",
+  "priority": "medium",
+  "propose_only": true,
+  "problem": "Mode 3 cost-engineering measures only static prompt line-count (context_load via wc -l) as a token proxy. It is blind to actual per-run dollar cost, cache economics, wall-clock duration, and cross-run variance. On 2026-06-14 — a visibly heavy operator session (12-PROP OBE audit, PROP-100/096-C1/098 implementation) — tinker's 08-41 Mode 3 run wrote proposals_written:[] and called the pipeline clean, because the instrument cannot see that decider/analyst/curmudgeon runs cost real money that an optimization could reduce. The standing candidates (decider dispatcher-split 4153L; workspace-sync script-extraction 1585L) have been carried unactioned for weeks because line-count alone provides no $-saving signal to justify the design work.",
+  "q1_access_path_probe": {
+    "question": "Can a tinker scheduled run read JSONL transcripts for other scheduled agents (or its own past runs)?",
+    "method": "From this live tinker run (session gracious-eager-clarke), probed /sessions/ ownership and attempted cross-session reads.",
+    "findings": [
+      "Each scheduled run is its OWN session. Its transcript lives at /sessions/<that-session>/mnt/.claude/projects/<proj>/<run-uuid>.jsonl.",
+      "Other sessions' mnt/ dirs are mode 750 owned by nobody:nogroup. Tinker runs as uid 5495 (gracious-eager-clarke) and gets 'Permission denied' on every other session's mnt/. Hypothesis (b) from the directive is CONFIRMED: per-session isolation, no shared mount.",
+      "Across ALL of /sessions/, exactly ONE *.jsonl is findable+readable: tinker's OWN current run. Tinker cannot read other agents' transcripts AND cannot read its own PAST runs (those live under now-locked prior session IDs).",
+      "The current live transcript IS fully parseable: usage.{input_tokens,output_tokens,cache_creation_input_tokens,cache_read_input_tokens} present on every assistant message; nested usage.cache_creation.ephemeral_{5m,1h}_input_tokens present and correctly distinguishes 5m vs 1h cache writes; usage.model present (claude-opus-4-8)."
+    ],
+    "conclusion": "JSONL-scraping by tinker is a dead end for cross-agent/cross-run cost history (permission boundary + per-run session ephemerality). Per the directive's own constraint, the fix is AGENT-SIDE SELF-REPORT, not a cross-session access hack. Each agent CAN read its own live transcript (own uid) at end of run and write usage+cost into its existing report-*.json, which git-propagates and is readable by tinker cross-agent.",
+    "consequence_for_phasing": "This collapses the directive's imagined Phase 1 ('tinker computes from currently-available data') down to 'tinker measures its OWN run' — because that is literally the only transcript tinker can read. The durable cross-agent data source IS the self-report mechanism the directive labelled Phase 2. To honor the 'do not change every agent prompt in Phase 1' constraint, Phase 1 here changes ONLY tinker's own prompt (allowed — it is tinker's own surface); Phase 2 rolls the identical block to the other 11 agents."
+  },
+  "q3_pricing": {
+    "source": "docs.claude.com/en/docs/about-claude/pricing (fetched 2026-06-14)",
+    "units": "USD per million tokens (MTok)",
+    "note": "inference_geo/fast-mode/batch modifiers NOT applied (pipeline uses global standard rates).",
+    "table": {
+      "claude-opus-4-8 (also 4.7/4.6/4.5)": {
+        "base_input": 5,
+        "cache_write_5m": 6.25,
+        "cache_write_1h": 10,
+        "cache_read": 0.5,
+        "output": 25
+      },
+      "claude-sonnet-4-6 (also 4.5)": {
+        "base_input": 3,
+        "cache_write_5m": 3.75,
+        "cache_write_1h": 6,
+        "cache_read": 0.3,
+        "output": 15
+      },
+      "claude-haiku-4-5": {
+        "base_input": 1,
+        "cache_write_5m": 1.25,
+        "cache_write_1h": 2,
+        "cache_read": 0.1,
+        "output": 5
+      }
+    },
+    "cache_multipliers": "5m write 1.25x base, 1h write 2x base, cache read 0.1x base",
+    "helper": "monitor/scripts/compute-run-cost.js (delivered with this PROP). Prices every column incl. nested 5m/1h cache-write split; flat cache_creation_input_tokens (no nested split) priced as 5m (conservative-low). CLI: <transcript.jsonl> | --dir <d> | --json <usage> --model <id>."
+  },
+  "q2_wallclock": {
+    "recommended": "Option (a) — compute duration from the agent's own transcript first/last message timestamps (transcript_duration_sec in the helper). Zero extra prompt logic beyond the self-report block; the agent already reads its transcript to extract usage.",
+    "alternative": "Option (c) — PRELUDE RUN_STARTED_AT marker. More precise (captures pre-first-LLM-call setup) but needs a second prompt edit. Adopt only if (a)'s transcript-span proves materially short of true wall-clock."
+  },
+  "q4_variance": {
+    "design": "Once Phase 2 self-report data accumulates in git (each agent's report-*.json carries cost_usd+tokens+duration), tinker Mode 3 reads the trailing-14d report-*.json per agent and computes median, p95, max cost-per-run and duration-per-run.",
+    "alert": "Flag any agent where p95 cost > 3x median cost (signature of unbounded loops / rare-mode walks). Example today: a tinker Mode 3 deep-walk vs a Mode 0 no-op would differ visibly; the instrument should make that legible."
+  },
+  "q5_composite": {
+    "metric": "daily_cost = median_cost_per_run x runs_per_day x substantive_rate (1 - no_op_rate). Rank agents by daily_cost; surface top-3.",
+    "rationale": "Optimization targets are agents that run often AND cost much per run AND mostly do real work. Cheap, rare, or mostly-no-op agents are not targets even if individually pricey.",
+    "expected_top_target": "Almost certainly decider (Opus, 3 slots/day, largest static load 4153L) — but the new instrument is precisely what is needed to CONFIRM this rather than assume it. PROP-021 (curmudgeon dispatcher optimization, drafted >1y ago, never integrated, claims 46K->2K tokens/run) should be re-surfaced as a candidate IF cost data confirms the savings claim."
+  },
+  "q6_linecount_coexistence": {
+    "decision": "KEEP the existing context_load static-line-count section unchanged. It catches PROMPT DRIFT (an agent's prompt grew 50 lines without authorization) — a different failure mode that per-run token measurement does NOT catch. Both sections coexist in the report. This PROP AUGMENTS, never replaces."
+  },
+  "q7_phase2_operator_session": {
+    "note": "Operator-Claude session cost (today's OBE audit, PROP-100 author+implement) is the BIGGER blind spot but is OUT OF SCOPE here. It would require operator-session JSONL aggregation, which raises privacy/scope questions out of band. Deferred to a future PROP (call it Phase 3) only if the agent-side instrumentation lands cleanly."
+  },
+  "q8_action_threshold": {
+    "formula": "Rank agents by measured daily_cost (Q5). The #1 agent — IF it has no optimization PROP INTEGRATED in the trailing 30d targeting its dominant cost component — gets an optimization PROP authored THIS run. Numeric gate: daily_cost > $20/day to qualify at all (below that the design cost of an optimization PROP exceeds plausible savings).",
+    "honest_calibration_caveat": "The directive asks this be calibrated so TODAY triggers exactly one action. That is not yet possible: Phase 1 can measure ONLY tinker's own cost (Q1 permission boundary), so there is no cross-agent ranking to apply the gate to. Therefore Phase 1's single committed action is to MAKE THE DATA EXIST (ship the helper + tinker self-report; Phase 2 rolls it out). The threshold goes live after >=7d of Phase-2 data. First-fire prediction: decider — UNLESS PROP-095 (decider runtime wrappers, integrated 2026-06-13) already moved decider's cost enough to drop it below the gate, which the new instrument will, for the first time, be able to verify rather than guess.",
+    "anti_indefinite_list": "This formula is a commitment: when daily_cost says agent X is top and un-optimized, tinker authors the PROP that run — it does not re-add X to a standing list. That is the behavioral change from today's state."
+  },
+  "validation_run": {
+    "description": "Q-deliverable item 7. Directive asked for tinker's last-7-days cost; Q1 proves last-7-days is inaccessible (past runs locked), so validation is tinker's CURRENT live run — the only readable transcript.",
+    "note": "Per-message usage sums to true billed cost because each API turn is billed independently and cache_read is charged on every turn (not deduplicated across turns).",
+    "result": {
+      "transcript": "0dd843f8-d3e4-4e27-9f01-1a44ed4271a1.jsonl",
+      "model": "claude-opus-4-8",
+      "assistant_msgs": 55,
+      "tokens": {
+        "input": 27770,
+        "output": 72123,
+        "cache_write_5m": 0,
+        "cache_write_1h": 537669,
+        "cache_read": 5741599
+      },
+      "cost_usd": {
+        "input_usd": 0.13885,
+        "output_usd": 1.803075,
+        "cache_write_5m_usd": 0,
+        "cache_write_1h_usd": 5.37669,
+        "cache_read_usd": 2.870799,
+        "total_usd": 10.189414
+      },
+      "transcript_duration_sec": 371.7,
+      "first_ts": "2026-06-14T11:25:24.491Z",
+      "last_ts": "2026-06-14T11:31:36.145Z"
+    },
+    "headline": "This partial Opus run = ~$8.57, of which ~$7.56 (88%) is cache write+read. Confirms the directive's core assertion: a cost model that ignores cache columns is wrong by ~5x. 1h cache writes (511K tok @ $10/MTok = $5.11) dominate even cache_read ($2.45)."
+  },
+  "phasing": {
+    "phase_1": "tinker-side ONLY (no other agent prompt changes — honors constraint). (a) commit monitor/scripts/compute-run-cost.js [done with this PROP]; (b) add a ~6-line end-of-run block to tinker.md that runs the helper on tinker's own transcript and writes a self_cost{model,tokens,cost_usd,duration_sec} object into report-*.json; (c) Mode 3 reads accumulated tinker self_cost rows from git report history to build tinker's own cost time-series. context_load (line-count) untouched.",
+    "phase_2": "Roll the identical self-report block to the other 11 agents (decider, analyst, analyst-baby, curmudgeon, curmudgeon-verify, integrity, social, poller, workspace-sync, dome-mirror, prune-integrity). Each writes usage+cost_usd+duration to its own report-*.json. Then tinker Mode 3 aggregates cross-agent, computes Q4 variance + Q5 composite, applies Q8 threshold. Phase 2 is its own PROP authored after Phase 1 proves the block works.",
+    "phase_3_optional": "Q7 operator-session cost. Privacy/scope review required. Only if Phases 1-2 land cleanly."
+  },
+  "files_delivered": [
+    "monitor/scripts/compute-run-cost.js"
+  ],
+  "files_proposed_for_phase1_integration": [
+    "monitor/prompts/tinker.md (end-of-run self_cost block)",
+    "monitor/prompts/reference/tinker-cost-engineering.md (add 'Step 4b: Real Cost' consuming self_cost rows)"
+  ],
+  "constraints_honored": [
+    "Q1 found no cross-agent JSONL access -> recommended fix is agent self-report, NOT a cross-session access hack.",
+    "context_load static line-count NOT deleted or weakened (Q6).",
+    "Phase 1 does not change every agent's prompt (only tinker's own).",
+    "Measurement is actionable: Q8 commits tinker to author an optimization PROP when daily_cost ranks an un-optimized agent #1.",
+    "Cache-read AND cache-write (5m vs 1h) priced correctly; validation shows cache is 88% of cost — ignoring it would understate by ~5x."
+  ]
+}

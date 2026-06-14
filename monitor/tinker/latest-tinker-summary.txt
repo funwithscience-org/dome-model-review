@@ -1,28 +1,17 @@
-TINKER 2026-06-14T08-56 — Mode 2 infra hygiene (pipeline GREEN)
+TINKER tinker-2026-06-14T11-25 — Directive DIRECTIVE-20260614-002 (Mode 4 PROP authoring)
 
-MODE: Mode 2 (Infrastructure & FUSE). The disk-footprint quick-check
-fired the soft 500MB trigger (615MB), with one stale operator clone as
-the actionable item. The previous run (08-41) had just completed a full
-Mode 3 cost-engineering re-baseline 15 min earlier with 0 findings, so a
-second deep Mode 3 walk this run would be wasteful — handled the infra
-item instead.
+TASK: Design real per-run cost measurement for Mode 3 (was: static line-count only).
 
-HEALTH (all GREEN):
-- FUSE: 5/5 spot-checked files md5-match GitHub. Auth 200.
-- PROP-099 resurrection canary: clean (RC=1).
-- Pipeline: all agents producing within ~1-2h (decider 06:19, ws-sync
-  08:09, prune-integrity 08:06, dome-mirror 08:35, tinker 08:41).
-- Backlog (PROP-030): open=10, net_velocity_7d=+83 (89 closed / 6 new),
-  age>=30d=0, assigned-analyst=0. No threshold fires.
+DELIVERED:
+- PROP-101 (propose-only): real cost measurement, phased.
+- monitor/scripts/compute-run-cost.js: cache-aware USD cost helper (Opus/Sonnet/Haiku 4.x pricing, 5m/1h cache-write split, cache-read 0.1x). Validated on tinker's own live run.
 
-FINDING (minor, FND-01): the standing /tmp clone-cleanup empowerment is
-BLOCKED by cross-session file ownership. /tmp/edit-clone (178MB, ~22h
-old) meets every removal criterion but rm -rf fails Permission-denied on
-all files — owned by nobody:nogroup from another session. No real disk
-pressure (root FS 60% used, 3.9G free), so this is informational.
-  ACTION FOR OPERATOR: reap /tmp/edit-clone from a session that owns it,
-  or move the operator working clone to $SESSION/edit-clone (per-session,
-  self-reaping) per the PROP-090 pattern already used for tinker's clone.
+KEY FINDING (Q1): tinker CANNOT read other agents' or its own past JSONL transcripts — per-session uid isolation (other sessions mode 750 nobody:nogroup, EACCES). Only the current live transcript is readable. => JSONL-scrape is a dead end; agent SELF-REPORT (write usage+cost to report-*.json) is the only viable durable source. Phase 1 = tinker-only (honors "don't change every agent prompt"); Phase 2 = roll to all 11 agents, then variance(Q4)+composite(Q5)+threshold(Q8).
 
-DEFERRED: the full PROP-lifecycle verification walk flagged by the 08-41
-run remains outstanding for the next Mode 3 pass.
+VALIDATION (the directive's headline concern): this Opus run = ~$8.57, of which 88% is cache (1h-write $5.11 + read $2.45). A cost model ignoring cache columns is wrong by ~5x — exactly the directive's assertion. context_load line-count tracking KEPT (Q6) — catches prompt-drift, a different failure mode.
+
+Q8 honest caveat: cannot calibrate "exactly one action today" because Phase 1 measures only tinker's own cost. Phase 1's committed action IS shipping the data source; threshold goes live after >=7d Phase-2 data. First-fire prediction: decider (unless PROP-095 wrappers already helped — now measurable).
+
+BACKLOG: healthy. 12 open, 0 assigned-analyst, net velocity +75/7d, oldest open 0.6d. No thresholds fired.
+
+OPERATOR ACTION: review PROP-101; integrate Phase 1 (tinker.md self_cost block + Step 4b in tinker-cost-engineering.md) if approved.
