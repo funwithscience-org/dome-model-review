@@ -1,0 +1,48 @@
+{
+  "directive_id": "DIRECTIVE-20260614-001",
+  "for": "tinker",
+  "status": "pending",
+  "priority": "medium",
+  "created_at": "2026-06-14T05:30:00.000Z",
+  "created_by": "operator",
+  "title": "Chronic expansion-tracker collisions — next_id + stuck-live pattern recurs multiple recent days. Root-cause needed, not just per-day band-aids.",
+  "context": "Operator observation 2026-06-14T05:25Z. The integrity 01:18Z report (monitor/integrity/report-2026-06-14T01-17.json) flagged TWO findings that fit a recurring pattern:\\n\\n(1) MAJOR — `expansion-tracker.json` next_id=623, but EXP-623 already exists in expansion-tracker-archive.jsonl (created 2026-06-13T09:34:26Z, integrated, archived). Next allocation would collide. Same family of finding was raised 2026-06-13T01:16Z (EXP-616/617/618 terminal in live tracker) and operator anecdotally recalls similar 'expansion-tracker hygiene' WARN entries throughout the past 1-2 weeks. The 2026-06-14T02:23Z decider run self-fixed next_id 623→624 in 'tracker housekeeping', but the fact that the fix is recurring as housekeeping suggests the underlying mechanism that DROPS next_id is not patched.\\n\\n(2) MODERATE — EXP-620 + EXP-621 have integrated=true but were stuck in live items[] instead of being moved to expansion-tracker-archive.jsonl. Operator manually archived them this morning (commit fe4bf0b). Same housekeeping shape — repeated finding suggests the integration-time archive step is being skipped under some condition.\\n\\nThese two findings hang together: when an EXP integrates, it should (a) be removed from live items[] + appended to archive.jsonl, AND (b) the tracker's next_id should be defensively bumped to max(current next_id, max(archived EXP-NNN) + 1). Today's collision shows next_id was 623 while EXP-623 was already in the archive — proof that the defensive bump didn't happen at integrate-time.\\n\\nThe canonical allocation pattern (analyst-normal-analysis.md, decider integration code) uses t.next_id++, which works IF the allocator and the archiver are coordinated. The chronic collision implies they aren't: either (a) the archive step lags / is skipped, leaving the tracker with stale items[] but next_id correctly bumped; or (b) two writers race on next_id without rebase coordination; or (c) a cross-writer path (e.g., decider allocates an EXP during self-apply, or operator-cowork allocates during retro-split, or analyst-baby allocates a consolidation EXP) doesn't share the same next_id-bump discipline.\\n\\nThis directive asks tinker to identify the actual mechanism with evidence (not narrative), and propose a fix. Phase 1 (today's housekeeping + reset) is already done. Phase 2 is preventive.",
+  "task": "Diagnose the chronic expansion-tracker next_id collision + stuck-live pattern, and propose a defensive fix.",
+  "investigation_questions": [
+    "Q1 — Count occurrences. Audit integrity reports for the past 14 days and count next_id collision findings AND stuck-live findings. If chronic = >3 occurrences in 14d, the fix should be structural; if <=1, it might be a one-off worth annotating but not fixing.",
+    "Q2 — Identify all writer sites that allocate EXP-IDs. Grep for `next_id` and `expansion-tracker.json` across all prompts (analyst.md, analyst-normal-analysis.md, analyst-mode0/1/5, analyst-baby.md, decider.md, decider-patches-and-selfapply.md, decider-curmudgeon-pq-mechanics.md, tinker prompts) AND any helper scripts. Map every write site and whether each does `t.next_id++` cleanly.",
+    "Q3 — Identify all archiver sites. When an EXP integrates, which prompt/code moves it from items[] to archive.jsonl? Verify the archive step is co-located with a defensive `t.next_id = Math.max(t.next_id, max_archived_id + 1)` recompute. If not, that's the fix.",
+    "Q4 — Race-condition analysis. Are analyst, analyst-baby, decider, and operator-cowork sessions allocating EXP-IDs concurrently? If yes, even with git pull --rebase the final next_id can be off-by-one or -two when concurrent allocations land. Check commit history for back-to-back commits within ~1 minute that both allocate EXP-IDs.",
+    "Q5 — Single-writer-path option (PROP-089 precedent). PROP-089 created allocate-iss-ids.js as the canonical ISS-id minter to close the ISS-2663/2664 allocator-race surface. Same pattern arguably should exist for EXP-IDs. Propose-cost: ~allocate-exp-ids.js + edit every prompt that allocates inline to call the script + lint enforcement. Trade against: simpler fix that just bumps the discipline of the existing inline allocator.",
+    "Q6 — The decider's End-of-Run sweeps (Step A0/A0b/A0c, PROP-056/058/070) catch various open-issues residue patterns. Should there be a Step A0e (or equivalent at the start of a run) that re-derives next_id from max(items[].EXP-NNN, archive EXP-NNN) + 1 every run? Defensive but never lowers next_id. This catches both (a) the cross-writer race AND (b) the missing-archive-step case.",
+    "Q7 — Are there CROSS-AGENT EXP-id allocation paths we haven't mapped? E.g., does sloppytoppy-rewrite allocate? Does curmudgeon ever? Does the operator's HNOTE-driven 'commission an EXP' workflow share the same discipline as the agents?"
+  ],
+  "deliverable": "A PROP-NNN proposal in monitor/tinker/proposals/ with: (1) Q1 occurrence count (numbers, not 'feels recurring'); (2) Q2/Q3/Q7 writer + archiver site inventory; (3) chosen root cause from Q4/Q5/Q6 with evidence; (4) proposed fix — recommend the minimal-LOC version that closes the failure mode, with a single-writer-path (Q5) alternative if appetite warrants. Propose-only; operator integrates after review.",
+  "constraints": [
+    "Do NOT remove the existing in-prompt self-heal logic (the `if(typeof t.next_id!=='number'){ ... }` block in analyst-normal-analysis.md). It's a safety net for a different failure mode (corrupt tracker).",
+    "Do NOT propose mass-rewriting items[] order or re-indexing existing EXPs. The fix is forward-only: prevent NEW collisions, don't try to restate history.",
+    "Honor the other-side: if Q1 finds <=2 occurrences in 14d, the recommended fix should be lightweight (e.g., add a defensive bump line to the archive step, not a whole new script). The directive's framing assumes chronic; let evidence revise that.",
+    "Do NOT add a sweep that auto-archives stuck-live items in the same run as it detects them — operator review of any stuck-live EXP is required (could be a real bug elsewhere). Surface, don't auto-remediate."
+  ],
+  "background_artifacts": {
+    "audit_session_ts": "2026-06-14T05:25Z",
+    "operator_phase_1_fixes_today": [
+      "fe4bf0b (operator-cowork): archive EXP-612 + EXP-622 from live items[] (the MODERATE stuck-live finding)",
+      "91249dc (decider 02:23Z): tracker housekeeping bumped next_id 623 -> 624 (the MAJOR collision finding)"
+    ],
+    "today_integrity_report": "monitor/integrity/report-2026-06-14T01-17.json",
+    "yesterday_similar_finding": "monitor/integrity/report-2026-06-13T01-15.json (EXP-616/617/618 terminal in live tracker; same family)",
+    "related_prop_lineage": [
+      "PROP-022 (state-file-archives — defines the archive-on-resolve convention these writes are supposed to follow)",
+      "PROP-053 (EXP-tracker gap audit — earlier sweep work)",
+      "PROP-070 (Step A0c assigned-analyst chain-aware close sweep — adjacent precedent)",
+      "PROP-089 (allocate-iss-ids.js — single-writer-path precedent on the ISS side; the Q5 reference)"
+    ]
+  },
+  "not_in_scope": [
+    "Cleanup of the current backlog — already done via fe4bf0b + 91249dc.",
+    "Changing the canonical EXP-id format (3-digit zero-padded EXP-NNN) — only the allocator discipline is in scope.",
+    "Cross-file ISS-ID allocation discipline — that's PROP-089 territory and is working.",
+    "Rate of EXP allocation as a backlog metric — separate health concern."
+  ]
+}
