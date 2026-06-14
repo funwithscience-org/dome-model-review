@@ -1538,6 +1538,24 @@ if [ $RUNREPORT_PUSH_EXIT -ne 0 ]; then
   echo "soft-complaint: run-report push failed (exit=$RUNREPORT_PUSH_EXIT, tail=$(echo "$RUNREPORT_PUSH_OUT" | tail -1 | head -c 80))" > "${SESSION}/ws-sync-state/last-runreport-push-fail.txt" 2>/dev/null
 fi
 
+# --- PROP-101 Phase 2 self-cost (relocated from trailing Step 5b 2026-06-14) ---
+# RELOCATED here from a trailing "Step 5b" block past Step 5 (Report). The
+# trailing position was the documented PROP-068 / PROP-074 silent-skip shape:
+# operator observed 0 rows in monitor/workspace-sync/cost-history.jsonl across
+# multiple hourly runs after PROP-101 Phase 2 landed, despite dome-mirror
+# (200-line prompt, Step 5b at line ~185) reliably producing rows. Inlined into
+# Step 4 before rm so it rides the same proven-invoked block as the run-report
+# write+push (174-cycle run-report existence in 9d). Non-fatal: any failure
+# logs to stderr and exits 0; the cleanup below still runs.
+bash "${CLONE}/monitor/scripts/write-self-cost.sh" append "${CLONE}" workspace-sync 2>&1 | tail -1 || true
+# Append happens in $CLONE; we need to commit+push it before the rm below.
+if [ -f "${CLONE}/monitor/workspace-sync/cost-history.jsonl" ] && \
+   ! git diff --quiet "${CLONE}/monitor/workspace-sync/cost-history.jsonl" 2>/dev/null; then
+  git add monitor/workspace-sync/cost-history.jsonl 2>/dev/null
+  git commit -m "workspace-sync self_cost: $(date -u +%Y-%m-%dT%H:%M:%SZ)" 2>&1 | tail -1
+  git push origin main 2>&1 | tail -1 || true
+fi
+
 # --- Cleanup: skip-log tmpfile (was the post-Step-4b rm-f, kept in place) ---
 rm -f "$SKIP_LOG"
 
@@ -1596,15 +1614,9 @@ fi
 
 Output a one-line summary: how many files were new, how many modified, or "Nothing to sync."
 
-### Step 5b: Self-Cost Report (PROP-101 Phase 2, added 2026-06-14)
+### Step 5b: (Removed 2026-06-14 — relocated INTO Step 4's collapsed block)
 
-Append one JSON line to `${CLONE}/monitor/workspace-sync/cost-history.jsonl` with this run's actual token usage + USD cost. The helper discovers the live transcript (the only readable `.jsonl` under `/sessions/`), prices it cache-aware via `compute-run-cost.js`, and appends a row. Non-fatal: any failure logs to stderr and exits 0; the run still ships. Run this BEFORE the cleanup step — the cleanup deletes the clone.
-
-```bash
-bash "${CLONE}/monitor/scripts/write-self-cost.sh" append "${CLONE}" workspace-sync
-```
-
-`monitor/workspace-sync/cost-history.jsonl` is `git-append-only` per PROP-065 — always write via the clone path.
+The PROP-101 Phase 2 self-cost append was initially placed here as a trailing block past Step 5 (Report). Operator observed 0 rows in `monitor/workspace-sync/cost-history.jsonl` across multiple hourly runs after PROP-101 Phase 2 landed — exact replay of the PROP-068 trailing-Cleanup-skip shape (~43% skip rate documented above). The call has been relocated into Step 4 directly, before the rm + cleanup, where it rides on the same proven-invoked block as the run-report write+push. This trailing section is kept as documentation of the skip-pattern lesson; no logic lives here.
 
 ## Rules
 
