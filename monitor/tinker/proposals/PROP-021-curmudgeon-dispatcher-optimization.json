@@ -7,7 +7,9 @@
   "category": "architecture_split + prompt_slim",
   "propose_only": true,
   "do_not_implement": "Operator authorizes implementation in a separate step. This PROP authoring run did NOT modify monitor/prompts/curmudgeon.md, monitor/prompts/reference/*, monitor/prompts/structure-integrity.md, and did NOT create any new scripts. Operator reviews PROP and authorizes implementation as a follow-up.",
+
   "summary": "PROP-020 cut Priority 3 (change-detection) cost ~95% by moving the in-LLM fingerprint scan to a precomputed integrity artifact (drift-audit.json). Operator's manual run on 2026-05-05 confirmed PROP-020 is working but observed that the *path to review* is still slow — curmudgeon spends meaningful time post-clone reading priority-queue.json (50KB, 99% history bloat), human-notes.json (39KB, all 9 notes consumed), tracker.json (65KB, 197 points), and walking the conditional logic for Priority 1 (PROP-009 strict/soft fallback against 467 review files), Priority 2 (coverage-already-exists exception), and the major-external-change audit (Step 0c2). Most runs find no work in 1/2 and fall to Priority 3 — but the LLM has read ~150KB of state and applied ~16KB of dispatcher prose to confirm 'nothing pending' before reaching the drift-audit hand-off. This PROP applies the PROP-020 pattern to the rest of the dispatcher: a deterministic Node script precomputes pre-review state into monitor/integrity/curmudgeon-dispatcher-state.json (~3-5KB, indicates which priority has work and pre-resolves the head item for each); curmudgeon's setup phase invokes the script via bash (~100-200ms wall-clock, zero LLM tokens) and reads the slim artifact instead of all the source state files. Combined with a prompt slim that moves rarely-triggered conditional logic (PROP-009 detail, batch-triage gate, coverage-already-exists, major-change audit) into reference files loaded only when triggered, the dispatcher hot path drops from ~16KB of prose + ~150KB of state reads to ~1.5KB of prose + ~5KB of state reads. The constraint is: actual review depth, lenses, citation discipline, severity grading, and priority order (1 → 2 → 3 → 4 → 5) are unchanged — optimize the path, not the destination. The expanded review lenses (Advocate Mode, Cross-WIN Consistency, Quantitative Verification) and PROP-009 queue_id discipline are out of scope.",
+
   "scope": {
     "in_scope": [
       "Curmudgeon Step 0a (V6 map read), 0b (priority queue check + PROP-009 reviewed-already lookup + Step 8a batch triage gate), 0c (human notes + coverage-already-exists exception), 0c2 (major external change workload audit), 0d (priority routing into change-and-holistic.md).",
@@ -33,8 +35,10 @@
       "DO NOT propose model-tier downgrades for any phase. Stick to Opus."
     ]
   },
+
   "instrumentation_pass": {
     "method": "Static measurement of (a) file sizes the LLM reads at dispatcher-time, (b) prose-line counts in the dispatcher region of curmudgeon.md, (c) decision-branch costs (file scans / multi-file lookups embedded in conditional logic). Wall-clock numbers are operator's qualitative observation 2026-05-05 ~21:15Z ('hard to tell when it switched over from mode selection to work') — no instrumented baseline exists yet (recommendation §regression_protection adds one).",
+
     "state_file_reads_at_dispatcher_time": {
       "priority-queue.json": {
         "total_bytes": 50583,
@@ -77,6 +81,7 @@
       "subtotal_dispatcher_time_bytes": 185804,
       "subtotal_dispatcher_time_token_estimate": "~46K tokens at Opus's ~4 chars/token"
     },
+
     "conditional_branch_state_reads": {
       "step_0b_PROP-009_strict_fallback": {
         "trigger": "queue is non-empty",
@@ -103,6 +108,7 @@
         "diagnosis": "Trigger is rare; precompute can carry boolean + count. Prose can be moved to reference."
       }
     },
+
     "prose_byte_breakdown_curmudgeon_md": {
       "total_file_bytes": 41511,
       "header_intro_v6_note_lines_1_22": 1500,
@@ -117,6 +123,7 @@
       "section_severity_cleanup_lines_356_399": 4000,
       "diagnosis": "Pre-review dispatcher prose (lines 23-175) totals ~21KB / ~5K tokens. Of this, ~10KB is conditional logic (PROP-009 detail, batch triage, coverage-already-exists, major-change audit) that fires on a small fraction of runs but gets paged into LLM context every run. The actual review procedure (lines 176-399, ~22KB) is unchanged by this PROP — that's the destination, not the path."
     },
+
     "summary_of_findings": [
       "Most curmudgeon runs (queue empty + notes consumed + Step 0c2 not triggered) do ~46K tokens of state-file input + ~5K tokens of dispatcher prose just to confirm 'fall through to Priority 3' — only to then read drift-audit.json and pick the head candidate.",
       "98% of priority-queue.json read content is history bloat. 99.99% of human-notes.json read content is consumed-note archive.",
@@ -124,6 +131,7 @@
       "PROP-009 reviewed-already lookup is mechanical and currently spelled out in prose — a script can pre-resolve the un-reviewed head item, eliminating the LLM-side enumeration."
     ]
   },
+
   "optimization_options_compared": {
     "option_A_dispatcher_state_precompute": {
       "name": "Single pre-resolved dispatcher state artifact (the precompute pattern, applied to Priorities 1/2/3/4)",
@@ -185,34 +193,15 @@
         "Precomputed coverage-already-exists check for notes is heuristic (the script picks the most-recent reviews matching note's target/keywords) — the LLM may want to override. Make the script's mapping advisory; LLM can disagree and write the full review."
       ]
     },
+
     "option_B_prompt_slim": {
       "name": "Slim curmudgeon.md by moving rare-path conditional logic into reference files loaded only when triggered",
       "what_it_does": "Move four conditional blocks out of curmudgeon.md into new reference files in monitor/prompts/reference/. Each is loaded only when the dispatcher-state (or fallback prose) signals the corresponding priority has work.",
       "specific_moves": [
-        {
-          "from_lines_curmudgeon_md": "67-118 (Step 0b PROP-009 strict + soft fallback detail)",
-          "to_file": "monitor/prompts/reference/curmudgeon-priority-queue.md",
-          "loaded_when": "Priority 1 has work (queue non-empty + un-reviewed item present)",
-          "byte_savings": 6500
-        },
-        {
-          "from_lines_curmudgeon_md": "121-148 (Step 8a Batch triage gate procedure)",
-          "to_file": "monitor/prompts/reference/curmudgeon-priority-queue.md (same file as above — concatenated)",
-          "loaded_when": "Priority 1 has work AND head item is win-detail-rewrite/section-rewrite/killshot-rewrite (re-review type)",
-          "byte_savings": 4000
-        },
-        {
-          "from_lines_curmudgeon_md": "152-158 (Step 0c coverage-already-exists exception)",
-          "to_file": "monitor/prompts/reference/curmudgeon-human-notes.md",
-          "loaded_when": "Priority 2 has work",
-          "byte_savings": 1500
-        },
-        {
-          "from_lines_curmudgeon_md": "159 (Step 0c2 Major external change workload audit)",
-          "to_file": "monitor/prompts/reference/curmudgeon-major-change-audit.md",
-          "loaded_when": "Priority 0c2 needed (unaudited critical/strategic in changes/)",
-          "byte_savings": 1500
-        }
+        {"from_lines_curmudgeon_md": "67-118 (Step 0b PROP-009 strict + soft fallback detail)", "to_file": "monitor/prompts/reference/curmudgeon-priority-queue.md", "loaded_when": "Priority 1 has work (queue non-empty + un-reviewed item present)", "byte_savings": 6500},
+        {"from_lines_curmudgeon_md": "121-148 (Step 8a Batch triage gate procedure)", "to_file": "monitor/prompts/reference/curmudgeon-priority-queue.md (same file as above — concatenated)", "loaded_when": "Priority 1 has work AND head item is win-detail-rewrite/section-rewrite/killshot-rewrite (re-review type)", "byte_savings": 4000},
+        {"from_lines_curmudgeon_md": "152-158 (Step 0c coverage-already-exists exception)", "to_file": "monitor/prompts/reference/curmudgeon-human-notes.md", "loaded_when": "Priority 2 has work", "byte_savings": 1500},
+        {"from_lines_curmudgeon_md": "159 (Step 0c2 Major external change workload audit)", "to_file": "monitor/prompts/reference/curmudgeon-major-change-audit.md", "loaded_when": "Priority 0c2 needed (unaudited critical/strategic in changes/)", "byte_savings": 1500}
       ],
       "curmudgeon_md_after_slim": "Drops from 41.5KB → ~28KB. Main dispatcher logic in 23-175 region drops from ~21KB → ~7KB. The slim version says: 'Read dispatcher-state.json. If recommended_priority is 1, read curmudgeon-priority-queue.md and follow its procedure. If 2, read curmudgeon-human-notes.md. If 3, read curmudgeon-change-and-holistic.md (existing). If 4, read curmudgeon-change-and-holistic.md §Holistic. If 5, spot-check.'",
       "estimated_savings": "~13KB / ~3.2K tokens off curmudgeon.md baseline load (every run pays this). When a rare path fires, the reference file is loaded — same total content, better stratification. Net win: in steady-state operation (most runs hit Priority 3 with empty queue), ~3.2K tokens saved per run.",
@@ -223,6 +212,7 @@
         "PROP-018 (sync manifest) interaction: new reference files need manifest classification. See §interaction_with_PROP_018."
       ]
     },
+
     "option_C_state_file_hygiene": {
       "name": "Slim the source state files themselves (move history bloat out)",
       "what_it_does": "Move priority-queue.json's history blob into a separate priority-queue-history.json. Same for human-notes.json's consumed entries → human-notes-archive.json. Live state files shrink to <2KB each.",
@@ -240,6 +230,7 @@
       ],
       "verdict": "Defer. Most of Option C's benefit is delivered by Option A; Option C's cost (multi-consumer schema change) is higher than its marginal benefit on top of A."
     },
+
     "option_D_fast_path_early_exit": {
       "name": "Fast-path early exit when dispatcher-state confirms 'no work in 1, 2, 0c2 — go to Priority 3 with drift-audit hand-off'",
       "what_it_does": "When dispatcher-state.json's recommended_priority === 3 AND priority_1_queue.has_unreviewed === false AND priority_2_notes.pending_count === 0 AND priority_0c2.needed === false, curmudgeon skips reading the queue/notes/changes state files entirely and proceeds straight to drift-audit.json + the change-and-holistic procedure. The precompute already evaluated those priorities; the LLM trusts the result.",
@@ -251,6 +242,7 @@
         "The LLM gives up the 'global view' it gets from reading all state files. Counter: it never used the global view for anything — the dispatcher prose already gates each priority on its own state."
       ]
     },
+
     "option_E_status_quo": {
       "name": "Do nothing (the other side of the argument)",
       "what_it_means": "Operator's observation ('hard to tell when it switched over from mode selection to work') is qualitative; PROP-020 already cut the biggest hot-path cost. The remaining dispatcher-time read cost is ~46K tokens, but Opus handles that comfortably. The marginal wall-clock per run might be 10-20 seconds — not a fortune at q4h cadence.",
@@ -259,6 +251,7 @@
       "minimum_acceptable_threshold": "If the recommended hybrid (A+B+D) doesn't deliver ≥40% reduction in dispatcher-phase input tokens (measured: dispatcher-state.json + curmudgeon.md + reference files loaded vs. baseline), it's not worth the maintenance overhead. Recommend operator pin this threshold pre-implementation."
     }
   },
+
   "recommendation": {
     "selected": "Hybrid: Option A (dispatcher-state precompute) + Option B (prompt slim) + Option D (explicit fast-path early exit). Defer Option C (state-file hygiene).",
     "rationale": "A delivers the biggest token win (~46K → ~2K dispatcher-time state input). B compounds it with a smaller but persistent prose-load reduction (~3.2K tokens/run). D ensures the LLM actually realizes the savings instead of defensively re-reading. C is mostly redundant after A and carries higher coordination cost. The combined hybrid mirrors PROP-020's pattern (precompute + slim prompt) and stacks: A removes state-file reads, B removes prose, D ensures both savings land.",
@@ -271,6 +264,7 @@
       "Real-time queue-watch / inotify on FUSE — over-engineering. Polling via curmudgeon-setup bash refresh is simpler and freshness-equivalent for the q4h cadence."
     ]
   },
+
   "implementation_sketch": {
     "deliverable_1_new_script": {
       "path": "monitor/scripts/compute-curmudgeon-dispatcher-state.js",
@@ -286,16 +280,12 @@
         "Write monitor/integrity/curmudgeon-dispatcher-state.json with the schema sketched in optimization_options_compared.option_A_dispatcher_state_precompute.schema_top_level."
       ],
       "performance_target": "<500ms wall-clock on the current corpus. Achievable: queue + notes + tracker + changes/ are all small (<500KB combined). Closed-issues lookup via targeted jq, not full read. Reviews directory walk is bounded by the number of queue items + pending notes (typically <5 total) × ~10ms per file stat + parse.",
-      "exit_codes": {
-        "0": "success — dispatcher-state.json written",
-        "1": "input data missing",
-        "2": "output write failed",
-        "3": "internal error"
-      },
+      "exit_codes": {"0": "success — dispatcher-state.json written", "1": "input data missing", "2": "output write failed", "3": "internal error"},
       "command_line_interface": "node monitor/scripts/compute-curmudgeon-dispatcher-state.js [--workspace /path] [--out monitor/integrity/curmudgeon-dispatcher-state.json] [--max-batch-byte-budget 10240] [--obe-cap 3] — defaults match the curmudgeon prompt's existing thresholds.",
       "test_coverage": "Add a test in test.js (or a sibling test file) that synthesizes: (a) a queue with 1 un-reviewed item + 1 already-reviewed item (PROP-009 strict match), asserts head_item is the un-reviewed one; (b) a pending note with a matching review file (coverage-already-exists triggers), asserts mapping is non-empty; (c) a Step 8a-eligible batch (3 minor patches), asserts batch_eligible_run.length===3; (d) priority resolution logic for each empty/work permutation. Cover at minimum 6 fixtures.",
       "skeleton": "Approximately 250-350 lines of JavaScript. Skeleton omitted from this PROP — operator can authorize implementation and the script will be drafted in the implementation PR. Pattern matches compute-drift-audit.js's structure: top-level main() function, deterministic JSON output sorted by alphabetical keys, exit-code semantics, --workspace flag for portability."
     },
+
     "deliverable_2_prompt_diffs": {
       "curmudgeon_md_changes": {
         "section_replaced": "Lines 67-175 (Step 0b through Step 0d entry). Approximately 21KB of prose.",
@@ -330,6 +320,7 @@
         "logic": "Identical to §7g (drift-audit) shape: check freshness, refresh if needed, log status. Failure → integrity Major finding."
       }
     },
+
     "deliverable_3_who_runs_the_precompute": {
       "primary_invocation": "Curmudgeon's Step 0a-r setup phase invokes `node monitor/scripts/compute-curmudgeon-dispatcher-state.js` via bash on every run. This guarantees freshness for queue/note arrival between integrity runs.",
       "secondary_invocation": "Integrity's daily BAU run also invokes the script as part of §7h (analogous to PROP-020's §7g for drift-audit). This is a backup — if curmudgeon's bash invocation fails, integrity ensures the file is still refreshed at least daily.",
@@ -337,6 +328,7 @@
       "argument_against_workspace_sync_invocation": "workspace-sync runs every 4h — same as curmudgeon's q4h. So a workspace-sync-side precompute is no fresher than an integrity-side precompute for curmudgeon's purposes. Plus workspace-sync's charter is FUSE↔git syncing, not deterministic precomputes. Adding precompute responsibilities to workspace-sync conflates concerns.",
       "argument_against_new_dedicated_agent": "Overkill. The script runs in <500ms; dedicating an agent to it is wasted scheduling overhead. A bash-invoked Node script is the right size."
     },
+
     "deliverable_4_fallback_story": {
       "missing_dispatcher_state": "Curmudgeon's Step 0a-r bash invocation runs the script — if file is missing, it gets created. If creation fails (script crash), curmudgeon detects the missing file in Step 0b read, reads curmudgeon-dispatcher-fallback.md, executes the legacy in-prompt scan. Records `fallback_reason: 'compute-curmudgeon-dispatcher-state.js failed: <stderr>'`.",
       "malformed_json": "JSON.parse fails in Step 0b. Same fallback path. fallback_reason: 'dispatcher-state.json malformed'.",
@@ -345,6 +337,7 @@
       "script_logic_error": "Tinker Mode 3 audit periodically re-evaluates dispatcher state independently and cross-checks against the script's output. If discrepancy, integrity Major finding + script fix. Same audit pattern as PROP-020's deliverable_8.tinker_mode3_audit_addition."
     }
   },
+
   "regression_protection": {
     "priority_order_invariant": "The sequential priority order (1 → 2 → 3 → 4 → 5) is preserved by the script's recommendation logic — the script applies it deterministically and emits recommended_priority in that order. The curmudgeon prompt defers to the script's recommendation. If the script has a bug that breaks priority order (e.g., recommending 3 when 1 has work), the tinker Mode 3 audit catches it within ~14 days and a script bug is fixed. In the meantime, the LLM has the dispatcher-state's full breakdown (priority_1, priority_2, etc.) and can override if the recommendation contradicts visible state.",
     "review_depth_invariant": "Steps 1-10 of the per-item review procedure (curmudgeon.md lines 176-355) are unchanged. The dispatcher edit only replaces lines 23-175 (the dispatcher region). Lens A/B/C in curmudgeon-change-and-holistic.md is unchanged. citation discipline, severity grading, JSON validation (Step 7b), tracker update (Step 8) — all unchanged.",
@@ -393,6 +386,7 @@
     },
     "rollback_plan": "If post-landing measurements show <40% input-token reduction or any review-quality regression: (1) keep the precompute script (it's harmless); (2) revert curmudgeon.md to the pre-slim version; (3) keep the new reference files in place but mark them advisory. The precompute alone delivers most of Option A's value even without the prompt slim. This rollback is reversible by a single commit revert."
   },
+
   "interaction_with_PROP_018": {
     "summary": "PROP-018 (sync-manifest, status: pending-operator-review as of 2026-05-05T19:30Z) replaces build.js OWNERSHIP + workspace-sync.md NEVER_PUSH/smart_copy enumeration with a single monitor/sync-manifest.json. Any new precompute artifact created by PROP-021 needs classification.",
     "this_PROP_021_can_ship_independently": true,
@@ -401,6 +395,7 @@
     "if_PROP_021_lands_first": "PROP-018's eventual landing migrates PROP-021's classifications into the manifest. PROP-018 already accounts for this kind of migration (its starting_inputs_from_prop_017 documents the multi-file-edit pattern PROP-021 uses).",
     "no_block": "Confirmed: PROP-021 does not block on PROP-018 and PROP-018 does not block on PROP-021. Independent rollout."
   },
+
   "estimated_impact": {
     "dispatcher_phase_input_token_reduction": {
       "baseline": "~46K tokens of state-file input + ~5K tokens of dispatcher prose = ~51K tokens dispatcher-time at session start.",
@@ -422,6 +417,7 @@
     "review_quality": "Unchanged. The actual review depth, lenses, and citation discipline are unaffected — only the picker is replaced. Tinker Mode 3 audit (in regression_protection.h) verifies this empirically.",
     "maintenance_cost": "Modest. One new ~300-line script + four reference files (one of which is a verbatim copy of existing prose for fallback). Same maintenance shape as PROP-020. Tinker Mode 3 quarterly audit ensures the script stays in sync with curmudgeon prompt expectations."
   },
+
   "side_effects": {
     "new_failure_modes_introduced": [
       "Dispatcher-state.json missing/stale → fallback path. Mitigation: 24h staleness threshold + integrity §7h backup refresh + curmudgeon-side bash refresh. Three layers.",
@@ -453,6 +449,7 @@
       "When operator wants to debug: dispatcher-state.json is human-readable and shows the script's full reasoning. No more 'why did curmudgeon skip this?' guesswork."
     ]
   },
+
   "open_design_questions_addressed": [
     {
       "question": "Should the precompute artifacts (if any) live in monitor/curmudgeon/ (reader's directory) or monitor/integrity/ (where compute-drift-audit.js's output lives)? Argue consistency with PROP-020's choice.",
@@ -475,6 +472,7 @@
       "answer": "Shift to parallel-look-then-route in the script; preserve sequential semantics in the recommendation. The script evaluates ALL priorities in one pass (queue + notes + 0c2 + drift-audit + holistic — total ~500ms) and emits `recommended_priority` based on the existing sequential rule (1 first, then 2, etc.). The LLM does ONE read and ONE branch. From the LLM's perspective this is parallel-look (the precompute revealed everything at once) → sequential-route (the LLM follows the script's recommendation, which respects the priority order). Why this is correct: the sequential priority order is a *correctness* invariant (queue items must be serviced before holistic reviews, etc.), and the script enforces that invariant deterministically. Moving the evaluation off the LLM doesn't break the invariant — it strengthens it (deterministic > probabilistic). The LLM could still override if the recommendation looks wrong (e.g., dispatcher-state says Priority 3 but priority_1_queue.has_unreviewed === true — clear contradiction), but this is an integrity escape valve, not a normal pattern. Counter-argument considered: 'parallel-look loses the LLM's holistic judgment.' The dispatcher's job is mechanical priority resolution, not holistic judgment — there's no holistic decision happening at dispatcher-time. The LLM's judgment is for the per-item review work (Steps 1-10), which is unchanged."
     }
   ],
+
   "the_other_side_arguments": {
     "main_gain": "Dispatcher-phase input tokens drop ~70-90% per run. Wall-clock dispatcher phase becomes a single read + branch (operator's '21:15Z manual run was hard to tell when mode selection ended' problem disappears). At q4h × 6 runs/day, recurring saving forever.",
     "main_cost": "One new ~300-line script + four reference files + maintenance coupling between dispatcher-state schema and curmudgeon prompt's expectations. Tinker Mode 3 quarterly audit is the maintenance check.",
@@ -485,6 +483,7 @@
     "argument_for_doing_more": "If we're going to ship a dispatcher precompute, why not also fold in Option C (state-file hygiene) for permanent slim live state? Counter: Option C is a multi-consumer schema change (decider + integrity also read priority-queue.json) — strictly higher coordination cost than A+B+D. Defer to a later cleanup-PROP after A+B+D land and the precompute pattern is validated end-to-end.",
     "argument_for_doing_less": "Could just do Option A (precompute) without Option B (prompt slim). That keeps the dispatcher prose intact (easier to maintain, single file) and still saves ~46K state-file tokens per run. Counter: Option B saves an additional ~3.2K tokens per run AND removes structural waste (loading conditional logic that fires on <10% of runs). It's a small additional cost relative to A and stacks cleanly. Recommend including both. If post-landing measurement shows B isn't pulling its weight, the rollback (revert curmudgeon.md to pre-slim, keep the precompute) is a single commit."
   },
+
   "completion_criteria_check": {
     "file_present": "monitor/tinker/proposals/PROP-021-curmudgeon-dispatcher-optimization.json — written by this run.",
     "instrumentation_concrete": "Yes — state file sizes, prose byte breakdown, conditional-branch state-read costs, token estimates all quantified in §instrumentation_pass.",
@@ -495,11 +494,15 @@
     "open_questions_addressed": "All 5 directive open questions answered with reasoning. See §open_design_questions_addressed.",
     "directive_status_field_to_set": "completed (this proposal authoring run satisfies the directive)."
   },
+
   "requires_human_judgment": true,
   "why_human_needed": "Operator must (1) authorize implementation (the directive is propose-only); (2) confirm the path choice (monitor/integrity/curmudgeon-dispatcher-state.json); (3) confirm the hybrid invocation pattern (curmudgeon-side bash + integrity-side daily); (4) confirm the 24h staleness threshold for fallback; (5) confirm the four reference-file split; (6) pin the minimum-acceptable-improvement threshold (≥40% recommended). This PROP authoring run did NOT modify monitor/prompts/curmudgeon.md, monitor/prompts/reference/*, monitor/prompts/structure-integrity.md, and did NOT create monitor/scripts/compute-curmudgeon-dispatcher-state.js per the directive's do_not_implement clause.",
+
   "verification_pattern": "test -f monitor/tinker/proposals/PROP-021-curmudgeon-dispatcher-optimization.json && grep -q 'verification_pattern' monitor/tinker/proposals/PROP-021-curmudgeon-dispatcher-optimization.json && echo FIXED || echo STILL_BROKEN",
+
   "post_implementation_verification_pattern": "test -f monitor/integrity/curmudgeon-dispatcher-state.json && test -f monitor/scripts/compute-curmudgeon-dispatcher-state.js && test -f monitor/prompts/reference/curmudgeon-priority-queue.md && test -f monitor/prompts/reference/curmudgeon-human-notes.md && test -f monitor/prompts/reference/curmudgeon-major-change-audit.md && test -f monitor/prompts/reference/curmudgeon-dispatcher-fallback.md && grep -q 'curmudgeon-dispatcher-state.json' monitor/prompts/curmudgeon.md && grep -q 'compute-curmudgeon-dispatcher-state' monitor/prompts/structure-integrity.md && echo IMPLEMENTED || echo NOT_IMPLEMENTED",
-  "status": "implemented",
+
+  "status": "proposed",
   "escalation_history": [],
   "cross_references": [
     "DIRECTIVE-20260505-005-curmudgeon-dispatcher-optimization.json (this PROP responds to)",
@@ -514,8 +517,5 @@
     "monitor/scripts/compute-drift-audit.js (precedent: deterministic Node script in monitor/scripts/)",
     "monitor/curmudgeon/priority-queue.json, human-notes.json, tracker.json (input state for the precompute)",
     "monitor/integrity/drift-audit.json (read by the precompute for Priority 3 hand-off summary)"
-  ],
-  "implemented_at": "2026-06-11T02:46:42.214Z",
-  "implemented_by": "auto-detected by tinker",
-  "actual_result": " verification_pattern returned FIXED on tinker-2026-06-11T02-43; status auto-closed per Step 2b."
+  ]
 }
