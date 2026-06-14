@@ -754,6 +754,16 @@ Overwrite `monitor/integrity/latest-integrity-summary.txt` with a scannable summ
 ### Alert on Critical Issues
 If `overall_status` is "fail", also write to `monitor/integrity/alerts.txt` so the Decider treats it as urgent.
 
+## Self-Cost Report (PROP-101 Phase 2, added 2026-06-14)
+
+Append one JSON line to `${CLONE}/monitor/integrity/cost-history.jsonl` with this run's actual token usage + USD cost. The helper discovers the live transcript (the only readable `.jsonl` under `/sessions/`), prices it cache-aware via `compute-run-cost.js`, and appends a row. Non-fatal: any failure logs to stderr and exits 0.
+
+```bash
+bash "${CLONE}/monitor/scripts/write-self-cost.sh" append "${CLONE}" integrity
+```
+
+`monitor/integrity/cost-history.jsonl` is `git-append-only` per PROP-065 — always write via the clone path.
+
 ## Severity Guidelines
 
 - **Critical**: Build drift (published HTML doesn't match source data), broken internal anchors that make sections unreachable, nav chain broken (users can't navigate between tabs)

@@ -353,6 +353,16 @@ You own the *strategy* for how our content is seen by machines — LLMs, search 
 }
 ```
 
+## Self-Cost Report (PROP-101 Phase 2, added 2026-06-14)
+
+Append one JSON line to `${CLONE}/monitor/social/cost-history.jsonl` with this run's actual token usage + USD cost. Non-fatal: any failure logs to stderr and exits 0.
+
+```bash
+bash "${CLONE}/monitor/scripts/write-self-cost.sh" append "${CLONE}" social
+```
+
+`monitor/social/cost-history.jsonl` is `git-append-only` per PROP-065 — always write via the clone path.
+
 ## Rules
 
 ### What you own

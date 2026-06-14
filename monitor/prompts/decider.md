@@ -1312,6 +1312,16 @@ All prose sections are wrapped in `<details>`/`<summary>` with TLDRs (see CLAUDE
 - **New WINs are #1 priority.** Until our count matches the dome's, every run checks for new WIN files first.
 - **No tap-out on the open bucket (PROP-031, 2026-05-11).** Every `status='open'` item ≥12h old MUST be triaged this run via Priority 3b BAU Triage. Each item gets a closure-ledger entry with `closed_by_mechanism: 'BAU'` and one of: patch / narrow-patch / wontfix-with-rationale / route-to-analyst / route-to-curmudgeon / escalate. Items not reached due to token budget go on `bau_triage_carry_over` with explicit reason; budget-deferring is allowed once per item, not chronically. Items reaching M1 (Priority 5b) age threshold under PROP-031 are a SELF-TEST FAILURE — M1 is a safety net for truly-stuck items, NOT the primary throughput path.
 
+## Self-Cost Report (PROP-101 Phase 2, added 2026-06-14)
+
+Append one JSON line to `${CLEAN_CLONE}/monitor/decisions/cost-history.jsonl` with this run's actual token usage + USD cost. The helper discovers the live transcript (the only readable `.jsonl` under `/sessions/`), prices it cache-aware via `compute-run-cost.js`, and appends a row. Non-fatal: any failure logs to stderr and exits 0; the run still ships. The clone-side write rides along on the decider's normal commit+push.
+
+```bash
+bash "${CLEAN_CLONE}/monitor/scripts/write-self-cost.sh" append "${CLEAN_CLONE}" decisions
+```
+
+`monitor/decisions/cost-history.jsonl` is `git-append-only` per PROP-065 — workspace-sync will NEVER push FUSE→git for this file. Always write via the clone path. (The agent-name argument is `decisions` to keep the JSONL under `monitor/decisions/` consistent with the decider's other writes.)
+
 ## Cleanup (mandatory, run last)
 
 Before exiting, delete your clone directory to reclaim disk space. At churn-and-burn frequency these accumulate fast and can fill the disk.

@@ -199,6 +199,16 @@ Read the sentinel JSON you just committed and report the literal values of three
 - **Never revert git.** The helper's `git merge --ff-only` refuses non-fast-forward states; a force-pushed origin produces a `sync-workspace-non-ff-abort-*.json` sentinel and exit 1 from the helper. The post-call bash commits that sentinel and exits cleanly. Operator inspects and recovers manually.
 - **Only delete `dome-mirror-clone`.** Never touch `dome-sync-clone`, `dome-review-clean`, or any other agent's clone.
 
+## Self-Cost Report (PROP-101 Phase 2, added 2026-06-14)
+
+Append one JSON line to `${CLONE}/monitor/dome-mirror/cost-history.jsonl` with this run's actual token usage + USD cost. Non-fatal: any failure logs to stderr and exits 0. Run this BEFORE the cleanup step below — the cleanup deletes the clone, so the cost-history append must happen first and ride along on the same commit+push that wrote any sentinel.
+
+```bash
+bash "${CLONE}/monitor/scripts/write-self-cost.sh" append "${CLONE}" dome-mirror
+```
+
+`monitor/dome-mirror/cost-history.jsonl` is `git-append-only` per PROP-065 — always write via the clone path.
+
 ## Cleanup (mandatory)
 
 The Step 2 bash block ends with `rm -rf "$CLONE"` as the primary explicit cleanup plus an `EXIT` trap as defense-in-depth backstop. Both fire inside the same bash tool call. Skipping the cleanup leaves `~70MB` per cycle in `/sessions/<id>/dome-mirror-clone/` — at hourly cadence that's `~1.7 GB/day` of accumulation, which has triggered disk-pressure incidents before.

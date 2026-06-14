@@ -315,12 +315,20 @@ GIT_APPEND_ONLY=(
   'monitor/curmudgeon/human-notes-archive.jsonl'
   'monitor/decisions/human-notes-archive.jsonl'
   'monitor/social/human-notes-archive.jsonl'
-  # PROP-101 Phase 1 (2026-06-14): per-agent cost history. Appended one row
-  # per agent run via write-self-cost.sh from the agent's clone. FUSE is
+  # PROP-101 Phase 1 + 2 (2026-06-14): per-agent cost history. Appended one
+  # row per agent run via write-self-cost.sh from the agent's clone. FUSE is
   # downstream-only; FUSE-newer divergence indicates a producer-side bug
   # (agent wrote to FUSE instead of clone-and-push) and is logged to skips.
   'monitor/analyst/cost-history.jsonl'
   'monitor/curmudgeon/cost-history.jsonl'
+  'monitor/decisions/cost-history.jsonl'
+  'monitor/analyst-baby/cost-history.jsonl'
+  'monitor/curmudgeon-verify/cost-history.jsonl'
+  'monitor/integrity/cost-history.jsonl'
+  'monitor/poller/cost-history.jsonl'
+  'monitor/social/cost-history.jsonl'
+  'monitor/dome-mirror/cost-history.jsonl'
+  'monitor/workspace-sync/cost-history.jsonl'
 )
 
 is_git_append_only() {
@@ -1576,6 +1584,16 @@ fi
 ### Step 5: Report
 
 Output a one-line summary: how many files were new, how many modified, or "Nothing to sync."
+
+### Step 5b: Self-Cost Report (PROP-101 Phase 2, added 2026-06-14)
+
+Append one JSON line to `${CLONE}/monitor/workspace-sync/cost-history.jsonl` with this run's actual token usage + USD cost. The helper discovers the live transcript (the only readable `.jsonl` under `/sessions/`), prices it cache-aware via `compute-run-cost.js`, and appends a row. Non-fatal: any failure logs to stderr and exits 0; the run still ships. Run this BEFORE the cleanup step — the cleanup deletes the clone.
+
+```bash
+bash "${CLONE}/monitor/scripts/write-self-cost.sh" append "${CLONE}" workspace-sync
+```
+
+`monitor/workspace-sync/cost-history.jsonl` is `git-append-only` per PROP-065 — always write via the clone path.
 
 ## Rules
 

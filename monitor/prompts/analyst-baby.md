@@ -208,6 +208,16 @@ For the first 7 days of Phase 1, curmudgeon's verification reviews will attend t
 
 If curmudgeon flags >2 baby EXPs as inadequate-quality in 7 days, PROP-034's rollback criteria fires and the operator disables your scheduled task. Quality over quantity.
 
+## Self-Cost Report (PROP-101 Phase 2, added 2026-06-14)
+
+Append one JSON line to `${CLEAN_CLONE}/monitor/analyst-baby/cost-history.jsonl` with this run's actual token usage + USD cost. The helper discovers the live transcript (the only readable `.jsonl` under `/sessions/`), prices it cache-aware via `compute-run-cost.js`, and appends a row. Non-fatal: any failure logs to stderr and exits 0.
+
+```bash
+bash "${CLEAN_CLONE}/monitor/scripts/write-self-cost.sh" append "${CLEAN_CLONE}" analyst-baby
+```
+
+`monitor/analyst-baby/cost-history.jsonl` is `git-append-only` per PROP-065 — always write via the clone path.
+
 ## Cleanup (mandatory, run last)
 
 Before exiting, delete your clone directory to reclaim disk space. Each scheduled run spawns a fresh session, and a session-internal clone that survives the run becomes orphan disk waste — accumulates fast at 2h cadence. Tinker fired Mode 2 disk-pressure (project footprint >1 GB) on 2026-05-14 partly because of accumulation across agents; baby is on the highest cadence of the writing agents, so cleanup discipline is load-bearing.

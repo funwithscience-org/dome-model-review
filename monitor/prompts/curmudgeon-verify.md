@@ -376,6 +376,16 @@ Write to `${WORKSPACE}/monitor/curmudgeon/latest-verify-summary.txt` (FUSE-canon
 - Escalations to main curmudgeon (count + target_ids)
 - No-op marker if `VERIFY_ELIGIBLE=0`
 
+## Self-Cost Report (PROP-101 Phase 2, added 2026-06-14)
+
+Append one JSON line to `${CLEAN_CLONE}/monitor/curmudgeon-verify/cost-history.jsonl` with this run's actual token usage + USD cost. The helper discovers the live transcript (the only readable `.jsonl` under `/sessions/`), prices it cache-aware via `compute-run-cost.js`, and appends a row. Non-fatal: any failure logs to stderr and exits 0.
+
+```bash
+bash "${CLEAN_CLONE}/monitor/scripts/write-self-cost.sh" append "${CLEAN_CLONE}" curmudgeon-verify
+```
+
+`monitor/curmudgeon-verify/cost-history.jsonl` is `git-append-only` per PROP-065 — always write via the clone path.
+
 ## Cleanup (mandatory, run last)
 
 ```bash
