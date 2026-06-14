@@ -1,0 +1,54 @@
+{
+  "run_id": "tinker-2026-06-14T08-56",
+  "ts": "2026-06-14T09:00:04Z",
+  "mode_selected": "Mode 2 (Infrastructure & FUSE hygiene) — disk-footprint quick-check fired (615MB >= 500MB trigger) with a stale operator clone candidate for the standing cleanup empowerment. Previous run (08-41) completed a full Mode 3 cost-engineering re-baseline 15 min prior with 0 findings; re-running a deep Mode 3 walk immediately would be poor cost discipline, so this run handles the actionable infra item instead.",
+  "modes_checked": {
+    "operator_directives": "NO PENDING DIRECTIVES (scanned from fresh clone per FND-01 discipline)",
+    "mode_0_assigned_to_tinker": "no assigned-to-tinker items pending (open-issues + expansion-tracker both empty of tinker-routed work)",
+    "mode_1_pipeline_health": "GREEN — all agents producing within last ~1-2h (decider 06:19, workspace-sync 08:09, prune-integrity 08:06, dome-mirror 08:35, tinker 08:41); no stranded patches >24h; backlog healthy",
+    "mode_2_infra_fuse": "AMBER(soft) — 5/5 spot-checked files md5-match GitHub; auth HTTP 200; PROP-099 resurrection canary clean (RC=1); disk project footprint 615MB just over the soft 500MB trigger but well below 800MB warn and 1500MB critical. One stale clone /tmp/edit-clone (178MB, 22h old) is the only footprint contributor beyond this run's own clone + FUSE workspace.",
+    "mode_3_cost": "Not selected — previous run (08-41) did the full re-baseline 15 min ago, 0 findings. The deferred PROP-lifecycle verification walk (flagged by 08-41) remains outstanding for a future Mode 3 run.",
+    "mode_4_proposals": "No self-fixable findings requiring a PROP this run."
+  },
+  "backlog_trend": {
+    "open_issues_total": 10,
+    "open_status_count": 5,
+    "assigned_analyst_count": 0,
+    "age_ge_14d_count": 2,
+    "age_ge_30d_count": 0,
+    "oldest_open_age_days": 0.5,
+    "new_issues_velocity_7d": 6,
+    "closed_issues_velocity_7d": 89,
+    "net_velocity_7d": 83,
+    "baby_drain_count_7d": 0,
+    "verify_drain_count_7d": 13,
+    "tier_fired": "none",
+    "note": "Strongly positive throughput (+83 net 7d). No threshold fires. Healthy."
+  },
+  "findings": [
+    {
+      "category": "disk-hygiene",
+      "severity": "minor",
+      "id": "FND-01-edit-clone-unremovable",
+      "summary": "Standing /tmp cleanup empowerment is blocked by cross-session file ownership. /tmp/edit-clone (178MB, 22h old) meets all removal criteria (matches /tmp/*-clone glob, mtime > 4h, not the <2h exclusion, not a FUSE mount) but rm -rf fails with 'Permission denied' on every file — the clone was created by another session and its files are owned by nobody:nogroup, not removable by this session's user.",
+      "evidence": "rm -rf /tmp/edit-clone -> exit 1, 5516 stderr 'Permission denied' lines, e.g. 'rm: cannot remove /tmp/edit-clone/predictions/eclipse-2026-08-12-predictions.json: Permission denied'. stat mtime 2026-06-13 10:26:33 UTC (~22.5h before this run).",
+      "impact": "Low. Root FS is at 60% used (3.9G free); no actual disk pressure. The 500MB project-footprint trigger is a leak-detection heuristic, not real pressure. The 178MB is recoverable only by the session that owns the clone (or operator).",
+      "recommendation": "Operator: remove the stale /tmp/edit-clone in a session that owns it, or let its owning session's end-of-run cleanup reclaim it. No agent change needed. If this recurs as a cross-session ownership pattern (stale operator clones that scheduled-agent sessions cannot reap), consider a future PROP to have the operator's clone live under $SESSION/edit-clone (per-session, self-reaping) per the PROP-090 pattern already applied to tinker's own clone."
+    }
+  ],
+  "cleanup_actions": [
+    {
+      "path": "/tmp/edit-clone",
+      "age_hours": 22,
+      "size_mb": 178,
+      "action": "ATTEMPTED-BLOCKED",
+      "reason": "Standing 4h /tmp/*-clone empowerment criteria all met, but rm -rf blocked by cross-session ownership (Permission denied, files owned by nobody:nogroup). Held off per empowerment uncertainty guidance; surfaced to operator as finding FND-01 instead of forcing."
+    }
+  ],
+  "previous_followup": {
+    "report-2026-06-14T08-41": "Mode 3 re-baseline, 0 findings, pipeline GREEN. Verified-still-true this run: FUSE 5/5 match, auth 200, PROP-099 canary clean, backlog healthy (now +83 net). No STILL_BROKEN carried.",
+    "deferred_work": "08-41 flagged that the next Mode 3 run should do the full PROP-lifecycle verification walk (deep). NOT done this run (Mode 2 selected for the actionable infra item). Still outstanding for next Mode 3 pass.",
+    "PROP-099": "VERIFIED WORKING — resurrection canary ran clean (RC=1) again this run.",
+    "PROP-100": "Confirmed integrated (cowork-claude commits 09:38 +0100 visible in git log)."
+  }
+}
