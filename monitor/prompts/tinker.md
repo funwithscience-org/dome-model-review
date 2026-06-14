@@ -232,6 +232,11 @@ metrics.baby_drain_count_7d = /* count of baby-completed tracker items in last 7
 // PROP-038 Phase 1 (2026-05-16): verify-mode curmudgeon throughput. Count curmudgeon/reviews/*.json files
 // where agent_subtype='curmudgeon-verify' AND reviewed_at within last 7d. Same single-pass shape as baby_drain_count_7d.
 metrics.verify_drain_count_7d = /* count of curmudgeon-verify reviews in last 7d, per agent_subtype field */;
+// PROP-085 (2026-06-14): root-FS headroom. The single most-correlated metric
+// with pipeline failure (2026-05-07/08 cascade, 2026-05-09 near-miss, 2026-05-21
+// disaster contributing factor). Cheap: one shell call. Gives WoW trend +
+// growth-rate estimation for free once 7+ rows accumulate.
+metrics.root_fs_free_mb = parseInt(require('child_process').execSync("df -m / | awk 'NR==2{print $4}'").toString().trim(), 10);
 fs.appendFileSync('monitor/tinker/queue-history.jsonl', JSON.stringify(metrics) + '\n');
 ```
 
@@ -314,10 +319,29 @@ TOKEN=$(git -C "${WORKSPACE}" remote get-url origin 2>/dev/null | grep -oP 'x-ac
 # absolute MB now, not %, since project-relative percent has no useful
 # denominator (the sandbox isn't dedicated to the pipeline).
 SESSION=$(pwd | grep -oP '/sessions/[^/]+')
-PROJ_MB=$(du -sm "${SESSION}/mnt" /tmp/*-clone /tmp/dome-* 2>/dev/null | awk '{s+=$1} END{print s+0}')
-echo "DISK: project-induced footprint ${PROJ_MB}MB (FUSE workspaces + ephemeral agent clones + agent scratch)"
-if [ "$PROJ_MB" -ge 1500 ]; then echo "DISK CRITICAL: project footprint ≥1500MB — likely accumulated clone leak"; fi
-if [ "$PROJ_MB" -ge 800 ]; then echo "DISK WARNING: project footprint ≥800MB — investigate clone cleanup"; fi
+# PROP-085 (2026-06-14): split CLONE_LEAK_MB (the thing PROJ_MB's thresholds were
+# actually designed to catch — accumulated /tmp/*-clone leaks) from FUSE_MB
+# (informational; not on the root partition, never the bottleneck the disk
+# threshold was meant to flag). PROJ_MB kept as deprecated alias.
+CLONE_LEAK_MB=$(du -sm /tmp/*-clone /tmp/dome-* 2>/dev/null | awk '{s+=$1} END{print s+0}')
+FUSE_MB=$(du -sm "${SESSION}/mnt" 2>/dev/null | awk '{s+=$1} END{print s+0}')
+PROJ_MB=$((CLONE_LEAK_MB + FUSE_MB))  # back-compat alias
+echo "DISK: clone-leak footprint ${CLONE_LEAK_MB}MB (/tmp/*-clone + /tmp/dome-*); FUSE workspaces ${FUSE_MB}MB (informational, not on root partition)"
+if [ "$CLONE_LEAK_MB" -ge 1000 ]; then echo "DISK CRITICAL: clone-leak ≥1000MB — likely accumulated clone leak"; fi
+if [ "$CLONE_LEAK_MB" -ge 500 ]; then echo "DISK WARNING: clone-leak ≥500MB — investigate clone cleanup"; fi
+# PROP-085 (2026-06-14): root-FS headroom watchdog. Single most-correlated metric
+# with pipeline failure. /var/log/journal + syslog grow ~45MB/day and the
+# sandbox uid has no sudo to vacuum (journalctl --vacuum-* fails with EACCES).
+# At baseline ~1.1GB log bloat + 45MB/day, headroom erodes to clone-failure
+# threshold (~350MB free, where a full clone won't fit) in 10-16 days without
+# operator/host action. KNOWN IMMUTABLE: /var/log/journal and /var/log/syslog*
+# are owned by nobody:nogroup, sandbox uid has no sudo (no-new-privileges flag).
+# Do not re-investigate cleanability each run; the lever is operator/host-level
+# (journald SystemMaxUse cap, host vacuum, or VM recycle).
+ROOT_FREE_MB=$(df -m / | awk 'NR==2{print $4}')
+echo "DISK: root-FS free ${ROOT_FREE_MB}MB"
+if [ "$ROOT_FREE_MB" -lt 350 ]; then echo "DISK CRITICAL: root-FS free <350MB — full-clone agents (integrity/prune/tinker, ~455MB transient each) at risk; operator_escalation"; fi
+if [ "$ROOT_FREE_MB" -lt 500 ]; then echo "DISK WARNING: root-FS free <500MB — major finding"; fi
 # PROP-088/091 lineage (raised 2026-06-12 per tinker FND-03): baselines bumped
 # while monitor/integrity/narrative-cite-audit (currently ~380MB on git HEAD)
 # drains through PROP-091 Phase 2. Expected post-drain steady state: full clone
