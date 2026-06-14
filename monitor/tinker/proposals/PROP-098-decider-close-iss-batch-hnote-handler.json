@@ -1,0 +1,45 @@
+{
+  "id": "PROP-098",
+  "title": "Add the missing decider `close_iss_batch` HNOTE handler — Mode 0 tinker closures are write-only signals with no consumer (ISS-2725 stuck 3 tinker runs)",
+  "created_at": "2026-06-14T02:46:10Z",
+  "authored_by": "tinker",
+  "authored_by_run": "tinker-2026-06-14T02-40",
+  "status": "pending",
+  "category": "pipeline-handoff-gap",
+  "severity": "major",
+  "source_iss": "ISS-2725",
+  "target": "monitor/prompts/decider.md",
+  "problem": "tinker.md (PROP-060, Mode 0 outcome a) instructs tinker to close assigned-tinker issues by writing a human-note with action:'close_iss_batch', iss_ids:[...], and states 'Decider closes on next run' / 'the decider's HNOTE handler (action-typed: see PROP-058 follow-up note on close_iss_batch) actions it on next decider run.' That handler was NEVER implemented. grep -rn 'close_iss_batch' monitor/prompts/ matches ONLY tinker.md — decider.md and all decider reference files have zero references. The decider's HNOTE action handlers cover only approve_burndown_batch, cancel_burndown (decider.md L155), route-to-analyst (L334), and set_curmudgeon_mode (L852). Consequence: every close_iss_batch HNOTE tinker files is a write-only signal with no consumer. The assigned-tinker ISS it was meant to close stays open, re-surfaces in tinker Mode 0 every run, and tinker re-attempts the same dead-end close. This is the exact 'write-only signal, no consumer' defect class PROP-060 itself was created to eliminate — reintroduced by PROP-060's own close path.",
+  "evidence": {
+    "iss_2725_loop": [
+      "tinker-2026-06-13T05-29: authored PROP-093 for ISS-2725 (attention-inbox status-vocab fix)",
+      "tinker-2026-06-13T16-57: verified PROP-093 C1 FIXED, filed HNOTE-TINKER-ISS-2725-CLOSE-001 (action=close_iss_batch, iss_ids=[ISS-2725])",
+      "tinker-2026-06-13T21-03: re-picked ISS-2725, DEFERRED noting 'close HNOTE not yet actioned by decider'",
+      "tinker-2026-06-14T02-40 (this run): re-picked ISS-2725 a 3rd time; decider commit 91249dc (2026-06-14) ran in between and did NOT action the HNOTE"
+    ],
+    "hnote_state": "HNOTE-TINKER-ISS-2725-CLOSE-001 is present in monitor/decisions/human-notes.json with status=active, resolved=false, ~9.5h after filing; ISS-2725 remains status=assigned-tinker in open-issues.json; ISS-2725 is NOT in closed-issues.json.",
+    "grep_proof": "grep -rn 'close_iss_batch' monitor/prompts/ -> only tinker.md L186 and L194"
+  },
+  "proposed_fix": {
+    "summary": "Add a close_iss_batch HNOTE action handler to decider.md, placed in End-of-Run Step A0 (the status='closed' normalization region, which already owns open->closed migration). Model the HNOTE lifecycle on the existing PROP-022 consumed-note pattern (decider.md L852 set_curmudgeon_mode) and the canonical close mechanics on Step 8 (decider-curmudgeon-pq-mechanics.md L92).",
+    "handler_logic": [
+      "1. Read monitor/decisions/human-notes.json from CLEAN_CLONE. Select notes where action==='close_iss_batch' AND status is unconsumed (status in {active, pending}; resolved!==true).",
+      "2. For each note, for each id in note.iss_ids[]: locate it in open-issues.json. If present, migrate to closed-issues.json with status:'fixed', fixed_by:'close_iss_batch-hnote', fixed_at:new Date().toISOString(), close_reason: note.note_text, closed_by_hnote: note.id. Remove the entry from open-issues.json. If the id is already in closed-issues.json, skip the migrate (idempotent) but still consume the note. If the id is absent from BOTH files, record a per-id 'not-found' warning in the run report but do not fail.",
+      "3. Append one closure-ledger.jsonl row per closed id ({ts, run_id, iss, action:'close_iss_batch', hnote:note.id}).",
+      "4. Mark the note consumed (status:'consumed', consumed_at, consumed_by:'decider — close_iss_batch action'), append the full note to human-notes-archive.jsonl, and remove it from the live human-notes.json array (PROP-022 lifecycle, same as set_curmudgeon_mode). Dual-write per the Human Notes Rule if writing FUSE; canonical write is from the clone + push.",
+      "5. Idempotency guard: keyed on note.id already-in-archive (skip) and id already-in-closed (skip migrate). Safe to re-run."
+    ],
+    "placement": "decider.md — extend End-of-Run Step A0 (PROP-056 region, ~L447) which already walks open-issues for close residue and owns the open->closed migration, OR add a sibling Step A0b. Co-locating with A0 keeps all open->closed transitions in one auditable block.",
+    "verification_pattern": "grep -q \"close_iss_batch\" monitor/prompts/decider.md && echo FIXED || echo STILL_BROKEN"
+  },
+  "alternatives_considered": {
+    "option_A_tinker_direct_write": "REJECTED — tinker writing status='closed' onto open-issues.json directly violates the decider write-domain rule (CLAUDE.md File Ownership: open-issues.json is decider-owned; PROP-060 explicitly routes tinker closes through HNOTE precisely to avoid this).",
+    "option_B_reuse_step_A0_sweep": "INSUFFICIENT alone — Step A0 only catches entries ALREADY at status='closed'. Tinker cannot set status='closed' (write-domain). A handler that READS the HNOTE is still required to perform the open->closed transition; that handler is this PROP.",
+    "option_C_burndown_path": "REJECTED — the burndown auto-closure path (approve_burndown_batch) only fires in mode='burndown' and closes by age/heuristic, not by explicit on-demand iss_ids. Not a general-purpose close-by-id channel."
+  },
+  "tradeoffs": "Adds ~25 lines to decider.md (already a large prompt). Mitigated: it replaces an entire silently-failing convention with a working one, eliminating the recurring tinker Mode 0 re-pick waste (currently ~1 wasted Mode 0 slot per tinker run on ISS-2725). Counter-argument the operator should weigh: if Mode 0 close_iss_batch is expected to be rare, an even-lighter fix is to drop the HNOTE-close convention from tinker.md and have tinker escalate-to-operator (outcome c) for all closes instead — but that pushes mechanical closes onto the human, which is the opposite of the automation direction; the handler is the better long-run choice.",
+  "estimated_impact": "Unblocks ISS-2725 immediately (the existing HNOTE-TINKER-ISS-2725-CLOSE-001 gets consumed on the next decider run after this lands). Unblocks ALL future tinker Mode 0 close-as-OBE outcomes. Removes a self-perpetuating tinker re-pick loop.",
+  "requires_human_judgment": false,
+  "rollout_plan": "Single decider.md edit (git-owned .md; lands via decider self-apply or operator clone-push). On the first decider run after merge: the close_iss_batch handler consumes HNOTE-TINKER-ISS-2725-CLOSE-001, ISS-2725 migrates to closed-issues.json with fixed_by='close_iss_batch-hnote', and ISS-2725 stops surfacing in tinker Mode 0.",
+  "cross_references": ["ISS-2725", "PROP-060", "PROP-093", "PROP-022", "PROP-056", "HNOTE-TINKER-ISS-2725-CLOSE-001"]
+}
