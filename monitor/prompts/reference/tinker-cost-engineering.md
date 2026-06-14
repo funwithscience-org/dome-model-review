@@ -68,7 +68,10 @@ Also check for the inverse: `status: 'complete'` without `integrated: true` that
 ```bash
 node -e "
 const t=JSON.parse(fs.readFileSync('monitor/analyst/expansion-tracker.json','utf8'));
-const stale=t.items.filter(i=>i.status==='complete'&&!i.integrated&&!i.routed_to_curmudgeon);
+// PROP-011 (2026-04-22, applied 2026-06-14): exclude items legitimately held
+// by decider via integration_blocked_until, and items superseded/reallocated.
+// Without these guards, design-refresh holds get re-escalated as 'wasted compute'.
+const stale=t.items.filter(i=>i.status==='complete'&&!i.integrated&&!i.routed_to_curmudgeon&&!i.integration_blocked_until&&!i.superseded_by&&!i.reallocated_to);
 stale.forEach(i=>console.log('STALE COMPLETE: '+i.id+' — complete but never integrated, created '+i.created_at));
 "
 ```
