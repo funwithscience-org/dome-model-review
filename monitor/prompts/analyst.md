@@ -231,7 +231,15 @@ Trigger: Predictions exist with `our_verdict === null` (never assessed). Process
 
 **Mode 2 — Human Notes**
 ```bash
-cat monitor/analyst/human-notes.json 2>/dev/null | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{const n=JSON.parse(d);const p=n.notes?n.notes.filter(x=>x.status==='pending'):[];console.log(p.length?'HUMAN NOTES: '+p.length+' pending':'NO NOTES')})"
+cat monitor/analyst/human-notes.json 2>/dev/null | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{const n=JSON.parse(d);const isLive=s=>(s==='pending'||s==='active'||s===undefined||s===null);const p=n.notes?n.notes.filter(x=>isLive(x.status)):[];console.log(p.length?'HUMAN NOTES: '+p.length+' live':'NO NOTES')})"
+# PROP-096 C1 (2026-06-14): canonical live-status vocabulary is {pending}; back-compat
+# accepts {active, missing-status} during transition. Resolution states {consumed,
+# consumed-pending-verification} are deliberately EXCLUDED — consumed-pending-verification
+# is a non-terminal-but-already-worked state awaiting workspace-sync verifier flip;
+# re-surfacing it would cause redo/race. Note text resolves across schema variants:
+# treat (x.note_text||x.note||x.body||x.title) as the note text wherever downstream
+# procedure reads it. Once writers normalize on status='pending' (PROP-096 C2 follow-up),
+# a Mode-3 cleanup can drop the active||missing tolerance.
 ```
 Trigger: Pending human notes exist.
 → Read `monitor/prompts/reference/analyst-mode1-expansions.md` (human notes procedure is in that module), execute.
@@ -320,7 +328,13 @@ Trigger: No higher-priority work. One item per run.
 
 **Mode 5 — Frozen Prediction Drafts** (operator-commissioned only)
 ```bash
-node -e "const fs=require('fs');const W=process.env.WORKSPACE||'.';const h=JSON.parse(fs.readFileSync(W+'/monitor/analyst/human-notes.json','utf8'));const a=h.notes||(Array.isArray(h)?h:Object.values(h));const m5=a.filter(n=>n.status==='pending'&&(n.mode===5||/frozen[- ]prediction/i.test((n.title||'')+(n.body||''))));console.log(m5.length?'MODE5 PENDING: '+m5.length+' — '+m5.map(n=>n.id).join(', '):'NO MODE5 WORK')"
+node -e "const fs=require('fs');const W=process.env.WORKSPACE||'.';const h=JSON.parse(fs.readFileSync(W+'/monitor/analyst/human-notes.json','utf8'));const a=h.notes||(Array.isArray(h)?h:Object.values(h));const m5=a.filter(n=>(n.status==='pending'||n.status==='active')&&(n.mode===5||/frozen[- ]prediction/i.test((n.title||'')+(n.body||''))));console.log(m5.length?'MODE5 PENDING: '+m5.length+' — '+m5.map(n=>n.id).join(', '):'NO MODE5 WORK')"
+# PROP-096 C1 (2026-06-14): Mode 5 status filter widened to (pending||active).
+# NOTE: missing-status is INTENTIONALLY excluded here (Mode 5 must never self-trigger;
+# the mode===5||frozen-prediction guard gates it, and missing-status route-to-analyst
+# notes don't match that guard). CRITICAL: do NOT include consumed or
+# consumed-pending-verification — the latter is non-terminal-but-already-worked
+# (workspace-sync verifier hasn't flipped it yet); re-surfacing would cause redo/race.
 ```
 Trigger: Explicit operator HNOTE in `monitor/analyst/human-notes.json` with `status: pending` and either `mode: 5` or "frozen prediction" in title/body. Never self-trigger; never run on a routine cadence.
 

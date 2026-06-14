@@ -129,20 +129,17 @@ const fs=require('fs');
 const path='monitor/analyst/expansion-tracker.json';
 const archPath='monitor/analyst/expansion-tracker-archive.jsonl';
 const t=JSON.parse(fs.readFileSync(path,'utf8'));
-if(typeof t.next_id!=='number'){
-  // Self-heal: compute from current items AND archive (PROP-022 phase 5) and
-  // write back. This should never fire post-Phase 0 — a non-numeric next_id
-  // indicates either a fresh migration or a direct human edit that lost the
-  // counter. Log LOUDLY so tinker notices. Post-phase-5 the live array can
-  // be mostly empty after a wave of integrations — max(live) alone would
-  // produce a next_id BELOW recently-archived IDs and cause collisions.
-  console.error('WARNING: next_id missing or non-numeric; self-heal engaged (PROP-022 phase 5 archive-aware)');
+// PROP-100 (2026-06-14): UNCONDITIONAL archive-aware clamp on EVERY read/use of
+// next_id (replaces the typeof-gated self-heal that only ran on corrupted
+// trackers and missed the valid-but-stale case that caused chronic collisions).
+// Mirrors PROP-063 ISS fix. Forward-only: never lowers next_id.
+{
   const liveMax=t.items.reduce((m,i)=>Math.max(m,parseInt((i.id||'EXP-0').replace('EXP-',''))||0),0);
   const archMax=fs.existsSync(archPath)
     ? fs.readFileSync(archPath,'utf8').split('\n').filter(Boolean).reduce((m,l)=>{try{return Math.max(m,parseInt((JSON.parse(l).id||'EXP-0').replace('EXP-',''))||0)}catch(e){return m}},0)
     : 0;
-  t.next_id=Math.max(liveMax, archMax)+1;
-  fs.writeFileSync(path,JSON.stringify(t,null,2));
+  const safeNext=Math.max((typeof t.next_id==='number' ? t.next_id : 0), liveMax+1, archMax+1);
+  if (safeNext !== t.next_id) { console.warn('PROP-100 EXP next_id clamp: was '+t.next_id+', max(live='+liveMax+',arch='+archMax+') -> '+safeNext); t.next_id=safeNext; fs.writeFileSync(path,JSON.stringify(t,null,2)); }
 }
 console.log('EXP-'+String(t.next_id).padStart(3,'0'));
 console.log('(next_id field, NOT items.length+1 — that formula is buggy with gaps. Do not increment this in the display command; the allocating writer bumps next_id.)');
@@ -179,14 +176,16 @@ const t=JSON.parse(fs.readFileSync(path,'utf8'));
 // ID allocation: ALWAYS use t.next_id, NEVER t.items.length+1. The length formula
 // collides on gaps (renames, concurrent allocation, or cross-writer allocation).
 // next_id is the canonical counter and the allocating writer bumps it.
-if(typeof t.next_id!=='number'){
-  // PROP-022 phase 5 archive-aware self-heal — must include archive max-id
-  console.error('WARNING: next_id missing or non-numeric; self-heal engaged (PROP-022 phase 5 archive-aware)');
+// PROP-100 (2026-06-14): UNCONDITIONAL archive-aware clamp on EVERY allocation
+// (replaces the typeof-gated self-heal that missed the chronic valid-but-stale
+// next_id collision case). Mirrors PROP-063 ISS fix. Forward-only.
+{
   const liveMax=t.items.reduce((m,i)=>Math.max(m,parseInt((i.id||'EXP-0').replace('EXP-',''))||0),0);
   const archMax=fs.existsSync(archPath)
     ? fs.readFileSync(archPath,'utf8').split('\n').filter(Boolean).reduce((m,l)=>{try{return Math.max(m,parseInt((JSON.parse(l).id||'EXP-0').replace('EXP-',''))||0)}catch(e){return m}},0)
     : 0;
-  t.next_id=Math.max(liveMax, archMax)+1;
+  const safeNext=Math.max((typeof t.next_id==='number' ? t.next_id : 0), liveMax+1, archMax+1);
+  if (safeNext !== t.next_id) { console.warn('PROP-100 EXP next_id clamp: was '+t.next_id+', max(live='+liveMax+',arch='+archMax+') -> '+safeNext); t.next_id=safeNext; }
 }
 const nextNum=t.next_id;
 t.next_id++;

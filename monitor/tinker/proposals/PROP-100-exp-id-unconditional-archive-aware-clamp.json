@@ -1,7 +1,7 @@
 {
   "id": "PROP-100",
   "title": "EXP-id allocator: make the archive-aware next_id clamp UNCONDITIONAL across all 4 allocator sites (mirror PROP-063's ISS-side fix) — closes the chronic next_id-collision failure mode",
-  "status": "proposed",
+  "status": "approved-implemented",
   "authored_by": "tinker",
   "authored_at": "2026-06-14T08-21",
   "authored_by_run": "tinker-2026-06-14T08-21",
@@ -15,12 +15,33 @@
       "window": "2026-06-01 .. 2026-06-14",
       "next_id_collision_findings": {
         "count": 3,
-        "days": ["2026-06-07 (next_id=596 but EXP-596 already live)", "2026-06-12 (next_id=615 not > max_id=615)", "2026-06-14 (next_id=623 but EXP-623 already in archive)"],
-        "plus_disjointness_symptoms": ["2026-06-08 EXP-596 in both live+archive", "2026-06-09 EXP-606 in both live+archive"]
+        "days": [
+          "2026-06-07 (next_id=596 but EXP-596 already live)",
+          "2026-06-12 (next_id=615 not > max_id=615)",
+          "2026-06-14 (next_id=623 but EXP-623 already in archive)"
+        ],
+        "plus_disjointness_symptoms": [
+          "2026-06-08 EXP-596 in both live+archive",
+          "2026-06-09 EXP-606 in both live+archive"
+        ]
       },
       "stuck_live_findings": {
         "count_days": 13,
-        "days": ["06-01","06-02","06-03","06-04","06-05","06-06","06-07","06-08","06-09","06-11","06-12","06-13","06-14"],
+        "days": [
+          "06-01",
+          "06-02",
+          "06-03",
+          "06-04",
+          "06-05",
+          "06-06",
+          "06-07",
+          "06-08",
+          "06-09",
+          "06-11",
+          "06-12",
+          "06-13",
+          "06-14"
+        ],
         "note": "integrated=true / terminal-status EXPs left in live items[] instead of archived — near-daily"
       },
       "verdict": "Both families are CHRONIC (>3 in 14d). Directive Q1 rule: chronic -> structural fix. The collision family is the one with a clean minimal structural fix; the stuck-live family is an adjacent archiver-skip whose COLLISION RISK is also closed by this fix."
@@ -45,9 +66,18 @@
     "primary_minimal_LOC": {
       "what": "In all 4 EXP allocator sites, replace the `if (typeof t.next_id !== 'number') { ...archive-aware recompute... }` gate with an UNCONDITIONAL upward clamp computed every allocation. Pattern (mirrors PROP-063 ISS fix):",
       "snippet": "const liveMax = t.items.reduce((m,i)=>Math.max(m,parseInt((i.id||'EXP-0').replace('EXP-',''))||0),0); const archPath='monitor/analyst/expansion-tracker-archive.jsonl'; const archMax = fs.existsSync(archPath) ? fs.readFileSync(archPath,'utf8').split('\\n').filter(Boolean).reduce((m,l)=>{try{return Math.max(m,parseInt((JSON.parse(l).id||'EXP-0').replace('EXP-',''))||0)}catch(e){return m}},0) : 0; const safeNext = Math.max((typeof t.next_id==='number'?t.next_id:0), liveMax+1, archMax+1); if (safeNext !== t.next_id) { console.warn('EXP next_id clamp: was '+t.next_id+', max(live='+liveMax+',arch='+archMax+') -> '+safeNext); t.next_id = safeNext; } const nextNum = t.next_id; t.next_id++;",
-      "properties": ["forward-only (never lowers next_id)", "closes (a) archive-lag, (b) rollback-rewind, (c) cross-writer-race in one change", "subsumes and strengthens the existing typeof self-heal (the constraint to keep the corrupt-tracker safety net is satisfied — Math.max(0,...) handles the non-numeric case)", "fixes the analyst site's live-only weakness by adding the archive walk it currently lacks"],
+      "properties": [
+        "forward-only (never lowers next_id)",
+        "closes (a) archive-lag, (b) rollback-rewind, (c) cross-writer-race in one change",
+        "subsumes and strengthens the existing typeof self-heal (the constraint to keep the corrupt-tracker safety net is satisfied — Math.max(0,...) handles the non-numeric case)",
+        "fixes the analyst site's live-only weakness by adding the archive walk it currently lacks"
+      ],
       "LOC": "~6 lines per site x 4 sites = ~24 LOC, mostly shared boilerplate.",
-      "files_touched": ["monitor/prompts/decider.md", "monitor/prompts/reference/decider-curmudgeon.md (2 sites)", "monitor/prompts/reference/analyst-normal-analysis.md"]
+      "files_touched": [
+        "monitor/prompts/decider.md",
+        "monitor/prompts/reference/decider-curmudgeon.md (2 sites)",
+        "monitor/prompts/reference/analyst-normal-analysis.md"
+      ]
     },
     "secondary_defensive_optional": {
       "what": "Decider start-of-run Step A0e: re-derive `t.next_id = Math.max(t.next_id, liveMax+1, archMax+1)` once per run, write-back only if it raises. Belt-and-suspenders that also protects any FUTURE 5th allocator site that forgets the clamp. Never auto-archives stuck-live items (honors directive constraint: surface, do not auto-remediate).",
@@ -72,5 +102,15 @@
     "location": "test.js or monitor/scripts/ smoke fixture — operator to place per build conventions."
   },
   "open_question_out_of_scope": "WHY the archive-move step (Q3 stuck-live) is skipped under some condition remains a separate diagnosis. This PROP closes the collision symptom (the MAJOR finding) and is robust to the archive lag; the stuck-live disjointness (MODERATE) is integrity-surfaced and operator-archived today. A follow-up directive could pin the archive-skip trigger if the manual housekeeping burden persists.",
-  "verification_pattern": "After implementation: (1) grep all 4 allocator sites for an UNCONDITIONAL clamp (no typeof gate around the Math.max(...,liveMax+1,archMax+1) write-back). (2) Watch integrity reports for 14 days — expect zero new next_id-collision MAJOR findings. (3) Confirm analyst-normal-analysis.md allocator now includes the archive walk (previously live-only)."
+  "verification_pattern": "After implementation: (1) grep all 4 allocator sites for an UNCONDITIONAL clamp (no typeof gate around the Math.max(...,liveMax+1,archMax+1) write-back). (2) Watch integrity reports for 14 days — expect zero new next_id-collision MAJOR findings. (3) Confirm analyst-normal-analysis.md allocator now includes the archive walk (previously live-only).",
+  "operator_decision": "approved-primary",
+  "operator_decision_at": "2026-06-14T08:38:28.671Z",
+  "operator_decision_by": "operator-cowork-session",
+  "operator_decision_rationale": "Approved primary minimal-LOC fix (unconditional archive-aware clamp). Replaced the typeof-gated self-heal at all 4 EXP allocator sites with the unconditional clamp pattern (mirrors PROP-063 ISS fix). Forward-only — never lowers next_id. Adds the archive walk the analyst site previously lacked. Secondary Step A0e + Q5 single-writer-path deferred per tinker recommendation (the primary fix alone closes the observed failure mode; if collisions recur, add Q5 next).",
+  "implementation_commit": "PENDING",
+  "implementation_files": [
+    "monitor/prompts/decider.md (M1 route-to-analyst tracker entry site)",
+    "monitor/prompts/reference/decider-curmudgeon.md (display-allocator + cycle-3-defense allocator)",
+    "monitor/prompts/reference/analyst-normal-analysis.md (analyst change-analysis allocator; gained archive walk)"
+  ]
 }
