@@ -1,0 +1,76 @@
+{
+  "id": "PROP-100",
+  "title": "EXP-id allocator: make the archive-aware next_id clamp UNCONDITIONAL across all 4 allocator sites (mirror PROP-063's ISS-side fix) — closes the chronic next_id-collision failure mode",
+  "status": "proposed",
+  "authored_by": "tinker",
+  "authored_at": "2026-06-14T08-21",
+  "authored_by_run": "tinker-2026-06-14T08-21",
+  "directive": "DIRECTIVE-20260614-001",
+  "propose_only": true,
+  "operator_review_required": true,
+  "problem_statement": "Chronic expansion-tracker.json next_id collisions + stuck-live terminal items. Integrity flags both families nearly every day. Root cause: in all four EXP-id allocator sites the archive-aware recompute `t.next_id = Math.max(liveMax, archMax) + 1` is GATED behind `if (typeof t.next_id !== 'number')`. It only fires when next_id is missing/corrupt; it never fires when next_id is a valid number that has fallen BEHIND max(live, archive). That stale-but-numeric case is exactly what produces collisions, and it arises from at least three real mechanisms observed in commit history: (a) an EXP is archived (live->archive move) without the archiver bumping next_id; (b) a rollback/recovery rewinds next_id (the same dynamic PROP-063 documents on the ISS side); (c) cross-writer allocation — decider, analyst, analyst-baby-consolidation, and operator-cowork housekeeping sessions all touch the tracker, and a rebasing loser keeps a stale next_id. In every case the allocator does a blind `t.next_id++` on a stale value and collides.",
+  "evidence": {
+    "Q1_occurrence_count_14d": {
+      "integrity_reports_scanned": 15,
+      "window": "2026-06-01 .. 2026-06-14",
+      "next_id_collision_findings": {
+        "count": 3,
+        "days": ["2026-06-07 (next_id=596 but EXP-596 already live)", "2026-06-12 (next_id=615 not > max_id=615)", "2026-06-14 (next_id=623 but EXP-623 already in archive)"],
+        "plus_disjointness_symptoms": ["2026-06-08 EXP-596 in both live+archive", "2026-06-09 EXP-606 in both live+archive"]
+      },
+      "stuck_live_findings": {
+        "count_days": 13,
+        "days": ["06-01","06-02","06-03","06-04","06-05","06-06","06-07","06-08","06-09","06-11","06-12","06-13","06-14"],
+        "note": "integrated=true / terminal-status EXPs left in live items[] instead of archived — near-daily"
+      },
+      "verdict": "Both families are CHRONIC (>3 in 14d). Directive Q1 rule: chronic -> structural fix. The collision family is the one with a clean minimal structural fix; the stuck-live family is an adjacent archiver-skip whose COLLISION RISK is also closed by this fix."
+    },
+    "Q2_allocator_sites": [
+      "monitor/prompts/decider.md:345-374 (PROP-029 M1 route-to-analyst). Archive-aware heal present but gated on typeof!=='number'. Then t.next_id++.",
+      "monitor/prompts/reference/decider-curmudgeon.md:132-147. Archive-aware heal gated on typeof!=='number'.",
+      "monitor/prompts/reference/decider-curmudgeon.md:179-206. Archive-aware heal gated on typeof!=='number'.",
+      "monitor/prompts/reference/analyst-normal-analysis.md:107-125. WORSE: heal is LIVE-ONLY (t.items.reduce, no archive walk) AND gated on typeof!=='number'."
+    ],
+    "Q3_archiver_sites": [
+      "decider phase-5 EXP archive move (live->archive): per integrity findings this is the step being skipped/lagged, producing stuck-live items. PROP-022 defines the archive-on-resolve convention these writes follow.",
+      "decider-curmudgeon-pq-mechanics.md:65 — self-integrate-in-same-run path writes directly to archive + bumps next_id in live file (this path is correct).",
+      "operator-cowork manual housekeeping (e.g. commit fe4bf0b 2026-06-14 archived EXP-612+622; commit 91249dc bumped next_id 623->624). Manual, not co-located with a defensive clamp.",
+      "FINDING: no archiver site co-locates a defensive `t.next_id = Math.max(t.next_id, archMax+1)` recompute. The clamp lives only (and conditionally) in allocators."
+    ],
+    "Q4_race_analysis": "Commit history confirms multi-writer reality: on 2026-06-14 decider (616bfdc, allocated EXP-624) and operator-cowork (fe4bf0b, archived EXP-612/622) both wrote the tracker the same day; 91249dc was a separate decider housekeeping bump. git pull --rebase does NOT recompute next_id on the rebased value, so a loser run that allocated against a stale next_id keeps the stale value. The unconditional clamp neutralizes this because every allocation re-derives the floor from the merged live+archive state at write time.",
+    "Q7_cross_agent_paths": "20 prompts reference expansion-tracker.json but only the 4 sites in Q2 ALLOCATE (do next_id++). analyst-baby consolidates existing EXPs (no allocation). curmudgeon/social/tinker/integrity/workspace-sync read-only or housekeeping. sloppytoppy-rewrite allocates RW-NNN not EXP-NNN. So the allocator surface is exactly 4 sites — a tractable patch target."
+  },
+  "root_cause": "Conditional (typeof-gated) archive-aware heal. The clamp is correct logic placed behind the wrong predicate. PROP-063 already diagnosed and fixed the identical defect class on the ISS side (decider-reporting.md:145): `const safeNext = Math.max(o.next_id||0, maxOpenNum+1, maxClosedNum+1); if (safeNext !== o.next_id) { heal }` — UNCONDITIONAL upward clamp, runs every allocation, never decrements. The EXP side never received the PROP-063 upgrade.",
+  "proposed_fix": {
+    "primary_minimal_LOC": {
+      "what": "In all 4 EXP allocator sites, replace the `if (typeof t.next_id !== 'number') { ...archive-aware recompute... }` gate with an UNCONDITIONAL upward clamp computed every allocation. Pattern (mirrors PROP-063 ISS fix):",
+      "snippet": "const liveMax = t.items.reduce((m,i)=>Math.max(m,parseInt((i.id||'EXP-0').replace('EXP-',''))||0),0); const archPath='monitor/analyst/expansion-tracker-archive.jsonl'; const archMax = fs.existsSync(archPath) ? fs.readFileSync(archPath,'utf8').split('\\n').filter(Boolean).reduce((m,l)=>{try{return Math.max(m,parseInt((JSON.parse(l).id||'EXP-0').replace('EXP-',''))||0)}catch(e){return m}},0) : 0; const safeNext = Math.max((typeof t.next_id==='number'?t.next_id:0), liveMax+1, archMax+1); if (safeNext !== t.next_id) { console.warn('EXP next_id clamp: was '+t.next_id+', max(live='+liveMax+',arch='+archMax+') -> '+safeNext); t.next_id = safeNext; } const nextNum = t.next_id; t.next_id++;",
+      "properties": ["forward-only (never lowers next_id)", "closes (a) archive-lag, (b) rollback-rewind, (c) cross-writer-race in one change", "subsumes and strengthens the existing typeof self-heal (the constraint to keep the corrupt-tracker safety net is satisfied — Math.max(0,...) handles the non-numeric case)", "fixes the analyst site's live-only weakness by adding the archive walk it currently lacks"],
+      "LOC": "~6 lines per site x 4 sites = ~24 LOC, mostly shared boilerplate.",
+      "files_touched": ["monitor/prompts/decider.md", "monitor/prompts/reference/decider-curmudgeon.md (2 sites)", "monitor/prompts/reference/analyst-normal-analysis.md"]
+    },
+    "secondary_defensive_optional": {
+      "what": "Decider start-of-run Step A0e: re-derive `t.next_id = Math.max(t.next_id, liveMax+1, archMax+1)` once per run, write-back only if it raises. Belt-and-suspenders that also protects any FUTURE 5th allocator site that forgets the clamp. Never auto-archives stuck-live items (honors directive constraint: surface, do not auto-remediate).",
+      "recommend": "Include if appetite warrants; the primary clamp alone closes the observed failure mode."
+    },
+    "Q5_single_writer_path_alternative": {
+      "what": "allocate-exp-ids.js mirroring PROP-089's allocate-iss-ids.js: single canonical EXP-id minter, edit all 4 inline sites to shell out, add lint enforcement.",
+      "cost": "new script + 4 prompt edits + lint integration (lint-decider-surfaces.js currently does NOT cover expansion-tracker.json — confirmed 0 references — so a producer-side push lint would be net-new).",
+      "recommend": "DEFER. Heavier than the failure warrants today. Adopt only if collisions recur after the unconditional clamp ships. The clamp is the PROP-063-proven fix; the single-writer-path is the PROP-089-proven fix — both exist as precedent and the lighter one should be tried first per the directive's minimal-LOC guidance."
+    }
+  },
+  "recommended": "primary_minimal_LOC (unconditional clamp in 4 sites). Optionally add secondary Step A0e. Defer Q5 script.",
+  "constraints_compliance": {
+    "keep_existing_self_heal": "SATISFIED — the unconditional clamp subsumes the typeof safety net (Math.max with (typeof==='number'?t.next_id:0) handles corrupt/missing next_id).",
+    "forward_only_no_history_restate": "SATISFIED — clamp only ever raises next_id; never reorders or re-indexes existing EXPs.",
+    "honor_other_side_lightweight_if_not_chronic": "Evidence shows CHRONIC (3 collisions + 13 stuck-live days in 14d) so structural fix is warranted; but the chosen structural fix IS the lightweight one (~24 LOC, no new script).",
+    "no_auto_archive_of_stuck_live": "SATISFIED — this PROP does not touch the archiver-skip remediation; stuck-live stays surfaced-for-operator. (Separate concern; its collision risk is closed by the clamp.)"
+  },
+  "test_fixture": {
+    "description": "Construct a tracker with next_id=623 and an archive.jsonl containing EXP-623 (the exact 2026-06-14 collision state). Run each allocator's clamp logic.",
+    "expected": "safeNext computes to 624 (archMax+1), clamp fires, allocated id = EXP-624 (no collision). Second fixture: next_id=999 (ahead of all) -> clamp is a no-op, allocates EXP-999. Third fixture: next_id missing -> Math.max(0, liveMax+1, archMax+1) heals as before.",
+    "location": "test.js or monitor/scripts/ smoke fixture — operator to place per build conventions."
+  },
+  "open_question_out_of_scope": "WHY the archive-move step (Q3 stuck-live) is skipped under some condition remains a separate diagnosis. This PROP closes the collision symptom (the MAJOR finding) and is robust to the archive lag; the stuck-live disjointness (MODERATE) is integrity-surfaced and operator-archived today. A follow-up directive could pin the archive-skip trigger if the manual housekeeping burden persists.",
+  "verification_pattern": "After implementation: (1) grep all 4 allocator sites for an UNCONDITIONAL clamp (no typeof gate around the Math.max(...,liveMax+1,archMax+1) write-back). (2) Watch integrity reports for 14 days — expect zero new next_id-collision MAJOR findings. (3) Confirm analyst-normal-analysis.md allocator now includes the archive walk (previously live-only)."
+}

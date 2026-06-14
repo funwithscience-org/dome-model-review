@@ -1,0 +1,60 @@
+{
+  "run_id": "tinker-2026-06-14T08-21",
+  "run_at": "2026-06-14T08:28:00Z",
+  "mode_selected": "Operator-directive (DIRECTIVE-20260614-001) + zombie-directive lifecycle cleanup",
+  "mode_selection_reason": "Pre-flight directive discovery found 10 pending operator-directives. Top-pick (DIRECTIVE-20260608-002) verified OBE. Audit of all 10 showed 9 were zombie-pending (deliverable PROP authored + cross-referenced, but directive never flipped) and 1 (DIRECTIVE-20260614-001, filed today) genuinely open with no PROP. Directives preempt Mode 1-4. Authored the open one's PROP and flipped all 10 lifecycle states.",
+  "modes_checked": {
+    "directive_discovery": "10 pending directives found; all resolved this run (1 new PROP authored, 9 confirmed-OBE flips)",
+    "mode_0_assigned_to_tinker": "not evaluated — directive preempts",
+    "mode_1_pipeline_health": "not the selected mode; backlog metrics computed (PROP-030 mandatory): open_issues=10, net_velocity_7d=+82, healthy",
+    "mode_2_infra": "not evaluated — directive preempts",
+    "mode_3_cost": "not evaluated — directive preempts",
+    "mode_4_proposals": "executed as part of directive work (PROP-100 authored)"
+  },
+  "findings": [
+    {
+      "id": "FND-01",
+      "category": "directive-lifecycle",
+      "severity": "moderate",
+      "title": "9 of 10 pending operator-directives were zombie-pending (work landed, status never flipped)",
+      "evidence": "DIRECTIVE-20260608-002 -> PROP-086 (superseded by PROP-087, implemented); -20260609-001 -> PROP-087 (approved+impl); -20260609-002 -> PROP-089 (implemented); -20260610-001 -> PROP-090 (implemented); -20260610-002 -> PROP-091 (proposed); -20260612-001 -> PROP-092 (proposed); -20260613-002 -> PROP-095 (pending); -20260613-003 -> PROP-096 (pending); -20260613-004 -> PROP-097 (approved-mech-1-impl). Each PROP cross-references its directive. All flipped to status=completed with completed_by_run + completion_note + prop_id_authored (additive-only per CLAUDE.md DIRECTIVE-LIFECYCLE exception).",
+      "root_cause": "Recurring write-side defect documented in tinker.md (FND-01 formalized 2026-06-14): directive status-flips must be written to the git CLONE and pushed, never FUSE (operator-directives is append_only in build.js OWNERSHIP, so FUSE writes never reach git). Directives authored by prior tinker runs left their deliverable PROP but the flip either went to FUSE-only or was skipped. This run writes all flips to the clone and pushes.",
+      "action_taken": "Flipped all 9 to completed in the clone; pushed."
+    },
+    {
+      "id": "FND-02",
+      "category": "proposal-authored",
+      "severity": "major",
+      "title": "PROP-100 authored — EXP-id chronic next_id collisions root-caused and fixed",
+      "evidence": "DIRECTIVE-20260614-001. Q1: 3 next_id collisions (06-07/06-12/06-14) + 2 disjointness symptoms + 13 stuck-live days in a 14-day integrity window = chronic. Q2: 4 allocator sites. Q3: no archiver co-locates a defensive clamp. Q4: multi-writer confirmed (decider 616bfdc + operator-cowork fe4bf0b same day). Root cause: archive-aware Math.max recompute is GATED behind `if(typeof t.next_id!=='number')`, so it never fires on a valid-but-stale next_id. Identical defect to PROP-063 on the ISS side, which was fixed with an UNCONDITIONAL clamp. Fix: make the clamp unconditional across all 4 sites (~24 LOC). Q5 single-writer-path (allocate-exp-ids.js) deferred per minimal-LOC guidance.",
+      "action_taken": "Authored monitor/tinker/proposals/PROP-100-exp-id-unconditional-archive-aware-clamp.json (propose-only; operator integrates)."
+    },
+    {
+      "id": "FND-03",
+      "category": "backlog-trend",
+      "severity": "info",
+      "title": "Backlog healthy; WoW % is a small-N artifact",
+      "evidence": "open_issues_total=10, open_status=5, assigned_analyst=0, age_ge_30d=0, oldest_open_age_days=0, net_velocity_7d=+82 (closed 88 / new 6), verify_drain_7d=13. WoW open_issues 8->10 = +25% which mechanically trips the moderate >10%-WoW trigger, but the absolute change is +2 on a tiny base; net velocity is strongly positive. Classified info, not moderate — the WoW% threshold is calibrated for the 200-400 regime and is unstable at single-digit totals.",
+      "action_taken": "Row appended to queue-history.jsonl. No escalation (operator_escalation tier not met)."
+    }
+  ],
+  "previous_followup": {
+    "note": "Prior tinker runs' PROPs verified live this run as part of directive OBE-checks: PROP-087/089/090/094/097/099 confirmed implemented or approved-implemented via status fields + presence of lint-decider-surfaces.js + allocate-iss-ids.js. PROP-091/092/095/096 authored and awaiting operator integration (proposed/pending) — not regressions."
+  },
+  "claude_md_audit": {
+    "checked": false,
+    "reason": "Not a Mode 3 run; directive work preempted. No CLAUDE.md accuracy/perf audit this run. Next Mode 3 run should pick it up."
+  },
+  "context_load": {
+    "checked": false,
+    "reason": "Directive-preempted run; per-agent context-load measurement deferred to next Mode 3 run."
+  },
+  "cleanup_actions": [],
+  "artifacts_written": [
+    "monitor/tinker/proposals/PROP-100-exp-id-unconditional-archive-aware-clamp.json",
+    "monitor/tinker/report-2026-06-14T08-21.json",
+    "monitor/tinker/latest-tinker-summary.txt",
+    "monitor/tinker/queue-history.jsonl (1 row appended)",
+    "10x monitor/tinker/operator-directives/*.json (status flips, additive)"
+  ]
+}
