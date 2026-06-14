@@ -4,7 +4,7 @@
   "authored_by": "tinker",
   "authored_by_run": "tinker-2026-05-20T02-40 (scheduled run, DIRECTIVE-20260518-002)",
   "authored_at": "2026-05-20T02:55:00Z",
-  "status": "design-pending-operator-review",
+  "status": "implemented",
   "directive_id": "DIRECTIVE-20260518-002",
   "related_directives": [
     "DIRECTIVE-20260508-001 (sonnet-poller audit + /tmp clone cleanup empowerment — sibling clone-discipline concern)"
@@ -17,7 +17,6 @@
     "CLAUDE.md 'Per-session clone discipline' (2026-05-09) — operator-side discipline section anchoring this work"
   ],
   "scope_disclaimer": "Tinker design-only per DIRECTIVE-20260518-002 out_of_scope: 'Do NOT self-apply any prompt edit'. Operator + cowork-claude apply. Six surgical patches (or three, depending on operator preference on baby-clone — see counter_args Q3) plus FUSE-staleness footnote.",
-
   "executive_summary": {
     "what_changed_since_directive_filed": "Between directive filing (2026-05-18T06:45Z) and this audit (2026-05-20T02:55Z), the operator-direct in-session patches to 4 files (curmudgeon.md, workspace-sync.md, decider-patches-and-selfapply.md, OPERATOR-RUNBOOK.md) have all LANDED on GitHub HEAD but are STALE in the FUSE workspace. So the audit must distinguish (a) the canonical state agents see when cloning fresh (GitHub HEAD — patched) from (b) what tinker sees reading FUSE (un-patched). All claims below are anchored to GitHub HEAD via curl verification.",
     "scope_summary": "Found 8 total clone-create sites across monitor/prompts/. 7 of 8 already have --depth 50 on GitHub HEAD (4 from operator-direct 2026-05-18 + 3 from PROPs 038/039/041). 1 remaining un-patched site (workspace-sync.md line 581 — strand-rescue recipe inside JSON template). Plus 2 implicit sites: analyst.md Step 0a and analyst-baby.md Step 0a only refresh-existing, never clone-create, yet baby clearly had a 659MB clone — the root cause is not in any prompt file. This PROP recommends adding an explicit clone-create-with-depth branch to analyst.md Step 0a to close the implicit-clone mystery defensively.",
@@ -25,7 +24,6 @@
     "patch_count_explanation": "Patch P1 covers workspace-sync.md:581 (strand-rescue text). Patch P2 covers analyst.md Step 0a (add clone-create with --depth 50 in the else branch). Patch P3 covers analyst-baby.md Step 0a inheritance text (point at the new analyst.md behavior). Patch P4 is a CLAUDE.md cross-reference update so the OWNED_BY operator-discipline section calls out the standard depth value.",
     "operator_decision_required": "Q3 (counter_arguments_addressed) — accept the baby implicit-clone defensive fix, or punt to a separate investigation? P2/P3 are independent of P1 so the operator can apply P1 alone first and defer P2/P3."
   },
-
   "audit_results": {
     "method": "Exhaustive grep across monitor/prompts/, monitor/prompts/reference/, monitor/scripts/, build-scripts/ for `git clone` literal. Each hit cross-referenced against GitHub HEAD via curl (because the FUSE workspace is stale for 4 of these files — the operator-applied edits from 2026-05-18 never round-tripped back to FUSE; see FUSE-staleness footnote below).",
     "sites_with_depth_50_already": [
@@ -152,7 +150,6 @@
       }
     ]
   },
-
   "baby_clone_source": {
     "investigation_summary": "DIRECTIVE-20260518-002 task_2 asks: 'Figure out where analyst-baby actually obtains its clone.' The 2026-05-18T05:14Z baby run reported a 659MB clone existed for cleanup; operator-direct grep before this audit could not find a clone-create command anywhere in baby's reachable prompts.",
     "what_was_searched": [
@@ -188,7 +185,6 @@
     "preferred_explanation": "H1 (harness pre-clones) is the most likely. H2 (session reuse) might be a contributing factor for clone persistence. H3 (vestigial code) is ruled out.",
     "defensive_fix_rationale": "Regardless of which hypothesis is correct, the safer engineering posture is to make the clone-source EXPLICIT in code that agents read. Currently the prompts assume the clone exists; if H1 is the mechanism, that's brittle (relies on harness behavior not documented in the prompts) and depth-uncontrollable (harness uses full depth). P2/P3 add a clone-create-with-depth-50 to the else branch of Step 0a so that (a) the source is documented, (b) the depth is bounded, (c) if the harness ever stops pre-cloning, the prompts self-heal. This costs nothing if the harness does pre-clone (the if-branch fires; clone-create is skipped). It saves the agent if the harness goes away or changes."
   },
-
   "phase_1_design": {
     "patches": [
       {
@@ -243,7 +239,6 @@
       }
     ]
   },
-
   "counter_arguments_addressed": [
     {
       "id": "Q1",
@@ -276,7 +271,6 @@
       "answer": "Two reasons it deserves --depth 50: (a) recovery scenarios are exactly when disk pressure matters most — strand-rescue fires when decider hit a 403 AND workspace-sync's auto-rescue ALSO failed; the disk is likely already under pressure. Smaller clone = better recovery posture. (b) Internal consistency — having 4 of 5 workspace-sync.md clone references at --depth 50 and ONE not creates a maintenance trap (next operator-direct edit might accidentally split-brain on the convention). Tiny patch, zero risk, removes a small inconsistency."
     }
   ],
-
   "regression_check": [
     {
       "id": "RC1",
@@ -311,7 +305,6 @@
       "expected": "monitor/decisions/latest-decider-summary.txt at next-cycle+1 reflects normal apply-and-push behavior"
     }
   ],
-
   "out_of_scope_followups": [
     {
       "id": "FU1",
@@ -342,7 +335,6 @@
       "recommended_filing": "Tinker Mode 3 instrumentation — add to queue-history.jsonl or sibling metric."
     }
   ],
-
   "fuse_staleness_footnote": {
     "summary": "Four target files of this PROP (curmudgeon.md, workspace-sync.md, decider-patches-and-selfapply.md, OPERATOR-RUNBOOK.md) are STALE in the FUSE workspace: FUSE has the un-patched (pre-2026-05-18) versions; GitHub HEAD has the operator-direct --depth-50 patches.",
     "implication_for_apply": "When applying P1-P4, the operator MUST work from a fresh clone (NOT from FUSE) to avoid reverting the operator-direct 2026-05-18 patches. After applying P1-P4 and pushing, run `node build.js publish` to sync FUSE back to canonical state.",
@@ -353,5 +345,10 @@
       "OPERATOR-RUNBOOK.md L14 — FUSE: 'git clone https://...' (no depth) ; GitHub: 'git clone --depth 50 https://...'"
     ],
     "why_this_matters_for_apply_safety": "If the operator edits the FUSE file directly with file-tools (which read FUSE), the diff will be based on the un-patched version and pushing it will REVERT the --depth 50 flag added on 2026-05-18. The correct apply procedure is: (1) git clone fresh from GitHub HEAD; (2) edit in the clone (where the file already has --depth 50 for sites S1-S4); (3) only the P1 (line 581) needs editing for workspace-sync.md, the rest are already correct on GitHub; (4) commit + push from the clone; (5) build.js publish to sync FUSE."
-  }
+  },
+  "obe_closed_at": "2026-06-14T16:00:00.000Z",
+  "obe_closed_by": "operator-cowork-tier4-2026-06-14",
+  "obe_prior_status": "design-pending-operator-review",
+  "obe_closure_note": "--depth 50 is universal across all clone-create sites in scheduled agent prompts (verified across analyst, analyst-baby, curmudgeon, curmudgeon-verify, dome-mirror, plus the operator-side standard set). Workspace-sync uses depth 50 via PROP-051 patch B3 stale-clone sweep. The analyst-baby clone-source gap PROP-049 originally identified has been resolved (analyst-baby has its own clone path setup per PROP-034). Closed in 2026-06-14 Tier-4 sweep.",
+  "obe_closure_evidence": "depth 50 hits in 5+ prompt files; analyst-baby.md clone setup"
 }

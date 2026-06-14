@@ -4,7 +4,7 @@
   "title": "Generalize decider's integrity intake (Step 1d) from moderate-only to every-severity, and trigger off integrity's already-emitted tracked_under:null signal instead of a severity-specific branch — model-class-resilient, dedup-respecting, urgent-fast-path.",
   "authored_by": "tinker (2026-05-16T03:00Z run, in response to DIRECTIVE-20260515-001-integrity-decider-handoff-failure)",
   "authored_at": "2026-05-16T03:00:00Z",
-  "status": "design-pending-operator-review",
+  "status": "implemented",
   "category": "pipeline_handoff_robustness + dispatcher_correctness",
   "directive": "DIRECTIVE-20260515-001-integrity-decider-handoff-failure",
   "supersedes_prop": [],
@@ -38,14 +38,56 @@
       ],
       "git_log_conclusion": "Step 1d's integrity-intake block has NOT been touched since ec95134 landed it on 2026-05-06. Hypothesis A (regression) is RULED OUT.",
       "decider_run_audit": [
-        {"run_id": "decider-2026-05-13T05-18", "issues_created": 0, "integrity_related_isssues": 0, "recommended_actions_mentioning_integrity": 0},
-        {"run_id": "decider-2026-05-13T13-18", "issues_created": 0, "integrity_related_isssues": 0, "recommended_actions_mentioning_integrity": 0},
-        {"run_id": "decider-2026-05-14T01-22", "issues_created": 0, "integrity_related_isssues": 0, "recommended_actions_mentioning_integrity": 0},
-        {"run_id": "decider-2026-05-14T21-22", "issues_created": 4, "integrity_related_isssues": 0, "recommended_actions_mentioning_integrity": 0},
-        {"run_id": "decider-2026-05-15T01-30", "issues_created": 1, "integrity_related_isssues": 0, "recommended_actions_mentioning_integrity": 0, "note": "ISS-2014 created (DOI verification, unrelated to integrity); the 2026-05-15T01-16 integrity report's 5 findings (1 critical + 2 major + 1 moderate + 1 minor) all ignored"},
-        {"run_id": "decider-2026-05-15T13-16", "issues_created": 0, "integrity_related_isssues": 0, "recommended_actions_mentioning_integrity": 0},
-        {"run_id": "decider-2026-05-15T17-20", "issues_created": 0, "integrity_related_isssues": 0, "recommended_actions_mentioning_integrity": 1, "note": "Mentioned 'Integrity report 2026-05-15T01:16 flagged build_drift and workspace_files_at_risk — likely stale' in recommended_actions but did NOT create an ISS. Proves decider IS reading the integrity report — the gap is in the action procedure, not the read."},
-        {"run_id": "decider-2026-05-16-01-14", "issues_created": 0, "integrity_related_isssues": 0, "recommended_actions_mentioning_integrity": 0}
+        {
+          "run_id": "decider-2026-05-13T05-18",
+          "issues_created": 0,
+          "integrity_related_isssues": 0,
+          "recommended_actions_mentioning_integrity": 0
+        },
+        {
+          "run_id": "decider-2026-05-13T13-18",
+          "issues_created": 0,
+          "integrity_related_isssues": 0,
+          "recommended_actions_mentioning_integrity": 0
+        },
+        {
+          "run_id": "decider-2026-05-14T01-22",
+          "issues_created": 0,
+          "integrity_related_isssues": 0,
+          "recommended_actions_mentioning_integrity": 0
+        },
+        {
+          "run_id": "decider-2026-05-14T21-22",
+          "issues_created": 4,
+          "integrity_related_isssues": 0,
+          "recommended_actions_mentioning_integrity": 0
+        },
+        {
+          "run_id": "decider-2026-05-15T01-30",
+          "issues_created": 1,
+          "integrity_related_isssues": 0,
+          "recommended_actions_mentioning_integrity": 0,
+          "note": "ISS-2014 created (DOI verification, unrelated to integrity); the 2026-05-15T01-16 integrity report's 5 findings (1 critical + 2 major + 1 moderate + 1 minor) all ignored"
+        },
+        {
+          "run_id": "decider-2026-05-15T13-16",
+          "issues_created": 0,
+          "integrity_related_isssues": 0,
+          "recommended_actions_mentioning_integrity": 0
+        },
+        {
+          "run_id": "decider-2026-05-15T17-20",
+          "issues_created": 0,
+          "integrity_related_isssues": 0,
+          "recommended_actions_mentioning_integrity": 1,
+          "note": "Mentioned 'Integrity report 2026-05-15T01:16 flagged build_drift and workspace_files_at_risk — likely stale' in recommended_actions but did NOT create an ISS. Proves decider IS reading the integrity report — the gap is in the action procedure, not the read."
+        },
+        {
+          "run_id": "decider-2026-05-16-01-14",
+          "issues_created": 0,
+          "integrity_related_isssues": 0,
+          "recommended_actions_mentioning_integrity": 0
+        }
       ],
       "run_audit_conclusion": "8 consecutive decider runs across 2026-05-13 → 2026-05-16, ZERO integrity-derived ISSs. The 17:20 run proves decider IS reading the integrity report at least sometimes (it cited build_drift and workspace_files_at_risk in recommended_actions). What's missing is the action: when decider reads a tracked_under:null finding, it does NOT create an ISS because the prompt only prescribes that action for severity:moderate. Even Opus runs in the window (most of these were Opus per scheduler) missed the findings identically. Hypothesis B (model-class) is therefore NOT the primary cause — both Sonnet and Opus follow the prompt literally; the prompt itself is the gap. Hypothesis B may compound the problem on Sonnet (more literal adherence) but isn't the root.",
       "step_1d_audit": {
@@ -109,7 +151,11 @@
   },
   "design_specification": {
     "files_touched": [
-      {"path": "monitor/prompts/reference/decider-intake.md", "edit_kind": "replace + extend", "lines_currently": "67-103 (existing Step 1d body)"}
+      {
+        "path": "monitor/prompts/reference/decider-intake.md",
+        "edit_kind": "replace + extend",
+        "lines_currently": "67-103 (existing Step 1d body)"
+      }
     ],
     "files_NOT_touched": [
       "monitor/prompts/structure-integrity.md (integrity-side is already correct — emits tracked_under for every severity)",
@@ -140,8 +186,27 @@
       ]
     },
     "field_extraction_contract": {
-      "from_integrity_report": ["severity", "category", "description", "location", "suggested_fix", "tracked_under"],
-      "to_open_issue": ["id (auto-allocated)", "title (template above)", "description (verbatim)", "location (verbatim)", "category='integrity_finding'", "severity (verbatim from finding)", "status='open' or 'closed' (if same-run-resolved)", "source='integrity-{report_date}'", "suggested_fix (verbatim)", "created_at (now-ISO)", "created_by='decider-step1d-untracked-finding'"]
+      "from_integrity_report": [
+        "severity",
+        "category",
+        "description",
+        "location",
+        "suggested_fix",
+        "tracked_under"
+      ],
+      "to_open_issue": [
+        "id (auto-allocated)",
+        "title (template above)",
+        "description (verbatim)",
+        "location (verbatim)",
+        "category='integrity_finding'",
+        "severity (verbatim from finding)",
+        "status='open' or 'closed' (if same-run-resolved)",
+        "source='integrity-{report_date}'",
+        "suggested_fix (verbatim)",
+        "created_at (now-ISO)",
+        "created_by='decider-step1d-untracked-finding'"
+      ]
     },
     "urgent_fast_path_specification": {
       "trigger": "F.severity === 'critical' OR F.severity === 'major'",
@@ -208,5 +273,10 @@
     "step_1d_current_text_quote": "**Moderate findings (`severity: \"moderate\"`)** — must be triaged on EVERY decider run. ... For each `severity: \"moderate\"` finding in the integrity report: 1. Dedupe against existing tracking. ... 2. If not matched, create an open ISS ... 3. Never silently drop ... 4. Surface in daily report.",
     "structure_integrity_md_emits_tracked_under_quote": "structure-integrity.md L565: 'For every finding (any severity), before emitting it, search monitor/decisions/open-issues.json for an existing ISS that matches this finding by category + location ... If matched, set tracked_under: \"ISS-NNN\" on the finding. Decider's Step 1d (per reference/decider-intake.md) uses this signal: a finding with tracked_under set is no-op'd by the decider (already-tracked); a finding with tracked_under: null triggers ISS creation.'",
     "the_asymmetry": "Integrity's prompt explicitly states the contract ('Decider's Step 1d ... uses this signal: a finding with tracked_under: null triggers ISS creation'). Decider's prompt does NOT honor that contract — it triggers on severity:moderate instead. The two prompts were written by the same commit (ec95134) but one (integrity) was written to the broader contract while the other (decider) was bounded to the moderate-only scope. PROP-037 aligns the decider side with what integrity already claims is happening."
-  }
+  },
+  "obe_closed_at": "2026-06-14T16:00:00.000Z",
+  "obe_closed_by": "operator-cowork-tier4-2026-06-14",
+  "obe_prior_status": "design-pending-operator-review",
+  "obe_closure_note": "Explicitly landed 2026-05-16 per decider-intake.md L66: PROP-037 generalization marker, every-severity iteration of integrity findings, trigger off integrity tracked_under field. Status was stale. Closed in 2026-06-14 Tier-4 sweep.",
+  "obe_closure_evidence": "monitor/prompts/reference/decider-intake.md L66 PROP-037 generalization (landed 2026-05-16) marker"
 }

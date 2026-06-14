@@ -4,12 +4,10 @@
   "authored_by": "tinker",
   "authored_at": "2026-05-05T16:35:00Z",
   "directive_id": "DIRECTIVE-20260505-001",
-  "status": "pending-operator-review",
+  "status": "implemented",
   "propose_only": true,
   "do_not_implement": "Operator authorizes implementation in a separate step. This PROP edits no prompt files itself.",
-
   "summary": "Operator-spotted bug confirmed independently. monitor/prompts/workspace-sync.md's smart_copy iteration omits monitor/decisions/processed-reviews.json — when decider's push 403s and universal-pusher copies the file to FUSE, workspace-sync never copies it back to git, so main's copy stays stale. digest-reviews.js builds processedSet from the stale copy on every decider run, so already-processed curmudgeon reviews keep appearing in pending-digest. The decider's staleness gate quietly skips them, but the cycle wastes Opus tokens and clutters daily-report commentary. Audit of monitor/decisions/, monitor/curmudgeon/, monitor/analyst/, monitor/integrity/, monitor/changes/, monitor/social/ surfaces 11 additional gap files with the same pattern (FUSE-newer-than-git for files agents currently write but workspace-sync's enumeration skips). Recommend an enhanced targeted fix: 13 smart_copy lines + 2 sync_glob lines. Defer the glob-based structural rewrite — the existing relic surface in workspace-only directories makes a 'iterate everything' approach actively dangerous.",
-
   "independent_verification": {
     "operator_chain_audit": "Operator's forensic chain re-derived from scratch. All steps pass.",
     "step_1_digest_reviews_js_line": {
@@ -34,7 +32,6 @@
     },
     "operator_chain_corrections": "None. Every step of the operator's evidence chain held up under independent verification."
   },
-
   "gap_audit": {
     "scope": "Per-file classification across monitor/decisions/, monitor/curmudgeon/, monitor/analyst/, monitor/integrity/, monitor/changes/, monitor/social/. Classifications: SMART_COPY (explicit one-line copy), SYNC_GLOB (covered by glob iteration), NEVER_PUSH (deny-listed), GAP (agent-written, FUSE-newer-than-git, NOT enumerated), RELIC (FUSE has it but agent prompts no longer reference; not currently written), GIT_ONLY (written from clone-side, no FUSE round-trip needed).",
     "confirmed_gaps_agent_written": [
@@ -227,7 +224,6 @@
     },
     "sync_glob_recursion_note": "sync_glob is intentionally NON-recursive (for f in ${WORKSPACE}/${rel}/${pat}; do — no **/ pattern). monitor/integrity/workspace-sync-runs/run-*.json is therefore not covered by the existing sync_glob monitor/integrity '*.json' line, but is fine because workspace-sync writes those files inside its own clone (Step 4b) and commits them git-side directly."
   },
-
   "structural_alternative": {
     "options_considered": [
       {
@@ -276,7 +272,6 @@
     ],
     "recommendation": "Targeted fix (Option D in the proposed_fix section). Defer Option B (sync manifest) to a separate PROP. Optionally add Option C (integrity-side gap detector) as a paired PR — see follow_up_recommendations below."
   },
-
   "proposed_fix": {
     "approach": "Enhanced targeted fix — add 13 explicit smart_copy lines and 2 sync_glob lines to monitor/prompts/workspace-sync.md Step 2.",
     "rationale_vs_structural": "Audit surfaced 12+ confirmed gaps (operator's threshold for 'structural becomes more attractive' was 3+). However, the workspace-only directories (monitor/analyst/, monitor/decisions/, monitor/curmudgeon/) carry ~15 relic files each that a flat glob-based rewrite would force-sync. The targeted fix avoids that risk while resolving every confirmed-active-writer gap. Operator's lean toward targeted is preserved; the audit just extends the line-count from 1 to 13.",
@@ -318,7 +313,6 @@
     "no_digest_reviews_js_changes": "Per non-goals: digest-reviews.js's staleness mechanism is correct. The bug is upstream in workspace-sync's enumeration.",
     "no_universal_pusher_changes": "Per non-goals: decider's universal-pusher copies the file to FUSE correctly. The gap is on the FUSE→git return leg, which is workspace-sync's job."
   },
-
   "measurement_plan": {
     "primary_metric": "Time from agent-side FUSE write to git origin/main reflection",
     "pre_fix_baseline": "monitor/decisions/processed-reviews.json: ~58h staleness on main (last_updated 2026-05-03T05:21Z vs FUSE 2026-05-05T13:24Z) at directive-issue time",
@@ -337,7 +331,6 @@
     "monitoring_window": "1 week post-deployment. After 7 days of clean syncs, declare resolved.",
     "follow_up_after_resolution": "Tinker should run a periodic FUSE-vs-main staleness audit (Mode 3 cost engineering) to catch any future enumeration drift before it becomes a stale-loop."
   },
-
   "sequencing": {
     "single_session_implementation": "Yes — one operator session with edit + commit + push to monitor/prompts/workspace-sync.md, plus an optional companion edit to CLAUDE.md to update the Human Notes Rule.",
     "rollout_steps": [
@@ -352,14 +345,12 @@
     "rollback_plan": "git revert the prompt-edit commit; workspace-sync's next run uses the prior enumeration.",
     "no_dependencies": "No other PROPs need to land first. No script changes. No agent prompt changes outside workspace-sync.md and (optionally) CLAUDE.md."
   },
-
   "follow_up_recommendations": {
     "PROP_017_followup_A_sync_manifest": "Author a separate PROP for Option B (sync manifest file) as a longer-term structural cleanup. Eliminates the three-way duplication of file ownership classifications across build.js, workspace-sync.md, and CLAUDE.md. Requires schema design + migration; not blocking the immediate fix.",
     "PROP_017_followup_B_integrity_gap_detector": "Author a separate PROP for Option C (integrity-side gap detector). Adds a per-run check that flags any FUSE-newer-than-main file not classified by workspace-sync. Catches future enumeration drift in <24h instead of waiting for a human to spot a stale-loop.",
     "claude_md_human_notes_rule_amendment": "Once PROP-017 lands, update CLAUDE.md Human Notes Rule from 'dual-write to FUSE and git clone' to 'write to FUSE; workspace-sync round-trips within 4h. Dual-write remains an option for urgent notes that must reach clone-reading agents immediately.'",
     "relic_cleanup_optional": "monitor/analyst/ and monitor/decisions/ have ~15 relic files (one-off forensic outputs, dead writers since 2026-04-06). Consider a separate cleanup pass to either delete them or archive to monitor/_archive/. Not in scope for this PROP."
   },
-
   "non_goals_compliance": {
     "no_NEVER_PUSH_changes": "Confirmed. Audit found no file currently in NEVER_PUSH that should be eligible to push.",
     "no_digest_reviews_js_changes": "Confirmed. The staleness mechanism is correct; bug is in workspace-sync.",
@@ -367,7 +358,6 @@
     "no_schedule_changes": "Confirmed. Cadence is fine; coverage is the problem.",
     "no_other_agent_write_path_changes": "Confirmed. All proposed changes are in monitor/prompts/workspace-sync.md (and optionally CLAUDE.md for the human-notes documentation update)."
   },
-
   "completion_criteria_self_check": {
     "file_present": "monitor/tinker/proposals/PROP-017-workspace-sync-smart-copy-gap.json — this file.",
     "bug_independently_verified": "Yes — see independent_verification section. Operator's chain held up at every step.",
@@ -376,7 +366,6 @@
     "measurement_pre_committed": "Yes — see measurement_plan. Disprove conditions named.",
     "directive_marked_completed": "Pending — tinker will mark DIRECTIVE-20260505-001 status:completed in this same run per DIRECTIVE-LIFECYCLE additive-edit exception."
   },
-
   "cross_references": [
     "DIRECTIVE-20260505-001 — operator-issued directive that triggered this PROP",
     "monitor/prompts/workspace-sync.md — the file that needs the fix",
@@ -386,11 +375,15 @@
     "CLAUDE.md File Ownership Rules section — file classification table that should be updated post-fix to reflect new sync coverage",
     "CLAUDE.md Human Notes Rule — currently mandates dual-write; can be relaxed once PROP-017 lands"
   ],
-
   "verification_pattern": {
     "purpose": "Used by tinker's PROP Lifecycle Verification (Mode 1 / previous_followup) to decide if PROP-017 is FIXED or STILL_BROKEN.",
     "primary_test": "After PROP-017 lands, check that monitor/decisions/processed-reviews.json on origin/main has last_updated within 8h of the latest FUSE-side last_updated. Specifically: curl raw.githubusercontent.com → parse last_updated → compare to FUSE last_updated → diff should be ≤ 8h.",
     "secondary_test": "Also check that monitor/analyst/attention-inbox.json on main has updated since 2026-05-05T08:00Z (the directive-time FUSE timestamp) — confirms the audit caught the right siblings, not just the primary case.",
     "still_broken_reason_template": "Stale on main: file=<path>, fuse_last_updated=<ts>, main_last_updated=<ts>, delta_hours=<n>. Either the smart_copy line was not added, the mtime guard is rejecting the file, or workspace-sync hasn't run since the fix landed."
-  }
+  },
+  "obe_closed_at": "2026-06-14T16:00:00.000Z",
+  "obe_closed_by": "operator-cowork-tier4-2026-06-14",
+  "obe_prior_status": "pending-operator-review",
+  "obe_closure_note": "Gap-fills shipped in monitor/prompts/workspace-sync.md (7 PROP-017 markers; processed-reviews.json + 11 sibling paths added to smart_copy iteration). 2026-05-05 implementation matched PROP-017 spec. Closed in 2026-06-14 Tier-4 sweep.",
+  "obe_closure_evidence": "workspace-sync.md (7 PROP-017 gap-fill comments + processed-reviews.json coverage)"
 }
