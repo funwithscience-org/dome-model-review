@@ -1,0 +1,89 @@
+{
+  "id": "PROP-099",
+  "title": "Implement PROP-094 Phase 2: prune<->workspace-sync resurrection detection canary - and it ALREADY caught a live regression PROP-094 did not close (verify-pending-run + narrative-cite re-added 06-14T03:09 by workspace-sync 8f743158)",
+  "created_at": "2026-06-14T06:50:04Z",
+  "authored_by": "tinker",
+  "authored_by_run": "tinker-2026-06-14T06-50",
+  "status": "pending",
+  "category": "detection/observability",
+  "severity": "major",
+  "propose_only": true,
+  "directive": "DIRECTIVE-20260613-001",
+  "parent_prop": "PROP-094 (remaining phase: detection canary - resurrection check in structure-integrity.md OR tinker.md Mode 2)",
+  "surfacing_report": "report-2026-06-14T06-50.json",
+  "executive_summary": "PROP-094 (commit 8b65f0f5, 2026-06-13T06:29Z) added a git-deletion-authority check to break the prune<->workspace-sync re-add loop, and it holds for the narrative-cite-audit backlog the operator manually drained on 06-13. But it left a detection canary UNIMPLEMENTED - the exact gap that let the loop run ~6 days undetected (prune's run sentinel truthfully reported \"archived+deleted N\" daily, but nothing checked the deletes STAYED deleted). This PROP implements that canary, and on its first validation run it caught a LIVE regression: 6 files (3 verify-pending-run + 3 narrative-cite) that prune deleted on 06-13T08:10 were re-added by workspace-sync commit 8f743158 at 06-14T03:09. The loop is NOT fully closed. Root-cause lead: PROP-094's GIT_DELETED_SET is built with git log in workspace-sync's SHALLOW clone and is blind to deleting commits older than clone depth (the deleting commit is 66 commits back from HEAD). The canary is deliberately git-depth-independent (reads the archive ledger + working tree) so it does not share that blind spot.",
+  "root_cause_of_original_incident": {
+    "directive_framing_was_wrong": "DIRECTIVE-20260613-001 hypothesized prune \"reports success but does not actually push deletes.\" FALSE. Every daily prune commit landed on origin/main (4859086a 06-07 ... 4eedc7f4 06-12, manual f3d8c46 + scheduled 908a72c7 06-13). Commit 4eedc7f4 genuinely REMOVED 279 narrative-cite source files (API diffstat removed=298, added=1, modified=1). PROP-081 run sentinels present in every commit.",
+    "actual_cause": "Q4 confirmed. prune deletes from git correctly; workspace-sync universal-pusher RE-ADDS the FUSE-resident copies (FUSE cannot unlink; dome-mirror delete-propagation gap leaves them). PROP-082 modeled narrative-cite-audit as a 14-day AGE window while prune policy is COUNT-based (keep_last_n=7); at ~hourly producer cadence keep-last-7 deletes everything older than ~7h while workspace-sync only refused re-add of files >15d old, so the 7h-to-14d band churned ~280/day -> 387 MB / 308-file backlog (drained 06-13).",
+    "ruled_out": [
+      "Q1 procedure breakdown - commits + sentinels landed daily",
+      "Q2 silent push failure - commits on origin/main",
+      "Q3 report not committing - every prune-integrity-runs/run-*.json sentinel present in its commit",
+      "Q5 pre-push hook failure - PROP-081 hook passed each run",
+      "Q6 lastRunAt lies / Fable dispatch - real archive+delete work landed daily with truthful per-category sentinels"
+    ]
+  },
+  "live_canary_hit": {
+    "found_at": "2026-06-14T06:50:04Z",
+    "detector": "ungated presence-only canary (this PROP, v2)",
+    "resurrected_total": 6,
+    "by_category": {
+      "verify-pending-run": 3,
+      "narrative-cite-audit": 3
+    },
+    "re_add_commit": "8f743158 \"Workspace sync: 2026-06-14T03:09:46Z\" re-added ALL 8 files prune deleted at 06-13T08:10 (commit 908a72c7): 3 verify-pending-run + 3 narrative-cite + 2 other.",
+    "smoking_gun_file": "monitor/integrity/verify-pending-run-2026-05-30T0808Z.json history: created f540eff1 (05-30) -> DELETED 908a72c7 (prune 06-13T08:10) -> RE-ADDED 8f743158 (ws-sync 06-14T03:09). Still present in origin/main HEAD (API sha 21205824).",
+    "parallel_backlog": "verify-pending-run count in HEAD = 284, oldest 2026-05-30 (15 days, past the 14-day retention). This is an UNDRAINED parallel instance of the same loop - the operator drained narrative-cite but not verify-pending-run.",
+    "why_prop094_missed_it": "Strong lead: PROP-094 GIT_DELETED_SET = `git log --diff-filter=D --since=95d -- monitor/integrity/` run inside workspace-sync SHALLOW clone. The deleting commit 908a72c7 is 66 commits behind HEAD; if workspace-sync clone depth < ~66 the deletion is unreachable, GIT_DELETED_SET omits the path, and the primary skip is bypassed. (The PROP-082 date fallback should still catch a 15-day-old verify-pending-run; that it did not suggests either the date fallback is also not reached on this path or the re-add goes through a bulk git add -A rather than smart_copy. Needs operator confirmation - see complementary_work.)",
+    "verification_independently_reproducible": "In this tinker clone: `git log --since=3d --diff-filter=D -- monitor/integrity/` returns 0 paths (shallow clone cannot see the 06-13 deletes), yet the archive-ledger canary returns 6 - demonstrating exactly why a ledger-based (not git-log-based) detector is required."
+  },
+  "evidence": [
+    "API commits on narrative-cite-audit-archive.jsonl: 4859086a(06-07) 0e563948(06-08) c87f03cb(06-09) a24366f3(06-10) 73a977af(06-11) 4eedc7f4(06-12) f3d8c46(06-13 manual) 908a72c7(06-13). prune pushed daily.",
+    "API: commit 4eedc7f4 {removed:298, modified:1, added:1}; 279 removed are narrative-cite source files.",
+    "API: re-add commit 8f743158 added 3 verify-pending-run + 3 narrative-cite + 2 other (the exact 8 prune deleted at 08:10).",
+    "API compare 908a72c7...main = 66 commits (shallow-depth blind-spot evidence).",
+    "workspace-sync.md is_prune_expired() narrative-cite-audit case days=14 vs prune keep_last_n=7 (count) = the PROP-082 mismatch.",
+    "PROP-094 commit 8b65f0f5 06-13T06:29Z; implementation_phases_remaining=[detection canary]; resurrection canary not implemented in monitor/prompts/ or monitor/scripts/.",
+    "Canary v2 (presence-only) validation run: resurrected_total=6 {narrative-cite:3, verify-pending-run:3}. v1 (content-gated) caught only 3 (false negatives from archive-body re-serialization formatting)."
+  ],
+  "proposed_fix": {
+    "summary": "Add a read-only, git-depth-independent resurrection canary and wire it into tinker Mode 2 quick-checks. It reads the per-category archive tombstone ledger (last 48h) and flags any tombstoned filename present again in the working tree. Presence-only signal; content-match kept as informational annotation only.",
+    "new_file": "monitor/scripts/check-prune-resurrection.js",
+    "script_content": "#!/usr/bin/env node\n/**\n * check-prune-resurrection.js - PROP-099 (implements PROP-094 Phase 2).\n * Resurrection canary for the prune <-> workspace-sync re-add loop.\n * prune-integrity.js archives every deleted filename into per-category\n * *-archive.jsonl (the tombstone ledger). This canary reads tombstones from\n * the last N hours (default 48) and flags any whose source path is PRESENT\n * again in the working tree (== git HEAD in a fresh clone). Prune artifacts\n * have timestamp-unique filenames, so a tombstoned filename reappearing IS\n * the resurrection signal - presence-only, no content-match gate.\n *\n * DESIGN NOTE: an earlier draft gated on content-hash match against the\n * archived body to exclude legitimate producer recreation. That produced\n * FALSE NEGATIVES: the archive stores body as parsed JSON, re-serialized\n * formatting differs from on-disk, so same-file resurrections were missed\n * (validation run missed 3 narrative-cite re-adds that DID happen). Presence\n * is the reliable signal for timestamp-unique artifacts; content match is\n * kept only as an informational annotation, never as a gate.\n *\n * GIT-DEPTH-INDEPENDENT: reads the archive JSONL + working tree only, no\n * git log. This is deliberate - the parallel git-history approach\n * (git log --diff-filter=D) is BLIND in a shallow clone when the deleting\n * commit is older than clone depth, which is exactly how the loop evaded\n * PROP-094 GIT_DELETED_SET. The ledger does not have that blind spot.\n *\n * Exit 0 = clean, exit 3 = resurrection detected. Read-only.\n */\nconst fs=require('fs');const path=require('path');const crypto=require('crypto');\nconst args=process.argv.slice(2);\nconst hi=args.indexOf('--hours');\nconst WINDOW_H=hi>=0&&args[hi+1]?parseInt(args[hi+1],10):48;\nconst root=(()=>{let c=process.cwd();while(c!==path.dirname(c)){if(fs.existsSync(path.join(c,'monitor','integrity')))return c;c=path.dirname(c);}return process.cwd();})();\nconst IDIR=path.join(root,'monitor','integrity');\nconst ARCHIVES=[\n  'narrative-cite-audit-archive.jsonl',\n  'verify-pending-runs-archive.jsonl',\n  'workspace-sync-runs-archive.jsonl',\n  'push-failure-archive.jsonl',\n  'report-archive.jsonl'\n];\nconst cutoff=Date.now()-WINDOW_H*3600*1000;\nconst sha=s=>crypto.createHash('sha1').update(s).digest('hex');\nlet hits=[];\nfor(const a of ARCHIVES){\n  const ap=path.join(IDIR,a);\n  if(!fs.existsSync(ap))continue;\n  let lines;try{lines=fs.readFileSync(ap,'utf8').split(String.fromCharCode(10));}catch(e){continue;}\n  for(const line of lines){\n    if(!line.trim())continue;\n    let rec;try{rec=JSON.parse(line);}catch(e){continue;}\n    const fname=rec.file;if(!fname)continue;\n    const mt=rec.mtime?Date.parse(rec.mtime):0;\n    if(mt&&mt<cutoff)continue;\n    const candidates=[path.join(IDIR,fname),path.join(IDIR,path.basename(fname))];\n    for(const cand of candidates){\n      if(!fs.existsSync(cand))continue;\n      let contentMatches=null;\n      try{\n        const onDisk=fs.readFileSync(cand,'utf8');\n        const body=typeof rec.body==='string'?rec.body:JSON.stringify(rec.body,null,2);\n        contentMatches=(sha(onDisk.trim())===sha(String(body).trim()));\n      }catch(e){}\n      hits.push({archive:a,file:path.relative(root,cand),tombstoned_at:rec.mtime,content_matches_archive:contentMatches});\n      break;\n    }\n  }\n}\nconst byCat={};for(const h of hits){byCat[h.archive]=(byCat[h.archive]||0)+1;}\nconst out={event:'prune-resurrection-canary',ts:new Date().toISOString(),window_hours:WINDOW_H,resurrected_total:hits.length,by_category:byCat,sample:hits.slice(0,12)};\nconsole.log(JSON.stringify(out,null,2));\nprocess.exit(hits.length>0?3:0);",
+    "integration_primary": {
+      "home": "monitor/prompts/tinker.md Mode 2 quick-check block",
+      "snippet": "# PROP-099 resurrection canary (Mode 2 quick-check). Cheap, read-only, git-depth-independent.\nRESURRECT=$(node monitor/scripts/check-prune-resurrection.js --hours 48 2>/dev/null)\nRESURRECT_RC=$?\nif [ \"$RESURRECT_RC\" = \"3\" ]; then\n  echo \"PROP-099 CANARY: prune-readd loop LIVE - emit finding category=prune-resurrection severity=major\"\n  echo \"$RESURRECT\" | head -40\nelse\n  echo \"PROP-099 CANARY: clean (no resurrected pruned artifacts in last 48h)\"\nfi",
+      "rationale": "Tinker Mode 2 already runs FUSE/disk/auth quick-checks daily and owns pipeline-integrity regressions. RC=3 -> emit findings[] category=prune-resurrection severity=major with by_category + sample."
+    },
+    "integration_alternative": {
+      "home": "monitor/prompts/structure-integrity.md (dome-integrity, daily 02:00Z)",
+      "rationale": "Either home acceptable; pick ONE to avoid double-reporting. tinker preferred (routes into the same report stream as backlog-trend)."
+    },
+    "ceiling_check_optional": "Optionally also bound each category in HEAD: alert if count > keep_last_n + slack. verify-pending-run at 284 (vs ~14-day window) and narrative-cite would both have tripped this immediately."
+  },
+  "backfill_plan": "(a) narrative-cite: already drained by operator 06-13 (commit f3d8c46 + FUSE rm). (b) verify-pending-run: NOT yet drained - 284 files / oldest 05-30 remain and are being actively re-added. Recommend the operator run the same manual catchup (prune-integrity.js --apply from a fresh clone, then git add -A + push) AND drain the FUSE copies (allow_cowork_file_delete + rm) so workspace-sync has nothing to resurrect. This is the verify-pending-run analog of the 06-13 narrative-cite drain.",
+  "detection_mechanism": "This PROP IS the detection mechanism (PROP-094 designed it; DIRECTIVE-20260613-001 deliverable item 4 requested it). Compares prune archived-delete ledger (last 48h) against working-tree presence; any hit => the re-add loop is live for that category.",
+  "complementary_work": {
+    "prop094_depth_gap": "RECOMMENDED follow-up (separate from this canary): make PROP-094 GIT_DELETED_SET robust to shallow clones - either deepen workspace-sync clone depth enough to cover the prune cadence, OR fetch-unshallow the monitor/integrity/ path before building the set, OR switch the primary skip to a ledger-based check like this canary (the archive JSONL is authoritative and git-depth-independent). Also confirm the verify-pending-run re-add is routed through smart_copy (so is_prune_expired even runs) vs a bulk git add -A path.",
+    "fuse_side": "PROP-091 (dome-mirror delete-propagation) + PROP-092 (dome-mirror overwrite-propagation) keep FUSE clean so the resident copies that feed the re-add stop accumulating. PROP-094 keeps git clean; PROP-091/092 keep FUSE clean; this canary detects regressions of either."
+  },
+  "constraints_honored": [
+    "Did NOT modify prune-integrity.js retention policies (not_in_scope[1]) - canary is read-only and additive.",
+    "Did NOT remove any PROP-051 safety gate (constraint[0]).",
+    "Honored the other-side (constraint[2]): empirically falsified the prune-does-not-push framing; root cause is the workspace-sync re-add side. Went further and PROVED PROP-094 has not fully closed it."
+  ],
+  "verification_pattern": "After integration: (1) run the canary in a fresh clone - currently exits 3 with 6 hits (will be 0 once verify-pending-run is drained AND the depth gap fixed). (2) After backfill, confirm git HEAD verify-pending-run count drops to <=14-day window and narrative-cite <= ~7 + one-day cadence across 3 consecutive days. (3) Negative test: re-place a tombstoned file into monitor/integrity/ in a scratch clone, confirm canary exits 3 and names it. (4) Confirm canary requires no git history (works in --depth 1 clone).",
+  "estimated_loc": "~70 (new script) + ~8 (tinker Mode 2 snippet)",
+  "requires_human_judgment": "Operator: (a) choose canary home, create the script, wire the snippet; (b) drain the verify-pending-run backlog; (c) decide the PROP-094 depth-gap follow-up. Propose-only.",
+  "cross_references": [
+    "PROP-094",
+    "PROP-082",
+    "PROP-081",
+    "PROP-091",
+    "PROP-092",
+    "PROP-051",
+    "DIRECTIVE-20260613-001",
+    "DIRECTIVE-20260610-002",
+    "DIRECTIVE-20260612-001"
+  ]
+}

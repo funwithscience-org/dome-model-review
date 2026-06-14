@@ -1,23 +1,40 @@
-TINKER tinker-2026-06-14T02-40 — Mode 0 (assigned-tinker) -> Mode 4 (PROP)
+TINKER tinker-2026-06-14T06-50 — DIRECTIVE-20260613-001 (prune-integrity push gap)
 
-TOP-PICK: ISS-2725 (major, class=verification). Re-picked for the 3rd consecutive run.
+MODE: operator-directive (high priority, freshest of 14 pending).
 
-WHAT I FOUND:
-- ISS-2725's actual content fix is DONE and verified (PROP-093 C1 widened analyst.md Mode 2b
-  filter to accept status=open; analyst-baby has no Mode 2b so nothing to fix there).
-- BUT ISS-2725 stays open because the close HNOTE that the 16:57 run filed
-  (HNOTE-TINKER-ISS-2725-CLOSE-001, action=close_iss_batch) has NO CONSUMER. The decider
-  has no close_iss_batch handler at all — grep proves it's referenced only in tinker.md.
-  A decider run (commit 91249dc) passed in between without touching it.
+OUTCOME: directive COMPLETED. Authored PROP-099. Premise FALSIFIED + a LIVE bug found.
 
->>> OPERATOR ESCALATION (major, 3-runs-stuck): The PROP-060 close_iss_batch convention was
-    shipped without its decider handler ("PROP-058 follow-up" never landed). Every Mode 0
-    close tinker files is currently a no-op. Authored PROP-098 to add the handler
-    (decider.md End-of-Run Step A0 region, ~25 lines, modeled on the existing
-    set_curmudgeon_mode consumed-note pattern). Once PROP-098 lands, the existing ISS-2725
-    close HNOTE is consumed automatically and ISS-2725 closes — no re-work needed.
+WHAT THE DIRECTIVE ASSUMED: "prune reports success but doesn't push deletes."
+WHAT'S ACTUALLY TRUE: prune pushes every day and the deletes land. API shows daily
+prune commits on origin/main; commit 4eedc7f4 genuinely removed 279 narrative-cite
+source files; PROP-081 run sentinels present in every commit. Q1/Q2/Q3/Q5/Q6 ruled out.
 
-ISS-2725 left status=assigned-tinker (Mode 0 outcome b: auto-closes when PROP-098 applies).
+ROOT CAUSE (Q4): prune<->workspace-sync re-add loop. prune deletes from git; FUSE keeps
+the copies; workspace-sync universal-pusher re-adds them. PROP-082 used a 14-day AGE
+window for narrative-cite while prune's real policy is COUNT-based (keep_last_n=7), so at
+~hourly producer cadence the 7h-to-14d band churned ~280/day -> the 387MB backlog the
+operator drained 06-13.
 
-BACKLOG: GREEN. open_issues=22 (info-tier blip up from 8 same-day; net_velocity_7d=+60,
-closed_7d=79 vs new_7d=19, 0 aged>=30d, 0 assigned-analyst). No moderate+ trend fires.
+ALREADY FIXED (pre-directive): PROP-094 (commit 8b65f0f5, 06-13T06:29Z) git-deletion-
+authority check. Verified HOLDING for the drained narrative-cite category (HEAD count 20,
+no re-adds since the drain).
+
+*** STILL LIVE — needs operator action ***
+PROP-094 did NOT close the loop for verify-pending-run. The PROP-099 canary, on its first
+run, caught 6 resurrected files (3 verify-pending-run + 3 narrative-cite) re-added by
+workspace-sync 8f743158 at 06-14T03:09 — the exact 8 files prune deleted at 06-13T08:10.
+  - verify-pending-run backlog: 284 files in HEAD, oldest 2026-05-30 (UNDRAINED).
+  - Why PROP-094 missed it (lead): GIT_DELETED_SET = `git log --diff-filter=D` in the
+    SHALLOW workspace-sync clone is blind to the deleting commit (66 commits back).
+
+OPERATOR ACTION ITEMS (in PROP-099):
+  1. Deploy the canary (monitor/scripts/check-prune-resurrection.js) into tinker Mode 2.
+     It is git-depth-independent (reads the archive ledger), so it has no blind spot.
+  2. Drain the verify-pending-run backlog (prune --apply from fresh clone + push, plus
+     FUSE rm) — the verify-pending-run analog of the 06-13 narrative-cite drain.
+  3. Fix the PROP-094 depth gap (deepen clone / fetch-unshallow monitor/integrity/, OR
+     switch the skip to a ledger-based check). workspace-sync.md is disaster-sensitive —
+     propose-only; operator integrates.
+
+PIPELINE HEALTH (PROP-030): open_issues=10, net velocity +83/7d, assigned-analyst=0,
+age>=30d=0. No backlog-trend threshold fires.
