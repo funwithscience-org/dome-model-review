@@ -4,18 +4,15 @@
   "authored_by": "tinker",
   "authored_at": "2026-05-05T19:30:21Z",
   "directive_id": "DIRECTIVE-20260505-002",
-  "status": "pending-operator-review",
+  "status": "deferred-prefer-targeted-fix",
   "propose_only": true,
   "do_not_implement": "Operator authorizes implementation in a separate step. This PROP creates monitor/sync-manifest.json schema and migration design ONLY — no manifest file, no workspace-sync.md edit, no build.js edit, no CLAUDE.md edit performed by this PROP-authoring run.",
-
   "summary": "Operator chose Option B (sync manifest) over PROP-017's targeted fix because the audit surfaced 15 gaps where 1 was visible. Three-way duplication across build.js OWNERSHIP, workspace-sync.md NEVER_PUSH+smart_copy enumeration, and CLAUDE.md File Ownership Rules is the structural bug class — every new agent write path is a 3-file edit, and missing the workspace-sync edit is silent. This PROP designs a single manifest at monitor/sync-manifest.json that both consumers (workspace-sync FUSE→git push, build.js publish git→FUSE copy) read at runtime; a node script (monitor/scripts/sync-from-manifest.js) replaces the inlined smart_copy/sync_glob iteration; an integrity lint catches new fs.writeFileSync paths absent from the manifest within 24h (Option C folded in). Migration is 11 steps, each independently reversible; legacy enumeration mode is gated by env var for one rollout cycle. After validation, CLAUDE.md File Ownership Rules and build.js OWNERSHIP become derived/auto-rendered views of the manifest, eliminating the failure mode entirely.",
-
   "starting_inputs_from_prop_017": {
     "audit_findings_carried_forward": "PROP-017's gap_audit section is the canonical input. 15 confirmed-active-writer gap files (now patched in workspace-sync.md as the targeted-fix interim), 17 covered smart_copy paths, 16 covered sync_glob paths, 13 NEVER_PUSH entries (inclusive of dynamic monitor/prompts/*.md rule), 15+ relic files in monitor/analyst/, monitor/decisions/, monitor/curmudgeon/. Manifest must cover all of these.",
     "targeted_fix_already_shipped": "Note: as of 2026-05-05T19:30Z, monitor/prompts/workspace-sync.md already contains the PROP-017 13 smart_copy + 2 sync_glob gap fills (lines 197-201, 211-213, 225-231, 269-271, 277-279, with `# PROP-017 gap fills (2026-05-05)` comments). This PROP supersedes that interim by replacing the entire enumeration with a manifest-driven loader. The targeted-fix lines are NOT to be removed yet — they keep the stale-loop closed during the manifest rollout window. Operator removes them at migration step 8 once the manifest path is verified.",
     "sync_glob_recursion_decision": "Per PROP-017 audit note: existing sync_glob is intentionally non-recursive (`for f in ${WORKSPACE}/${rel}/${pat}` with no **/ pattern). Manifest preserves this — globs are non-recursive by default. A `recursive: true` boolean on the manifest entry can opt in if needed later, but no current entry needs it."
   },
-
   "schema_design": {
     "file_path": "monitor/sync-manifest.json",
     "schema_version": "1.0.0",
@@ -36,19 +33,48 @@
       "direction": {
         "type": "enum",
         "required": true,
-        "values": ["workspace_to_clone", "clone_to_workspace", "both", "never"],
+        "values": [
+          "workspace_to_clone",
+          "clone_to_workspace",
+          "both",
+          "never"
+        ],
         "description": "Authoritative direction across the FUSE↔git boundary. Implementations interpret as: workspace-sync (FUSE→git) treats workspace_to_clone|both as push-eligible (smart_copy with mtime guard); build.js publish (git→FUSE) treats clone_to_workspace|both as copy on publish. `never` means neither consumer touches the file — used for clone-internal generated files (workspace-sync-skips.jsonl is special-cased separately as clone_to_workspace because integrity reads it from FUSE) and for FUSE-only relics (with classification:'scratch')."
       },
       "owner_agent": {
         "type": "string",
         "required": true,
-        "values_suggested": ["analyst", "curmudgeon", "decider", "integrity", "poller", "social", "tinker", "workspace-sync", "operator", "build.js", "digest-reviews.js", "human", "multi-writer"],
+        "values_suggested": [
+          "analyst",
+          "curmudgeon",
+          "decider",
+          "integrity",
+          "poller",
+          "social",
+          "tinker",
+          "workspace-sync",
+          "operator",
+          "build.js",
+          "digest-reviews.js",
+          "human",
+          "multi-writer"
+        ],
         "description": "Diagnostic / documentation only. The agent or pipeline component that primarily authors this file. 'multi-writer' for files with intentional multiple writers (e.g. tracker.json — decider + curmudgeon)."
       },
       "classification": {
         "type": "enum",
         "required": true,
-        "values": ["data", "ledger", "summary", "scratch", "source", "docs", "flag", "log", "report"],
+        "values": [
+          "data",
+          "ledger",
+          "summary",
+          "scratch",
+          "source",
+          "docs",
+          "flag",
+          "log",
+          "report"
+        ],
         "description": "Semantic category. data=canonical project data (wins.json), ledger=trackers and processed lists (open-issues.json, processed-reviews.json), summary=human-facing latest-*.txt rollups (latest-review-summary, alerts.txt, morning-briefing.txt), scratch=relics and forensic one-offs (FUSE-only by design), source=code/prompts/build scripts (git-authoritative), docs=generated HTML/machine-readable layer (built artifacts), flag=presence-vs-absence semantic markers (prop-009-enforce.flag), log=append-only logs (workspace-sync-skips.jsonl), report=append-only per-run / per-ID artifacts (daily-report-*.json, run-*.json, EXP-*.json, WIN-*.json, PROP-*.json)."
       },
       "notes": {
@@ -64,7 +90,11 @@
       "added_by": {
         "type": "string",
         "required": true,
-        "values_suggested": ["operator", "tinker", "<agent>"],
+        "values_suggested": [
+          "operator",
+          "tinker",
+          "<agent>"
+        ],
         "description": "Who authored this entry. Operator is normal for hand-curated entries; agent name when an automated migration tool wrote it (rare)."
       },
       "recursive": {
@@ -191,7 +221,6 @@
     ],
     "validation_script": "monitor/scripts/validate-sync-manifest.js — invoked by sync-from-manifest.js on every workspace-sync run before iteration begins; invoked by build.js on every publish before sync-to-workspace; invoked by lint-sync-manifest.js (Option C) on every integrity run. Failures: V1, V3, V4, V5, V6, V7, V8, V9 are fatal (script exits non-zero, calling consumer aborts). V2, V10 are warnings (logged, calling consumer continues)."
   },
-
   "migration_plan": {
     "workspace_sync_md_step_2_rewrite": {
       "before_outline": "Step 2 currently inlines: NEVER_PUSH array (line 59-82), is_never_push() function with 6 self-tests, smart_copy() helper with mtime guard, sync_glob() helper, then ~70 lines of explicit smart_copy and sync_glob invocations covering analyst / curmudgeon / poller / decider / data-rescue / docs/assets / social / integrity / tinker / status. PROP-017 targeted-fix added 13 smart_copy lines + 2 sync_glob lines. Total Step 2 length: ~210 lines including comments.",
@@ -379,21 +408,54 @@
     ],
     "step_dependencies": {
       "1": [],
-      "2": [1],
-      "3": [1],
-      "4": [1],
-      "5": [1],
-      "6": [1],
+      "2": [
+        1
+      ],
+      "3": [
+        1
+      ],
+      "4": [
+        1
+      ],
+      "5": [
+        1
+      ],
+      "6": [
+        1
+      ],
       "7": [],
-      "8": [2, 3, 4, 5, 6, 7],
-      "9": [7],
-      "10": [1, 5, 6],
-      "11": [7, 8],
-      "12_parity_test": [7, 1, 2, 3, 4, 5, 6]
+      "8": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "9": [
+        7
+      ],
+      "10": [
+        1,
+        5,
+        6
+      ],
+      "11": [
+        7,
+        8
+      ],
+      "12_parity_test": [
+        7,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ]
     },
     "ordering_rationale": "Steps 1-6 are pure manifest authoring (no consumer changes). Steps 7 is script authoring (no consumer changes). Step 8 is the cutover for workspace-sync (highest-risk single step). Step 9 is the cutover for build.js (lower-risk; static fallback protects against runtime failures). Steps 10-11 are documentation and observability. Step 12 (parity test) is recommended before Step 8 cutover — operator runs in a sandbox clone, not main."
   },
-
   "measurement_plan": {
     "primary_metric": "Number of new manifest gaps detected over 30 days post-rollout. Target: zero. Disprove: any non-zero count where the gap was caused by a new agent write path that should have been added during the prompt edit.",
     "secondary_metrics": [
@@ -417,7 +479,6 @@
       "Operator schedules a quarterly relic-deprecation review (look for relic entries past their deprecation_at and decide on cleanup)."
     ]
   },
-
   "side_effect_dual_write_rule": {
     "current_rule": "CLAUDE.md Human Notes Rule: 'All `human-notes.json` files (`monitor/analyst/`, `monitor/decisions/`, `monitor/social/`, `monitor/curmudgeon/`) are dual-write. When adding a human note, ALWAYS write to BOTH the FUSE workspace AND the git clone, then commit+push from the clone.'",
     "rule_origin": "Workaround for the gap that workspace-sync didn't round-trip 3 of 4 human-notes.json files (only monitor/analyst/human-notes.json was explicitly synced).",
@@ -433,16 +494,35 @@
     "lean": "OPTION B. Keep the dual-write rule but reframe as optional/recommended-for-urgent. The 4h cycle is good enough for 95% of notes; the 5% that need faster propagation justify keeping the option open. Cost of keeping the rule: zero (humans already do it). Cost of dropping it: occasional 4h delay where operator-induced agent change should have been immediate. The risk asymmetry favors keeping it.",
     "claude_md_prose_change": "Update the Human Notes Rule paragraph to: 'All `human-notes.json` files have manifest entries with direction `both` or `workspace_to_clone`; workspace-sync round-trips them within 4h. For URGENT notes that need to reach clone-reading agents (decider, curmudgeon) before next workspace-sync cycle, dual-write to FUSE AND git clone, then commit+push from the clone. For routine notes, single-write to FUSE is sufficient.'"
   },
-
   "open_questions_addressed": {
     "Q1_manifest_location": {
       "question": "Should the manifest live at monitor/sync-manifest.json or workspace-manifest.json or somewhere else?",
       "options_considered": [
-        {"path": "monitor/sync-manifest.json", "pros": "Lives alongside other monitor/ subdirs; workspace-sync's domain", "cons": "Slightly verbose"},
-        {"path": "monitor/workspace-manifest.json", "pros": "Names what it represents", "cons": "Slightly misleading — it's not a workspace inventory, it's a sync contract"},
-        {"path": "data/sync-manifest.json", "pros": "data/ is a known top-level dir", "cons": "Conflates project data with pipeline plumbing"},
-        {"path": "manifest.json (root)", "pros": "Discoverable", "cons": "Conflicts with package.json conceptually; too generic"},
-        {"path": "monitor/prompts/sync-manifest.json", "pros": "Lives with the prompts that consume it", "cons": "Not a prompt; mixes concerns"}
+        {
+          "path": "monitor/sync-manifest.json",
+          "pros": "Lives alongside other monitor/ subdirs; workspace-sync's domain",
+          "cons": "Slightly verbose"
+        },
+        {
+          "path": "monitor/workspace-manifest.json",
+          "pros": "Names what it represents",
+          "cons": "Slightly misleading — it's not a workspace inventory, it's a sync contract"
+        },
+        {
+          "path": "data/sync-manifest.json",
+          "pros": "data/ is a known top-level dir",
+          "cons": "Conflates project data with pipeline plumbing"
+        },
+        {
+          "path": "manifest.json (root)",
+          "pros": "Discoverable",
+          "cons": "Conflicts with package.json conceptually; too generic"
+        },
+        {
+          "path": "monitor/prompts/sync-manifest.json",
+          "pros": "Lives with the prompts that consume it",
+          "cons": "Not a prompt; mixes concerns"
+        }
       ],
       "decision": "monitor/sync-manifest.json. It's a workspace-sync concern, fits alongside monitor/curmudgeon/, monitor/analyst/, etc. Names what it does (sync manifest) without overclaiming (it's not a 'workspace inventory' — it's a sync contract).",
       "tradeoff": "Slightly less discoverable for new readers than a root-level file. Mitigated by CLAUDE.md File Ownership Rules pointing at it explicitly."
@@ -450,8 +530,16 @@
     "Q2_never_push_concept_disposition": {
       "question": "Should NEVER_PUSH stay as a separate concept in workspace-sync.md or get folded into the manifest as direction='never'?",
       "options_considered": [
-        {"name": "Keep separate", "pros": "Backward-compat with existing prompt comprehension", "cons": "Re-introduces the duplication problem PROP-018 is solving"},
-        {"name": "Fold into manifest as direction='clone_to_workspace' or 'never'", "pros": "Single source of truth; eliminates duplication", "cons": "Slightly less obvious for readers who scanned NEVER_PUSH and now have to scan manifest"}
+        {
+          "name": "Keep separate",
+          "pros": "Backward-compat with existing prompt comprehension",
+          "cons": "Re-introduces the duplication problem PROP-018 is solving"
+        },
+        {
+          "name": "Fold into manifest as direction='clone_to_workspace' or 'never'",
+          "pros": "Single source of truth; eliminates duplication",
+          "cons": "Slightly less obvious for readers who scanned NEVER_PUSH and now have to scan manifest"
+        }
       ],
       "decision": "Fold into manifest. NEVER_PUSH semantics are encoded as direction values: clone_to_workspace (build.js publish copies git→FUSE; workspace-sync refuses to push) for source/docs/flag/log files, and direction='never' for clone-internal-only files. The bash is_never_push() helper can stay in workspace-sync.md as a fallback safety check that reads the manifest and applies the same logic — this is a defensive guard, not a separate registry.",
       "tradeoff": "Readers who used to grep workspace-sync.md for NEVER_PUSH must now grep the manifest. The PROP rewrites workspace-sync.md to call out the manifest path explicitly, mitigating the discoverability cost."
@@ -464,9 +552,21 @@
     "Q4_who_can_edit_the_manifest": {
       "question": "Should the manifest be in NEVER_PUSH itself (operator-edited only) or eligible to be edited by agents?",
       "options_considered": [
-        {"name": "Operator-only", "pros": "Avoids ouroboros (an agent editing its own contract)", "cons": "Slows down genuine pipeline evolution — every new write path requires operator-mediated PROP review"},
-        {"name": "Agent-eligible (with constraints)", "pros": "Faster evolution; agents can self-extend", "cons": "Pipeline-edits-pipeline failure mode; an agent bug propagates through the manifest to all consumers"},
-        {"name": "Operator-only with structured PROP-driven extensions", "pros": "Best of both — agents PROPOSE manifest changes; operator commits", "cons": "Slight friction for routine extensions"}
+        {
+          "name": "Operator-only",
+          "pros": "Avoids ouroboros (an agent editing its own contract)",
+          "cons": "Slows down genuine pipeline evolution — every new write path requires operator-mediated PROP review"
+        },
+        {
+          "name": "Agent-eligible (with constraints)",
+          "pros": "Faster evolution; agents can self-extend",
+          "cons": "Pipeline-edits-pipeline failure mode; an agent bug propagates through the manifest to all consumers"
+        },
+        {
+          "name": "Operator-only with structured PROP-driven extensions",
+          "pros": "Best of both — agents PROPOSE manifest changes; operator commits",
+          "cons": "Slight friction for routine extensions"
+        }
       ],
       "decision": "Operator-only (the manifest's manifest-entry has direction='clone_to_workspace'; workspace-sync refuses to push). Agents propose extensions via PROPs that operator merges. The workflow: integrity lint detects a missing-manifest-entry, tinker (Mode 4) authors a PROP to extend the manifest, operator reviews and commits.",
       "rationale": "The manifest is pipeline policy. Letting agents self-edit policy is the failure mode that justifies having the manifest in the first place. Operator-only ownership keeps the change rate sane (~1-3 entries per week max) and the audit trail clear (every manifest commit is human-mediated).",
@@ -475,16 +575,27 @@
     "Q5_rollback_story": {
       "question": "What's the rollback story if the manifest-driven workspace-sync introduces a regression?",
       "options_considered": [
-        {"name": "Keep old enumeration commented out for one rollout cycle", "pros": "Fastest rollback (uncomment + commit)", "cons": "Bloats workspace-sync.md by ~150 lines; the 'commented-out fallback' becomes drift bait"},
-        {"name": "Env-var gated legacy mode in sync-from-manifest.js", "pros": "Cleaner; rollback is one env var change", "cons": "Requires the script to actually maintain a legacy code path internally"},
-        {"name": "Tag the pre-cutover commit as `pre-prop-018-rollback` for `git revert`", "pros": "No special code needed", "cons": "Rollback is a multi-file revert (workspace-sync.md, build.js, CLAUDE.md, structure-integrity.md); harder to do cleanly under time pressure"}
+        {
+          "name": "Keep old enumeration commented out for one rollout cycle",
+          "pros": "Fastest rollback (uncomment + commit)",
+          "cons": "Bloats workspace-sync.md by ~150 lines; the 'commented-out fallback' becomes drift bait"
+        },
+        {
+          "name": "Env-var gated legacy mode in sync-from-manifest.js",
+          "pros": "Cleaner; rollback is one env var change",
+          "cons": "Requires the script to actually maintain a legacy code path internally"
+        },
+        {
+          "name": "Tag the pre-cutover commit as `pre-prop-018-rollback` for `git revert`",
+          "pros": "No special code needed",
+          "cons": "Rollback is a multi-file revert (workspace-sync.md, build.js, CLAUDE.md, structure-integrity.md); harder to do cleanly under time pressure"
+        }
       ],
       "decision": "Env-var gated legacy mode in sync-from-manifest.js for one rollout cycle (7 days). The script supports `LEGACY_MODE=1` env var that disables manifest iteration and invokes the bash helpers (smart_copy, sync_glob) with the same enumeration as pre-PROP-018. After 7 days clean, remove the legacy mode in a separate cleanup commit.",
       "rationale": "Cleanest rollback path: operator sets LEGACY_MODE=1 in workspace-sync's task config, and the next workspace-sync run uses the old behavior — no git revert needed, no clone confusion. The 7-day window matches the monitoring_window for early regression detection.",
       "tradeoff": "Maintains two code paths in sync-from-manifest.js for one week. Mitigated by: (a) the legacy path is just a wrapper around the existing bash helpers, ~30 lines, (b) deleting it after 7 days is a single-commit cleanup."
     }
   },
-
   "non_goals_compliance": {
     "no_NEVER_PUSH_membership_changes": "Confirmed. No file currently in NEVER_PUSH is being made push-eligible by this PROP. The migration preserves existing semantics; only the storage location and iteration mechanism change.",
     "no_digest_reviews_js_changes": "Confirmed. digest-reviews.js's staleness mechanism is correct.",
@@ -492,7 +603,6 @@
     "no_broader_architectural_cleanup": "Confirmed. Scope is the smart_copy iteration → manifest migration. Agent prompt restructuring, CLAUDE.md prose rewrite (beyond File Ownership Rules section), and other architectural cleanups are out of scope.",
     "prop_017_preserved": "Confirmed. PROP-017's targeted fix lines remain in workspace-sync.md until Step 8 cutover. PROP-017 status is updated to 'superseded-by-PROP-018' as a follow-up after PROP-018 lands; the file itself is not deleted (kept as alternative-not-chosen reference per directive non-goals)."
   },
-
   "completion_criteria_self_check": {
     "file_present": "monitor/tinker/proposals/PROP-018-sync-manifest.json — this file.",
     "schema_concrete": "Yes — schema_design.entry_shape lists 9 required-or-optional fields with types and validation. example_entries_per_classification has 10 example entries spanning all 9 classifications and 3 of 4 directions (workspace_to_clone, clone_to_workspace, both, never; the example for `never` direction covers scratch classification and clone-internal). validation_rules lists 10 rules.",
@@ -503,7 +613,6 @@
     "open_questions_addressed": "Yes — all 5 open design questions (Q1-Q5) answered with options_considered, decision, rationale, and tradeoff in the open_questions_addressed section. Decisions: Q1 monitor/sync-manifest.json; Q2 fold into manifest; Q3 strict uniqueness with first-match-wins for globs; Q4 operator-only with PROP-driven agent proposals; Q5 env-var gated legacy mode for 7-day rollout cycle.",
     "directive_marked_completed": "Pending — tinker will mark DIRECTIVE-20260505-002 status:'completed' in this same run per DIRECTIVE-LIFECYCLE additive-edit exception."
   },
-
   "cross_references": [
     "DIRECTIVE-20260505-002 — operator directive that triggered this PROP",
     "PROP-017 — alternative-not-chosen targeted fix; gap audit findings carried forward as PROP-018 inputs",
@@ -517,11 +626,15 @@
     "monitor/prompts/reference/tinker-proposals-and-fixes.md — gains escalation rule at Step 11",
     "monitor/prompts/reference/BUILD-AND-CHANGE.md — should be updated post-implementation to document the manifest-driven flow"
   ],
-
   "verification_pattern": {
     "purpose": "Used by tinker's PROP Lifecycle Verification (Mode 1 / previous_followup) to decide if PROP-018 is FIXED or STILL_BROKEN.",
     "primary_test": "After PROP-018 lands in full (all 11 migration steps + 7-day legacy-mode window): (a) curl https://raw.githubusercontent.com/funwithscience-org/dome-model-review/main/monitor/sync-manifest.json — file exists with valid JSON; (b) `node monitor/scripts/validate-sync-manifest.js` — exits 0 (V1-V9 pass); (c) `node monitor/scripts/lint-sync-manifest.js` — exits 0 (zero manifest-gap-candidate findings); (d) workspace-sync's last 5 run reports show files_committed > 0 across the manifest-driven path.",
     "secondary_test": "Compare workspace-sync's commit set 30 days pre-PROP-018 vs 30 days post-PROP-018: should be a superset (more gap files now covered) with zero new force-syncs of relic files. If a relic file appears in any post-PROP-018 commit, the manifest entry was misconfigured.",
     "still_broken_reason_template": "Manifest absent or invalid: file=<path>, reason=<missing|parse_error|validation_failure>. Or: lint findings present: kind=<kind>, count=<n>. Or: workspace-sync legacy mode activated: env=LEGACY_MODE=1 set on <date>, indicates manifest-driven path failed."
-  }
+  },
+  "obe_closed_at": "2026-06-14T11:00:00.000Z",
+  "obe_closed_by": "operator-cowork-2026-06-14",
+  "obe_prior_status": "pending-operator-review",
+  "obe_closure_note": "Operator-decision close 2026-06-14: deferring the manifest single-source-of-truth migration in favor of the targeted PROP-017 gap-fixes that already shipped + ongoing discipline. The 3-file duplication (build.js OWNERSHIP + workspace-sync.md NEVER_PUSH + CLAUDE.md File Ownership Rules) is real but has been stable since PROP-051 safety gates (2026-05-21) landed; no new disaster traced to enumeration drift. 11-step migration cost is high vs ongoing risk-reduction benefit. Targeted-fix pattern (add new files to all 3 sites when authored) is working — every PROP shipped since (021/045/051/090/091/092/093/094/095/096/097/098/099/100) followed that discipline cleanly. Re-open if a future disaster traces specifically to enumeration drift rather than other causes.",
+  "obe_closure_rationale": "Cost > benefit at current pipeline maturity. Targeted-fix discipline works; manifest is over-engineering for the failure rate."
 }

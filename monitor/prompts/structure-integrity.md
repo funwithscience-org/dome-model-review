@@ -594,6 +594,48 @@ fi
 
 **What does NOT change**: curmudgeon's Priority 3 review procedure (Steps 5-10 in the dispatcher) is unchanged. The fingerprint comparison rule (PROP-019 reduced-set, common fields only) is unchanged. The drift-magnitude tiebreak (commit 71be960) is unchanged. This step is purely a precomputation artifact — curmudgeon's review output is identical to what it would produce with the old in-prompt scan.
 
+### 7i. Curmudgeon Dispatcher State Precompute (PROP-021 Phase 1, added 2026-06-14)
+
+Counterpart to §7g for the rest of curmudgeon's pre-review dispatcher (Priorities 1, 2, "audit", 4 in addition to §7g's Priority 3). Phase 1 ships the script + the integrity-side refresh check, but does NOT yet edit `monitor/prompts/curmudgeon.md` — the artifact is produced for measurement only. Phase 2 (separate PR, conditional on operator confirming the ≥40% input-token reduction threshold from PROP-021 §regression_protection.a) will edit curmudgeon.md to consume the artifact and slim out the rare-path prose.
+
+**Trigger:** Run the refresh step if `monitor/integrity/curmudgeon-dispatcher-state.json` is missing OR its `generated_at` is more than 6 hours old. Tighter than §7g's 72h gate because queue state (priority 1) can flip whenever the decider pushes — Phase 2 will additionally have curmudgeon-side bash refresh on every curmudgeon run for sub-minute freshness; in Phase 1 the daily integrity refresh + this 6h gate are sufficient since the artifact is measurement-only.
+
+```bash
+node -e "
+const fs=require('fs');
+const path='monitor/integrity/curmudgeon-dispatcher-state.json';
+let stale=true;
+try{
+  const d=JSON.parse(fs.readFileSync(path,'utf8'));
+  const ageH=(Date.now()-Date.parse(d.generated_at))/3600000;
+  stale=ageH>6;
+  console.log('curmudgeon-dispatcher-state age:', ageH.toFixed(1)+'h', stale?'STALE — refresh':'fresh — skip');
+}catch(e){console.log('curmudgeon-dispatcher-state missing or unreadable; refresh required');}
+process.exit(stale?2:0);
+"
+CDS_GATE=$?
+if [ $CDS_GATE -eq 2 ]; then
+  CURMUDGEON_DISPATCHER_RUN_ID="${INTEGRITY_RUN_ID:-integrity-$(date -u +%Y%m%dT%H%MZ)}" \
+    node monitor/scripts/compute-curmudgeon-dispatcher-state.js 2>&1 | tee /tmp/curmudgeon-dispatcher-state.log
+  if [ ${PIPESTATUS[0]} -ne 0 ]; then
+    echo "MAJOR FINDING: compute-curmudgeon-dispatcher-state script failed — Phase 2 curmudgeon.md consumption blocked."
+    echo "  Stack trace + diagnostics in /tmp/curmudgeon-dispatcher-state.log (last 20 lines):"
+    tail -20 /tmp/curmudgeon-dispatcher-state.log
+  else
+    echo "OK: curmudgeon-dispatcher-state refreshed."
+  fi
+fi
+```
+
+**Severity rubric:**
+- **Major** if the script fails (non-zero exit, missing output). Phase 1 impact is measurement-only (curmudgeon still reads source state files), but a chronic failure means the Phase 2 rollout cannot proceed. Operator investigates within 24h.
+- **Moderate** if the script ran but `recommended_priority` is `null` or matches no known value (1, 2, "audit", 3, 4, 5). Indicates a logic bug. Cross-check by spot-running standalone with `--workspace`.
+- **Informational otherwise**: report `recommended_priority`, `recommendation_reason`, `priority_1_queue.queue_total`, `priority_1_queue.has_unreviewed`, `priority_3_drift.candidate_count`, `total_script_ms` so deep-tail health is visible.
+
+**Why integrity owns this**: same rationale as §7g — integrity already runs daily, has a structural-audit charter, single context window. Adding a sub-second deterministic step on a 6h gate is the lightest possible intervention.
+
+**What does NOT change**: curmudgeon's per-item review procedure (Steps 1-10) is unchanged. Phase 1 changes nothing about curmudgeon's actual behavior — it just produces a measurement artifact. The sequential priority order (1 → 2 → audit → 3 → 4 → 5) is preserved by the script's recommendation logic.
+
 ### 7h. Mech-A-Bypass False-Closure Audit (PROP-059, added 2026-05-25, schema-corrected 2026-05-26)
 
 **PROLOGUE — clone-source-of-truth (PROP-078, 2026-06-03):** Both the scan-source (`monitor/decisions/closed-issues.json`) AND the self-test write destination (`monitor/decisions/open-issues.json`) MUST be the fresh clone path (`${CLEAN_CLONE}/monitor/decisions/...`). Reading either file from FUSE risks importing stale content from cross-session propagation lag; writing a stale-source-derived modification to the clone then pushing reverts whatever a same-hour writer just committed. The 2026-06-03T01:30:38Z commit `3a709c71` is the canonical failure shape (Section 7h self-test fired, integrity read `open-issues.json` from stale FUSE, appended ISS-2519, wrote the merged blob to its clone, and pushed — erasing decider's ca68cb5d EXP-450 closures). The corrective fix is procedural: always read AND write from the clone path. PROP-077 H5 documents the full forensic timeline. If the audit below fires AND the self-test triggers, the write MUST go to `${CLEAN_CLONE}/monitor/decisions/open-issues.json`, never to FUSE.

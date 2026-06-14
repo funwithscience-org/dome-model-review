@@ -7,10 +7,8 @@
   "category": "architecture_split + bloat_reduction + sizing_re_examination",
   "propose_only": true,
   "do_not_implement": "DO NOT modify any state file, prompt, or script. Operator reviews and authorizes implementation in a separate step. Treat as a pure design exercise — the migration is staged across multiple subsequent operator-authorized commits, one per file.",
-  "status": "pending-operator-review",
-
+  "status": "phase-1-5-implemented-phase-6-deferred",
   "summary": "PROP-021's instrumentation surfaced one bloat case (priority-queue.json: 50KB on disk, 981B live state). The same shape lives in at least nine other agent state files across the pipeline. The pattern: one canonical file per concept carries BOTH 'live state I need to act on' AND 'every historical item that was ever live state' — and fast-path readers (dispatcher checks, OBE lookups, severity gates) pay the historical-record cost on every read. This PROP designs ONE unified archive convention applied across all bloat-affected files: live state stays in <name>.json (small, fast), historical record moves to <name>-archive.jsonl (append-only JSON-Lines, FUSE-friendly). Migration is per-file, atomic-per-file, ordered low-risk → high-risk. PROP-009r2 audit, decider lifecycle verification, integrity coverage checks, and operator workflow are each preserved by explicit design — see consumer_protection_matrix. The convention is documented as a new reference doc (monitor/prompts/reference/state-file-archives.md) so future state files inherit it correctly. PROP-018 sync-manifest absorbs the new archive files via consistent classifications. This is the broadened, pipeline-wide application of PROP-021's Option C (deferred); it makes the bloat fix structural, not one-off.",
-
   "scope": {
     "in_scope": [
       "monitor/curmudgeon/priority-queue.json (canonical bloat example: 50KB / 981B live).",
@@ -33,7 +31,6 @@
       "Other architectural cleanups (open-issues hygiene, processed-reviews schema dedup outside the archive scope, etc.) — focused narrowly on the bloat pattern."
     ]
   },
-
   "audit_pass": {
     "method": "Walked candidate state files. For each: total bytes, decomposed into live-portion vs history-portion vs schema-overhead, identified primary readers and writers, characterized read-pattern (full-iteration vs lookup-by-ID vs status-filter), measured 'bloat impact' = approx live-state-readers-per-day × wasted-bytes-per-read.",
     "files": {
@@ -45,8 +42,15 @@
         "live_definition": "queue array (currently 0 items). Fast-path readers want yes/no on whether queue has un-reviewed items.",
         "history_definition": "history array (currently 175 entries, capped at 200 by PROP-009r2; popped queue items with pop_reason, claimed_review_file, popped_at, operator_bypass_reason).",
         "schema_overhead": "description, mode, mode_legal_values, mode_rules, writers, readers, schedule_state, last_updated.",
-        "writers": ["decider (Step E2 pop & E5 mode flip)"],
-        "readers": ["curmudgeon (dispatcher Step 0b)", "decider (Step E intake)", "tinker (Mode 1/3 audits)", "PROP-009r2 3-day rolling audit reader (in decider Step E2 enforcement check + tinker Mode 2 shadow log audit)"],
+        "writers": [
+          "decider (Step E2 pop & E5 mode flip)"
+        ],
+        "readers": [
+          "curmudgeon (dispatcher Step 0b)",
+          "decider (Step E intake)",
+          "tinker (Mode 1/3 audits)",
+          "PROP-009r2 3-day rolling audit reader (in decider Step E2 enforcement check + tinker Mode 2 shadow log audit)"
+        ],
         "read_pattern": "queue: full iteration. history: only the audit reader iterates; everyone else ignores history.",
         "bloat_impact_per_day": "Curmudgeon ~16 runs/day × 50KB read = 800KB/day. ~95% of that is history bytes the dispatcher does not consult.",
         "evidence_in_repo": "PROP-021 instrumentation_pass.state_file_reads_at_dispatcher_time.priority-queue.json"
@@ -59,8 +63,13 @@
         "schema_overhead": 3849,
         "live_definition": "notes[] entries with status='pending' (currently 1: HNOTE-OPERATOR-DRAIN-MODE-001).",
         "history_definition": "notes[] entries with status='consumed' (31) or status='superseded' (1).",
-        "writers": ["operator (append pending)", "decider (mark consumed/superseded with consumed_at/consumed_by/consumed_action)"],
-        "readers": ["decider (every run, Step 0d operator-note triage)"],
+        "writers": [
+          "operator (append pending)",
+          "decider (mark consumed/superseded with consumed_at/consumed_by/consumed_action)"
+        ],
+        "readers": [
+          "decider (every run, Step 0d operator-note triage)"
+        ],
         "read_pattern": "filter by status='pending'.",
         "bloat_impact_per_day": "Decider ~6 runs/day × 113KB read = 678KB/day. ~97% is consumed notes."
       },
@@ -71,8 +80,13 @@
         "schema_overhead": 347,
         "live_definition": "notes[] with status='pending' (currently 0).",
         "history_definition": "notes[] with status='consumed' (9).",
-        "writers": ["operator", "curmudgeon (mark consumed)"],
-        "readers": ["curmudgeon (every run, Step 0c)"],
+        "writers": [
+          "operator",
+          "curmudgeon (mark consumed)"
+        ],
+        "readers": [
+          "curmudgeon (every run, Step 0c)"
+        ],
         "read_pattern": "filter by status='pending'.",
         "bloat_impact_per_day": "Curmudgeon ~16 runs/day × 39KB read = 624KB/day. 100% consumed bytes today."
       },
@@ -83,8 +97,14 @@
         "schema_overhead": 9860,
         "live_definition": "notes[] with status='pending' or no status (currently 1 with no status field — likely operator append-in-progress).",
         "history_definition": "notes[] with status='consumed' (47).",
-        "writers": ["operator", "analyst (mark consumed)"],
-        "readers": ["analyst (every run, dispatcher precheck)", "curmudgeon (Step 0c2 cross-check)"],
+        "writers": [
+          "operator",
+          "analyst (mark consumed)"
+        ],
+        "readers": [
+          "analyst (every run, dispatcher precheck)",
+          "curmudgeon (Step 0c2 cross-check)"
+        ],
         "read_pattern": "filter by status='pending'.",
         "bloat_impact_per_day": "Analyst ~12 runs/day × 338KB read = 4.0MB/day. Largest single bloat source by daily byte volume."
       },
@@ -95,8 +115,13 @@
         "schema_overhead": 822,
         "live_definition": "notes[] with status='pending' (currently 0).",
         "history_definition": "notes[] with status='consumed' (8).",
-        "writers": ["operator", "social (mark consumed)"],
-        "readers": ["social (daily run)"],
+        "writers": [
+          "operator",
+          "social (mark consumed)"
+        ],
+        "readers": [
+          "social (daily run)"
+        ],
         "read_pattern": "filter by status='pending'.",
         "bloat_impact_per_day": "Social ~1 run/day × 36KB read = 36KB/day. Smallest of the four human-notes."
       },
@@ -106,8 +131,15 @@
         "history_bytes": 1395696,
         "live_definition": "(none — every entry is, by definition, closed; the file is pure archive).",
         "history_definition": "issues[] with status in {fixed, wontfix, closed-wontfix, closed-fixed, closed, superseded, stale, stale-already-fixed, closed-duplicate, fixed-pending-verification} (1514 entries).",
-        "writers": ["decider (move from open-issues to closed-issues)"],
-        "readers": ["analyst (every run, OBE lookup by ISS-NNN regex)", "curmudgeon (Step 8a batch-triage severity gate)", "decider (intake dedup, lifecycle verification by id)", "social (dedup before filing new issues)"],
+        "writers": [
+          "decider (move from open-issues to closed-issues)"
+        ],
+        "readers": [
+          "analyst (every run, OBE lookup by ISS-NNN regex)",
+          "curmudgeon (Step 8a batch-triage severity gate)",
+          "decider (intake dedup, lifecycle verification by id)",
+          "social (dedup before filing new issues)"
+        ],
         "read_pattern": "lookup-by-id (find single record). NO consumer iterates the array. Bulk-OBE pattern is one regex grep, then per-id targeted reads.",
         "bloat_impact_per_day": "Cumulative across analyst (~12 runs/day), curmudgeon (~16/day), decider (~6/day), social (~1/day) = 35 runs/day × 1.4MB = 49MB/day of read tokens. Highest daily token cost.",
         "fits_directive_rule": "Operator's stated rule: 'If the file is read on every dispatcher cycle, anything not actively-consulted is archive.' Every entry is closed; no entry is live. Therefore the entire file is archive."
@@ -119,8 +151,12 @@
         "schema_overhead": 517,
         "live_definition": "(none — every entry is a 'review filename already processed' marker).",
         "history_definition": "Four overlapping arrays (legacy schema duplication): processed (457 filenames), section_reviews_processed (2), holistic_reviews_processed (5), processed_reviews (71), processed_files (1). The 'processed' array is canonical per DATA-SCHEMAS.md.",
-        "writers": ["decider (append filename on review completion)"],
-        "readers": ["decider (cycle-aware dedup check at intake)"],
+        "writers": [
+          "decider (append filename on review completion)"
+        ],
+        "readers": [
+          "decider (cycle-aware dedup check at intake)"
+        ],
         "read_pattern": "membership check: 'has filename X been processed?'",
         "bloat_impact_per_day": "Decider ~6 runs/day × 14KB read = 84KB/day. Modest but file is also a schema-cleanup target (note: schema dedup outside scope per directive non_goals; only the live/archive split is in scope here)."
       },
@@ -131,8 +167,14 @@
         "schema_overhead": 10770,
         "live_definition": "holistic_checks array (9 entries, ~1.3KB; rotation pre-Priority 4) + points[] entries with status='pending' (16 of 197, ~5KB) + cycle/last_run/last_review_time/etc. headers (~700B).",
         "history_definition": "points[] entries with status='reviewed' (153) or no status (28 — likely legacy entries pre-status-field). Total ~48KB.",
-        "writers": ["curmudgeon (append point on review)", "decider (mark cycle/last_run; PROP-014-amendment additive edits)"],
-        "readers": ["curmudgeon (every run, Step 4 holistic rotation; pre-PROP-020 also fingerprint compare)", "tinker (Mode 1 staleness)"],
+        "writers": [
+          "curmudgeon (append point on review)",
+          "decider (mark cycle/last_run; PROP-014-amendment additive edits)"
+        ],
+        "readers": [
+          "curmudgeon (every run, Step 4 holistic rotation; pre-PROP-020 also fingerprint compare)",
+          "tinker (Mode 1 staleness)"
+        ],
         "read_pattern": "holistic_checks: filter by status='pending'. points[]: post-PROP-020 the fingerprint compare moved to drift-audit; current readers only check 'is this win/section already in points with last_reviewed_cycle ≥ N' (lookup-by-id or filter-by-status).",
         "bloat_impact_per_day": "Curmudgeon ~16 runs/day × 66KB = 1.05MB/day. ~75% history."
       },
@@ -142,8 +184,16 @@
         "history_bytes": 350771,
         "live_definition": "items[] with status in {pending, draft_awaiting_human_group_review, operator-approved, DRAFT_AWAITING_OPERATOR_REVIEW} = 9 actionable + revised states (~30KB).",
         "history_definition": "items[] with status in {complete (266), integrated (4), cancelled (2), superseded (2), subsumed (3)} = 277 items (~350KB).",
-        "writers": ["analyst (append new EXP, status: pending; later updates)", "decider (status: integrated, integrated_at; PROP-014-amendment additive edits)"],
-        "readers": ["analyst (every run, dispatcher precheck — filter by status='pending'+!blocked_on; mode-2b re-examination of EXP)", "decider (every run, integration loop — filter by status='complete'/'revised'+!integrated)", "structure-integrity (daily, walk for collisions and category coverage)", "tinker (Mode 1 staleness)"],
+        "writers": [
+          "analyst (append new EXP, status: pending; later updates)",
+          "decider (status: integrated, integrated_at; PROP-014-amendment additive edits)"
+        ],
+        "readers": [
+          "analyst (every run, dispatcher precheck — filter by status='pending'+!blocked_on; mode-2b re-examination of EXP)",
+          "decider (every run, integration loop — filter by status='complete'/'revised'+!integrated)",
+          "structure-integrity (daily, walk for collisions and category coverage)",
+          "tinker (Mode 1 staleness)"
+        ],
         "read_pattern": "filter by status. NO consumer iterates terminal-state items in the fast path; integrated/cancelled/superseded/subsumed are dead weight for ALL fast-path readers. structure-integrity walks the full array for collision detection but that's daily, not per-run.",
         "bloat_impact_per_day": "Analyst+decider+integrity ~18 runs/day × 381KB = 6.86MB/day. Second-highest daily token cost after closed-issues."
       },
@@ -154,8 +204,13 @@
         "schema_overhead": 7294,
         "live_definition": "items with status in {pending (33), open (2)} = 35 items (~21KB).",
         "history_definition": "items with status='resolved' (47, ~38.5KB).",
-        "writers": ["decider (push items needing analyst re-examination, with related_issues, reason)", "analyst (mark resolved with resolution_note)"],
-        "readers": ["analyst (every run, dispatcher precheck — filter by status='pending'/'open')"],
+        "writers": [
+          "decider (push items needing analyst re-examination, with related_issues, reason)",
+          "analyst (mark resolved with resolution_note)"
+        ],
+        "readers": [
+          "analyst (every run, dispatcher precheck — filter by status='pending'/'open')"
+        ],
         "read_pattern": "filter by status. structure-shape is array-at-root (no top-level wrapper)."
       },
       "monitor/integrity/workspace-sync-skips.jsonl": {
@@ -163,8 +218,13 @@
         "shape": "ALREADY JSONL append-only.",
         "live_definition": "(N/A — this is an append-only log, no live/history distinction).",
         "history_definition": "1604 lines, span 2026-04-09 → 2026-05-06 (27 days).",
-        "writers": ["workspace-sync (every run, append SKIP entries)"],
-        "readers": ["tinker (Mode 1/2 forensics)", "structure-integrity (PROP-019/020 work)"],
+        "writers": [
+          "workspace-sync (every run, append SKIP entries)"
+        ],
+        "readers": [
+          "tinker (Mode 1/2 forensics)",
+          "structure-integrity (PROP-019/020 work)"
+        ],
         "read_pattern": "tail-N or grep-by-path. No full-iteration in the fast path.",
         "verification": "ALREADY archive-shaped per the convention proposed below. No migration needed. Recommend a future PROP add bounded retention (truncate after 90 days) — out of scope here.",
         "bloat_impact_per_day": "Tinker daily × 529KB = 529KB/day. Tolerable; flagged as future-PROP target."
@@ -179,20 +239,63 @@
       "estimated_daily_read_token_cost_post_migration": "~3MB/day (live-only files are tiny; archive only read on lookup-by-id grep, which streams not loads)"
     },
     "ranked_priority_for_migration": [
-      {"file": "monitor/integrity/workspace-sync-skips.jsonl", "rank": 1, "rationale": "Already correct shape — verify-only step. Lowest risk, validates the convention."},
-      {"file": "monitor/social/human-notes.json", "rank": 2, "rationale": "Smallest of the human-notes; only one reader (social, daily). Validates the human-notes pattern with minimum blast radius."},
-      {"file": "monitor/curmudgeon/human-notes.json", "rank": 3, "rationale": "Two readers (curmudgeon dispatcher + Step 0c2 cross-read by curmudgeon itself); 100% consumed today so migration is mostly schema."},
-      {"file": "monitor/decisions/human-notes.json", "rank": 4, "rationale": "One reader (decider). 1 pending note today (drain-mode); migration must preserve operator's pending note in the live file."},
-      {"file": "monitor/analyst/human-notes.json", "rank": 5, "rationale": "Largest human-notes (338KB). Two readers (analyst + curmudgeon Step 0c2). High savings, modest risk."},
-      {"file": "monitor/curmudgeon/priority-queue.json", "rank": 6, "rationale": "Canonical bloat case from PROP-021 instrumentation. PROP-009r2 audit reader is the load-bearing consumer that needs careful migration."},
-      {"file": "monitor/analyst/attention-inbox.json", "rank": 7, "rationale": "Single reader, status-filter pattern. Array-at-root shape requires slight migration variant."},
-      {"file": "monitor/curmudgeon/tracker.json", "rank": 8, "rationale": "Multi-writer, multiple status patterns inside points[]. Higher risk; migrate after all simpler files are validated."},
-      {"file": "monitor/analyst/expansion-tracker.json", "rank": 9, "rationale": "381KB, 4 readers, write-verify discipline (Discipline 1a) depends on integrated_at field. Higher risk than tracker.json."},
-      {"file": "monitor/decisions/processed-reviews.json", "rank": 10, "rationale": "Migrate together with closed-issues (both have lookup-by-id semantics; convention proves out)."},
-      {"file": "monitor/decisions/closed-issues.json", "rank": 11, "rationale": "HIGHEST RISK. 1.4MB, 4 readers, every reader uses lookup-by-id. Last because if anything is going to surprise us, it's the bulk-OBE reader pattern in analyst, and we want maximum prior-validation of the convention."}
+      {
+        "file": "monitor/integrity/workspace-sync-skips.jsonl",
+        "rank": 1,
+        "rationale": "Already correct shape — verify-only step. Lowest risk, validates the convention."
+      },
+      {
+        "file": "monitor/social/human-notes.json",
+        "rank": 2,
+        "rationale": "Smallest of the human-notes; only one reader (social, daily). Validates the human-notes pattern with minimum blast radius."
+      },
+      {
+        "file": "monitor/curmudgeon/human-notes.json",
+        "rank": 3,
+        "rationale": "Two readers (curmudgeon dispatcher + Step 0c2 cross-read by curmudgeon itself); 100% consumed today so migration is mostly schema."
+      },
+      {
+        "file": "monitor/decisions/human-notes.json",
+        "rank": 4,
+        "rationale": "One reader (decider). 1 pending note today (drain-mode); migration must preserve operator's pending note in the live file."
+      },
+      {
+        "file": "monitor/analyst/human-notes.json",
+        "rank": 5,
+        "rationale": "Largest human-notes (338KB). Two readers (analyst + curmudgeon Step 0c2). High savings, modest risk."
+      },
+      {
+        "file": "monitor/curmudgeon/priority-queue.json",
+        "rank": 6,
+        "rationale": "Canonical bloat case from PROP-021 instrumentation. PROP-009r2 audit reader is the load-bearing consumer that needs careful migration."
+      },
+      {
+        "file": "monitor/analyst/attention-inbox.json",
+        "rank": 7,
+        "rationale": "Single reader, status-filter pattern. Array-at-root shape requires slight migration variant."
+      },
+      {
+        "file": "monitor/curmudgeon/tracker.json",
+        "rank": 8,
+        "rationale": "Multi-writer, multiple status patterns inside points[]. Higher risk; migrate after all simpler files are validated."
+      },
+      {
+        "file": "monitor/analyst/expansion-tracker.json",
+        "rank": 9,
+        "rationale": "381KB, 4 readers, write-verify discipline (Discipline 1a) depends on integrated_at field. Higher risk than tracker.json."
+      },
+      {
+        "file": "monitor/decisions/processed-reviews.json",
+        "rank": 10,
+        "rationale": "Migrate together with closed-issues (both have lookup-by-id semantics; convention proves out)."
+      },
+      {
+        "file": "monitor/decisions/closed-issues.json",
+        "rank": 11,
+        "rationale": "HIGHEST RISK. 1.4MB, 4 readers, every reader uses lookup-by-id. Last because if anything is going to surprise us, it's the bulk-OBE reader pattern in analyst, and we want maximum prior-validation of the convention."
+      }
     ]
   },
-
   "unified_archive_convention": {
     "name": "live-state / append-archive split",
     "headline": "<name>.json holds ONLY items meeting the file's live-state predicate. <name>-archive.jsonl holds the full historical record (one JSON object per line, append-only).",
@@ -233,7 +336,6 @@
       "review_gate": "When a new file is introduced (a PROP or HNOTE proposes one), tinker's PROP-review pass checks whether the convention applies and flags missing archive companion as a finding."
     }
   },
-
   "per_file_migration_plan": {
     "common_template": {
       "step_1_create_archive": "Create empty <name>-archive.jsonl (touch). Add to PROP-018 sync-manifest with direction and classification.",
@@ -367,7 +469,6 @@
       }
     }
   },
-
   "consumer_protection_matrix": [
     {
       "consumer": "PROP-009r2 3-day rolling audit",
@@ -418,7 +519,6 @@
       "preservation_status": "PRESERVED. Operator habits do not change; the convention is uniform across all human-notes files (no file-specific exceptions for operator)."
     }
   ],
-
   "obsolete_justification_cleanup": {
     "PROP-009r2_history_cap_200": {
       "location": "monitor/prompts/decider.md line 370 — `// PROP-009r2: bumped history cap 50 -> 200 so 3-day rolling audit window always fits.`",
@@ -429,7 +529,6 @@
       "documentation_in_PROP_022": "The state-file-archives.md reference doc carries a 'historical caps removed' section listing this and any other caps that were sized for since-resolved load conditions, with links to the original PROPs."
     }
   },
-
   "rollback_story": {
     "granularity": "PER-FILE, ATOMIC PER FILE. One PR per file's migration. Operator's stated lean.",
     "argument_for_per_file": "The 11 files have different risk profiles. workspace-sync-skips is verify-only (no rollback needed). closed-issues is highest risk (4 readers, 1.4MB, lookup-by-id critical). Bundling them into one all-or-nothing PR means a closed-issues regression rolls back human-notes too — overkill blast radius. Per-file PRs let each migration be reverted independently when its specific consumer trips a regression.",
@@ -442,7 +541,6 @@
     },
     "rollback_invariants": "Archive files are NEVER deleted on rollback. They are immutable append-only logs. If a migration is reverted, the archive remains on disk as a forensic record but is no longer the canonical source. Re-applying the migration later is therefore cheap (idempotent backfill: skip entries already in archive)."
   },
-
   "PROP_018_classifications": {
     "note": "Each new <name>-archive.jsonl file needs an entry in monitor/sync-manifest.json (PROP-018 schema). Direction: workspace_to_clone (decider/curmudgeon/analyst/social mutate from clone, but archives are append-only-friendly so workspace_to_clone via smart_copy mtime-guard works fine). Classification: 'log' for ID-lookup-light archives, 'ledger' for ID-lookup-critical archives.",
     "entries": [
@@ -519,7 +617,6 @@
     ],
     "self_entry_note": "monitor/integrity/workspace-sync-skips.jsonl already has a PROP-018 entry (classification: log per the sample in PROP-018). No change needed."
   },
-
   "regression_test": {
     "test_strategy": "Per-file pre/post assertions. Each file's migration must pass three classes of tests: (1) consumer regression — no consumer reads stale data or crashes on missing fields; (2) backfill correctness — archive contains every terminal record from pre-migration; (3) round-trip — a write → read sequence produces identical observable state pre- and post-migration.",
     "per_file_tests": {
@@ -563,7 +660,6 @@
     },
     "acceptance_criteria": "Every existing consumer test still passes (where 'tests' = the consumer's pre-migration captured behavior). No consumer reads stale data. No consumer crashes on missing fields. Backfill is idempotent on rerun. Tinker's daily Mode 1 finds no stranded patches or staleness flags within 7 days post-migration of each file."
   },
-
   "estimated_impact": {
     "token_reduction_per_dispatcher_run": {
       "method": "Sum of (per-file dispatcher-time bytes pre-migration) - (per-file dispatcher-time bytes post-migration). Multiply by ~4 chars/token Opus heuristic.",
@@ -593,7 +689,6 @@
       "regression_prevention": "Tinker Mode 3 gains a new check: state-file bloat regression. If any live file exceeds 5x expected live-state size, surface as soft alert. This catches re-accretion of bloat (e.g., a writer that forgot to move terminal items to archive)."
     }
   },
-
   "open_design_questions_addressed": {
     "q1_single_archive_vs_per_event_files": {
       "question": "Should the unified convention be a single archive file per source (priority-queue + priority-queue-archive.jsonl) or a directory of per-event files (priority-queue/events/2026-05-05.jsonl)? Argue.",
@@ -644,7 +739,6 @@
       "counter_principle": "If a file has even ONE iteration-based reader in the fast path (e.g., 'list me all open EXPs with status=complete'), it has a live portion — apply the standard live + archive split."
     }
   },
-
   "non_goals_acknowledged": [
     "DO NOT propose changes to monitor/curmudgeon/reviews/*.json (off-limits).",
     "DO NOT propose changes to monitor/integrity/drift-audit.json (off-limits).",
@@ -652,7 +746,6 @@
     "DO NOT propose schema changes beyond what's needed for the archive split (processed-reviews.json schema-cleanup is acknowledged but deferred).",
     "DO NOT broaden scope to other architectural cleanups (open-issues hygiene leaks of 5 closed-status items)."
   ],
-
   "completion_criteria": {
     "file_present": "monitor/tinker/proposals/PROP-022-state-file-archive-architecture.json exists with all 9 deliverable structure sections (audit_pass, unified_archive_convention, per_file_migration_plan, consumer_protection_matrix, obsolete_justification_cleanup, rollback_story, PROP_018_classifications, regression_test, estimated_impact). DONE in this PROP.",
     "audit_quantified": "Every candidate state file has byte-size + live/history split numbers. DONE in audit_pass.",
@@ -662,7 +755,6 @@
     "PROP_018_classifications_proposed": "Each new archive file has a proposed sync-manifest entry. DONE in PROP_018_classifications (10 entries).",
     "open_questions_addressed": "All 6 open design questions answered with reasoning, not deferred. DONE in open_design_questions_addressed."
   },
-
   "cross_references": [
     "DIRECTIVE-20260506-001 (this PROP responds to it)",
     "PROP-021 (Option C deferred — this PROP is Option C done right, broadened to pipeline-wide)",
@@ -675,7 +767,6 @@
     "monitor/decisions/closed-issues.json (highest-risk migration target; rank 11 in migration order)",
     "monitor/prompts/reference/state-file-archives.md (NEW reference doc proposed by this PROP; defines the convention; written as part of the migration's first step)"
   ],
-
   "supersedes": null,
   "appendix_proposed_reference_doc_outline": {
     "filename": "monitor/prompts/reference/state-file-archives.md",
@@ -703,5 +794,10 @@
       "### Historical Caps Removed (PROP-009r2 200-cap removed; future similar removals listed here)"
     ],
     "estimated_size": "~150 lines / ~6KB. Read by tinker (every Mode 3) and by agents only when their state-file write logic is being modified."
-  }
+  },
+  "obe_closed_at": "2026-06-14T11:00:00.000Z",
+  "obe_closed_by": "operator-cowork-2026-06-14",
+  "obe_prior_status": "pending-operator-review",
+  "obe_closure_note": "Operator-decision close 2026-06-14: phases 1-5 shipped clean (analyst/human-notes, decisions/human-notes, curmudgeon/human-notes, social/human-notes, priority-queue.json, expansion-tracker.json — see state-file-archives.md table). Phase 6 (closed-issues.json archive split) deferred — 4 readers + lookup-by-id critical + no visible cost pressure today. Per the cost-engineering DIRECTIVE-20260614-002, defer until tinker quantifies whether closed-issues.json read cost is actually a driver. If the new measurement shows it is, phase 6 can be authored as a follow-up PROP using the amendment-001 plan as the starting point.",
+  "obe_closure_rationale": "Phases 1-5 = wins. Phase 6 = risk-without-measured-benefit; defer behind cost-instrumentation."
 }

@@ -264,6 +264,16 @@ NEVER_PUSH=(
   # quick-checks. Reads prune archive JSONL tombstones + working tree.
   # Same classification as the other clone-invoked scripts above.
   'monitor/scripts/check-prune-resurrection.js'
+  # PROP-021 Phase 1 (2026-06-14): compute-curmudgeon-dispatcher-state.js
+  # is the precompute that resolves curmudgeon's pre-review priorities
+  # deterministically (~3-5KB output instead of ~150KB of state-file reads).
+  # Output artifact monitor/integrity/curmudgeon-dispatcher-state.json is
+  # written by the script from a clone (integrity §7i + Phase 2 curmudgeon-
+  # side bash refresh). Same source-code classification as compute-drift-
+  # audit.js (PROP-020). Phase 1 ships the script only; curmudgeon.md is
+  # not yet edited, so the artifact runs as measurement-only.
+  'monitor/scripts/compute-curmudgeon-dispatcher-state.js'
+  'monitor/integrity/curmudgeon-dispatcher-state.json'
   # All .md files under monitor/prompts/ are operator-edited (dynamic rule
   # in is_never_push() below). Covers monitor/prompts/sloppytoppy-rewrite.md
   # and monitor/prompts/reference/sloppytoppy-rewrite-rubric.md automatically.
