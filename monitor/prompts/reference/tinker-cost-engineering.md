@@ -287,7 +287,7 @@ Step 4 above tracks STATIC line-count as a token proxy. Step 4b tracks ACTUAL pe
 - Tinker self_cost on each report: `monitor/tinker/report-*.json` → `self_cost.{cost_usd,tokens,transcript_duration_sec,model,assistant_msgs}`.
 - Analyst cost history: `monitor/analyst/cost-history.jsonl` (one row per run, git-append-only).
 - Curmudgeon cost history: `monitor/curmudgeon/cost-history.jsonl` (one row per run, git-append-only).
-- (Phase 2 will add 9 more agents — decider, analyst-baby, curmudgeon-verify, integrity, social, poller, workspace-sync, dome-mirror, prune-integrity. Until then those agents are not measured.)
+- (Phase 2 DEPLOYED 2026-06-14, commit b054e5d — self_cost block now wired into the other 8 agents: decider, analyst-baby, curmudgeon-verify, integrity, social, poller, workspace-sync, dome-mirror. As of deployment dome-mirror already produces rows; the rest populate cost-history.jsonl on their next scheduled runs. prune-integrity is script-only (SKILL.md) and not yet instrumented.)
 
 **Per-agent rollup from cost-history JSONL (analyst pattern; mirror for curmudgeon by swapping the path):**
 ```bash
@@ -348,7 +348,7 @@ if(d.length)console.log('  duration p50s:', pct(d,0.5).toFixed(0), 'p95s:', pct(
 }
 ```
 
-**Phase 2:** roll the self_cost block to the other 9 agents. Each block is one bash line invoking `write-self-cost.sh` — copy-paste from the analyst/curmudgeon template. Phase 2 is its own PROP and depends on Phase 1's pattern proving stable.
+**Phase 2 (DONE 2026-06-14, commit b054e5d):** self_cost block rolled to the remaining 8 agents (decider, analyst-baby, curmudgeon-verify, integrity, social, poller, workspace-sync, dome-mirror) — each a single bash line invoking `write-self-cost.sh`. cost-history.jsonl populates as each agent next runs. The composite-threshold metric above stays gated on ≥7d of accumulated Phase-2 data before it goes LIVE.
 
 ## Step 5: Audit Yourself and Track Conversions
 
