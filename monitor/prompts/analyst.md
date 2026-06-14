@@ -473,6 +473,14 @@ console.log('postlude: wrote latest-analysis-summary.txt');
 
 **Step P2 — Update `monitor/status.json`** with `last_analyst_run: <ISO-TS>` and `last_analyst_mode: <mode-list>`. Use `${WORKSPACE}/monitor/status.json` (FUSE-canonical) to match the rest of the pipeline.
 
+**Step P3 — Self-cost report (PROP-101 Phase 1, added 2026-06-14).** Append one JSON line to `${CLONE}/monitor/analyst/cost-history.jsonl` with this run's actual token usage + USD cost. The helper discovers the live transcript (the only readable `.jsonl` under `/sessions/`), prices it cache-aware via `compute-run-cost.js`, and appends a row. Non-fatal: any failure logs to stderr and exits 0; the run still ships. The clone-side write rides along on the analyst's normal commit+push.
+
+```bash
+bash "${CLONE}/monitor/scripts/write-self-cost.sh" append "${CLONE}" analyst
+```
+
+`monitor/analyst/cost-history.jsonl` is `git-append-only` per PROP-065 — workspace-sync will NEVER push FUSE→git for this file. Always write via the clone path.
+
 ## Progressive Disclosure & TLDRs
 
 All prose sections are wrapped in `<details>`/`<summary>` with 2–3 sentence TLDRs (see CLAUDE.md "Progressive Disclosure" section for full architecture). When you write or review content, be aware:

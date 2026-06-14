@@ -481,6 +481,16 @@ Lookup-by-point-id (e.g., the anti-staleness guard in Step 4 above checking 'rev
 ### 9. Write Summary
 Overwrite `monitor/curmudgeon/latest-review-summary.txt` with a human-readable summary of findings.
 
+### 9b. Self-Cost Report (PROP-101 Phase 1, added 2026-06-14)
+
+Append one JSON line to `${CLONE}/monitor/curmudgeon/cost-history.jsonl` with this run's actual token usage + USD cost. The helper discovers the live transcript (the only readable `.jsonl` under `/sessions/`), prices it cache-aware via `compute-run-cost.js`, and appends a row. Non-fatal: any failure logs to stderr and exits 0; the run still ships. The clone-side write rides along on the curmudgeon's normal commit+push.
+
+```bash
+bash "${CLONE}/monitor/scripts/write-self-cost.sh" append "${CLONE}" curmudgeon
+```
+
+`monitor/curmudgeon/cost-history.jsonl` is `git-append-only` per PROP-065 — workspace-sync will NEVER push FUSE→git for this file. Always write via the clone path.
+
 ### 10. Alert on Critical/Major Issues
 If any hole has severity "critical" or "major", append to `monitor/curmudgeon/alerts.txt`.
 

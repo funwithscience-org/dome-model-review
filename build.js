@@ -162,6 +162,12 @@ const OWNERSHIP = {
   'monitor/curmudgeon/human-notes-archive.jsonl': 'git-append-only',
   'monitor/decisions/human-notes-archive.jsonl': 'git-append-only',
   'monitor/social/human-notes-archive.jsonl': 'git-append-only',
+  // PROP-101 Phase 1 (2026-06-14): per-agent cost history. Appended one JSON
+  // line per agent run (analyst + curmudgeon for Phase 1; Phase 2 rolls to
+  // other agents). Same git-append-only discipline as the other .jsonl files
+  // above — written via agent clone-and-push only, FUSE is downstream-only.
+  'monitor/analyst/cost-history.jsonl': 'git-append-only',
+  'monitor/curmudgeon/cost-history.jsonl': 'git-append-only',
 
   // PROP-066 Phase 1 (2026-05-31): sync-workspace-step4c.js helper script
   // and its operator-curated bootstrap config. Both git-owned; edited via

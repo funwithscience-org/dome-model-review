@@ -454,6 +454,19 @@ Include in every report regardless of mode:
 - `modes_checked`: quick-check results for all modes (so the next run has context)
 - `previous_followup`: status of any unresolved findings from last report. **Before filling this section**, walk `monitor/tinker/proposals/` and run each PROP's `verification_pattern` to decide FIXED vs STILL_BROKEN — see the "PROP Lifecycle Verification" section in `monitor/prompts/reference/tinker-proposals-and-fixes.md`. Never mark a previous finding STILL_BROKEN based only on "workspace md5 matches main" — that is not verification, it only confirms the workspace is in sync.
 
+## Self-Cost Report (PROP-101 Phase 1, added 2026-06-14)
+
+After writing this run's `report-${RUN_ID}.json` AND before the final commit+push, merge actual per-run token usage + USD cost into the report. The helper discovers the live transcript (the only readable `.jsonl` under `/sessions/`), prices it cache-aware via `compute-run-cost.js`, and writes a `self_cost` object into the report. Non-fatal: if discovery or pricing fails, the helper logs to stderr and exits 0 — the report still ships without the field.
+
+```bash
+bash "${CLONE}/monitor/scripts/write-self-cost.sh" merge "${CLONE}" \
+  "${CLONE}/monitor/tinker/report-${RUN_ID}.json"
+```
+
+The `self_cost.cost_usd.total_usd` field on tinker's report-*.json is the canonical per-run cost. Mode 3 reads accumulated tinker self_cost rows (since each report is timestamped) to build tinker's own cost time-series — see `monitor/prompts/reference/tinker-cost-engineering.md` Step 4b.
+
+Phase 2 (separate PROP) rolls the equivalent block to the other Opus agents.
+
 ## Critical Rules
 
 - **Read before writing.** Always read current files before suggesting fixes.

@@ -279,6 +279,77 @@ When recommending extraction, write a concrete PROP: which lines move, what the 
 
 **Baseline (2026-04-12, post-V6 refactor + change-driven architecture):** The first report after this change sets the baseline. Subsequent reports compare against it.
 
+## Step 4b: Real Cost (PROP-101 Phase 1, added 2026-06-14)
+
+Step 4 above tracks STATIC line-count as a token proxy. Step 4b tracks ACTUAL per-run USD cost from JSONL transcripts via per-agent self-report. They coexist: line-count catches prompt drift (a separate failure mode); real cost catches per-run variance and is the actionable optimization signal.
+
+**Data sources (Phase 1):**
+- Tinker self_cost on each report: `monitor/tinker/report-*.json` → `self_cost.{cost_usd,tokens,transcript_duration_sec,model,assistant_msgs}`.
+- Analyst cost history: `monitor/analyst/cost-history.jsonl` (one row per run, git-append-only).
+- Curmudgeon cost history: `monitor/curmudgeon/cost-history.jsonl` (one row per run, git-append-only).
+- (Phase 2 will add 9 more agents — decider, analyst-baby, curmudgeon-verify, integrity, social, poller, workspace-sync, dome-mirror, prune-integrity. Until then those agents are not measured.)
+
+**Per-agent rollup from cost-history JSONL (analyst pattern; mirror for curmudgeon by swapping the path):**
+```bash
+node -e "
+const fs=require('fs');
+const path='monitor/analyst/cost-history.jsonl';
+if(!fs.existsSync(path)){console.log('no analyst cost history yet'); process.exit(0);}
+const cutoff=Date.now()-14*24*3600*1000;
+const rows=fs.readFileSync(path,'utf8').split('\n').filter(Boolean)
+  .map(l=>{try{return JSON.parse(l)}catch{return null}}).filter(Boolean)
+  .filter(r=>r.run_at && Date.parse(r.run_at)>cutoff);
+if(!rows.length){console.log('analyst: no rows in last 14d'); process.exit(0);}
+const c=rows.map(r=>r.cost_usd && r.cost_usd.total_usd).filter(x=>typeof x==='number').sort((a,b)=>a-b);
+const d=rows.map(r=>r.transcript_duration_sec).filter(x=>typeof x==='number').sort((a,b)=>a-b);
+const pct=(arr,p)=>arr[Math.min(arr.length-1,Math.floor(arr.length*p))];
+console.log('analyst 14d:', rows.length, 'runs');
+console.log('  cost p50:', pct(c,0.5).toFixed(3), 'p95:', pct(c,0.95).toFixed(3), 'max:', c[c.length-1].toFixed(3), 'sum:', c.reduce((a,b)=>a+b,0).toFixed(2));
+if(d.length)console.log('  duration p50s:', pct(d,0.5).toFixed(0), 'p95s:', pct(d,0.95).toFixed(0));
+"
+```
+
+**Tinker's own self_cost lives inside report-*.json (no JSONL):**
+```bash
+node -e "
+const fs=require('fs');
+const dir='monitor/tinker';
+const cutoff=Date.now()-14*24*3600*1000;
+const reports=fs.readdirSync(dir).filter(f=>/^report-.*\.json$/.test(f)).map(f=>{
+  try{const r=JSON.parse(fs.readFileSync(dir+'/'+f,'utf8'));return {f, ts:r.ts||r.generated_at, cost:r.self_cost && r.self_cost.cost_usd && r.self_cost.cost_usd.total_usd, dur:r.self_cost && r.self_cost.transcript_duration_sec}}catch{return null}
+}).filter(r=>r && r.cost!=null && r.ts && Date.parse(r.ts)>cutoff);
+if(!reports.length){console.log('tinker: no self_cost in last 14d (PROP-101 just landed?)'); process.exit(0);}
+const c=reports.map(r=>r.cost).sort((a,b)=>a-b);
+const d=reports.map(r=>r.dur).filter(x=>typeof x==='number').sort((a,b)=>a-b);
+const pct=(arr,p)=>arr[Math.min(arr.length-1,Math.floor(arr.length*p))];
+console.log('tinker 14d:', reports.length, 'runs');
+console.log('  cost p50:', pct(c,0.5).toFixed(3), 'p95:', pct(c,0.95).toFixed(3), 'max:', c[c.length-1].toFixed(3), 'sum:', c.reduce((a,b)=>a+b,0).toFixed(2));
+if(d.length)console.log('  duration p50s:', pct(d,0.5).toFixed(0), 'p95s:', pct(d,0.95).toFixed(0));
+"
+```
+
+**Variance alert (PROP-101 Q4):** Flag any agent where `p95 / median > 3` over a ≥7-run window. That ratio is the signature of unbounded loops or rare-mode walks consuming far more than baseline.
+
+**Composite metric + Q8 threshold (live after ≥7d of Phase 2 data, NOT yet):** `daily_cost = median_cost_per_run × runs_per_day × substantive_rate`. Rank agents by daily_cost; the #1 agent — IF it has no optimization PROP integrated in the trailing 30d targeting its dominant cost component — gets an optimization PROP authored THIS run, IF `daily_cost > $20/day`. Anti-indefinite-list commitment: when daily_cost surfaces an agent, the action is to author the PROP that run, not to re-add the agent to a standing-candidates list.
+
+**Report fields:**
+```json
+"real_cost": {
+  "phase": 1,
+  "agents_with_data": ["tinker", "analyst", "curmudgeon"],
+  "agents_pending_phase2": ["decider", "analyst-baby", "curmudgeon-verify", "integrity", "social", "poller", "workspace-sync", "dome-mirror", "prune-integrity"],
+  "per_agent_14d": {
+    "tinker":    {"runs": "N", "p50": "...", "p95": "...", "max": "...", "sum_usd": "...", "p50_duration_s": "..."},
+    "analyst":   {"runs": "N", "p50": "...", "p95": "...", "max": "...", "sum_usd": "...", "p50_duration_s": "..."},
+    "curmudgeon":{"runs": "N", "p50": "...", "p95": "...", "max": "...", "sum_usd": "...", "p50_duration_s": "..."}
+  },
+  "variance_alerts": ["<agent>: p95/p50 ratio + reason"],
+  "composite_threshold_status": "pending Phase 2 data | LIVE | top: <agent> daily_cost=$X — PROP authored this run"
+}
+```
+
+**Phase 2:** roll the self_cost block to the other 9 agents. Each block is one bash line invoking `write-self-cost.sh` — copy-paste from the analyst/curmudgeon template. Phase 2 is its own PROP and depends on Phase 1's pattern proving stable.
+
 ## Step 5: Audit Yourself and Track Conversions
 
 **You are not exempt.** Track your own no-op rate, module growth, and proposal implementation rate.

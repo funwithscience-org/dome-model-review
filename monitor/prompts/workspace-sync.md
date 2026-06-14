@@ -274,6 +274,15 @@ NEVER_PUSH=(
   # not yet edited, so the artifact runs as measurement-only.
   'monitor/scripts/compute-curmudgeon-dispatcher-state.js'
   'monitor/integrity/curmudgeon-dispatcher-state.json'
+  # PROP-101 Phase 1 (2026-06-14): real per-run cost measurement.
+  # compute-run-cost.js prices Claude session JSONL transcripts (cache-aware,
+  # 5m/1h cache-write split, cache_read 0.1x). write-self-cost.sh is the
+  # bash wrapper each agent invokes at end-of-run — discovers transcript,
+  # invokes the helper, writes result to clone-side report or cost-history.jsonl.
+  # Both are source code; same classification as compute-drift-audit.js /
+  # compute-curmudgeon-dispatcher-state.js / push-via-api.js / etc.
+  'monitor/scripts/compute-run-cost.js'
+  'monitor/scripts/write-self-cost.sh'
   # All .md files under monitor/prompts/ are operator-edited (dynamic rule
   # in is_never_push() below). Covers monitor/prompts/sloppytoppy-rewrite.md
   # and monitor/prompts/reference/sloppytoppy-rewrite-rubric.md automatically.
@@ -306,6 +315,12 @@ GIT_APPEND_ONLY=(
   'monitor/curmudgeon/human-notes-archive.jsonl'
   'monitor/decisions/human-notes-archive.jsonl'
   'monitor/social/human-notes-archive.jsonl'
+  # PROP-101 Phase 1 (2026-06-14): per-agent cost history. Appended one row
+  # per agent run via write-self-cost.sh from the agent's clone. FUSE is
+  # downstream-only; FUSE-newer divergence indicates a producer-side bug
+  # (agent wrote to FUSE instead of clone-and-push) and is logged to skips.
+  'monitor/analyst/cost-history.jsonl'
+  'monitor/curmudgeon/cost-history.jsonl'
 )
 
 is_git_append_only() {
