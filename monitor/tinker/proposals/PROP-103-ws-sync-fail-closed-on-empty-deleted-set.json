@@ -1,0 +1,69 @@
+{
+  "id": "PROP-103",
+  "title": "workspace-sync: fail-closed + observability when the per-run GIT_DELETED_SET comes up empty/short while prune archives are non-empty (the 16:22 single-run bulk-resurrection mechanism PROP-094/099 left open)",
+  "authored_by": "tinker",
+  "authored_at": "2026-06-15T02:47:00Z",
+  "authored_by_run": "tinker-2026-06-15T02-47",
+  "status": "proposed",
+  "category": "infrastructure/fail-closed",
+  "severity": "moderate",
+  "propose_only": true,
+  "surfacing_report": "monitor/tinker/report-tinker-2026-06-15T02-47.json",
+  "parent_props": ["PROP-082", "PROP-094", "PROP-099"],
+  "executive_summary": "The PROP-099 resurrection canary fired on the 2026-06-15T02:41 tinker run: 45 prune-tombstoned monitor/integrity/ files (18 narrative-cite-audit + 27 verify-pending-run) present again in git HEAD. Deep trace shows this is NOT an ongoing loop and NOT a failure of the PROP-094/099 git-deletion-authority guard in steady state -- the guard is demonstrably working (96 'git-deleted-authoritative; do not resurrect' SKIP entries in the recent skip-log, firing every cycle on the exact files, both before and after the burst). ALL 45 resurrections trace to a SINGLE anomalous workspace-sync run at 2026-06-14T16:22:12Z (commit 8b358ede) which bulk-added 39 prune-tombstoned files and self-reported them as a 'Clean run: 59 new files added' with ZERO git-deleted-authoritative skips. The 7 workspace-sync cycles since (17:31 -> 02:09) each show 0 new resurrections. The files are now stuck in HEAD because once present, smart_copy takes its dst-exists branch (cmp match -> no-op) and the dst-absent guard no longer applies. Root structural gap: the guard depends on a per-run GIT_DELETED_SET build that is a single point of failure -- when that build yields an empty/incomplete set (transient archive-read failure, or a stale prompt read during the 4 workspace-sync.md prompt commits on 06-14), the dst-absent branch silently falls through to the permissive PROP-082 date proxy and bulk-resurrects, with no fail-closed check and no observability (git_deleted_count is not in the run-report schema). PROP-103 adds both.",
+  "evidence": [
+    {
+      "claim": "Guard works in steady state",
+      "proof": "monitor/integrity/workspace-sync-skips.jsonl: 96 'PROP-094 git-deleted-authoritative; pruned artifact, do not resurrect' entries in the last 500 lines, including verify-pending-run-2026-05-30T0808Z.json and narrative-cite-audit-2026-06-13T0512Z.json, logged at 06-14 01:09/02:09/08:07/09:22/11:11/12:51 and continuing through 02:09 today. RESCUE 'git-deleted-but-content-differs' count = 0."
+    },
+    {
+      "claim": "All 45 resurrections came from ONE run",
+      "proof": "Per-commit diff-filter=A cross-referenced against the archive-ledger set (2018 paths): the only Workspace-sync commit since the PROP-099 fix with true-resurrections > 0 is 8b358ede (2026-06-14T16:22:12Z) with 39. Commits at 12:53, 17:31, 21:13, 22:10, 23:23, 00:08, 01:08, 02:09 all have 0 true-resurrections. (The '2 prune-category files per cycle' those runs add are FRESH artifacts the run's own 3.6a/3.6b scripts produced -- new timestamps, NOT in the archive ledger.)"
+    },
+    {
+      "claim": "The 16:22 run's guard did not fire",
+      "proof": "Run report monitor/integrity/workspace-sync-runs/run-2026-06-14T16-22-27Z.json agent_notes: 'Clean run: 59 new files added (1 expansion, 1 curmudgeon review, 17 narrative-cite-audits, 22 verify-pending-runs, 18 workspace-sync-runs). All JSON valid. 10 git-append-only skips...'. 17+22 = 39 = the true-resurrection count. No git-deleted-authoritative skips recorded for that run; the files were classified as new rescues."
+    },
+    {
+      "claim": "Residue is static and self-draining",
+      "proof": "check-prune-resurrection.js --hours 72 returns the same 45 (18 + 27). All re-added at 16:22; none since. FUSE still holds 298 verify-pending-run + 34 narrative-cite source files (the resurrection reservoir) but the working guard skips them every cycle. Next scheduled prune-integrity (daily 09:00 local) will re-delete the 45 from git; prune parses filename-embedded timestamps (PROP-054) so it will see them as aged."
+    },
+    {
+      "claim": "No observability of the failure",
+      "proof": "ws-sync run-report schema keys = run_id, timestamp, files_committed, skips_total, skip_breakdown, agent_notes, cleanup_ran. GIT_DELETED_COUNT (echoed to stdout by the build block, workspace-sync.md ~line 666) is not persisted, so a 0-count build is invisible to the canary and to tinker."
+    }
+  ],
+  "root_cause": {
+    "structural": "The PROP-094/099 dst-absent guard is gated on a per-run GIT_DELETED_SET built fresh each run from the prune archive JSONLs. The build is a single point of failure with a PERMISSIVE failure mode: if it returns empty/short (archive files transiently unreadable in the clone, an error in the jq/node extraction, or a stale/old prompt during prompt churn), every grep -qFx miss falls through to the PROP-082 date proxy, which resurrects everything inside its date window. The system has no check that 'set is empty but archives are non-empty = build failed = do NOT trust the permissive path', and no record of the count for after-the-fact detection.",
+    "why_16_22_specifically": "Not definitively isolated to one mechanism, but two candidates both point at the same fix: (a) transient empty/short set build for that single run; (b) the 4 workspace-sync.md prompt commits on 06-14 (12:54, 14:20, 17:59, 18:03 local) churned the FUSE-propagated prompt; the 16:22 UTC run may have executed a transiently inconsistent or pre-PROP-094 prompt. Either way a fail-closed guard on the empty-set condition prevents the bulk leak."
+  },
+  "proposed_fix": {
+    "primary": {
+      "name": "Fail-closed when GIT_DELETED_SET is empty/short but prune archives are non-empty",
+      "where": "monitor/prompts/workspace-sync.md, immediately after the GIT_DELETED_SET build block (after the line that echoes GIT_DELETED_COUNT, ~line 666).",
+      "design": "Compute ARCHIVE_NONEMPTY = (any monitor/integrity/*-archive.jsonl exists with >=1 non-blank line). If ARCHIVE_NONEMPTY is true AND GIT_DELETED_COUNT is 0 (or < a small floor, e.g. < 50 while archives total thousands of lines), the set build is presumed FAILED. In that state, set a run-scoped flag GIT_DELETED_SET_UNTRUSTED=1. In smart_copy's dst-absent branch, when GIT_DELETED_SET_UNTRUSTED=1 AND the candidate path matches the prune-managed integrity categories (verify-pending-run-*, narrative-cite-audit-*, workspace-sync-runs/run-*, report-*, push-failure-*), SKIP the rescue (fail-closed: 'do not resurrect when deletion-authority is unknown') and log reason 'PROP-103 deleted-set-untrusted; fail-closed skip'. Also write a sentinel monitor/integrity/workspace-sync-deleted-set-untrusted-<ts>.json so tinker/canary surface it. Non-prune-managed paths (data/wins.json, open-issues.json, priority-queue.json -- never deleted by prune) are unaffected: they fall through to normal rescue exactly as today, preserving the universal-pusher's reason for existing.",
+      "loc": "~15-20",
+      "conservatism": "Fail-closed only for prune-managed integrity categories and only when the set build is provably broken. Worst case of a false-positive untrusted state: one cycle of prune-managed integrity artifacts are NOT rescued from FUSE -- harmless, since those are exactly the artifacts prune wants gone; the next healthy cycle resyncs anything legitimately new (fresh artifacts are produced in the clone by 3.6a/3.6b, not rescued from FUSE, so they are unaffected). PROP-051 safety gates A1-A4 untouched. prune-integrity.js untouched."
+    },
+    "secondary_observability": {
+      "name": "Persist git_deleted_count + untrusted flag into the ws-sync run report",
+      "where": "monitor/prompts/workspace-sync.md run-report writer (~line 1500-1526).",
+      "design": "Add git_deleted_count and git_deleted_set_untrusted (bool) to the run-report record. Lets the PROP-099 canary and tinker Mode 2 detect a 0-count build the same day instead of inferring it from agent_notes prose after a leak.",
+      "loc": "~4"
+    }
+  },
+  "rejected_alternatives": [
+    "Make the date-proxy fallback stricter: still a permissive fall-through; does not address the empty-set root cause and reintroduces the cadence-dependence PROP-094 removed.",
+    "Drain the 45 residue manually via a delete-push from tinker: prune's job, not tinker's; risks the PROP-051 delete-sanity gate; the next scheduled prune drains them mechanically.",
+    "NEVER_PUSH the integrity categories outright: loses the legitimate producer-push-failure rescue for genuinely-new integrity artifacts (e.g. abort sentinels written to FUSE under disk pressure)."
+  ],
+  "backfill_plan": "No manual action required. The 45-file residue (18 narrative-cite + 27 verify-pending-run) currently in git HEAD will be re-deleted by the next scheduled prune-integrity run (daily 09:00 local). With the steady-state guard working, they will stay deleted. FUSE source copies persist but are correctly skipped each cycle. If the residue re-leaks after a prune (i.e. the burst recurs), that is direct evidence the empty-set mechanism is live and PROP-103 should be prioritized.",
+  "verification_pattern": "After integration: (1) run workspace-sync self-tests (must pass). (2) Negative test: in a scratch clone, force GIT_DELETED_SET empty (e.g. point the build at a nonexistent dir) with archives present, run a sync over a FUSE dir containing a tombstoned integrity file, confirm the file is SKIPPED with reason 'PROP-103 deleted-set-untrusted' and a sentinel is written. (3) Positive test: with a healthy set, confirm normal git-deleted-authoritative skips still fire and a genuinely-new integrity artifact is still rescued. (4) Confirm git_deleted_count appears in the next ws-sync run report. (5) Run check-prune-resurrection.js after the next prune cycle: expect the 45 residue to drop to 0 and stay 0.",
+  "constraints_honored": [
+    "Propose-only; operator integrates after review.",
+    "PROP-051 safety gates A1-A4 untouched.",
+    "prune-integrity.js eligibility/retention untouched.",
+    "Other side honored: the PROP-094/099 guard is exonerated for steady-state operation -- it works; this PROP hardens its single-point-of-failure build step, it does not replace it."
+  ],
+  "cross_references": ["PROP-082", "PROP-094", "PROP-099", "PROP-051", "PROP-054", "PROP-091", "DIRECTIVE-20260613-001"]
+}

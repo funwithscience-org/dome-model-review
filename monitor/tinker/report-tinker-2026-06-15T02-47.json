@@ -1,0 +1,100 @@
+{
+  "report_id": "tinker-2026-06-15T02-47",
+  "timestamp": "2026-06-15T02:47:00Z",
+  "agent": "tinker",
+  "mode_selected": "Mode 2 — Infrastructure & FUSE",
+  "mode_selected_reason": "PROP-099 prune-resurrection canary fired (RC=3, 45 tombstoned monitor/integrity/ files present in git HEAD). Per the wired Mode 2 quick-check, a canary RC=3 selects Mode 2 and emits a findings[] entry category=prune-resurrection. Modes 0/1 were clean; no pending operator-directives; no assigned-to-tinker items.",
+  "modes_checked": {
+    "operator_directives": "none pending",
+    "mode_0_assigned_to_tinker": "none pending",
+    "mode_1_pipeline_health": "GREEN — all agents fresh (decider 02:26, curmudgeon-verify 01:08, poller 00:10, baby 17:31 prior, mirror 02:34); no stranded patches >24h; commit stream active and healthy",
+    "mode_2_infra": "FUSE matches GitHub (5/5 key files); auth 200; root-FS free 3847MB; clone-leak 174MB (under 500MB threshold; /tmp/edit-clone 167MB is operator's canonical clone, 9h old, left untouched). PROP-070 orphan-integrated: 0. PROP-099 canary: RC=3 — SELECTED.",
+    "mode_3_cost": "deferred — Mode 2 canary took precedence",
+    "mode_4_proposals": "PROP-103 authored as the Mode 2 finding's formal fix (propose-only)"
+  },
+  "previous_followup": {
+    "PROP-099": "Canary deployed and WORKING — it caught the live residue this run, exactly as designed. Steady-state guard (PROP-094 git-deletion-authority) VERIFIED working: 96 'git-deleted-authoritative; do not resurrect' skip-log entries in last 500 lines, firing every cycle on the exact resurrected paths. The remaining open question from PROP-099 complementary_work ('confirm re-add routed through smart_copy vs bulk git add') is now answered: re-add is via sync_glob->smart_copy (line 807), guard normally fires; the 16:22 leak was a single-run guard miss (empty/short GIT_DELETED_SET), NOT a bulk git add -A bypass. PROP-103 hardens that gap.",
+    "PROP-102": "Phase 0 shadow ran this run: 114 PROPs walked, 0 would-close candidates, 0 actually-closed (enforce flag absent). Consistent with prior run."
+  },
+  "backlog_trend": {
+    "open_issues_total": 23,
+    "open_status_count": 9,
+    "assigned_analyst_count": 9,
+    "net_velocity_7d": 55,
+    "new_issues_velocity_7d": 19,
+    "closed_issues_velocity_7d": 74,
+    "age_ge_30d_count": 0,
+    "oldest_open_age_days": 0.4,
+    "root_fs_free_mb": 3847,
+    "wow_open_total": "9 -> 23 (+155.6%)",
+    "threshold_assessment": "WoW% mechanically trips the 'major' tier (>20% WoW), but this is a low-base artifact: net velocity is +55 (74 closed vs 19 new in 7d), only 9 of 23 are status=open, oldest open is 0.4 days, age>=30d is 0. The queue is actively draining, not growing. The PROP-030 WoW% tiers have no absolute-floor gate, so they false-positive on small bases (9->23). Recorded as info-tier in substance; candidate calibration note below."
+  },
+  "findings": [
+    {
+      "id": "FND-01",
+      "category": "prune-resurrection",
+      "severity": "moderate",
+      "canary_raw_severity": "major",
+      "title": "45 prune-tombstoned integrity files resurrected in git HEAD — traced to a SINGLE anomalous workspace-sync run (06-14T16:22), guard otherwise working; static, self-draining residue",
+      "evidence": "check-prune-resurrection.js RC=3, 45 files (18 narrative-cite-audit + 27 verify-pending-run). Per-commit cross-ref vs 2018-path archive set: only commit 8b358ede (06-14T16:22:12Z) has true-resurrections>0 (39); 7 subsequent ws-sync cycles = 0. 16:22 run report self-labeled 'Clean run: 59 new files added' with 0 git-deleted-authoritative skips. Adjacent runs logged 96 correct skips. Files stuck in HEAD because smart_copy's dst-exists branch no-ops once present.",
+      "root_cause": "Per-run GIT_DELETED_SET build (workspace-sync.md ~line 648-666) is a single point of failure with a PERMISSIVE failure mode: empty/short set -> dst-absent branch falls through to permissive PROP-082 date proxy -> bulk resurrection, with no fail-closed check and no persisted git_deleted_count for detection.",
+      "recommended_action": "PROP-103 (authored this run): fail-closed when GIT_DELETED_SET is empty/short while prune archives are non-empty + persist git_deleted_count in the run report. Residue self-drains on next scheduled prune (09:00 local); no manual push needed.",
+      "severity_rationale": "Downgraded from the canary's blunt 'major' to moderate: bounded static residue (45 files, not growing), steady-state guard verified working, self-draining on next prune. Honest counter-risk: if the empty-set mechanism recurs, the next prune's re-deletes could re-leak — the next prune cycle is the true verification.",
+      "verification_next": "After the next prune-integrity run (~08:00 UTC today), re-run check-prune-resurrection.js: expect 45 -> 0 and stay 0 across following ws-sync cycles. If it re-leaks, prioritize PROP-103 integration."
+    },
+    {
+      "id": "FND-02",
+      "category": "backlog-trend",
+      "severity": "info",
+      "title": "PROP-030 WoW% tiers false-positive on small bases (9->23 open issues = +155% trips 'major')",
+      "evidence": "queue-history.jsonl: 7d-ago open_total=9, current=23. net_velocity_7d=+55. Only 9 status=open; age>=30d=0; oldest open 0.4d.",
+      "recommended_action": "Candidate calibration (not authored as PROP this run): gate the WoW% tiers behind an absolute floor (e.g. only evaluate >5%/>10%/>20% WoW when open_issues_total >= 50). The absolute-count tiers (>200/>300/>400) already carry the real backlog signal. Low priority — cosmetic false-positive, no operational impact.",
+      "severity_rationale": "Pipeline is healthy by every absolute metric; this is a metric-calibration nit, not a backlog problem."
+    }
+  ],
+  "context_load": {
+    "note": "Not recomputed this run (Mode 2 canary took the run). CLAUDE.md + per-agent context-load audit deferred to next Mode 3 run."
+  },
+  "claude_md_audit": {
+    "note": "Deferred to next Mode 3 run. Spot-observation: CLAUDE.md PROP-099 lineage prose is accurate; the 'live verify-pending-run leak found 2026-06-14T03:09' note matches today's findings (same loop class, now traced to the 16:22 single-run miss)."
+  },
+  "commits_pushed": [
+    "pending end-of-run single push"
+  ],
+  "files_changed": [
+    "monitor/tinker/proposals/PROP-103-ws-sync-fail-closed-on-empty-deleted-set.json (new)",
+    "monitor/tinker/report-tinker-2026-06-15T02-47.json (new)",
+    "monitor/tinker/latest-tinker-summary.txt (updated)",
+    "monitor/tinker/queue-history.jsonl (appended)"
+  ],
+  "next_tinker_run_priorities": [
+    "VERIFY FND-01: after the ~08:00 UTC prune-integrity run, confirm check-prune-resurrection.js drops to 0 and stays 0. If re-leak, escalate PROP-103.",
+    "Resume Mode 3 (cost engineering + CLAUDE.md/context-load audit) if pipeline stays green.",
+    "Consider authoring the FND-02 WoW%-floor calibration as a low-priority PROP if it keeps flapping."
+  ],
+  "cleanup_actions": [],
+  "cleanup_planned": "rm -rf ${SESSION}/tinker-clone at end of run (per Cleanup step). /tmp/edit-clone (operator's, 9h, 167MB) left untouched — footprint under 500MB threshold and it is the operator's canonical working clone.",
+  "self_cost": {
+    "transcript": "a89d0627-f823-474a-8525-fe2212728689.jsonl",
+    "model": "claude-opus-4-8",
+    "assistant_msgs": 98,
+    "tokens": {
+      "input": 20474,
+      "output": 150642,
+      "cache_write_5m": 0,
+      "cache_write_1h": 480343,
+      "cache_read": 13535601
+    },
+    "cost_usd": {
+      "input_usd": 0.10237,
+      "output_usd": 3.76605,
+      "cache_write_5m_usd": 0,
+      "cache_write_1h_usd": 4.80343,
+      "cache_read_usd": 6.7678,
+      "total_usd": 15.43965
+    },
+    "transcript_duration_sec": 725.7,
+    "first_ts": "2026-06-15T02:39:19.781Z",
+    "last_ts": "2026-06-15T02:51:25.492Z"
+  }
+}
