@@ -110,6 +110,32 @@ In short: read data from the clone (guaranteed fresh), write outputs to the work
 
 **Step 0a: Read the V6 translation map** (`${CLONE}/monitor/v6-restructure-map.json`). All sections were renumbered on 2026-04-07. Your Cycle 1 reviews use old numbers (e.g., "Section 4.5.1" is now "Section 2.1"). When reading ANY prior review from `monitor/curmudgeon/reviews/`, mentally translate old section numbers to new ones using the map. When writing NEW reviews, always use the new numbers. The tracker items have already been updated to use new numbers.
 
+**Step 0a-r: Refresh & read dispatcher-state precompute (PROP-021 Phase 2 stage-1, added 2026-06-15).** Before scanning priority-queue/human-notes/tracker/changes in-prompt, refresh the precomputed dispatcher-state artifact and read it. The script resolves all four priorities (queue head w/ PROP-009 strict + soft fallback, pending notes w/ coverage-already-exists advisory mapping, Step 0c2 audit need, drift-audit hand-off, holistic check rotation) deterministically in <500ms. **PREFER its recommendation:** if `recommended_priority` is set and `generated_at` is within 5 minutes, branch on it and SKIP the in-prompt state-file reads in Step 0b/Step 0c/Step 0c2 below — those are the FALLBACK for when the precompute is missing/stale. This stage keeps the fallback prose intact (PROP-021 stage-1 rollout); a future stage-2 commit will slim the rare-path prose into reference files conditional on observed clean operation. Cost benefit: the priority-queue.json (50KB), human-notes.json (39KB), tracker.json (65KB), and reviews/ walk that follow are skipped on every run that has a fresh dispatcher-state — ~46K state-file tokens saved per run for Priority-3 fall-through (the common case).
+
+```bash
+# Refresh — sub-second; if it fails, the file may be stale and we'll fall back below.
+node ${CLONE}/monitor/scripts/compute-curmudgeon-dispatcher-state.js --workspace ${CLONE} 2>&1 | tail -3 || true
+
+# Read the artifact. If missing/old/malformed, the fallback in-prompt prose below handles it.
+DISP_STATE=$(cat ${CLONE}/monitor/integrity/curmudgeon-dispatcher-state.json 2>/dev/null)
+if [ -n "$DISP_STATE" ]; then
+  AGE_SEC=$(node -e "try{const d=JSON.parse(require('fs').readFileSync('${CLONE}/monitor/integrity/curmudgeon-dispatcher-state.json','utf8'));console.log(Math.floor((Date.now()-Date.parse(d.generated_at))/1000))}catch(e){console.log(999999)}")
+  echo "[PROP-021 stage-1] dispatcher-state age: ${AGE_SEC}s"
+fi
+```
+
+**Branch on `recommended_priority` (from `DISP_STATE`):**
+- `1` → Priority 1 (queue). The artifact's `priority_1_queue.head_item` is the un-reviewed item (PROP-009 strict + soft fallback already applied); skip the in-prompt PROP-009 lookup in Step 0b. The artifact's `priority_1_queue.batch_eligible_run` is the candidate Step 8a batch (severity gate is LLM-applied, not pre-resolved).
+- `2` → Priority 2 (pending notes). The artifact's `priority_2_notes.pending_items` is the filter result; skip the in-prompt notes scan in Step 0c.
+- `audit` → Priority 0c2 (major external change audit). Skip the in-prompt walk; trigger the audit directly.
+- `3` → Priority 3 (change-driven). Skip Step 0b/0c/0c2 entirely; go straight to the drift-audit hand-off in `monitor/prompts/reference/curmudgeon-change-and-holistic.md`. **This is the common case — most runs land here.**
+- `4` → Priority 4 (holistic). Skip Step 0b/0c/0c2; use `priority_4_holistic.next_check_id`.
+- `5` → spot-check fallback.
+
+**Fallback (if precompute missing or stale >5min):** fall through to Step 0b/0c/0c2 below — the in-prompt scan is preserved as the fallback. Record `dispatcher_state_used: false` and `fallback_reason: <missing|stale|malformed>` in the review JSON's instrumentation field.
+
+**Instrumentation:** for every review file written this run, include three fields in `instrumentation`: `dispatcher_state_used` (bool), `dispatcher_state_age_seconds` (number or null), `dispatcher_state_recommended_priority` (1|2|audit|3|4|5 or null). Lets tinker measure adoption rate + fallback rate per PROP-021 §regression_protection.
+
 **Step 0b: Check the priority queue** (`${CLONE}/monitor/curmudgeon/priority-queue.json` — read from the CLONE, not the workspace mount, because the mount can be stale). This is the urgent re-review queue. Items here are freshly onboarded WINs, rewritten sections, new proposal packages, or anything else the decider flagged as needing immediate attention. **They jump ALL other work — change-driven reviews, holistic checks, and spot-checks.**
 
 **Phase 1 verify-mode handoff (PROP-038, landed 2026-05-16):** Before popping a queue item, check if it qualifies for the verify-mode agent (`dome-curmudgeon-verify`). If ALL of the following hold, SKIP this item — verify-mode owns it:
