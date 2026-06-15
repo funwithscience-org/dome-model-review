@@ -400,11 +400,13 @@ Before writing any change record to `monitor/changes/`:
 
 ## Self-Cost Report (PROP-101 Phase 2, added 2026-06-14)
 
-Append one JSON line to `${CLONE}/monitor/poller/cost-history.jsonl` with this run's actual token usage + USD cost. Non-fatal: any failure logs to stderr and exits 0.
+Append one JSON line to `${CLONE}/monitor/poller/cost-history.jsonl` with this run's actual token usage + USD cost. Non-fatal: any failure logs to stderr and exits 0. The helper handles ALL writes — when transcript discovery succeeds it writes the full cost row; when it fails (operator's 2026-06-15 finding: poller's session uid couldn't read its own JSONL transcript via the `find /sessions/ -readable` pattern) the helper writes a `discovery_failed: true` placeholder row so tinker can detect the failure class.
 
 ```bash
 bash "${CLONE}/monitor/scripts/write-self-cost.sh" append "${CLONE}" poller
 ```
+
+**Do NOT write a manual fallback row** even if the helper appears silent or you suspect the discovery failed — the helper now writes a placeholder row in that case, with the canonical schema. A manual write with a guessed schema (the 2026-06-15T00:09Z poller run wrote `{input_tokens:null,total_cost_usd:null,note:"cost-reporting-not-available"}` — wrong schema) corrupts the aggregator. If the helper itself fails to run (bash error), an empty row is the right outcome; the next cycle picks up data.
 
 `monitor/poller/cost-history.jsonl` is `git-append-only` per PROP-065 — always write via the clone path.
 

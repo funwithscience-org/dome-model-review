@@ -557,6 +557,30 @@ smart_copy() {
         return 0
       fi
     fi
+    # PROP-103 (2026-06-15): fail-closed when GIT_DELETED_SET is provably broken.
+    # If the trust check at GIT_DELETED_SET build time flagged the set as untrusted,
+    # and this candidate path matches a prune-managed integrity category,
+    # SKIP the rescue. Without this, the 2026-06-14T16:22Z bulk-resurrection class
+    # recurs whenever the per-run set build fails (any cause: shallow clone depth,
+    # git command timeout, malformed archive). The conservative choice is to
+    # NOT rescue prune-managed files when we can't trust the deletion-authority
+    # signal. One cycle of un-rescued prune-managed artifacts is harmless
+    # (those are exactly the files prune wanted gone); a flood of resurrections
+    # is the disaster shape PROP-094/099 was designed to prevent.
+    if [ "${GIT_DELETED_SET_UNTRUSTED:-0}" -eq 1 ]; then
+      case "$dst" in
+        monitor/integrity/verify-pending-run-*.json|\
+        monitor/integrity/narrative-cite-audit-*.json|\
+        monitor/integrity/workspace-sync-runs/run-*.json|\
+        monitor/integrity/push-failure-*.json|\
+        monitor/integrity/report-*.json|\
+        monitor/integrity/git-to-fuse-divergence-*.json|\
+        monitor/integrity/sync-workspace-runs-*.json)
+          echo "SKIP (PROP-103 deleted-set-untrusted; fail-closed on prune-managed integrity rescue): $dst" >> "$SKIP_LOG"
+          return 0
+          ;;
+      esac
+    fi
     # PROP-082 fallback (SECONDARY): date-based filter for paths git didn't
     # delete in the 95-day window (never-tracked, or beyond retention horizon).
     # Kept as belt-and-suspenders; the PROP-094 primary catches the common case.
@@ -664,6 +688,29 @@ for archive in monitor/integrity/*-archive.jsonl; do
 done | awk '{ if($0 ~ /\//) print $0; else print "monitor/integrity/" $0 }' | sort -u > "$GIT_DELETED_SET"
 GIT_DELETED_COUNT=$(wc -l < "$GIT_DELETED_SET" 2>/dev/null || echo 0)
 echo "[PROP-094+PROP-099] git-deleted set built from archive ledger: ${GIT_DELETED_COUNT} paths (depth-independent)"
+
+# PROP-103 (2026-06-15): fail-closed trust check. The 2026-06-14T16:22Z workspace-sync
+# run (commit 8b358ede) bulk-resurrected 45 prune-tombstoned files because its
+# GIT_DELETED_SET came up at COUNT=0 while the archive .jsonl files held ~thousands
+# of tombstones. The set build is presumed FAILED if GIT_DELETED_COUNT is small
+# while archive ledgers are non-empty. When that happens, we MUST NOT rescue
+# prune-managed integrity artifacts from FUSE — those are exactly the files
+# prune already removed from git, and a missing-deleted-set lets them flood back.
+# Non-prune-managed paths (data/wins.json, open-issues.json, etc.) are unaffected
+# — they fall through to normal rescue, preserving the universal-pusher's role.
+GIT_DELETED_SET_UNTRUSTED=0
+ARCHIVE_LINES=$(cat monitor/integrity/*-archive.jsonl 2>/dev/null | grep -c . || echo 0)
+# Threshold: archives have >=50 tombstones AND our set has <50. Both conditions
+# necessary; a freshly-pruned project with empty archives is a legitimate 0.
+if [ "$ARCHIVE_LINES" -ge 50 ] && [ "$GIT_DELETED_COUNT" -lt 50 ]; then
+  GIT_DELETED_SET_UNTRUSTED=1
+  echo "[PROP-103] FAIL-CLOSED: GIT_DELETED_COUNT=${GIT_DELETED_COUNT} but archive_lines=${ARCHIVE_LINES} — set build presumed broken; prune-managed integrity rescues will be SKIPPED this cycle"
+  # Write sentinel so tinker/canary surface it next cycle.
+  SENTINEL="monitor/integrity/workspace-sync-deleted-set-untrusted-$(date -u +%Y-%m-%dT%H-%M-%SZ).json"
+  printf '{"ts":"%s","reason":"PROP-103 GIT_DELETED_SET trust gate","git_deleted_count":%d,"archive_lines":%d,"action":"skip prune-managed integrity rescues this cycle"}\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$GIT_DELETED_COUNT" "$ARCHIVE_LINES" > "$SENTINEL" 2>/dev/null || true
+fi
+export GIT_DELETED_SET_UNTRUSTED GIT_DELETED_COUNT ARCHIVE_LINES
 
 # Iterate over each file the workspace might author and smart_copy it
 sync_glob() {
@@ -1502,6 +1549,9 @@ MTIME_GUARD_COUNT="$MTIME_GUARD_COUNT" \
 ANTI_REVERSION_COUNT="$ANTI_REVERSION_COUNT" \
 RECENT_COMMIT_COUNT="$RECENT_COMMIT_COUNT" \
 AGENT_NOTES="$AGENT_NOTES" \
+GIT_DELETED_COUNT="${GIT_DELETED_COUNT:-0}" \
+GIT_DELETED_SET_UNTRUSTED="${GIT_DELETED_SET_UNTRUSTED:-0}" \
+ARCHIVE_LINES="${ARCHIVE_LINES:-0}" \
 node -e "
 const fs=require('fs');
 const out=process.env.OUT;
@@ -1516,6 +1566,12 @@ const rec={
     anti_reversion: parseInt(process.env.ANTI_REVERSION_COUNT||'0',10),
     recent_commit_guard: parseInt(process.env.RECENT_COMMIT_COUNT||'0',10)
   },
+  // PROP-103 (2026-06-15): persist deletion-authority signals so the PROP-099
+  // canary and tinker Mode 2 can detect a 0-count build the same day instead of
+  // inferring it from agent_notes prose after a leak.
+  git_deleted_count: parseInt(process.env.GIT_DELETED_COUNT||'0',10),
+  git_deleted_set_untrusted: process.env.GIT_DELETED_SET_UNTRUSTED === '1',
+  archive_lines: parseInt(process.env.ARCHIVE_LINES||'0',10),
   agent_notes: process.env.AGENT_NOTES || '',
   cleanup_ran: true
 };
@@ -1549,11 +1605,17 @@ fi
 # logs to stderr and exits 0; the cleanup below still runs.
 bash "${CLONE}/monitor/scripts/write-self-cost.sh" append "${CLONE}" workspace-sync 2>&1 | tail -1 || true
 # Append happens in $CLONE; we need to commit+push it before the rm below.
+# Use git status --porcelain so untracked-new-file detection works (the previous
+# git diff --quiet check returns 0 on UNTRACKED files because git doesn't track
+# them at all — that was the bug that left cost-history.jsonl empty across 10+
+# runs since the first attempt at this fix). status --porcelain emits '?? path'
+# for untracked files AND ' M path' for modified-tracked files; both should
+# trigger the commit+push.
 if [ -f "${CLONE}/monitor/workspace-sync/cost-history.jsonl" ] && \
-   ! git diff --quiet "${CLONE}/monitor/workspace-sync/cost-history.jsonl" 2>/dev/null; then
-  git add monitor/workspace-sync/cost-history.jsonl 2>/dev/null
-  git commit -m "workspace-sync self_cost: $(date -u +%Y-%m-%dT%H:%M:%SZ)" 2>&1 | tail -1
-  git push origin main 2>&1 | tail -1 || true
+   git -C "${CLONE}" status --porcelain monitor/workspace-sync/cost-history.jsonl 2>/dev/null | grep -q .; then
+  git -C "${CLONE}" add monitor/workspace-sync/cost-history.jsonl 2>/dev/null
+  git -C "${CLONE}" commit -m "workspace-sync self_cost: $(date -u +%Y-%m-%dT%H:%M:%SZ)" 2>&1 | tail -1
+  git -C "${CLONE}" push origin main 2>&1 | tail -1 || true
 fi
 
 # --- Cleanup: skip-log tmpfile (was the post-Step-4b rm-f, kept in place) ---

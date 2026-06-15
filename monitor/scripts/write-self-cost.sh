@@ -46,7 +46,29 @@ fi
 # other sessions' mnt/ dirs are mode 750 owned by nobody:nogroup and EACCES.
 TRANSCRIPT=$(find /sessions -path '*/.claude/projects/*' -name '*.jsonl' -readable 2>/dev/null | head -1)
 if [ -z "$TRANSCRIPT" ] || [ ! -f "$TRANSCRIPT" ]; then
-  echo "write-self-cost: no readable transcript found under /sessions; skipping" >&2
+  # 2026-06-15 hardening: poller's 00:09Z run hallucinated a row with the wrong
+  # schema when the helper silent-skipped here. Always emit a row even on
+  # discovery failure so the LLM has nothing to hallucinate AND tinker's
+  # aggregator can detect discovery-failed agents as a class. Schema matches
+  # successful runs minus the cost/token/duration fields, plus discovery_failed.
+  if [ "$MODE" = "append" ]; then
+    AGENT="$ARG3"
+    HISTORY="${CLONE}/monitor/${AGENT}/cost-history.jsonl"
+    mkdir -p "$(dirname "$HISTORY")" 2>/dev/null || true
+    node -e "
+      const fs=require('fs');
+      try {
+        const row={
+          agent: process.argv[1],
+          run_at: new Date().toISOString(),
+          discovery_failed: true,
+          reason: 'no-readable-jsonl-transcript-under-sessions',
+        };
+        fs.appendFileSync(process.argv[2], JSON.stringify(row) + '\n');
+        console.log('write-self-cost append: ' + process.argv[1] + ' discovery_failed (placeholder row written)');
+      } catch (e) { console.error('placeholder append failed: ' + e.message); }
+    " "$AGENT" "$HISTORY" || true
+  fi
   exit 0
 fi
 

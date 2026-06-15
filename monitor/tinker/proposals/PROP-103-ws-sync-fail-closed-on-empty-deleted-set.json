@@ -4,12 +4,16 @@
   "authored_by": "tinker",
   "authored_at": "2026-06-15T02:47:00Z",
   "authored_by_run": "tinker-2026-06-15T02-47",
-  "status": "proposed",
+  "status": "implemented",
   "category": "infrastructure/fail-closed",
   "severity": "moderate",
   "propose_only": true,
   "surfacing_report": "monitor/tinker/report-tinker-2026-06-15T02-47.json",
-  "parent_props": ["PROP-082", "PROP-094", "PROP-099"],
+  "parent_props": [
+    "PROP-082",
+    "PROP-094",
+    "PROP-099"
+  ],
   "executive_summary": "The PROP-099 resurrection canary fired on the 2026-06-15T02:41 tinker run: 45 prune-tombstoned monitor/integrity/ files (18 narrative-cite-audit + 27 verify-pending-run) present again in git HEAD. Deep trace shows this is NOT an ongoing loop and NOT a failure of the PROP-094/099 git-deletion-authority guard in steady state -- the guard is demonstrably working (96 'git-deleted-authoritative; do not resurrect' SKIP entries in the recent skip-log, firing every cycle on the exact files, both before and after the burst). ALL 45 resurrections trace to a SINGLE anomalous workspace-sync run at 2026-06-14T16:22:12Z (commit 8b358ede) which bulk-added 39 prune-tombstoned files and self-reported them as a 'Clean run: 59 new files added' with ZERO git-deleted-authoritative skips. The 7 workspace-sync cycles since (17:31 -> 02:09) each show 0 new resurrections. The files are now stuck in HEAD because once present, smart_copy takes its dst-exists branch (cmp match -> no-op) and the dst-absent guard no longer applies. Root structural gap: the guard depends on a per-run GIT_DELETED_SET build that is a single point of failure -- when that build yields an empty/incomplete set (transient archive-read failure, or a stale prompt read during the 4 workspace-sync.md prompt commits on 06-14), the dst-absent branch silently falls through to the permissive PROP-082 date proxy and bulk-resurrects, with no fail-closed check and no observability (git_deleted_count is not in the run-report schema). PROP-103 adds both.",
   "evidence": [
     {
@@ -65,5 +69,18 @@
     "prune-integrity.js eligibility/retention untouched.",
     "Other side honored: the PROP-094/099 guard is exonerated for steady-state operation -- it works; this PROP hardens its single-point-of-failure build step, it does not replace it."
   ],
-  "cross_references": ["PROP-082", "PROP-094", "PROP-099", "PROP-051", "PROP-054", "PROP-091", "DIRECTIVE-20260613-001"]
+  "cross_references": [
+    "PROP-082",
+    "PROP-094",
+    "PROP-099",
+    "PROP-051",
+    "PROP-054",
+    "PROP-091",
+    "DIRECTIVE-20260613-001"
+  ],
+  "obe_closed_at": "2026-06-15T06:30:00.000Z",
+  "obe_closed_by": "operator-cowork-prop-103-impl-2026-06-15",
+  "obe_prior_status": "proposed",
+  "obe_closure_note": "Primary fix shipped: GIT_DELETED_SET trust gate after the build (threshold: archive_lines>=50 AND git_deleted_count<50 -> UNTRUSTED) + fail-closed skip in smart_copy dst-absent branch for prune-managed integrity categories + sentinel write monitor/integrity/workspace-sync-deleted-set-untrusted-<ts>.json. Secondary observability shipped: git_deleted_count + git_deleted_set_untrusted + archive_lines persisted in run-report writer. Non-prune-managed paths fall through to normal rescue (universal-pusher preserved). Closes the 2026-06-14T16:22Z bulk-resurrection class PROP-094/099 left open.",
+  "obe_closure_evidence": "monitor/prompts/workspace-sync.md PROP-103 markers (trust gate at L666-area, fail-closed skip in smart_copy dst-absent branch, run-report persistence in node writer block)"
 }
