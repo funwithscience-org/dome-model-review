@@ -1,0 +1,178 @@
+{
+  "prop_id": "PROP-105",
+  "title": "PROP-022 Phase 6 (closed-issues.json archive split) — measurement-driven re-evaluation: DEFER again, premise refuted, design pre-approved with quantitative re-trigger",
+  "authored_by": "tinker",
+  "authored_at": "2026-06-16T05:32:37.912Z",
+  "directive_id": "DIRECTIVE-20260616-001",
+  "amends": "PROP-022-amendment-001",
+  "category": "state-file-architecture / cost-engineering",
+  "propose_only": true,
+  "do_not_implement": true,
+  "status": "pending-operator-review",
+  "recommendation": "DEFER Phase 6 again — but on quantified evidence this time, not on a qualitative 'no cost pressure' assertion. The directive's empirical premise (1.4MB->3.1MB doubling in 24-48h, 850KB/day, parse-cost-driven decider wall-clock) does not survive measurement. Preserve amendment-001's design verbatim as the pre-approved migration to execute the moment a quantitative re-trigger fires. Ship two cheap, zero-migration-risk pieces NOW (Q6 lookup pattern doc + a closed_issues_mb metric in tinker queue-history) so the next re-evaluation is instrument-driven, not vibe-driven.",
+  "executive_summary": "DIRECTIVE-20260616-001 asked tinker to revive PROP-022 Phase 6 because the 2026-06-14 deferral's 'no cost pressure' justification was claimed to be empirically false: closed-issues.json allegedly doubled 1.4MB->3.1MB in ~24-48h (~850KB/day) and decider supposedly spends meaningful wall-clock parsing it 5x/run. The directive's own constraint required Q1 measurement BEFORE committing, and stated 'if parsing isn't actually the bottleneck, this whole directive should defer again.' Measurement refutes both load-bearing claims. (Q1) A full read+parse of the current 3.0MB file is ~10ms; the decider's entire per-run closed-issues.json I/O budget (5 reads + 3 writes) is ~43ms at 3MB, projected ~144ms at 10MB = 0.011% of a 1320s run. Parsing is not the wall-clock driver. (Q2) Real growth is ~30-42KB/day (2.09MB on 2026-05-25 -> 3.00MB on 2026-06-16, smooth and ~linear), roughly 20x slower than the claimed 850KB/day; and no 24-48h doubling occurred (the file was 2.93MB on 06-13, 2.95MB on 06-14, 2.98MB on 06-15). The '1.4MB' figure is amendment-001's 2026-05-06 historical baseline (its _intro literally says '1.4MB file'), not a 2026-06-14 measurement — the directive conflated the two. (Q2 corollary) The git-churn cost surface is also neutralized: ~20 commits/day touch the file, but git delta-compression packs 8 sampled blob versions (23.9MB raw) into 0.73MB on disk (32.8x), so the file is a negligible packfile/clone-size contributor; the real disk driver remains monitor/integrity/narrative-cite-audit (~380MB). All three cost surfaces (LLM context, wall-clock, disk) are refuted or neutralized at the current and near-projected file size.",
+  "q1_attribution_measurement": {
+    "question": "Confirm whether closed-issues.json parsing is materially in decider's growing wall-clock before committing to the split.",
+    "method": "10-iteration hrtime benchmark of JSON.parse and JSON.stringify against the live 3.0MB closed-issues.json in the tinker clone; cross-referenced against decider's read/write call-site count in decider.md.",
+    "findings": {
+      "file_size_at_measurement_mb": 3,
+      "file_size_bytes": 3148484,
+      "closed_issue_count": 2641,
+      "parse_ms_median": 3.5,
+      "readfile_plus_parse_ms_median": 10.2,
+      "stringify_ms_median": 8.6,
+      "decider_reads_per_run": 5,
+      "decider_writes_per_run": 3,
+      "per_run_pure_cpu_ms_at_3mb": 43,
+      "per_run_pure_cpu_ms_projected_5mb": 72,
+      "per_run_pure_cpu_ms_projected_10mb": 144,
+      "pct_of_1320s_decider_run_at_10mb": 0.011
+    },
+    "verdict": "REFUTED. Parsing/serialization is ~0.011% of decider wall-clock even at a projected 10MB. The decider run-time increase (May ~600-800s -> June ~1316-1360s per the directive) is attributable to LLM-turn count growth from backlog processing, not JSON I/O. Note: each decider read happens inside a fresh `node -e` subprocess, so node-spawn overhead (~50-100ms) dominates the per-call cost regardless of file size — meaning the file-size-attributable marginal cost is even smaller than the 43ms figure suggests. Per the directive's explicit constraint, this is the case where the directive 'should defer again.'",
+    "caveat": "Could not read a duration field from monitor/decisions/cost-history.jsonl (only model + cost_usd present; no duration_s). The 1316/1360s decider figures are taken from the directive at face value. Even granting them, 43-144ms of I/O cannot explain a 600s+ increase."
+  },
+  "q2_growth_rate_audit": {
+    "question": "Confirm or refute the ~850KB/day growth claim with git history.",
+    "method": "GitHub Commits + Contents API: sampled closed-issues.json blob size at 8 commits spanning 2026-05-25 -> 2026-06-16 (depth-50 local clone only reaches ~19h, so the API was used to avoid deepening the clone and adding disk pressure).",
+    "size_progression": [
+      {
+        "date": "2026-05-25",
+        "mb": 2.09,
+        "bytes": 2188680
+      },
+      {
+        "date": "2026-05-31",
+        "mb": 2.18,
+        "bytes": 2287249
+      },
+      {
+        "date": "2026-06-02",
+        "mb": 2.44,
+        "bytes": 2554084
+      },
+      {
+        "date": "2026-06-06",
+        "mb": 2.56,
+        "bytes": 2683278
+      },
+      {
+        "date": "2026-06-10",
+        "mb": 2.89,
+        "bytes": 3030717
+      },
+      {
+        "date": "2026-06-13",
+        "mb": 2.93,
+        "bytes": 3072725
+      },
+      {
+        "date": "2026-06-14",
+        "mb": 2.95,
+        "bytes": 3094758
+      },
+      {
+        "date": "2026-06-15",
+        "mb": 2.98,
+        "bytes": 3126022
+      },
+      {
+        "date": "2026-06-16",
+        "mb": 3,
+        "bytes": 3148484
+      }
+    ],
+    "measured_growth_rate_kb_per_day": "~30-42 KB/day (0.91MB over 22 days = ~42KB/day average; most-recent 06-13->06-16 window ~23KB/day, slightly decelerating)",
+    "directive_claimed_rate_kb_per_day": 850,
+    "discrepancy_factor": "~20x overstated",
+    "no_doubling_event": "The file was 2.93/2.95/2.98MB on 06-13/14/15 — monotonic, no truncation or rotation. A 1.4MB->3.1MB doubling on 06-14 is impossible given it was already 2.89MB on 06-10.",
+    "source_of_1_4mb_error": "amendment-001's phase_6 _intro (authored 2026-05-06) states verbatim '1.4MB file'. That was the accurate size on 2026-05-06. The directive treated this historical baseline as a current 2026-06-14 measurement, manufacturing the apparent doubling. This is a stale-baseline conflation, not a real growth spike.",
+    "projection_at_real_rate": "At ~35KB/day: 5MB reached ~Nov 2026 (not 'by week's end'); 10MB reached ~mid-2027. Linear, no compounding observed.",
+    "verdict": "REFUTED. Growth is modest, smooth, and ~20x slower than claimed; the alarming projection was an artifact of the stale-baseline error."
+  },
+  "q2_corollary_git_churn_surface": {
+    "note": "The only cost surface the directive did NOT name but that is the most plausible real concern for a frequently-committed growing file: git-history / clone-size / disk pressure (the documented #1 pipeline-failure correlate per CLAUDE.md 2026-05-07/08, 05-09, 05-21).",
+    "commits_per_day_touching_file": "~18-25 (sustained over the sampled 3 weeks; ~500 commits 2026-05-25 -> 2026-06-16)",
+    "delta_compression_measurement": {
+      "blob_versions_sampled_in_depth50_clone": 8,
+      "raw_sum_mb": 23.9,
+      "packed_on_disk_sum_mb": 0.73,
+      "delta_ratio": "32.8x"
+    },
+    "working_tree_caveat": "Delta compression protects .git only. The checked-out working-tree copy is uncompressed and grows linearly with file size; at the current 3MB it is a trivial line item, and full-clone agents already carry far larger working-tree items. The real disk driver is monitor/integrity/narrative-cite-audit (~380MB, draining via PROP-091 Phase 2).",
+    "verdict": "NEUTRALIZED at current/near-projected size. Worth re-checking only if the working-tree copy crosses into double-digit MB (see re-trigger thresholds)."
+  },
+  "q3_revive_or_redesign": {
+    "question": "Revive amendment-001's phase_6_resolutions verbatim, or redesign for current schema?",
+    "schema_drift_check": "Current closed-issues.json entry shape: {id, severity, category, description, source, target, status, class_hint, created_at, found_at, created_by_run, fixed_by, fixed_at}. The `id` field is the 'ISS-NNN' string form amendment-001's gap_2 grep pattern (`\"id\":\"ISS-NNN\"`) targets. No drift that breaks the lookup design.",
+    "decision": "REVIVE VERBATIM when a trigger fires. amendment-001's four gap-resolutions (gap_1 stale-prerequisite reconciliation, gap_2 grep-pattern correctness with per-call-site audit, gap_3 acceptance wall-clock thresholds + tests/phase6-perf.sh, gap_4 dual-write-window argument) remain valid and applicable. No redesign needed; only re-confirm the reader inventory at execution time (decider 5 reads/3 writes; structure-integrity.md 8 refs; tinker.md 1; curmudgeon.md 1 — note this is now arguably 4 reader-agents matching amendment-001's '4 readers', though decider+integrity dominate).",
+    "reader_inventory_current": {
+      "decider": "5 reads + 3 writes",
+      "integrity": "8 refs in structure-integrity.md",
+      "tinker": "1 ref",
+      "curmudgeon": "1 ref (Step 8a batch triage)"
+    }
+  },
+  "q4_migration_plan": {
+    "question": "Migration sequencing.",
+    "gate_status": "amendment-001's gate ('phases 1-5 clean for 7+ days post-phase-5') cleared weeks ago (phase 5 shipped 2026-05-07). No additional waiting period is the blocker — the blocker is now justification, and the justification is absent per Q1/Q2.",
+    "plan_when_triggered": [
+      "(a) Backfill: split closed-issues.json into closed-issues.json (live, recent-N-days window) + closed-issues-archive.jsonl (one JSON object per line, historical).",
+      "(b) Update all readers in lockstep (single atomic commit): live-first lookup, then grep archive.jsonl for historical id misses. Per amendment-001 gap_2 the grep pattern is `grep '\"id\":\"ISS-NNN\"' archive.jsonl`.",
+      "(c) Update the writer (decider) to append closed entries to archive.jsonl (or batch-rotate from live on a window boundary).",
+      "(d) Add tests/phase6-perf.sh (amendment-001 gap_3) as a pre-commit gate with the acceptance thresholds below.",
+      "(e) Update build.js OWNERSHIP + workspace-sync.md classification for the new closed-issues-archive.jsonl (git-append-only, same class as the PROP-065 .jsonl set)."
+    ],
+    "atomicity": "Single-commit migration per amendment-001's stated preference — all readers switch together. Partial deployment is the disaster shape (a reader still doing JSON.parse on a now-split file would silently miss historical ids).",
+    "new_file_classification": "closed-issues-archive.jsonl should be git-append-only (matches the 26-file PROP-065 set): FUSE is a downstream replica, writes via clone-and-push only."
+  },
+  "q5_retention_window_calibration": {
+    "question": "Retention window for the 'live' file; amendment-001 floated closed-issues-recent-90d.",
+    "calibration": "At the REAL ~35KB/day rate (not the directive's 850KB/day): a 90-day live window ~= 90 * 35KB ~= 3.1MB (i.e. ~today's whole file — useless as a split). To keep the live file under a ~1MB comfort target at 35KB/day: window ~= 1024KB / 35KB ~= 29 days. So a 30-day live window yields ~1MB live + the rest in archive. (Contrast the directive's panicked '90 days = 76MB, 30 days = 25MB' — those used the false 850KB/day rate and are ~20x too high.)",
+    "recommended_live_window": "30 days (live ~1.0MB at current rate, ~2 months of headroom before it reaches 2MB). Re-derive at execution time from the then-current measured rate; do not hardcode against a stale rate (the lesson of this whole directive).",
+    "note": "Because growth is slow, even a generous 60-day window (~2MB live) is defensible; the split's value comes mostly from capping unbounded long-tail growth, not from shrinking today's file."
+  },
+  "q6_lookup_by_id_canonical_pattern": {
+    "question": "Codify the post-split lookup-by-id pattern so future readers don't reinvent it wrong.",
+    "recommendation": "Ship NOW, independent of the deferral — it is documentation only, zero migration risk, and future-proofs every reader. Add to monitor/prompts/reference/DATA-SCHEMAS.md (after the existing closed-issues.json section ~line 77) the canonical pattern: live-first, archive-grep fallback.",
+    "canonical_pattern_text": "Lookup an issue by id across the (future) split store: (1) read the live file `closed-issues.json` and `arr.find(i => i.id === target)`; (2) on miss, `grep '\"id\":\"' + target + '\"' closed-issues-archive.jsonl | head -1` and JSON.parse the matched line. Never JSON.parse the whole archive.jsonl. Bulk lookups: single `grep -E '\"id\":\"(ISS-100|ISS-200|...)\"'` pass over the archive, then JSON.parse matched lines. Until the split ships, the live file IS the whole store and step (1) suffices — so the pattern is forward-compatible: code written this way today keeps working post-split with only the fallback added.",
+    "rationale": "Documenting the pattern before the migration means readers added between now and the split are written split-ready, shrinking the eventual lockstep change."
+  },
+  "q7_prop104_coordination": {
+    "question": "Coordinate with PROP-104 (decider working-set reduction) so the two don't step on each other.",
+    "finding": "No conflict, and no sequencing dependency, because Phase 6 is deferred. PROP-104 Phase 0 measurement can proceed against the current (un-split) closed-issues.json. If Phase 6 ever ships, PROP-104's measurement of closed-issues.json read cost should re-run against the post-split state for accurate attribution. Since this PROP recommends deferral, PROP-104 is unaffected today. Per the directive constraint, this PROP's recommendation is NOT gated on PROP-104 and PROP-104 is NOT gated on this — they are orthogonal. PROP-104's own finding (state files don't enter LLM context) is consistent with and reinforces Q1 here: the only cost closed-issues.json could impose is wall-clock/disk, both measured negligible."
+  },
+  "q8_prop022_closure_amendment": {
+    "question": "Amend/re-open PROP-022's closure with this directive's empirical findings rather than silently superseding.",
+    "recommended_closure_amendment_text": "2026-06-16 (PROP-105, DIRECTIVE-20260616-001): Phase 6 deferral RE-AFFIRMED on quantified evidence. The 2026-06-14 deferral's qualitative 'no cost pressure' assertion is now backed by measurement: closed-issues.json I/O is ~43ms/decider-run at 3MB (0.011% of run-time at projected 10MB); real growth is ~35KB/day (not the 850KB/day claimed in the directive, which conflated amendment-001's stale 2026-05-06 '1.4MB' baseline with a current measurement); git delta-compression packs the ~20 daily commits at 32.8x so the file is a negligible clone-size contributor. The deferral's own gate ('defer until tinker quantifies whether read cost is actually a driver; if it is, author Phase 6') is now resolved in the NEGATIVE — read cost is not a driver. amendment-001's design is preserved as pre-approved and will execute on the quantitative re-trigger defined in PROP-105 (no further design or operator re-litigation needed when a trigger fires).",
+    "note": "Recommend the operator either (a) leave PROP-022 status as phase-1-5-implemented-phase-6-deferred and append this amendment to its closure metadata, or (b) keep amendment-001 status as phase-5-implemented-phase-6-deferred and attach PROP-105 as the measurement record. Tinker did NOT mutate PROP-022 or amendment-001 (propose-only; those files are operator-owned closure records)."
+  },
+  "recommended_actions_ship_now": [
+    "Q6: add the canonical live-first/archive-grep lookup-by-id pattern to DATA-SCHEMAS.md (doc only, zero risk).",
+    "Add a cheap closed_issues_mb metric to tinker's queue-history.jsonl pre-flight (one stat call) so file growth is tracked automatically and the re-trigger is instrument-driven, not re-discovered by eye. Optionally also log decider's measured per-run closed-issues I/O if a duration probe is added.",
+    "Append the Q8 closure amendment text to PROP-022 (operator action — propose-only here)."
+  ],
+  "quantitative_re_trigger_thresholds": {
+    "note": "Phase 6 (revive amendment-001 verbatim) auto-justifies — no new design, straight to the migration plan in Q4 — the moment ANY of these fires. This replaces 'no cost pressure today' (un-measurable) with measurable gates, so the next decision is mechanical.",
+    "triggers_any_of": [
+      "closed-issues.json > 8MB (working-tree copy becomes a non-trivial full-clone line item; ~well beyond today's 3MB; ETA ~2027 at current rate).",
+      "Measured decider per-run closed-issues.json I/O budget > 2000ms (5 reads + 3 writes), i.e. ~2 orders of magnitude above today's 43ms — would require ~140MB file, OR a regression in parse pattern (e.g. a reader added that parses in a hot loop).",
+      "Single lookup-by-id find() over the live array > 50ms (degraded O(n) scan at large entry counts).",
+      "Sustained growth rate > 200KB/day for 14 consecutive days (5x current; would re-open the projection concern).",
+      "df-based root-FS headroom analysis attributes > 15MB of working-tree clone size to closed-issues.json across active agent clones."
+    ]
+  },
+  "other_side_considerations": {
+    "case_for_doing_phase_6_anyway": "The file IS monotonically growing (effectively append-on-close). Over a 1-2 year horizon it reaches 12-25MB, at which point the uncompressed working-tree copy carried by every full clone (decider, integrity, tinker, prune, workspace-sync, dome-mirror) does become a real per-clone line item, and O(n) find() lookups degrade. Phase 6 is a 'someday yes'. The risk of deferring is that the eventual migration is a 4-reader lockstep change that is easier to do at 3MB than at 25MB. Mitigation: amendment-001's design is preserved verbatim and pre-approved, and the quantitative triggers fire with months of lead time — so 'someday' arrives with warning, not as a fire.",
+    "case_against_the_directive_being_wrong_to_ask": "The operator was right to ask tinker to re-measure — the 2026-06-14 deferral used a qualitative justification ('no cost pressure today') that genuinely deserved quantification. The directive's instinct (instrument before deciding) was correct; only its input data (the 1.4MB baseline) was stale. The output of this PROP is exactly what the directive's Q1 constraint asked for: measure, and if parsing isn't the bottleneck, defer honestly.",
+    "residual_uncertainty": "cost-history.jsonl lacks a duration field, so the decider wall-clock figures (1316/1360s) could not be independently confirmed; they were taken from the directive. The I/O-vs-runtime ratio is so extreme (0.011%) that this does not change the verdict, but adding a duration field to cost-history (PROP-101 follow-up) would let a future run confirm the LLM-turn-count attribution directly."
+  },
+  "cross_references": [
+    "DIRECTIVE-20260616-001 (this work order)",
+    "PROP-022-state-file-archive-architecture (parent; phase-1-5-implemented-phase-6-deferred)",
+    "PROP-022-amendment-001 (phase_6_resolutions design; revived-as-pre-approved here)",
+    "PROP-101 (cost instrumentation; lacks duration field — follow-up noted)",
+    "PROP-104 + DIRECTIVE-20260615-001 (decider working-set reduction; orthogonal, coordinated not gated)",
+    "DIRECTIVE-20260614-002 (cost-engineering directive that set the 'quantify before split' gate)"
+  ],
+  "completion_criteria": "Operator reviews; either re-affirms deferral (recommended) and ships the two zero-risk now-actions (Q6 doc + closed_issues_mb metric), or overrides with a decision to execute amendment-001's migration. Either way the un-quantified-assertion problem is closed: the decision is now anchored to measured numbers and explicit re-trigger thresholds."
+}
