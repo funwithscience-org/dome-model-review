@@ -1,0 +1,217 @@
+{
+  "id": "PROP-104",
+  "title": "Decider per-turn working-set reduction (PROP-040 Phase 2) — measure-then-precompute-then-slim, with honest reframing of where decider's cache_read actually comes from",
+  "authored_by": "tinker",
+  "authored_at": "2026-06-16T02:45:00Z",
+  "directive_id": "DIRECTIVE-20260615-001",
+  "category": "cost-engineering / precompute-and-slim",
+  "propose_only": true,
+  "do_not_implement": true,
+  "requires_human_judgment": true,
+  "why_human_needed": "Decider is the #1-cost AND highest-stakes agent. Any prompt-slim or precompute that narrows what the LLM sees per decision carries real downstream-mistake risk (the directive's Q6 / constraint #1). Phase 0 measurement + shadow validation is mandatory before any slim ships; the operator must review the Phase-0 evidence and approve each phase gate.",
+  "status": "design-pending-operator-review",
+  "summary": "DIRECTIVE-20260615-001 asks for PROP-040 Phase 2: shrink decider's ~17-19M cache_read tokens/run by precomputing+slimming its per-turn working set, mirroring the PROP-020/PROP-021 precompute-and-slim pattern. This PROP delivers that design (Q1-Q8) BUT leads with a correction the directive's framing missed: decider's large state files (closed-issues.json now 3.1MB, open-issues.json) are read inside bash `node -e` sweep blocks that print only one-line summaries — their bulk NEVER enters the LLM context window. Therefore the 17M cache_read/run is dominated by the GROWING CONVERSATION PREFIX (system prompt + decider.md 1334L + conditionally-loaded reference files + ACCUMULATED tool-result outputs + 136-158 assistant turns), re-read on every turn — not by re-reading state files into the LLM. A closed-issues precompute would save script wall-clock and shrink some printed output, but would NOT by itself cut the headline cache_read, because that content was never in-context. Phase 0 must empirically locate the cache_read before Phase 1 builds anything. The precompute is still worth shipping (it reduces dispatcher-phase tool-result volume, enables a future prompt-slim, and cuts wall-clock), but the savings are contingent, not assumed.",
+  "the_correction_up_front": {
+    "directive_premise": "Directive context: 'at 158 LLM turns x ~108K cache_read per turn, each turn re-reads ~108K tokens of context ... most of its 17M cache_read tokens are state files re-read each turn.'",
+    "what_the_evidence_shows": "Verified 2026-06-16 against decider.md HEAD: the heavy state-file reads — open-issues.json + closed-issues.json (Priority 5b L261-262; End-of-Run sweeps A0 L458-459, A0b L543-545, A0c L656-658, A0d L862-873), expansion-tracker.json (L235, L343, L656), priority-queue.json (Step B E1/E2/E3) — are ALL inside bash `node -e` blocks. Each block does `JSON.parse(fs.readFileSync(...))` and prints a SHORT summary (e.g. Step A0 prints 'Step A0 sweep: no status=closed residue'; Priority 3 prints 'Pending: N Critical: X Major: Y'). The 3.1MB of closed-issues.json is parsed in the subprocess and discarded; only the printed stdout enters the tool-result and thus the LLM context.",
+    "therefore": "cache_read per turn = the entire growing conversation prefix that gets re-read on each of 136-158 turns. It scales with (turn_count x accumulated_context), where accumulated_context = system+prompt prose + every prior bash/Read tool-result that was verbose + every prior assistant message. State-file SIZE only matters to cache_read insofar as a block PRINTS large output into a tool-result that then persists.",
+    "implication_for_design": "The precompute lever the directive names (slim closed-issues so the LLM re-reads less) only pays off where state content is actually in-context. Phase 0 MUST distinguish three cache_read sources: (a) static prompt prose (decider.md + reference files), (b) accumulated verbose tool-result output (what bash blocks print), (c) any Read-tool state-file loads into context. The fix differs per source: (a)->prompt-slim (PROP-040 Phase-1 lineage / PROP-021 stage-2), (b)->trim what bash prints + fewer turns, (c)->precompute artifact. The directive assumed (c) dominates; the static map suggests (a)+(b) likely dominate. Phase 0 settles it with data, not assumption."
+  },
+  "Q1_measurement_design": {
+    "goal": "Instrument decider to attribute cache_read/input tokens to dispatcher steps AND to the three sources above, so the Phase-1 precompute target is data-driven, not guesswork.",
+    "mechanism_a_per_step_token_capture": "PROP-101's compute-run-cost.js already parses the live transcript .jsonl for aggregate per-run usage. Extend the existing write-self-cost.sh path (decider already runs it via PROP-101 Phase 2) with a --by-step mode that buckets each assistant message's usage by a step marker. Concretely: have decider emit a cheap stderr breadcrumb at the start of each dispatcher step/sweep — `echo \"STEP_MARKER <step> $(date +%s)\"` — and have a post-run analyzer (compute-decider-step-cost.js, new) align transcript message timestamps to the marker windows, summing input/cache_read/cache_write/output per window. Output: monitor/integrity/decider-step-cost-<RUN_ID>.json. Non-fatal, mirrors write-self-cost.sh exit-0-on-failure discipline.",
+    "mechanism_b_context_source_attribution": "Separately answer 'is the cache_read prompt-prose, tool-result accumulation, or Read-tool state loads?'. Two cheap probes: (1) `wc -c` / token-estimate the static context (decider.md + each reference file actually loaded per run) and compare to total input — the static floor. (2) Scan the transcript for tool_result blocks > ~2KB and bucket by which bash block / Read produced them; this quantifies (b). Whatever is left after (a)+(b) is (c). This is the single most important Phase-0 number: it decides whether Phase 1 precompute is worth building at all.",
+    "acceptance": "Phase 0 is complete when we can state, with transcript evidence from >=5 decider runs, the % split of input tokens across {static prompt prose, accumulated tool-result output, Read-tool state loads} and the top-3 token-heaviest steps. No Phase-1 code ships before this."
+  },
+  "Q2_working_set_inventory": {
+    "method": "Static map of every JSON.parse(fs.readFileSync()) in decider.md (1334L) + reference files, tagged by step, file size, read-style (bash-subprocess vs Read-tool), and reuse (once vs repeated).",
+    "files": [
+      {
+        "file": "closed-issues.json",
+        "size": "3.1MB (was 1.4MB+ at directive time — growing ~fast)",
+        "reads": "Priority 5b L262; End-of-Run A0 L459, A0b L544, A0c L657, A0d L863 (>=5 full parses/run)",
+        "read_style": "ALL bash `node -e` subprocess; prints only summaries",
+        "in_llm_context": "NO (bulk never printed)",
+        "precompute_value": "wall-clock + subprocess memory; NOT direct cache_read unless a block prints large output"
+      },
+      {
+        "file": "open-issues.json",
+        "size": "28KB",
+        "reads": "same sweeps as closed-issues + Priority 1b/2; ~6 parses/run",
+        "read_style": "bash subprocess + one require() in Priority 2 external-report loop",
+        "in_llm_context": "NO (small + summarized)",
+        "precompute_value": "low (already small)"
+      },
+      {
+        "file": "pending-digest.json",
+        "size": "560KB",
+        "reads": "Priority 3 L212",
+        "read_style": "bash subprocess; prints pending_count + severity_breakdown only",
+        "in_llm_context": "summary only",
+        "precompute_value": "ALREADY a precompute — digest-reviews.js pre-slices it. Precedent that the pattern works for decider. But 560KB is large for a 'digest'; candidate to slim further (drop full review bodies, keep id+severity+pointer)."
+      },
+      {
+        "file": "expansion-tracker.json",
+        "size": "72KB",
+        "reads": "Priority 4 L235; M1 L343; A0b L544; A0c L657; ~5 parses/run",
+        "read_style": "bash subprocess",
+        "in_llm_context": "NO",
+        "precompute_value": "low-medium"
+      },
+      {
+        "file": "expansion-tracker-archive.jsonl",
+        "size": "large append log",
+        "reads": "M1 L354; A0b L553; A0c L664",
+        "read_style": "bash subprocess line-split",
+        "in_llm_context": "NO",
+        "precompute_value": "wall-clock only"
+      },
+      {
+        "file": "priority-queue.json",
+        "size": "4KB",
+        "reads": "Step B E1 L942, E2 L1002, E3 L1203 + writes",
+        "read_style": "bash subprocess + writes",
+        "in_llm_context": "small",
+        "precompute_value": "none (tiny, and it is decider's own write surface)"
+      },
+      {
+        "file": "human-notes.json (decisions)",
+        "size": "16KB",
+        "reads": "Step B E1 L943; A0d L862",
+        "read_style": "bash subprocess",
+        "in_llm_context": "low",
+        "precompute_value": "low"
+      },
+      {
+        "file": "closure-ledger.jsonl",
+        "size": "append log",
+        "reads": "A0 L478, A0b L574, A0c L734",
+        "read_style": "bash subprocess",
+        "in_llm_context": "NO",
+        "precompute_value": "wall-clock only"
+      },
+      {
+        "file": "curmudgeon/reviews/*.json",
+        "size": "per-file",
+        "reads": "Step E2 L1009-1022, L1141 (dir walk); Priority 3 reads full review bodies referenced in digest INTO context",
+        "read_style": "bash for pop-matching; Read-tool for digest bodies",
+        "in_llm_context": "YES for the digest-referenced review bodies the LLM reasons over",
+        "precompute_value": "HIGH — this is a genuine (c)-class in-context load. Slimming what the LLM must read here (vs reading full review JSON) is a real cache_read lever."
+      }
+    ],
+    "headline_finding": "The ONLY confirmed in-LLM-context state loads are: (1) curmudgeon review bodies the LLM reads during Priority 3 digest processing, and (2) whatever each bash sweep PRINTS. closed-issues.json's 3.1MB — the directive's headline — is NOT in context. So the highest-value precompute target is likely the curmudgeon-review digest path (already partly precomputed via pending-digest.json/digest-reviews.js), not closed-issues."
+  },
+  "Q3_precompute_candidates": {
+    "ranked": [
+      {
+        "rank": 1,
+        "candidate": "Slim pending-digest.json (already exists, 560KB).",
+        "design": "digest-reviews.js currently emits pending_count + severity_breakdown + (apparently) enough body that the file is 560KB. Have it additionally emit a decider-facing slim slice: per-pending-review {queue_id, target_id, severity, hole_count, one-line synopsis, pointer-to-full-file}. Decider reads the slim slice for triage and only Read-tool-loads a FULL review body when it decides to act on that specific item. This directly cuts (c)-class in-context tokens on the most common decider path (Priority 3 fires most runs).",
+        "owner": "digest-reviews.js (already runs in decider's clone setup via decider-setup.sh)",
+        "risk": "low — additive field; decider can fall back to full file."
+      },
+      {
+        "rank": 2,
+        "candidate": "decider-dispatcher-state.json — the PROP-021 analog.",
+        "location": "monitor/integrity/decider-dispatcher-state.json",
+        "schema": "schema_version, generated_at, generator, generator_run_id, recommended_priority (1|1b|2|2b|2c|3|3b|4|5|5b), recommendation_reason, priority_1b_issue_proposals{pending_count, ids}, priority_2_external_reports{count}, priority_3_digest{pending_count, critical, major, head_items[]}, priority_4_expansions{integ_ready_count, ids}, priority_5b_stale{candidate_count, oldest_age_days}, end_of_run_sweeps{a0_residue_count, a0b_residue_count, a0c_orphan_count, a0d_pending_hnote_count}, stats",
+        "purpose": "Lets decider's dispatcher pick its route + know whether each end-of-run sweep has ANY work, from ONE small artifact read once — instead of 5+ bash blocks each parsing multi-MB files and printing summaries. The win is fewer turns + less printed tool-result output (source (b)), not closed-issues re-reads.",
+        "owner": "hybrid (see Q4)",
+        "risk": "medium — must stay fresh; stale artifact misses same-run items (Q4)."
+      },
+      {
+        "rank": 3,
+        "candidate": "closed-issues-recent.json (date-windowed slim).",
+        "design": "Drop entries closed before a cutoff (90d default). Decider's sweeps rarely re-open old closures; A0 dedup only needs recent ledger. Emitting closed-issues-recent-90d.json shrinks the 3.1MB the SWEEP SUBPROCESSES parse — pure wall-clock + subprocess-memory win. Only becomes a cache_read win IF Phase 0 finds a block that prints large closed-issues-derived output into context.",
+        "owner": "hybrid",
+        "risk": "low-medium — a sweep that legitimately needs full history (rare) must read the full file; keep full file available and window only the hot-path reads."
+      }
+    ],
+    "recommendation": "Phase 1 ships candidates #1 (digest slim) and #2 (dispatcher-state) together — they target the two confirmed in-context sources. Candidate #3 (closed-issues window) ships only if Phase 0 finds a closed-issues-derived in-context print; otherwise it is a wall-clock-only optimization filed as a low-priority follow-up, NOT bundled here (avoids over-engineering the directive's headline file that turns out not to be the bottleneck)."
+  },
+  "Q4_who_runs_it": {
+    "recommendation": "Hybrid, mirroring PROP-021 exactly. (1) integrity daily run refreshes via a new structure-integrity.md check (see Q-conventions) — backstop freshness. (2) decider-side bash refresh in decider-setup.sh (clone setup) on EVERY run — because open-issues/expansion-tracker/priority-queue change every decider run, a 24h-stale artifact would miss same-run items. PROP-020 chose integrity-only (drift changes slowly); PROP-021 chose hybrid (queue changes hourly). Decider state changes per-run, so hybrid with per-run decider-side refresh is the correct, well-precedented choice.",
+    "freshness_gate": "integrity check uses a tight gate (recommend 6h, matching PROP-021 §7i, not PROP-020's 72h) because decider state is fast-moving.",
+    "cost_note": "The decider-side bash refresh adds sub-second wall-clock and ZERO LLM tokens (bash invocation, structurally invisible to the LLM) — same argument PROP-021 makes."
+  },
+  "Q5_cache_write_impact": {
+    "analysis": "28% of decider cost (~$2.85/run) is cache_write_1h — fires when cached context is invalidated and re-primed. The precompute's cache-write benefit is REAL ONLY for the stable-cacheable slice. Key distinction: the static prompt prose (decider.md + reference files) is stable across runs and caches well; the per-run churn slice (today's open-issues/digest state as it enters context) invalidates the cache each run regardless. So: (i) a precompute artifact that itself CHANGES every run (dispatcher-state, because state changes every run) does NOT help cache_write — it is in the churn slice by definition. (ii) The cache_write WIN comes from making the churn slice SMALLER (less to re-prime), not from caching the artifact. (iii) The biggest cache_write lever is actually the PROMPT-SLIM (Phase 2): a smaller, more-stable decider.md + reference set is what caches cleanly across runs. Conclusion: don't over-claim cache_write savings from the precompute artifact; the honest cache_write win is downstream of Phase 2 prompt-slim and of shrinking printed tool-result volume."
+  },
+  "Q6_shadow_validation": {
+    "design": "MANDATORY before any prompt-slim ships (directive constraint #1). Phase 1 ships the precompute artifacts in SHADOW: the compute scripts produce decider-dispatcher-state.json + slim digest, integrity/decider-setup refresh them, AND decider keeps reading the full files exactly as today. Decider additionally logs, per run, instrumentation fields into its report: dispatcher_state_used(false in shadow), dispatcher_state_recommended_priority (what the artifact WOULD have said), actual_priority_taken (what decider did). A post-hoc comparison (tinker or integrity) checks: 'would routing/sweep decisions have been identical if decider had trusted the slim artifact instead of the full files?' over >=20 runs. Phase 2 (decider actually trusts the slim artifact + prose slimmed) ships ONLY if shadow shows zero divergent decisions AND Phase 0 confirmed a >=40% input-token reduction is achievable on the targeted path. Same measurement-only discipline as PROP-021 Phase 1.",
+    "rollback": "Phase 2 is mechanical text relocation + a read-source switch; `git revert` restores byte-identical. If even ONE 'forgot to load' or divergent-decision regression appears, Phase 2 halts (mirrors PROP-040 Phase 1 exit criteria)."
+  },
+  "Q7_ordering_vs_PROP021": {
+    "recommendation": "Design NOW, ship in PARALLEL with PROP-021 Phase 2 — do not serialize. Rationale: (1) the precompute-and-slim pattern is already validated twice (PROP-020 drift-audit, PROP-021 curmudgeon stage-1 shipped 2026-06-15); the design work does not need PROP-021's prompt-slim measurement to de-risk it. (2) BUT honor a hard sequencing rule WITHIN this PROP: Phase 0 measurement before Phase 1 code, and shadow before Phase 2 slim — that is where the de-risking lives, not in waiting on PROP-021. (3) Compounding the two agents' savings sooner is worth more than the marginal information PROP-021 Phase 2's measurement would add, especially since this PROP's Phase 0 will produce decider-specific numbers anyway.",
+    "caveat": "If operator prefers a single learning loop, the cheap sequencing is: let PROP-021 stage-1 (already shipped) accumulate 7 green days of its instrumentation fields first — those real curmudgeon numbers would calibrate this PROP's Q8 estimate. That is a 1-week delay for better priors. Tinker's lean: ship Phase 0 measurement of THIS PROP immediately (it is read-only instrumentation, zero risk), which produces better decider-specific priors than PROP-021's curmudgeon numbers would."
+  },
+  "Q8_estimated_savings": {
+    "honest_framing": "The directive's $8-12/day estimate assumes the precompute cuts cache_read from 17M to ~7-10M. Per the correction above, that assumption likely OVERSTATES the precompute's direct effect, because closed-issues' 3.1MB is not in cache_read to begin with. Revised estimate by source:",
+    "by_source": [
+      {
+        "source": "(c) in-context state loads (curmudgeon review bodies + dispatcher summaries)",
+        "lever": "digest-slim + dispatcher-state",
+        "est_cache_read_reduction": "plausibly 1-4M tokens/run on Priority-3-heavy runs; near-zero on quiet runs",
+        "est_usd": "$0.30-1.20/run x 3 = $1-3.5/day"
+      },
+      {
+        "source": "(a) static prompt prose (decider.md 1334L + reference files)",
+        "lever": "Phase 2 prompt-slim (gated on >=40% measured)",
+        "est_cache_read_reduction": "depends on how much rare-path prose can move to conditional reference files; PROP-040 Phase 1 already moved 265L",
+        "est_usd": "modest; the cleaner cache also reduces cache_write_1h"
+      },
+      {
+        "source": "(b) accumulated verbose tool-result output",
+        "lever": "trim what bash sweeps PRINT + fewer turns via dispatcher-state short-circuit",
+        "est_cache_read_reduction": "potentially the LARGEST lever — every KB a block prints is re-read on all subsequent turns; cutting 158 turns by even 10-20% via dispatcher short-circuit compounds",
+        "est_usd": "unknown until Phase 0; possibly the biggest single win"
+      }
+    ],
+    "bottom_line": "Realistic combined target: $4-9/day (~$1.5-3.3K/year), at the LOW end of the directive's estimate, with the honest caveat that the exact number is unknowable until Phase 0 attributes the cache_read. The strategic value (establishing reusable precompute infra + the (b)-source 'trim what you print' discipline) may exceed the direct dollar savings — consistent with the directive's own 'bigger win is establishing the pattern' note.",
+    "assumptions": "Sonnet pricing $0.30/M cache_read; 3 runs/day; Phase 0 confirms the source split; no cadence/model change."
+  },
+  "phased_rollout": {
+    "phase_0": "Measurement + shadow infra. Ship compute-decider-step-cost.js (read-only transcript analyzer) + the dispatcher-state/digest-slim scripts in SHADOW (produced but not trusted). Decider logs would-have-routed instrumentation. EXIT: >=5 runs of source-attributed token data + >=20 runs of shadow routing comparison. No prompt edits. Zero risk.",
+    "phase_1": "Precompute ship. Decider TRUSTS decider-dispatcher-state.json for routing + sweep-has-work gating, and the slim digest for Priority-3 triage, with full-file fallback prose intact. Add structure-integrity.md refresh check + decider-setup.sh per-run refresh. Instrumentation: dispatcher_state_used=true, age, recommended_priority. GATE to enter: Phase 0 shadow shows zero divergent decisions.",
+    "phase_2": "Prompt slim. Move rare-path decider.md prose into conditional reference files (PROP-040 Phase 1 lineage). GATE to enter: Phase 1 holds 7 green days AND Phase 0 measured >=40% achievable input-token reduction on the targeted path. If <40%, keep precompute, skip slim (PROP-021's rollback-to-precompute-only rule)."
+  },
+  "conventions_to_mirror": {
+    "artifact_location": "monitor/integrity/decider-dispatcher-state.json (PROP-020/021 both chose monitor/integrity/)",
+    "script_location": "monitor/scripts/compute-decider-dispatcher-state.js (top-level main(), exit codes 0=ok 1=input-missing 2=write-fail 3=internal, --workspace/--out flags, deterministic alpha-sorted JSON, <500ms target, >=6 test fixtures)",
+    "step_cost_script": "monitor/scripts/compute-decider-step-cost.js (Phase 0 read-only analyzer)",
+    "integrity_check": "structure-integrity.md new check §7j (next free 7-series letter; 7g=drift PROP-020, 7h=Mech-A PROP-059, 7i=curmudgeon-dispatcher PROP-021), modeled byte-for-byte on §7i with a 6h freshness gate",
+    "file_ownership": "3-file lock-step (PROP-021 protocol): classify decider-dispatcher-state.json + compute-decider-dispatcher-state.js + compute-decider-step-cost.js as 'git'-owned in (1) build.js OWNERSHIP, (2) workspace-sync.md NEVER_PUSH, (3) CLAUDE.md File Ownership table. Slim-digest changes ride digest-reviews.js which is already git-owned infrastructure.",
+    "code_sharing_Q5_directive": "compute-curmudgeon-dispatcher-state.js (389L) and compute-drift-audit.js do NOT currently share a lib. The decider precompute IS structurally similar (read JSON, slice by date/status, project fields, emit JSON with schema_version/generated_at/stats). RECOMMEND extracting the shared scaffolding — readJSON(rel,fallback), fail(code,msg), the schema_version/generated_at/generator/stats envelope, alpha-sorted deterministic write — into monitor/scripts/dispatcher-state-precompute-lib.js, and refactor compute-curmudgeon-dispatcher-state.js to use it in the SAME PR so it is proven against an existing caller before decider depends on it. Do NOT duplicate the envelope a third time."
+  },
+  "constraints_honored": [
+    "Phase 0 shadow validation REQUIRED before any prompt slim — built into phased_rollout + Q6.",
+    "NO decider model change proposed (explicitly out of scope).",
+    "NO decider cadence change proposed (PROP-031 BAU discipline preserved).",
+    "Mirrors PROP-020/021 conventions exactly (artifact in monitor/integrity/, script in monitor/scripts/, integrity §7j, 'git' ownership 3-file lock-step).",
+    "Code-sharing addressed: recommend shared dispatcher-state-precompute-lib.js, refactor curmudgeon caller in same PR, no triplication."
+  ],
+  "the_other_side_arguments": [
+    "AGAINST building this at all: Phase 0 may reveal that closed-issues/state files contribute ~0 to cache_read (they are read in bash, not context), in which case the directive's headline target evaporates and the only real levers are prompt-slim (already partly done in PROP-040 Phase 1) and 'print less / fewer turns'. If so, the honest output is a much smaller PROP: just the (b)-source discipline (trim verbose bash prints) + a digest slim, NOT a full dispatcher-state precompute. Phase 0 is explicitly designed to be able to KILL Phase 1.",
+    "AGAINST the precompute: decider is high-stakes; the dispatcher-state artifact introduces a freshness-coupling failure mode (decider trusts a stale artifact, misses a same-run item) that the current full-file reads do not have. Mitigated by per-run decider-side refresh + shadow validation, but it is a new class of bug the current design lacks.",
+    "AGAINST parallel-with-PROP-021: serializing would give better priors (real curmudgeon numbers first). Tinker judged the parallel path higher-EV but flags this as a legitimate operator call.",
+    "FOR proceeding regardless: even if direct dollar savings are modest, the reusable precompute lib + the empirical source-attribution from Phase 0 are durable infrastructure that de-risks every future heavy-state-agent optimization. The directive itself makes this 'establish the pattern' argument."
+  ],
+  "verification_pattern": "test -f monitor/tinker/proposals/PROP-104-decider-working-set-reduction-phase-2.json && grep -q '\"verification_pattern\"' monitor/tinker/proposals/PROP-104-decider-working-set-reduction-phase-2.json && echo FIXED || echo STILL_BROKEN",
+  "post_implementation_verification_pattern": "test -f monitor/scripts/compute-decider-dispatcher-state.js && test -f monitor/integrity/decider-dispatcher-state.json && test -f monitor/scripts/dispatcher-state-precompute-lib.js && grep -q 'decider-dispatcher-state' monitor/prompts/structure-integrity.md && grep -q 'decider-dispatcher-state' monitor/prompts/decider.md && echo IMPLEMENTED || echo NOT_IMPLEMENTED",
+  "cross_references": {
+    "directive": "DIRECTIVE-20260615-001-decider-working-set-reduction-phase-2",
+    "prop_lineage": [
+      "PROP-040 (decider context-load extraction, Phase 1 implemented — prompt-split lineage)",
+      "PROP-021 (curmudgeon dispatcher precompute — Phase 1 + Phase 2 stage-1 shipped — pattern mirrored)",
+      "PROP-020 (drift-audit precompute — original pattern)",
+      "PROP-101 (cost instrumentation — produced the empirical decider runs motivating this PROP)"
+    ],
+    "key_files": [
+      "monitor/prompts/decider.md",
+      "monitor/scripts/compute-curmudgeon-dispatcher-state.js",
+      "monitor/scripts/compute-drift-audit.js",
+      "monitor/scripts/digest-reviews.js",
+      "monitor/prompts/structure-integrity.md"
+    ]
+  }
+}

@@ -1,28 +1,24 @@
-TINKER 2026-06-15T02-47 — Mode 2 (Infrastructure) — selected by PROP-099 canary RC=3
+TINKER 2026-06-16T02-39 — Mode 4 (operator-directive override)
 
-FINDING FND-01 (prune-resurrection, moderate; canary raw=major):
-45 prune-tombstoned monitor/integrity/ files (18 narrative-cite-audit + 27 verify-pending-run)
-are back in git HEAD. Deep trace: NOT an ongoing loop. ALL 45 came from ONE anomalous
-workspace-sync run at 06-14T16:22 (commit 8b358ede) that bulk-added 39 tombstoned files and
-self-labeled "Clean run: 59 new files added" with ZERO git-deleted-authoritative skips.
-The PROP-094/099 guard is WORKING in steady state — 96 "do not resurrect" skips in the recent
-skip-log, firing every cycle on the exact files. 7 ws-sync cycles since 16:22 = 0 new
-resurrections. Files are stuck in HEAD only because smart_copy's dst-exists branch no-ops once
-they're present. Root cause: the per-run GIT_DELETED_SET build is a single point of failure with
-a PERMISSIVE failure mode (empty/short set -> falls through to date proxy -> bulk resurrect),
-no fail-closed check, no persisted git_deleted_count.
+DIRECTIVE-20260615-001 (decider working-set reduction, PROP-040 Phase 2): COMPLETED.
+Authored PROP-104 (propose-only, design-pending-operator-review) answering Q1-Q8 with a
+3-phase rollout: Phase 0 measure+shadow -> Phase 1 precompute ship -> Phase 2 prompt-slim
+(gated on >=40% measured input-token reduction). Mirrors PROP-020/021 conventions.
 
-ACTION: Authored PROP-103 (propose-only) — fail-closed when GIT_DELETED_SET is empty/short
-while prune archives are non-empty (skip prune-managed integrity rescues, write a sentinel),
-plus persist git_deleted_count in the run report for same-day detection. ~20 LOC, PROP-051
-gates untouched, prune untouched.
+KEY CORRECTION (operator please read): the directive's headline premise is partly wrong.
+Decider's ~17M cache_read/run is NOT dominated by re-reading state files. closed-issues.json
+(now 3.1MB, grown from 1.4MB) and the other big state files are read in bash node -e blocks
+that print only summaries — their bulk never enters the LLM context. The cache_read is the
+growing conversation prefix (prompt prose + accumulated tool-result output + 136-158 turns)
+re-read each turn. PROP-104 reframes the levers and its Phase 0 is allowed to KILL Phase 1 if
+measurement confirms state files contribute ~0 to cache_read. Honest revised savings estimate:
+~$4-9/day (low end of directive's $8-12), with strategic value (reusable precompute lib +
+source-attribution infra) likely exceeding the direct dollar figure.
 
-NO MANUAL DRAIN NEEDED: the 45 residue will be re-deleted by the next scheduled prune
-(~08:00 UTC today) and the working guard will keep them gone. >>> NEXT TINKER RUN: verify
-check-prune-resurrection.js drops to 0 after that prune; if it re-leaks, escalate PROP-103. <<<
+Pre-flight (every-run): backlog healthy (open=26, net velocity +78, root-FS 3732MB free,
+0 commission HNOTEs). PROP auto-close shadow: 0 closeable of 115 walked.
 
-Backlog-trend: open_issues 23 (9 open / 9 assigned-analyst), net_velocity_7d +55, age>=30d 0,
-root-FS 3847MB free. WoW 9->23 (+155%) mechanically trips 'major' but is a small-base artifact
-(queue is draining, not growing) — FND-02 notes a candidate WoW%-absolute-floor calibration.
+Watch: closed-issues.json doubled (1.4->3.1MB) in ~1 day — wall-clock concern for the 5+
+full parses/run even though it is out-of-context. PROP-104 candidate #3 addresses if needed.
 
-Pipeline otherwise GREEN: FUSE matches GitHub, auth 200, no stranded patches, all agents fresh.
+Directive flipped status pending->completed (written to clone + pushed; NOT FUSE, per FND-01).
