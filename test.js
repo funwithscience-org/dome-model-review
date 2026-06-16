@@ -1052,6 +1052,26 @@ console.log('\n── 14. EXP-618 WIN-014 sensitivity-floor regression ──');
 }
 
 // ════════════════════════════════════════════
+// 15. EXP-633 regression: WIN-051 gear-motion preempt (c5 H2)
+// ════════════════════════════════════════════
+
+{
+  console.log('\n── 15. EXP-633 WIN-051 gear-motion preempt regression ──');
+  const win051 = wins.find(w => w.id === '051');
+  assert(win051, 'EXP-633: WIN-051 exists in wins.json');
+  if (win051) {
+    // EXP-633 added a gear-driven local moon preempt paragraph to detail_evidence.
+    // Unique key-string fires if the paragraph is silently removed.
+    assert(win051.detail_evidence.includes('gear-driven local moon'),
+      'EXP-633: WIN-051.detail_evidence must contain "gear-driven local moon" (gear-motion preempt paragraph, c5 H2 closure)');
+    // Companion factual fix: WIN-010 should say 2024 North American cohort, not European (c17 H0 companion patch)
+    const win010 = wins.find(w => w.id === '010');
+    assert(win010 && win010.detail_evidence.includes('2024 North American cohort'),
+      'c17 factual fix: WIN-010.detail_evidence must contain "2024 North American cohort" (not "European cohort")');
+  }
+}
+
+// ════════════════════════════════════════════
 // Results
 // ════════════════════════════════════════════
 
