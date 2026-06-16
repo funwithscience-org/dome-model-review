@@ -1,0 +1,121 @@
+{
+  "prop_id": "PROP-106",
+  "title": "EXP allocator single-write-path: allocate-exp-ids.js helper (shared allocate-ids-lib.js with allocate-iss-ids.js) + strict push-time next_id-invariant lint + phased enforce flag — mirrors PROP-089 for the expansion-tracker.json surface",
+  "status": "proposed",
+  "priority": "medium",
+  "authored_by": "tinker (DIRECTIVE-20260616-002 execution, run tinker-2026-06-16T15-53)",
+  "authored_at": "2026-06-16T15:56:00Z",
+  "directive_reference": "DIRECTIVE-20260616-002 — PROP-089-style hardening for EXP id allocation in expansion-tracker.json. Integrity caught next_id staleness at 2026-06-16T01:15Z (next_id=627 vs live_max=630); collision averted only by analyst-baby's defensive self-heal. The writer-side bug (new EXP item written without atomically advancing next_id) is structurally present. Filed medium priority by operator-cowork-session 2026-06-16T07:20Z.",
+  "related_props": {
+    "PROP-089": "The TEMPLATE. ISS-id allocation hardening: allocate-iss-ids.js single-write-path + lint-decider-surfaces.js C3 cross-file uniqueness + canonical concurrent-collision recovery. This PROP applies the identical shape to the EXP surface.",
+    "PROP-100": "The EXP read-side self-heal (approved-implemented). Made the archive-aware next_id clamp `safeNext = max(next_id, liveMax+1, archMax+1)` UNCONDITIONAL across the 4 allocator sites (analyst-normal-analysis.md, decider.md ~L356, decider-curmudgeon.md two sites). PROP-100 : PROP-106 :: PROP-063 : PROP-089 — i.e. PROP-100 is the clamp, PROP-106 is the script+lint that makes the clamp unskippable and adds push-time enforcement. This PROP is ADDITIVE: it does not change PROP-100's clamp semantics, it moves them into an unskippable script and adds a strict push-time invariant gate.",
+    "PROP-063": "ISS-side self-heal that PROP-089 hardened. The EXP lineage (PROP-100 -> PROP-106) is the exact parallel of the ISS lineage (PROP-063 -> PROP-089).",
+    "PROP-066_PROP-050_pattern": "Helper-script extraction as the fix for LLM skip-by-omission of prompt-level code blocks — proven by push-via-api.js (PROP-050), audit-rewrite.js (PROP-041), sync-workspace-step4c.js (PROP-066), prune-integrity.js (PROP-051C), allocate-iss-ids.js (PROP-089). Same pattern, EXP surface."
+  },
+  "root_cause_answer_to_directive": {
+    "Q1_writer_side_diagnosis": {
+      "question": "Did the gap-producing commits advance next_id?",
+      "answer": "NO. The writer wrote new items[] entries (EXP-629, EXP-630) and never bumped next_id. The bug is in the claim/write code path missing the atomic next_id++, NOT a claim-advances-then-write-overwrites-with-stale-snapshot pattern.",
+      "evidence_via_github_contents_api": [
+        "260fafd (analyst-baby EXP-629 write, 2026-06-15T03:41Z): expansion-tracker.json had next_id=627, live_max=629 — EXP-629 present in items[] but next_id NOT advanced (still 627).",
+        "d6411be (analyst-baby claim EXP-630, 2026-06-15T15:35Z): next_id=627, live_max=630.",
+        "ca0fd35 (analyst-baby EXP-630 write, 2026-06-15T15:37Z): next_id=627, live_max=630 — still stale.",
+        "1813a46 (analyst-baby claim EXP-631..637, 2026-06-16T03:37Z): next_id=638, live_max=637 — SELF-HEALED. The allocator took safeNext=max(declared=627, liveMax+1=631)=631, allocated 7 ids, advanced next_id to 638. PROP-100 clamp working as designed on the READ side."
+      ],
+      "diagnosis": "PROP-100's clamp is a READ-side self-heal: it repairs a stale next_id at the moment of the NEXT allocation. It does NOT guarantee that a writer advances next_id in lockstep with its OWN write. analyst-baby's prompt (analyst-baby.md Mode 1 BAU drain, steps 3/5/6) describes writing the consolidated tracker entry and marking originals consolidated, but contains NO shared allocation code block and NO explicit `t.next_id++` — the Sonnet model improvises the allocation each run. Sometimes it bumps next_id (1813a46), sometimes it does not (260fafd). This is the exact PROP-089 defect class: prompt-level allocation logic gets improvised/skipped under load. The fix is identical: extract a single allocator script that reserves-and-bumps atomically and a push-time lint that refuses to land a stale write."
+    },
+    "Q2_multi_writer_audit": {
+      "writers_today": "Three agents allocate/write EXP ids: analyst (Opus), analyst-baby (Sonnet), decider (Sonnet integration path). CLAUDE.md's unclassified-multi-writer note currently says 'expansion-tracker.json: analyst + decider' — this is STALE; analyst-baby is now the dominant EXP writer per commit history. Recommend CLAUDE.md update (see deliverable note).",
+      "table": [
+        {"writer": "analyst (Opus)", "prompt_site": "reference/analyst-normal-analysis.md L107-135", "allocation": "Canonical PROP-100 block present: safeNext clamp + nextNum=t.next_id + t.next_id++ written back. CORRECT — advances next_id in lockstep.", "rebase_discipline": "git pull --rebase at run start (analyst.md)", "race_shape": "low risk — uses the clamp + bumps"},
+        {"writer": "analyst-baby (Sonnet)", "prompt_site": "analyst-baby.md Mode 1 BAU drain steps 3/5/6", "allocation": "NO shared allocation block. Prompt describes writing items[] entries and consolidated-into status flips but never shows the next_id++. IMPROVISED per run — this is the gap-opener (260fafd/d6411be/ca0fd35).", "rebase_discipline": "claims committed separately then work; git pull --rebase implied but allocation is ad-hoc", "race_shape": "HIGH — the primary gap source; 5 of the 13 sampled episode-starts were analyst-baby"},
+        {"writer": "decider (Sonnet)", "prompt_site": "decider.md ~L346-378 + reference/decider-curmudgeon.md L133-205 (two sites)", "allocation": "Canonical PROP-100 block present at all sites: safeNext clamp + t.next_id++. CORRECT in code; 2 of 13 sampled episode-starts (EXP-615, EXP-633) were decider — likely the integration path writing the item before the increment commit lands, or a clamp-but-no-write-back edge.", "rebase_discipline": "clones fresh, git pull --rebase, pre-push hook chain (PROP-083)", "race_shape": "medium — clamp present but still appears in episode-starts"},
+        {"writer": "workspace-sync (Sonnet)", "prompt_site": "workspace-sync.md universal-pusher", "allocation": "Does NOT allocate. RELAYS stale FUSE state to git: when a writer leaves FUSE stale, the next workspace-sync commit ('Workspace sync: <ts>') carries the staleness into git. NOT a root cause — a propagation surface. 4 of 13 sampled episode-starts were workspace-sync relays of writer staleness.", "rebase_discipline": "n/a", "race_shape": "relay only"}
+      ],
+      "read_modify_write_pattern": "The classic 'read next_id; do work; write old next_id+1' race is NOT the dominant failure here. The dominant failure is 'write new item; never touch next_id at all' (analyst-baby). Both are closed by routing every writer through allocate-exp-ids.js, which reserves-and-bumps as one atomic write before the item is added."
+    },
+    "Q3_recurrence_rate": {
+      "method": "Pulled all 514 commits touching monitor/analyst/expansion-tracker.json in the trailing 60 days via the GitHub commits API, fetched expansion-tracker.json at each commit via the Contents API (raw), computed next_id vs live_max (= max EXP id in items[]) at each.",
+      "findings": {
+        "commits_analyzed": 514,
+        "healthy_states_next_id_gt_live_max": 406,
+        "stale_states_next_id_le_live_max": 108,
+        "stale_fraction": "21.0% of all commits were in a stale (collision-imminent) state",
+        "distinct_staleness_episodes": 44,
+        "episode_rate": "~0.73 episodes/day (44 in 60d); ~5/week",
+        "gap_size_distribution_live_max_minus_next_id_plus_1": {"1": 47, "2": 12, "3": 3, "4": 13, "5": 5, "6": 5, "7": 3, "8": 2, "9": 6, "10": 2, "11": 7, "13": 3},
+        "max_gap": 13,
+        "current_state_at_authoring": "HEAD (main) is STALE by 1: next_id=638, live_max=638. A new gap opened at episode-start 4c07fb59 (decider EXP-633, 2026-06-16T06:20Z) and is ongoing.",
+        "why_integrity_only_sees_a_few": "Integrity runs daily (one sample/day). The median episode self-heals within hours (defensive allocator on the next write). So integrity samples ~1-2 of the 44 episodes; the other ~42 opened and self-healed inside a 24h window and were invisible to the daily check."
+      },
+      "verdict": "The directive's floor estimate ('at least 2 recurrences in 60 days') is a ~22x undercount. This is FREQUENT-SILENT, not RARE-BUT-RECURRING. That materially changes the cost-benefit: the integrity 'major' finding is not a once-a-month event, and the staleness window is open ~21% of the time. BUT — see Q7 — the same data shows the self-heal has a 100% catch rate over 60 days (zero actual collisions corrupted state), so 'frequent' does not mean 'damaging yet'."
+    }
+  },
+  "proposal": {
+    "design_principle": "Same trade as PROP-089/PROP-066: move the allocation logic the Sonnet writers keep improvising out of prose and into a script invocation that is structurally hard to skip, then back it with a strict push-time invariant gate so a stale write cannot land on origin/main. Phase 1 does NOT make concurrent-run collisions mathematically impossible (two clones from the same base can still reserve the same ids locally); it makes every stale write (a) impossible to push unnoticed and (b) mechanically recoverable. Given the observed rate (~5 episodes/week, all self-healed so far) and the keep-it-simple constraint, strict-detect-at-the-git-boundary is the right cost point.",
+    "changes": [
+      {
+        "id": "C0",
+        "what": "Extract shared monitor/scripts/allocate-ids-lib.js used by BOTH allocate-iss-ids.js and the new allocate-exp-ids.js",
+        "detail": "Per directive constraint ('Don't duplicate'). The two allocators are structurally identical: read file, compute archive-aware max, take safeNext = max(declaredNext, liveMax+1, archMax+1) floor, reserve N contiguous ids, write next_id := safeNext+N back atomically (tmp-file + rename). The lib exports `allocate({openPathOrTrackerPath, idField, idPrefix, padWidth, archivePath, count, dryRun})`. allocate-iss-ids.js becomes a thin wrapper binding (open-issues.json, 'next_iss_id', 'ISS-', no-pad, closure-ledger+closed-issues). allocate-exp-ids.js binds (expansion-tracker.json, 'next_id', 'EXP-', pad-3, expansion-tracker-archive.jsonl). NOTE: refactoring allocate-iss-ids.js to use the shared lib is OPTIONAL for Phase 1 (it already works); if the operator prefers minimal blast radius, ship allocate-exp-ids.js standalone first and fold both into the lib in a follow-up. Recommend the shared lib only if it lands in the SAME apply session (atomic), else standalone first.",
+        "classification": "git-owned source code: add to build.js OWNERSHIP, workspace-sync.md NEVER_PUSH, CLAUDE.md File Ownership list — same as allocate-iss-ids.js."
+      },
+      {
+        "id": "C1",
+        "what": "New script monitor/scripts/allocate-exp-ids.js — the ONLY supported way to mint EXP ids",
+        "detail": "Usage: node monitor/scripts/allocate-exp-ids.js [--count N] [--dry-run] [--verify]. Behavior mirrors allocate-iss-ids.js exactly: (1) read expansion-tracker.json; (2) archive-aware max-walk across items[] AND expansion-tracker-archive.jsonl (the PROP-100 / PROP-053-rev2 archive-aware semantics); (3) safeNext = max(next_id, liveMax+1, archMax+1) — warn on clamp; (4) reserve N contiguous ids [safeNext, safeNext+N) formatted EXP-NNN (zero-padded to 3); (5) write next_id := safeNext+N back atomically; (6) print reserved ids one per line. A crash between reserve and item-write leaves an id GAP, which is harmless (gaps are already the no_trace norm per expansion-tracker-gap-semantics.md); reuse is the only disease. --verify mode runs the invariant check only (next_id > max(all EXP ids in live ∪ archive); no duplicate EXP ids within items[]) and exits 1 with detail — shared by C3 and usable ad hoc.",
+        "rationale": "Q1 proved analyst-baby improvises and sometimes omits next_id++. A script call (IDS=$(node monitor/scripts/allocate-exp-ids.js --count N)) is structurally hard to skip; four prior PROPs prove the extraction pattern sticks where prose does not."
+      },
+      {
+        "id": "C2",
+        "what": "Replace every inline/prose EXP-allocation site with a script invocation",
+        "detail": "Write-sites to repoint: (a) reference/analyst-normal-analysis.md L107-135 — replace the inline PROP-100 block with `EXP=$(node monitor/scripts/allocate-exp-ids.js)` + prose 'NEVER allocate EXP-NNN any other way; never scan items.length+1; never reuse a freed id.' Keep the PROP-100 rationale paragraph, repointed at the script. (b) analyst-baby.md Mode 1 step 3/5 — ADD the explicit script call (currently MISSING entirely; this is the gap-opener) so the orphan-pickup and batch-write paths reserve through the script BEFORE writing items[]. (c) decider.md ~L346-378 and reference/decider-curmudgeon.md L133-205 (two sites) — replace the inline PROP-100 blocks with the script call. (d) CLAUDE.md gains one line in Lessons Learned pointing at the script as the single EXP mint, AND the unclassified-multi-writer note updates 'analyst + decider' -> 'analyst + analyst-baby + decider'. Audit command for apply: `grep -rn 'next_id' monitor/prompts/` and verify every EXP-related hit is the script reference (ISS/queue allocators out of scope).",
+        "rationale": "analyst-baby's MISSING allocation block is the single biggest lever — it is the only writer with no shared block and the dominant gap source (Q2)."
+      },
+      {
+        "id": "C3",
+        "what": "Push-time enforcement: STRICT next_id-invariant lint, chained into ALL THREE writers' pre-push hooks",
+        "detail": "Q5 DECISION: a PEER script monitor/scripts/lint-exp-allocations.js, NOT an extension of lint-decider-surfaces.js. Reason: lint-decider-surfaces.js is chained ONLY into the decider's pre-push hook (PROP-083 chain), but the EXP surface is written by analyst + analyst-baby + decider — the primary gap-openers (analyst-baby) never run the decider hook. Extending lint-decider-surfaces.js would guard only decider pushes and miss the dominant writer. The peer script `node monitor/scripts/lint-exp-allocations.js` asserts the STRICT invariant: next_id > max(all EXP ids across items[] ∪ archive). It is chained into the pre-push hooks of analyst, analyst-baby, AND decider clones (the same install pattern as PROP-081's required-artifacts hook / PROP-083's lint chain). Exit 1 = block push, print the violating ids + the C4 recovery procedure. Diff-aware scoping is NOT needed for the strict invariant (the invariant is a whole-file property, and legacy gaps are no_trace not inversions, so the strict check never fires on benign reservation drift — only on the actual write-without-bump bug).",
+        "rationale": "This is the layer that makes a future improvised stale write non-landable. Q6 STRICT choice: parity with PROP-089's ISS next_iss_id invariant; strict (next_id > live_max) is easier to assert than per-id collision detection and catches near-misses + cross-run drift, not just active races. Other-side on strict (Q6): a writer with a summary-only / no-new-EXP commit could be blocked if the tracker is ALREADY stale from someone else's prior bad write — but that is CORRECT behavior, it forces the self-heal commit to fix the invariant before piling new commits on top. The defensive self-heal (PROP-100) stays in place as the repair mechanism that makes passing the gate a one-liner."
+      },
+      {
+        "id": "C4",
+        "what": "Canonical concurrent-collision recovery procedure for EXP (written, mechanical)",
+        "detail": "Mirror PROP-089 C4. Add to analyst.md / analyst-baby.md / decider integration reference: when a push is rejected non-FF OR lint-exp-allocations.js exits 1, after `git pull --rebase`, re-run `node monitor/scripts/allocate-exp-ids.js --verify`. If it reports the invariant violated by ids YOUR run minted: (1) run allocate-exp-ids.js --count k to mint k fresh ids from the rebased state; (2) rename your k colliding new EXP records (file + items[] entry + every reference in files touched by this same commit: issue-proposals, attention-inbox, review refs); (3) re-run --verify (must pass); (4) re-push. Never renumber the OTHER writer's entries (they won the race by landing first); never decrement next_id; never delete the gap ids (they are harmless no_trace).",
+        "rationale": "Unwritten LLM-executed recovery is a variance generator. Canonicalize it so the next race resolves identically regardless of which of the three writers / which model hits it."
+      }
+    ],
+    "Q7_other_side_explicit": {
+      "argue_against_doing_anything": "The defensive allocator (PROP-100) IS the fix. Q3 shows 44 staleness episodes in 60 days yet ZERO actual collisions corrupted state — the self-heal has a 100% catch rate. The writers run on hourly+ cadences with PEAK-SHIFT non-concurrent scheduling (analyst UTC 00/04/08, analyst-baby 04:20/16:20, decider 02/06/10), so the genuine concurrent-write window inside a staleness gap is small. Strict lint adds a fail-closed gate that fires on every staleness even when no race is happening — that is the integrity 'major' finding's cost moved earlier in the pipeline, ~5x/week. One could argue the cheaper move is to DOWNGRADE the integrity check (treat next_id<=live_max as INFO not MAJOR, since the self-heal always catches it) rather than ship script+lint+hook-on-3-agents.",
+      "counter": "(a) The self-heal is best-effort, not a guarantee. Two genuinely concurrent writers (analyst Mode 1 + analyst-baby, which CAN overlap — analyst-baby 04:20 vs analyst 04:00 are 20min apart and analyst runs are not instantaneous) racing in a gap window can each read next_id=627, both decide to allocate EXP-629, and both write EXP-629 with DIFFERENT bodies. The race window is small but the 21%-open staleness means there are ~44 windows/60d where it is open at all; the fix makes the window zero. (b) An EXP-629-with-two-bodies collision is UNRECOVERABLE without manual repair (unlike ISS, EXP carries a deliverable file + issue-proposals + tracker status — a silent double-allocation corrupts the integration chain). (c) PROP-089 set the discipline; extending it keeps id-allocation uniform across surfaces — per-surface ad-hoc defensive code is the 'I thought we fixed that' disaster shape the operator explicitly wants to avoid.",
+      "honest_recommendation": "SHIP, but the operator should weigh (a) the rate is high (~5/week) which argues FOR the harden, against (b) the damage rate is zero-so-far which argues the self-heal is adequate. If the operator decides the noise cost of the strict gate exceeds the collision risk, the legitimate alternative is to DOWNGRADE the integrity next_id-inversion check to INFO and keep PROP-100's self-heal as the sole mechanism. This PROP makes the rate visible (Q3) precisely so the operator can make that call with eyes open. Tinker's lean: ship — the EXP collision is unrecoverable and the cost is one script + one lint + three hook lines."
+    },
+    "Q8_phased_rollout": {
+      "phase_0_shadow": "Ship allocate-exp-ids.js + lint-exp-allocations.js in SHADOW. Writers call the script for allocation (real reserve-and-bump — this is safe and strictly better than improvising). The lint runs in REPORT-ONLY mode (logs would-have-aborted to monitor/integrity/exp-lint-shadow.jsonl, exit 0). EXIT criteria: >=5 runs of shadow data per writer (analyst, analyst-baby, decider) with zero divergent allocations vs the current ad-hoc path AND zero false-positive would-aborts on benign no_trace drift.",
+      "phase_1_enforce": "Enable the lint at push-time (exit 1 on violation) gated by presence of monitor/decisions/prop-106-enforce.flag — mirror the prop-009-enforce.flag convention. The hook reads the flag; absent = shadow, present = enforce.",
+      "phase_2_retire": "Remove the inline PROP-100 allocation blocks from the 4 prompt sites, leaving allocate-exp-ids.js as the sole entry point. The PROP-100 self-heal CLAMP stays (it now lives inside the script) — only the duplicated prose blocks are retired. Keep analyst-baby's defensive behavior as the Phase-0/Phase-1 safety net."
+    },
+    "explicitly_out_of_scope": [
+      "Other id surfaces (WIN, PRED, PROP, RW, PUNT, queue_id, ATT) — each evaluated separately if it shows the same staleness pattern. queue_id is PROP-087 scope.",
+      "Changing analyst-baby's defensive self-heal behavior beyond routing it through allocate-exp-ids.js — the self-heal stays as the safety net.",
+      "Re-litigating PROP-089's design choices — mirror what worked.",
+      "Cross-agent precompute generalization (PROP-021 / PROP-104 territory) — different cost surface.",
+      "UUID/timestamp EXP ids — rejected for the same reason as PROP-089 (breaks the EXP-\\d+ convention parsed by audit-exp-tracker-gaps.js, integrity, digest tooling)."
+    ]
+  },
+  "deliverable_notes": {
+    "claude_md_update_needed": "CLAUDE.md 'Unclassified' multi-writer note says 'expansion-tracker.json: analyst + decider'. Q2 commit history shows analyst-baby is now the dominant EXP writer. Update to 'analyst + analyst-baby + decider' at apply time.",
+    "code_sharing_recommendation": "Extract monitor/scripts/allocate-ids-lib.js shared by allocate-iss-ids.js + allocate-exp-ids.js (directive constraint). If minimal-blast-radius is preferred, ship allocate-exp-ids.js standalone first and fold both into the lib in a follow-up PROP.",
+    "lint_placement_decision": "PEER script lint-exp-allocations.js (Q5 option b), NOT extension of lint-decider-surfaces.js — because the EXP surface is multi-writer and the decider-surfaces lint only runs on the decider hook.",
+    "atomic_deployment_constraint": "Per directive: allocator extraction must be lockstep with writer call-site updates. Shipping the script without updating analyst/analyst-baby/decider sites = dead code; shipping call-site updates without the script = orphan references. Single PROP, atomic apply."
+  },
+  "verification_pattern": "git show origin/main:monitor/scripts/allocate-exp-ids.js >/dev/null 2>&1 && git show origin/main:monitor/scripts/lint-exp-allocations.js >/dev/null 2>&1 && git show origin/main:monitor/prompts/analyst-baby.md | grep -qF 'allocate-exp-ids.js' && node $CLONE/monitor/scripts/allocate-exp-ids.js --verify",
+  "estimated_effort": "allocate-exp-ids.js ~110 lines (most exists as the PROP-100 inline block + allocate-iss-ids.js to copy); lint-exp-allocations.js ~60 lines; shared lib refactor ~40 lines net (optional Phase 1); prompt edits 4-5 files ~50 lines net; pre-push hook install on 3 agent clones ~9 lines. One apply session. No pipeline stop: Phase 0 shadow is backwards-compatible (script reproduces PROP-100 semantics; lint is report-only).",
+  "risks": [
+    "Hook-on-three-agents: unlike PROP-089 (decider-only hook), this needs the lint chained into analyst + analyst-baby + decider pre-push hooks. More install surface. Mitigation: each agent's clone-setup section already installs hooks (PROP-081/083 pattern); add one chained invocation each.",
+    "Strict gate blocks summary-only commits when tracker is already stale from a prior bad write. This is intended (forces self-heal first) but could surprise a writer mid-run. Mitigation: C4 recovery procedure is a one-liner (re-run allocator to clamp), and shadow phase surfaces the frequency before enforce.",
+    "Script bypass remains possible for operator cowork sessions that hand-edit expansion-tracker.json — the lint only guards agent clones with the hook installed. Mitigation: CLAUDE.md note + integrity's daily next_id-inversion check stays as the final detector.",
+    "If the operator chooses the Q7 'downgrade integrity check instead' path, this PROP is shelved and PROP-100's self-heal remains sole mechanism — acceptable, the Q3 data supports an informed either-way call."
+  ],
+  "operator_decision": "pending"
+}

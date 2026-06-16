@@ -1,28 +1,38 @@
-TINKER 2026-06-16T05-26 — Operator-directive run (DIRECTIVE-20260616-001)
+TINKER 2026-06-16T15-53 — DIRECTIVE run (DIRECTIVE-20260616-002)
 
-TASK: Reconsider PROP-022 Phase 6 (closed-issues.json archive split). Directive claimed the
-2026-06-14 "no cost pressure" deferral was empirically false: file allegedly doubled
-1.4MB->3.1MB in 24-48h (850KB/day), decider parse cost driving wall-clock.
+PRIMARY: Authored PROP-106 — EXP allocator single-write-path + strict push-time
+next_id-invariant lint. Mirrors PROP-089 (the ISS-side fix) for the
+expansion-tracker.json surface. Directive marked completed.
 
-VERDICT: Both premises REFUTED by measurement. DEFER AGAIN — now quantified. Authored PROP-105.
+KEY FINDING (Q3 60-day audit, 514 commits via GitHub API):
+  EXP next_id staleness is FREQUENT-SILENT, not rare. 108/514 commits (21%) sat
+  in a collision-imminent next_id<=live_max state; 44 distinct episodes (~5/week);
+  gap sizes 1-13. HEAD is STALE by 1 RIGHT NOW (next_id=638, live_max=638).
+  Integrity (daily) only samples ~1-2 of the 44 because most self-heal within 24h.
+  Directive's "at least 2 in 60 days" floor was a ~22x undercount.
 
-  Q1 (wall-clock): full decider per-run closed-issues.json I/O = ~43ms at 3MB, ~144ms at 10MB
-      = 0.011% of a 1320s run. Parsing is NOT the bottleneck. Per the directive's own
-      constraint, this is the "defer again" case.
-  Q2 (growth): real rate ~30-42KB/day (2.09MB on 05-25 -> 3.00MB on 06-16), ~20x slower than
-      the claimed 850KB/day. NO doubling (2.93/2.95/2.98MB on 06-13/14/15). The "1.4MB" was
-      amendment-001's 2026-05-06 baseline mistaken for a current measurement.
-  Q2 corollary (git churn): ~20 commits/day, but delta-compresses 32.8x (23.9MB raw -> 0.73MB
-      packed). Negligible clone-size impact; disk driver is narrative-cite-audit (~380MB).
-  Q3/Q4/Q5: amendment-001 design still valid; revive verbatim on trigger. 30-day live window
-      ~= 1MB at real rate (directive's 25-76MB estimates used the false rate).
-  Q6: recommend documenting live-first/archive-grep lookup pattern in DATA-SCHEMAS.md now (0 risk).
-  Q8: closure-amendment text supplied for PROP-022 (operator integrates; propose-only).
+ROOT CAUSE (Q1, API-evidenced): analyst-baby writes new EXP items[] entries
+without advancing next_id (commits 260fafd/d6411be/ca0fd35 all left next_id=627
+while live_max climbed to 629/630). PROP-100's clamp is a READ-side self-heal —
+it repairs on the NEXT allocation but does not force a writer to bump in lockstep
+with its own write. analyst-baby.md has NO shared allocation block; it improvises.
 
-PRE-APPROVED RE-TRIGGER (amendment-001 ships verbatim when ANY fires):
-  file>8MB | decider I/O>2s/run | find()>50ms | growth>200KB/day x14d | working-tree>15MB/clone
+PROP-106 DESIGN: (C0) shared allocate-ids-lib.js; (C1) allocate-exp-ids.js sole
+mint; (C2) repoint 4 prompt sites incl. analyst-baby's MISSING block; (C3) PEER
+lint-exp-allocations.js (strict next_id>live_max) chained into analyst +
+analyst-baby + decider hooks — NOT a lint-decider-surfaces.js extension, because
+EXP is multi-writer and that lint only runs on the decider hook; (C4) canonical
+recovery; Q8 phased shadow -> prop-106-enforce.flag -> retire inline blocks.
 
-PIPELINE HEALTH: GREEN. open-issues=26, net velocity +75 (97 closed / 22 new 7d), root-FS 3.4G free.
-PROP auto-close: 116 walked, 0 would-close (shadow). No backlog thresholds fired.
+OTHER SIDE (Q7, honest): the self-heal has a 100% catch rate over 60 days (zero
+actual collisions). Operator may legitimately DOWNGRADE the integrity
+next_id-inversion check to INFO instead of shipping. PROP surfaces the rate so the
+call is informed. Tinker's lean: ship — an EXP double-allocation (file +
+issue-proposals + tracker chain) is unrecoverable, cost is 1 script + 1 lint + 3
+hook lines.
 
-DELIVERABLE: monitor/tinker/proposals/PROP-105-...measurement-driven-reevaluation.json (propose-only).
+LILNT-NOTE FOR APPLY: CLAUDE.md multi-writer note "analyst + decider" is stale ->
+"analyst + analyst-baby + decider".
+
+PIPELINE: GREEN. 6 open issues, net velocity +102/7d. Disk 3544MB free. PROP-102
+shadow walk: 117 PROPs, 0 newly-closeable.
