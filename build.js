@@ -85,6 +85,20 @@ const OWNERSHIP = {
   'test.js': 'git',
   'monitor/decisions/open-issues.json': 'git',
   'monitor/decisions/closed-issues.json': 'git',
+  // 2026-06-17 fix (operator-cowork): both files are written by decider in
+  // its clone, committed, pushed to git. They were never propagating
+  // git→FUSE because they weren't in OWNERSHIP — only build.js sync-workspace
+  // (PROP-066 Step 4c) does git→FUSE via OWNERSHIP iteration. The smart_copy
+  // entry in workspace-sync.md for processed-reviews.json is FUSE→git rescue
+  // path only; pending-digest.json is in NEVER_PUSH for the same reason.
+  // Symptom: integrity reported "15 reviews unprocessed" daily for 5+ days
+  // because the FUSE processed-reviews.json was mtime'd Jun 14 while clone
+  // had today's processed entries (decider drained all 15 each morning;
+  // FUSE just never got the news). Classifying 'git' enables git→FUSE
+  // propagation; the NEVER_PUSH / smart_copy entries already handle the
+  // reverse direction policies and don't conflict.
+  'monitor/decisions/processed-reviews.json': 'git',
+  'monitor/curmudgeon/pending-digest.json': 'git',
   // PROP-009r2 C-1: enforcement-toggle flag, git-owned so build.js publish copies
   // it from clone to workspace. The file's presence = enforce; absence = shadow.
   // Created via `touch && git add && git commit`; removed via `git rm && commit`.
