@@ -1,0 +1,101 @@
+{
+  "run_id": "2026-06-17T02-40",
+  "agent": "tinker",
+  "run_at": "2026-06-17T02:41:00Z",
+  "mode_selected": "Mode 1 (pipeline health) — investigated the recurring integrity expansion_tracker next_id FAIL. Root cause confirmed. Disposition: Mode 4 outcome is DEFER-TO-EXISTING-PROP — the fix is already captured by PROP-106 (authored 2026-06-16T15:56 by the prior tinker run). No new PROP authored to avoid a strict duplicate; instead surfaced corroborating + post-PROP-recurrence evidence and a prioritization recommendation.",
+  "modes_checked": {
+    "mode_0_directives": "NO PENDING DIRECTIVES (clone-authoritative scan of monitor/tinker/operator-directives/).",
+    "mode_0_assigned_to_tinker": "no assigned-to-tinker items pending (open-issues status=assigned-tinker = 0; expansion-tracker assigned_to=tinker = 0).",
+    "mode_1_pipeline_health": "All agents producing on cadence (poller 3h, analyst 11h, curmudgeon 79m, decider 12m, analyst-baby, curmudgeon-verify 17h, integrity 7m, dome-mirror 7m, workspace-sync 32m). No stalled agents. No actionable stranded-patches >24h. RED: integrity report 2026-06-17T01-17 = FAIL on two checks (see findings).",
+    "mode_2_infra": "FUSE: all 4 spot-checked files md5-match GitHub main. Auth: dome PAT HTTP 200. Disk: root free 3499MB, clone footprint 319MB — healthy.",
+    "mode_3_cost": "not selected (Mode 1 RED took precedence); CLAUDE.md/context-load audit deferred.",
+    "mode_4_proposals": "investigation routed here; concluded existing PROP-106 covers root cause; authored 0 new PROPs."
+  },
+  "previous_followup": {
+    "method": "PROP lifecycle auto-close shadow walk (prop-auto-close.js) over 118 PROPs: 81 have verification_pattern, 37 grade-A, 2 eligible, 0 mechA_would_close, 0 mechB_would_close, 0 actually_closed (Phase 0 shadow). No previously-flagged PROP is verifiably FIXED-and-closeable this run.",
+    "directly_relevant": "Recurring next_id finding's open fix is PROP-106 (status proposed, priority medium) — NOT implemented. allocate-exp-ids.js / lint-exp-allocations.js absent on main; analyst-baby.md does not reference allocate-exp-ids.js. PROP-106 verification_pattern correctly STILL_BROKEN."
+  },
+  "findings": [
+    {
+      "id": "FND-01",
+      "category": "pipeline-health",
+      "severity": "moderate",
+      "title": "Recurring integrity FAIL: expansion-tracker next_id == max EXP id (8 consecutive days); root cause = analyst-baby does not advance next_id on EXP write",
+      "evidence": [
+        "integrity report 2026-06-17T01-17 checks.expansion_tracker.status=fail: next_id=638 equals max_id=638 (EXP-638 exists, integrated:true). Next allocation will produce duplicate EXP-638.",
+        "Recurrence: expansion_tracker check flagged [NEXT_ID] every day 06-10..-17 = warn,warn,FAIL,warn,warn,pass,FAIL,FAIL. The 06-15 pass was an Opus-analyst/decider allocation that clamped next_id past max; re-broke within a day.",
+        "Live (git HEAD): next_id=638, max live EXP id=638 (EXP-638), 0 duplicate EXP ids across 79 items — PROP-100 read-side clamp holding, NO actual corruption.",
+        "Offending write path: EXP-638 source=analyst-baby-batch, authored_by=analyst-baby, created_at=2026-06-16T04:25Z. analyst-baby.md mentions next_id ZERO times; Mode 1 BAU Step 5 writes EXP-<NNN> with no allocate-from-next_id block and no t.next_id++. By contrast analyst-normal-analysis.md L107-135 and decider.md ~L356 allocate from t.next_id with the PROP-100 archive-aware clamp then increment."
+      ],
+      "root_cause": "analyst-baby has no shared EXP-id allocation block; the model mints an EXP id but never advances next_id in lockstep with its own write, leaving next_id == maxid. PROP-100's clamp is a READ-side self-heal that repairs at the NEXT allocation, so corruption is prevented but the stale state trips integrity's next_id<=maxid check every morning until some other agent allocates.",
+      "disposition": "ALREADY CAPTURED by PROP-106 (allocate-exp-ids.js + lint-exp-allocations.js + analyst-baby.md wiring + push-time invariant lint, mirroring PROP-089 for the ISS surface). PROP-106 status=proposed, priority=medium, authored 2026-06-16T15:56 by prior tinker run. No new PROP authored — would be a strict duplicate.",
+      "new_evidence_beyond_PROP-106": [
+        "PROP-106 evidence runs through 2026-06-16T03:37 (EXP-631..637 self-heal). This run adds: EXP-638 (analyst-baby, 2026-06-16T04:25) re-introduced next_id==maxid AFTER PROP-106 was authored, and integrity FAILed again on 06-16 and 06-17 — bug still actively producing daily FAILs; PROP-106 not implemented.",
+        "Impact: alert-fatigue + decider churn — every FAIL is a tracked_under:null integrity finding the decider must promote to an ISS then close on self-heal."
+      ],
+      "recommendation": "Operator: prioritize PROP-106 (consider bumping priority medium->medium-high given 8-day FAIL streak and recurrence-after-authoring). Correct single fix; no competing proposal needed."
+    },
+    {
+      "id": "FND-02",
+      "category": "data-hygiene",
+      "severity": "minor",
+      "title": "analyst-baby wrote a malformed ISO timestamp on EXP-638 (commit hash interpolated into seconds field)",
+      "evidence": [
+        "expansion-tracker.json EXP-638.integrated_at = 2026-06-16T03:e8fe124Z — short commit hash e8fe124 substituted into the seconds position (cf. integrated_by=analyst-baby-commit-3e8fe124). Not a parseable date.",
+        "Same registration block carries integration_mode=direct-patch-by-analyst-baby / decider registering retroactively."
+      ],
+      "root_cause": "Template/string-interpolation bug in the write that builds integrated_at — a commit hash leaked into the timestamp template.",
+      "disposition": "Low severity, one record. Fold into PROP-106 implementation (baby-write hardening) or a tiny standalone fix later. Not worth a dedicated PROP this run.",
+      "recommendation": "On next analyst-baby.md edit / PROP-106 impl, set integrated_at via new Date().toISOString(), not a template that can capture a commit hash."
+    },
+    {
+      "id": "FND-03",
+      "category": "backlog-trend",
+      "severity": "info",
+      "title": "open_issues_total grew 8 -> 12 WoW (+50%), info tier only",
+      "evidence": [
+        "queue-history.jsonl 2026-06-17T02-40: open_issues_total=12 (6 open + 6 pending-human) vs 2026-06-10T17-33 open=8. WoW >5% trips info tier.",
+        "Context: net_velocity_7d=+91 (closed 99 / new 8), assigned_analyst=0, age_ge_30d=0, oldest open ~0d. Same-day churn was 23->26->6->12. Noise, not regression.",
+        "root_fs_free_mb=3499, pending_commission_hnotes=0, baby_drain_7d=3, verify_drain_7d=8 — healthy."
+      ],
+      "root_cause": "Small-N WoW comparison on a backlog that oscillates within a day. Not actionable.",
+      "disposition": "Info per PROP-030 thresholds; no action.",
+      "recommendation": "none"
+    }
+  ],
+  "claude_md_audit": {
+    "status": "light-pass (Mode 1 run)",
+    "notes": [
+      "No accuracy discrepancies surfaced incidentally. Monitoring Pipeline table's 2026-06-15 model corrections (decider/integrity/dome-mirror/workspace-sync = Sonnet) consistent with PROP-101 cost-history. Full size/context-load trend audit deferred to next Mode 3 run."
+    ]
+  },
+  "context_load": {
+    "status": "deferred",
+    "note": "Per-agent context-load trend not measured this cycle (Mode 1). Carry to next Mode 3 run."
+  },
+  "cleanup_actions": [],
+  "no_op": false,
+  "self_cost": {
+    "transcript": "756763c3-90e1-4c16-b357-0dd2074f6720.jsonl",
+    "model": "claude-opus-4-8",
+    "assistant_msgs": 89,
+    "tokens": {
+      "input": 19891,
+      "output": 113598,
+      "cache_write_5m": 0,
+      "cache_write_1h": 344706,
+      "cache_read": 10689887
+    },
+    "cost_usd": {
+      "input_usd": 0.099455,
+      "output_usd": 2.83995,
+      "cache_write_5m_usd": 0,
+      "cache_write_1h_usd": 3.44706,
+      "cache_read_usd": 5.344944,
+      "total_usd": 11.731409
+    },
+    "transcript_duration_sec": 538.1,
+    "first_ts": "2026-06-17T02:39:24.211Z",
+    "last_ts": "2026-06-17T02:48:22.321Z"
+  }
+}
