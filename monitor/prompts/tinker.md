@@ -247,6 +247,16 @@ metrics.pending_commission_hnotes_count = commissionCount;
 // disaster contributing factor). Cheap: one shell call. Gives WoW trend +
 // growth-rate estimation for free once 7+ rows accumulate.
 metrics.root_fs_free_mb = parseInt(require('child_process').execSync("df -m / | awk 'NR==2{print $4}'").toString().trim(), 10);
+// PROP-105 (2026-06-17): closed-issues.json size telemetry. Cheap stat call.
+// Phase 6 archive-split is deferred per PROP-105 with quantitative re-triggers:
+// file>8MB, growth>200KB/day×14d, decider I/O>2s/run, find()>50ms,
+// working-tree>15MB/clone. This metric is the instrument for the size + growth
+// triggers — auto-detected once 14+ rows accumulate. Compare to prior row for
+// growth-rate-7d signal.
+try {
+  const st = fs.statSync('monitor/decisions/closed-issues.json');
+  metrics.closed_issues_mb = +(st.size / 1024 / 1024).toFixed(2);
+} catch (_) { metrics.closed_issues_mb = null; }
 fs.appendFileSync('monitor/tinker/queue-history.jsonl', JSON.stringify(metrics) + '\n');
 ```
 

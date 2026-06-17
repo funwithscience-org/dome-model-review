@@ -78,6 +78,8 @@ Two files: `open-issues.json` (active) and `closed-issues.json` (archive). Decid
 
 Query counts: `node -e "const o=JSON.parse(require('fs').readFileSync('monitor/decisions/open-issues.json','utf8'));const c=JSON.parse(require('fs').readFileSync('monitor/decisions/closed-issues.json','utf8'));console.log('Open:',o.issues.length,'Closed:',c.issues.length)"`
 
+**Lookup-by-id canonical pattern (PROP-105, 2026-06-17) — forward-compatible with the future closed-issues split:** Until/unless `closed-issues-archive.jsonl` ships (PROP-022 amendment-001 phase 6, currently deferred per PROP-105 with quantitative re-trigger thresholds), the live file IS the whole store and step (1) below suffices. Code written to this pattern today keeps working post-split with only the fallback added — no rewrite needed. Pattern: (1) read `closed-issues.json` and `arr.find(i => i.id === target)`; (2) on miss, `grep '"id":"' + target + '"' closed-issues-archive.jsonl | head -1` and JSON.parse the matched line. **Never** JSON.parse the whole archive.jsonl. Bulk lookups: single `grep -E '"id":"(ISS-100|ISS-200|...)"'` pass over the archive, then JSON.parse matched lines. Rationale: avoid reinventing wrong; documenting the pattern before the migration means readers added between now and the split are written split-ready, shrinking the eventual lockstep change.
+
 **M1 routing fields (PROP-027, landed 2026-05-10) — added by decider when M1 stale-issue sweep routes an ISS:**
 - `class_hint`: `'verification' | 'deep-attack' | 'holistic' | null` — advisory hint for analyst's eventual `review_class` declaration on the EXP. Analyst is authoritative per PROP-025; hint is non-binding upstream signal.
 - `routing_reason`: free-text explaining the analyst-class work expected.
