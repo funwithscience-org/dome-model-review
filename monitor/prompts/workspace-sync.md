@@ -217,6 +217,11 @@ NEVER_PUSH=(
   'monitor/curmudgeon/pending-digest.json'
   # PROP-009r2 C-1: presence-vs-absence is the signal here, not content.
   'monitor/decisions/prop-009-enforce.flag'
+  # PROP-106 (2026-06-17): shadow-mode flag for lint-exp-allocations.js.
+  # Same git-owned discipline as prop-009-enforce.flag (opposite polarity:
+  # presence = shadow, absence = enforce). Operator edits in clone, ferried
+  # to FUSE by build.js publish; NEVER round-trip from FUSE.
+  'monitor/decisions/prop-106-shadow.flag'
   # PROP-026 Phase 1: mode toggle and auto-closure ledger (decider M2). Both
   # are git-owned — decider writes from clone, never round-trip from FUSE.
   'monitor/decisions/decider-mode.json'
@@ -251,6 +256,16 @@ NEVER_PUSH=(
   # / push-via-api.js / prune-integrity.js / lint-close-records.js.
   'monitor/scripts/lint-decider-surfaces.js'
   'monitor/scripts/allocate-iss-ids.js'
+  # PROP-106 (2026-06-17): allocate-exp-ids.js is the canonical EXP-id
+  # minter mirroring allocate-iss-ids.js for the expansion-tracker.json
+  # surface. lint-exp-allocations.js is the peer pre-push invariant gate
+  # chained into analyst + analyst-baby + decider clones (not extending
+  # lint-decider-surfaces.js because that one runs only in decider's hook
+  # and the primary gap-opener — analyst-baby — never runs that hook).
+  # Same git-owned source code classification as the other scripts above;
+  # invoked from clones, NEVER round-trip from FUSE.
+  'monitor/scripts/allocate-exp-ids.js'
+  'monitor/scripts/lint-exp-allocations.js'
   # PROP-095 (2026-06-13): decider-commit-push.sh + decider-setup.sh are the
   # round-trip-consolidation wrappers (clone-invoked only). They collapse the
   # decider's commit/push ceremony (~25 round-trips) and PRELUDE/clone-setup
@@ -340,6 +355,11 @@ GIT_APPEND_ONLY=(
   # appends one row per cycle (shadow-mode dryrun:true or enforce dryrun:false).
   # Same git-append-only discipline as the cost-history files above.
   'monitor/tinker/prop-auto-close-ledger.jsonl'
+  # PROP-106 (2026-06-17): lint-exp-allocations.js shadow-mode log. Written
+  # from any of analyst / analyst-baby / decider clones during shadow phase.
+  # Same multi-clone-writer pattern as the cost-history files above. FUSE
+  # divergence = producer-side bug (clone bypass).
+  'monitor/integrity/lint-exp-allocations-shadow.jsonl'
 )
 
 is_git_append_only() {

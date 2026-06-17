@@ -1,7 +1,7 @@
 {
   "prop_id": "PROP-106",
   "title": "EXP allocator single-write-path: allocate-exp-ids.js helper (shared allocate-ids-lib.js with allocate-iss-ids.js) + strict push-time next_id-invariant lint + phased enforce flag — mirrors PROP-089 for the expansion-tracker.json surface",
-  "status": "proposed",
+  "status": "phase-0-shadow-shipped",
   "priority": "medium",
   "authored_by": "tinker (DIRECTIVE-20260616-002 execution, run tinker-2026-06-16T15-53)",
   "authored_at": "2026-06-16T15:56:00Z",
@@ -27,10 +27,34 @@
     "Q2_multi_writer_audit": {
       "writers_today": "Three agents allocate/write EXP ids: analyst (Opus), analyst-baby (Sonnet), decider (Sonnet integration path). CLAUDE.md's unclassified-multi-writer note currently says 'expansion-tracker.json: analyst + decider' — this is STALE; analyst-baby is now the dominant EXP writer per commit history. Recommend CLAUDE.md update (see deliverable note).",
       "table": [
-        {"writer": "analyst (Opus)", "prompt_site": "reference/analyst-normal-analysis.md L107-135", "allocation": "Canonical PROP-100 block present: safeNext clamp + nextNum=t.next_id + t.next_id++ written back. CORRECT — advances next_id in lockstep.", "rebase_discipline": "git pull --rebase at run start (analyst.md)", "race_shape": "low risk — uses the clamp + bumps"},
-        {"writer": "analyst-baby (Sonnet)", "prompt_site": "analyst-baby.md Mode 1 BAU drain steps 3/5/6", "allocation": "NO shared allocation block. Prompt describes writing items[] entries and consolidated-into status flips but never shows the next_id++. IMPROVISED per run — this is the gap-opener (260fafd/d6411be/ca0fd35).", "rebase_discipline": "claims committed separately then work; git pull --rebase implied but allocation is ad-hoc", "race_shape": "HIGH — the primary gap source; 5 of the 13 sampled episode-starts were analyst-baby"},
-        {"writer": "decider (Sonnet)", "prompt_site": "decider.md ~L346-378 + reference/decider-curmudgeon.md L133-205 (two sites)", "allocation": "Canonical PROP-100 block present at all sites: safeNext clamp + t.next_id++. CORRECT in code; 2 of 13 sampled episode-starts (EXP-615, EXP-633) were decider — likely the integration path writing the item before the increment commit lands, or a clamp-but-no-write-back edge.", "rebase_discipline": "clones fresh, git pull --rebase, pre-push hook chain (PROP-083)", "race_shape": "medium — clamp present but still appears in episode-starts"},
-        {"writer": "workspace-sync (Sonnet)", "prompt_site": "workspace-sync.md universal-pusher", "allocation": "Does NOT allocate. RELAYS stale FUSE state to git: when a writer leaves FUSE stale, the next workspace-sync commit ('Workspace sync: <ts>') carries the staleness into git. NOT a root cause — a propagation surface. 4 of 13 sampled episode-starts were workspace-sync relays of writer staleness.", "rebase_discipline": "n/a", "race_shape": "relay only"}
+        {
+          "writer": "analyst (Opus)",
+          "prompt_site": "reference/analyst-normal-analysis.md L107-135",
+          "allocation": "Canonical PROP-100 block present: safeNext clamp + nextNum=t.next_id + t.next_id++ written back. CORRECT — advances next_id in lockstep.",
+          "rebase_discipline": "git pull --rebase at run start (analyst.md)",
+          "race_shape": "low risk — uses the clamp + bumps"
+        },
+        {
+          "writer": "analyst-baby (Sonnet)",
+          "prompt_site": "analyst-baby.md Mode 1 BAU drain steps 3/5/6",
+          "allocation": "NO shared allocation block. Prompt describes writing items[] entries and consolidated-into status flips but never shows the next_id++. IMPROVISED per run — this is the gap-opener (260fafd/d6411be/ca0fd35).",
+          "rebase_discipline": "claims committed separately then work; git pull --rebase implied but allocation is ad-hoc",
+          "race_shape": "HIGH — the primary gap source; 5 of the 13 sampled episode-starts were analyst-baby"
+        },
+        {
+          "writer": "decider (Sonnet)",
+          "prompt_site": "decider.md ~L346-378 + reference/decider-curmudgeon.md L133-205 (two sites)",
+          "allocation": "Canonical PROP-100 block present at all sites: safeNext clamp + t.next_id++. CORRECT in code; 2 of 13 sampled episode-starts (EXP-615, EXP-633) were decider — likely the integration path writing the item before the increment commit lands, or a clamp-but-no-write-back edge.",
+          "rebase_discipline": "clones fresh, git pull --rebase, pre-push hook chain (PROP-083)",
+          "race_shape": "medium — clamp present but still appears in episode-starts"
+        },
+        {
+          "writer": "workspace-sync (Sonnet)",
+          "prompt_site": "workspace-sync.md universal-pusher",
+          "allocation": "Does NOT allocate. RELAYS stale FUSE state to git: when a writer leaves FUSE stale, the next workspace-sync commit ('Workspace sync: <ts>') carries the staleness into git. NOT a root cause — a propagation surface. 4 of 13 sampled episode-starts were workspace-sync relays of writer staleness.",
+          "rebase_discipline": "n/a",
+          "race_shape": "relay only"
+        }
       ],
       "read_modify_write_pattern": "The classic 'read next_id; do work; write old next_id+1' race is NOT the dominant failure here. The dominant failure is 'write new item; never touch next_id at all' (analyst-baby). Both are closed by routing every writer through allocate-exp-ids.js, which reserves-and-bumps as one atomic write before the item is added."
     },
@@ -43,7 +67,20 @@
         "stale_fraction": "21.0% of all commits were in a stale (collision-imminent) state",
         "distinct_staleness_episodes": 44,
         "episode_rate": "~0.73 episodes/day (44 in 60d); ~5/week",
-        "gap_size_distribution_live_max_minus_next_id_plus_1": {"1": 47, "2": 12, "3": 3, "4": 13, "5": 5, "6": 5, "7": 3, "8": 2, "9": 6, "10": 2, "11": 7, "13": 3},
+        "gap_size_distribution_live_max_minus_next_id_plus_1": {
+          "1": 47,
+          "2": 12,
+          "3": 3,
+          "4": 13,
+          "5": 5,
+          "6": 5,
+          "7": 3,
+          "8": 2,
+          "9": 6,
+          "10": 2,
+          "11": 7,
+          "13": 3
+        },
         "max_gap": 13,
         "current_state_at_authoring": "HEAD (main) is STALE by 1: next_id=638, live_max=638. A new gap opened at episode-start 4c07fb59 (decider EXP-633, 2026-06-16T06:20Z) and is ongoing.",
         "why_integrity_only_sees_a_few": "Integrity runs daily (one sample/day). The median episode self-heals within hours (defensive allocator on the next write). So integrity samples ~1-2 of the 44 episodes; the other ~42 opened and self-healed inside a 24h window and were invisible to the daily check."
@@ -117,5 +154,34 @@
     "Script bypass remains possible for operator cowork sessions that hand-edit expansion-tracker.json — the lint only guards agent clones with the hook installed. Mitigation: CLAUDE.md note + integrity's daily next_id-inversion check stays as the final detector.",
     "If the operator chooses the Q7 'downgrade integrity check instead' path, this PROP is shelved and PROP-100's self-heal remains sole mechanism — acceptable, the Q3 data supports an informed either-way call."
   ],
-  "operator_decision": "pending"
+  "operator_decision": "pending",
+  "operator_deployment": {
+    "deployed_at": "2026-06-17T06:35:00.000Z",
+    "deployed_by": "operator (cowork session 2026-06-17)",
+    "phase_0_scope_shipped": [
+      "monitor/scripts/allocate-exp-ids.js created (the canonical EXP-id minter; mirrors allocate-iss-ids.js; supports --count, --dry-run, --verify; tested clean).",
+      "monitor/scripts/lint-exp-allocations.js created (STRICT next_id > max(live ∪ archive) + duplicate-id invariant gate; shadow vs enforce mode via prop-106-shadow.flag; tested clean — caught the live 2026-06-17 violation, logged to shadow, exited 0).",
+      "monitor/decisions/prop-106-shadow.flag created (ships in SHADOW mode by default per PROP-106's phased rollout — allows analyst/analyst-baby/decider clones to push without enforcement while the prompt edits propagate and stale state clears).",
+      "analyst-baby.md edited (step 3 orphan-pickup + step 5 batch consolidation both now require the script call; step 6 FND-02 timestamp discipline note added).",
+      "CLAUDE.md File-Ownership table updated (allocate-exp-ids.js, lint-exp-allocations.js, prop-106-shadow.flag added; unclassified-multi-writer note updated to include analyst-baby).",
+      "build.js OWNERSHIP updated (prop-106-shadow.flag added with 'git' classification so operator flag toggles ferry clone→FUSE).",
+      "workspace-sync.md NEVER_PUSH updated (allocate-exp-ids.js, lint-exp-allocations.js, prop-106-shadow.flag all listed alongside the PROP-089 entries).",
+      "Self-heal in-flight: ran 'node allocate-exp-ids.js --count 0' to advance the currently-stale next_id 638→639 so the live state passes --verify immediately post-deploy."
+    ],
+    "phase_0_scope_deferred_to_phase_1": [
+      "Edit analyst.md / analyst-normal-analysis.md allocation site to call the script (Q1 evidence shows analyst-baby was THE primary gap-opener; analyst's existing inline PROP-100 block works; can be folded in next session without urgency).",
+      "Edit decider.md / decider-curmudgeon.md allocation sites to call the script (decider's inline PROP-100 block also works; ditto).",
+      "Install lint-exp-allocations.js into analyst + analyst-baby + decider pre-push hooks. Requires coordination with running schedules; cleanest to do in a dedicated apply session.",
+      "Optional: C0 shared-lib refactor (allocate-ids-lib.js shared by both allocate-iss-ids.js and allocate-exp-ids.js). PROP-106 itself says this is optional; ship in a follow-up only if benefit emerges."
+    ],
+    "phase_0_to_phase_1_transition_criteria": [
+      "≥7 days of shadow-mode operation with the prompt edits in place.",
+      "Zero new violations logged to monitor/integrity/lint-exp-allocations-shadow.jsonl from analyst-baby pushes (i.e., the prompt edit fixed the gap; absence of new shadow log entries confirms it).",
+      "analyst-baby ran at least one orphan-pickup AND one batch consolidation cycle with the updated prompt and the script call.",
+      "Operator decision to flip enforce: `git rm monitor/decisions/prop-106-shadow.flag && commit && push`. After that, lint blocks any violation."
+    ],
+    "fnd_02_addressed": "Yes — analyst-baby.md step 6 now has the timestamp discipline note ('Generate every timestamp with new Date().toISOString(); never string-concatenate with commit hashes; use two fields if both are needed'). The original FND-02 example was integrated_at='2026-06-16T03:e8fe124Z' (commit hash bled into seconds field).",
+    "monitoring": "tinker's next Mode 1 run should: (a) note the shadow log in monitor/integrity/ if any new violations appear, (b) confirm the analyst-baby fix worked by checking expansion-tracker invariant in upcoming integrity reports, (c) propose the Phase 1 enforce flip when transition criteria are met.",
+    "rationale_for_partial_ship": "analyst-baby is the dominant gap-opener (Q1 evidence). Shipping just the analyst-baby edit + the script + the shadow lint stops the 8-consecutive-days integrity FAIL pattern without touching the other writer prompts that were working. The deferred items (analyst.md, decider.md, hook installs) make the system MORE robust but don't fix the immediate bug — they're follow-up work."
+  }
 }

@@ -135,9 +135,21 @@ console.log('IDs:', pendingForBaby.slice(0,10).map(i=>i.id).join(','));
 
 3. **For orphan ISSs** (severity minor/moderate, no tracker entry): create a self-authored tracker entry FIRST, set `source: 'analyst-baby-orphan-pickup'`, `routed_from_iss: <ISS-ID>`, `claimed_by: 'analyst-baby'`. Then process as normal.
 
+   **PROP-106 (2026-06-17): ALLOCATE THE EXP ID VIA SCRIPT, NEVER FREESTYLE.** This step requires a new EXP id. Use the canonical allocator:
+   ```bash
+   EXP_ID=$(node monitor/scripts/allocate-exp-ids.js)  # mints 1, advances next_id atomically
+   echo "Orphan-pickup EXP: $EXP_ID"
+   ```
+   NEVER allocate EXP ids any other way. NEVER read `expansion-tracker.next_id` directly and increment in JS. NEVER use `items.length + 1`. NEVER reuse a freed id. The script clamps `next_id := max(declared, live_max+1, archive_max+1)` so it self-heals from any prior stale state. Q1 of PROP-106 confirmed that analyst-baby's MISSING explicit next_id mutation was the gap-opener that produced 8 consecutive days of integrity FAIL through 2026-06-17.
+
 4. **Read context.** For each ISS in your batch: read the ISS description, read the curmudgeon review if cited, read the current WIN/section text, verify the claim with web_fetch where needed (cite verification is a common BAU drain task).
 
-5. **Write the batched EXP** to `monitor/analyst/expansions/EXP-<NNN>-baby-batch-<N>.json`. Required fields:
+5. **Allocate + write the batched EXP.** First mint the consolidated EXP id via the script:
+   ```bash
+   EXP_ID=$(node monitor/scripts/allocate-exp-ids.js)  # mints 1, advances next_id atomically
+   echo "Consolidated batch EXP: $EXP_ID"
+   ```
+   Then write the batch to `monitor/analyst/expansions/${EXP_ID}-baby-batch-<N>.json`. Required fields:
    - `item_id`: the tracker entry ID (your consolidated EXP)
    - `target`: 1-sentence description of what's being patched
    - `issue_ids`: array of ISS IDs covered
@@ -148,6 +160,8 @@ console.log('IDs:', pendingForBaby.slice(0,10).map(i=>i.id).join(','));
    - `obe_resolutions`: array of ISS IDs you confirmed are already resolved (no patch needed); use the same pattern as EXP-302
 
 6. **Update tracker entries**: mark the original tracker entries as `status: 'consolidated-into-<NEW_EXP_ID>'` and clear `claimed_by` / `claimed_at`. The new consolidated tracker entry gets `status: 'complete'`, `completed_at: <ISO now>`, `output_file: <path>`.
+
+   **PROP-106 FND-02 (2026-06-17): timestamp discipline.** Generate every timestamp with `new Date().toISOString()` and write the result verbatim. NEVER string-concatenate a timestamp with a commit hash or run id. The FND-02 observed example was `integrated_at="2026-06-16T03:e8fe124Z"` — a commit hash bled into the seconds field, breaking ISO-8601. If you need both a timestamp and an identifier in the same record, use TWO fields (e.g., `completed_at: "<ISO>"`, `completed_by_commit: "<sha>"`), never one concatenated string.
 
 7. **Write issue-proposal**: one file per ISS in `monitor/analyst/issue-proposals/proposal-<ISS-ID>-resolution.json` signaling to decider that the work is ready for integration. Use the same shape as existing issue-proposals.
 

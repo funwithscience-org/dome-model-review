@@ -89,6 +89,14 @@ const OWNERSHIP = {
   // it from clone to workspace. The file's presence = enforce; absence = shadow.
   // Created via `touch && git add && git commit`; removed via `git rm && commit`.
   'monitor/decisions/prop-009-enforce.flag': 'git',
+  // PROP-106 (2026-06-17): shadow-mode toggle for lint-exp-allocations.js.
+  // Presence = shadow (log + allow push). Absence = enforce (block push on
+  // invariant violation). Opposite polarity from prop-009-enforce.flag so
+  // the safer default after the flag is removed is enforcement (the EXP
+  // allocator's PROP-100 self-heal still works; the lint just goes from
+  // logging to blocking). Git-owned so build.js publish ferries operator
+  // flag toggles clone→FUSE; workspace-sync NEVER_PUSH.
+  'monitor/decisions/prop-106-shadow.flag': 'git',
   // PROP-026 Phase 1 (2026-05-10): mode toggle for decider's burndown vs BAU
   // operation against open-issues.json. Operator manually flips mode='burndown'
   // (sets reason, auto_revert_when_open_below, auto_revert_after, dryrun=true);
@@ -177,6 +185,13 @@ const OWNERSHIP = {
   'monitor/social/cost-history.jsonl': 'git-append-only',
   'monitor/dome-mirror/cost-history.jsonl': 'git-append-only',
   'monitor/workspace-sync/cost-history.jsonl': 'git-append-only',
+  // PROP-106 (2026-06-17): lint-exp-allocations.js writes per-violation rows
+  // when shadow mode is active (prop-106-shadow.flag present). Written from
+  // any of analyst / analyst-baby / decider clones — same multi-clone-writer
+  // pattern as PROP-065 cost-history files. git-append-only so FUSE→git
+  // round-trips are blocked by workspace-sync but git→FUSE propagation is
+  // normal (clone push → workspace-sync Step 4c sync).
+  'monitor/integrity/lint-exp-allocations-shadow.jsonl': 'git-append-only',
 
   // PROP-102 Phase 0 (2026-06-14): PROP-lifecycle auto-close infrastructure.
   // - prop-auto-close-ledger.jsonl: tinker appends one row per Phase-0 dryrun
