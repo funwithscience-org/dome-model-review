@@ -9,7 +9,7 @@
   "do_not_implement": true,
   "requires_human_judgment": true,
   "why_human_needed": "Decider is the #1-cost AND highest-stakes agent. Any prompt-slim or precompute that narrows what the LLM sees per decision carries real downstream-mistake risk (the directive's Q6 / constraint #1). Phase 0 measurement + shadow validation is mandatory before any slim ships; the operator must review the Phase-0 evidence and approve each phase gate.",
-  "status": "phase-0-approved-pending-implementation",
+  "status": "phase-0-measurement-shipped",
   "operator_evidence_added_2026-06-16T13-30Z": {
     "context_for_tinker": "Adding this for tinker's awareness during Phase 0 implementation. NOT a new task — supplementary evidence relevant to the measurement design. This is NOT a context-exhaustion event (initial operator framing was incorrect on closer inspection). Filed by operator-cowork session 2026-06-16T13-30Z.",
     "finding_type": "summary-writer hallucination (decider confabulated its own run history)",
@@ -237,5 +237,28 @@
       "monitor/scripts/digest-reviews.js",
       "monitor/prompts/structure-integrity.md"
     ]
+  },
+  "operator_phase_0_deployment": {
+    "deployed_at": "2026-06-17T05:45:00.000Z",
+    "deployed_by": "operator (cowork session 2026-06-17)",
+    "phase_0_scope_shipped": [
+      "monitor/scripts/compute-decider-step-cost.js: read-only transcript analyzer. Buckets per-step input/cache/output tokens via STEP_MARKER stderr breadcrumbs; also size-buckets tool_result blocks > 2KB for mechanism_b context-source attribution. Smoke-tested on our session transcript: works, processes 14.5K-msg transcripts cleanly.",
+      "decider.md: 16 STEP_MARKER breadcrumbs added at the start of every dispatcher priority (1, 1b, 2, 2b, 2c, 3, 3b, 4, 5, 5b) and every end-of-run step (A0, A0b, A0c, A0d, A, B). Format: `echo \"STEP_MARKER <step> $(date +%s)\" >&2`. These are stderr writes — no behavioral impact on routing decisions; pure instrumentation. Header note instructs future editors NOT to remove them and to add new markers when adding new dispatcher steps.",
+      "CLAUDE.md File-Ownership table updated to document compute-decider-step-cost.js with description of its scope and mechanism_a/mechanism_b dual purpose."
+    ],
+    "phase_0_scope_deferred_to_phase_1": [
+      "Shadow dispatcher-state.json producer script (would precompute the slice of state decider's dispatcher needs into a slim artifact). PROP-104 phased_rollout puts this in Phase 0 alongside measurement, but the measurement alone is what's needed to PROVE the precompute is worth shipping. Defer until Phase 0 evidence shows tool_result accumulation dominates cache_read.",
+      "Shadow digest-slim script (smaller curmudgeon pending-digest variant). Same logic: defer until evidence proves Priority-3 reading the full digest is the cost driver.",
+      "write-self-cost.sh --by-step extension to write per-step rows directly into per-run cost-history. Defer; analyzer-on-demand is sufficient for Phase 0."
+    ],
+    "phase_0_exit_criteria_per_PROP_104_authored": [
+      "≥5 decider runs of source-attributed token data (per_step_attribution_pct > 80%; tells us STEP_MARKERs are landing in the right windows).",
+      "≥20 runs of shadow routing comparison — DEFERRED because shadow dispatcher-state isn't shipped this round.",
+      "Operator review of the first batch of decider-step-cost-RUN_ID.json artifacts (running compute-decider-step-cost.js against each new decider transcript). Then operator decides whether Phase 1 precompute is worth building based on mechanism_b distribution."
+    ],
+    "how_to_use": "After a decider run completes and write-self-cost.sh appends its row, run: `node monitor/scripts/compute-decider-step-cost.js <path-to-decider-transcript.jsonl> > monitor/integrity/decider-step-cost-<RUN_ID>.json`. The analyzer reads the live JSONL session transcript and produces per-step token attribution + tool-result top-20. Operator can also run it on backfilled transcripts to see historical patterns.",
+    "what_we_expect_to_learn": "From mechanism_b: which tool_use type produces the bulk of the verbose tool_result accumulation. PROP-104's the_correction_up_front predicts that bash blocks printing large summaries (open-issues + closed-issues + pending-digest scans) plus accumulated Read tool calls dominate, NOT state-file content. If proven, the Phase 1/2 fix becomes 'trim what bash prints' + 'prompt-slim rare-path prose', not 'precompute state files'.",
+    "H1_vs_H2_canary_check": "Per the operator_evidence_added_2026-06-16 confabulation finding: walk historical latest-decider-summary.txt files for self-history confabulation patterns ('context-resumed', 'continuation of', etc) and correlate with each run's PROP-101 cost-history row (turn count, cache_read, duration). Sharp threshold → H2 (context-pressure-induced); flat → H1 (standalone bug). This piggybacks on the analyzer's existing transcript walk and adds ~30 lines of grep logic if implemented.",
+    "rationale_for_partial_ship": "Measurement is the gating step. Shipping the analyzer + breadcrumbs lets the operator gather Phase 0 evidence over the next ~5 decider runs (24h at 3-slot cadence ≈ 5 runs / 36 hrs) without committing to a precompute infrastructure that may turn out to be the wrong fix per PROP-104's own the_correction_up_front analysis."
   }
 }

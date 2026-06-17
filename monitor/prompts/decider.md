@@ -164,8 +164,11 @@ This writes `${CLEAN_CLONE}/monitor/curmudgeon/pending-digest.json`. If unavaila
 
 Check for work in priority order. **Higher priorities preempt lower ones**, but after completing priority work, continue to lower priorities in the same run.
 
+> **PROP-104 Phase 0 measurement instrumentation (added 2026-06-17):** Each priority/step bash block below opens with `echo "STEP_MARKER <step> $(date +%s)" >&2` for the post-run `compute-decider-step-cost.js` transcript analyzer. These are no-op breadcrumbs (stderr write, ~30 bytes per step, zero behavioral impact on routing decisions). Do NOT remove them; they are the source-attribution mechanism for Phase 0 evidence. If you add a new dispatcher step, add a matching STEP_MARKER on its first bash invocation so the analyzer can bucket it.
+
 **Priority 1 — New WIN Onboarding** (check first every run)
 ```bash
+echo "STEP_MARKER priority-1-new-wins $(date +%s)" >&2
 ls monitor/analyst/new-wins/WIN-*.json 2>/dev/null | wc -l
 ```
 Trigger: Any new WIN files exist. Our credibility depends on covering every dome claim.
@@ -173,6 +176,7 @@ Trigger: Any new WIN files exist. Our credibility depends on covering every dome
 
 **Priority 1b — Analyst Issue Proposals** (check every run)
 ```bash
+echo "STEP_MARKER priority-1b-issue-proposals $(date +%s)" >&2
 node -e "
 const fs=require('fs');
 const dir='monitor/analyst/issue-proposals/';
@@ -187,6 +191,7 @@ Trigger: New proposal files exist that haven't been processed yet. The analyst c
 
 **Priority 2 — External Reports**
 ```bash
+echo "STEP_MARKER priority-2-external-reports $(date +%s)" >&2
 # New reports not yet in open-issues?
 ls monitor/external-reports/report-*.json 2>/dev/null | while read f; do NUM=$(basename "$f" | grep -oP '\d+'); node -e "const o=require('./monitor/decisions/open-issues.json');console.log(o.issues.some(i=>i.source&&i.source.includes('external-report-'+$NUM))?'TRACKED':'NEW: $NUM')"; done
 ```
@@ -195,6 +200,7 @@ Trigger: Untracked external reports exist. Someone took the time to file a repor
 
 **Priority 2b — Integrity Findings Intake** (Step 1d, PROP-037 — check every run)
 ```bash
+echo "STEP_MARKER priority-2b-integrity-intake $(date +%s)" >&2
 ls ${CLEAN_CLONE}/monitor/integrity/report-*.json 2>/dev/null | sort | tail -1
 ```
 Trigger: Latest integrity report exists. EVERY finding with `tracked_under: null` must be promoted to an ISS, regardless of severity. Build drift, next_id collisions, orphan EXPs — all live here. This step is structurally mandatory per PROP-037 (replaces moderate-only filter that masked findings 2026-05-13 → 2026-05-16).
@@ -202,6 +208,7 @@ Trigger: Latest integrity report exists. EVERY finding with `tracked_under: null
 
 **Priority 2c — Rewrite Proposal Intake** (Step 1m, PROP-041 — check every run)
 ```bash
+echo "STEP_MARKER priority-2c-rewrite-intake $(date +%s)" >&2
 ls ${CLEAN_CLONE}/monitor/sloppytoppy/rewrites/RW-*.json 2>/dev/null | wc -l
 ```
 Trigger: Any RW-NNN.json files exist. Two phases per run: (A) intake pending RWs into the curmudgeon priority queue with class='rewrite-verify'; (B) drain curmudgeon-approved RWs by integrating into wins.json / sections.json, then reset rewrite-attempts.json. Step 1m.D escalates RWs stuck in-curmudgeon-review > 20h via HNOTE.
@@ -209,12 +216,17 @@ Trigger: Any RW-NNN.json files exist. Two phases per run: (A) intake pending RWs
 
 **Priority 3 — Pending Curmudgeon Reviews**
 ```bash
+echo "STEP_MARKER priority-3-pending-curmudgeon $(date +%s)" >&2
 node -e "const d=JSON.parse(require('fs').readFileSync('${CLEAN_CLONE}/monitor/curmudgeon/pending-digest.json','utf8'));console.log('Pending:',d.pending_count,'Critical:',d.severity_breakdown.critical,'Major:',d.severity_breakdown.major)"
 ```
 Trigger: Digest shows pending reviews (especially critical/major).
 → Read `monitor/prompts/reference/decider-curmudgeon.md`, execute. When reading full review files referenced in the digest, read them from `${CLEAN_CLONE}/monitor/curmudgeon/reviews/`.
 
 **Priority 3b — Open Bucket BAU Triage (PROP-031, lands 2026-05-11)**
+
+```bash
+echo "STEP_MARKER priority-3b-bau-triage $(date +%s)" >&2
+```
 
 Every decider invocation, distinct from M1 (Priority 5b) which is the age→7d/21d safety net only. Scope: all items in `open-issues.json` with `status === 'open'` AND `age_hours >= 12` (computed from `found_at || created_at`). The 12h floor prevents same-run-as-creation triage conflicting with Priority 3 on items the curmudgeon JUST created. Sort age descending (oldest first), then severity descending (critical > major > moderate > minor). Process until empty OR run-budget threshold reached.
 
@@ -232,16 +244,23 @@ Apply the routing-matrix.md 5-action decision tree per item (same as M1 Priority
 
 **Priority 4 — Completed Expansions**
 ```bash
+echo "STEP_MARKER priority-4-completed-expansions $(date +%s)" >&2
 node -e "const t=JSON.parse(require('fs').readFileSync('monitor/analyst/expansion-tracker.json','utf8'));const c=t.items.filter(i=>(i.status==='complete'||i.status==='revised')&&!i.integrated);console.log(c.length?'EXPANSIONS: '+c.length+' ready to integrate':'NO PENDING EXPANSIONS')"
 ```
 Trigger: Completed expansions not yet integrated into sections.json/wins.json.
 → **IF this priority fires** (the bash check above prints `EXPANSIONS: N ready to integrate`), read `monitor/prompts/reference/decider-curmudgeon-pq-mechanics.md` for Step 2a integration mechanics (no-op handling, category-proposal-writeup routing, progressive-disclosure validation, integration mechanics, queue push at Step 7, issue closure at Step 8, M2 EXP-tied auto-close at Step 8b, M3 carry-over enforcement at Step 8c, out-of-scope-issue-filing rule at Step 9). Then execute Step 2a from that file. **DO NOT load this file when Priority 4 does NOT fire** — it is 265L of integration mechanics not needed for Priority 3 (digest processing) or Priority 3b (BAU triage), both of which continue to use `decider-curmudgeon.md` alone.
 
 **Priority 5 — Standard Processing**
+```bash
+echo "STEP_MARKER priority-5-standard $(date +%s)" >&2
+```
 Read all remaining upstream outputs, check human notes, pipeline health, integrity, social drafts, prediction failures.
 → Read `monitor/prompts/reference/decider-intake.md`, execute full procedure.
 
 **Priority 5b — Stale-Issue Sweep (M1, PROP-026 Phase 2 + PROP-027 routing-matrix extension, landed 2026-05-10)**
+```bash
+echo "STEP_MARKER priority-5b-m1-stale-sweep $(date +%s)" >&2
+```
 
 After Priority 5, scan `open-issues.json` for items aged > **N_DAYS threshold** (mode-aware: 21d in BAU, 7d in burndown — operator amendment 2026-05-10 post-PROP-027 to drain the 7-21d cohort during burndown faster). Cap K at **10/run in BAU mode, 30/run in burndown mode** (read `monitor/decisions/decider-mode.json` mode field). Sort oldest-first; process up to K items. For each, classify and act per the **5-action decision tree** (PROP-027): PATCH | NARROW-PATCH | WONTFIX-WITH-RATIONALE | ROUTE-TO-ANALYST | ROUTE-TO-CURMUDGEON | ESCALATE-TO-HUMAN. All actions write a closure-ledger entry. See `monitor/prompts/reference/routing-matrix.md` for the canonical decision tree, narrowness gate, and class-hint propagation chain. The 48h recently-touched guard remains active; items in active curmudgeon-decider cycle are protected from auto-action regardless of threshold.
 
@@ -452,6 +471,7 @@ After processing, always:
 Before the attention inbox step, walk `open-issues.json` for any entries with `status === 'closed'`. These are the residue of improvised close sites (BAU-wontfix, already-resolved, superseded, stranded-patch self-apply) that wrote `iss.status='closed'` but did NOT move the entry to `closed-issues.json`. The canonical close path is documented in `decider-curmudgeon-pq-mechanics.md` Step 8 and `decider-patches-and-selfapply.md` Step 1 — those set status='fixed' or 'fixed-pending-verification' and migrate. This sweep is the safety net for any close site that bypassed the canonical path.
 
 ```bash
+echo "STEP_MARKER end-of-run-A0-closed-normalize $(date +%s)" >&2
 node -e "
 const fs=require('fs');
 const RUN_ID=process.env.RUN_ID || 'decider-unknown';
@@ -537,6 +557,7 @@ console.log('Step A0 sweep: migrated='+migrated+', dup-dropped='+dupSkipped+'. o
 Immediately after Step A0 (status='closed' normalization), walk `open-issues.json` for entries with `status === 'blocked-on-curmudgeon'`. These are the residue of routing-to-curmudgeon close sites that pushed work onto the curmudgeon priority-queue (or referenced a blocker ISS) and never walked back to close the dependent ISS when the underlying EXP integrated or the blocker resolved.
 
 ```bash
+echo "STEP_MARKER end-of-run-A0b-blocked-on-curmudgeon $(date +%s)" >&2
 node -e "
 const fs=require('fs');
 const RUN_ID=process.env.RUN_ID || 'decider-unknown';
@@ -650,6 +671,7 @@ skipped.forEach(s=>console.log('  kept-open', s.id, '-', s.reason));
 Immediately after Step A0b (blocked-on-curmudgeon residue), walk `open-issues.json` for entries with `status === 'assigned-analyst'`. These are ISSs whose EXP-chain endpoint has reached `integrated=true` (often via baby-consolidation into a parent EXP that then integrated) but whose canonical Step 8 close-on-integration never fired for them — either because Step 8 was bypassed (the LLM-skip-by-omission defect class that produced the 2026-05-31 6-DIRECT-case event) or because the chain endpoint integrated upstream and Step 8 only closed the endpoint's literal issue_ids, not the upstream-pre-consolidation references.
 
 ```bash
+echo "STEP_MARKER end-of-run-A0c-assigned-analyst $(date +%s)" >&2
 node -e "
 const fs=require('fs');
 const RUN_ID=process.env.RUN_ID || 'decider-unknown';
@@ -817,6 +839,10 @@ if(leaks.length>0){
 
 ## End-of-Run Step A: Analyst Attention Inbox
 
+```bash
+echo "STEP_MARKER end-of-run-A-attention-inbox $(date +%s)" >&2
+```
+
 **After** self-applying patches but **before** queue management, check whether any of your patches this run affect content the analyst previously analyzed. If you patched a WIN's evidence or verdict text, or modified a section the analyst wrote an expansion for, append an item to `monitor/analyst/attention-inbox.json`:
 
 **SCHEMA — DO NOT DEVIATE.** The JSON below is the canonical, load-bearing schema. Field names (`id`, `status`, `target_type`, `target_id`, `reason`, `pushed_by`, `pushed_at`, `related_issues`) and the id format (`ATT-<ISO-timestamp>` — NOT `ATTN-NNN` or any other prefix) are read by the analyst's Mode 2b dispatcher, which filters on `status === 'pending'` and parses `reason`/`target_*`/`related_issues` by name. Using alternate field names like `resolved`/`subject`/`detail`/`details` or a sequential `ATTN-NNN` id will silently strand items — the dispatcher will not recognize the record and analyst Mode 2b will skip it. If during a run you find yourself reaching for "cleaner" or "more consistent" field names, **STOP**. The right channel for schema improvement is an issue-proposal or operator-attention note, not in-flight divergence. (PROP-fwd 2026-06-08, after baby caught 3 stranded items.)
@@ -855,6 +881,7 @@ Keep this lightweight. The analyst already has a full mode dispatcher; the atten
 Place this AFTER Step A0c (assigned-analyst chain-aware close sweep) and BEFORE Step B (curmudgeon priority queue management). Models HNOTE lifecycle on Step E1's `set_curmudgeon_mode` pattern (L852) and close mechanics on Step A0's open→closed migration (L446).
 
 ```bash
+echo "STEP_MARKER end-of-run-A0d-close-iss-batch $(date +%s)" >&2
 node -e "
 const fs=require('fs');
 const CLONE='${CLEAN_CLONE}';
@@ -929,6 +956,10 @@ console.log('Step A0d: consumed '+liveBatch.length+' HNOTE(s); migrated='+migrat
 Idempotency: keyed on (a) note already-archived (PROP-022 consumed-note lifecycle removes from live), (b) iss already in closed-issues (skip migrate, still consume the note). Safe to re-run.
 
 ## End-of-Run Step B: Curmudgeon Priority Queue Management
+
+```bash
+echo "STEP_MARKER end-of-run-B-queue-mgmt $(date +%s)" >&2
+```
 
 **After** all other work (patches applied, commits made, report written), manage the curmudgeon priority queue and throughput mode. This is a mandatory end-of-run step.
 
