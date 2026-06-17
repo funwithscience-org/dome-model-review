@@ -1525,7 +1525,7 @@ function main() {
   "@context": "https://schema.org",
   "@type": "ClaimReview",
   "url": "https://funwithscience.net/dome-model-review/",
-  "claimReviewed": "The Ovoid Cavity Cosmological Model has ${counts.total} confirmed predictions with ${failures.dome_claimed_accuracy} accuracy",
+  "claimReviewed": "The Ovoid Cavity Cosmological Model claims ${failures.dome_claimed_confirmed || 69} confirmed predictions with ${failures.dome_claimed_accuracy} accuracy",
   "author": {
     "@type": "Organization",
     "name": "Fun With Science",
