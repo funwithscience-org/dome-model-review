@@ -74,6 +74,63 @@ Verify every internal link resolves to an actual element in the page:
   - The first tab's prev is null, the last tab's next is null
 - **Table of contents**: Every `<li>` in the TOC (overview tab) links to a heading that exists in the correct tab.
 
+### 1b. Relative-Href File Resolution (added 2026-06-18)
+
+Verify every `<a href="...">` whose target is a **same-domain relative path to a file** resolves to a real file inside `docs/`. This closes the gap between Check 1 (`#fragment` anchors, internal) and Check 3 (`http(s)://` URLs, external) — relative-href links to files fall through both. The 2026-06-18 security-audit 404 (`href="../security-audit.md"` resolving outside `docs/` on GitHub Pages) was the motivating bug.
+
+Mechanics:
+
+```bash
+node -e "
+const fs = require('fs');
+const path = require('path');
+const html = fs.readFileSync('docs/index.html', 'utf8');
+const DOCS_ROOT = path.resolve('docs');
+
+// Match href values. Strip query strings + fragments. Skip:
+//   - #fragment (handled by Check 1)
+//   - http://, https://, mailto:, javascript:, tel: (handled by Check 3 or N/A)
+//   - data: URIs (inline)
+const seen = new Set();
+const broken = [];
+const re = /href=\"([^\"]+)\"/g;
+let m;
+while ((m = re.exec(html)) !== null) {
+  let href = m[1];
+  if (!href) continue;
+  // Strip query/fragment.
+  href = href.replace(/[?#].*$/, '');
+  if (!href) continue; // pure fragment link
+  if (/^(?:https?:|mailto:|javascript:|tel:|data:)/i.test(href)) continue;
+  if (seen.has(href)) continue;
+  seen.add(href);
+  // Resolve relative to docs/index.html.
+  const target = path.resolve('docs', href);
+  // OUTSIDE-DOCS gate: if the resolved target escapes docs/, it cannot be served by GitHub Pages.
+  if (!target.startsWith(DOCS_ROOT + path.sep) && target !== DOCS_ROOT) {
+    broken.push({ href, reason: 'resolves outside docs/ (escapes GitHub Pages tree)' });
+    continue;
+  }
+  if (!fs.existsSync(target)) {
+    broken.push({ href, reason: 'file not found at ' + path.relative(process.cwd(), target) });
+  }
+}
+console.log(JSON.stringify({ total_unique_relative_hrefs: seen.size, broken }, null, 2));
+"
+```
+
+Classify findings:
+
+- **broken (major)**: Any href that resolves outside `docs/` (escapes the published tree) OR points to a non-existent file. These are user-visible 404s.
+- **pass (info)**: All relative hrefs resolve to real files inside `docs/`.
+
+Notes on edge cases:
+
+- This check uses **unique-href dedup** — the same href appearing N times in the HTML counts once. The user-visible bug is "the target is missing," not "how many links point to it."
+- `href=""` (empty) and `href="#"` (bare anchor) are skipped by the strip-fragment step — they're either accidental or intentional no-op buttons.
+- Directory-style hrefs (`href="something/"`) are checked as `docs/something/index.html` existence — GitHub Pages auto-serves index.html. If you ever add such an href, extend the existsSync check above.
+- This check does NOT verify the linked file's content is correct (out of scope). It only verifies the file exists.
+
 ### 2. Tab Structure Integrity
 
 - Every `<div class="tab-content">` has a unique ID
@@ -700,6 +757,12 @@ Write to `monitor/integrity/report-YYYY-MM-DDTHH-MM.json` (include hour and minu
     "internal_anchors": {
       "status": "pass|fail",
       "total_links": 0,
+      "broken": [],
+      "details": "summary"
+    },
+    "relative_href_resolution": {
+      "status": "pass|fail",
+      "total_unique_relative_hrefs": 0,
       "broken": [],
       "details": "summary"
     },
