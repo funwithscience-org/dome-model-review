@@ -1,37 +1,16 @@
-TINKER RUN 2026-06-17T02-40 — Mode 1 (pipeline health)
+TINKER 2026-06-18T02-42 — Directive-driven (OBE-flip batch)
 
-PIPELINE: healthy on infra. All agents producing on cadence; FUSE in sync with
-GitHub (4/4 spot-checked files md5-match); dome PAT verified; disk fine (root
-3499MB free, clones 319MB). No stalled agents, no stranded patches >24h.
+PIPELINE: GREEN. open_issues=8, status=open:0, assigned-analyst:0, net_velocity_7d=+97, age>=30d:0, root-FS free 3464MB, closed-issues 3.05MB. No backlog threshold fired.
 
-RED (investigated): integrity 2026-06-17T01-17 FAILed two checks:
-  (1) curmudgeon_digest: 15 reviews unprocessed -> RESOLVED by decider 02-21 run
-      ("process 15 reviews; 9 ISS created"). pending-digest.json in clone is the
-      stale decider-clone copy; not a live problem.
-  (2) expansion_tracker next_id collision: next_id=638 == max EXP-638 (integrated).
+PROP auto-close (shadow): 118 PROPs walked, 0 would-close.
 
-ROOT CAUSE (FND-01): analyst-baby does NOT advance next_id when it writes a batch
-EXP. analyst-baby.md mentions next_id ZERO times; Opus analyst + decider both
-allocate-from-next_id with the PROP-100 clamp then increment. EXP-638 (authored_by
-analyst-baby, 06-16T04:25) left next_id stale at 638. PROP-100's read-side clamp
-prevents ACTUAL id duplication (0 dupes in 79 items) but the stale state trips
-integrity every morning -> 8 consecutive days of warn/FAIL (06-10..-17).
+PRIMARY: Directive discovery found 19 PENDING directives (git clone authoritative). Cleared 3 verified-OBE zombie-pending directives via clone-and-push:
+  - DIRECTIVE-20260603-003 -> completed (PROP-078 implemented; integrity+decider prompts carry clone-source-of-truth rule)
+  - DIRECTIVE-20260607-002 -> completed (PROP-083/PROP-080 implemented; ISS-2621 fixed)
+  - DIRECTIVE-20260609-002 -> completed (PROP-089 implemented; ISS-id allocator collision prevention shipped)
 
-DISPOSITION: NO new PROP authored. The fix is ALREADY captured by PROP-106
-(allocate-exp-ids.js single-write-path + lint + analyst-baby.md wiring; mirrors
-PROP-089 for the ISS surface), authored YESTERDAY by the prior tinker run, status
-proposed, priority medium, NOT yet implemented.
+Left pending deliberately (mid-7d-shadow, NOT OBE): 20260614-003 (PROP-102), 20260614-001 + 20260616-002 (PROP-106).
 
->>> OPERATOR ACTION: prioritize PROP-106. New evidence this run: the bug RE-RECURRED
-    AFTER PROP-106 was authored (EXP-638 + 06-16/06-17 FAILs), so it is still
-    producing daily integrity FAILs + decider churn. Suggest bumping priority
-    medium -> medium-high.
+FND-01 (moderate): CLAUDE.md claims tinker-2026-06-14T07-54 already flipped 20260603-003 + 20260607-002, but a fresh origin clone still showed them pending on 06-18 — that flip never landed in git (FUSE-write bug, push omission, or revert). They re-preempted the dispatcher for 4+ days. Recommend adding a post-push re-read verification to the lifecycle-flip procedure.
 
-MINOR (FND-02): analyst-baby wrote a malformed timestamp on EXP-638:
-    integrated_at="2026-06-16T03:e8fe124Z" (commit hash leaked into seconds field).
-    Fold into PROP-106 impl / next baby-prompt edit; not worth its own PROP.
-
-BACKLOG (FND-03, info): open issues 8->12 WoW (+50%) but net velocity +91,
-    0 assigned-analyst, 0 aged-30d. Noise at small-N; no action.
-
-PROP auto-close (shadow): 118 PROPs walked, 0 would-close. No enforce flag.
+NEXT RUN: 16 directives remain pending. Top genuinely-actionable: DIRECTIVE-20260613-001 (prune-integrity push gap, HIGH).
