@@ -1772,7 +1772,7 @@ ${accuracyVariantList ? `<p class="ams-p ams-variant">Internal queries return ${
 <h2>Downloads</h2>
 <div class="ds-downloads">
 <a class="ds-dl-card" href="../downloads/critical-review-dome-model-v6.pdf"><span class="ds-dl-icon">&#128203;</span> <span class="ds-dl-label">PDF Version</span><br><small>Print-ready format</small></a>
-<a class="ds-dl-card" href="../security-audit.md"><span class="ds-dl-icon">&#128274;</span> <span class="ds-dl-label">Security Audit</span><br><small>Prompt injection findings</small></a>
+<a class="ds-dl-card" href="security-audit.md"><span class="ds-dl-icon">&#128274;</span> <span class="ds-dl-label">Security Audit</span><br><small>Prompt injection findings</small></a>
 </div>
 
 ${sectionNav(null, null, 'evaluate', 'Evaluation Guide')}
