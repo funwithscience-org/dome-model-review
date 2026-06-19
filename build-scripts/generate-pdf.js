@@ -10,7 +10,12 @@ const path = require('path');
 const fs = require('fs');
 
 const HTML_PATH = path.join(__dirname, '..', 'docs', 'index.html');
-const PDF_PATH = path.join(__dirname, '..', 'downloads', 'critical-review-dome-model-v6.pdf');
+// 2026-06-19 fix: PDF now lives under docs/ so GitHub Pages can serve it.
+// Previously written to ../downloads/ at repo root which escapes the served
+// tree (caught by structure-integrity.md Check 1b on its first run).
+// Version aligned to v5 to match the existing artifact; operator bumps when
+// rev'ing the review.
+const PDF_PATH = path.join(__dirname, '..', 'docs', 'downloads', 'critical-review-dome-model-v5.pdf');
 
 async function main() {
   if (!fs.existsSync(HTML_PATH)) {
