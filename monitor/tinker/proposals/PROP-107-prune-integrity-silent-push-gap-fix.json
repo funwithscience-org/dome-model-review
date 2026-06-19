@@ -1,0 +1,95 @@
+{
+  "id": "PROP-107",
+  "title": "prune-integrity reports success but doesn't push deletes — silent push-failure masked by workspace-sync sentinel-rescue asymmetry. Make the push failure-loud (script-owned commit+push) and add a sentinel-without-commit detection canary.",
+  "created_at": "2026-06-19T05:58:00Z",
+  "authored_by": "tinker",
+  "authored_by_run": "tinker-2026-06-19T05-49",
+  "status": "pending",
+  "category": "infrastructure/push-reliability",
+  "severity": "major",
+  "propose_only": true,
+  "directive": "DIRECTIVE-20260613-001",
+  "target_mode": "Mode 4 (proposal authoring)",
+  "parent_prop": "PROP-081 (closed the report-write-skip half of this bug class; this PROP closes the push-success half)",
+  "surfacing_report": "monitor/tinker/report-2026-06-19T05-49.json",
+
+  "executive_summary": "The dome-prune-integrity agent has been running daily (sentinels exist for every day 06-10..06-18) but its archive+delete commit landed on origin/main only ONCE in that window (commit 380b86b, 2026-06-18). For 8 consecutive days (06-10..06-17) the agent reported success while zero prune-delete commits reached origin. The run still LOOKS successful because the script-self-written run sentinel (PROP-081) reaches origin via workspace-sync's universal-pusher FUSE-rescue — but the source deletions are structurally un-rescuable by workspace-sync (add/update-only by post-2026-05-21-disaster design). Net effect: the sentinel creates a false success signal while monitor/integrity/ bloats. PROP-081 guaranteed the sentinel is in the agent's diff; it did not guarantee that diff reaches origin. The fix: move commit+push into prune-integrity.js itself (the LLM is already out of the loop for the file-ops and the sentinel; finish the job) with a fail-loud post-push verification + push-failure sentinel, plus a pull-rebase retry for the non-fast-forward trigger. Detection: a sentinel-without-matching-commit canary that PROP-099's resurrection canary cannot cover (because the never-landed case produces no archive tombstone).",
+
+  "root_cause": {
+    "chosen_from_directive_questions": "Synthesis of Q2 (silent push failure) + Q3 (sentinel writes but deletes don't commit). Q1 localizes the break to the agent's commit+push step AFTER the script exits cleanly.",
+    "mechanism": "prune-integrity.js does ONLY: archive-append + source-delete (in the agent's clone working tree), self-write of the run sentinel (PROP-081), and pre-push hook install. It does NOT commit or push. Commit+push is entirely the agent (SKILL.md) responsibility. When that push fails, the agent swallows it and ends with no error artifact. The deletions die with the clone; next run re-discovers them as eligible (confirmed accumulation: narrative-cite-audit matched 58 on 06-17 -> 69 on 06-18).",
+    "why_it_looks_successful": "The script writes the run sentinel into the clone AND a FUSE copy exists (the agent's push-failure fallback copies committed-but-unpushed NEW files to FUSE, decider-style). workspace-sync's universal-pusher then rescues the FUSE sentinel FUSE->git as an ordinary new append-only file. Additions get rescued; deletions never do (workspace-sync is add/update-only post-disaster). The rescued sentinel is the false success signal.",
+    "why_intermittent": "8 days fail then 06-18 succeeds. Most likely push-failure trigger is non-fast-forward: the prune run does a large archive-append (narrative-cite-audit JSONL rows are ~23k lines each) and runs while workspace-sync (hourly) and dome-mirror (:30) are also pushing; by push time origin/main has advanced and a single concurrent commit rejects the push. Without a pull-rebase retry, every collision is a total loss. 06-18 happened to hit a quiet window. A PAT-403 'Devilwench' contamination (PROP-051 Option C) is a secondary candidate but would not spontaneously clear on 06-18, so non-ff is the better fit. The fix below is trigger-agnostic — it makes ANY push failure loud and retries the non-ff case.",
+    "pre_push_hook_interaction_Q5": "Plausible contributing trigger: if the SKILL.md stages with `git add -u` / `git commit -am` rather than `git add -A`, the new UNTRACKED sentinel is excluded from the commit, the PROP-081 pre-push hook (requires a new prune-integrity-runs/run-*.json in the outgoing diff) fails, and the push is refused — then swallowed. Could not be confirmed because the SKILL.md is not in the repo or any accessible mount (it lives in the scheduled-task session mount; EPERM on the host copy). The script-owned-push fix forces `git add -A`, which moots this trigger regardless."
+  },
+
+  "other_side_Q4_ruled_out": {
+    "claim": "The directive correctly asked to keep open the possibility that prune is fine and ANOTHER agent (workspace-sync) re-adds deleted files (the PROP-082/094 re-add loop).",
+    "verdict": "RULED OUT as the cause of this incident. The re-add loop requires the delete to LAND first and then be resurrected. Here the delete never landed: the agent-reported 06-17 commit 43013bb does not exist on origin at all (`git cat-file -t 43013bb` -> 'no such commit'). PROP-094's GIT_DELETED_SET guard in workspace-sync correctly suppresses resurrection of genuinely-pruned files ('SKIP PROP-094 git-deleted-authoritative; pruned artifact, do not resurrect'). The failure is upstream of resurrection: there is no delete to resurrect. So PROP-082/094 are working as designed and are not implicated.",
+    "note": "workspace-sync IS still pushing large volumes of FRESH narrative-cite-audit-*.json (integrity's normal per-run output) FUSE->git (e.g. b1f4a5f carried ~30 such files, 06-12..06-14). That is correct universal-pusher behavior, not a re-add — but it does mean the pile prune must shrink keeps growing, which raises the cost of every missed prune push."
+  },
+
+  "evidence": [
+    "git log -- monitor/integrity/prune-integrity-runs/ : exactly ONE 'prune-integrity: archive+delete' commit reachable in depth-50 history = 380b86b (2026-06-18 08:07:08Z, 345 sources removed). No prune-delete commit for 06-10..06-17.",
+    "Agent-reported 06-17 commit (run-2026-06-17T08-06-38Z.json commit_sha: 43013bb5c6180d0109ce5e6304ce2579696a9649) is unreachable: `git cat-file -t` returns 'no such commit'. The deletes that commit claimed never reached origin.",
+    "The 06-17 prune sentinels (script self-write run-...T08-06-03Z.json AND agent wrapper run-...T08-06-38Z.json) were both introduced to origin by workspace-sync commit b1f4a5f (2026-06-18 04:09:36Z, 'workspace-sync run report') — i.e. via FUSE-rescue, NOT via a prune push.",
+    "Sentinel format shifted between agent-written (06-17 wrapper: has script_output_excerpt + commit_sha) and script self-write (06-18: written_by 'prune-integrity.js structural self-write (PROP-081)', no commit_sha) — confirming the script writes its own sentinel while commit+push remains the agent's responsibility.",
+    "Accumulation across the gap: narrative-cite-audit matched 58 (06-17) -> 69 (06-18); eligible 51 -> 62. Files prune claimed to remove were still present the next day.",
+    "No prune-specific push-failure-*.json sentinel exists in the 06-10..06-17 window (latest push-failure sentinel is 2026-05-24, and those are workspace-sync/decider, not prune). The prune agent produces NO error artifact when its push fails — the failure is invisible.",
+    "prune-integrity.js (lines 354-405) contains only file-ops + self-write + hook-install; no execSync/git commit/git push anywhere in the script.",
+    "Script's own PROP-081 comment documents a prior instance of the same bug class: 'DIRECTIVE-20260606-002: on 2026-06-06T08:06Z the prune agent narrated a run-report write that never reached git ... rescued 12h later by workspace-sync only because a FUSE copy existed.'",
+    "Scheduled-task lastRunAt for dome-prune-integrity = 2026-06-18T08:06:04Z and matches the sentinel timestamps each day -> Q6 ruled out: lastRunAt is NOT lying about the run firing; it simply doesn't reflect push success."
+  ],
+
+  "proposed_fix": {
+    "philosophy": "Same as PROP-081: take the LLM out of the loop for the load-bearing step. PROP-081 moved the run-report WRITE into the script; this PROP moves the COMMIT+PUSH into the script, where the file-ops, sentinel, and hook already live. The agent's job collapses to 'invoke the script and surface its output'.",
+    "fix_A_script_owned_commit_push": "Add a `--commit-and-push` mode (APPLY-only) to prune-integrity.js that, AFTER the file-ops + self-write + hook-install, runs: (1) `git add -A` (guarantees the new sentinel AND all deletions are staged together — moots the Q5 add-u trigger and satisfies the PROP-081 hook from inside the script); (2) the PROP-051 delete-sanity HARD_CAP check on `git diff --cached --numstat` BEFORE committing (abort + write workspace-sync-style abort sentinel if staged deletes exceed a high cap, e.g. 2000 — well above the normal ~345 — preserving disaster-safety without touching retention policies); (3) commit; (4) `git pull --rebase origin main` then `git push`, with ONE retry on non-fast-forward (re-rebase, re-run delete-sanity, re-push); (5) POST-PUSH VERIFY: `git fetch origin main` and assert `git rev-parse origin/main == HEAD`. If verify fails, write `monitor/integrity/push-failure-<ts>.json` with {agent:'prune-integrity', reason, local_head, origin_head, staged_deletes, staged_archive_appends} and exit non-zero so the run is visibly failed — do NOT leave a success-looking state.",
+    "fix_B_failure_loud_no_silent_swallow": "The push-failure sentinel above is the structural counterpart to decider's push-failure block. Crucially, prune must NOT rely on workspace-sync to 'rescue' a partial result, because workspace-sync can only ever carry the additions (sentinel), never the deletions — so a rescued prune run is ALWAYS a false success. The push-failure sentinel makes the gap detectable on the next tinker/integrity run instead of silently accumulating for days.",
+    "fix_C_keep_agent_thin": "Update the dome-prune-integrity SKILL.md (operator-applied; not in repo) so its only git responsibility is invoking `node monitor/scripts/prune-integrity.js --apply --commit-and-push` and reporting the exit code. Remove any agent-side `git add -u`/`commit -am`/`push` improvisation. If the script exits non-zero, the agent surfaces it; it does NOT write a success summary.",
+    "alternative_if_script_push_is_undesirable": "If the operator prefers to keep push in the agent layer, the minimal equivalent is: SKILL.md must (a) use `git add -A`, (b) `git pull --rebase` + retry-once on non-ff, (c) post-push verify origin advanced, (d) write a push-failure sentinel + abort-on-failure rather than swallow. Fix A is preferred because it is enforced in code, not in prompt prose the LLM can skip."
+  },
+
+  "backfill_plan": {
+    "current_state": "Mostly clean already. Operator drained the 06-13 backlog (commit f3d8c46, 457 deletes / 387.62 MB). The 06-18 prune run drained the 06-13..06-18 accumulation (commit 380b86b, 345 deletes). Today's 06-19 run has not yet fired (nextRunAt 2026-06-19T08:05:20Z).",
+    "verification_step": "From a fresh clone run `node monitor/scripts/prune-integrity.js` (DRY RUN, no --apply) and read the per-policy eligible counts. If a residual backlog exists (eligible > keep_last_n for any policy), run once with `--apply --commit-and-push` (post-fix) or the operator's manual catchup (pre-fix). Expected near-zero given 380b86b just ran.",
+    "no_policy_changes": "Per directive constraint, retention/eligibility logic in prune-integrity.js is NOT touched. The fix is purely in the commit+push mechanics."
+  },
+
+  "detection_mechanism": {
+    "name": "sentinel-without-commit canary (prune push-gap)",
+    "gap_it_fills": "PROP-099's check-prune-resurrection.js reads the archive JSONL tombstones and flags a tombstoned filename reappearing in HEAD. In the NEVER-LANDED case there is NO tombstone (the archive-append is git-append-only and is NOT FUSE-rescued by workspace-sync, so it never reaches origin either) — so PROP-099 is structurally blind to this incident. This canary covers the complementary case.",
+    "logic": "In a fresh clone (depth >= ~50, or use the Contents API for the sentinel list): for each monitor/integrity/prune-integrity-runs/run-*.json reporting total deleted > 0, require a git commit touching monitor/integrity/ with matching net deletions within +/-90min of the sentinel timestamp (a 'prune-integrity: archive+delete' commit). A sentinel with deleted>0 and NO matching delete-commit == push-gap -> emit findings[] category='prune-push-gap' severity=major, naming the orphaned sentinel(s).",
+    "secondary_cheap_signal": "Compare the latest prune sentinel's reported per-policy `deleted` against the actual day-over-day change in git-HEAD counts for the same filename patterns. If a policy reported deleted=N but the HEAD count did not fall by ~N (net of new writes), flag. This is the N+1-day check the directive requested.",
+    "home": "Add as a tinker Mode-2 pre-flight check (alongside the existing PROP-099 RESURRECT canary) OR as an integrity-agent daily check. Read-only, git-depth-aware. Tinker pre-flight is preferred since tinker already runs the PROP-099 canary in the same block."
+  },
+
+  "complementary_work": [
+    "PROP-081 — script self-writes the run report + installs the required-artifacts pre-push hook. Closed the report-WRITE-skip half. This PROP closes the push-SUCCESS half.",
+    "PROP-094 / PROP-099 — resurrection detection (delete landed then re-added). Disjoint from this PROP (delete never landed). Together the two canaries cover both failure directions.",
+    "PROP-051 Workstream C — the prune-integrity script + retention design; this PROP extends its push reliability without altering its safety gates or policies.",
+    "PROP-091 — dome-mirror delete-propagation (FUSE side). Sibling: once prune deletes land on git reliably, dome-mirror must propagate them to FUSE so workspace-sync's PROP-094 guard sees them."
+  ],
+
+  "constraints_honored": [
+    "Does NOT remove any PROP-051 safety gate — the script-owned push ADDS a delete-sanity HARD_CAP check before its own commit (mirrors workspace-sync's >50-delete / >10%-tree abort), it does not relax anything.",
+    "Does NOT modify prune-integrity.js retention/eligibility logic — operator validated the 387.62 MB reclaim with current policies. Fix is push-mechanics only.",
+    "Kept the Q4 'other side' open and answered it with evidence (43013bb unreachable; PROP-094 guard working) rather than assuming prune is at fault by default.",
+    "Propose-only: no PROP files, scripts, or SKILL.md were modified this run. Operator integrates after review."
+  ],
+
+  "verification_pattern": {
+    "grade": "B",
+    "pattern": "Manual / multi-step (cannot be a single exit-0 shell check because it depends on operator integration of a SKILL.md not in the repo). After integration: (1) In a scratch clone, run `node monitor/scripts/prune-integrity.js --apply --commit-and-push` against a sandbox remote; confirm a single commit carries BOTH the new sentinel AND the deletions, and that post-push verify asserts origin==HEAD. (2) Negative test: point the clone at a remote that has advanced (simulate non-ff); confirm the pull-rebase retry recovers and the push lands, OR on terminal failure a push-failure-<ts>.json is written and exit code is non-zero (NOT a silent success). (3) Run the new sentinel-without-commit canary against the 06-10..06-17 history; confirm it flags the orphaned 06-17 sentinel. (4) After 3 consecutive scheduled prune runs post-fix, confirm one 'prune-integrity: archive+delete' commit per run on origin and HEAD counts for each policy at steady-state (keep_last_n).",
+    "depends_on": "operator integration of Fix A (script change) + Fix C (SKILL.md thinning)"
+  },
+
+  "estimated_loc": "~70 LOC in prune-integrity.js (commit-and-push mode + verify + push-failure sentinel) + ~60 LOC new canary script + ~10 LOC tinker pre-flight wiring + SKILL.md thinning (operator-applied, ~15 lines).",
+  "requires_human_judgment": true,
+  "do_not_auto_close": false,
+  "cross_references": {
+    "directive": "monitor/tinker/operator-directives/DIRECTIVE-20260613-001-prune-integrity-push-gap.json",
+    "operator_rescue_commits": ["f3d8c46 (2026-06-13)", "380b86b (2026-06-18 scheduled run that did land)"],
+    "unreachable_agent_commit": "43013bb (06-17 reported, never on origin)",
+    "rescue_vehicle": "b1f4a5f (workspace-sync, carried 06-17 sentinels FUSE->git)"
+  }
+}
