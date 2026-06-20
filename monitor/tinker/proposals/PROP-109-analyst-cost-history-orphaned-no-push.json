@@ -6,7 +6,7 @@
   "category": "cost-observability",
   "propose_only": true,
   "do_not_implement": true,
-  "status": "pending-operator-review",
+  "status": "implemented",
   "severity": "moderate",
   "recommendation": "Give the analyst's PROP-101 Phase-1 cost self-report an explicit, unconditional push path for monitor/analyst/cost-history.jsonl, OR route the row through the decider. Do NOT route it through workspace-sync FUSE->git (banned by PROP-065 for git-append-only files).",
   "executive_summary": "The analyst (Opus, the single most expensive agent at ~$8-11/run) has written ZERO cost-history rows since 2026-06-18T04:17, despite firing on schedule ~7+ times (scheduler lastRunAt 2026-06-20T04:08). Peer Phase-1 agents curmudgeon (last row 2026-06-20T05:13, 15 rows) and analyst-baby (logs every no-op) are fine. Root cause: analyst.md Step P3 appends the cost row to the CLONE path monitor/analyst/cost-history.jsonl and says it 'rides along on the analyst's normal commit+push' -- but analyst.md line 518 architecturally forbids the analyst from committing/pushing ('Do NOT attempt git clone, git commit, or git push. The decider handles git'). The analyst has 0 pushes in the last 7 days. Because cost-history.jsonl is git-append-only (PROP-065), workspace-sync will NOT rescue it FUSE->git, and P3 writes to the clone (not FUSE) anyway -- so the appended row dies when the analyst's run-local clone is deleted at end of run. The gap is drought-correlated: rows exist for 2026-06-14..06-18 (right after PROP-101 landed), then went silent once the dome entered its day-64 mechanical-AR-only drought with no commit-worthy output.",
@@ -60,5 +60,16 @@
     "curmudgeon.md Step 9 / analyst-baby.md Step 10 (the always-push peers whose rides-along works)"
   ],
   "completion_criteria": "analyst cost-history.jsonl receives a fresh row on a no-op/no-commit analyst run; verification_pattern returns FIXED; analyst.md P3 and line 518 no longer contradict each other.",
-  "operator_disposition": "pending"
+  "operator_disposition": {
+    "decided_at": "2026-06-20T07:30:00.000Z",
+    "decided_by": "operator (cowork session 2026-06-20)",
+    "option_selected": "A (narrowest, preferred per PROP-109 recommended_fix_options)",
+    "shipped": [
+      "monitor/prompts/analyst.md Step P3: added explicit targeted commit+push block guarded by DOME_PAT env + git pull --rebase. Push scoped to monitor/analyst/cost-history.jsonl only.",
+      "monitor/prompts/analyst.md Critical Rule line 518: carved out the cost-history.jsonl exception so the two statements stop contradicting (was 'Do NOT...' blanket, now 'Do NOT... except for the one narrow PROP-109 carve-out at Step P3')."
+    ],
+    "why_option_A_over_B": "B (decider-mediated handoff via FUSE) trades latency against architectural purity. Option A is narrowest — one git-append-only file, one push, scoped exception with the rationale documented inline. Same shape as PROP-065 git-append-only semantics; matches what curmudgeon already does (curmudgeon is the model for an agent pushing its own append-only cost rows).",
+    "not_chosen": "Option C (do nothing) was explicitly rejected per PROP-109's own risk analysis — would silently violate PROP-101's 'every run' invariant on the priciest agent and corrupt cross-agent cost comparison.",
+    "next_analyst_run_will": "Append cost row + push. Next-after-that run's git pull --rebase will fetch the prior row. If push fails (no DOME_PAT, transient 403), the row sits in the run-local clone and is lost — same failure mode as curmudgeon, acceptable per PROP-101 'non-fatal, log to stderr' discipline. Eight-day cost-history gap (2026-06-18 to 2026-06-26) won't be backfilled — the rows are gone."
+  }
 }

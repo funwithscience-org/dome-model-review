@@ -491,13 +491,33 @@ console.log('postlude: wrote latest-analysis-summary.txt');
 
 **Step P2 — Update `monitor/status.json`** with `last_analyst_run: <ISO-TS>` and `last_analyst_mode: <mode-list>`. Use `${WORKSPACE}/monitor/status.json` (FUSE-canonical) to match the rest of the pipeline.
 
-**Step P3 — Self-cost report (PROP-101 Phase 1, added 2026-06-14).** Append one JSON line to `${CLONE}/monitor/analyst/cost-history.jsonl` with this run's actual token usage + USD cost. The helper discovers the live transcript (the only readable `.jsonl` under `/sessions/`), prices it cache-aware via `compute-run-cost.js`, and appends a row. Non-fatal: any failure logs to stderr and exits 0; the run still ships. The clone-side write rides along on the analyst's normal commit+push.
+**Step P3 — Self-cost report (PROP-101 Phase 1, added 2026-06-14; explicit push added per PROP-109 2026-06-20).** Append one JSON line to `${CLONE}/monitor/analyst/cost-history.jsonl` with this run's actual token usage + USD cost. The helper discovers the live transcript (the only readable `.jsonl` under `/sessions/`), prices it cache-aware via `compute-run-cost.js`, and appends a row. Non-fatal: any failure logs to stderr and exits 0; the run still ships.
 
 ```bash
 bash "${CLONE}/monitor/scripts/write-self-cost.sh" append "${CLONE}" analyst
 ```
 
-`monitor/analyst/cost-history.jsonl` is `git-append-only` per PROP-065 — workspace-sync will NEVER push FUSE→git for this file. Always write via the clone path.
+**Then push it.** Analyst is otherwise a non-pushing agent (see Critical Rule below), but PROP-109 (2026-06-20) carved a narrow exception: `cost-history.jsonl` is the only file the analyst may commit and push, and only via the block below. Without this push, the row dies when the run-local clone is deleted (the gap PROP-109 found: zero analyst cost rows after 2026-06-18 despite ~7+ scheduled runs).
+
+```bash
+cd "${CLONE}" || { echo "[P3-push] CLONE not set — skip"; true; }
+if [ -n "${DOME_PAT:-}" ] && [ -d .git ]; then
+  git pull --rebase origin main 2>&1 | tail -3 || { echo "[P3-push] rebase failed — skip push"; true; }
+  # Scope: ONLY cost-history.jsonl. Never anything else from the analyst clone.
+  if [ -n "$(git status --porcelain monitor/analyst/cost-history.jsonl)" ]; then
+    git add monitor/analyst/cost-history.jsonl
+    git -c user.email='analyst@dome-model-review' -c user.name='analyst' \
+      commit -m "analyst: PROP-101 cost-history row (PROP-109 P3 push)" --no-verify 2>&1 | tail -3 || true
+    git push origin main 2>&1 | tail -3 || echo "[P3-push] push failed — row stays in this clone; next run's pull --rebase will pick up upstream"
+  else
+    echo "[P3-push] no new cost-history row to push (write-self-cost.sh probably silent-skipped)"
+  fi
+else
+  echo "[P3-push] DOME_PAT missing or no .git — skip"
+fi
+```
+
+`monitor/analyst/cost-history.jsonl` is `git-append-only` per PROP-065 — workspace-sync will NEVER push FUSE→git for this file. The P3 push is the only mechanism that gets the row into git. The push is narrowly scoped to a single git-append-only file (low-collision per PROP-065 semantics) and guarded by `git pull --rebase` so concurrent writers (none today, but future-proof) integrate cleanly.
 
 ## Progressive Disclosure & TLDRs
 
@@ -515,7 +535,7 @@ All prose sections are wrapped in `<details>`/`<summary>` with 2–3 sentence TL
 - **Lead with the simple structural argument before the technical one.** Is there a plain-English impossibility a non-specialist can follow?
 - **Be intellectually honest.** Genuine improvements get acknowledged.
 - **Apply charitable interpretation.** AI side effects vs deliberate responses.
-- **Do NOT attempt git clone, git commit, or git push.** Write outputs to workspace. The decider handles git.
+- **Do NOT attempt git clone, git commit, or git push** — except for the one narrow PROP-109 carve-out at Step P3 (commit + push `monitor/analyst/cost-history.jsonl` ONLY, via the block in Step P3). Write all other outputs to workspace. The decider handles git for everything else. The P3 push is the only commit+push the analyst is permitted to do; widening this exception requires an operator directive.
 - **Propose exact replacement text** for outdated claims.
 - **Think hard.** You're Opus for a reason.
 - **Flag newsworthy findings.** If an expansion or discovery would make a compelling headline for a non-specialist reader (e.g., major self-contradiction, dramatic cascade, dome site change), add `"newsworthy": "Short punchy headline suggestion"` to your output JSON. The decider collects these for human review — adding items to the site's Breaking News section is a human decision, not an agent one.
