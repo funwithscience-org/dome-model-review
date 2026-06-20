@@ -10,34 +10,29 @@
   "do_not_implement": true,
   "requires_human_judgment": true,
   "why_human_needed": "workspace-sync.md is the file that produced the 2026-05-21 mass-delete disaster (commit ea785c49, -14.9M lines). Any structural edit must honor PROP-051 fail-closed gates A1-A4 + PROP-103 trust gate. Phase 1 ships only after operator smoke-test + 7-day shadow. Investigation here is read-only.",
-  "status": "proposed",
+  "status": "phase-1a-shipped",
   "severity": "moderate",
   "target": "tinker (Phase 0 instrumentation authorship) + operator (Phase 1 integration signoff)",
   "do_not_auto_close": true,
   "do_not_auto_close_reason": "Disaster-sensitive surface; closure requires operator confirmation that Phase 1 (if pursued) passed smoke-test, OR explicit operator decision to ship Phase 0 / cadence-only and stop.",
-
   "summary": "Week-1 PROP-101 data flagged workspace-sync as the #2 weekly-cost agent ($2.18/run x 41 runs/week = ~$13/day) — surprising for a nominal file-mover. Investigation finds the cost is almost entirely structural overhead, NOT work volume. Per-cycle real work is tiny and stable: median ~5 files committed, ~20-35 skip decisions (run reports, 224 samples). The $2.18 decomposes as 49% cache_write (~176K tok), 26% cache_read (~21 turns x ~82K ctx), 25% output (~42K tok). The sibling sync agent dome-mirror does comparable trivial work at $0.74/run / 4.7 turns / 2.9K output — because it is a 216-line single-action prompt that calls ONE helper script. workspace-sync is a 1746-line, ~11-step prompt the LLM walks turn-by-turn, reproducing large inline bash blocks as tool input. The lever, with direct precedent (PROP-074 dome-mirror, PROP-066 sync-workspace-step4c.js), is to extract the FUSE->git pipeline into a single helper script and thin the prompt. Phase 0 instruments + corrects the directive's premise; Phase 1 is the extraction, conditional on disaster-grade smoke-test.",
-
   "the_correction_up_front": {
     "directive_premise": "DIRECTIVE-20260620-001 hypothesized that the 24% output fraction is driven by '65,000 resurrection-skips per cycle', each being 'a tool_result + a follow-up assistant decision turn'.",
     "finding": "REFUTED as a per-cycle figure. The 65K is the CUMULATIVE lifetime size of monitor/integrity/workspace-sync-skips.jsonl (94,910 rows, 33 MB; dominated by ~64,578 older-than-prune-retention + ~20,035 mtime-guard rows accumulated since deployment). Per-CYCLE skip volume today is ~20-35 (run-report skip_breakdown), bounded by the curated smart_copy call-list + FUSE file count (~5,263 monitor files, ~1,187 integrity files after PROP-091 drain), not 64K.",
     "why_it_matters": "The skip decisions run INSIDE bash (the smart_copy loop is a few bash tool calls), not as separate LLM turns. So skip volume drives wall-clock and skip-log size, NOT the 21-turn count. Attacking 'skip volume' would not move the cost. The real drivers are prompt size (cache_write), step count (cache_read), and inline-bash reproduction (output). This reframes the whole fix away from the skip-loop and toward prompt architecture.",
     "secondary_correction": "Per-file git operations in smart_copy (git log for the mtime guard; up to 20 git show calls per differing file for anti-reversion) ARE the wall-clock driver (median 354s/run, max 3758s = 63 min). That is real and worth fixing in the helper-script port, but it is a duration/UX problem, not the dollar driver — duration is not billed; tokens are."
   },
-
   "Q1_per_turn_token_attribution": {
     "design": "Mirror PROP-104 Phase 0's STEP_MARKER pattern. Add a cheap stderr breadcrumb at the head of each major step in workspace-sync.md: STEP_MARKER setup, STEP_MARKER smart_copy_loop, STEP_MARKER docs_regen (Step 3), STEP_MARKER strand_rescue (Step 3.5), STEP_MARKER state_verify (Step 3.6), STEP_MARKER delete_sanity (Step 3.7), STEP_MARKER commit (Step 4/5), STEP_MARKER push (Step 6). ~30 bytes each, zero behavioral impact.",
     "analysis_tool": "Reuse monitor/scripts/compute-decider-step-cost.js shape (it already buckets a transcript's input/cache/output by STEP_MARKER windows). A thin wrapper compute-ws-sync-step-cost.js (or a --agent flag on the existing script) attributes per-step token cost across 3-5 captured runs.",
     "predicted_result_from_structure": "Without running, the structural prediction is that NO single step dominates output — the 42K output is spread across ~21 turns because the LLM reproduces large inline bash blocks (7 fenced bash blocks, several hundred lines each) as tool-call input at each step. cache_read is dominated by turn-count (21 x 82K), and cache_write by the 1746-line prompt being re-cached cold each hourly run. Phase 0 confirms or refutes; if confirmed, the fix is the Phase 1 extraction, not a per-step micro-optimization.",
     "cost": "Trivial and reversible. Shippable independently of Phase 1."
   },
-
   "Q2_resurrection_skip_attribution": {
     "result": "See the_correction_up_front. Per-cycle skip categories (from skip_breakdown across recent run reports): mtime_guard ~16-23, git_append_only ~9-18, anti_reversion 0-2, never_push 0-1, recent_commit_guard 0. Lifetime skip-log totals (cumulative, for context): older-than-prune-retention ~64,578; mtime-guard ~20,035; git-append-only FUSE-matches-git ~3,240; PROP-094 git-deleted-authoritative ~6,806; anti-reversion (per historic commit) ~70.",
     "conclusion": "Skips are NOT the dominant LLM cost. They are bash-internal. The directive's 'move the bulk decision out of the LLM' instinct is correct in DIRECTION but the bulk decision is ALREADY out of the LLM (it is in the bash smart_copy function). What is still in the LLM is the orchestration of ~11 steps and the reproduction of their bash bodies.",
     "lever_identified_instead": "The smart_copy loop's per-file git log / git show calls (the wall-clock driver) should move into the Phase 1 helper script where a single git operation (e.g. one git diff against a precomputed index, or a batched git cat-file) replaces N per-file invocations. This is a duration win bundled into the Phase 1 extraction, not a separate cost win."
   },
-
   "Q3_compare_to_dome_mirror": {
     "dome_mirror": "77 cost rows, avg 4.7 turns/run, $0.736/run. Composition: cache_write 84% ($0.62), cache_read 11% ($0.08), output 6% ($0.04). ~106K cache_write tok, ~2.9K output tok, 37s median duration. Prompt is 216 lines and its single action is `node monitor/scripts/sync-workspace-step4c.js`.",
     "workspace_sync": "54 cost rows, median 21 turns/run, $2.189/run. Composition: cache_write 49% ($1.09), cache_read 26% ($0.54), output 25% ($0.55). ~176K cache_write tok, ~42K output tok, 354s median duration. Prompt is 1746 lines with ~11 steps and 7 large inline bash blocks.",
@@ -50,7 +45,6 @@
     "answer_to_why_4x": "Neither agent does meaningfully more REAL work (both propagate a handful of files/cycle). dome-mirror is cheaper purely because it is single-action. workspace-sync is expensive purely because it is a long multi-step prompt the LLM walks manually. dome-mirror is the existence proof that the workspace-sync surface can be collapsed — PROP-074 already did exactly this for the git->FUSE half after 6 failed attempts to keep it LLM-orchestrated.",
     "not_in_scope_note": "No dome-mirror inefficiency was surfaced; its 84% cache_write is the irreducible cold-cache floor for any hourly agent (see Q5). No separate dome-mirror directive needed."
   },
-
   "Q4_helper_script_extraction_candidates": {
     "precedent": "sync-workspace-step4c.js (PROP-066) and dome-mirror (PROP-074) prove the pattern: when a load-bearing bash block becomes a committed script invoked in one line, the LLM stops skipping it AND stops paying to reproduce it.",
     "candidates": [
@@ -78,14 +72,12 @@
     ],
     "recommended_sequence": "Ship Phase 0 (instrumentation + this premise correction) now. If operator wants the full win, pursue (A) under disaster-grade smoke-test. If operator prefers de-risking, do (C) then (B) then (A) incrementally. (C) is safe to ship alongside Phase 0."
   },
-
   "Q5_output_volume_composition": {
     "measured": "Median output 42,101 tok/run (min 564, max 85,133). dome-mirror median ~2.9K.",
     "hypothesis": "Dominated by the LLM reproducing the prompt's large inline bash blocks as tool-call input across ~21 steps, plus the run-report JSON write and per-step narration. NOT by per-skip log rows (those are bash echo > file, server-side; they land in tool_result/cache on the NEXT turn as input, not as model output).",
     "confirm_in_phase_0": "compute-ws-sync-step-cost.js attributes output per STEP_MARKER window. If the bash-heavy steps (smart_copy_loop, state_verify) dominate output, the (A)/(B) extraction directly removes it. If output is instead concentrated in report-writing, candidate (C) captures it.",
     "do_not_batch_skip_log_warning": "The directive floated 'batch skip-log writes (summary row vs per-skip row)'. Phase 0 shows skip-log writes are bash-side and do NOT drive model output, so batching them yields ~0 cost benefit and would reduce forensic resolution of the resurrection-guard canaries (PROP-065/094/099/103). Recommend AGAINST."
   },
-
   "Q6_cadence_reduction": {
     "current": "Hourly during active window (UTC 21-23 + 0-11 = 15 runs/day after PEAK-SHIFT 2026-06-08; was 24).",
     "proposal": "Every 2h during active window -> ~7-8 runs/day. Halves run count -> ~$6.5/day saved (~$2.3K/yr), independent of and additive-to any script extraction. Cheapest possible lever; fully reversible (cron-only change).",
@@ -93,7 +85,6 @@
     "trade_off_honored": "Per directive constraint, do NOT recommend this without the Q8 rescue baseline. Q8 (below) shows rescues fire in ~5% of cycles and high-value 403-rescues rarer still, so 2h is acceptable. RECOMMENDED as the immediate, low-risk win while Phase 0/1 are evaluated.",
     "caveat": "If operator later raises decider push-failure frequency (e.g. chronic Devilwench 403 returns), revisit — at high 403 rates the 1h cadence earns its keep."
   },
-
   "Q7_prop051_sensitivity": {
     "acknowledgment": "workspace-sync.md is the 2026-05-21 mass-delete file (commit ea785c49 wiped 4,733 of 4,755 tree entries; recovery to 1488170d). Gates A1-A4 (degraded-mode prohibition, pre-clone disk-pressure, post-clone working-tree-size, pre-push delete-sanity) + PROP-103 trust gate + clone-hygiene Workstream B exist specifically because of it.",
     "constraints_on_phase_1": [
@@ -105,7 +96,6 @@
     ],
     "investigation_is_read_only": "Nothing in this PROP edits workspace-sync.md. Phase 0 instrumentation (STEP_MARKER) is additive no-op stderr only and is itself optional/operator-gated."
   },
-
   "Q8_rescue_event_baseline": {
     "method": "Scanned 224 monitor/integrity/workspace-sync-runs/*.json run reports.",
     "findings": {
@@ -116,14 +106,12 @@
     "interpretation": "The rescue guarantee is high-value insurance that fires rarely. The cost-per-actual-rescue is therefore very high under hourly cadence. This SUPPORTS Q6 (2h cadence) and SUPPORTS Phase 1 (a deterministic script provides the same insurance more cheaply). It does NOT support removing the capability.",
     "phase_0_add": "Instrument an explicit rescue-event counter in the run report (count of universal-pusher FUSE-newer pushes for NEVER_PUSH-adjacent runtime data files + strand rescues) so the baseline is exact rather than text-grep-estimated before any cadence change ships."
   },
-
   "phased_rollout": {
     "phase_0": "MEASUREMENT + PREMISE CORRECTION (low risk, shippable now). (a) Add STEP_MARKER stderr breadcrumbs to workspace-sync.md major steps (additive no-op). (b) Add compute-ws-sync-step-cost.js (or --agent flag on compute-decider-step-cost.js). (c) Add the rescue-event counter to the run report (Q8). (d) Capture 3-5 runs, confirm per-step attribution. (e) This PROP already records the premise correction (skip volume is cumulative, not per-cycle). Optionally ship helper-script candidate (C) (report writer) here — lowest risk.",
     "phase_1a_cadence": "Cron-only: hourly -> 2h during active window. Independent, reversible, ~$6.5/day. Gated only on Q8 rescue baseline (satisfied). Operator can ship this without touching the disaster file.",
     "phase_1b_extraction": "Extract FUSE->git pipeline into sync-fuse-to-git.js (candidate A, optionally via B as an intermediate). Thin workspace-sync.md to ~250-350 lines. Ship in shadow >=7 days with disaster-grade smoke-test per Q7. Projected steady-state: approach dome-mirror's profile (~$0.74-1.10/run, ~5-7 turns), saving ~$1.1-1.4/run on top of the cadence halving.",
     "combined_projected_savings": "Cadence halving alone: ~$6.5/day. Cadence + extraction: from ~$13/day toward ~$4-6/day, i.e. ~$2.5-3.3K/yr. Extraction is the larger structural win; cadence is the cheaper immediate one."
   },
-
   "the_other_side_arguments": [
     "AGAINST Phase 1b: 'Touching the disaster file is not worth $1.4/run.' Real risk. Mitigation: cadence (1a) captures half the savings with zero disaster exposure; 1b is optional and only if operator has appetite. The PROP explicitly de-risks 1b behind 7-day shadow + smoke-test, and offers the B/C incremental path.",
     "AGAINST: 'The 1746-line prompt is institutional memory — every comment encodes a past incident (EXIT-trap removal, FND-02, ea785c49). Slimming loses that.' Counter: the incident NARRATIVE belongs in a reference doc (monitor/prompts/reference/) and the gate LOGIC belongs in the script as named, tested functions. Neither needs to sit in the LLM's per-turn context to keep working. dome-mirror lost no safety by being 216 lines.",
@@ -131,7 +119,6 @@
     "AGAINST the whole framing: 'cache_write is 49% and is irreducible cold-cache cost — you can't beat the hourly-vs-1h-TTL mismatch.' Partly true: ~84% cache_write is dome-mirror's floor too. BUT cache_write tokens scale with PROMPT SIZE; cutting 1746->300 lines cuts ~17K of the ~176K cache_write (~10%), and cadence halving cuts the NUMBER of cold-cache events in half. The cache_write floor argues for cadence reduction (fewer cold writes) even MORE than for extraction.",
     "AGAINST acting at all: 'workspace-sync ranks below curmudgeon/analyst/decider in $/run; fix those first.' Counter: this is a directive-commissioned investigation; the finding (cost is structural overhead on a near-zero-judgment agent) is unusually clean and the cadence fix is nearly free. The per-run rank is low but the surprise-to-effort ratio is high."
   ],
-
   "constraints_honored": [
     "PROP-051 disaster-sensitivity: propose-only, do_not_implement, requires_human_judgment all true; Phase 1b gated behind shadow + smoke-test; no edit to workspace-sync.md in this PROP.",
     "Did NOT propose removing the prune-resurrection guards (PROP-094/099/103) — confirmed the 64K skip volume is real protective work; the lever is orchestration, not the guard.",
@@ -139,19 +126,16 @@
     "Q6 cadence trade-off stated explicitly and gated on the Q8 rescue baseline.",
     "Kept the PROP-104 STEP_MARKER instrumentation pattern as the Phase 0 mechanism (cheap, reversible)."
   ],
-
   "not_in_scope": [
     "dome-mirror cost analysis (sibling agent; its profile is the cheap-floor reference, no inefficiency found).",
     "Switching workspace-sync's model (operator decides separately).",
     "Removing the FUSE->git rescue guarantee (load-bearing)."
   ],
-
   "verification_pattern": {
     "grade": "C",
     "note": "Propose-only PROP with do_not_implement + requires_human_judgment. No mechanical FIXED/STILL_BROKEN check applies until the operator chooses a phase to ship. Auto-close is disabled (do_not_auto_close). Closure is operator-driven.",
     "pattern": "echo 'PROP-110 is propose-only / requires_human_judgment; no auto-verification. Operator selects Phase 0 / 1a / 1b.' && exit 1"
   },
-
   "cross_references": {
     "directive": "DIRECTIVE-20260620-001-workspace-sync-cost-audit",
     "lineage": [
@@ -164,5 +148,23 @@
       "PROP-101 (per-agent cost-history instrumentation) — the data source that surfaced this."
     ],
     "data_basis": "monitor/workspace-sync/cost-history.jsonl (54 rows), monitor/dome-mirror/cost-history.jsonl (77 rows), 224 monitor/integrity/workspace-sync-runs/*.json reports, monitor/integrity/workspace-sync-skips.jsonl (94,910 rows / 33 MB)."
+  },
+  "operator_deployment": {
+    "phase_1a_cadence_shipped_at": "2026-06-20T08:25:00.000Z",
+    "phase_1a_cadence_shipped_by": "operator (cowork session 2026-06-20)",
+    "phase_1a_change": {
+      "before_cron": "0 0-12,22-23 * * *",
+      "after_cron": "0 0,2,4,6,8,10,12,22 * * *",
+      "before_runs_per_day": 15,
+      "after_runs_per_day": 8,
+      "projected_savings_per_day_usd": 6.5,
+      "projected_savings_per_year_usd": 2370,
+      "rescue_latency_before": "1h",
+      "rescue_latency_after": "2h",
+      "gate_satisfied": "Q8 baseline: ~5% of 224 cycles fire rescue events; standing 21 push-failure sentinels + 7 stranded-patches lifetime",
+      "what_changed": "cron only (cadence) — workspace-sync.md prompt NOT touched (PROP-051 disaster-sensitive)",
+      "reverts_to": "0 0-12,22-23 * * *"
+    },
+    "phase_1b_status": "pending — independent of Phase 1a, will ship after PROP-111 1A/1B/1D + Phase 0 STEP_MARKER measurement informs the extraction scope"
   }
 }
