@@ -1,0 +1,168 @@
+{
+  "id": "PROP-111",
+  "title": "Integrity cost engineering — precompute-extract + prompt-slim the mechanical checks; defer Haiku split. (DIRECTIVE-20260620-002)",
+  "authored_by": "tinker",
+  "authored_at": "2026-06-20T07:02:41.485Z",
+  "authored_by_run": "tinker-2026-06-20T07-02",
+  "directive_id": "DIRECTIVE-20260620-002",
+  "category": "cost-engineering",
+  "propose_only": true,
+  "do_not_implement": true,
+  "requires_human_judgment": true,
+  "why_human_needed": "Phase-1 path selection (precompute vs prompt-slim vs Haiku split) is an operator call; Haiku-eligibility claims require a smoke-test the operator should sanction; coverage-preservation on a structure-integrity agent is correctness-sensitive.",
+  "status": "proposed",
+  "severity": "moderate",
+  "target": "monitor/prompts/structure-integrity.md + new monitor/scripts/compute-integrity-mechanical.js (Phase 1)",
+  "do_not_auto_close": true,
+  "do_not_auto_close_reason": "propose-only / requires_human_judgment; closure is operator-driven after a phase is chosen and shipped.",
+  "summary": "Integrity costs a stable ~$4.24/run ($21/wk, ~$1.1K/yr). The cost is genuine and worth engineering. The cost is dominated by cache_read (55%, the ~855-line prompt + reference prefix re-read across ~70 turns) and cache_write_1h (29%, the big prompt cached cold each daily run), NOT by file-walking per se — large-file scans run inside bash node -e blocks that print SHORT summaries, so most bytes never enter LLM context (same mechanism PROP-104 found for decider). The highest-ROI, lowest-risk levers are therefore (A) precompute-extract the mechanical checks (1/1b/4/5/6) into one deterministic compute-integrity-mechanical.js the LLM consumes as a single small JSON — mirrors PROP-020/021 — which cuts turns + output + tool_result accumulation; and (B) prompt-slim by moving rare-path forensic prose (the 7h PROP-078 prologue, 7e digest mechanics, schema-correction notes) to a reference file. A Haiku model-split is real but only ~3x cheaper (NOT 10x — see correction) and carries coverage/handoff risk, so it is deferred to Phase 2 conditional on (A)+(B) being insufficient and on smoke-test evidence.",
+  "the_correction_up_front": {
+    "wall_clock_premise_is_a_skewed_mean_artifact": "The directive's headline '3931s = ~65 min per run' is a MEAN dominated by a single outlier. Per monitor/integrity/cost-history.jsonl (6 runs, 2026-06-15..06-20): transcript_duration_sec = [447, 563, 576, 585, 605, 17462]. Five of six runs are 447-605s (~7.5-10 min). The sixth (2026-06-19, 17462s = 4.85 h) drags the mean to 3373s. MEDIAN is 580s (9.7 min); mean-excluding-outlier is 555s (9.3 min). The typical integrity run is ~9 minutes, not 65. So 'it takes 65 minutes for a structure check' is NOT the real situation; the 06-19 run is a stall to investigate separately, not evidence of systemic 65-min runtime.",
+    "cost_premise_IS_correct": "The COST concern is real and stable: total_usd = $3.64-$4.74 across ALL six runs including the slow one (mean $4.242, matching the directive). Cost is decoupled from wall-clock — the 4.85h run cost $4.74, only ~12% above the median run. So cost engineering is justified on its own terms; wall-clock is a separate, smaller, outlier-driven concern.",
+    "composition_confirms_directive": "Cost split (mean of 6): cache_read 55.1% ($2.34), cache_write_1h 29.2% ($1.24), output 15.7% ($0.67), input ~0%. This matches the directive's '29% write, 56% read, 15% out' table line. The driver is the ~70-turn conversation prefix re-read (cache_read) on top of a large cold-cached prompt (cache_write), exactly the PROP-104 the_correction pattern.",
+    "haiku_savings_overstated_in_directive": "The directive's Q3 says 'Haiku at 0.1x the read cost = ~10x savings.' That conflates Haiku's ABSOLUTE cache_read rate ($0.10/MTok) with the MULTIPLE vs Sonnet. Per the compute-run-cost.js PRICING table: Sonnet-4-6 cache_read $0.30, Haiku-4-5 cache_read $0.10 -> 3x cheaper, not 10x. Haiku is uniformly ~3x cheaper across in/out/cache_read/cache_write_1h. A clean Haiku swap (same token volume, IF quality holds) would be ~$1.4/run vs $4.24 = ~3x / 67% — better than the directive's 40% split estimate, but only if Haiku does the semantic checks without quality loss, which is unproven.",
+    "file_size_nit": "Directive says integrity 'walks docs/index.html (4.5MB HTML)'. Actual size on git HEAD is 1.75MB (docs/index.html), sections.json 759KB, wins.json 588KB. Minor, but the precompute-savings estimate should use real sizes."
+  },
+  "Q1_per_check_token_wallclock_attribution": {
+    "status": "PARTIAL — aggregate measured, per-check attribution requires Phase 0 instrumentation",
+    "what_is_measured_now": "Aggregate per-run from cost-history.jsonl (N=6): mean $4.242/run, ~70 assistant turns, cache_read 55% / cache_write 29% / output 16%, median 9.7 min wall-clock.",
+    "what_is_NOT_measured_yet": "Per-check token + wall-clock breakdown. cost-history.jsonl is whole-run only. We cannot yet say which of Checks 1-9 dominates.",
+    "phase_0_instrumentation": "Mirror PROP-104's STEP_MARKER pattern: emit a no-op stderr breadcrumb `STEP_MARKER <check-id> <epoch>` at the start of each check's bash block in structure-integrity.md (Checks 1,1b,2,3,4,5,5b,5c,5d,6,7,7a.5,7a.6,7b-7i,8,9). Then ship a compute-integrity-step-cost.js (clone of compute-decider-step-cost.js) that buckets the live transcript's tokens by check window. Capture 3-5 runs. ~30 bytes/marker, zero behavioral impact. EXIT criterion: >=3 instrumented runs before any Phase-1 model/split decision.",
+    "predicted_ranking_to_be_tested": "From the prompt structure, the likely top token-consumers are Check 5 (per-WIN detail loop over ~70 WINs), Check 4 (data-prose rebuild), Check 1/1b (full-HTML anchor + href walks), and Check 5b (dome-site fetch). Likely top WALL-CLOCK consumer is Check 3 (External Link Validation, ~30 HTTP calls x up to 15s timeout) and Check 5b (network fetch of the dome wins page). The two rankings differ: token cost tracks turns+prefix; wall-clock tracks network I/O. The 06-19 outlier is almost certainly a Check-3/Check-5b network stall."
+  },
+  "Q2_mechanical_vs_semantic_classification": {
+    "legend": "MECHANICAL = file-exists/count-matches/anchor-resolves/hash-matches/HTTP-status — scriptable or Haiku-able. SEMANTIC = cross-reference judgment — Sonnet. MIXED = mechanical scan + semantic interpretation — splittable.",
+    "checks": {
+      "1_internal_anchor_integrity": "MECHANICAL — id/href resolution, sectionNav chain continuity, TOC targets. Pure graph check.",
+      "1b_relative_href_resolution": "MECHANICAL — already a self-contained node script inline in the prompt; trivially extractable.",
+      "2_tab_structure": "MECHANICAL — unique IDs, nav references, non-empty tabs, heading hierarchy.",
+      "3_external_link_validation": "MECHANICAL — HTTP status classification (broken/redirect/timeout/ok). Network-bound but no judgment.",
+      "4_data_prose_consistency": "MECHANICAL — recompute counts from wins.json, compare to HTML. Deterministic.",
+      "5_win_detail_consistency": "MECHANICAL — per-WIN anchor existence, row existence, verdict-color match, group consistency, asterisk marker. Deterministic loop.",
+      "5b_win_number_alignment_with_dome": "MIXED — fetch+parse is mechanical; 'title/claim drift' and 'cross-reference alias' judgments are SEMANTIC (does the dome's new title still match our claim?).",
+      "5c_progressive_disclosure": "MOSTLY MECHANICAL — presence of <details>/<summary>/ps-tldr/ks-tldr and non-empty TLDR text. The 'is this TLDR meaningful' nuance is light-semantic but the spec is structural.",
+      "5d_hardcoded_theme_colors": "MECHANICAL — regex scan of sections.json inline styles (script already in prompt).",
+      "6_discoverability": "MECHANICAL — file existence, XML/JSON validity, meta-tag presence, count cross-checks.",
+      "7_expansion_tracker_continuity": "MECHANICAL — ID continuity/gaps/next_id/disjointness over live+archive (script already in prompt).",
+      "7a5_iss_id_collision": "MECHANICAL — ID uniqueness across open+closed.",
+      "7a6_fuse_vs_git_staleness": "MECHANICAL — hash comparison FUSE vs git.",
+      "7b_workspace_only_files": "MECHANICAL — file existence.",
+      "7c_section_new_priority_queue_coupling": "MIXED — mechanical coupling scan + light interpretation.",
+      "7d_workspace_sync_skip_log": "MECHANICAL — log parse + classification.",
+      "7e_curmudgeon_digest_coverage": "MIXED — coverage counting is mechanical; 'is this a real gap' is light-semantic.",
+      "7f_broken_review_files": "MECHANICAL — JSON parse success/failure.",
+      "7g_drift_audit": "MECHANICAL — already fully a script (compute-drift-audit.js); integrity just gates+reports.",
+      "7i_curmudgeon_dispatcher_state": "MECHANICAL — already fully a script (compute-curmudgeon-dispatcher-state.js); integrity just gates+reports.",
+      "7h_mech_a_bypass_false_closure": "MIXED — the scan is mechanical (field-match over closed-issues.json); the 're-verify target file against closure_reason' on a flagged CRITICAL is SEMANTIC.",
+      "8_project_docs": "MIXED — schedule-table/file-map/path checks mechanical; 'hardcoded count that should be a query' detection is light-semantic.",
+      "9_build_reproducibility": "MECHANICAL — node build.js html + diff vs docs/index.html."
+    },
+    "tally": "~17 MECHANICAL, ~5 MIXED, ~0 purely-SEMANTIC. The integrity charter is overwhelmingly mechanical — which is exactly why precompute-extraction (A) is the natural fit and why a full Sonnet pass over all of it is the waste."
+  },
+  "Q3_haiku_eligibility": {
+    "status": "DEFERRED to Phase 0 smoke-test — no Haiku-as-integrity comparison run yet; per the directive's constraint, Haiku-eligibility claims must be smoke-test-backed, not asserted.",
+    "reasoning": "Given Q2, ~17/22 checks are MECHANICAL and would plausibly produce identical findings on Haiku (they ARE mechanical — Haiku makes fewer judgment errors on mechanical work because there is no judgment). The 5 MIXED checks (5b, 7c, 7e, 7h, 8) contain the semantic residue that wants Sonnet.",
+    "smoke_test_design": "Re-run Haiku-as-integrity against 2-3 historical days where the Sonnet integrity report had findings (e.g. 2026-06-19 PRED-073 build-drift CRITICAL; the 2026-06-18 relative-href 404). Compare finding-for-finding. If Haiku catches the same mechanical findings, that is the evidence. Cost note: Haiku is ~3x cheaper per token (not 10x — see correction), so the swap saves ~67% on whatever volume moves to Haiku.",
+    "caveat": "Even if Haiku passes the smoke-test, the split's value depends on whether (A) precompute-extraction already collapsed the token volume — if (A) drops the LLM portion to a thin report-writer, a model swap saves little in absolute dollars. Sequence (A)+(B) FIRST, then re-measure before committing to a split."
+  },
+  "Q4_precompute_extraction_candidates": {
+    "pattern": "PROP-020 (drift-audit) and PROP-021 (curmudgeon-dispatcher-state) both already do this for integrity-adjacent work: a deterministic Node script writes a small JSON, the LLM consumes a summary in one read. Extend to integrity's own mechanical checks.",
+    "proposed_artifact": "monitor/scripts/compute-integrity-mechanical.js -> monitor/integrity/integrity-mechanical-<RUN_ID>.json. One script runs Checks 1,1b,2,4,5,5c,5d,6,7,7a.5,7f and emits a structured {check, status, findings[]} blob. The LLM reads ONE JSON instead of writing ~11 inline bash node -e blocks across ~11+ turns.",
+    "candidates_with_estimate": [
+      {
+        "check": "1 + 1b anchor/href resolution",
+        "savings": "Removes a multi-turn HTML walk; LLM reads a {broken:[...]} list. Est. 3-5 turns -> 1 read."
+      },
+      {
+        "check": "4 data-prose counts",
+        "savings": "Removes the recompute+compare logic from context; LLM reads {expected,actual,mismatches}. ~2 turns -> 0 (folded into the one read)."
+      },
+      {
+        "check": "5 WIN detail loop (~70 WINs)",
+        "savings": "Biggest single win — the per-WIN loop is the likely #1 token-consumer (Q1). Script emits {win_id, anchor_ok, row_ok, color_ok, group_ok}[]. ~5-8 turns -> 1 read."
+      },
+      {
+        "check": "6 discoverability + 5d colors + 7/7a.5/7f tracker/collision/parse",
+        "savings": "All already scripted inline; consolidate into the same artifact. ~4-6 turns -> folded in."
+      }
+    ],
+    "net_effect": "Turn count is the cache_read multiplier. Collapsing ~11 mechanical bash-block turns into 1 artifact-read could cut assistant_msgs from ~70 toward ~30-40, with cache_read scaling roughly with turns. Conservative estimate: 25-40% total-cost reduction from precompute alone, model-independent. This is the single highest-ROI/lowest-risk lever and needs NO model change.",
+    "risk": "LOW — deterministic script, LLM only reports. Same risk profile as the already-shipped PROP-020/021 scripts. Phase 0 ships it in SHADOW (script runs, integrity still does its own checks) so we can diff script-findings vs LLM-findings before cutting over."
+  },
+  "Q5_two_agent_split_analysis": {
+    "design": "Mirror PROP-038 (curmudgeon discovery+verify). integrity-mechanical (Haiku/script, computes the Q4 artifact + flags every-issue-no-judgment) -> integrity-semantic (Sonnet, reads artifact summaries + applies judgment on the 5 MIXED checks + writes the final single report).",
+    "cost_math": "Directive's estimate ~$0.50 Haiku + ~$2 Sonnet = $2.50/run vs $4.24 = ~40%. BUT: corrected — most of integrity is mechanical, so if the Haiku/script pass does the bulk and Sonnet only adjudicates 5 MIXED checks + writes the report, the Sonnet portion could be much smaller than $2. Plausible $0.5 + $1 = $1.5/run (~65%). The uncertainty is large; Phase 0 per-check attribution (Q1) is required to bound it.",
+    "risk": "MEDIUM — adds a handoff + a second scheduled task. Q8 single-voice contract must be preserved. PROP-038 proved the pattern works, but integrity is correctness-sensitive (it is the pipeline's own smoke-detector).",
+    "recommendation": "DEFER. Do (A) precompute + (B) prompt-slim first. A split only pays if, after (A)+(B), the residual Sonnet cost is still high AND the smoke-test (Q3) clears Haiku. Re-evaluate with Phase-0 data."
+  },
+  "Q6_external_link_cadence": {
+    "finding": "Check 3 makes ~30 HTTP calls/run to data-source domains (NOAA/NASA/ESA/USGS/INTERMAGNET/GitHub/tools). At up to 15s timeout each, this is the most plausible wall-clock contributor and the likely cause of the 2026-06-19 4.85h stall (a hung/retrying fetch). Token cost of Check 3 is small; its cost is wall-clock.",
+    "proposal": "Move Check 3 to a 7-DAY cadence (gate on monitor/integrity/external-link-status.json generated_at > 168h), OR trigger only when a data-source URL in sections.json changes (hash the extracted URL set). Data-source pages do not vanish randomly — ESA's 2026-06-19 permanent-redirect is a once-in-many-months event; weekly latency is acceptable. Add a hard per-fetch timeout + total Check-3 budget (e.g. 90s wall) with a fail-soft 'skipped, stale' note so a single hung host can never produce a 4.85h run again.",
+    "risk": "LOW — cron/gate only, no coverage loss (links still checked, just weekly). Independently removes the wall-clock outlier risk. RECOMMENDED as an immediate, standalone win even if (A)/(B) wait."
+  },
+  "Q7_compare_to_curmudgeon_verify": {
+    "data": "curmudgeon-verify (sibling Sonnet mechanical-verify) cost-history: bimodal — no-op runs ~$0.90-1.03 at 54-92s (8-12 turns); active runs ~$2.5-3.9 at 207-526s (34-65 turns). Integrity is $4.24 at ~70 turns flat (no no-op mode — it always does the full 22-check sweep daily).",
+    "insight": "The 8x wall-clock multiplier vs verify's no-op runs is mostly that integrity has no early-exit: it runs all ~22 checks every day whether or not anything changed. verify short-circuits when there is nothing to verify. Integrity could adopt a similar gate for the network-bound + drift checks (Check 3 weekly per Q6; 7g/7i already gated at 72h/6h). The fixed per-check overhead (turn = re-read prefix) is the structural floor that precompute (A) + prompt-slim (B) attack.",
+    "takeaway": "Integrity's cost is ~structural, not anomalous — it just has not had the gating + precompute treatment verify-class agents got. There is real, safe headroom."
+  },
+  "Q8_single_voice_preservation": {
+    "contract": "Downstream consumers (decider Priority 2b, tinker Mode 1) read ONE report-*.json + ONE latest-integrity-summary.txt at fixed paths. Any change must keep these exact outputs at the same paths.",
+    "preserved_by_design": "(A) precompute is invisible to consumers — integrity still writes the same single report, it just builds it from an artifact instead of inline scans. (B) prompt-slim is invisible. (C) cadence change is invisible (report still lists Check 3 status: 'fresh'/'stale-skipped'). Only (D) the two-agent split changes the topology: integrity-mechanical would feed integrity-semantic which writes the final report — externally identical.",
+    "split_edge_case": "If integrity-semantic crashes before writing the final report, mechanical findings are lost UNLESS the script also persists them. Mitigation: compute-integrity-mechanical.js must write its JSON to disk (monitor/integrity/integrity-mechanical-*.json) BEFORE the semantic pass, so a semantic crash leaves a recoverable mechanical artifact + an integrity report can be reconstructed. This is another reason to ship (A) the artifact first — it makes a future split safe by construction."
+  },
+  "phased_rollout": {
+    "phase_0_measurement_and_shadow": [
+      "Add STEP_MARKER breadcrumbs to each check in structure-integrity.md (no-op stderr, zero behavior change).",
+      "Ship compute-integrity-step-cost.js (clone of compute-decider-step-cost.js) for per-check attribution. Capture >=3 runs.",
+      "Ship compute-integrity-mechanical.js in SHADOW (runs, writes artifact, integrity still does its own checks). Diff script-findings vs LLM-findings for >=3 runs.",
+      "Run the Q3 Haiku smoke-test against 2-3 historical finding-bearing days; record finding-for-finding agreement.",
+      "Investigate the 2026-06-19 17462s outlier transcript (confirm Check 3 / Check 5b network stall hypothesis)."
+    ],
+    "phase_1_pick_ONE_or_mix_on_evidence": [
+      "1A PRECOMPUTE (recommended first): cut integrity over to consuming the mechanical artifact; remove the inline bash blocks for Checks 1/1b/4/5/5c/5d/6/7/7a.5/7f. Est. 25-40% cost cut, model-independent, LOW risk.",
+      "1B PROMPT-SLIM: move rare-path forensic prose (7h PROP-078 prologue, 7e digest mechanics, schema-correction history) to monitor/prompts/reference/integrity-deep-notes.md, conditionally referenced. Cuts cache_write+cache_read floor, LOW risk.",
+      "1C EXTERNAL-LINK CADENCE (independent immediate win): Check 3 weekly + per-fetch/total timeout budget. Removes wall-clock outlier risk, LOW risk.",
+      "1D HAIKU SPLIT (only if 1A+1B insufficient AND smoke-test clears): mirror PROP-038. MEDIUM risk; preserve single-voice per Q8."
+    ],
+    "recommended_sequence": "1C now (cheap, fixes the outlier) -> 1A -> 1B -> re-measure -> decide on 1D. Do NOT lead with the Haiku split."
+  },
+  "the_other_side_arguments": [
+    "AGAINST optimizing at all: $21/wk is a small line item and integrity is the pipeline's smoke-detector — correctness >> cost. Counter: 1A/1B/1C are coverage-preserving and LOW risk; they also remove the 4.85h-stall failure mode (operator-latency + a hung run blocking the 02-slot). The ROI is modest but the risk is near-zero, so it clears the bar.",
+    "AGAINST the precompute: it duplicates check logic into a script that can drift from the prompt's intent. Counter: that is exactly what PROP-020/021 already accepted and it has held; shadow-diff for >=3 runs before cutover catches drift.",
+    "AGAINST trusting the '9-minute median': N=6 is small and the 06-19 stall could recur. Counter: agreed — which is why 1C (timeout budget) is recommended regardless; it bounds the worst case rather than assuming it away.",
+    "FOR the directive's instinct even though its 65-min framing is a skewed mean: the COST is real and stable, and integrity genuinely never got the gating/precompute treatment its siblings did. The directive points at a real inefficiency; only its wall-clock magnitude is mis-stated."
+  ],
+  "confidence_and_next_measurement": {
+    "what_N6_supports": "Cost magnitude ($4.24/run +/- ~$0.4), composition (cache_read 55% / write 29% / out 16%), and that wall-clock is bimodal (9-min normal vs one 4.85h stall). These are solid at N=6.",
+    "what_needs_more_data": "Per-check token/wall-clock attribution (need STEP_MARKER, >=3 runs). Haiku finding-parity (need smoke-test). Exact precompute savings (need shadow-diff turn-count delta). State per-check claims as hypotheses until Phase 0 lands.",
+    "bounded_claim": "Precompute (1A) cost reduction is estimated 25-40% with wide error bars at N=6/no-attribution; tighter bounds need the Phase 0 per-check data."
+  },
+  "constraints_honored": [
+    "ALL 22 checks preserved — every lever is script-extraction, gating, prompt-relocation, or model-routing. Zero checks removed.",
+    "Single-voice contract preserved (Q8) — same report-*.json + latest-integrity-summary.txt at same paths.",
+    "Daily 02:00Z cadence unchanged for the agent; only Check 3's INTERNAL scan cadence proposed weekly (decider's 02-slot still gets a daily report).",
+    "Haiku-eligibility left as a smoke-test (Q3), not asserted.",
+    "Propose-only. No behavioral edits to structure-integrity.md in this run."
+  ],
+  "not_in_scope": [
+    "Removing any integrity check.",
+    "Changing the agent's daily cadence.",
+    "Integrity prompt rewrite for narrative style.",
+    "Cross-agent precompute-lib sharing (separate question if duplication emerges).",
+    "Implementing any phase — operator selects after Phase 0 evidence."
+  ],
+  "verification_pattern": {
+    "grade": "C",
+    "note": "Propose-only PROP with do_not_implement + requires_human_judgment. No mechanical FIXED/STILL_BROKEN check applies until the operator picks a phase. Auto-close disabled.",
+    "pattern": "echo 'PROP-111 is propose-only / requires_human_judgment; operator selects Phase 0 then 1A/1B/1C/1D.' && exit 1"
+  },
+  "cross_references": [
+    "DIRECTIVE-20260620-002 (this PROP's parent)",
+    "PROP-104 (decider working-set reduction; the_correction context-source pattern this PROP reuses)",
+    "PROP-020 (drift-audit precompute — the extraction pattern)",
+    "PROP-021 (curmudgeon-dispatcher-state precompute + prompt-slim)",
+    "PROP-038 (curmudgeon discovery+verify split — the split precedent)",
+    "PROP-101 (cost-history instrumentation — this PROP's data source)",
+    "PROP-110 (workspace-sync cost-slim — sibling cost-engineering PROP from the same operator session)"
+  ]
+}
