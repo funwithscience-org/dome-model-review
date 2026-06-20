@@ -59,9 +59,15 @@ The site uses a tab-based layout where each section is a `<div class="tab-conten
 **CRITICAL — clone is source-of-truth for `monitor/decisions/*` and `monitor/analyst/*` reads AND writes (PROP-078, 2026-06-03).** Never read or write FUSE for these files. Cross-session FUSE staleness can revert a freshly-pushed file (2026-06-03T01:30Z incident; see PROP-077 H5 root cause). Use `${CLEAN_CLONE}/<path>` or the equivalent fresh-clone-relative path for every read AND every write under `monitor/decisions/` and `monitor/analyst/`. The runtime symptom of bypass is a revert-shaped commit (high removal count) on an append-only file like `open-issues.json`.
 
 
+> **PROP-111 Phase 0 instrumentation (added 2026-06-20):** Each check section below opens with `echo "STEP_MARKER <check-id> $(date +%s)" >&2` for the post-run `compute-integrity-step-cost.js` analyzer. These are no-op stderr breadcrumbs (~30 bytes each, zero behavioral impact). Do NOT remove them; they are the source-attribution mechanism for Phase 0 evidence that gates Phase 1 precompute extraction.
+
 ## What You Check
 
 ### 1. Internal Anchor Integrity
+
+```bash
+echo "STEP_MARKER check-1-internal-anchors $(date +%s)" >&2
+```
 
 Verify every internal link resolves to an actual element in the page:
 
@@ -75,6 +81,10 @@ Verify every internal link resolves to an actual element in the page:
 - **Table of contents**: Every `<li>` in the TOC (overview tab) links to a heading that exists in the correct tab.
 
 ### 1b. Relative-Href File Resolution (added 2026-06-18)
+
+```bash
+echo "STEP_MARKER check-1b-relative-href $(date +%s)" >&2
+```
 
 Verify every `<a href="...">` whose target is a **same-domain relative path to a file** resolves to a real file inside `docs/`. This closes the gap between Check 1 (`#fragment` anchors, internal) and Check 3 (`http(s)://` URLs, external) — relative-href links to files fall through both. The 2026-06-18 security-audit 404 (`href="../security-audit.md"` resolving outside `docs/` on GitHub Pages) was the motivating bug.
 
@@ -133,13 +143,42 @@ Notes on edge cases:
 
 ### 2. Tab Structure Integrity
 
+```bash
+echo "STEP_MARKER check-2-tab-structure $(date +%s)" >&2
+```
+
 - Every `<div class="tab-content">` has a unique ID
 - Every tab button in the nav bar references a real tab ID
 - No tab is empty (has at least one `<h1>` or `<h2>`)
 - Heading hierarchy is valid within each tab (no `<h2>` before the first `<h1>`, no skipped levels)
 - The active tab on page load is "overview"
 
-### 3. External Link Validation — DATA SOURCE LINKS ONLY
+### 3. External Link Validation — DATA SOURCE LINKS ONLY (weekly cadence + bounded timeout, PROP-111 1C, 2026-06-20)
+
+```bash
+echo "STEP_MARKER check-3-external-links $(date +%s)" >&2
+```
+
+**Cadence: weekly, not daily.** External data-source URLs don't drift on a daily schedule — they drift on a month-scale (NOAA reorgs, ESA path moves, etc.). Checking them every day is wasteful and is the single largest wall-clock variance source for integrity (the 2026-06-19 17,462s run was a network-stall in this check). Run Check 3 **only on Mondays UTC**; skip on Tue-Sun with a one-line note in the report.
+
+```bash
+DOW=$(date -u +%u)   # 1=Mon..7=Sun
+if [ "$DOW" -ne 1 ]; then
+  echo "Check 3 SKIPPED (weekly cadence: today is day-of-week $DOW; runs Mondays UTC). Per PROP-111 1C."
+  CHECK3_STATUS="skipped-weekly-cadence"
+fi
+```
+
+When Check 3 DOES run (Mondays), apply a **hard total-time budget**: abort the check after 180 seconds wall-clock even if URLs remain, write any unchecked URLs as `timeout-budget-exhausted` in the report, and flag a moderate finding so the operator can investigate. A 4.85h network stall must NEVER recur.
+
+```bash
+START=$(date +%s)
+TIMEOUT_BUDGET_SEC=180
+# In each per-URL curl:
+#   curl --max-time 10 --connect-timeout 5 ...  (was 15 — tightened)
+# Between URLs, check elapsed:
+#   if [ $(( $(date +%s) - START )) -ge $TIMEOUT_BUDGET_SEC ]; then break; fi
+```
 
 **DOI and paper citation links are NOT checked by this agent.** Citation verification is the Curmudgeon's responsibility (it checks every DOI as part of per-WIN review). The DOI resolver aggressively rate-limits automated requests, producing false 404s that pollute this report.
 
@@ -154,10 +193,18 @@ Skip any URL matching `doi.org/*`, `dx.doi.org/*`, or publisher domains (springe
 Classify failures as:
 - **broken**: URL returns 404 or DNS failure on two attempts
 - **redirect_changed**: URL redirects but to an unexpected destination
-- **timeout**: URL didn't respond within 15 seconds (flag but don't alarm)
+- **timeout**: URL didn't respond within 10 seconds (PROP-111 1C tightened from 15s)
+- **timeout-budget-exhausted**: 180s total Check-3 budget hit before this URL was reached (PROP-111 1C; investigate next-run)
+- **skipped-weekly-cadence**: today isn't Monday UTC (PROP-111 1C)
 - **ok**: URL resolves successfully
 
+Schema: when Check 3 was skipped due to cadence, set `external_links.status='skipped-weekly-cadence'`, `last_checked_at=<previous Monday's report's run_at>`, and an empty `broken/timeouts/redirect_changed`. Downstream readers (decider Priority 2b) should treat skipped as "no new info" not "no problems."
+
 ### 4. Data-Prose Consistency
+
+```bash
+echo "STEP_MARKER check-4-data-prose $(date +%s)" >&2
+```
 
 Rebuild the computed counts from `data/wins.json` and verify they match what appears in the generated HTML. This catches "edited the data but forgot to rebuild" scenarios.
 
@@ -170,6 +217,10 @@ Check:
 
 ### 5. WIN Detail Consistency
 
+```bash
+echo "STEP_MARKER check-5-win-detail $(date +%s)" >&2
+```
+
 For each WIN in `wins.json`:
 - The detail popup anchor (`#detail-NNN`) exists in the HTML
 - The summary table row for this WIN exists
@@ -178,6 +229,10 @@ For each WIN in `wins.json`:
 - If `new_in_v51` is true, the asterisk marker appears in the summary table
 
 ### 5b. WIN Number Alignment with Dome Site
+
+```bash
+echo "STEP_MARKER check-5b-win-dome-align $(date +%s)" >&2
+```
 
 Fetch the dome site's wins page (john09289.github.io/predictions/wins.html) and compare WIN numbers and titles against our `data/wins.json`. Flag:
 - **Number collisions on dome site**: Same WIN-NNN used for different claims in different sections (e.g., prospective vs confirmed lists). The author has renumbered WINs without cleaning up all sections.
@@ -189,6 +244,10 @@ This check catches the author silently renumbering or redefining WINs, which cou
 
 ### 5c. Progressive Disclosure Structure
 
+```bash
+echo "STEP_MARKER check-5c-progressive-disclosure $(date +%s)" >&2
+```
+
 All prose sections should be wrapped in `<details>`/`<summary>` with TLDRs. Spot-check the rendered HTML:
 
 - Every `<h2>` inside a tab (except tab-level `<h1>` headings and the overview scorecard) should be inside a `<details>` with `ps-summary` or `ks-summary` class.
@@ -199,6 +258,10 @@ All prose sections should be wrapped in `<details>`/`<summary>` with TLDRs. Spot
 - Severity: Missing TLDR structure = **moderate** (content works but UX regresses). Empty/broken TLDR = **major**.
 
 ### 5d. Hardcoded Theme Colors / Inline Style Drift
+
+```bash
+echo "STEP_MARKER check-5d-hardcoded-colors $(date +%s)" >&2
+```
 
 The site uses a dark theme with CSS variables (`var(--card-bg)`, `var(--border)`, `var(--text)`, `var(--accent)`, `var(--heading)`). Hardcoded color literals in `sections.json` inline styles — especially light-theme values like `#f8f9fa`, `#fff`, `#ffffff`, or named colors like `white` — break the theme and produce jarring white panels against the dark background.
 
@@ -227,6 +290,10 @@ matches.forEach(m => console.log(' ', m.path, '|', m.color, '|', m.snippet));
 
 ### 6. Discoverability Infrastructure
 
+```bash
+echo "STEP_MARKER check-6-discoverability $(date +%s)" >&2
+```
+
 Verify that our AI/search discoverability files exist and are well-formed:
 
 - **`docs/llms.txt`**: Must exist. Check that it contains our review URL (`funwithscience.net/dome-model-review`), mentions the dome model by name, and describes the review's key findings. If the file references specific counts (e.g., "0 of 67+"), verify those counts match `wins.json` length. Flag staleness if counts are off — the social agent can fix `llms.txt` directly, but you should flag it.
@@ -241,6 +308,10 @@ Classify issues as:
 - **Minor**: Formatting issues, suboptimal descriptions
 
 ### 7. Expansion Tracker Continuity
+
+```bash
+echo "STEP_MARKER check-7-expansion-tracker $(date +%s)" >&2
+```
 
 Check `monitor/analyst/expansion-tracker.json` for signs of write collisions (concurrent agent writes that silently drop entries). **Post-PROP-022 phase 5 (2026-05-07): all five checks below must walk both live (`items[]`) AND archive (`expansion-tracker-archive.jsonl`).** The archive holds terminal-state items moved out of live by the verifier or decider integration writer. ID continuity, next_id correctness, and disjointness are GLOBAL invariants — gaps or collisions anywhere (live or archive) are bugs.
 
@@ -347,6 +418,10 @@ Classify: ID gaps, `next_id` inversions, and live-archive overlaps are **major**
 
 ### 7a.5. ISS ID-Collision Audit (PROP-063, added 2026-05-29)
 
+```bash
+echo "STEP_MARKER check-7a5-iss-collision $(date +%s)" >&2
+```
+
 **PROLOGUE — clone-source-of-truth (PROP-078, 2026-06-03):** All reads of `monitor/decisions/closed-issues.json` AND `monitor/decisions/open-issues.json` in this section MUST resolve to the fresh clone (`${CLEAN_CLONE}/monitor/decisions/...`) — NEVER the FUSE workspace. If this audit's "file a new ISS" instruction is followed downstream, the open-issues.json write MUST also target the clone, not FUSE. Cross-session FUSE staleness can revert a freshly-pushed file (see PROP-077 H5; 2026-06-03T01:30Z `open-issues.json` revert). The bash/node snippets below use bare `monitor/decisions/...` paths for brevity; the agent is responsible for ensuring the working directory is the clone before invoking them.
 
 Walk `monitor/decisions/closed-issues.json` for duplicate `id` values. Any duplicate is **major** severity (mirrors EXP-tracker duplicate-ID classification — PROP-022 phase 5). Also walk `open-issues.json` and verify no ID appears in BOTH open and closed (cross-file collision). Suggested fix template: "rewrite duplicate-ID entries to new ISS numbers per PROP-063 retroactive dedup table; investigate any misrouted closure_reasons (where closure_reason describes a different entry's patch than the entry's own description)." If the duplicate-ID audit returns >0 entries that were not already tracked under a PROP-063-class ISS, file a new ISS with `category: 'id_integrity_finding'` and `severity: 'major'`. While PROP-063 retroactive Phase 2 dedup is pending (29 known duplicates as of 2026-05-29), the audit should emit a SINGLE finding tagged `tracked_under: 'PROP-063'` so it doesn't generate 29 new ISSs on each daily run.
@@ -386,6 +461,10 @@ if(crossFile.length>0) {
 
 ### 7a.6. FUSE-vs-Git Prompt-Staleness Audit (PROP-064, added 2026-05-30)
 
+```bash
+echo "STEP_MARKER check-7a6-fuse-staleness $(date +%s)" >&2
+```
+
 PROP-064 added a structural fix for PROP-061's Step 4c silent-skip bug. This audit is the secondary canary that catches FUSE staleness independent of workspace-sync's self-reporting — if workspace-sync regresses again (different bug variant), this audit catches it before the operator notices manually.
 
 **Scan:** For each git-owned prompt file under `monitor/prompts/*.md` (the canonical agent prompts), compute md5(FUSE version) and md5(GitHub raw at HEAD). If any mismatch, flag as `category: 'fuse-staleness'` severity `moderate` (rises to `major` if the same files appear stale across two consecutive integrity runs).
@@ -421,6 +500,10 @@ fi
 
 ### 7b. Workspace-Only Files at Risk
 
+```bash
+echo "STEP_MARKER check-7b-workspace-only $(date +%s)" >&2
+```
+
 The FUSE workspace mount is read-write but git cannot operate on it. Agents that write output files (curmudgeon reviews, analyst expansions, analyst reports) write to the workspace — but those files only persist if they are also committed to git via the clean clone. Check for files that exist on the workspace but not in git:
 
 - **Curmudgeon reviews**: Compare `monitor/curmudgeon/reviews/*.json` on workspace vs git. Flag any files present on workspace but missing from git — these are completed reviews the digest pipeline can't process reliably and that will be lost if the workspace is recycled.
@@ -430,6 +513,10 @@ The FUSE workspace mount is read-write but git cannot operate on it. Agents that
 Classify: Any workspace-only file is **major** (at risk of silent data loss). List the specific filenames so they can be committed.
 
 ### 7c. Section-New / Proposal-Writeup Priority-Queue Coupling (Phase 1 Change 1.7)
+
+```bash
+echo "STEP_MARKER check-7c-section-new $(date +%s)" >&2
+```
 
 New-section and category-proposal-writeup expansions are supposed to produce a curmudgeon re-review before the prose lands — that's why the decider pushes them onto `monitor/curmudgeon/priority-queue.json` at intake time. If one of these items exists in the tracker but is **not** on the queue, the prose will either never be written or will be written without any adversarial review, silently bypassing the churn-and-burn mode and the curmudgeon's coverage invariants.
 
@@ -459,6 +546,10 @@ console.log('OK: all ' + needed.length + ' coupled-category items have priority-
 Classify decoupled items as **major**. The fix is usually a one-line decider patch to push the missing entry onto the queue with the EXP id as `target_id`; the integrity agent does not push itself — it reports and lets the decider reconcile.
 
 ### 7d. Workspace-Sync Skip Log (Phase 1 Change 1.8)
+
+```bash
+echo "STEP_MARKER check-7d-ws-skip-log $(date +%s)" >&2
+```
 
 The workspace-sync agent logs two types of skips to `monitor/integrity/workspace-sync-skips.jsonl`:
 
@@ -520,6 +611,10 @@ Classify:
 
 ### 7e. Curmudgeon → Decider Digest Coverage
 
+```bash
+echo "STEP_MARKER check-7e-digest-coverage $(date +%s)" >&2
+```
+
 The digest pipeline (`build-scripts/digest-reviews.js`) converts curmudgeon review files into a compact digest for the decider. If the digest script filters out review files (by prefix, naming convention, or other criteria), completed curmudgeon work becomes invisible to the decider — findings pile up with no one acting on them.
 
 **Check:** Compare the set of review files the curmudgeon has produced against what the digest and decider have processed.
@@ -580,6 +675,10 @@ This check exists because `digest-reviews.js` historically filtered on `WIN-*` p
 
 ### 7f. Broken Curmudgeon Review Files (Parse Errors)
 
+```bash
+echo "STEP_MARKER check-7f-broken-reviews $(date +%s)" >&2
+```
+
 The digest pipeline's `errors[]` array records review files that fail JSON parsing. Their findings are silently dropped — the file is neither "pending" nor "processed," it's in error limbo. Historically these could sit broken for 9+ days before being noticed.
 
 **MANDATORY: regenerate the digest before reading it.** The digest can lag the actual file state by hours (it's only refreshed when the decider runs). Reading a stale digest will produce false positives that contradict reality. Always do this first:
@@ -610,6 +709,10 @@ process.exit(1);
 **Bug history:** On 2026-04-15T08:17, integrity flagged 4 broken review files that had actually been recovered at 06:12 (commit bfbf663). The digest hadn't been regenerated since 21:26 the previous day, so integrity was reading a stale errors array. The mandatory regeneration above prevents that class of false positive.
 
 ### 7g. Drift Audit (Curmudgeon Change-Detection Candidate List)
+
+```bash
+echo "STEP_MARKER check-7g-drift-audit $(date +%s)" >&2
+```
 
 The curmudgeon's Priority 3 change-detection scan (see `monitor/prompts/reference/curmudgeon-change-and-holistic.md`) historically read every review fingerprint in-LLM each cycle (~462 files, ~5K input tokens worth on the pick step alone, ~minutes wall-clock). PROP-020 split this work: integrity precomputes the candidate list deterministically via a Node script, curmudgeon reads the precomputed list. The result: curmudgeon hot-path drops to a single ~10KB read; integrity absorbs the full scan once every ~3 days.
 
@@ -653,6 +756,10 @@ fi
 
 ### 7i. Curmudgeon Dispatcher State Precompute (PROP-021 Phase 1, added 2026-06-14)
 
+```bash
+echo "STEP_MARKER check-7i-dispatcher-state $(date +%s)" >&2
+```
+
 Counterpart to §7g for the rest of curmudgeon's pre-review dispatcher (Priorities 1, 2, "audit", 4 in addition to §7g's Priority 3). Phase 1 ships the script + the integrity-side refresh check, but does NOT yet edit `monitor/prompts/curmudgeon.md` — the artifact is produced for measurement only. Phase 2 (separate PR, conditional on operator confirming the ≥40% input-token reduction threshold from PROP-021 §regression_protection.a) will edit curmudgeon.md to consume the artifact and slim out the rare-path prose.
 
 **Trigger:** Run the refresh step if `monitor/integrity/curmudgeon-dispatcher-state.json` is missing OR its `generated_at` is more than 6 hours old. Tighter than §7g's 72h gate because queue state (priority 1) can flip whenever the decider pushes — Phase 2 will additionally have curmudgeon-side bash refresh on every curmudgeon run for sub-minute freshness; in Phase 1 the daily integrity refresh + this 6h gate are sufficient since the artifact is measurement-only.
@@ -695,6 +802,10 @@ fi
 
 ### 7h. Mech-A-Bypass False-Closure Audit (PROP-059, added 2026-05-25, schema-corrected 2026-05-26)
 
+```bash
+echo "STEP_MARKER check-7h-mech-a-bypass $(date +%s)" >&2
+```
+
 **PROLOGUE — clone-source-of-truth (PROP-078, 2026-06-03):** Both the scan-source (`monitor/decisions/closed-issues.json`) AND the self-test write destination (`monitor/decisions/open-issues.json`) MUST be the fresh clone path (`${CLEAN_CLONE}/monitor/decisions/...`). Reading either file from FUSE risks importing stale content from cross-session propagation lag; writing a stale-source-derived modification to the clone then pushing reverts whatever a same-hour writer just committed. The 2026-06-03T01:30:38Z commit `3a709c71` is the canonical failure shape (Section 7h self-test fired, integrity read `open-issues.json` from stale FUSE, appended ISS-2519, wrote the merged blob to its clone, and pushed — erasing decider's ca68cb5d EXP-450 closures). The corrective fix is procedural: always read AND write from the clone path. PROP-077 H5 documents the full forensic timeline. If the audit below fires AND the self-test triggers, the write MUST go to `${CLEAN_CLONE}/monitor/decisions/open-issues.json`, never to FUSE.
 
 PROP-016 Mechanism A intercepts decider commits that would push NEVER_PUSH files via the rescue path, but it only catches modifications that actually appear in `git status --porcelain`. The 2026-05-18 false closures (ISS-2094, ISS-2102, ISS-2106) bypassed Mech A by hallucinating `closure_reason` claims without invoking any tool to modify a file — `git status` was empty, Mech A had nothing to flag, the close proceeded. PROP-059 makes `fixed-pending-verification` + a non-empty `verification_pattern` mandatory for every `decider-self-apply*` close. This audit catches any close that escapes that discipline.
@@ -720,6 +831,10 @@ PROP-016 Mechanism A intercepts decider commits that would push NEVER_PUSH files
 
 ### 8. Project Documentation — Mechanical Checks
 
+```bash
+echo "STEP_MARKER check-8-project-docs $(date +%s)" >&2
+```
+
 `CLAUDE.md` and `SESSION-CONTEXT.md` are the first things new AI sessions read. Check the mechanical facts:
 
 - **Schedule table**: Compare the agent schedule table in CLAUDE.md against actual cron expressions (check task configs or recent run timestamps). Flag any mismatches.
@@ -730,6 +845,10 @@ PROP-016 Mechanism A intercepts decider commits that would push NEVER_PUSH files
 Classify: Schedule mismatches and missing file map entries are **moderate**. Hardcoded counts are **major** (we criticize the dome for this exact thing).
 
 ### 9. Build Reproducibility
+
+```bash
+echo "STEP_MARKER check-9-build-reproducibility $(date +%s)" >&2
+```
 
 Run `node build.js html` and diff the output against the current `docs/index.html`. If they differ, the published site doesn't match the source data. This is a critical finding.
 
@@ -774,11 +893,14 @@ Write to `monitor/integrity/report-YYYY-MM-DDTHH-MM.json` (include hour and minu
       "details": "summary"
     },
     "external_links": {
-      "status": "pass|warn|fail",
+      "status": "pass|warn|fail|skipped-weekly-cadence",
       "total_links": 0,
       "broken": [],
       "timeouts": [],
+      "timeout_budget_exhausted": [],
       "redirect_changed": [],
+      "last_checked_at": "ISO timestamp of the most recent non-skipped run",
+      "cadence": "weekly (PROP-111 1C, 2026-06-20): runs Mondays UTC only; other days status=skipped-weekly-cadence",
       "details": "summary"
     },
     "data_prose_consistency": {
