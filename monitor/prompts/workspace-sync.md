@@ -305,6 +305,15 @@ NEVER_PUSH=(
   # superseded_by_props on older PROPs. Both git-owned source code.
   'monitor/scripts/prop-auto-close.js'
   'monitor/scripts/mark-prop-superseded.js'
+  # PROP-108 Phase 0 (2026-06-20): directive-lifecycle auto-close peer of
+  # PROP-102's Mechanism B applied to the operator-directive surface.
+  # directive-auto-close.js walks pending directives and closes those whose
+  # linked PROP is terminal-implemented. mark-directive-superseded.js is the
+  # backfill helper for cross-lineage supersession (sets supersedes_directives
+  # on a PROP that should mark a directive superseded but doesn't via
+  # directive_id back-ref). Both git-owned source code; invoked from clones.
+  'monitor/scripts/directive-auto-close.js'
+  'monitor/scripts/mark-directive-superseded.js'
   # All .md files under monitor/prompts/ are operator-edited (dynamic rule
   # in is_never_push() below). Covers monitor/prompts/sloppytoppy-rewrite.md
   # and monitor/prompts/reference/sloppytoppy-rewrite-rubric.md automatically.
@@ -355,6 +364,10 @@ GIT_APPEND_ONLY=(
   # appends one row per cycle (shadow-mode dryrun:true or enforce dryrun:false).
   # Same git-append-only discipline as the cost-history files above.
   'monitor/tinker/prop-auto-close-ledger.jsonl'
+  # PROP-108 Phase 0 (2026-06-20): directive-auto-close ledger. tinker appends
+  # one row per cycle (shadow-mode dryrun:true or enforce dryrun:false). Same
+  # git-append-only discipline as prop-auto-close-ledger.jsonl above.
+  'monitor/tinker/directive-auto-close-ledger.jsonl'
   # PROP-106 (2026-06-17): lint-exp-allocations.js shadow-mode log. Written
   # from any of analyst / analyst-baby / decider clones during shadow phase.
   # Same multi-clone-writer pattern as the cost-history files above. FUSE

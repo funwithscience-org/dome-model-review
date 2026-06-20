@@ -217,6 +217,19 @@ const OWNERSHIP = {
   'monitor/tinker/prop-auto-close-ledger.jsonl': 'git-append-only',
   'monitor/tinker/prop-auto-close-enforce.flag': 'git',
 
+  // PROP-108 (2026-06-20): directive-auto-close mirrors PROP-102's Mechanism B
+  // applied to the operator-directive surface.
+  // - directive-auto-close-ledger.jsonl: tinker appends one row per cycle per
+  //   would-close (shadow) or close (enforce) action. Same git-append-only
+  //   discipline as prop-auto-close-ledger.jsonl above.
+  // - directive-auto-close-enforce.flag: presence = enforce (flip pending→
+  //   completed). Absence = shadow (ledger-only). Located under
+  //   monitor/decisions/ (not monitor/tinker/) to match the
+  //   prop-009-enforce.flag / prop-106-shadow.flag convention of "operator-
+  //   toggled lifecycle flags live under decisions/".
+  'monitor/tinker/directive-auto-close-ledger.jsonl': 'git-append-only',
+  'monitor/decisions/directive-auto-close-enforce.flag': 'git',
+
   // PROP-066 Phase 1 (2026-05-31): sync-workspace-step4c.js helper script
   // and its operator-curated bootstrap config. Both git-owned; edited via
   // clone-and-push. Same source-code classification as monitor/scripts/

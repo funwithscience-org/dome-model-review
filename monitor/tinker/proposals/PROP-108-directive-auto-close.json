@@ -4,7 +4,7 @@
   "created_at": "2026-06-20T02:43:46.000Z",
   "authored_by": "tinker",
   "authored_by_run": "tinker-2026-06-20T02-40",
-  "status": "design-pending-operator-review",
+  "status": "phase-0-shadow-shipped",
   "category": "pipeline-lifecycle-gap",
   "severity": "moderate",
   "source_directive": "DIRECTIVE-20260619-001",
@@ -105,15 +105,51 @@
     "pending_directives": 9,
     "would_close": 0,
     "per_directive": [
-      {"directive": "DIRECTIVE-20260608-002", "links": "none", "outcome": "stay pending (no linked PROP)"},
-      {"directive": "DIRECTIVE-20260609-001", "links": "none", "outcome": "stay pending (no linked PROP)"},
-      {"directive": "DIRECTIVE-20260610-001", "links": "none", "outcome": "stay pending (no linked PROP; low priority)"},
-      {"directive": "DIRECTIVE-20260610-002", "links": "PROP-091 (no source_directive back-ref present on PROP-091)", "outcome": "stay pending (link not machine-readable; needs source_directive or supersedes_directives backfill)"},
-      {"directive": "DIRECTIVE-20260612-001", "links": "PROP-092 (no source_directive back-ref present on PROP-092)", "outcome": "stay pending (link not machine-readable)"},
-      {"directive": "DIRECTIVE-20260613-003", "links": "PROP-096:pending (source_directive)", "outcome": "stay pending (linked PROP not terminal)"},
-      {"directive": "DIRECTIVE-20260613-004", "links": "PROP-097:approved-mech-1-implemented (source_directive)", "outcome": "stay pending (partial-phase, no opt-in)"},
-      {"directive": "DIRECTIVE-20260614-003", "links": "PROP-102:phase-0-implemented-phase-1-pending-7d-shadow-audit (source_directive)", "outcome": "stay pending (partial-phase, no opt-in)"},
-      {"directive": "DIRECTIVE-20260619-001", "links": "none (this PROP authored from it)", "outcome": "stay pending (this run flips it completed via the dispatcher's normal directive-completion path, not the auto-closer)"}
+      {
+        "directive": "DIRECTIVE-20260608-002",
+        "links": "none",
+        "outcome": "stay pending (no linked PROP)"
+      },
+      {
+        "directive": "DIRECTIVE-20260609-001",
+        "links": "none",
+        "outcome": "stay pending (no linked PROP)"
+      },
+      {
+        "directive": "DIRECTIVE-20260610-001",
+        "links": "none",
+        "outcome": "stay pending (no linked PROP; low priority)"
+      },
+      {
+        "directive": "DIRECTIVE-20260610-002",
+        "links": "PROP-091 (no source_directive back-ref present on PROP-091)",
+        "outcome": "stay pending (link not machine-readable; needs source_directive or supersedes_directives backfill)"
+      },
+      {
+        "directive": "DIRECTIVE-20260612-001",
+        "links": "PROP-092 (no source_directive back-ref present on PROP-092)",
+        "outcome": "stay pending (link not machine-readable)"
+      },
+      {
+        "directive": "DIRECTIVE-20260613-003",
+        "links": "PROP-096:pending (source_directive)",
+        "outcome": "stay pending (linked PROP not terminal)"
+      },
+      {
+        "directive": "DIRECTIVE-20260613-004",
+        "links": "PROP-097:approved-mech-1-implemented (source_directive)",
+        "outcome": "stay pending (partial-phase, no opt-in)"
+      },
+      {
+        "directive": "DIRECTIVE-20260614-003",
+        "links": "PROP-102:phase-0-implemented-phase-1-pending-7d-shadow-audit (source_directive)",
+        "outcome": "stay pending (partial-phase, no opt-in)"
+      },
+      {
+        "directive": "DIRECTIVE-20260619-001",
+        "links": "none (this PROP authored from it)",
+        "outcome": "stay pending (this run flips it completed via the dispatcher's normal directive-completion path, not the auto-closer)"
+      }
     ],
     "interpretation": "Matches the directive's prediction and PROP-102's own first-result shape: 0 would-close. The 6 full zombies were already operator-hand-flipped to 'completed' before this run, so there is nothing left to auto-close at design time — the EXPECTED, DESIRED conservative result. It confirms the design would NOT spuriously close the 3 currently-linked-but-not-terminal directives (PROP-096 pending, PROP-097 partial, PROP-102 partial). Secondary finding surfaced by the dry run: PROP-091 and PROP-092 carry NO source_directive back-reference, so their directives (20260610-002, 20260612-001) have no machine-readable link at all — these are the canonical case for the Q4 supersedes_directives backfill (or a source_directive backfill). The interesting forward test: when a future directive's linked PROP reaches a terminal status, does the walker catch the resulting close without operator intervention. The shadow ledger records that first real candidate when it occurs."
   },
@@ -160,5 +196,29 @@
     "PROP-097",
     "PROP-091",
     "PROP-092"
-  ]
+  ],
+  "operator_deployment": {
+    "deployed_at": "2026-06-20T07:00:00.000Z",
+    "deployed_by": "operator (cowork session 2026-06-20)",
+    "phase_0_scope_shipped": [
+      "monitor/scripts/directive-auto-close.js — peer walker (~250 lines). Forward back-ref via PROP.directive_id / PROP.source_directive + cross-lineage via PROP.supersedes_directives. Conservative whitelist (implemented/integrated/applied/self-applied/completed). Multi-phase opt-in via auto_close_when_phase_0_done field on directives. Field-gated by do_not_auto_close / requires_human_judgment.",
+      "monitor/scripts/mark-directive-superseded.js — backfill helper. `node mark-directive-superseded.js PROP-X by DIRECTIVE-Y [DIRECTIVE-Z ...]`. Idempotent.",
+      "monitor/prompts/tinker.md — Pre-flight: Directive Lifecycle Auto-Close block placed AFTER PROP Lifecycle Auto-Close and BEFORE Operator-Directive Discovery (placement is load-bearing in enforce mode).",
+      "build.js OWNERSHIP — directive-auto-close-ledger.jsonl ('git-append-only') + directive-auto-close-enforce.flag ('git', under monitor/decisions/ for operator-toggle).",
+      "workspace-sync.md NEVER_PUSH — both new scripts listed; GIT_APPEND_ONLY — ledger listed.",
+      "Backfilled supersedes_directives: PROP-101 [DIRECTIVE-20260614-002], PROP-106 [DIRECTIVE-20260614-001]. Smoke-test of the script against current state (0 pending directives, 106 walked) reports clean zero — confirms no spurious closes when there are no pending zombies."
+    ],
+    "phase_0_scope_deferred_to_phase_1": [
+      "Flip the enforce flag (`monitor/decisions/directive-auto-close-enforce.flag`) once shadow accumulates ≥7 days of clean dryrun data. Today the script ships in shadow only.",
+      "Shared monitor/scripts/auto-close-lib.js extraction if duplication emerges with prop-auto-close.js (PROP-108 explicitly says optional)."
+    ],
+    "phase_0_to_phase_1_transition_criteria": [
+      "≥7 days of shadow-mode operation accumulating ledger entries.",
+      "Zero false-positive `would_close` rows (where the directive should have stayed pending — operator audits the ledger periodically).",
+      "Operator decision to flip enforce: `touch monitor/decisions/directive-auto-close-enforce.flag && git add && commit && push`. After that, lint auto-closes any directive whose linked PROP is terminal-implemented.",
+      "Future cross-lineage cases backfilled via mark-directive-superseded.js at the time of authoring or operator audit."
+    ],
+    "smoke_test_result": "TINKER_RUN_ID=operator-cowork-2026-06-20-smoke node monitor/scripts/directive-auto-close.js --workspace . → directives_walked=106 pending=0 would_close=0 actually_closed=0 (since all directives currently closed). Clean. The cross-lineage backfills on PROP-101 + PROP-106 are now in place so if those two directives had been pending, the walker would have detected them via supersedes_directives.",
+    "ship_with_confidence_rationale": "Conservative defaults + shadow-mode default + smoke-test clean. Operator can review the ledger at the 7-day mark and flip enforce when confident. No prompt-side changes affect routing or correctness — pre-flight is purely additive."
+  }
 }

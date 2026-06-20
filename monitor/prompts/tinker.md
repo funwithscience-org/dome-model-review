@@ -273,6 +273,32 @@ If ANY threshold fires → add a finding object to the run's report.findings[] w
 
 If the operator_escalation tier fires, ALSO write a one-line note to `monitor/tinker/latest-tinker-summary.txt` so the operator sees it in the morning summary.
 
+### Pre-flight: Directive Lifecycle Auto-Close (PROP-108, every run, added 2026-06-20)
+
+Walk every directive in `monitor/tinker/operator-directives/` with `status === 'pending'` and close those whose linked PROP is unambiguously, fully implemented. Mirror of PROP-102's Mechanism B applied to the directive surface.
+
+Linkage resolution (two paths):
+- **Forward back-ref**: PROP.directive_id (or legacy PROP.source_directive) === DIRECTIVE.directive_id — the canonical case when a directive commissioned the PROP.
+- **Cross-lineage forward-decl**: PROP.supersedes_directives contains DIRECTIVE.directive_id — for cases where PROP-X obsoletes DIRECTIVE-Y but PROP-X was authored from a different directive. Declared via `node monitor/scripts/mark-directive-superseded.js PROP-X by DIRECTIVE-Y`.
+
+Conservative closure rule: auto-close only when linked PROP.status ∈ {`implemented`, `integrated`, `applied`, `self-applied`, `completed`}. Partial-phase statuses (`phase-0-*-shipped`, `approved-mech-1-implemented`, `phase-0-implemented-manifest-only`) are explicitly NOT terminal for default close — those PROPs still have shipped-work pending, so their directives retain oversight value.
+
+Multi-phase opt-in: if a directive declares `auto_close_when_phase_0_done: true`, the whitelist expands for that directive specifically to include /^phase-0.*-implemented/, /^phase-0.*-shipped/, /^phase-0-measurement-shipped/, /^approved-mech-1-implemented/.
+
+Field-gated: directives with `do_not_auto_close: true` or `requires_human_judgment: true` are skipped regardless of linked PROP status.
+
+Phase 0 (shadow): every run is dry-run; the script appends ledger rows with `dryrun: true` to `monitor/tinker/directive-auto-close-ledger.jsonl` and writes ZERO changes to directive files. Surface count of would-close candidates in `latest-tinker-summary.txt`.
+
+Phase 1 (enforce): gated by presence of `monitor/decisions/directive-auto-close-enforce.flag`. When the flag exists, status flips are written via clone-and-push (additive-edit per the CLAUDE.md DIRECTIVE-LIFECYCLE exception: status pending→completed, plus completed_at, completed_by_run, prop_id_authored, closure_note).
+
+```bash
+TINKER_RUN_ID="${RUN_ID}" node monitor/scripts/directive-auto-close.js --workspace "${CLONE}" 2>&1 | tee /tmp/directive-auto-close.log
+```
+
+**Placement is load-bearing**: this pre-flight runs AFTER PROP Lifecycle Auto-Close (below) and BEFORE Operator-Directive Discovery. In enforce mode, the walker must flip zombies to `completed` BEFORE discovery runs, so a freshly-detected zombie does not preempt the dispatcher on the same cycle it is closed. The script is non-fatal — exits 0 on internal error.
+
+For retroactive cross-lineage backfill (PROPs that should mark a directive superseded but don't), use `node monitor/scripts/mark-directive-superseded.js PROP-X by DIRECTIVE-Y [DIRECTIVE-Z ...]`. Run from a fresh git clone; the script writes to PROP-X.json; the operator commits + pushes.
+
 ### Pre-flight: PROP Lifecycle Auto-Close (PROP-102, every run, added 2026-06-14)
 
 Walk every PROP in `monitor/tinker/proposals/` and apply two mechanisms:
