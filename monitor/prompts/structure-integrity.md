@@ -63,11 +63,49 @@ The site uses a tab-based layout where each section is a `<div class="tab-conten
 
 ## What You Check
 
+### 0. Mechanical Precompute Refresh (PROP-111 1A, added 2026-06-20)
+
+```bash
+echo "STEP_MARKER check-0-mechanical-precompute $(date +%s)" >&2
+```
+
+`monitor/scripts/compute-integrity-mechanical.js` does the deterministic, no-LLM work for 10 of the mechanical checks below (1, 1b, 4, 5, 5c, 5d, 6, 7, 7a.5, 7f). Run it at the start of every integrity cycle. The artifact at `monitor/integrity/integrity-mechanical-state.json` is then consumable by the corresponding check sections — each lists a precompute-short-circuit rule at the top.
+
+Mirrors the precompute pattern proven in §7g (PROP-020 drift-audit) and §7i (PROP-021 curmudgeon-dispatcher-state).
+
+```bash
+node monitor/scripts/compute-integrity-mechanical.js 2>&1 | tee /tmp/integrity-mechanical.log
+IM_STATUS=${PIPESTATUS[0]}
+if [ $IM_STATUS -ne 0 ]; then
+  echo "MAJOR FINDING: compute-integrity-mechanical exited $IM_STATUS — fall back to inline checks for all PROP-111-covered sections."
+  echo "  Last 20 lines:"
+  tail -20 /tmp/integrity-mechanical.log
+  PROP_111_FALLBACK=1
+else
+  echo "OK: integrity-mechanical-state refreshed."
+  PROP_111_FALLBACK=0
+fi
+```
+
+**Severity rubric:**
+- **Major** if the script fails (non-zero exit, missing output). All ten covered checks fall back to their inline prose. Operator investigates within 24h.
+- **Informational otherwise**: report `summary.passed`, `summary.failed`, `summary.failed_checks`, `summary.duration_ms` so leverage is visible. A `failed_checks` list ≠ a Major finding here — individual check sections still own their severity rubric and inspect the per-check details on a hit.
+
+**Consumer protocol (each of the 10 covered checks below):**
+1. If `PROP_111_FALLBACK=1`, run the inline prose verbatim. Skip the artifact read.
+2. Else read `monitor/integrity/integrity-mechanical-state.json` § `checks.check_<id>`. If `status='pass'`, record the `details` field as the report finding and move on. Skip the inline prose.
+3. If `status='fail'`, surface the per-check details (`broken_anchors`, `mismatches`, `issues`, etc.) using the per-check severity rubric below — don't re-run the inline prose; the artifact has the data.
+4. If the per-check JSON is missing entirely (script schema drift), fall back to the inline prose.
+
+What does NOT change: the inline prose for each covered check stays in place as fallback, and the severity rubrics + report structure are unchanged. PROP-111 1A is a leverage/cost optimization, not a semantic change.
+
 ### 1. Internal Anchor Integrity
 
 ```bash
 echo "STEP_MARKER check-1-internal-anchors $(date +%s)" >&2
 ```
+
+_PROP-111 1A precompute key: `check_1_internal_anchors` — see §0 consumer protocol._
 
 Verify every internal link resolves to an actual element in the page:
 
@@ -85,6 +123,8 @@ Verify every internal link resolves to an actual element in the page:
 ```bash
 echo "STEP_MARKER check-1b-relative-href $(date +%s)" >&2
 ```
+
+_PROP-111 1A precompute key: `check_1b_relative_href` — see §0 consumer protocol._
 
 Verify every `<a href="...">` whose target is a **same-domain relative path to a file** resolves to a real file inside `docs/`. This closes the gap between Check 1 (`#fragment` anchors, internal) and Check 3 (`http(s)://` URLs, external) — relative-href links to files fall through both. The 2026-06-18 security-audit 404 (`href="../security-audit.md"` resolving outside `docs/` on GitHub Pages) was the motivating bug.
 
@@ -206,6 +246,8 @@ Schema: when Check 3 was skipped due to cadence, set `external_links.status='ski
 echo "STEP_MARKER check-4-data-prose $(date +%s)" >&2
 ```
 
+_PROP-111 1A precompute key: `check_4_data_prose` — see §0 consumer protocol._
+
 Rebuild the computed counts from `data/wins.json` and verify they match what appears in the generated HTML. This catches "edited the data but forgot to rebuild" scenarios.
 
 Check:
@@ -220,6 +262,8 @@ Check:
 ```bash
 echo "STEP_MARKER check-5-win-detail $(date +%s)" >&2
 ```
+
+_PROP-111 1A precompute key: `check_5_win_detail` — see §0 consumer protocol._
 
 For each WIN in `wins.json`:
 - The detail popup anchor (`#detail-NNN`) exists in the HTML
@@ -248,6 +292,8 @@ This check catches the author silently renumbering or redefining WINs, which cou
 echo "STEP_MARKER check-5c-progressive-disclosure $(date +%s)" >&2
 ```
 
+_PROP-111 1A precompute key: `check_5c_progressive_disclosure` — see §0 consumer protocol._
+
 All prose sections should be wrapped in `<details>`/`<summary>` with TLDRs. Spot-check the rendered HTML:
 
 - Every `<h2>` inside a tab (except tab-level `<h1>` headings and the overview scorecard) should be inside a `<details>` with `ps-summary` or `ks-summary` class.
@@ -262,6 +308,8 @@ All prose sections should be wrapped in `<details>`/`<summary>` with TLDRs. Spot
 ```bash
 echo "STEP_MARKER check-5d-hardcoded-colors $(date +%s)" >&2
 ```
+
+_PROP-111 1A precompute key: `check_5d_hardcoded_colors` — see §0 consumer protocol._
 
 The site uses a dark theme with CSS variables (`var(--card-bg)`, `var(--border)`, `var(--text)`, `var(--accent)`, `var(--heading)`). Hardcoded color literals in `sections.json` inline styles — especially light-theme values like `#f8f9fa`, `#fff`, `#ffffff`, or named colors like `white` — break the theme and produce jarring white panels against the dark background.
 
@@ -294,6 +342,8 @@ matches.forEach(m => console.log(' ', m.path, '|', m.color, '|', m.snippet));
 echo "STEP_MARKER check-6-discoverability $(date +%s)" >&2
 ```
 
+_PROP-111 1A precompute key: `check_6_discoverability` — see §0 consumer protocol._
+
 Verify that our AI/search discoverability files exist and are well-formed:
 
 - **`docs/llms.txt`**: Must exist. Check that it contains our review URL (`funwithscience.net/dome-model-review`), mentions the dome model by name, and describes the review's key findings. If the file references specific counts (e.g., "0 of 67+"), verify those counts match `wins.json` length. Flag staleness if counts are off — the social agent can fix `llms.txt` directly, but you should flag it.
@@ -312,6 +362,8 @@ Classify issues as:
 ```bash
 echo "STEP_MARKER check-7-expansion-tracker $(date +%s)" >&2
 ```
+
+_PROP-111 1A precompute key: `check_7_expansion_tracker` — see §0 consumer protocol._
 
 Check `monitor/analyst/expansion-tracker.json` for signs of write collisions (concurrent agent writes that silently drop entries). **Post-PROP-022 phase 5 (2026-05-07): all five checks below must walk both live (`items[]`) AND archive (`expansion-tracker-archive.jsonl`).** The archive holds terminal-state items moved out of live by the verifier or decider integration writer. ID continuity, next_id correctness, and disjointness are GLOBAL invariants — gaps or collisions anywhere (live or archive) are bugs.
 
@@ -421,6 +473,8 @@ Classify: ID gaps, `next_id` inversions, and live-archive overlaps are **major**
 ```bash
 echo "STEP_MARKER check-7a5-iss-collision $(date +%s)" >&2
 ```
+
+_PROP-111 1A precompute key: `check_7a5_iss_collision` — see §0 consumer protocol._
 
 **PROLOGUE — clone-source-of-truth (PROP-078, 2026-06-03):** All reads of `monitor/decisions/closed-issues.json` AND `monitor/decisions/open-issues.json` in this section MUST resolve to the fresh clone (`${CLEAN_CLONE}/monitor/decisions/...`) — NEVER the FUSE workspace. If this audit's "file a new ISS" instruction is followed downstream, the open-issues.json write MUST also target the clone, not FUSE. Cross-session FUSE staleness can revert a freshly-pushed file (see PROP-077 H5; 2026-06-03T01:30Z `open-issues.json` revert). The bash/node snippets below use bare `monitor/decisions/...` paths for brevity; the agent is responsible for ensuring the working directory is the clone before invoking them.
 
@@ -678,6 +732,8 @@ This check exists because `digest-reviews.js` historically filtered on `WIN-*` p
 ```bash
 echo "STEP_MARKER check-7f-broken-reviews $(date +%s)" >&2
 ```
+
+_PROP-111 1A precompute key: `check_7f_broken_reviews` — see §0 consumer protocol._
 
 The digest pipeline's `errors[]` array records review files that fail JSON parsing. Their findings are silently dropped — the file is neither "pending" nor "processed," it's in error limbo. Historically these could sit broken for 9+ days before being noticed.
 

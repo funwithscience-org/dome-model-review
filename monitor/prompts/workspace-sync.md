@@ -289,6 +289,15 @@ NEVER_PUSH=(
   # not yet edited, so the artifact runs as measurement-only.
   'monitor/scripts/compute-curmudgeon-dispatcher-state.js'
   'monitor/integrity/curmudgeon-dispatcher-state.json'
+  # PROP-111 Phase 1 1A (2026-06-20): compute-integrity-mechanical.js does
+  # mechanical work for 10 of structure-integrity's checks (1, 1b, 4, 5, 5c,
+  # 5d, 6, 7, 7a.5, 7f). Output artifact monitor/integrity/
+  # integrity-mechanical-state.json is written by the script from integrity's
+  # clone at the top of every cycle (§0 refresh). Same source-code
+  # classification as compute-drift-audit.js / compute-curmudgeon-dispatcher-
+  # state.js. Workspace-sync NEVER pushes either file FUSE→git.
+  'monitor/scripts/compute-integrity-mechanical.js'
+  'monitor/integrity/integrity-mechanical-state.json'
   # PROP-101 Phase 1 (2026-06-14): real per-run cost measurement.
   # compute-run-cost.js prices Claude session JSONL transcripts (cache-aware,
   # 5m/1h cache-write split, cache_read 0.1x). write-self-cost.sh is the
