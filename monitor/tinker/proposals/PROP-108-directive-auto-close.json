@@ -1,0 +1,164 @@
+{
+  "id": "PROP-108",
+  "title": "Directive auto-close: extend PROP-102 Mechanism B (deliberate-supersedes graph) to the operator-directive surface — walk pending directives every cycle, close those whose linked PROP is terminal-implemented. Peer script + shadow→enforce rollout. Closes the zombie-directive re-preemption gap.",
+  "created_at": "2026-06-20T02:43:46.000Z",
+  "authored_by": "tinker",
+  "authored_by_run": "tinker-2026-06-20T02-40",
+  "status": "design-pending-operator-review",
+  "category": "pipeline-lifecycle-gap",
+  "severity": "moderate",
+  "source_directive": "DIRECTIVE-20260619-001",
+  "target": [
+    "monitor/prompts/tinker.md",
+    "monitor/scripts/directive-auto-close.js",
+    "monitor/scripts/mark-directive-superseded.js",
+    "build.js",
+    "monitor/prompts/workspace-sync.md",
+    "CLAUDE.md"
+  ],
+  "requires_human_judgment": false,
+  "do_not_auto_close": true,
+  "do_not_auto_close_reason": "This PROP introduces the directive-auto-close machinery itself and proposes operator policy decisions (terminal-status whitelist boundary, shadow-audit window length, flag location). It must be operator-integrated and must never auto-close itself. Mirrors PROP-102's in-situ opt-out example.",
+  "problem": "The operator-directives surface has the same one-sided-write / stale-status defect that PROP-102 fixed for PROPs — but worse, because a stale-pending directive actively RE-PREEMPTS tinker's dispatcher every cycle. The dispatcher's Operator-Directive Discovery pre-flight (tinker.md) picks up the highest-priority status='pending' directive and runs it as the run's primary task, skipping Mode 0-4 selection entirely. When a directive's linked PROP reaches terminal status (work shipped) but the directive's status is never flipped to 'completed', the directive becomes a zombie: its task is done, yet it keeps preempting the dispatcher, starving real Mode 1-4 work. Operator audit 2026-06-19T11:30Z found 6 of 15 pending directives were full zombies (linked PROP at terminal status). The operator hand-flipped those 6 in-session (now status='completed'), but the FIX is the MECHANISM: tinker should auto-detect future zombies every cycle, the same way PROP-102 Mechanism B already auto-detects superseded PROPs. Same structural shape: a back-reference field (PROP.source_directive -> DIRECTIVE.directive_id, mirroring PROP.supersedes_props) plus a terminal-status check on the referenced object.",
+  "structural_parallel_to_prop_102": {
+    "prop_102_surface": "monitor/tinker/proposals/PROP-*.json — closed when a sibling PROP declaring supersedes_props (or the PROP's own superseded_by_props) is terminal-implemented, OR when the PROP's own verification_pattern passes (Mechanism A).",
+    "this_surface": "monitor/tinker/operator-directives/DIRECTIVE-*.json — closed when the linked PROP (via PROP.source_directive back-reference, or a PROP's forward supersedes_directives declaration) is terminal-implemented.",
+    "why_only_mechanism_B_analog": "Directives have no self-verifiable artifact analogous to a PROP's verification_pattern — a directive is a task instruction, not a checkable code-state assertion. So there is no Mechanism-A analog here; closure is purely graph-driven off the linked PROP's status. This is intentional and keeps the design narrow.",
+    "shared_conventions": "ledger pattern (PROP-065 git-append-only), shadow->enforce flag rollout (PROP-009r2 / PROP-026 / PROP-102), obe_*-style closure metadata, idempotent additive-edit writes (CLAUDE.md DIRECTIVE-LIFECYCLE exception)."
+  },
+  "Q1_script_shape": {
+    "decision": "Peer script monitor/scripts/directive-auto-close.js (NOT an extension of prop-auto-close.js).",
+    "rationale": "The directive surface has a different writer set (tinker + operator), a different terminal-object (the linked PROP, not the directive itself), and a different lifecycle field set (status/completed_at/completed_by_run/prop_id_authored vs obe_*). Folding it into prop-auto-close.js would bloat that script with a second object model for no shared-code win. This mirrors PROP-102's own peer-tool pattern (prop-auto-close.js + mark-prop-superseded.js) and PROP-021's 'peer script when surfaces have different writers' precedent. If genuine duplication emerges later (e.g. the terminal-status predicate), extract a shared monitor/scripts/auto-close-lib.js — the directive's own Q1 endorses this fallback. Initial ship: standalone peer script (~120 lines, structurally a trimmed copy of prop-auto-close.js's Mechanism-B half).",
+    "invocation": "New tinker.md pre-flight block 'Directive Lifecycle Auto-Close', placed AFTER the PROP Lifecycle Auto-Close pre-flight and BEFORE the Operator-Directive Discovery pre-flight. Placement is load-bearing: in enforce mode the walker must flip zombies to 'completed' BEFORE discovery runs, so a freshly-detected zombie does not preempt the dispatcher on the same cycle it is closed. Command: TINKER_RUN_ID=\"${RUN_ID}\" node monitor/scripts/directive-auto-close.js --workspace \"${CLONE}\" 2>&1 | tee /tmp/directive-auto-close.log. Non-fatal: exits 0 on internal error."
+  },
+  "Q2_terminal_status_whitelist": {
+    "close_when_linked_prop_status_in": [
+      "implemented",
+      "integrated",
+      "applied",
+      "self-applied",
+      "completed"
+    ],
+    "close_when_linked_prop_status_matches_pattern": [],
+    "explicitly_NOT_terminal_for_single_phase_close": [
+      "proposed",
+      "design-pending-operator-review",
+      "pending-operator-review",
+      "implementation-pending-operator-review",
+      "approved",
+      "operator-approved",
+      "approved-mech-1-implemented",
+      "phase-0-implemented-phase-1-pending-7d-shadow-audit",
+      "phase-0-implemented-manifest-only",
+      "phase-0-shadow-shipped",
+      "phase-0-measurement-shipped",
+      "partially-superseded-by-*",
+      "superseded",
+      "wont-fix-not-worth-it"
+    ],
+    "rationale": "Conservative by directive constraint ('lean conservative on terminal-status definition; false-positive loses visibility on real work'). A directive closes ONLY when its linked PROP is unambiguously, fully implemented. Partial-phase statuses (phase-0-*, approved-mech-1-*) are explicitly NOT terminal for a default single-phase close — those PROPs still have shipped-work pending, so their directives still have oversight value and must stay pending. This is exactly why today's DIRECTIVE-20260613-004 (-> PROP-097 approved-mech-1-implemented) and DIRECTIVE-20260614-003 (-> PROP-102 phase-0-implemented-phase-1-pending...) MUST stay pending — and the dry-run below confirms they do.",
+    "note_on_phase_pattern_terminals": "Deliberately did NOT include /^phase-.*-implemented/ as a terminal pattern (PROP-102's prop-auto-close.js does, for its own status field). For the DIRECTIVE surface a 'phase-0-implemented' linked PROP means partial work; auto-closing the directive on partial PROP completion is exactly the false-positive the directive's Q3 warns against. Multi-phase closure is opt-in only (Q3)."
+  },
+  "Q3_multi_phase_handling": {
+    "default": "NO auto-close for directives whose linked PROP is at a partial-phase status. Require operator judgment.",
+    "opt_in_field": "auto_close_when_phase_0_done: true — set on the DIRECTIVE json by its author when the directive's task language was genuinely 'design and ship Phase 0 (shadow)' and Phase-0 completion fully discharges the directive.",
+    "opt_in_semantics": "When a directive carries auto_close_when_phase_0_done:true AND its linked PROP status matches a phase-0-implemented / phase-0-shadow-shipped / phase-0-measurement-shipped pattern, the walker treats that as terminal-for-this-directive and closes it. Without the opt-in, partial-phase linked PROPs leave the directive pending.",
+    "rationale": "Mirrors the directive's Q3 recommendation exactly. 4 of today's pending directives (20260610-002->PROP-091, 20260612-001->PROP-092, 20260613-004->PROP-097, 20260614-003->PROP-102) are partial zombies; none should auto-close by default. The opt-in keeps the conservative default while letting future single-shot-Phase-0 directives close cleanly."
+  },
+  "Q4_cross_lineage": {
+    "field": "supersedes_directives: ['DIRECTIVE-Y', ...] — a forward declaration on a PROP, mirroring PROP-102's supersedes_props shape.",
+    "semantics": "When PROP-X declares supersedes_directives:['DIRECTIVE-Y'] AND PROP-X is in a terminal-implemented status (Q2 whitelist), DIRECTIVE-Y auto-closes with prop_id_authored=PROP-X and a closure note citing the cross-lineage edge.",
+    "manual_backfill_tool": "monitor/scripts/mark-directive-superseded.js — peer of mark-prop-superseded.js. Usage: node mark-directive-superseded.js DIRECTIVE-20260614-001 by PROP-106. Writes supersedes_directives onto the PROP (additive, preserves other fields); the next tinker run auto-closes the directive if the PROP is terminal-implemented. Lets the operator/tinker code cross-lineage edges that authors forgot to declare at authoring time.",
+    "discipline_going_forward": "When authoring a PROP that addresses a directive NOT referenced via that PROP's source_directive, the author adds supersedes_directives at authoring time. The directive's source_directive back-reference remains the primary (1-to-1) link; supersedes_directives is the secondary (cross-lineage) link.",
+    "heuristic_explicitly_banned": "No NLP / topic-similarity matching (directive constraint). Closure requires an explicit machine-readable edge: either DIRECTIVE.directive_id == PROP.source_directive (back-reference), or PROP.supersedes_directives includes DIRECTIVE.directive_id (forward-declaration). Nothing else."
+  },
+  "Q5_rollout": {
+    "pattern": "Shadow-then-enforce, mirroring PROP-102 / PROP-009r2 / PROP-026.",
+    "phase_0_shadow": "Walker runs every cycle, resolves linkage + terminal-status edges, and appends would-close rows to monitor/tinker/directive-auto-close-ledger.jsonl with dryrun:true. ZERO writes to directive files. Surfaces the would-close count in latest-tinker-summary.txt. Operator audits the ledger.",
+    "operator_audit_window": "Recommend >=7 days (>=7 tinker runs) of shadow before enforce, identical to PROP-102. Runs CONCURRENTLY with PROP-102's own shadow window; both ledgers can be inspected together at the 7-day mark. Per directive constraint, this PROP's Phase-1 ship is NOT gated on PROP-102's Phase-1 ship — independent shadow windows.",
+    "phase_1_enforce": "Gated by presence of monitor/decisions/directive-auto-close-enforce.flag (presence = enforce, absence = shadow). In enforce mode the walker flips the directive status pending->completed with completed_at + completed_by_run + prop_id_authored, from tinker's clone, pushed; ledger row dryrun:false.",
+    "flag_location_decision": "monitor/decisions/directive-auto-close-enforce.flag — per the directive's explicit Q5 instruction and the prop-009-enforce.flag precedent (also in monitor/decisions/). Note PROP-102's analogous flag lives in monitor/tinker/ (prop-auto-close-enforce.flag); the two-location split is mildly inconsistent but each follows its stated source. Operator may relocate to monitor/tinker/ for uniformity if preferred — flag a one-line decision at integration.",
+    "flag_classification": "directive-auto-close-enforce.flag classified 'git' in build.js OWNERSHIP + workspace-sync.md NEVER_PUSH, exactly like prop-009-enforce.flag / prop-auto-close-enforce.flag / decider-mode.json."
+  },
+  "Q6_idempotence": {
+    "guarantee": "Honors the CLAUDE.md DIRECTIVE-LIFECYCLE additive-edit exception (PROP-014-amendment-001 Q6). The walker writes ONLY status, completed_at, completed_by_run, prop_id_authored — and only when status is currently 'pending'. The single permitted transition is pending->completed. Each field guarded by if(d.<field>==null) for first-set; status guarded by if(d.status==='pending'). A second run sees status='completed' and no-ops. No other field is ever mutated.",
+    "write_side_discipline": "CRITICAL (FND-01, formalized 2026-06-14): the status flip is written to the git CLONE and pushed, NEVER to FUSE. operator-directives/ is append_only in build.js OWNERSHIP, so walkAppendOnly skips existing files — a FUSE-written flip never reaches git and the directive stays git-pending (zombie-pending), re-preempting the dispatcher forever. This is the exact bug class the directive aims to KILL; the auto-closer must not reintroduce it. The walker is invoked from the clone (--workspace ${CLONE}) precisely so its writes land in git.",
+    "ledger_keying": "Ledger rows keyed on (directive_id, run flip); re-runs after a flip see status='completed' (not 'pending') and do not re-emit."
+  },
+  "Q7_notification": {
+    "summary_line": "latest-tinker-summary.txt gets 'DIRECTIVE AUTO-CLOSE: N closed (M shadow-candidates) this cycle' every run, so closures are operator-auditable rather than silent.",
+    "report_findings": "report-*.json findings[] gets one object per closed (or would-close) directive with category='directive-auto-close', directive_id, linked prop_id, linkage_type ('source_directive' | 'supersedes_directives'), prior_status, new_status, and dryrun flag — for forensic search.",
+    "rationale": "Directive constraint Q7: 'Lets the operator audit closures rather than have them disappear silently.'"
+  },
+  "Q8_cross_lineage_backfill_plan": {
+    "two_cases_today": {
+      "DIRECTIVE-20260614-001": "Addressed by PROP-106 (PROP-106's own source_directive is DIRECTIVE-20260616-002). Backfill: add supersedes_directives:['DIRECTIVE-20260614-001'] to PROP-106.json.",
+      "DIRECTIVE-20260614-002": "Addressed by PROP-101 (shipped without explicit directive linkage). Backfill: add supersedes_directives:['DIRECTIVE-20260614-002'] to PROP-101.json."
+    },
+    "current_state": "Both DIRECTIVE-20260614-001 and -002 are ALREADY status='completed' (operator hand-flipped them in the 2026-06-19 session, as the directive predicted). So the backfill is now retroactive self-documentation, NOT an active close — it makes the cross-lineage edges machine-readable so the mechanism is demonstrably exercised and the pattern is self-documenting for future authors.",
+    "how_to_backfill": "node monitor/scripts/mark-directive-superseded.js DIRECTIVE-20260614-001 by PROP-106 ; node monitor/scripts/mark-directive-superseded.js DIRECTIVE-20260614-002 by PROP-101. (Idempotent; since the directives are already completed, the walker will not re-close them — the edge is recorded for documentation.)",
+    "going_forward": "Authors add supersedes_directives at PROP-authoring time whenever the PROP discharges a directive not captured by source_directive."
+  },
+  "phase_0_shadow_dryrun_first_result": {
+    "run": "tinker-2026-06-20T02-40",
+    "simulation_method": "Ran the proposed conservative close logic against the live 9 pending directives + 119 PROPs in the clone (source_directive back-reference + Q2 terminal-status whitelist + Q3 partial-phase default-no).",
+    "pending_directives": 9,
+    "would_close": 0,
+    "per_directive": [
+      {"directive": "DIRECTIVE-20260608-002", "links": "none", "outcome": "stay pending (no linked PROP)"},
+      {"directive": "DIRECTIVE-20260609-001", "links": "none", "outcome": "stay pending (no linked PROP)"},
+      {"directive": "DIRECTIVE-20260610-001", "links": "none", "outcome": "stay pending (no linked PROP; low priority)"},
+      {"directive": "DIRECTIVE-20260610-002", "links": "PROP-091 (no source_directive back-ref present on PROP-091)", "outcome": "stay pending (link not machine-readable; needs source_directive or supersedes_directives backfill)"},
+      {"directive": "DIRECTIVE-20260612-001", "links": "PROP-092 (no source_directive back-ref present on PROP-092)", "outcome": "stay pending (link not machine-readable)"},
+      {"directive": "DIRECTIVE-20260613-003", "links": "PROP-096:pending (source_directive)", "outcome": "stay pending (linked PROP not terminal)"},
+      {"directive": "DIRECTIVE-20260613-004", "links": "PROP-097:approved-mech-1-implemented (source_directive)", "outcome": "stay pending (partial-phase, no opt-in)"},
+      {"directive": "DIRECTIVE-20260614-003", "links": "PROP-102:phase-0-implemented-phase-1-pending-7d-shadow-audit (source_directive)", "outcome": "stay pending (partial-phase, no opt-in)"},
+      {"directive": "DIRECTIVE-20260619-001", "links": "none (this PROP authored from it)", "outcome": "stay pending (this run flips it completed via the dispatcher's normal directive-completion path, not the auto-closer)"}
+    ],
+    "interpretation": "Matches the directive's prediction and PROP-102's own first-result shape: 0 would-close. The 6 full zombies were already operator-hand-flipped to 'completed' before this run, so there is nothing left to auto-close at design time — the EXPECTED, DESIRED conservative result. It confirms the design would NOT spuriously close the 3 currently-linked-but-not-terminal directives (PROP-096 pending, PROP-097 partial, PROP-102 partial). Secondary finding surfaced by the dry run: PROP-091 and PROP-092 carry NO source_directive back-reference, so their directives (20260610-002, 20260612-001) have no machine-readable link at all — these are the canonical case for the Q4 supersedes_directives backfill (or a source_directive backfill). The interesting forward test: when a future directive's linked PROP reaches a terminal status, does the walker catch the resulting close without operator intervention. The shadow ledger records that first real candidate when it occurs."
+  },
+  "other_side": {
+    "argue_against_1": "'PROP-102's auto-close is itself still in shadow pending a 7d audit. Don't ship a second auto-close variant before the first proves out.' Counter (also raised by the directive): directive-auto-close shadow mode is independently safe (ledger-only, zero file writes) and the two shadow windows run concurrently and are inspected together at the 7-day mark. Holding this one back gains nothing and leaves zombie directives re-preempting the dispatcher longer. Independent rollout is the right call.",
+    "argue_against_2": "'Conservative terminal-status rules will let partial-zombie directives (Phase 0 done, later phases pending) sit pending and still mildly clutter the queue.' Counter: that is the intended trade. The directive constraint is explicit that false-negatives (stays pending when it could close) cost only an operator audit step, while false-positives (closes while real work pends) lose visibility on shipped-but-incomplete work. Partials retain oversight value; the opt-in field (Q3) is the escape hatch for genuinely single-shot directives.",
+    "argue_against_3": "'A peer script duplicates the terminal-status predicate already in prop-auto-close.js.' Counter: the duplication is ~15 lines of a Set + regex list; extracting a shared lib now is premature abstraction across two surfaces with different object models. The PROP names auto-close-lib.js as the documented refactor target IF a third surface or real drift appears.",
+    "argue_against_4": "'Why not also give directives a Mechanism-A self-verification analog?' Counter: directives are task instructions, not checkable code-state assertions — there is no directive-local artifact to verify. Closure is correctly graph-only off the linked PROP. Adding a fake verification surface would invite exactly the grade-C false-trust problem PROP-102 had to grade-gate against."
+  },
+  "constraints_honored": [
+    "Mirrors PROP-102's shape: same flag convention, same ledger pattern (git-append-only), same shadow->enforce rollout, same obe/closure-metadata discipline.",
+    "Conservative-by-default close rules (directive constraint): single-phase terminal-implemented only; partials require opt-in; lean to false-negative.",
+    "Honors CLAUDE.md DIRECTIVE-LIFECYCLE additive-edit exception: writes only status/completed_at/completed_by_run/prop_id_authored, pending->completed transition only, idempotent first-set guards.",
+    "Cross-lineage detection is opt-in via explicit supersedes_directives field; no heuristic topic-matching.",
+    "Phase-0 shadow runs concurrently with PROP-102 Phase 0; Phase-1 ship NOT gated on PROP-102 Phase-1.",
+    "Write-side FND-01 discipline: status flips written to clone + pushed, NEVER to FUSE (the bug class this directive kills)."
+  ],
+  "not_in_scope": [
+    "Auto-close for ISS items (decider handles ISS closure).",
+    "Auto-close for human-notes (different lifecycle, human-notes-archive.jsonl).",
+    "Heuristic / NLP topic matching between directives and PROPs.",
+    "A Mechanism-A self-verification analog for directives (no directive-local checkable artifact)."
+  ],
+  "proposed_fix": {
+    "summary": "Add monitor/scripts/directive-auto-close.js (peer of prop-auto-close.js, Mechanism-B-analog only): walk every status='pending' directive, resolve its linked PROP via PROP.source_directive back-reference and PROP.supersedes_directives forward-declaration, and if the linked PROP is in the conservative terminal-implemented whitelist (or partial+opt-in per Q3), close the directive (shadow: ledger-only; enforce: flip pending->completed with completed_at/completed_by_run/prop_id_authored from the clone). Add monitor/scripts/mark-directive-superseded.js (Q4 backfill tool). Add a 'Directive Lifecycle Auto-Close' pre-flight to tinker.md placed AFTER PROP Lifecycle Auto-Close and BEFORE Operator-Directive Discovery. Register directive-auto-close-ledger.jsonl (git-append-only) and directive-auto-close-enforce.flag (git) in build.js OWNERSHIP, workspace-sync.md (NEVER_PUSH + GIT_APPEND_ONLY), and CLAUDE.md. Document supersedes_directives + auto_close_when_phase_0_done in CLAUDE.md where the PROP/directive schema is canonicalized. Backfill PROP-106 (supersedes_directives:['DIRECTIVE-20260614-001']) and PROP-101 (supersedes_directives:['DIRECTIVE-20260614-002']).",
+    "verification_pattern": "test -f monitor/scripts/directive-auto-close.js && grep -q 'directive-auto-close' monitor/prompts/tinker.md && grep -q 'directive-auto-close-ledger.jsonl' build.js && echo FIXED || echo STILL_BROKEN"
+  },
+  "estimated_impact": "Eliminates the zombie-directive re-preemption gap permanently. Future directives whose linked PROP reaches terminal status auto-close within one tinker run (enforce mode), so the dispatcher's Operator-Directive Discovery never wastes a run on already-discharged work. Expected steady state per the directive: ~5-8 genuinely-pending directives at any time; zombies cleared within hours of the PROP reaching terminal status; operator visibility preserved via ledger + summary.",
+  "rollout_plan": "Propose-only this run. Operator integrates after review: (1) add monitor/scripts/directive-auto-close.js + mark-directive-superseded.js; (2) add the 'Directive Lifecycle Auto-Close' pre-flight to tinker.md (after PROP auto-close, before directive discovery); (3) register ledger (git-append-only) + flag (git) in build.js OWNERSHIP, workspace-sync.md, CLAUDE.md; (4) document supersedes_directives + auto_close_when_phase_0_done in CLAUDE.md; (5) backfill PROP-106 + PROP-101 supersedes_directives via mark-directive-superseded.js; (6) run >=7 days in shadow (no enforce flag), audit directive-auto-close-ledger.jsonl dryrun rows; (7) create monitor/decisions/directive-auto-close-enforce.flag to enable Phase 1.",
+  "cross_references": [
+    "DIRECTIVE-20260619-001",
+    "PROP-102",
+    "PROP-014",
+    "PROP-098",
+    "PROP-026",
+    "PROP-009",
+    "PROP-009r2",
+    "PROP-065",
+    "PROP-060",
+    "PROP-021",
+    "PROP-101",
+    "PROP-106",
+    "PROP-096",
+    "PROP-097",
+    "PROP-091",
+    "PROP-092"
+  ]
+}
