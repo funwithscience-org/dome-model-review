@@ -1,0 +1,64 @@
+{
+  "prop_id": "PROP-109",
+  "title": "Analyst cost-history rows are orphaned: P3 'rides along on the analyst's normal commit+push' but the analyst is a non-pushing (decider-mediated) agent",
+  "authored_by": "tinker",
+  "authored_at": "2026-06-20T05:59:00Z",
+  "category": "cost-observability",
+  "propose_only": true,
+  "do_not_implement": true,
+  "status": "pending-operator-review",
+  "severity": "moderate",
+  "recommendation": "Give the analyst's PROP-101 Phase-1 cost self-report an explicit, unconditional push path for monitor/analyst/cost-history.jsonl, OR route the row through the decider. Do NOT route it through workspace-sync FUSE->git (banned by PROP-065 for git-append-only files).",
+  "executive_summary": "The analyst (Opus, the single most expensive agent at ~$8-11/run) has written ZERO cost-history rows since 2026-06-18T04:17, despite firing on schedule ~7+ times (scheduler lastRunAt 2026-06-20T04:08). Peer Phase-1 agents curmudgeon (last row 2026-06-20T05:13, 15 rows) and analyst-baby (logs every no-op) are fine. Root cause: analyst.md Step P3 appends the cost row to the CLONE path monitor/analyst/cost-history.jsonl and says it 'rides along on the analyst's normal commit+push' -- but analyst.md line 518 architecturally forbids the analyst from committing/pushing ('Do NOT attempt git clone, git commit, or git push. The decider handles git'). The analyst has 0 pushes in the last 7 days. Because cost-history.jsonl is git-append-only (PROP-065), workspace-sync will NOT rescue it FUSE->git, and P3 writes to the clone (not FUSE) anyway -- so the appended row dies when the analyst's run-local clone is deleted at end of run. The gap is drought-correlated: rows exist for 2026-06-14..06-18 (right after PROP-101 landed), then went silent once the dome entered its day-64 mechanical-AR-only drought with no commit-worthy output.",
+  "evidence": {
+    "analyst_cost_history_rows_total": 6,
+    "analyst_cost_history_last_run_at": "2026-06-18T04:17:10.369Z",
+    "analyst_scheduler_last_run": "2026-06-20T04:08:32.482Z",
+    "analyst_scheduler_cron": "0 1,5,9 * * * (UTC 00/04/08), enabled",
+    "analyst_pushes_last_7d": 0,
+    "curmudgeon_cost_history_last_run_at": "2026-06-20T05:13:29.664Z",
+    "curmudgeon_cost_history_rows": 15,
+    "analyst_postlude_summary_fresh": "monitor/analyst/latest-analysis-summary.txt FUSE mtime 2026-06-20 04:14 -- analyst DOES reach its postlude; P1 (FUSE summary) and P2 (status.json FUSE) survive via workspace-sync; only P3 (clone cost-history) is lost",
+    "analyst_md_line_518": "Do NOT attempt git clone, git commit, or git push. Write outputs to workspace. The decider handles git.",
+    "analyst_md_step_P3": "Append one JSON line to the CLONE monitor/analyst/cost-history.jsonl ... The clone-side write rides along on the analyst's normal commit+push. (contradicts line 518: there is no normal analyst push)",
+    "write_self_cost_sh_header": "writes the result to the clone-side path so the agent's normal commit+push carries it to origin. Never writes to FUSE.",
+    "git_append_only_membership": "monitor/analyst/cost-history.jsonl is in workspace-sync.md GIT_APPEND_ONLY (PROP-065) -- FUSE->git rescue is intentionally denied"
+  },
+  "root_cause": "PROP-101 Phase 1 reused the curmudgeon/baby cost-report pattern (clone-append + rides-along-on-push) for the analyst without accounting for the analyst's different git model. Curmudgeon and analyst-baby push every run, so their rides-along works. The analyst is decider-mediated and pushes nothing in steady state, so its rides-along has no carrier.",
+  "unverified_point": "The exact mechanism by which the 6 existing rows (2026-06-14..06-18) reached git could not be confirmed from a depth-50 shallow clone (the only commit touching the file within depth is the grafted shallow-boundary commit). Hypothesis: the analyst had commit-worthy verdict/FAIL-integration work in that window that triggered a push the cost row rode along on; once the drought removed all commit-worthy output, the carrier disappeared. Does not affect the current-state diagnosis (rows silent for 2 days across 7+ runs).",
+  "recommended_fix_options": [
+    {
+      "option": "A (preferred, narrowest)",
+      "change": "In analyst.md Step P3, after the write-self-cost.sh append, add an explicit targeted commit+push of ONLY monitor/analyst/cost-history.jsonl from the analyst's clone, guarded by the PAT-prelude DOME_PAT and a git pull --rebase. cost-history.jsonl is git-append-only and single-writer-per-agent, so a targeted push is low-collision. Grants the analyst a narrowly-scoped push capability (one git-append-only file) -- an architecture change from line 518's blanket no-push, which is why this is operator-gated. Must update analyst.md line 518 to carve out the cost-history exception so the two statements stop contradicting.",
+      "risk": "Analyst gains a push surface. Mitigated by scoping to one append-only file + git pull --rebase before push."
+    },
+    {
+      "option": "B (decider-mediated, preserves no-push invariant)",
+      "change": "Analyst writes the cost row to a FUSE handoff file (e.g. monitor/analyst/pending-cost-row.json); the decider, on its next run, appends it to cost-history.jsonl from the decider's clone and pushes. Keeps the analyst push-free but adds a handoff hop and up-to-4h latency, and needs decider.md changes.",
+      "risk": "Latency + a new handoff to maintain; more moving parts than A."
+    },
+    {
+      "option": "C (do nothing -- documented null option)",
+      "change": "Accept that analyst no-op/drought runs are uninstrumented; rely on the 6 representative rows for the analyst cost model.",
+      "risk": "Silently violates the PROP-101 'every run, including no-op' invariant on the priciest agent; corrupts cross-agent cost comparison; hides any future analyst cost spike. Not recommended but cheap."
+    }
+  ],
+  "verification_pattern": "node -e \"const fs=require('fs');try{const t=fs.readFileSync('monitor/analyst/cost-history.jsonl','utf8').trim();const rows=t?t.split('\\n').filter(Boolean).map(l=>JSON.parse(l)):[];if(!rows.length)process.exit(1);const last=rows[rows.length-1];const ageDays=(Date.now()-Date.parse(last.run_at))/86400000;process.exit(ageDays<2?0:1)}catch(e){process.exit(1)}\" && echo FIXED || echo STILL_BROKEN",
+  "verification_pattern_grade": "A",
+  "verification_pattern_explanation": "Behavioral check: passes only when the most recent analyst cost-history row is <2 days old. Analyst fires 3x/day, so post-fix the row is always fresh (FIXED); pre-fix it is stuck at 2026-06-18 (STILL_BROKEN). Runs cwd=clone, matching prop-auto-close.js --workspace invocation.",
+  "other_side_considerations": [
+    "Marginal info from logging each near-identical drought no-op run is low -- we already know analyst Opus runs cost ~$8-11 from the 6 existing rows, so ~$25-33/day during a 3x/day drought is estimable without the rows.",
+    "The drought is the abnormal regime; once the dome author resumes activity the analyst will produce commit-worthy work and the rides-along carrier returns on its own, partially self-healing the gap.",
+    "Counter to the above: tinker's Mode 3 cost time-series is the consumer, and a growing hole on the priciest agent during a multi-week drought is precisely when an operator would want to confirm whether the analyst is burning Opus dollars on no-op fresh-eyes passes. That answer currently isn't in the data.",
+    "Granting the analyst any push surface (Option A) widens its blast radius and partially erodes the clean 'decider owns git' invariant several safety properties lean on. Option B preserves the invariant at the cost of latency."
+  ],
+  "cross_references": [
+    "PROP-101 (real cost measurement, Phase 1 -- source of Step P3)",
+    "PROP-065 (git-append-only deny -- why FUSE->git rescue is NOT an option here)",
+    "PROP-107 (prune-integrity reports success but doesn't push -- same class: agent does work, push step doesn't carry it)",
+    "analyst.md line 518 (no-push invariant) vs analyst.md Step P3 (rides-along claim)",
+    "curmudgeon.md Step 9 / analyst-baby.md Step 10 (the always-push peers whose rides-along works)"
+  ],
+  "completion_criteria": "analyst cost-history.jsonl receives a fresh row on a no-op/no-commit analyst run; verification_pattern returns FIXED; analyst.md P3 and line 518 no longer contradict each other.",
+  "operator_disposition": "pending"
+}
