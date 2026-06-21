@@ -1,22 +1,32 @@
-TINKER 2026-06-20T07-03 — Operator Directive DIRECTIVE-20260620-002 (integrity runtime/cost audit) -> PROP-111 authored.
+TINKER RUN 2026-06-21T02-40 — DIRECTIVE-OVERRIDE (DIRECTIVE-20260620-003, PROP-104 Phase 0)
 
-HEADLINE: Integrity's cost ($4.24/run, $21/wk, ~$1.1K/yr) is real and worth engineering — but the directive's "65 min/run" wall-clock premise is a SKEWED-MEAN ARTIFACT. Per cost-history.jsonl (N=6): 5 of 6 runs are 7.5-10 min (median 9.7 min); the "3931s mean" is dragged up by ONE 2026-06-19 run at 17462s (4.85h) — a network stall, not systemic. Cost is decoupled from wall-clock (the 4.85h run cost only ~12% above median).
+HEADLINE: PROP-104 Phase 0 per-transcript analysis CANNOT be run by tinker.
+Cross-session sandbox isolation: a tinker session can read exactly ONE
+*.jsonl transcript — its own. Decider's transcripts (other sessions) are
+mode 750 nobody:nogroup => EACCES. This is the same constraint documented in
+write-self-cost.sh L44-47 / PROP-101 Q1; the directive's Q1 cited that
+discovery command but it only ever returns the caller's own transcript.
+The analyzer itself WORKS (proven on tinker's own transcript) — the blocker
+is access, not code.
 
-COST COMPOSITION (matches directive): cache_read 55% / cache_write_1h 29% / output 16%. Driver = ~70-turn prefix re-read on a large cold-cached 855-line prompt (the PROP-104 the_correction pattern). Cost is structural, not anomalous — integrity just never got the gating/precompute treatment its siblings (PROP-020/021/038) did.
+DELIVERABLE: PROP-112 — relocate compute-decider-step-cost.js into decider's
+OWN end-of-run (co-located with write-self-cost.sh, where the transcript is
+readable); emit a committed per-step JSON; tinker aggregates cross-run.
+Mirrors the PROP-101 self-cost pattern. PROPOSE-ONLY; operator decides Phase 1.
 
-CLASSIFICATION: ~17 of 22 checks MECHANICAL, ~5 MIXED, ~0 purely-SEMANTIC.
+BOUNDED EVIDENCE (from committed decider/cost-history.jsonl, N=13):
+  - cache_read 52.5% + cache_write_1h 30.7% + output 16.7% of USD.
+  - fresh-input ~129 tokens/run (negligible).
+  - Pearson r(assistant_msgs, cache_read) = 0.996.
+  => PRECOMPUTE Phase-1 path is RULED OUT (no fresh state-file load cost).
+     Lever is the cached prefix: bash-output-trim + fewer turns, then
+     prompt-slim. CONFIRMS PROP-104 the_correction. Q8 confirmed: closed-
+     issues.json (3.07MB) does not enter context as fresh input.
+  - Q5 (H1/H2 confabulation): UNSATISFIABLE — decider summaries aren't
+    archived per-run (single overwritten file; 3 git versions, 0 hits).
 
-PROP-111 (propose-only) recommends, in order:
-  - 1C: Check-3 external links weekly + per-fetch/total timeout budget. Fixes the 4.85h-stall failure mode. Immediate, LOW risk, cron/gate only.
-  - 1A: precompute-extract mechanical checks (1/1b/4/5/5c/5d/6/7/7a.5/7f) into compute-integrity-mechanical.js the LLM reads as one JSON. Est 25-40% cost cut, MODEL-INDEPENDENT, LOW risk. Mirrors PROP-020/021.
-  - 1B: prompt-slim rare-path forensic prose to a reference file.
-  - re-measure, THEN consider 1D Haiku split (MEDIUM risk).
-  Lead with precompute+gating, NOT the Haiku split.
+PIPELINE HEALTH (incidental): GREEN. open-issues=3, assigned-analyst=0,
+net velocity +106/7d, root-FS free 3522MB, closed-issues 3.07MB. No
+backlog-trend thresholds fired. No stranded patches, no FUSE/auth issues.
 
-CORRECTIONS FILED: (1) 65-min wall-clock = one-outlier skewed mean (median ~9.7min). (2) Haiku is ~3x cheaper than Sonnet (cache_read $0.10 vs $0.30), NOT 10x as directive Q3 implied. (3) docs/index.html is 1.75MB, not 4.5MB.
-
-PHASE 0 (proposed): STEP_MARKER per-check instrumentation (mirror PROP-104) + compute-integrity-mechanical.js in shadow + Haiku smoke-test on historical finding-bearing days + investigate the 06-19 stall transcript.
-
-OTHER PENDING DIRECTIVE (next run): -003 PROP-104 Phase 0 analyze. WARNING for whoever picks it up: it needs decider transcripts from other sessions' /sessions/ mounts (typically NOT readable cross-session) — verify `find /sessions -readable -name '*.jsonl'` first; escalate rather than synthesize if unreadable.
-
-Pipeline health: open_issues=3, net_velocity_7d=+101, root-FS free 3291MB, closed_issues 3.07MB. All GREEN. Auto-close shadow clean (PROP-102: 0/122 would-close; PROP-108: 0/2 would-close).
+DIRECTIVE-20260620-003 flipped pending->completed (clone-side).

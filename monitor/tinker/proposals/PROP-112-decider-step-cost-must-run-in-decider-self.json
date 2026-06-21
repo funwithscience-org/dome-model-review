@@ -1,0 +1,70 @@
+{
+  "prop_id": "PROP-112",
+  "title": "PROP-104 Phase 0 per-step analysis must run inside decider's own end-of-run (cross-session transcript isolation blocks tinker); bounded aggregate analysis refutes the precompute hypothesis",
+  "authored_by": "tinker",
+  "authored_at": "2026-06-21T02:45:00Z",
+  "directive_id": "DIRECTIVE-20260620-003",
+  "category": "cost-engineering / pipeline-architecture",
+  "propose_only": true,
+  "do_not_implement": true,
+  "status": "proposed",
+  "requires_human_judgment": true,
+  "recommendation": "Two-part: (1) FIX THE EXECUTION MODEL — move compute-decider-step-cost.js into decider's own end-of-run (right after write-self-cost.sh, which already runs against decider's own readable transcript), emit a committed per-step JSON, and have tinker aggregate the committed JSONs cross-run. This is the ONLY design under which PROP-104 Phase 0's per-step analysis can ever run, because every scheduled agent can read only its OWN transcript. (2) ACT ON THE BOUNDED EVIDENCE — the aggregate data (N=13 committed decider runs) already rules out the PRECOMPUTE Phase-1 path and points the lever at the cached conversation prefix (bash-output-trim + fewer turns, then prompt-slim). Do NOT pursue precompute.",
+  "executive_summary": "DIRECTIVE-20260620-003 asked tinker to run compute-decider-step-cost.js against decider transcripts since 2026-06-17 and produce the Phase 0 -> Phase 1 decision evidence. The per-transcript analysis (Q1-Q4, Q8 per-run) is STRUCTURALLY IMPOSSIBLE for tinker: a tinker session can read exactly ONE *.jsonl under /sessions/*/.claude/projects/ -- its own current transcript. Decider's transcripts live in other sessions whose mnt dirs are mode 750 nobody:nogroup => EACCES. This is the same isolation documented in write-self-cost.sh L44-47 and PROP-101 Q1; the directive's Q1 cited that discovery command, but the command returns only the caller's own transcript by design. The analyzer itself is FUNCTIONAL (proven by running it on tinker's own transcript). The fix is to run the analyzer where the transcript is readable: inside decider's own run. Meanwhile, bounded analysis of committed aggregate data (decider/cost-history.jsonl) settles the most important Phase-1 question on its own: precompute is the wrong lever.",
+  "q1_q2_transcript_discovery_and_runs": {
+    "result": "BLOCKED (structural), analyzer PROVEN functional",
+    "evidence": "find /sessions -path '*/.claude/projects/*' -name '*.jsonl' -readable => 1 file (tinker's own). 0 decider transcripts readable. Analyzer ran clean on tinker's own transcript (parsed run_meta: model claude-opus-4-8, cost computed). per_step=0 only because tinker emits no STEP_MARKERs.",
+    "conclusion": "No future tinker run can do this either. The directive's premise is incompatible with the sandbox model."
+  },
+  "q3_q4_distribution_and_mechanism_b": {
+    "per_step_split": "UNAVAILABLE without transcript.",
+    "aggregate_cost_split_n13": {"window": "2026-06-14..2026-06-21", "cache_read_pct": 52.5, "cache_write_1h_pct": 30.7, "output_pct": 16.7, "fresh_input_tokens_total": 1676, "fresh_input_tokens_per_run_avg": 129},
+    "cache_read_vs_turns": {"pearson_r": 0.996, "mean_cache_read_tokens_per_assistant_msg": 119000},
+    "interpretation": "Fresh-input ~0 => source (c) Read-tool state-file loads do NOT enter context as fresh input. CONFIRMS PROP-104 the_correction_up_front: state files are parsed in bash subprocess and discarded; only short printed summaries enter tool_result. cache_read = the full prefix re-read every turn, scaling with turn count (r=0.996), not with state-file reads. The (a) static-prompt-floor vs (b) accumulated-tool_result split WITHIN cache_read is the one number still requiring the transcript."
+  },
+  "q5_h1_h2_confabulation": {
+    "result": "INSUFFICIENT DATA",
+    "reason": "latest-decider-summary.txt is a single overwritten file, not a per-run archive; the directive's 'walk all summaries from 06-14 onward' is unsatisfiable as specified. Depth-50 git history => 3 distinct committed versions, 0 confabulation-pattern hits in all 3. Referenced 06-16T10:00 event not in shallow-clone-reachable history. N too small to separate H1 from H2.",
+    "fix_for_future": "Archive decider summaries per-run to a JSONL (like cost-history), OR run the confabulation grep inside decider's own session."
+  },
+  "q6_phase1_path_recommendation": {
+    "ruled_out": "PRECOMPUTE (path i) -- fresh-input is already ~129 tokens/run; there is no fresh state-file load cost to precompute away.",
+    "recommended": "MIX weighted to BASH-OUTPUT-TRIM + FEWER-TURNS (path iii), then PROMPT-SLIM (path ii). 83% of cost (cache_read + cache_write_1h) is the conversation prefix cached and re-read each turn; r=0.996 with turn count makes turn-count and per-turn tool_result volume the highest-leverage levers.",
+    "blocked_refinement": "Exact (a) prompt-floor vs (b) tool_result-growth apportionment needs the in-decider per-step analysis (the architectural fix below) before committing the prompt-slim-vs-output-trim weighting."
+  },
+  "q7_confidence_interval": {
+    "n": 13,
+    "firm": "cache_read+cache_write dominate (~83%); fresh-input negligible (precompute ruled out); cache_read linear in turns (r=0.996).",
+    "not_firm": "the a/b split inside cache_read -- needs >=5 per-step transcript analyses, unobtainable under current execution model. Recommend shipping the architectural fix to GENERATE that data before any a/b-dependent Phase 1 commitment."
+  },
+  "q8_prop022_phase6_verification": {
+    "result": "CONFIRMED at aggregate level",
+    "detail": "Fresh-input 53-215 tokens/run; closed-issues.json (3.07MB) does not enter context as fresh input. Consistent with PROP-105 defer-phase-6 and PROP-104 the_correction. Per-tool_result-size verification needs the transcript, but the fresh-input floor corroborates it."
+  },
+  "proposed_fix": {
+    "what": "Add a per-step analysis step to decider's end-of-run, co-located with the existing write-self-cost.sh call (which already operates on decider's own readable transcript).",
+    "how": "After write-self-cost.sh merges self_cost, decider runs: node monitor/scripts/compute-decider-step-cost.js <own-transcript> > monitor/integrity/decider-step-cost-<decider-run-id>.json (append-only dir, committed via decider's normal push). Tinker's role becomes AGGREGATION across the committed per-step JSONs (Q3) -- fully within tinker's git access.",
+    "why": "Mirrors PROP-101 exactly: each agent prices its OWN transcript and commits the result; cross-agent rollups read the committed files. The analyzer was mis-sited in the original PROP-104 Phase 0 design (assumed tinker could reach decider transcripts).",
+    "transcript_discovery_in_decider": "Reuse write-self-cost.sh's discovery (find /sessions -path '*/.claude/projects/*' -name '*.jsonl' -readable | head -1) -- inside decider it resolves to decider's own transcript.",
+    "cost": "One extra ~1s node invocation per decider run + one small committed JSON. Negligible.",
+    "ownership_note": "monitor/integrity/ is already append-only in build.js OWNERSHIP; per-run files fit the existing pattern. Retention handled by dome-prune-integrity (PROP-051 Workstream C)."
+  },
+  "other_side_considerations": [
+    "ARGUE-AGAINST the fix: 'Just have the operator run the analyzer in a cowork session that can read all transcripts.' Counter: operator-cowork CAN read cross-session, but that makes the measurement manual/ad-hoc -- the whole point of PROP-104 instrumentation was a standing, automated signal. In-decider self-analysis is the automated equivalent of PROP-101's self-cost and needs no human in the loop.",
+    "ARGUE-FOR doing nothing: 'The aggregate data already answers the Phase-1 question (precompute is out, trim turns/output).' Partly true -- the precompute ruling is firm at N=13. But the prompt-slim-vs-output-trim WEIGHTING still needs the a/b split, so the in-decider analyzer earns its keep. If the operator is satisfied acting on the aggregate alone, the architectural fix can be deferred and Phase 1 can ship bash-output-trim first.",
+    "ARGUE-AGAINST self-instrumentation: 'Adding analysis to decider's hot path risks the same context-bloat we are trying to measure.' Counter: it runs at end-of-run as a bash subprocess (like write-self-cost.sh); its output is a committed file, not in-context tokens. Net context impact ~0.",
+    "Risk of the bounded recommendation: N=13 spans a narrow 7-day window at one cadence (post-PEAK-SHIFT 3 runs/day). If decider workload shape changes materially, re-measure before trusting the 52.5/30.7/16.7 split."
+  ],
+  "verification_pattern": {
+    "grade": "B",
+    "describes": "Phase-1 of the fix (in-decider analyzer) would be verified by: committed monitor/integrity/decider-step-cost-<run>.json files appearing after decider runs, each containing non-empty per_step[]. This PROP is propose-only; no auto-close until operator approves a Phase 1.",
+    "manual_check": "ls monitor/integrity/decider-step-cost-*.json | grep -v summary  # should be non-empty once the in-decider step ships"
+  },
+  "cross_references": {
+    "parent_directive": "DIRECTIVE-20260620-003",
+    "parent_prop": "PROP-104 (Phase 0 analyzer + STEP_MARKERs)",
+    "related": ["PROP-101 (self-cost pattern this fix mirrors)", "PROP-105 (PROP-022 phase 6 defer, Q8)", "write-self-cost.sh L44-47 (the isolation constraint)"],
+    "consolidated_finding": "monitor/integrity/decider-step-cost-summary-2026-06-21T02-40.json"
+  },
+  "operator_disposition": "PENDING. Decide: (A) approve the in-decider analyzer relocation (recommended) so per-step data can ever be generated; AND/OR (B) act now on the aggregate-only ruling and ship a bash-output-trim/fewer-turns Phase 1 for decider, explicitly NOT precompute. Mark DIRECTIVE-20260620-003 complete on receipt of this PROP."
+}

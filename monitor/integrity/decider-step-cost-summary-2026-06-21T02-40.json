@@ -1,0 +1,57 @@
+{
+  "schema": "decider-step-cost-summary",
+  "generated_by": "tinker",
+  "run_id": "2026-06-21T02-40",
+  "generated_at": "2026-06-21T02:44:00Z",
+  "directive": "DIRECTIVE-20260620-003",
+  "prop_lineage": "PROP-104 Phase 0",
+  "headline": "PROP-104 Phase 0 per-transcript analysis CANNOT be executed by tinker due to cross-session sandbox isolation. The analyzer (compute-decider-step-cost.js) is functional, but decider transcripts are unreadable from a tinker session (EACCES). Partial bounded analysis done from committed aggregate data (decider/cost-history.jsonl, PROP-101) refutes the precompute hypothesis and confirms PROP-104's the_correction_up_front.",
+  "Q1_transcript_discovery": {
+    "result": "BLOCKED",
+    "readable_transcripts_under_sessions": 1,
+    "readable_transcript_is": "tinker's own current run only",
+    "decider_transcripts_readable": 0,
+    "root_cause": "find /sessions -path '*/.claude/projects/*' -name '*.jsonl' -readable returns exactly ONE file: the calling agent's own live transcript. All other sessions' mnt dirs are mode 750 owned by nobody:nogroup => EACCES. This is documented verbatim in monitor/scripts/write-self-cost.sh L44-47 and PROP-101 Q1. The directive's Q1 cites that same discovery command but the command returns only the caller's own transcript by design; it was never capable of reaching decider's transcripts from a tinker session.",
+    "implication": "Not a this-run shortfall; a structural impossibility. No future tinker run can read decider transcripts either."
+  },
+  "Q2_analyzer_runs": {
+    "result": "BLOCKED for decider; analyzer PROVEN functional",
+    "decider_runs_analyzed": 0,
+    "proof_of_function": "Ran compute-decider-step-cost.js against tinker's OWN readable transcript: parsed run_meta cleanly (model claude-opus-4-8, msgs parsed, cost computed). per_step=0 and tool_result_buckets=0 only because tinker emits no STEP_MARKERs and this short run had no >2KB tool_results yet. The script works; the blocker is access, not the code."
+  },
+  "Q3_per_step_distribution": {
+    "result": "UNAVAILABLE",
+    "reason": "Per-step bucketing requires the decider transcripts (STEP_MARKER alignment). Not reachable. Substitute aggregate (per-RUN, not per-STEP) analysis provided in Q6."
+  },
+  "Q4_mechanism_b_attribution": {
+    "result": "PARTIAL (bounded from aggregate, exact a/b split UNAVAILABLE)",
+    "finding": "Across 13 committed decider runs (2026-06-14..2026-06-21): cache_read = 52.5% of total USD, cache_write_1h = 30.7%, output = 16.7%, fresh-input = negligible (1676 tokens total across 13 runs, ~129/run). Fresh-input being ~0 means source (c) Read-tool state-file loads do NOT enter context as fresh input tokens. This directly CONFIRMS PROP-104's the_correction_up_front: state-file content is parsed inside bash subprocess and discarded; only short printed summaries enter tool_result. The precise (a) static-prompt vs (b) accumulated-tool_result split WITHIN cache_read cannot be computed without the transcript.",
+    "cache_read_vs_turns": "Pearson r(assistant_msgs, cache_read) = 0.996 (near-perfect linear). Mean ~119K cache_read tokens per assistant message. cache_read = the full conversation prefix re-read every turn; it scales with turn count, not with fresh state-file reads."
+  },
+  "Q5_h1_h2_confabulation": {
+    "result": "INSUFFICIENT DATA",
+    "reason": "latest-decider-summary.txt is a SINGLE overwritten file, not a per-run archive. The directive's premise ('walk all decider summary files from 2026-06-14 onward') is not satisfiable as specified. Depth-50 git history captured only 3 distinct committed versions; grep for confabulation patterns (context-resumed / continuation of / as I was working on / when I previously / resuming) returned 0 hits in all 3. The referenced 2026-06-16T10:00 event is not in the committed history reachable from a shallow clone. N too small to distinguish H1 from H2.",
+    "recommendation": "If H1/H2 is to be answered, decider summaries must be ARCHIVED per-run (append to a JSONL) the way cost-history is, OR the confabulation grep must run inside decider's own session against its own transcript."
+  },
+  "Q6_phase1_recommendation": {
+    "result": "BOUNDED RECOMMENDATION (from aggregate, not per-step)",
+    "rule_out_precompute": "Path (i) PRECOMPUTE is the WRONG lever. Fresh-input tokens are already ~129/run; there is no fresh state-file load cost to precompute away. Precompute targets a cost that does not exist in the data.",
+    "primary_lever": "cache_read (52.5%) + cache_write_1h (30.7%) = 83% of cost is the conversation prefix being cached and re-read every turn. r=0.996 with turn count. The levers that move it are (a) PROMPT-SLIM (shrink the fixed decider.md+reference floor) and (b) BASH-OUTPUT-TRIM + FEWER-TURNS (shrink accumulated tool_result and reduce assistant_msgs).",
+    "apportionment_gap": "Choosing between (a) and (b) requires the per-step (a)-floor vs (b)-growth split inside cache_read, which is exactly the blocked transcript analysis. The turn-count linearity (r=0.996) is suggestive that (b)+turn-count dominates the GROWTH, while (a) sets the per-turn FLOOR.",
+    "recommended_phase1": "MIX, weighted to (b): reduce decider turn count and per-turn tool_result volume first (highest-correlated lever), prompt-slim second. Do NOT pursue precompute."
+  },
+  "Q7_confidence": {
+    "n_aggregate_runs": 13,
+    "can_conclude": "With N=13 aggregate runs we can firmly conclude: cache_read+cache_write dominate (83% +/- a few pp), fresh-input is negligible (precompute ruled out), and cache_read scales linearly with turns (r=0.996).",
+    "cannot_conclude": "We CANNOT put a number on the (a) static-prompt vs (b) accumulated-tool_result split inside cache_read. That needs >=5 per-step transcript analyses, which are unobtainable under the current execution model. Recommend the architectural fix below before any Phase 1 commitment that depends on the a/b split."
+  },
+  "Q8_prop022_phase6": {
+    "result": "CONFIRMED at aggregate level",
+    "finding": "Fresh-input tokens are 53-215 per decider run. closed-issues.json (3.07MB) bulk does NOT enter context as fresh input -- consistent with PROP-105's defer-phase-6 conclusion and PROP-104's the_correction. The per-tool_result-size verification (that closed-issues reads appear as small one-line print summaries) cannot be done without the transcript, but the aggregate fresh-input floor corroborates it."
+  },
+  "architectural_fix": {
+    "problem": "compute-decider-step-cost.js was designed to be run by tinker against decider transcripts, but the sandbox isolation model makes every scheduled agent able to read ONLY its own transcript. The analyzer can therefore never be driven cross-session.",
+    "fix": "Move the per-step analysis INTO decider's own end-of-run, immediately after it already runs write-self-cost.sh against its own (readable) transcript. Decider emits a committed per-step JSON (e.g. monitor/integrity/decider-step-cost-<decider-run>.json, append-only). Tinker then AGGREGATES the committed JSONs cross-run (Q3) -- which IS within tinker's access since they are git files. Mirrors the PROP-101 self-cost pattern exactly (each agent prices its own transcript and commits the result).",
+    "embodied_in": "PROP-112"
+  }
+}
