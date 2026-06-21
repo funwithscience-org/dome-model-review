@@ -1005,6 +1005,18 @@ bash "${CLONE}/monitor/scripts/write-self-cost.sh" append "${CLONE}" integrity
 
 `monitor/integrity/cost-history.jsonl` is `git-append-only` per PROP-065 — always write via the clone path.
 
+## Per-Step Cost Self-Instrumentation (PROP-112, added 2026-06-21)
+
+Append one JSONL row to `${CLONE}/monitor/integrity/step-cost-history.jsonl` with this run's per-`STEP_MARKER` token + USD breakdown. The helper discovers the live transcript (same single-transcript discovery as the total-cost reporter above), runs `compute-integrity-step-cost.js` on it, and appends a row containing `{agent, run_at, transcript_path, step_cost: {...analyzer output...}}`.
+
+**Why this lives here**: every scheduled agent can read exactly one `.jsonl` under `/sessions/` — its own current transcript. Other sessions' `.claude/projects/` dirs are mode 750 owned by `nobody:nogroup` and EACCES. So per-step analysis is only viable inside the agent that produced the transcript. Tinker aggregates the committed per-step JSONL across runs from a clone; tinker cannot read your transcript directly. This mirrors the PROP-101 self-cost pattern.
+
+```bash
+bash "${CLONE}/monitor/scripts/write-self-step-cost.sh" "${CLONE}" integrity compute-integrity-step-cost.js
+```
+
+`monitor/integrity/step-cost-history.jsonl` is `git-append-only` per PROP-065 — workspace-sync NEVER pushes it FUSE→git. Always write via the clone path. Non-fatal: any failure logs to stderr and exits 0; the run still ships.
+
 ## Severity Guidelines
 
 - **Critical**: Build drift (published HTML doesn't match source data), broken internal anchors that make sections unreachable, nav chain broken (users can't navigate between tabs)

@@ -199,6 +199,14 @@ const OWNERSHIP = {
   'monitor/social/cost-history.jsonl': 'git-append-only',
   'monitor/dome-mirror/cost-history.jsonl': 'git-append-only',
   'monitor/workspace-sync/cost-history.jsonl': 'git-append-only',
+  // PROP-112 (2026-06-21): per-STEP_MARKER step-cost history. Decider + integrity
+  // self-instrument at end-of-run via write-self-step-cost.sh (cross-session
+  // transcripts are unreadable, so per-step analysis can only run inside the
+  // agent that produced the transcript). Same git-append-only discipline as
+  // cost-history files above. Tinker aggregates cross-run from a clone.
+  'monitor/decisions/step-cost-history.jsonl': 'git-append-only',
+  'monitor/integrity/step-cost-history.jsonl': 'git-append-only',
+  'monitor/scripts/write-self-step-cost.sh': 'git',
   // PROP-106 (2026-06-17): lint-exp-allocations.js writes per-violation rows
   // when shadow mode is active (prop-106-shadow.flag present). Written from
   // any of analyst / analyst-baby / decider clones — same multi-clone-writer

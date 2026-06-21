@@ -307,6 +307,15 @@ NEVER_PUSH=(
   # compute-curmudgeon-dispatcher-state.js / push-via-api.js / etc.
   'monitor/scripts/compute-run-cost.js'
   'monitor/scripts/write-self-cost.sh'
+  # PROP-112 (2026-06-21): per-STEP_MARKER step-cost analyzer wrappers.
+  # write-self-step-cost.sh discovers the agent's own transcript, runs the
+  # per-step analyzer (compute-decider-step-cost.js or
+  # compute-integrity-step-cost.js), and appends one row to
+  # monitor/<agent>/step-cost-history.jsonl. Source code; same classification
+  # as write-self-cost.sh. The two analyzer scripts are already classified
+  # above (compute-decider-step-cost.js shipped PROP-104 Phase 0,
+  # compute-integrity-step-cost.js shipped PROP-111 Phase 0).
+  'monitor/scripts/write-self-step-cost.sh'
   # PROP-102 Phase 0 (2026-06-14): PROP-lifecycle auto-close + supersession.
   # prop-auto-close.js walks PROPs, grades verification_patterns, applies
   # Mechanism A (auto-close on VP pass) + Mechanism B (supersedes graph).
@@ -382,6 +391,13 @@ GIT_APPEND_ONLY=(
   # Same multi-clone-writer pattern as the cost-history files above. FUSE
   # divergence = producer-side bug (clone bypass).
   'monitor/integrity/lint-exp-allocations-shadow.jsonl'
+  # PROP-112 (2026-06-21): per-STEP_MARKER step-cost history. Decider +
+  # integrity self-instrument at end-of-run via write-self-step-cost.sh
+  # because cross-session transcripts are unreadable (PROP-101 Q1). Same
+  # git-append-only discipline as the cost-history files above; FUSE
+  # divergence = producer-side bug (clone bypass).
+  'monitor/decisions/step-cost-history.jsonl'
+  'monitor/integrity/step-cost-history.jsonl'
 )
 
 is_git_append_only() {

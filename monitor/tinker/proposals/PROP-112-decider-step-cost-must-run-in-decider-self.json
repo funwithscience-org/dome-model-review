@@ -7,7 +7,7 @@
   "category": "cost-engineering / pipeline-architecture",
   "propose_only": true,
   "do_not_implement": true,
-  "status": "proposed",
+  "status": "phase-0-shipped",
   "requires_human_judgment": true,
   "recommendation": "Two-part: (1) FIX THE EXECUTION MODEL — move compute-decider-step-cost.js into decider's own end-of-run (right after write-self-cost.sh, which already runs against decider's own readable transcript), emit a committed per-step JSON, and have tinker aggregate the committed JSONs cross-run. This is the ONLY design under which PROP-104 Phase 0's per-step analysis can ever run, because every scheduled agent can read only its OWN transcript. (2) ACT ON THE BOUNDED EVIDENCE — the aggregate data (N=13 committed decider runs) already rules out the PRECOMPUTE Phase-1 path and points the lever at the cached conversation prefix (bash-output-trim + fewer turns, then prompt-slim). Do NOT pursue precompute.",
   "executive_summary": "DIRECTIVE-20260620-003 asked tinker to run compute-decider-step-cost.js against decider transcripts since 2026-06-17 and produce the Phase 0 -> Phase 1 decision evidence. The per-transcript analysis (Q1-Q4, Q8 per-run) is STRUCTURALLY IMPOSSIBLE for tinker: a tinker session can read exactly ONE *.jsonl under /sessions/*/.claude/projects/ -- its own current transcript. Decider's transcripts live in other sessions whose mnt dirs are mode 750 nobody:nogroup => EACCES. This is the same isolation documented in write-self-cost.sh L44-47 and PROP-101 Q1; the directive's Q1 cited that discovery command, but the command returns only the caller's own transcript by design. The analyzer itself is FUNCTIONAL (proven by running it on tinker's own transcript). The fix is to run the analyzer where the transcript is readable: inside decider's own run. Meanwhile, bounded analysis of committed aggregate data (decider/cost-history.jsonl) settles the most important Phase-1 question on its own: precompute is the wrong lever.",
@@ -18,8 +18,18 @@
   },
   "q3_q4_distribution_and_mechanism_b": {
     "per_step_split": "UNAVAILABLE without transcript.",
-    "aggregate_cost_split_n13": {"window": "2026-06-14..2026-06-21", "cache_read_pct": 52.5, "cache_write_1h_pct": 30.7, "output_pct": 16.7, "fresh_input_tokens_total": 1676, "fresh_input_tokens_per_run_avg": 129},
-    "cache_read_vs_turns": {"pearson_r": 0.996, "mean_cache_read_tokens_per_assistant_msg": 119000},
+    "aggregate_cost_split_n13": {
+      "window": "2026-06-14..2026-06-21",
+      "cache_read_pct": 52.5,
+      "cache_write_1h_pct": 30.7,
+      "output_pct": 16.7,
+      "fresh_input_tokens_total": 1676,
+      "fresh_input_tokens_per_run_avg": 129
+    },
+    "cache_read_vs_turns": {
+      "pearson_r": 0.996,
+      "mean_cache_read_tokens_per_assistant_msg": 119000
+    },
     "interpretation": "Fresh-input ~0 => source (c) Read-tool state-file loads do NOT enter context as fresh input. CONFIRMS PROP-104 the_correction_up_front: state files are parsed in bash subprocess and discarded; only short printed summaries enter tool_result. cache_read = the full prefix re-read every turn, scaling with turn count (r=0.996), not with state-file reads. The (a) static-prompt-floor vs (b) accumulated-tool_result split WITHIN cache_read is the one number still requiring the transcript."
   },
   "q5_h1_h2_confabulation": {
@@ -63,8 +73,34 @@
   "cross_references": {
     "parent_directive": "DIRECTIVE-20260620-003",
     "parent_prop": "PROP-104 (Phase 0 analyzer + STEP_MARKERs)",
-    "related": ["PROP-101 (self-cost pattern this fix mirrors)", "PROP-105 (PROP-022 phase 6 defer, Q8)", "write-self-cost.sh L44-47 (the isolation constraint)"],
+    "related": [
+      "PROP-101 (self-cost pattern this fix mirrors)",
+      "PROP-105 (PROP-022 phase 6 defer, Q8)",
+      "write-self-cost.sh L44-47 (the isolation constraint)"
+    ],
     "consolidated_finding": "monitor/integrity/decider-step-cost-summary-2026-06-21T02-40.json"
   },
-  "operator_disposition": "PENDING. Decide: (A) approve the in-decider analyzer relocation (recommended) so per-step data can ever be generated; AND/OR (B) act now on the aggregate-only ruling and ship a bash-output-trim/fewer-turns Phase 1 for decider, explicitly NOT precompute. Mark DIRECTIVE-20260620-003 complete on receipt of this PROP."
+  "operator_disposition": "PENDING. Decide: (A) approve the in-decider analyzer relocation (recommended) so per-step data can ever be generated; AND/OR (B) act now on the aggregate-only ruling and ship a bash-output-trim/fewer-turns Phase 1 for decider, explicitly NOT precompute. Mark DIRECTIVE-20260620-003 complete on receipt of this PROP.",
+  "operator_deployment": {
+    "deployed_at": "2026-06-21T05:30:00.000Z",
+    "deployed_by": "operator (cowork session 2026-06-21)",
+    "scope_shipped": [
+      "monitor/scripts/write-self-step-cost.sh: new sibling to write-self-cost.sh. Discovers agent transcript, runs per-step analyzer, appends one row to monitor/<agent>/step-cost-history.jsonl. Smoke-tested clean.",
+      "monitor/prompts/decider.md: added Per-Step Cost Self-Instrumentation section right after PROP-101 Self-Cost Report. Invokes compute-decider-step-cost.js.",
+      "monitor/prompts/structure-integrity.md: added Per-Step Cost Self-Instrumentation section right after PROP-101 Self-Cost Report. Invokes compute-integrity-step-cost.js.",
+      "CLAUDE.md: PROP-065 git-append-only list extended with monitor/decisions/step-cost-history.jsonl + monitor/integrity/step-cost-history.jsonl.",
+      "build.js OWNERSHIP: write-self-step-cost.sh (git) + 2 step-cost-history.jsonl files (git-append-only).",
+      "workspace-sync.md NEVER_PUSH + GIT_APPEND_ONLY: mirrored 3 entries."
+    ],
+    "scope_NOT_in_phase_0": [
+      "Tinker cross-run aggregator (read step-cost-history.jsonl + report on trends) — pending. Phase 1 will land it once we have several committed rows from real decider + integrity runs.",
+      "Per-step cost archiving (similar to archive-tracker pattern). If step-cost-history.jsonl grows large, consider periodic archive rotation — defer until we see volume.",
+      "Extension to other STEP_MARKER-instrumented agents (analyst, curmudgeon, etc.) — they don't yet have STEP_MARKERs and dedicated analyzers; defer until cost engineering needs it."
+    ],
+    "what_did_NOT_change": [
+      "Existing PROP-101 write-self-cost.sh / cost-history.jsonl path — unchanged.",
+      "compute-decider-step-cost.js + compute-integrity-step-cost.js analyzer scripts — unchanged (already shipped).",
+      "Decider/integrity main pipelines. The new step is end-of-run, non-fatal, and parallel to PROP-101 self-cost report."
+    ]
+  }
 }

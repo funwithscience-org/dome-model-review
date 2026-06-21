@@ -1354,6 +1354,18 @@ bash "${CLEAN_CLONE}/monitor/scripts/write-self-cost.sh" append "${CLEAN_CLONE}"
 
 `monitor/decisions/cost-history.jsonl` is `git-append-only` per PROP-065 — workspace-sync will NEVER push FUSE→git for this file. Always write via the clone path. (The agent-name argument is `decisions` to keep the JSONL under `monitor/decisions/` consistent with the decider's other writes.)
 
+## Per-Step Cost Self-Instrumentation (PROP-112, added 2026-06-21)
+
+Append one JSONL row to `${CLEAN_CLONE}/monitor/decisions/step-cost-history.jsonl` with this run's per-`STEP_MARKER` token + USD breakdown. The helper discovers the live transcript (same single-transcript discovery as the total-cost reporter above), runs `compute-decider-step-cost.js` on it, and appends a row containing `{agent, run_at, transcript_path, step_cost: {...analyzer output...}}`.
+
+**Why this lives here**: every scheduled agent can read exactly one `.jsonl` under `/sessions/` — its own current transcript. Other sessions' `.claude/projects/` dirs are mode 750 owned by `nobody:nogroup` and EACCES. So per-step analysis is only viable inside the agent that produced the transcript. Tinker aggregates the committed per-step JSONL across runs from a clone; tinker cannot read your transcript directly. This mirrors the PROP-101 self-cost pattern.
+
+```bash
+bash "${CLEAN_CLONE}/monitor/scripts/write-self-step-cost.sh" "${CLEAN_CLONE}" decisions compute-decider-step-cost.js
+```
+
+`monitor/decisions/step-cost-history.jsonl` is `git-append-only` per PROP-065 — workspace-sync NEVER pushes it FUSE→git. Always write via the clone path. Non-fatal: any failure logs to stderr and exits 0; the run still ships.
+
 ## Cleanup (mandatory, run last)
 
 Before exiting, delete your clone directory to reclaim disk space. At churn-and-burn frequency these accumulate fast and can fill the disk.
