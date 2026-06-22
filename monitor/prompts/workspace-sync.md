@@ -298,6 +298,10 @@ NEVER_PUSH=(
   # state.js. Workspace-sync NEVER pushes either file FUSE→git.
   'monitor/scripts/compute-integrity-mechanical.js'
   'monitor/integrity/integrity-mechanical-state.json'
+  # PROP-113 Fix B (2026-06-22): build-git-deleted-set.js — hardened helper
+  # invoked by THIS prompt to build GIT_DELETED_SET. Source code; never round-
+  # trips from FUSE (mirrors check-prune-resurrection.js / compute-*.js).
+  'monitor/scripts/build-git-deleted-set.js'
   # PROP-101 Phase 1 (2026-06-14): real per-run cost measurement.
   # compute-run-cost.js prices Claude session JSONL transcripts (cache-aware,
   # 5m/1h cache-write split, cache_read 0.1x). write-self-cost.sh is the
@@ -728,22 +732,19 @@ smart_copy() {
 # Cost: ~ms per archive file read; sub-second total. Falls through to
 # PROP-082 date proxy if the archive files don't exist yet (fresh repo).
 GIT_DELETED_SET="/tmp/git-deleted-set-$$-${RANDOM}.txt"
-: > "$GIT_DELETED_SET"
-for archive in monitor/integrity/*-archive.jsonl; do
-  [ -f "$archive" ] || continue
-  # Extract the .file field from each tombstone record (jq if available,
-  # node fallback). Output one path per line. Prepend "monitor/integrity/"
-  # to bare basenames since smart_copy passes full repo-relative paths.
-  if command -v jq >/dev/null 2>&1; then
-    jq -r 'select(.file != null) | .file' "$archive" 2>/dev/null
-  else
-    node -e "
-      const fs=require('fs');
-      const lines=fs.readFileSync('$archive','utf8').split(String.fromCharCode(10));
-      for(const l of lines){if(!l.trim())continue;try{const r=JSON.parse(l);if(r.file)console.log(r.file);}catch(e){}}
-    " 2>/dev/null
-  fi
-done | awk '{ if($0 ~ /\//) print $0; else print "monitor/integrity/" $0 }' | sort -u > "$GIT_DELETED_SET"
+# PROP-113 Fix B (2026-06-22): build the set via a hardened helper instead of the
+# inline jq/node|awk|sort pipeline. The helper parses each archive line as JSON,
+# rejects any .file containing a newline or failing the integrity-path regex
+# (^monitor/integrity/[A-Za-z0-9._:-]+(/...)*$), then writes sorted-unique paths.
+# This stops malformed/multi-line archive records from emitting path fragments
+# that inflate the set (root cause of the 70375 overcount). The helper ALWAYS
+# exits 0 and degrades to an empty set on error, so the PROP-103 lower-bound gate
+# still fail-closes. Its stderr is a one-line JSON summary
+# {records_seen,parse_failures,paths_emitted,rejected} — a rising `rejected` is the
+# early warning for intermittent archive corruption. Extraction-pattern precedent:
+# sync-workspace-step4c.js (PROP-066).
+GDS_SUMMARY=$(node monitor/scripts/build-git-deleted-set.js --integrity-dir monitor/integrity --out "$GIT_DELETED_SET" 2>&1 >/dev/null) || : > "$GIT_DELETED_SET"
+echo "[PROP-113 Fix B] git-deleted-set build: ${GDS_SUMMARY}"
 GIT_DELETED_COUNT=$(wc -l < "$GIT_DELETED_SET" 2>/dev/null || echo 0)
 echo "[PROP-094+PROP-099] git-deleted set built from archive ledger: ${GIT_DELETED_COUNT} paths (depth-independent)"
 
@@ -767,6 +768,22 @@ if [ "$ARCHIVE_LINES" -ge 50 ] && [ "$GIT_DELETED_COUNT" -lt 50 ]; then
   SENTINEL="monitor/integrity/workspace-sync-deleted-set-untrusted-$(date -u +%Y-%m-%dT%H-%M-%SZ).json"
   printf '{"ts":"%s","reason":"PROP-103 GIT_DELETED_SET trust gate","git_deleted_count":%d,"archive_lines":%d,"action":"skip prune-managed integrity rescues this cycle"}\n' \
     "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$GIT_DELETED_COUNT" "$ARCHIVE_LINES" > "$SENTINEL" 2>/dev/null || true
+fi
+# PROP-113 Fix A (2026-06-22): two-sided trust gate — UPPER bound.
+# PROP-103 only fail-closes on an undersized set (count<50 while archives>=50).
+# A garbage OVERCOUNT sails through: the 2026-06-20T09:13Z run built
+# GIT_DELETED_COUNT=70375 against ARCHIVE_LINES=20631 (3.41x), all paths garbage,
+# so grep -qFx matched none of the real tombstones and 18 narrative-cite files
+# flooded back. The set is built by `sort -u` over one-.file-path-per-record
+# extractions, so the unique-path count can NEVER legitimately exceed the number
+# of archive records: GIT_DELETED_COUNT > ARCHIVE_LINES is, by construction, a
+# corruption signal. Fail-closed on it exactly as PROP-103 does on the low side.
+if [ "$GIT_DELETED_SET_UNTRUSTED" -eq 0 ] && [ "$ARCHIVE_LINES" -ge 50 ] && [ "$GIT_DELETED_COUNT" -gt "$ARCHIVE_LINES" ]; then
+  GIT_DELETED_SET_UNTRUSTED=1
+  echo "[PROP-113] FAIL-CLOSED (upper bound): GIT_DELETED_COUNT=${GIT_DELETED_COUNT} > archive_lines=${ARCHIVE_LINES} — set build over-produced (garbage); prune-managed integrity rescues will be SKIPPED this cycle"
+  SENTINEL_OVER="monitor/integrity/workspace-sync-deleted-set-untrusted-$(date -u +%Y-%m-%dT%H-%M-%SZ).json"
+  printf '{"ts":"%s","reason":"PROP-113 GIT_DELETED_SET upper-bound trust gate","git_deleted_count":%d,"archive_lines":%d,"action":"skip prune-managed integrity rescues this cycle"}\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$GIT_DELETED_COUNT" "$ARCHIVE_LINES" > "$SENTINEL_OVER" 2>/dev/null || true
 fi
 export GIT_DELETED_SET_UNTRUSTED GIT_DELETED_COUNT ARCHIVE_LINES
 
@@ -1562,6 +1579,41 @@ if [ $PUSH_EXIT -ne 0 ] && echo "$PUSH_OUT" | grep -qi "rejected\|non-fast-forwa
   git push origin main 2>&1 | tail -2
 fi
 
+# --- PROP-113 Fix C (2026-06-22): post-sync resurrection assertion ---
+# Before finalizing this run's report, assert this cycle did NOT re-add any path
+# prune-integrity tombstoned. --hours 2 narrows to just-this-cycle (prune+sync
+# cadence is well under 2h; a wider window re-flags pre-existing residue and would
+# abort every run until backfill drains). RC=3 => a resurrection happened THIS
+# cycle: write a loud abort sentinel so integrity/tinker see it the same day instead
+# of inferring it from prose. Non-fatal to the already-pushed data commit — the
+# rescue already happened; this makes a bad cycle self-evident on the run that caused it.
+RESURRECTION_STATUS="clean"
+if [ -f monitor/scripts/check-prune-resurrection.js ]; then
+  RESURRECTION_OUT=$(node monitor/scripts/check-prune-resurrection.js --hours 2 2>/dev/null)
+  RESURRECTION_RC=$?
+  if [ "$RESURRECTION_RC" -eq 3 ]; then
+    RESURRECTION_STATUS="ABORT-resurrection-detected"
+    RES_SENTINEL="monitor/integrity/workspace-sync-resurrection-abort-$(date -u +%Y-%m-%dT%H-%M-%SZ).json"
+    RES_SENTINEL="$RES_SENTINEL" RES_OUT="$RESURRECTION_OUT" node -e '
+      const fs=require("fs");
+      let detail={}; try{detail=JSON.parse(process.env.RES_OUT||"{}");}catch(e){}
+      fs.writeFileSync(process.env.RES_SENTINEL, JSON.stringify({
+        event:"workspace-sync-resurrection-abort",
+        timestamp:new Date().toISOString(),
+        gate:"PROP-113 Fix C post-sync resurrection assertion",
+        window_hours:2,
+        resurrected_total: detail.resurrected_total!=null?detail.resurrected_total:null,
+        by_category: detail.by_category||null,
+        reason:"workspace-sync re-added prune-tombstoned integrity artifact(s) this cycle; GIT_DELETED_SET likely untrusted/overcount. See PROP-113.",
+        operator_action:"Inspect this run report + any deleted-set-untrusted sentinel; verify PROP-113 Fix A/B gate fired. Next prune cycle should re-tombstone; if residue persists, Git Data API tree-delete (CLAUDE.md escape hatch).",
+        agent:"workspace-sync"
+      }, null, 2));
+    ' 2>/dev/null || true
+    git add "$RES_SENTINEL" 2>/dev/null
+    echo "[PROP-113 Fix C] WARNING resurrection detected this cycle — wrote $RES_SENTINEL"
+  fi
+fi
+
 # --- Capture FILES_COMMITTED NOW, AFTER 4a so it reads the workspace-sync commit ---
 # Per Q-OP-1: collapse keeps this variable local. Reads HEAD = the FUSE→git
 # commit just pushed (or its predecessor if the commit was empty — grep -c
@@ -1610,6 +1662,7 @@ AGENT_NOTES="$AGENT_NOTES" \
 GIT_DELETED_COUNT="${GIT_DELETED_COUNT:-0}" \
 GIT_DELETED_SET_UNTRUSTED="${GIT_DELETED_SET_UNTRUSTED:-0}" \
 ARCHIVE_LINES="${ARCHIVE_LINES:-0}" \
+RESURRECTION_STATUS="${RESURRECTION_STATUS:-clean}" \
 node -e "
 const fs=require('fs');
 const out=process.env.OUT;
@@ -1630,6 +1683,8 @@ const rec={
   git_deleted_count: parseInt(process.env.GIT_DELETED_COUNT||'0',10),
   git_deleted_set_untrusted: process.env.GIT_DELETED_SET_UNTRUSTED === '1',
   archive_lines: parseInt(process.env.ARCHIVE_LINES||'0',10),
+  // PROP-113 Fix C: post-sync resurrection assertion result (clean | ABORT-resurrection-detected).
+  resurrection_status: process.env.RESURRECTION_STATUS || 'clean',
   agent_notes: process.env.AGENT_NOTES || '',
   cleanup_ran: true
 };

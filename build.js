@@ -269,6 +269,11 @@ const OWNERSHIP = {
   // clone. Workspace-sync NEVER pushes it FUSE→git (entry mirrored in
   // workspace-sync.md NEVER_PUSH). Same shape as PROP-020/PROP-021.
   'monitor/scripts/compute-integrity-mechanical.js': 'git',
+  // PROP-113 Fix B (2026-06-22): build-git-deleted-set.js — hardened helper
+  // that builds workspace-sync's GIT_DELETED_SET via per-line JSON parse +
+  // path-regex validation + .. traversal guard. Replaces the inline jq/node|
+  // awk|sort pipeline. Source code; same classification as compute-* helpers.
+  'monitor/scripts/build-git-deleted-set.js': 'git',
   'monitor/integrity/integrity-mechanical-state.json': 'git',
 
   // PROP-041 Phase 2: rewriter's per-run sentinel summary. Workspace-owned,
