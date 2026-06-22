@@ -1,0 +1,54 @@
+{
+  "id": "PROP-113",
+  "title": "GIT_DELETED_SET garbage-overcount escapes PROP-103's lower-bound-only trust gate — add upper-bound/ratio sanity + post-sync resurrection assertion to kill the surviving prune<->workspace-sync re-add loop",
+  "authored_by": "tinker",
+  "authored_at": "2026-06-22T02:48:35.984Z",
+  "authored_by_run": "tinker-2026-06-22T02-40",
+  "status": "pending",
+  "propose_only": true,
+  "category": "infrastructure",
+  "severity": "major",
+  "surfacing_report": "monitor/tinker/report-2026-06-22T02-40.json",
+  "parent_props": [
+    "PROP-094",
+    "PROP-099",
+    "PROP-103",
+    "PROP-107"
+  ],
+  "executive_summary": "The prune<->workspace-sync resurrection loop is STILL LIVE despite PROP-094 (depth-independent GIT_DELETED_SET from archive ledger) and PROP-103 (fail-closed when set is empty). The PROP-099 canary fired this run at 312 resurrected integrity artifacts in 48h (107 narrative-cite-audit + 205 verify-pending-run), all present in git HEAD after prune-integrity tombstoned them. PROP-103's own verification_pattern step 5 ('residue drops to 0 and stays 0') is therefore failing. Root cause: GIT_DELETED_SET build is unstable — observed counts include 0 and 70375 (vs ~20631 real archive lines). The 70375-count build on run-2026-06-20T09-13-21Z (the workspace-sync run immediately after the 06-20 08:06 prune) re-added 18 narrative-cite-audit files. PROP-103's trust gate only checks the LOWER bound (count<50 && archives>=50 => untrusted); a garbage OVERCOUNT (count >> archive_lines) sails through with untrusted=false, so grep -qFx fails to match the real tombstoned paths and they flood back as cp re-adds.",
+  "evidence": [
+    "PROP-099 canary RC=3 this run: {narrative-cite-audit-archive.jsonl:107, verify-pending-runs-archive.jsonl:205}, total 312, window 48h.",
+    "git log monitor/integrity/narrative-cite-audit-2026-06-19T2309Z.json: deleted at b24f419 (prune-integrity 2026-06-21 08:06) then re-added at 3e1924e (Workspace sync 2026-06-21 09:13). Recurs each prune+sync cycle (also 06-21 11:11/21:08/23:24).",
+    "That path IS in a freshly-rebuilt GIT_DELETED_SET (count 2510) and its pre-delete blob sha1 (d973c58...) == current HEAD blob — so the producer-recreation exception (smart_copy lines 600-617) is NOT the escape route; these are immutable per-run artifacts, not regenerated.",
+    "workspace-sync run reports show git_deleted_count flapping: distribution incl. {0:3 runs, 70375:1 run} all with git_deleted_set_untrusted=false. run-2026-06-20T09-13-21Z had count=70375 and agent_notes '18 new narrative-cite-audit files' — the resurrection event.",
+    "PROP-103 trust gate (workspace-sync.md ~line 763): `if [ ARCHIVE_LINES >= 50 ] && [ GIT_DELETED_COUNT < 50 ]` => only the lower bound; no upper-bound or ratio check. A 70375 overcount is never flagged untrusted.",
+    "Net effect: 100 narrative-cite-audit-*.json + 365 verify-pending-run*.json in HEAD that prune wants gone; monitor/integrity working tree ~170MB. Defeats prune-integrity's retention purpose and slowly erodes clone disk headroom (the recurring disk-pressure failure class)."
+  ],
+  "root_cause": "PROP-103 made the trust gate fail-closed on an EMPTY/undersized set but assumed a built set is trustworthy. It is not: the archive-ledger->set build can also OVER-produce (count 70375 >> ~20631 archive lines), almost certainly from malformed/multi-line archive records (verify-pending-runs-archive.jsonl carries a `body` field whose embedded JSON can contain newlines that the line-split mis-parses, and/or path-format mismatches) yielding a set of garbage strings that grep -qFx cannot match against real repo-relative paths. With no upper-bound/ratio sanity and no post-sync assertion that no just-tombstoned path was re-added, the garbage-set cycle silently re-adds everything prune deleted.",
+  "proposed_fix": {
+    "philosophy": "Extend PROP-103's trust gate from lower-bound-only to a two-sided sanity band, and add a cheap post-sync assertion so a bad cycle fails loud instead of silently resurrecting. Do NOT hand-edit retention math; keep changes inside the existing GIT_DELETED_SET trust block + a new end-of-sync check.",
+    "fix_A_two_sided_trust_gate": "In workspace-sync.md after GIT_DELETED_COUNT/ARCHIVE_LINES are computed, set GIT_DELETED_SET_UNTRUSTED=1 ALSO when the set is implausibly large relative to the archive ledger: e.g. `GIT_DELETED_COUNT > ARCHIVE_LINES` (a sort -u set can never legitimately exceed the number of archive records) OR `GIT_DELETED_COUNT > 1.5*ARCHIVE_LINES`. Reuse the existing fail-closed SKIP path (prune-managed integrity categories are skipped, non-prune paths unaffected) and write the same untrusted sentinel. This closes the 70375 case.",
+    "fix_B_robust_set_build": "Harden the archive->set extraction so a `body` field containing embedded newlines cannot inflate/corrupt the path list: parse each archive with a streaming JSON-per-line reader that tolerates and skips malformed fragments, and after extraction validate each emitted path with a regex (`^monitor/integrity/[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$`) before sort -u. Drop non-matching lines. This prevents garbage strings from ever entering the set.",
+    "fix_C_post_sync_resurrection_assertion": "At end of each workspace-sync run, before reporting success, run `node monitor/scripts/check-prune-resurrection.js --hours 2` (narrow window = just-this-cycle). If RC=3, write monitor/integrity/workspace-sync-resurrection-abort-<ts>.json and surface a loud agent_note (NOT silent success). This makes a bad cycle self-evident on the very run that caused it, rather than waiting for the daily tinker canary."
+  },
+  "rejected_alternatives": [
+    "Hand-deleting the 312 resurrected files now without fixing the build: they re-appear next prune+sync cycle (this is exactly what happened after the operator's 06-13 manual drain of 308 files).",
+    "Disabling workspace-sync's rescue of monitor/integrity entirely: would break the legitimate universal-pusher rescue of genuinely-new integrity artifacts that haven't been pushed by their producer.",
+    "Tightening prune retention to delete fewer files: orthogonal — the bug is re-add, not over-prune."
+  ],
+  "backfill_plan": "After fix lands and one prune+sync cycle completes, the 312 residue should drop to 0 via the next prune (which re-tombstones+deletes them) followed by a now-suppressing workspace-sync. If residue persists >1 cycle, the operator can one-shot delete via the Git Data API tree-delete path (CLAUDE.md escape hatch) since FUSE can't unlink.",
+  "verification_pattern": "Grade A. Run `node monitor/scripts/check-prune-resurrection.js --hours 48`; exit code 0 (clean) => FIXED. Currently exits 3 with 312 resurrected. After fix + one prune+sync cycle, expect RC=0 sustained across 2 consecutive daily tinker runs. Secondary: grep workspace-sync run reports for any `git_deleted_count` > `archive_lines` with `git_deleted_set_untrusted:false` => should be empty.",
+  "constraints_honored": [
+    "No edits applied this run (propose_only).",
+    "No retention-policy math touched.",
+    "workspace-sync.md changes are operator-review-gated given the 2026-05-21 mass-delete history."
+  ],
+  "cross_references": [
+    "PROP-094 (archive-ledger set build)",
+    "PROP-099 (resurrection canary — fired this run)",
+    "PROP-103 (lower-bound fail-closed gate this PROP extends)",
+    "PROP-107 (prune push-loudness, complementary)",
+    "PROP-091 (narrative-cite drain)",
+    "DIRECTIVE-20260521-001 (workspace-sync disaster postmortem)"
+  ]
+}

@@ -1,32 +1,26 @@
-TINKER RUN 2026-06-21T02-40 — DIRECTIVE-OVERRIDE (DIRECTIVE-20260620-003, PROP-104 Phase 0)
+TINKER 2026-06-22T02-40 — Mode 2 (Infrastructure)
+==========================================
+SELECTED: Mode 2 — PROP-099 prune-resurrection canary TRIPPED (major).
 
-HEADLINE: PROP-104 Phase 0 per-transcript analysis CANNOT be run by tinker.
-Cross-session sandbox isolation: a tinker session can read exactly ONE
-*.jsonl transcript — its own. Decider's transcripts (other sessions) are
-mode 750 nobody:nogroup => EACCES. This is the same constraint documented in
-write-self-cost.sh L44-47 / PROP-101 Q1; the directive's Q1 cited that
-discovery command but it only ever returns the caller's own transcript.
-The analyzer itself WORKS (proven on tinker's own transcript) — the blocker
-is access, not code.
+KEY FINDING (major): the prune<->workspace-sync re-add loop is STILL LIVE.
+  312 prune-tombstoned integrity artifacts back in git HEAD in 48h
+  (107 narrative-cite-audit + 205 verify-pending-run). monitor/integrity ~170MB.
+  Mechanism PROVEN: prune deletes (b24f419, 06-21 08:06) -> workspace-sync
+  re-adds 1h later (3e1924e, 09:13). The run that re-added them
+  (run-2026-06-20T09-13-21Z) had git_deleted_count=70375 (vs ~20631 real
+  archive lines) with untrusted=false. PROP-103's trust gate is LOWER-bound
+  only (count<50) so a garbage OVERCOUNT escapes -> real paths unmatched ->
+  re-added. PROP-103's own "residue stays 0" criterion is failing.
 
-DELIVERABLE: PROP-112 — relocate compute-decider-step-cost.js into decider's
-OWN end-of-run (co-located with write-self-cost.sh, where the transcript is
-readable); emit a committed per-step JSON; tinker aggregates cross-run.
-Mirrors the PROP-101 self-cost pattern. PROPOSE-ONLY; operator decides Phase 1.
+ACTION: Authored PROP-113 (propose-only; workspace-sync.md edits are
+  operator-review-gated post 2026-05-21 disaster). Proposes: (A) two-sided
+  trust gate (untrusted when count > archive_lines), (B) robust set build
+  with per-path regex validation, (C) post-sync resurrection assertion that
+  fails loud on the cycle that caused it.
 
-BOUNDED EVIDENCE (from committed decider/cost-history.jsonl, N=13):
-  - cache_read 52.5% + cache_write_1h 30.7% + output 16.7% of USD.
-  - fresh-input ~129 tokens/run (negligible).
-  - Pearson r(assistant_msgs, cache_read) = 0.996.
-  => PRECOMPUTE Phase-1 path is RULED OUT (no fresh state-file load cost).
-     Lever is the cached prefix: bash-output-trim + fewer turns, then
-     prompt-slim. CONFIRMS PROP-104 the_correction. Q8 confirmed: closed-
-     issues.json (3.07MB) does not enter context as fresh input.
-  - Q5 (H1/H2 confabulation): UNSATISFIABLE — decider summaries aren't
-    archived per-run (single overwritten file; 3 git versions, 0 hits).
+OPERATOR ACTION NEEDED: review/approve PROP-113. The 312-file residue is a
+  steady disk leak; manual deletion alone recurs until the set build is fixed.
 
-PIPELINE HEALTH (incidental): GREEN. open-issues=3, assigned-analyst=0,
-net velocity +106/7d, root-FS free 3522MB, closed-issues 3.07MB. No
-backlog-trend thresholds fired. No stranded patches, no FUSE/auth issues.
-
-DIRECTIVE-20260620-003 flipped pending->completed (clone-side).
+PIPELINE OTHERWISE GREEN: 3 open issues, net velocity +97/7d, PAT HTTP 200,
+  FUSE matches GitHub, root-FS 3204MB free. No stalled agents, no stranded
+  patches. PROP-102/108 auto-close still shadow (0 would-close).
