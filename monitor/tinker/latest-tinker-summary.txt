@@ -1,16 +1,32 @@
-TINKER 2026-06-23T02-40 — Mode 2 -> Mode 4 (PROP-099 canary fired)
+TINKER 2026-06-23T05-53 — operator-directive mode (DIRECTIVE-20260623-001)
 
-PIPELINE: GREEN. All agents fresh (<1h). Backlog healthy: 4 open issues, net +66/7d. Disk healthy (root-free 3.3GB). FUSE matches GitHub. Auth 200.
+PRIMARY: Authored PROP-114 root-cause investigation + amendment (propose-only).
 
-MAJOR FINDING — prune<->workspace-sync re-add loop is STILL LIVE after PROP-113 P3 (deployed 2026-06-22 16:15):
-  - PROP-099 canary (--hours 48): RC=3, 23 narrative-cite-audit files resurrected.
-  - Confirmed re-add commit 5a20dcd at 2026-06-22 23:09 (7h post-deploy): 17 tombstoned files re-added (status A).
-  - PROP-113 Fix C self-assertion reported resurrection_status='clean' on that exact run — FALSE assurance.
+ROOT CAUSE FOUND (corrects prior PROP-114 guess):
+  The residual 23/day integrity resurrection is NOT the Fix C tombstone-window
+  blindspot and NOT a producer-fresh shallow-clone blob fail-open (refuted via a
+  faithful depth-50 clone at runtime HEAD, which SKIPs correctly). It is
+  cross-bash-session loss of the un-exported $GIT_DELETED_SET variable when the
+  workspace-sync agent splits the ~600-line Step 2 block across bash-tool calls
+  (PROP-066 class). Empty set -> grep matches nothing -> fresh prune batch falls
+  through to cp -> resurrection. Confirmed by empty-var simulation (re-add) vs
+  populated set (SKIP), matching the SKIP@21:12 -> re-add@23:09 of path 0009Z.
+  Secondary: the 23:10 run persisted 0/625 skip records to the jsonl (same
+  ephemeral-loss disease on $SKIP_LOG) which hid the evidence.
 
-ROOT CAUSE (reproducible): Fix C calls check-prune-resurrection.js --hours 2, which filters by TOMBSTONE AGE (script line 53). The loop re-adds files tombstoned DAYS ago (FUSE retains them; re-add event is fresh, tombstone is old). The 2h window is structurally blind to this — the dominant loop shape. The 48h tinker canary catches it; the 2h self-assertion cannot.
+FIX (propose-only, recommend P2 = combined):
+  A. Deterministic in-clone set path (.git/dome-git-deleted-set.txt) — survives
+     bash-call splits.
+  B. smart_copy self-heal default + fail-closed guard for prune-managed integrity
+     when the set is unavailable (harmless skip; opposite is the disaster).
+  C. Fix C v2 = re-add-event detection (commit-added paths INTERSECT fresh set),
+     replacing the blind --hours 2 window. Replay vs 5a20dcd flags 15 (correct);
+     old Fix C reported 'clean'.
+  All diff old_strings verified vs workspace-sync.md @4c76b43. 3/5 smoke cases
+  executed + passed this run. requires_human_judgment=true — operator picks phase.
 
-ACTION: Authored PROP-114 — replace tombstone-age window with re-add-event detection (intersect this run's HEAD added-paths with the already-built GIT_DELETED_SET). ~15 LOC, fires only on real re-adds, depth/age independent.
+PROP-113 LIFECYCLE: recommend mark 'partially-implemented' (it closed the
+  over-count class, 312->23) and transfer residue=0 criterion to PROP-114.
 
-PROP-113 verification: STILL_BROKEN (--hours 48 RC=3, target RC=0). Progress real (prior 312 -> 23) but loop not closed. A second, separate MECHANISM defect remains: smart_copy re-adds in workspace-sync's shallow clone even though the depth-50 producer-fresh guard SKIPs correctly — flagged as a follow-on in PROP-114 complementary_work.
-
-OPERATOR: the 23 residue files will re-tombstone next prune cycle, or can be tree-deleted via the Git Data API escape hatch. The detection fix (PROP-114) is the priority so future re-adds are caught on the causing run.
+BACKLOG: healthy. open=4, net_velocity_7d=+66, root-FS free 3024MB. No thresholds.
+PRE-FLIGHT: PROP-102 + PROP-108 auto-close both shadow, 0 closures.

@@ -1,6 +1,6 @@
 {
   "id": "PROP-114",
-  "title": "PROP-113 Fix C post-sync resurrection assertion is blind to the dominant loop shape — it windows by tombstone-age (--hours 2), but resurrection re-adds files tombstoned days ago; switch to re-add-event detection",
+  "title": "PROP-113 residual 23/day integrity resurrection: ROOT CAUSE is cross-bash-session loss of $GIT_DELETED_SET in smart_copy (PROP-066 class), NOT the Fix C tombstone-age window and NOT a producer-fresh shallow-clone blob fail-open. Fix = deterministic in-clone set path + fail-closed guard for prune-managed integrity + re-add-event Fix C v2.",
   "created_at": "2026-06-23T02:49:01Z",
   "authored_by": "tinker",
   "authored_by_run": "tinker-2026-06-23T02-40",
@@ -39,10 +39,155 @@
   ],
   "verification_pattern": {
     "grade": "A",
-    "pattern": "After fix: in workspace-sync's clone, replay 'git show --diff-filter=A --name-only --pretty=format: 5a20dcd | grep \"^monitor/integrity/narrative-cite-audit\"' and confirm the intersection with build-git-deleted-set.js output is non-empty (>=15 paths) and that the assertion would set resurrection_status=ABORT. Steady-state: across 2 consecutive daily tinker runs, every workspace-sync run report whose commit added a tombstoned path has resurrection_status='ABORT-resurrection-detected' (no more false 'clean'). check-prune-resurrection.js --hours 48 trending to 0 is the loop-closed signal (tracked by PROP-113/PROP-099)."
+    "pattern": "Post-deploy of P2 (Diffs A+B+C): (1) SMOKE-3 + SMOKE-5 pass (fail-closed guard skips when set unavailable; no false positive on clean runs). (2) Across 2 consecutive days, every workspace-sync run report whose commit ADDED a tombstoned integrity path has resurrection_status='ABORT-resurrection-detected' (no more false 'clean') AND such commits trend to zero as prevention takes hold. (3) Loop-closed signal: check-prune-resurrection.js --hours 48 RC=0 sustained 2 days (the criterion transferred from PROP-113). (4) workspace-sync-skips.jsonl shows 'PROP-094 git-deleted-authoritative' SKIPs continuing for tombstoned paths (set reliably available) and/or 'PROP-114 fail-closed' SKIPs on any split run — but NO new narrative-cite re-add commits.",
+    "note": "Requires operator to ship P2 first; gated by requires_human_judgment=true."
   },
-  "estimated_loc": 15,
-  "requires_human_judgment": false,
-  "do_not_auto_close": false,
-  "cross_references": ["PROP-113", "PROP-099", "PROP-094", "PROP-103", "PROP-107"]
+  "estimated_loc": 27,
+  "requires_human_judgment": true,
+  "do_not_auto_close": true,
+  "cross_references": [
+    "PROP-113",
+    "PROP-099",
+    "PROP-094",
+    "PROP-103",
+    "PROP-066",
+    "PROP-107",
+    "DIRECTIVE-20260623-001"
+  ],
+  "amended_at": "2026-06-23T05:53Z",
+  "amended_by": "tinker",
+  "amended_by_run": "tinker-2026-06-23T05-53",
+  "amendment_source_directive": "DIRECTIVE-20260623-001",
+  "mechanism_correction": {
+    "note": "The ORIGINAL PROP-114 (authored by tinker run 02-40) diagnosed two things: (1) Fix C's --hours 2 tombstone-age window is blind to the dominant loop shape [CORRECT — kept], and (2) the re-add MECHANISM is the PROP-094 producer-fresh exception fail-opening in workspace-sync's shallow clone because git show ${last_del_sha}^:dst behaves differently at depth [REFUTED by this amendment]. The directive (DIRECTIVE-20260623-001) asked for the root-cause detective work. It was done; the producer-fresh-blob hypothesis is empirically false. The actual root cause is ephemeral $GIT_DELETED_SET loss across MCP bash-tool-call boundaries (the PROP-066 cross-bash-session state-loss class).",
+    "original_complementary_work_field_was_wrong": "The original 'complementary_work' said the open question was 'why the smart_copy PROP-094 producer-fresh guard re-adds in workspace-sync's runtime when a depth-50 clone correctly SKIPs'. Answer: it does NOT re-add via the producer-fresh guard at all. A faithful depth-50 clone pinned at the runtime HEAD (5a20dcd^) computes the guard as SKIP (correct). The re-add happens because the guard is never reached: grep -qFx against an EMPTY $GIT_DELETED_SET matches nothing, so the whole PROP-094 block is skipped and the file falls through to cp."
+  },
+  "Q1_Q2_root_cause_investigation": {
+    "smoking_gun": "On 2026-06-22, the path monitor/integrity/narrative-cite-audit-2026-06-20T0009Z.json was correctly SKIPped via PROP-094 deletion-authority at the 09:08, 11:09, and 21:12 workspace-sync runs (proven by workspace-sync-skips.jsonl entries with reason 'PROP-094 git-deleted-authoritative'), then RE-ADDED (git status A) at the 23:09 run (commit 5a20dcd). The file content never changed (FUSE sha1 51ad31be == re-added HEAD blob 51ad31be). So a content-identical, already-tombstoned file flipped from SKIP to re-add between 21:12 and 23:09.",
+    "faithful_depth50_reproduction": "A real depth-50 shallow clone pinned at the runtime pre-push HEAD (5a20dcd^ = 80d3f2dc) was fetched. In it: (a) build-git-deleted-set.js emits 2589 paths — EXACTLY matching the run report's git_deleted_count=2589 — and 0009Z IS in that set; (b) the PROP-094 producer-fresh guard computes last_del_sha=1af8525 (deletion at depth ~28), its parent blob IS present (depth ~29), last_blob_hash=51ad31be == fuse_hash=51ad31be, so the guard decision is SKIP (correct). Therefore the producer-fresh exception did NOT and could NOT have re-added 0009Z. The prior shallow-clone-blob-fail-open hypothesis is refuted.",
+    "actual_mechanism": "The re-add path is sync_glob 'monitor/integrity' '*.json' -> smart_copy. In smart_copy's dst-absent branch, the first gate is `if grep -qFx \"$dst\" \"$GIT_DELETED_SET\"`. $GIT_DELETED_SET is a /tmp file path held ONLY in a shell variable (workspace-sync.md line 734: GIT_DELETED_SET=\"/tmp/git-deleted-set-$$-${RANDOM}.txt\"; it is NOT exported — line 788 exports only GIT_DELETED_SET_UNTRUSTED/_COUNT/_LINES). The GIT_DELETED_SET build (lines 711-790) and the smart_copy loop (lines 790-960) sit in one ~600-line fenced bash block (Step 2, closes line 1005). When the workspace-sync agent (Sonnet) executes that block across MORE THAN ONE MCP bash-tool call — the documented PROP-066 split behavior (each bash tool call is a fresh shell, no env carryover) — the smart_copy loop's shell has $GIT_DELETED_SET EMPTY. `grep -qFx \"$dst\" \"\"` matches nothing (grep errors on empty filename, returns non-zero), so the PROP-094 block is skipped entirely; $GIT_DELETED_SET_UNTRUSTED is also empty so PROP-103 fail-closed defaults to 0 (no skip); is_prune_expired returns false for the freshly-pruned 1-2-day-old batch (14-day window); the file falls through to `cp` and is resurrected.",
+    "empirical_confirmation_of_mechanism": "Simulated smart_copy's dst-absent branch for 0009Z with GIT_DELETED_SET='' (the cross-call-loss state): grep matched nothing, PROP-103 did not fire, is_prune_expired returned false, RESULT = cp (resurrected). With GIT_DELETED_SET=/tmp/runtime_set.txt (the real 2589-path set): grep matched -> PROP-094 -> producer-fresh -> SKIP (no re-add). The single variable being empty vs populated flips the outcome, exactly reproducing the SKIP@21:12 -> re-add@23:09 transition (21:12 ran Step 2 in one bash call; 23:09 split it).",
+    "why_intermittent_23_per_day": "Only the FRESHLY-pruned batch is eligible to resurrect on a lossy run: those files are currently absent in git (deleted by that day's prune) AND still inside the 14-day is_prune_expired window. Files pruned on earlier days were already re-added on a prior lossy cycle and are now present in git (dst exists -> mtime-guard no-op, not re-added). Files older than 14 days are caught by the is_prune_expired fallback even when the set is lost. So each lossy run resurrects ~one daily prune batch (~15-23 files), matching the observed 23/48h. The 8290 'PROP-094 git-deleted-authoritative' SKIP records in workspace-sync-skips.jsonl prove the set IS usually available — the loss is intermittent, firing only on runs where the agent split Step 2.",
+    "secondary_observability_gap": "The 23:10 run report claims skips_total=625 but persisted ZERO records to workspace-sync-skips.jsonl (grep for that run_id / any 2026-06-22T23 timestamp returns nothing). This is the SAME disease on a second ephemeral variable: $SKIP_LOG (an mktemp path, also not surviving cross-call) was empty/unreadable in the Step-4b persist call, so the run's skip detail — including any evidence of the re-adds — was silently dropped. This is why the resurrection was invisible in the structured skip log and only the 48h tinker canary caught it.",
+    "hypothesis_ranking": {
+      "best_fit": "(i) — 'Fix A never trips because the set is honest; Fix B's helper is correct but smart_copy has a SEPARATE GAP.' Confirmed. The helper is correct (2589 paths incl. 0009Z). The separate gap is that smart_copy cannot SEE the set when $GIT_DELETED_SET is lost across a bash-call split. Precise mechanism is the PROP-066 ephemeral-state-loss class — a refinement of (i) not explicitly enumerated in the directive.",
+      "partially_right": "(iii) — 'a code path that doesn't consult GIT_DELETED_SET.' In EFFECT correct: the consult runs but against an empty path, so it is as if the set is never consulted. Same smart_copy code path, lost state.",
+      "right_family_wrong_specific": "(iv) — 'FUSE->git race: file committed before GIT_DELETED_SET sees latest archive append.' Wrong specific (the set DID contain the records; the archive tombstones were committed days earlier in b24f419/1af8525), but the right FAMILY — a state/timing problem, not a logic-threshold problem.",
+      "ruled_out": [
+        "(ii) Fix A misconfigured — RULED OUT: set is honest (2589 < archive_lines 21274), Fix A's upper-bound gate correctly did not trip; Fix A is irrelevant to this failure mode.",
+        "(v) NEVER_PUSH-strand / universal-pusher path — RULED OUT: narrative-cite-audit is a standard prune-managed integrity artifact synced via sync_glob->smart_copy, not a NEVER_PUSH or runtime-data rescue path."
+      ]
+    },
+    "what_run_report_alone_cannot_rule_out": "The run report fields (git_deleted_count=2589, git_deleted_set_untrusted=false, resurrection_status='clean') are consistent with BOTH the (refuted) producer-fresh-blob-fail-open hypothesis AND the (confirmed) ephemeral-set-loss hypothesis — because the report is written by a DIFFERENT sub-step that DID see the exported _COUNT/_UNTRUSTED/_LINES vars while the smart_copy loop did not see $GIT_DELETED_SET. Distinguishing them required (a) the faithful depth-50 reproduction to refute the blob hypothesis and (b) the empty-variable simulation to confirm the ephemeral-loss hypothesis. Neither could be settled from the run report alone."
+  },
+  "Q3_Q4_concrete_fix": {
+    "design_decision": "Q3 picks candidate (a): compare THIS run's commit-added paths against a freshly-built GIT_DELETED_SET. No new helper script required (Q4 = reuse existing build-git-deleted-set.js). BUT visibility (Fix C v2) alone does not stop the leak — it is post-commit and only detects. The load-bearing fix is the ROOT-CAUSE PREVENTION (Diffs A+B): make $GIT_DELETED_SET reconstructable from a deterministic in-clone path and fail-closed when it is still unavailable for prune-managed integrity. With prevention in place, Fix C v2 becomes a same-run canary that should report clean.",
+    "diff_A_deterministic_set_path": {
+      "target_file": "monitor/prompts/workspace-sync.md",
+      "rationale": "Replace the per-shell-random /tmp path with a deterministic in-clone path so a smart_copy loop running in a SEPARATE bash-tool call can still locate the set the build step wrote (the clone dir + .git persist across bash calls in the same session; only shell variables are lost). .git/ contents are never tracked, so no risk of committing the set.",
+      "line": 734,
+      "old_string": "GIT_DELETED_SET=\"/tmp/git-deleted-set-$$-${RANDOM}.txt\"",
+      "new_string": "GIT_DELETED_SET=\"$(git rev-parse --git-dir 2>/dev/null || echo .git)/dome-git-deleted-set.txt\"   # PROP-114: deterministic in-clone path (survives bash-tool-call splits; .git is never tracked)"
+    },
+    "diff_A2_export_optional": {
+      "target_file": "monitor/prompts/workspace-sync.md",
+      "line": 788,
+      "note": "Optional belt-and-suspenders: add GIT_DELETED_SET to the export list so in-call subprocesses see it. Does NOT help across bash-tool calls (export dies with the shell) — the deterministic path in Diff A + the default in Diff B are what actually close the cross-call gap. Include only if the operator wants the var visible to any in-call node helpers.",
+      "old_string": "export GIT_DELETED_SET_UNTRUSTED GIT_DELETED_COUNT ARCHIVE_LINES",
+      "new_string": "export GIT_DELETED_SET GIT_DELETED_SET_UNTRUSTED GIT_DELETED_COUNT ARCHIVE_LINES"
+    },
+    "diff_B_failclosed_guard": {
+      "target_file": "monitor/prompts/workspace-sync.md",
+      "rationale": "In smart_copy's dst-absent branch, BEFORE the `grep -qFx` gate: (1) default $GIT_DELETED_SET to the deterministic in-clone path if the variable was lost across a bash-call split; (2) if the set is STILL unavailable (missing/empty), fail CLOSED for prune-managed integrity categories — we cannot prove the path is not a tombstoned artifact, so do not resurrect. Skipping is harmless (re-tries next cycle); resurrection is the disaster shape. This is the minimal, PROP-051-disaster-safe change — it can only REDUCE pushes, never mass-delete.",
+      "anchor_line": 604,
+      "old_string": "    if grep -qFx \"$dst\" \"$GIT_DELETED_SET\" 2>/dev/null; then\n      local last_del_sha last_blob_hash fuse_hash",
+      "new_string": "    # PROP-114 (2026-06-23): self-heal the deletion-authority set path. The Step 2\n    # build (line ~734) and this smart_copy loop sit in one ~600-line fenced block;\n    # when the agent runs them in SEPARATE bash-tool calls (PROP-066 cross-call state\n    # loss) $GIT_DELETED_SET is EMPTY here, grep -qFx matches nothing, and the\n    # freshly-pruned integrity batch falls through to cp -> resurrection (root cause\n    # of the 2026-06-22 23/day leak; see PROP-114 Q1/Q2). Reconstruct the deterministic\n    # in-clone path so a split loop still finds the set the build step wrote.\n    : \"${GIT_DELETED_SET:=$(git rev-parse --git-dir 2>/dev/null || echo .git)/dome-git-deleted-set.txt}\"\n    # Fail-closed backstop: if the set is STILL unavailable, do not resurrect\n    # prune-managed integrity artifacts (harmless skip; opposite is the disaster).\n    if [ ! -s \"$GIT_DELETED_SET\" ]; then\n      case \"$dst\" in\n        monitor/integrity/verify-pending-run-*.json|\\\n        monitor/integrity/narrative-cite-audit-*.json|\\\n        monitor/integrity/workspace-sync-runs/run-*.json|\\\n        monitor/integrity/push-failure-*.json|\\\n        monitor/integrity/report-*.json|\\\n        monitor/integrity/git-to-fuse-divergence-*.json|\\\n        monitor/integrity/sync-workspace-runs-*.json)\n          echo \"SKIP (PROP-114 fail-closed; GIT_DELETED_SET unavailable, cannot verify deletion-authority): $dst\" >> \"$SKIP_LOG\"\n          return 0\n          ;;\n      esac\n    fi\n    if grep -qFx \"$dst\" \"$GIT_DELETED_SET\" 2>/dev/null; then\n      local last_del_sha last_blob_hash fuse_hash",
+      "validation": "old_string matches workspace-sync.md @ commit 4c76b43 lines 604-605 verbatim (verified this run)."
+    },
+    "diff_C_fixc_v2_readd_event": {
+      "target_file": "monitor/prompts/workspace-sync.md",
+      "rationale": "Replace PROP-113 Fix C (check-prune-resurrection.js --hours 2, tombstone-age-windowed, blind to days-old re-adds) with re-add-event detection: rebuild the set HERE (deterministic in-clone path, independent of the Step-2 loop's shell state) and intersect with the paths THIS run's commit ADDED. Fires only on genuine re-adds, silent on untouched residue, independent of tombstone age and clone depth.",
+      "replace_block_lines": "1590-1615 (the `RESURRECTION_STATUS=\"clean\"` ... closing `fi` of the check-prune-resurrection.js block)",
+      "new_block": [
+        "RESURRECTION_STATUS=\"clean\"",
+        "# PROP-114 Fix C v2 (2026-06-23): re-add-event detection (supersedes PROP-113 Fix C --hours 2).",
+        "# Rebuild the deletion-authority set here so this assertion does not depend on the",
+        "# Step-2 $GIT_DELETED_SET surviving a bash-call split. Intersect with the paths THIS",
+        "# run committed as ADDED. Tombstone-age-independent; catches the days-old re-add the",
+        "# old --hours 2 window missed (which reported false clean for commit 5a20dcd).",
+        "GDS_ASSERT=\"$(git rev-parse --git-dir 2>/dev/null || echo .git)/dome-gds-assert.txt\"",
+        "node monitor/scripts/build-git-deleted-set.js --integrity-dir monitor/integrity --out \"$GDS_ASSERT\" 2>/dev/null || : > \"$GDS_ASSERT\"",
+        "ADDED_PATHS=$(git show --diff-filter=A --name-only --pretty=format: HEAD 2>/dev/null | grep \"^monitor/integrity/\" | sort -u)",
+        "RESURRECTED=\"\"",
+        "if [ -s \"$GDS_ASSERT\" ] && [ -n \"$ADDED_PATHS\" ]; then",
+        "  RESURRECTED=$(comm -12 <(printf \"%s\\n\" \"$ADDED_PATHS\") <(sort -u \"$GDS_ASSERT\"))",
+        "fi",
+        "if [ -n \"$RESURRECTED\" ]; then",
+        "  RESURRECTION_STATUS=\"ABORT-resurrection-detected\"",
+        "  RES_COUNT=$(printf \"%s\\n\" \"$RESURRECTED\" | grep -c .)",
+        "  RES_SENTINEL=\"monitor/integrity/workspace-sync-resurrection-abort-$(date -u +%Y-%m-%dT%H-%M-%SZ).json\"",
+        "  RES_SENTINEL=\"$RES_SENTINEL\" RES_LIST=\"$RESURRECTED\" RES_COUNT=\"$RES_COUNT\" node -e '",
+        "    const fs=require(\"fs\");",
+        "    const list=(process.env.RES_LIST||\"\").split(\"\\n\").filter(Boolean);",
+        "    fs.writeFileSync(process.env.RES_SENTINEL, JSON.stringify({",
+        "      event:\"workspace-sync-resurrection-abort\",",
+        "      timestamp:new Date().toISOString(),",
+        "      gate:\"PROP-114 Fix C v2 re-add-event detection\",",
+        "      detector:\"commit-added-paths INTERSECT GIT_DELETED_SET (tombstone-age-independent)\",",
+        "      resurrected_total:parseInt(process.env.RES_COUNT||\"0\",10),",
+        "      resurrected_paths:list.slice(0,200),",
+        "      reason:\"workspace-sync commit ADDED prune-tombstoned integrity artifact(s) this cycle. Root-cause class: GIT_DELETED_SET unavailable in smart_copy shell (PROP-114). Verify the fail-closed guard + deterministic-set-path fix are deployed.\",",
+        "      operator_action:\"If residue persists after 2 prune cycles, tree-delete the listed paths via Git Data API escape hatch (CLAUDE.md).\",",
+        "      agent:\"workspace-sync\"",
+        "    }, null, 2));",
+        "  ' 2>/dev/null || true",
+        "  git add \"$RES_SENTINEL\" 2>/dev/null",
+        "  echo \"[PROP-114 Fix C v2] RESURRECTION DETECTED this cycle ($RES_COUNT paths) — wrote $RES_SENTINEL; resurrection_status set in run report\"",
+        "fi",
+        "rm -f \"$GDS_ASSERT\" 2>/dev/null"
+      ],
+      "post_commit_visibility_note": "Like PROP-113 Fix C, this runs AFTER the data commit+push, so it has NO abort authority over the data commit (honors the directive constraint + PROP-051 disaster sensitivity). Same-run visibility is achieved via resurrection_status='ABORT-resurrection-detected' in the run report (already pushed at end of run) plus the git-added sentinel (picked up next cycle). The operator may optionally add a tiny dedicated commit+push for the sentinel for instant visibility, but that adds a push and is not required.",
+      "validation_evidence": "Replayed against the real resurrection commit 5a20dcd in a depth-402 clone: build-git-deleted-set.js -> 2589 paths; git show --diff-filter=A 5a20dcd -> 17 integrity paths; intersection = 15 (the tombstoned re-adds), correctly EXCLUDING the 2 genuinely-new 2026-06-22 files. The OLD Fix C (--hours 2) reported resurrection_status='clean' for this exact commit. Proven improvement."
+    },
+    "Q4_helper_changes": "None. Q3 picks candidate (a), which reuses the existing monitor/scripts/build-git-deleted-set.js unchanged. No new or modified helper script. (Candidate (b) — a --by-add-event mode on check-prune-resurrection.js — was considered and rejected: it duplicates the set-build the prevention fix already performs and adds a second source of truth.)"
+  },
+  "Q5_smoke_test": {
+    "discipline": "PROP-051-grade; mirrors PROP-113 amendment (reproduce false-clean, verify the fix catches it, verify a known-good cycle still passes, plus parity).",
+    "cases": [
+      "SMOKE-1 (reproduce the false-clean / leak): in a real depth-50 clone pinned at runtime HEAD 5a20dcd^, simulate the cross-call state loss (GIT_DELETED_SET='') and run the dst-absent branch for a days-old tombstoned narrative-cite file present in FUSE. EXPECT current code -> cp (resurrect). EXECUTED THIS RUN: confirmed cp (resurrect).",
+      "SMOKE-2 (prevention via deterministic default): set GIT_DELETED_SET to the deterministic in-clone path that the build wrote; rerun the dst-absent branch. EXPECT grep match -> PROP-094 -> producer-fresh SKIP (no re-add). EXECUTED THIS RUN: confirmed SKIP.",
+      "SMOKE-3 (fail-closed backstop): force the set unavailable (rm the deterministic file) and run the dst-absent branch for a prune-managed integrity path. EXPECT new guard -> 'SKIP (PROP-114 fail-closed; GIT_DELETED_SET unavailable)' (no re-add). VALIDATE post-deploy.",
+      "SMOKE-4 (Fix C v2 catches the days-old re-add): replay git show --diff-filter=A 5a20dcd INTERSECT freshly-built set. EXPECT count >= 15. EXECUTED THIS RUN: count=15 (2 genuinely-new files correctly excluded). Old --hours 2 Fix C reported 'clean' for the same commit.",
+      "SMOKE-5 (known-good cycle, no false positive): on a normal run with no re-adds, ADDED integrity paths INTERSECT set = empty -> RESURRECTION_STATUS='clean', no sentinel. VALIDATE post-deploy across 2 consecutive runs.",
+      "PARITY: build-git-deleted-set.js is NOT modified by this PROP, so its output is byte-identical pre/post (2589 paths at runtime HEAD; helper summary records_seen=21274 parse_failures=0 paths_emitted=2589 rejected=0). No parity drift to assert beyond confirming the script is untouched."
+    ],
+    "executed_this_run": "SMOKE-1, SMOKE-2, SMOKE-4 executed and PASSED during the Q1/Q2 investigation (see Q1_Q2 evidence). SMOKE-3 and SMOKE-5 are post-deploy validations (cannot run without applying the diffs, which is out of scope per propose-only)."
+  },
+  "Q6_disaster_vector_analysis": {
+    "fixC_v2_abort_authority": "NONE over the data commit. Fix C v2 runs post-commit/post-push; it only writes a sentinel and sets resurrection_status in the run report. Confirmed it cannot abort or roll back the data commit. Honors the directive constraint and PROP-051.",
+    "failclosed_guard_effect_on_commit": "The Diff-B fail-closed guard DOES affect the data commit — it skips (does not cp) a prune-managed integrity file when the set is unavailable. This is fail-CLOSED (fewer files pushed), the safe direction on the PROP-051 disaster axis: it can only REDUCE the push set, never trigger a mass-delete. Worst case if it false-positives (set legitimately unavailable on a run with a genuinely-new integrity file): that file is deferred ONE cycle and pushed next run when the set is available — loud (the SKIP reason floods the log) and self-correcting.",
+    "sentinel_flood_bound": "At most ONE resurrection-abort sentinel per run (a single file listing all detected paths, capped at 200 in resurrected_paths). Cannot flood integrity. Contrast with the resurrection itself, which adds ~15-23 multi-MB files/run.",
+    "universal_pusher_interaction": "The fail-closed guard is scoped by an explicit case-list to the 7 prune-managed integrity categories ONLY. Runtime data files (data/wins.json, open-issues.json, priority-queue.json, etc.) and the universal-pusher rescue path are entirely unaffected — they never match the case-list, so their dst-absent rescue behavior is unchanged.",
+    "worst_case_perpetual_loss": "If EVERY run split Step 2 (perpetual cross-call loss) AND the deterministic-path default somehow also failed, genuinely-new integrity artifacts would never sync — but that state is loud (every run logs the fail-closed SKIP reason) and far preferable to silent resurrection. The deterministic in-clone path (Diff A) makes this scenario very unlikely because the build step's output persists in the clone's .git across bash-tool calls within the same session.",
+    "rollback": "All three diffs are additive/local to workspace-sync.md (a NEVER_PUSH source file pushed only via build.js publish / operator). Rollback = revert the workspace-sync.md commit. No data migration, no state to unwind. The deterministic set file lives under .git and is never tracked, so no cleanup needed on rollback."
+  },
+  "Q7_backfill_plan": {
+    "situation": "As of this run, the canary (--hours 48) reports 23 already-resurrected files in HEAD. PROP-113 Q8 assumed natural prune+sync drain, which did NOT happen because the underlying bug persisted (every lossy run re-added the fresh batch faster than drain).",
+    "why_natural_drain_works_AFTER_the_fix": "Once Diffs A+B are deployed, the next prune cycle re-tombstones the 23 files (deletes from git, appends archive records), and the FIXED smart_copy will SKIP them on the subsequent workspace-sync (set available via deterministic path; or fail-closed if not). So natural drain becomes reliable post-fix — unlike pre-fix.",
+    "recommended": "(c)-then-(a): deploy the fix, let the next 1-2 prune cycles re-tombstone, and verify via Fix C v2 ('clean') + PROP-099 canary (--hours 48 RC trending to 0). If any residue persists after 2 prune cycles, escalate to (a) operator-side Git Data API tree-delete of the specific resurrected paths (CLAUDE.md escape hatch). Do NOT pre-emptively tree-delete before the fix is deployed — they would just re-resurrect on the next lossy run.",
+    "rejected_options": "(b) clone-side `git rm` + push before the fix: same problem — re-resurrects next lossy cycle. Tree-delete or git-rm are cleanup ACCELERATORS only meaningful AFTER prevention is live."
+  },
+  "Q8_sequence_recommendation": {
+    "P1_fixc_v2_only": "Ship Fix C v2 (Diff C) alone. PRO: correct, same-run visibility of re-adds; replaces the false-clean. CON: does NOT stop the leak (root cause untouched) — the pipeline keeps resurrecting ~23/day, now just visibly. Turns a silent leak into a loud one without curing it. NOT recommended alone.",
+    "P2_combined": "Ship Fix C v2 (Diff C) + root-cause prevention (Diffs A+B). PRO: stops the leak at source AND makes any residual visible; ~25 LOC; all changes are fail-closed (can only reduce pushes, never mass-delete), so they sit on the safe side of the PROP-051 disaster axis. CON: touches smart_copy (PROP-051-sensitive) — but the change is provably non-deleting. RECOMMENDED.",
+    "P3_defer": "Defer until more root-cause certainty. NOT recommended — the root cause is now established with empirical reproduction (faithful depth-50 clone + empty-variable simulation), and the leak, though bounded per-run, is unbounded growth over time (~8400 files/year).",
+    "recommendation": "P2. The detective work removed the uncertainty that would justify P3, and P1 alone leaves the leak running. P2's smart_copy change is minimal and fail-closed."
+  },
+  "Q9_prop113_lifecycle": {
+    "current_state": "PROP-113 status 'phase-P3-shipped'; its verification_pattern (check-prune-resurrection.js --hours 48 RC=0 sustained 2 days) is FAILING (RC=3, 23 residue).",
+    "finding": "PROP-113 fixed a REAL but DIFFERENT failure mode — the 2026-06-14 GIT_DELETED_SET over-count (garbage-inflated set) bulk-resurrection. Fix A (upper-bound trust gate), Fix B (hardened honest set builder), and Fix C (assertion) correctly closed THAT class and drove 312/48h -> 23/48h (93% reduction). The residual 23 is a SEPARATE root cause (ephemeral $GIT_DELETED_SET loss across bash-call splits) that PROP-113 never targeted. PROP-113's residue=0 criterion was over-broad — it assumed the over-count path was the only resurrection source.",
+    "recommendation": "(a): mark PROP-113 'partially-implemented' (it fully closed the over-count class — keep that credit) and TRANSFER the residue=0 success criterion to PROP-114, which targets the actual residual mechanism. PROP-114 becomes the load-bearing fix for sustained residue=0.",
+    "prop102_autoclose_interaction": "PROP-113's grade-A verification_pattern currently FAILS, so PROP-102 Mechanism A will NOT auto-close it (correct). After re-status to 'partially-implemented' (not in the eligible-for-autoclose whitelist) the auto-close graph leaves it alone. PROP-114 carries residue=0 going forward; this amendment sets PROP-114 requires_human_judgment=true + do_not_auto_close=true so PROP-102 will not close PROP-114 before the operator selects and ships a phase. Once shipped and residue=0 sustains, the operator can clear those flags to let PROP-102 auto-close PROP-114 on its verification_pattern.",
+    "supersession_note": "PROP-114 does NOT supersede PROP-113 (different mechanisms). It is a sibling/follow-on. Recommend NOT setting supersedes_props; instead annotate PROP-113 with a pointer to PROP-114 for the residual, and mark partially-implemented. Operator may run `node monitor/scripts/mark-prop-superseded.js` only if they decide to fold them, which is not recommended."
+  }
 }
