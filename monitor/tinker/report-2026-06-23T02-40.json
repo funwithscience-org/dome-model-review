@@ -1,0 +1,75 @@
+{
+  "run_id": "2026-06-23T02-40",
+  "ts": "2026-06-23T02:49:34Z",
+  "mode_selected": "Mode 2 (Infrastructure & FUSE) -> Mode 4 (PROP authoring). PROP-099 prune-resurrection canary fired RC=3 during the Mode-2 quick-check; investigated to root cause and authored PROP-114. No pending operator directive, no Mode 0 assigned-to-tinker items.",
+  "modes_checked": {
+    "mode0_assigned_to_tinker": "none pending",
+    "operator_directives": "0 pending (110 directives walked, all terminal)",
+    "prop_autoclose_shadow": "props_walked=125, eligible=1, would_close=0",
+    "directive_autoclose_shadow": "directives_walked=110, pending=0, would_close=0",
+    "mode1_pipeline_health": "GREEN — all agents committed within last ~1h (decider 02:12, integrity 01:15, curmudgeon 01:14, dome-mirror 02:34, poller 00:10, workspace-sync 01:12). No stalled agents. No actionable stranded patches.",
+    "mode2_infra": "FUSE: all 5 hashed files match GitHub. Auth 200. Disk: root-free 3340MB, clone-leak 13MB, FUSE 409MB — healthy. PROP-070 orphan-integrated check clean. PROP-099 CANARY FIRED RC=3 (23 resurrected narrative-cite-audit files in 48h).",
+    "mode3_cost": "not selected this run (Mode 2 finding preempted)",
+    "selection_reason": "PROP-099 major canary firing is the most pressing work; routed to root-cause + PROP authoring."
+  },
+  "backlog_trend": {
+    "open_issues_total": 4,
+    "open_status_count": 0,
+    "assigned_analyst_count": 1,
+    "net_velocity_7d": 66,
+    "age_ge_30d_count": 0,
+    "root_fs_free_mb": 3340,
+    "closed_issues_mb": 3.09,
+    "thresholds_fired": "none — backlog is healthy (4 open issues, net +66/7d). Appended row to queue-history.jsonl."
+  },
+  "findings": [
+    {
+      "category": "prune-resurrection",
+      "severity": "major",
+      "id": "FND-2026-06-23T02-40-01",
+      "summary": "prune<->workspace-sync re-add loop is still LIVE after PROP-113 P3 deployed 2026-06-22T16:15. PROP-099 canary --hours 48 => RC=3, 23 narrative-cite-audit files resurrected. Confirmed re-add commit 5a20dcd at 2026-06-22T23:09:48Z (7h post-deploy) added 17 tombstoned files (status A, 396638 insertions).",
+      "evidence": "check-prune-resurrection.js --hours 48 RC=3 resurrected_total=23; commit 5a20dcd name-status shows 17 'A' narrative-cite-audit-*.json; run report run-2026-06-22T23-10-45Z.json resurrection_status='clean' despite the re-add.",
+      "impact": "Working-tree bloat (~24 files x ~1.26MB = ~30MB of files prune wanted gone) and, more importantly, PROP-113 Fix C — the designated self-detection safety net — gives FALSE assurance: it reports 'clean' on resurrection-causing runs. The loop is invisible to the per-run agent that causes it.",
+      "recommendation": "Authored PROP-114 (Fix C window blind-spot, detection fix). Re-add MECHANISM (why smart_copy re-adds despite the depth-50 guard passing) flagged as complementary follow-on. PROP-113 verification status: STILL_BROKEN. Next prune cycle should re-tombstone; operator may tree-delete the 23 residue via Git Data API escape hatch."
+    },
+    {
+      "category": "prop-defect",
+      "severity": "major",
+      "id": "FND-2026-06-23T02-40-02",
+      "summary": "PROP-113 Fix C post-sync resurrection assertion uses check-prune-resurrection.js --hours 2, which filters by TOMBSTONE age (script line 53). The loop re-adds files tombstoned days ago, so the 2h window is structurally blind to the dominant loop shape and reports resurrection_status='clean' on runs that re-add old-tombstoned files.",
+      "evidence": "workspace-sync.md ~line 1589 (--hours 2) + check-prune-resurrection.js line 41/53 (cutoff by rec.mtime). False-clean run-2026-06-22T23-10-45Z.json vs re-add commit 5a20dcd.",
+      "impact": "Self-assertion cannot catch the re-add it is meant to catch. Operator inferring loop-closure from resurrection_status='clean' would be misled.",
+      "recommendation": "PROP-114: replace tombstone-age window with re-add-event detection — intersect this run's HEAD commit added-paths (git show --diff-filter=A) with the already-built GIT_DELETED_SET. Fires only on real re-adds, independent of tombstone age and clone depth. ~15 LOC."
+    }
+  ],
+  "cleanup_actions": [],
+  "previous_followup": {
+    "PROP-113": "STILL_BROKEN. verification_pattern (check-prune-resurrection.js --hours 48 => RC=0) currently RC=3 (23). Progress real: prior runs cited 312 resurrected; the Fix B archive-based set + Fix A upper-bound gate cut the overcount, but residual re-adds continue and Fix C's --hours 2 self-assertion is blind to them (see FND-02 / PROP-114). Recommend operator keep PROP-113 open pending PROP-114 + a mechanism follow-on.",
+    "PROP-099": "Canary is deployed and WORKING — it correctly fired RC=3 this run, which is exactly its purpose. Status 'pending' could move to implemented once operator confirms; the detector itself is sound.",
+    "PROP-107": "pending (prune-integrity silent push-gap). Unaffected by this run; orthogonal to the detection fix.",
+    "note": "Did not re-run every PROP verification_pattern this run (Mode-2 finding consumed the run); PROP-113/099/107 reviewed because directly implicated."
+  },
+  "self_cost": {
+    "transcript": "c1becb2f-9918-4c1f-9484-27aac00fe932.jsonl",
+    "model": "claude-opus-4-8",
+    "assistant_msgs": 94,
+    "tokens": {
+      "input": 20030,
+      "output": 120756,
+      "cache_write_5m": 0,
+      "cache_write_1h": 355868,
+      "cache_read": 12289737
+    },
+    "cost_usd": {
+      "input_usd": 0.10015,
+      "output_usd": 3.0189,
+      "cache_write_5m_usd": 0,
+      "cache_write_1h_usd": 3.55868,
+      "cache_read_usd": 6.144869,
+      "total_usd": 12.822599
+    },
+    "transcript_duration_sec": 624.6,
+    "first_ts": "2026-06-23T02:39:22.699Z",
+    "last_ts": "2026-06-23T02:49:47.304Z"
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "id": "PROP-114",
+  "title": "PROP-113 Fix C post-sync resurrection assertion is blind to the dominant loop shape — it windows by tombstone-age (--hours 2), but resurrection re-adds files tombstoned days ago; switch to re-add-event detection",
+  "created_at": "2026-06-23T02:49:01Z",
+  "authored_by": "tinker",
+  "authored_by_run": "tinker-2026-06-23T02-40",
+  "status": "pending",
+  "category": "infrastructure",
+  "severity": "major",
+  "propose_only": true,
+  "directive": null,
+  "target_mode": "operator-review",
+  "parent_prop": "PROP-113",
+  "surfacing_report": "monitor/tinker/report-2026-06-23T02-40.json",
+  "executive_summary": "PROP-113 Fix C added a post-sync resurrection assertion to workspace-sync.md that is supposed to make a resurrection-causing cycle self-evident on the run that caused it. It calls check-prune-resurrection.js --hours 2. That script filters candidates by TOMBSTONE mtime (check-prune-resurrection.js line 53: if(mt && mt < cutoff) continue), so --hours 2 only considers files tombstoned in the last 2 hours. The actual prune<->workspace-sync re-add loop re-adds files that were tombstoned DAYS ago: FUSE retains the per-run JSON indefinitely (no unlink), prune deletes the git copy, and a later workspace-sync re-adds it. The re-add EVENT is fresh but the TOMBSTONE is old. Result: Fix C reports resurrection_status='clean' on the exact run that re-added 17 tombstoned narrative-cite-audit files. The assertion provides false assurance — it is structurally incapable of catching the dominant loop shape. The 48h tinker-side canary catches it; the 2h self-assertion cannot.",
+  "root_cause": "Window semantics mismatch. check-prune-resurrection.js windows by tombstoned_at (rec.mtime), not by re-add event time. Fix C narrowed the window to --hours 2 specifically to avoid re-flagging pre-existing residue every run ('a wider window re-flags pre-existing residue and would abort every run until backfill drains', workspace-sync.md ~line 1583). That reasoning is sound for a tombstone-age window but it throws out exactly the events Fix C exists to catch: a re-add today of a file tombstoned yesterday. Tombstone-age windowing and re-add-event detection are different questions; Fix C asks the wrong one.",
+  "other_side_Q4_ruled_out": "Counter-argument: maybe --hours 2 is correct and the residual 23 are just pre-fix backlog that will drain once prune re-tombstones, so the assertion SHOULD ignore them. Rejected by evidence: commit 5a20dcd (2026-06-22T23:09:48Z, ~7h AFTER PROP-113 P3 deployed at 16:15) re-added 17 narrative-cite-audit files with git status 'A' (396,638 insertions), and the matching run report run-2026-06-22T23-10-45Z.json recorded resurrection_status='clean', git_deleted_set_untrusted=false, git_deleted_count=2589. That is a NEW re-add event post-deploy, not static backlog, and Fix C declared it clean. A correct assertion must flag the run that performs the re-add regardless of how old the tombstone is. Secondary counter-argument: widening to --hours 48 in the assertion would make it abort almost every run (because residue persists), turning the abort sentinel into noise. Also rejected: the right detector is not a wider tombstone window but a re-add-event check (did THIS push add any path in the tombstone set), which only fires on actual re-adds and is silent on untouched residue.",
+  "evidence": {
+    "canary_48h": "check-prune-resurrection.js --hours 48 => RC=3, resurrected_total=23, all category narrative-cite-audit-archive.jsonl (tinker run 2026-06-23T02-40).",
+    "fixc_window_source": "workspace-sync.md ~line 1589: RESURRECTION_OUT=$(node monitor/scripts/check-prune-resurrection.js --hours 2 ...). Comment at ~1583 documents the deliberate 2h narrowing.",
+    "script_filter": "check-prune-resurrection.js line 41 cutoff=Date.now()-WINDOW_H*3600*1000; line 53 if(mt && mt < cutoff) continue; — mt is rec.mtime (tombstone time).",
+    "false_clean_run": "monitor/integrity/workspace-sync-runs/run-2026-06-22T23-10-45Z.json: files_committed=18, resurrection_status='clean', git_deleted_set_untrusted=false, git_deleted_count=2589.",
+    "matching_readd_commit": "5a20dcd01561abab5b9a1716039e8b1b406ff57a 2026-06-22T23:09:48Z 'Workspace sync': 17 narrative-cite-audit-*.json added (status A) + 1 genuinely-new live file; tombstones for the 17 dated 2026-06-21T08:06 and 2026-06-22T08:05 (15-39h before the re-add).",
+    "depth50_repro": "In a depth-50 clone, smart_copy's PROP-094 producer-fresh guard correctly SKIPs all 17 (pre-deletion blob sha1 == HEAD blob == FUSE src for each), so the re-add mechanism itself is shallow-clone-depth-sensitive in workspace-sync's runtime environment and is NOT reproducible at depth 50 — see complementary_work."
+  },
+  "proposed_fix": {
+    "summary": "Replace the tombstone-age window in Fix C with re-add-event detection. After the push, compute the set of paths ADDED by this run's HEAD commit (git show --diff-filter=A --name-only HEAD) and intersect with the GIT_DELETED_SET already built this cycle (archive-tombstone-derived, depth-independent, available as $GIT_DELETED_SET). Any non-empty intersection => this run re-added a tombstoned path => write the abort/warning sentinel and set resurrection_status='ABORT-resurrection-detected'. This fires only on actual re-adds, is silent on untouched residue, and is independent of tombstone age and clone depth.",
+    "concrete": "In workspace-sync.md Fix C block (~lines 1582-1611): after PUSH, run: ADDED=$(git show --diff-filter=A --name-only --pretty=format: HEAD | grep '^monitor/integrity/' || true); RESURRECTED=$(comm -12 <(printf '%s\n' \"$ADDED\" | sort -u) <(sort -u \"$GIT_DELETED_SET\")); if [ -n \"$RESURRECTED\" ]; then resurrection_status=ABORT, write sentinel listing $RESURRECTED. Keep the check-prune-resurrection.js call as a SECONDARY signal if desired, but the primary gate must be the commit-add intersection.",
+    "why_this_is_correct": "GIT_DELETED_SET is exactly the set of prune-tombstoned paths workspace-sync must never re-add. If this run's commit added any member of that set, that is by definition a resurrection — no time window needed."
+  },
+  "backfill_plan": "None required for detection. The 23 currently-resurrected files remain until the next prune cycle re-tombstones them or the operator tree-deletes via the Git Data API escape hatch (CLAUDE.md). PROP-114 only fixes the DETECTION gap so future re-adds are caught on the causing run. The separate re-add MECHANISM (why smart_copy re-adds at all in workspace-sync's shallow clone despite the depth-50 guard passing) is tracked under complementary_work and likely needs the producer-fresh exception to fail-closed when last_del_sha or the pre-deletion blob is unresolvable in a shallow clone.",
+  "detection_mechanism": "After fix: any run that re-adds a tombstoned integrity artifact writes monitor/integrity/workspace-sync-resurrection-abort-<ts>.json AND sets resurrection_status='ABORT-resurrection-detected' in its run report, on the SAME run. Verify by replaying against commit 5a20dcd: the commit-add intersection must be non-empty (17 paths).",
+  "complementary_work": "PROP-099 (canary, pending) detects the loop after the fact at 48h — keep. This PROP makes workspace-sync self-report the causing run. The remaining open question — why the smart_copy PROP-094 producer-fresh guard re-adds in workspace-sync's runtime when a depth-50 clone correctly SKIPs — is a separate MECHANISM defect (likely the git log --diff-filter=D / git show parent-blob lookup behaving differently at workspace-sync's shallow clone depth). Recommend a follow-on PROP making the producer-fresh exception fail-closed (SKIP) when last_del_sha is found but the pre-deletion blob cannot be resolved, rather than the current behaviour which can RESCUE on an unresolvable/ambiguous comparison.",
+  "constraints_honored": [
+    "Propose-only: no edits applied to workspace-sync.md this run.",
+    "Evidence-based: every claim cites a file, line, commit, or run report.",
+    "Does not touch wins.json/sections.json (decider domain).",
+    "Considers the other side (other_side_Q4_ruled_out)."
+  ],
+  "verification_pattern": {
+    "grade": "A",
+    "pattern": "After fix: in workspace-sync's clone, replay 'git show --diff-filter=A --name-only --pretty=format: 5a20dcd | grep \"^monitor/integrity/narrative-cite-audit\"' and confirm the intersection with build-git-deleted-set.js output is non-empty (>=15 paths) and that the assertion would set resurrection_status=ABORT. Steady-state: across 2 consecutive daily tinker runs, every workspace-sync run report whose commit added a tombstoned path has resurrection_status='ABORT-resurrection-detected' (no more false 'clean'). check-prune-resurrection.js --hours 48 trending to 0 is the loop-closed signal (tracked by PROP-113/PROP-099)."
+  },
+  "estimated_loc": 15,
+  "requires_human_judgment": false,
+  "do_not_auto_close": false,
+  "cross_references": ["PROP-113", "PROP-099", "PROP-094", "PROP-103", "PROP-107"]
+}

@@ -1,27 +1,16 @@
-Tinker run tinker-2026-06-22T05-31 (2026-06-22T05:43:09Z)
-Mode: DIRECTIVE (DIRECTIVE-20260622-001, high priority — preempted Mode 0-4)
+TINKER 2026-06-23T02-40 — Mode 2 -> Mode 4 (PROP-099 canary fired)
 
-DELIVERABLE: Authored full edit-level design for PROP-113 fixes A/B/C into
-monitor/tinker/proposals/PROP-113-...json (amendment_DIRECTIVE-20260622-001).
-Propose-only — NO edits applied to workspace-sync.md (PROP-051 disaster-sensitive).
+PIPELINE: GREEN. All agents fresh (<1h). Backlog healthy: 4 open issues, net +66/7d. Disk healthy (root-free 3.3GB). FUSE matches GitHub. Auth 200.
 
-What's in the amendment (Q1-Q9):
- - Q1 exact insertion-point map (line numbers @ commit aecf923)
- - Q2 Fix A diff: upper-bound trust gate, threshold = strict GIT_DELETED_COUNT>ARCHIVE_LINES (invariant-backed)
- - Q3 Fix B: full build-git-deleted-set.js helper source + diff (hardened parser, path regex, ..-guard)
- - Q4 Fix C diffs: post-sync resurrection assertion (--hours 2) + abort sentinel + report field
- - Q5 per-fix disaster vectors (none introduce a deletion path — all fail-closed/observability only)
- - Q6 per-phase smoke tests + full test-prop-113.js source (executed this run: 5/5 PASS)
- - Q7 sequence rec: SHIP P2 (A+C) FIRST, observe one cycle (canary RC=0), then Fix B
- - Q8 backfill: natural drain via next prune cycle; Git Data API tree-delete as fallback for the 312
- - Q9 PROP-103: COMPLEMENT not supersede; re-home the residue=0 success criterion to PROP-113
+MAJOR FINDING — prune<->workspace-sync re-add loop is STILL LIVE after PROP-113 P3 (deployed 2026-06-22 16:15):
+  - PROP-099 canary (--hours 48): RC=3, 23 narrative-cite-audit files resurrected.
+  - Confirmed re-add commit 5a20dcd at 2026-06-22 23:09 (7h post-deploy): 17 tombstoned files re-added (status A).
+  - PROP-113 Fix C self-assertion reported resurrection_status='clean' on that exact run — FALSE assurance.
 
-Validation: all 5 diffs match target exactly once; Fix B helper byte-identical to old
-pipeline on clean data (2510==2510) and drops injected garbage/traversal with 0 leakage.
-FOUND+FIXED a path-traversal hole + dropped-colon-filename regression in the
-PROP-113-as-written regex (folded into Fix B; see FND-02).
+ROOT CAUSE (reproducible): Fix C calls check-prune-resurrection.js --hours 2, which filters by TOMBSTONE AGE (script line 53). The loop re-adds files tombstoned DAYS ago (FUSE retains them; re-add event is fresh, tombstone is old). The 2h window is structurally blind to this — the dominant loop shape. The 48h tinker canary catches it; the 2h self-assertion cannot.
 
-Pipeline health (pre-flight): GREEN. open_issues=3, net_velocity_7d=+97, root_fs_free=3088MB.
-LIVE ISSUE: resurrection canary RC=3 (312 artifacts/48h) — PROP-113 is the remedy, awaiting operator ship.
+ACTION: Authored PROP-114 — replace tombstone-age window with re-add-event detection (intersect this run's HEAD added-paths with the already-built GIT_DELETED_SET). ~15 LOC, fires only on real re-adds, depth/age independent.
 
-Next run: resume Mode 0 assigned-to-tinker scan + proposals/ verification_pattern sweep.
+PROP-113 verification: STILL_BROKEN (--hours 48 RC=3, target RC=0). Progress real (prior 312 -> 23) but loop not closed. A second, separate MECHANISM defect remains: smart_copy re-adds in workspace-sync's shallow clone even though the depth-50 producer-fresh guard SKIPs correctly — flagged as a follow-on in PROP-114 complementary_work.
+
+OPERATOR: the 23 residue files will re-tombstone next prune cycle, or can be tree-deleted via the Git Data API escape hatch. The detection fix (PROP-114) is the priority so future re-adds are caught on the causing run.
