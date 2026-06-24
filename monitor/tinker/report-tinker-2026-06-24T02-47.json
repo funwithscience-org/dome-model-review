@@ -1,0 +1,253 @@
+{
+  "generated_at": "2026-06-24T02:47:42Z",
+  "report_date": "2026-06-24",
+  "run_id": "tinker-2026-06-24T02-47",
+  "mode_selected": "cost_engineering",
+  "mode_reason": "No pending operator directive, no Mode-0 assigned-to-tinker items, no Mode-1 stalled agents (all 12 enabled agents producing within cadence; integrity 2026-06-24 run passed 3837 tests), no Mode-2 infra issues (FUSE matches GitHub, auth 200, root-FS 3155MB free, clone-leak 20MB). Both auto-close pre-flights ran shadow with 0 would-close. Falls through to Mode 3, the default productive state. Timely because the operator's quiet-period cadence cuts landed 2026-06-23 and Mode 3 explicitly verifies the results of recent changes.",
+  "modes_checked": {
+    "pipeline_health": "green — all enabled agents committing within 36h; decider/curmudgeon/integrity/poller/analyst/workspace-sync/dome-mirror/curmudgeon-verify/prune-integrity all live; integrity all-pass 3837 tests; 0 stranded patches >24h",
+    "infrastructure": "green — FUSE all 5 key files match GitHub; auth HTTP 200; root-FS free 3155MB (>500MB ok); clone-leak 20MB (own clone); PROP-099 prune-resurrection canary clean; PROP-070 orphan-integrated 0",
+    "cost_engineering": "RAN this mode. Last context_load baseline 2026-06-10. PROP-114 (prior directive output) advanced to phase-P2-shipped.",
+    "proposals": "0 pending self-fixes; 0 findings needing new PROPs this run (no composite-threshold breach)"
+  },
+  "pipeline_health": {
+    "agents_running": 12,
+    "agents_stalled": [],
+    "backlog_trend": {
+      "open_issues_total": 3,
+      "open_status_count": 0,
+      "net_velocity_7d": 64,
+      "thresholds_fired": "none",
+      "note": "open-issues stable 3-4 across last 8 tinker runs; positive net velocity; no backlog-trend finding"
+    }
+  },
+  "findings": [
+    {
+      "severity": "minor",
+      "category": "self",
+      "description": "Tinker is now the single most expensive per-run agent in the pipeline (p50 $12.77/run, max $17.24), exceeding curmudgeon ($9.57) and analyst ($9.53). Its total context load also grew +15.4% (1426L -> 1646L) since the last context_load baseline (2026-06-10 report), driven by the dispatcher accumulating stable pre-flight prose (PROP-102 prop-auto-close added 2026-06-14, PROP-108 directive-auto-close added 2026-06-20).",
+      "evidence": "monitor/tinker/report-*.json self_cost: 14 runs/14d, p50 $12.765, p95 $17.241. Context-load: tinker.md dispatcher 622L + 4 reference modules = 1417L excl CLAUDE.md, 1646L incl. Prior baseline report-2026-06-10T17-33.json context_load.per_agent.tinker.total=1426.",
+      "suggested_fix": {
+        "file": "monitor/prompts/tinker.md",
+        "find": "PROP-102 + PROP-108 auto-close pre-flight prose blocks (the explanatory paragraphs around the script invocations)",
+        "replace": "1-line description + script-invocation, moving the lengthy rationale prose to a tinker reference module",
+        "rationale": "Stable, well-tested mechanisms whose prose no longer needs to be re-read every run. NOTE: deliberately NOT actioned this run — tinker's dominant cost component is tool-call breadth (15-20 bash round-trips, accumulated tool_result context), not prompt size; a prompt diet would save only a few cents/run. Recorded as a watch-item, not a PROP. Per Step 4b composite rule, tinker's daily_cost ($12.77) is below the $20/day mandatory-PROP threshold."
+      },
+      "self_fixable": false,
+      "fix_applied": false
+    },
+    {
+      "severity": "minor",
+      "category": "efficiency",
+      "description": "analyst-baby cost variance p95/p50 = 4.3 (above the PROP-101 Q4 >3 alert threshold). Investigated: benign. The ratio is driven by two early large-consolidation runs (2026-06-15 $5.24/715s, 2026-06-16 $6.01/700s) vs recent short BAU drains ($1-2/~70-230s). Cost tracks work-volume/duration linearly; no unbounded-loop signature (the 8360s run on 2026-06-19 cost only $0.98, i.e. mostly idle wall-clock, not token burn).",
+      "evidence": "monitor/analyst-baby/cost-history.jsonl 14d: 18 runs, p50 $1.394, p95/max $6.011. Duration-cost correlation confirms volume-driven variance.",
+      "self_fixable": false,
+      "fix_applied": false
+    },
+    {
+      "severity": "minor",
+      "category": "schedule",
+      "description": "Two latent quiet-period risk tradeoffs, both documented/intentional, noted for operator awareness: (1) dome-curmudgeon-verify is PAUSED (enabled:false) — if a verify-class item lands in the priority-queue during the pause, nothing processes it until re-enabled; queue is currently empty so no live impact. (2) workspace-sync FUSE->git rescue latency is now up to 8h (3 slots/day vs prior 8) — a decider push failure (Devilwench 403) waits up to 8h for rescue; acceptable under low quiet-period write volume per the operator's documented Q8 5%-rescue tolerance band.",
+      "evidence": "list_scheduled_tasks: dome-curmudgeon-verify enabled:false; dome-workspace-sync cron 0 1,5,9 * * *. Both documented in CLAUDE.md quiet-period cadence notes (2026-06-23).",
+      "self_fixable": false,
+      "fix_applied": false
+    }
+  ],
+  "previous_followup": [
+    {
+      "finding": "Prior two tinker runs (2026-06-19, 2026-06-23) were operator-directive-driven (DIRECTIVE-20260613-001 / DIRECTIVE-20260623-001), authoring PROP-114 root-cause investigation for the residual 23/day integrity resurrection (propose-only, requires_human_judgment).",
+      "status": "FIXED",
+      "evidence": "PROP-114 now status=phase-P2-shipped (operator selected and shipped the combined P2 fix). PROP-099 prune-resurrection canary returns clean (RC=0) this run and queue-history shows no prune-resurrection events — the resurrection class the PROP targeted is no longer firing. PROP-113 advanced to phase-P3-shipped."
+    }
+  ],
+  "open_issue_health": {
+    "total_open": 3,
+    "open_status_count": 0,
+    "aged_out": [],
+    "repeated_deferrals": [],
+    "missing_patches": [],
+    "zombie_fixes": []
+  },
+  "cost_engineering": {
+    "headline": "Quiet-period cadence cuts (2026-06-23) validated with real cost data: forward pipeline ~$45.5/day excl tinker (~$58.7/day incl tinker+prune) vs pre-cut ~$72/day excl tinker. Savings ~$26/day on the cut agents, roughly 35% reduction. No analytical-depth loss: the cuts removed redundant slots (analyst was logging only 18 cost rows in 14d against a 3-slot/day schedule = ~57% no-op slots before the cut to 1/day).",
+    "wasted_compute": {
+      "re_reviews": "25 targets with >1 review across the 815-file project-lifetime history (e.g. WIN-001 x4) — cumulative, NOT active churn; these are legitimate post-patch re-reviews. No active re-review pattern.",
+      "re_work": "0 (analyst integrated-then-modified: 0; stale-complete: 0)",
+      "orphan_reprocessing": "0 (issue-proposals ledger 690 >= on-disk 689)",
+      "duplicate_outputs": "0 duplicate new-wins",
+      "stale_queue_items": "0 (priority-queue empty)",
+      "estimated_wasted_opus_runs": 0,
+      "trend": "IMPROVING"
+    },
+    "real_cost": {
+      "phase": 2,
+      "window_days": 14,
+      "per_agent_14d": {
+        "tinker": {
+          "runs": 14,
+          "p50": 12.765,
+          "p95": 17.241,
+          "max": 17.241,
+          "sum_usd": 164.79
+        },
+        "curmudgeon": {
+          "runs": 25,
+          "p50": 9.573,
+          "p95": 16.397,
+          "max": 18.523,
+          "sum_usd": 271.41
+        },
+        "analyst": {
+          "runs": 18,
+          "p50": 9.527,
+          "p95": 14.543,
+          "max": 14.543,
+          "sum_usd": 178.14
+        },
+        "decider": {
+          "runs": 22,
+          "p50": 6.148,
+          "p95": 10.676,
+          "max": 10.699,
+          "sum_usd": 137.9
+        },
+        "integrity": {
+          "runs": 10,
+          "p50": 4.206,
+          "p95": 4.745,
+          "max": 4.745,
+          "sum_usd": 38.05
+        },
+        "social": {
+          "runs": 5,
+          "p50": 2.856,
+          "p95": 3.508,
+          "max": 3.508,
+          "sum_usd": 14.32
+        },
+        "poller": {
+          "runs": 9,
+          "p50": 2.292,
+          "p95": 2.811,
+          "max": 2.811,
+          "sum_usd": 20.57
+        },
+        "workspace-sync": {
+          "runs": 79,
+          "p50": 2.407,
+          "p95": 3.159,
+          "max": 3.271,
+          "sum_usd": 176.47
+        },
+        "curmudgeon-verify": {
+          "runs": 24,
+          "p50": 1.574,
+          "p95": 3.059,
+          "max": 3.853,
+          "sum_usd": 40.95
+        },
+        "analyst-baby": {
+          "runs": 18,
+          "p50": 1.394,
+          "p95": 6.011,
+          "max": 6.011,
+          "sum_usd": 35.53
+        },
+        "dome-mirror": {
+          "runs": 128,
+          "p50": 0.751,
+          "p95": 0.765,
+          "max": 0.769,
+          "sum_usd": 94.86
+        }
+      },
+      "variance_alerts": [
+        "analyst-baby: p95/p50=4.3 — investigated benign (work-volume/duration driven, no loop)"
+      ],
+      "forward_daily_cost": {
+        "tinker": 12.77,
+        "curmudgeon": 9.57,
+        "analyst": 9.53,
+        "workspace-sync": 7.22,
+        "decider": 6.15,
+        "integrity": 4.21,
+        "social": 2.86,
+        "poller": 2.29,
+        "dome-mirror": 2.25,
+        "analyst-baby": 1.39,
+        "curmudgeon-verify": 0,
+        "total_excl_tinker_prune": 45.47,
+        "total_incl_tinker": 58.24
+      },
+      "composite_threshold_status": "LIVE. Top forward daily_cost agent = tinker ($12.77/day). Below the $20/day mandatory-PROP threshold, so NO optimization PROP mandated this run (per tinker-cost-engineering.md Step 4b Q8 rule). Tinker is #1 per-run cost but its cost is dominated by inherent tool-call breadth (valuable analytical work), not waste."
+    },
+    "proposals_written": [],
+    "implemented_since_last_report": [
+      "PROP-114 phase-P2-shipped (integrity resurrection fix); PROP-113 phase-P3-shipped"
+    ],
+    "cumulative_estimated_savings": "Quiet-period cadence cuts: ~$26/day (~$780/mo) at maintained quality. (Operator-authored, tinker-validated.)"
+  },
+  "context_load": {
+    "claude_md_lines": 229,
+    "per_agent": {
+      "analyst": {
+        "total": 1999,
+        "prev": 1888,
+        "delta_pct": 5.9
+      },
+      "curmudgeon": {
+        "base_total": 1238,
+        "max_total": 1366
+      },
+      "decider": {
+        "total": 4222,
+        "prev": 4048,
+        "delta_pct": 4.3
+      },
+      "tinker": {
+        "total": 1646,
+        "prev": 1426,
+        "delta_pct": 15.4
+      }
+    },
+    "trend": "GROWING (tinker only)",
+    "alerts": [
+      "tinker +15.4% since 2026-06-10 baseline (moderate threshold) — driven by PROP-102/PROP-108 pre-flight prose accumulation in the dispatcher. Watch-item; low ROI to fix (see findings[0]). analyst +5.9% and decider +4.3% under the 10% threshold; CLAUDE.md 229L (+6% from 216) under the 15% threshold."
+    ]
+  },
+  "recommendations": [
+    {
+      "priority": 1,
+      "type": "human_decision",
+      "description": "No action required. Pipeline is healthy and freshly cost-optimized. Quiet-period cuts validated (~35% cost reduction at maintained quality). Re-enable dome-curmudgeon-verify when a verify-class item next appears in the priority-queue; revert cadences per the CLAUDE.md REVERT triggers if the dome breaks its day-67 drought."
+    },
+    {
+      "priority": 2,
+      "type": "prop",
+      "description": "Watch-item (not yet a PROP): if tinker's context load crosses +25% or its per-run cost p50 crosses ~$15, author a dispatcher prompt-diet extracting PROP-102/PROP-108 pre-flight prose to a reference module. Low priority — tinker daily_cost is below the $20/day threshold and the dominant cost lever is tool-call breadth, not prompt size."
+    }
+  ],
+  "self_cost": {
+    "transcript": "ca5cd3b3-ae9f-42c7-bac0-6a5969b5590a.jsonl",
+    "model": "claude-opus-4-8",
+    "assistant_msgs": 71,
+    "tokens": {
+      "input": 28744,
+      "output": 110773,
+      "cache_write_5m": 0,
+      "cache_write_1h": 560283,
+      "cache_read": 8606517
+    },
+    "cost_usd": {
+      "input_usd": 0.14372,
+      "output_usd": 2.769325,
+      "cache_write_5m_usd": 0,
+      "cache_write_1h_usd": 5.60283,
+      "cache_read_usd": 4.303259,
+      "total_usd": 12.819133
+    },
+    "transcript_duration_sec": 497.2,
+    "first_ts": "2026-06-24T02:39:24.933Z",
+    "last_ts": "2026-06-24T02:47:42.138Z"
+  }
+}
