@@ -29,7 +29,13 @@ No-ops are cheap waste — the agent discovers there's nothing to do and stops. 
 
 **1. Curmudgeon re-reviewing the same target:**
 ```bash
-# Find targets reviewed more than once. Same target_id across multiple review files = re-review.
+# Find targets reviewed more than once. Same target_id across multiple FULL review files = re-review.
+# IMPORTANT (added 2026-06-25 per tinker-2026-06-25T02-41 FND): EXCLUDE agent_subtype==='curmudgeon-verify'.
+# Verify passes (PROP-038, the `.cN` cycle files) are DESIGNED to re-touch a patched target — they are
+# the narrow verification flow, not wasted re-work. Counting them produces ~20+ false "re-review" hits
+# every Mode 3 run (every WIN with a full April review + later verify cycles trips the >1 filter). The
+# empirical disambiguation on 2026-06-25 found ALL clustered hits were verify-subtype. Filtering them at
+# read-time keeps the detector pointed at genuine duplicate FULL reviews (the actual clone-missing-FUSE bug).
 node -e "
 const fs=require('fs');
 const dir='monitor/curmudgeon/reviews/';
@@ -37,14 +43,15 @@ const files=fs.readdirSync(dir).filter(f=>f.endsWith('.json'));
 const byTarget={};
 files.forEach(f=>{
   try{const r=JSON.parse(fs.readFileSync(dir+f,'utf8'));
+  if(r.agent_subtype==='curmudgeon-verify')return; // designed verification pass, not re-work
   const tid=r.target_id||r.win_id||f.replace('.json','');
   (byTarget[tid]=byTarget[tid]||[]).push({file:f,date:r.reviewed_at||fs.statSync(dir+f).mtime.toISOString()});
   }catch(e){}
 });
-Object.entries(byTarget).filter(([k,v])=>v.length>1).forEach(([k,v])=>console.log(k+': '+v.length+' reviews — '+v.map(x=>x.file).join(', ')));
+Object.entries(byTarget).filter(([k,v])=>v.length>1).forEach(([k,v])=>console.log(k+': '+v.length+' FULL reviews — '+v.map(x=>x.file).join(', ')));
 "
 ```
-Root cause: curmudgeon's fresh clone doesn't contain its own prior reviews (written to FUSE). Fix: curmudgeon checks FUSE for existing reviews before starting (already patched — verify it's working).
+Root cause: curmudgeon's fresh clone doesn't contain its own prior reviews (written to FUSE). Fix: curmudgeon checks FUSE for existing reviews before starting (already patched — verify it's working). The verify-subtype exclusion above is a precision fix for the DETECTOR, separate from that root cause.
 
 **2. Analyst re-writing completed expansions:**
 ```bash
