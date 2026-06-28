@@ -1,0 +1,241 @@
+{
+  "run_id": "2026-06-28T02-40",
+  "ts": "2026-06-28T02-40",
+  "agent": "tinker",
+  "mode_selected": "Mode 3 — Cost Engineering & Architecture. No pending operator directive, no Mode 0 assigned-to-tinker items, no Mode 1/2 red flags. Pipeline healthy → default productive state.",
+  "modes_checked": {
+    "operator_directives": "NO PENDING DIRECTIVES (read from fresh clone; PROP-108 directive-auto-close shadow walked 111 directives, 0 pending, 0 would-close).",
+    "mode_0_assigned_tinker": "No assigned-to-tinker items in open-issues.json (status='assigned-tinker') or expansion-tracker.json (assigned_to='tinker').",
+    "mode_1_pipeline_health": "GREEN. All agents producing within hours: decider 02:16, integrity 01:15, curmudgeon 01:15, poller/status/workspace-sync 00:11-00:14, dome-mirror 00:35. No actionable stranded patches >24h. HEAD e85bec5.",
+    "mode_2_infra_fuse": "GREEN. FUSE md5 matches GitHub for all 5 checked files (wins/sections/digest-reviews/generate-html/index.html). PAT scope verified HTTP 200. Disk: clone-leak 1MB, FUSE 436MB, root-free 3316MB. No stale /tmp clones >4h.",
+    "prop_lifecycle_auto_close": "PROP-102 shadow: 126 PROPs walked, 88 have_vp, grade_A 38, eligible_for_autoclose 1, mechA/mechB would_close 0. PROP-108 shadow: 111 directives, 0 pending. Both shadow-mode (no enforce flags present); 0 changes written."
+  },
+  "findings": [
+    {
+      "id": "FND-01",
+      "category": "cost-engineering",
+      "severity": "moderate",
+      "title": "Tinker is the #1 daily-cost agent (~$12.77/run) and the only Opus analytical agent omitted from the 2026-06-23 quiet-period throttle sweep.",
+      "evidence": "PROP-101 14d cost data: tinker p50 $12.765/run (sum $214.34) > curmudgeon $10.279 > analyst $9.397. list_scheduled_tasks confirms dome-tinker still daily `30 3 * * *` Opus while analyst/curmudgeon/decider/analyst-baby were cut to 1/day and curmudgeon-verify paused on 2026-06-23. Dome at day 72 manual drought.",
+      "action": "Authored PROP-115. Recommendation A: throttle dome-tinker to every-other-day (`30 3 */2 * *`), ~50% / ~$45/wk saving, 1-line reversible. Recommendation B (deferred): Haiku/script pre-flight gate modeled on PROP-034/038.",
+      "authority": "operator (schedule change is operator-domain; not self-applied)."
+    },
+    {
+      "id": "FND-02",
+      "category": "wasted-compute-detector-precision",
+      "severity": "minor",
+      "title": "Curmudgeon re-review detector still over-counts cycle-numbered FULL reviews as re-work.",
+      "evidence": "Detector flagged SEC-4.1 (2), timestamp-error-tab (2), WIN-013 (2), WIN-067 (4) as multi-review. Inspection: all are legitimate change-driven `.cN` cycle reviews with distinct cycle numbers and reviewed_at timestamps spanning weeks/months (e.g. WIN-067 cycles 1/10/11/12 across 04-06..05-25), NOT the clone-missing-FUSE duplicate bug. The 2026-06-25 fix excluded agent_subtype='curmudgeon-verify' but full-subtype cycle re-reviews remain a false-positive class.",
+      "action": "No re-work PROP needed (0 active re-work instances). Detector-precision refinement candidate: group by target AND flag only when the same cycle appears twice OR when content-hash matches an existing review. Low priority — surfaced for a future Mode 4.",
+      "authority": "tinker (future detector refinement)."
+    },
+    {
+      "id": "FND-03",
+      "category": "cost-variance",
+      "severity": "info",
+      "title": "analyst-baby p95/p50 cost ratio = 4.0 (>3 PROP-101 Q4 variance threshold).",
+      "evidence": "analyst-baby 14d: p50 $1.324, p95 $5.243, max $6.011. Ratio 4.0. Signature of occasional large batch-drain runs vs low-cost BAU runs.",
+      "action": "Flag only, no PROP. Absolute cost is tiny (sum $40.15/14d, lowest-but-one). The variance is expected behavior for a BAU-drain agent that occasionally batches a large consolidation; not an unbounded-loop pathology. Re-check if absolute cost climbs.",
+      "authority": "monitoring."
+    },
+    {
+      "id": "FND-04",
+      "category": "backlog-trend",
+      "severity": "info",
+      "title": "Backlog healthy — no PROP-030 threshold fires.",
+      "evidence": "open_issues_total=3 (0 status='open'), assigned_analyst=0, net_velocity_7d=+31 (31 closed, 0 new), age_ge_30d=0, oldest_open=0d. closed_issues.json=3.11MB (well under PROP-105 8MB trigger; stable vs 06-16 data-growth-watch note). root_fs_free=3316MB.",
+      "action": "None. Queue-history row appended.",
+      "authority": "monitoring."
+    }
+  ],
+  "wasted_compute": {
+    "re_reviews": [
+      {
+        "target": "WIN-067",
+        "count": 4,
+        "root_cause": "legitimate change-driven .cN cycle reviews (cycles 1/10/11/12)",
+        "status": "NOT-REWORK"
+      },
+      {
+        "target": "SEC-4.1",
+        "count": 2,
+        "root_cause": "cycle reviews c3/c4",
+        "status": "NOT-REWORK"
+      },
+      {
+        "target": "WIN-013",
+        "count": 2,
+        "root_cause": "c1 + c11 spaced 2 months",
+        "status": "NOT-REWORK"
+      },
+      {
+        "target": "timestamp-error-tab-apr2026-update",
+        "count": 2,
+        "root_cause": "c1/c2 cycle reviews",
+        "status": "NOT-REWORK"
+      }
+    ],
+    "re_work": [],
+    "orphan_reprocessing": [],
+    "duplicate_outputs": [],
+    "stale_queue_items": [],
+    "estimated_wasted_opus_runs": 0,
+    "trend": "STABLE",
+    "note": "Detector precision gap noted as FND-02 — cycle-numbered FULL reviews are false positives."
+  },
+  "cost_engineering": {
+    "agent_efficiency_note": "Quiet-period pipeline (dome day 72 manual drought). Most upstream agents at 1/day. Highest-leverage cost finding is tinker's own daily Opus cadence — see FND-01 / PROP-115.",
+    "proposals_written": [
+      {
+        "id": "PROP-115",
+        "summary": "Throttle tinker to every-other-day during quiet period (immediate) + strategic Haiku/script pre-flight gate (deferred).",
+        "priority": "medium"
+      }
+    ],
+    "implemented_since_last_report": [],
+    "cumulative_estimated_savings": "PROP-115 Recommendation A: ~$45/wk if applied."
+  },
+  "real_cost": {
+    "phase": 2,
+    "window_days": 14,
+    "per_agent_14d": {
+      "tinker": {
+        "runs": 18,
+        "p50": 12.765,
+        "p95": 17.241,
+        "max": 17.241,
+        "sum_usd": 214.34
+      },
+      "curmudgeon": {
+        "runs": 28,
+        "p50": 10.279,
+        "p95": 18.034,
+        "max": 18.523,
+        "sum_usd": 316.21,
+        "p95_p50": 1.8
+      },
+      "analyst": {
+        "runs": 22,
+        "p50": 9.397,
+        "p95": 12.865,
+        "max": 14.543,
+        "sum_usd": 210.98,
+        "p95_p50": 1.4
+      },
+      "decider": {
+        "runs": 26,
+        "p50": 5.487,
+        "p95": 10.676,
+        "max": 10.699,
+        "sum_usd": 155.94,
+        "p95_p50": 1.9
+      },
+      "integrity": {
+        "runs": 14,
+        "p50": 3.642,
+        "p95": 4.745,
+        "sum_usd": 50.76
+      },
+      "social": {
+        "runs": 9,
+        "p50": 2.803,
+        "p95": 3.541,
+        "sum_usd": 24.9
+      },
+      "poller": {
+        "runs": 14,
+        "p50": 2.461,
+        "p95": 3.684,
+        "sum_usd": 35.6
+      },
+      "workspace-sync": {
+        "runs": 91,
+        "p50": 2.431,
+        "p95": 3.123,
+        "sum_usd": 206.53
+      },
+      "analyst-baby": {
+        "runs": 22,
+        "p50": 1.324,
+        "p95": 5.243,
+        "max": 6.011,
+        "sum_usd": 40.15,
+        "p95_p50": 4
+      },
+      "curmudgeon-verify": {
+        "runs": 24,
+        "p50": 1.574,
+        "p95": 3.059,
+        "sum_usd": 40.95
+      },
+      "dome-mirror": {
+        "runs": 140,
+        "p50": 0.751,
+        "p95": 0.768,
+        "sum_usd": 103.85
+      }
+    },
+    "variance_alerts": [
+      "analyst-baby: p95/p50=4.0 — occasional large batch-drain runs; low absolute cost, flag only (FND-03)."
+    ],
+    "composite_threshold_status": "LIVE (>=7d Phase-2 data). #1 daily_cost = tinker ~$12.77/day at current cadence. Below the $20/day hard-PROP threshold, but authored PROP-115 under the 'audit yourself' mandate as #1 agent with no trailing-30d cost PROP."
+  },
+  "context_load": {
+    "claude_md_lines": 229,
+    "per_agent": {
+      "analyst": {
+        "total_excl_claude": 1756,
+        "with_claude": 1985
+      },
+      "curmudgeon": {
+        "disp_plus_refs": 1009,
+        "conditional": 128,
+        "max_with_claude": 1366
+      },
+      "decider": {
+        "total_excl_claude": 3993,
+        "with_claude": 4222
+      },
+      "tinker": {
+        "total_excl_claude": 1424,
+        "with_claude": 1653
+      }
+    },
+    "trend": "STABLE",
+    "alerts": [],
+    "note": "claude_md 229L (was 214 on 06-01, +7% over month, under 15% threshold). tinker 1653 and decider 4222 flat vs 06-24/06-26/06-27 reports. workspace-sync.md is the single fattest prompt at 1855L (Sonnet, mechanical) — future prompt-diet candidate, not urgent."
+  },
+  "claude_md_audit": {
+    "accuracy": "Monitoring Pipeline table matches live scheduled tasks (verified via list_scheduled_tasks): tinker daily Opus confirmed; quiet-period cadences for analyst/curmudgeon/decider/analyst-baby/workspace-sync/dome-mirror match; curmudgeon-verify paused. No discrepancies found this run.",
+    "performance": "claude_md 229L, +7% since 06-01 baseline, under threshold. No extraction action needed."
+  },
+  "previous_followup": {
+    "last_report": "report-2026-06-27T02-46.json (and 06-26, 06-24, 06-25 — the 'report-2026-06-16' picked by ls -t earlier was a clone-mtime artifact; tinker has run daily without gap).",
+    "prop_verification": "PROP-102 shadow walker ran all 126 PROPs this run: grade_A verification_patterns produced 1 eligible-for-autoclose, 0 would-close — no previously-open finding flipped to FIXED this run. No STILL_BROKEN findings carried forward from prior reports.",
+    "status": "No unresolved findings from prior reports require action this run."
+  },
+  "cleanup_actions": [],
+  "self_cost": {
+    "transcript": "6c427d2b-98a2-4067-ae21-530e2912aedb.jsonl",
+    "model": "claude-opus-4-8",
+    "assistant_msgs": 68,
+    "tokens": {
+      "input": 19770,
+      "output": 119930,
+      "cache_write_5m": 0,
+      "cache_write_1h": 537031,
+      "cache_read": 8526245
+    },
+    "cost_usd": {
+      "input_usd": 0.09885,
+      "output_usd": 2.99825,
+      "cache_write_5m_usd": 0,
+      "cache_write_1h_usd": 5.37031,
+      "cache_read_usd": 4.263122,
+      "total_usd": 12.730533
+    },
+    "transcript_duration_sec": 543.4,
+    "first_ts": "2026-06-28T02:40:09.104Z",
+    "last_ts": "2026-06-28T02:49:12.472Z"
+  }
+}

@@ -1,0 +1,73 @@
+{
+  "id": "PROP-115",
+  "prop_id": "PROP-115",
+  "title": "Tinker quiet-period cadence throttle + strategic pre-flight gate — tinker is the #1 daily-cost agent and the only Opus analytical agent omitted from the 2026-06-23 quiet-period sweep",
+  "authored_by": "tinker",
+  "authored_at": "2026-06-28T02:40:00Z",
+  "authored_by_run": "2026-06-28T02-40",
+  "status": "proposed",
+  "category": "cost-engineering",
+  "priority": "medium",
+  "directive": null,
+  "supersedes_prop": null,
+  "amends": null,
+  "depends_on": [],
+  "headline_recommendation": "Throttle dome-tinker from daily (`30 3 * * *`) to every-other-day during the quiet period (Recommendation A, immediate, ~$6.4/day / ~50% saving, 1-line reversible cron change), mirroring the 2026-06-23 operator sweep that throttled every other Opus analytical agent but missed tinker. Separately, evaluate a Haiku/script pre-flight gate + reduced-cadence Opus deep-dive as the permanent structural fix (Recommendation B, deferred, modeled on PROP-034/PROP-038).",
+  "executive_summary": "Mode 3 real-cost analysis (PROP-101 data, 14d window) shows tinker is the single most expensive agent in the pipeline at p50 $12.77/run (sum $214.34/14d) — above curmudgeon ($10.28) and analyst ($9.40), the agents that do the actual analytical heavy-lifting. Tinker is the meta-ops agent whose explicit mandate includes 'Audit yourself. You are not exempt.' The 2026-06-23 quiet-period throttle reduced analyst/curmudgeon/decider/analyst-baby to 1/day, paused curmudgeon-verify, and cut workspace-sync/dome-mirror to 3 slots — but dome-tinker was left at daily 03:30 Opus. With the dome at day 72 of manual drought and the entire upstream chain at 1/day, a daily Opus tinker run that on most days produces 'pipeline GREEN' is the largest uncut single cost in the quiet pipeline.",
+  "context_verification": {
+    "tinker_schedule_confirmed": "dome-tinker cronExpression='30 3 * * *' (daily 03:39 local), enabled=true, model=Opus — verified via list_scheduled_tasks 2026-06-28.",
+    "quiet_period_sweep_omission": "2026-06-23 quiet-period throttle (per CLAUDE.md Monitoring Pipeline notes + live task descriptions) covers dome-analyst (1/day), dome-curmudgeon (1/day), dome-decider (1/day), dome-analyst-baby (1/day), dome-curmudgeon-verify (PAUSED), dome-workspace-sync (3 slots), dome-mirror (3 slots). dome-tinker is NOT mentioned in any quiet-period note and retains its original daily cadence.",
+    "cost_ranking_14d": "Per-run p50 USD (PROP-101 cost-history + tinker self_cost, 14d): tinker $12.765, curmudgeon $10.279, analyst $9.397, decider $5.487, integrity $3.642, social $2.803, poller $2.461, workspace-sync $2.431, analyst-baby $1.324, dome-mirror $0.751.",
+    "daily_cost_ranking_current_cadence": "At current quiet-period cadence (cadence x p50, substantive_rate=1 upper bound): tinker $12.77/day (#1), curmudgeon $10.28, analyst $9.40, workspace-sync $7.29, integrity $3.64. Tinker is #1.",
+    "q8_hard_threshold": "PROP-101 Q8 composite hard threshold is $20/day; tinker at ~$12.77/day does NOT cross it, so this is NOT a forced-PROP per Q8 — it is authored under the 'Audit yourself' mandate as the highest-value discretionary Mode 3 finding.",
+    "no_prior_tinker_cost_prop": "Grep of monitor/tinker/proposals/ confirms no existing PROP targets tinker's own model cost, cadence, or a tinker pre-flight gate. PROP-101 is measurement; PROP-060 is Mode 0; PROP-112 is decider step-cost. The 30d-no-targeting-PROP precondition is satisfied."
+  },
+  "recommendation_A_immediate": {
+    "summary": "Throttle dome-tinker to every-other-day during the quiet period.",
+    "change": "dome-tinker cronExpression: `30 3 * * *` -> `30 3 */2 * *` (every other day at 03:30 local). Update the task description to record the quiet-period throttle and revert trigger, matching the wording style of the other 2026-06-23 throttle notes.",
+    "estimated_saving": "~$12.77 every other day saved => ~$6.4/day, ~$45/week, ~50% of tinker spend.",
+    "risk": "LOW. The PROP-030 backlog-trend pre-flight (cheap insurance against silent backlog growth) and the Mode 1/2 staleness+disk checks still run on every day tinker DOES run. During a genuine quiet period (no new content, upstream all 1/day, low churn), incident risk is structurally lower than during active periods, so doubling worst-case tinker-detection latency from 1d to 2d is acceptable.",
+    "revert_trigger": "Revert to `30 3 * * *` if the dome breaks its manual drought, if open_issues_total climbs back above ~50, if any Mode 1/2 red flag recurs across consecutive runs, or if the broader pipeline reverts off quiet-period cadence.",
+    "authority": "Operator-domain. The 2026-06-23 throttles were operator decisions; tinker should NOT self-modify its own schedule autonomously (and this scheduled run does not authorize schedule write-actions). Operator applies via update_scheduled_task or the schedule skill."
+  },
+  "recommendation_B_strategic_deferred": {
+    "summary": "Permanent structural fix: a cheap (Haiku or script-only) pre-flight gate that runs all mechanical tinker checks, escalating to a full Opus run only when judgment is needed.",
+    "rationale": "Essentially every tinker pre-flight is already mechanical/scriptable: PROP-030 backlog metrics, prop-auto-close (PROP-102) walker, directive-auto-close (PROP-108) walker, operator-directive discovery, Mode 0 assigned-to-tinker scan, and the Mode 1/2 staleness/disk/FUSE quick-checks. Opus judgment is only required for (a) a found directive/Mode-0 item, (b) a Mode 1/2 red flag, or (c) a scheduled Mode 3 deep-dive. A Haiku/script gate could do the mechanical sweep daily and only spin up Opus on (a)/(b)/(c).",
+    "precedent": "Directly mirrors PROP-034 (split analyst into Sonnet-baby BAU-drain + Opus deep) and PROP-038 (split curmudgeon into Opus-discovery + Sonnet-verify). The model-split / cheap-gate pattern is proven in this pipeline.",
+    "deep_dive_cadence": "Run the full Opus Mode 3 deep-dive on a reduced cadence (e.g. every 3rd day) rather than daily; the gate handles liveness on the other days.",
+    "why_deferred": "Recommendation A captures ~50% of the saving immediately with a 1-line reversible change and zero new code. Recommendation B is multi-phase engineering (new gate prompt/script, dispatcher rework, model wiring) and should be scheduled when the drought ends or as a deliberate permanent-efficiency project, not rushed under quiet-period conditions."
+  },
+  "counter_argument": {
+    "for_keeping_daily": "Tinker's daily run is cheap insurance against the disk-fill and backlog-growth incidents that have caused real damage (2026-05-07/08 disk cascade, 2026-05-09 near-miss, 2026-05-21 workspace-sync disaster). PROP-030 exists specifically because three consecutive 'GREEN' runs missed a backlog growing past 230 items. Halving tinker cadence doubles worst-case detection latency for exactly the class of problem tinker was built to catch.",
+    "rebuttal": "Two mitigations make every-other-day acceptable during the quiet period specifically: (1) the daily dome-integrity run (02:00) independently surfaces site-health and build-drift, and each clone-using agent runs its own clone-hygiene preclean, so disk and structural signals are not solely tinker-dependent; (2) incident risk correlates with churn, and a manual-drought quiet period is the lowest-churn regime — the very conditions under which the operator already judged it safe to throttle every OTHER Opus agent. The revert trigger restores daily cadence the moment activity returns. Net: Recommendation A is the symmetric completion of a throttle the operator clearly intended pipeline-wide and simply missed for tinker.",
+    "against_recommendation_B": "A Haiku/script gate adds a new failure surface (the gate mis-classifying a run as no-op and skipping a needed Opus deep-dive) and new maintenance burden. The analyst/curmudgeon splits required several follow-up PROPs to stabilize. Recommendation B should not be undertaken lightly; Recommendation A is strictly safer and reversible."
+  },
+  "what_NOT_to_do": [
+    "Do NOT have tinker self-modify its own cron in an autonomous scheduled run — schedule changes are operator-domain and this task file does not authorize schedule write-actions.",
+    "Do NOT skip the PROP-030 backlog-trend pre-flight on the days tinker runs; the insurance metric must still land every actual run.",
+    "Do NOT pursue Recommendation B before Recommendation A — A captures most of the value with none of the engineering risk.",
+    "Do NOT throttle below every-other-day (e.g. to weekly) during the quiet period; that would let backlog-trend blind spots reopen of the kind PROP-030 was built to close."
+  ],
+  "cost_analysis": {
+    "current_tinker_spend_14d_usd": 214.34,
+    "current_tinker_p50_per_run_usd": 12.765,
+    "recommendation_A_saving_per_week_usd": 45,
+    "recommendation_A_saving_pct": 50,
+    "recommendation_B_additional_saving": "Variable; could push effective tinker cost toward the cheap-gate floor (~$1-2 on no-op days) on non-deep-dive days, but requires engineering investment.",
+    "measurement_followup": "After Recommendation A applies, the next tinker run lands on day N+2; PROP-101 self_cost rows confirm realized saving. Re-evaluate Recommendation B at drought-end."
+  },
+  "acceptance_criteria": [
+    "dome-tinker cronExpression changed to `30 3 */2 * *` (or operator-chosen quiet-period cadence) AND task description updated with throttle note + revert trigger.",
+    "Next two tinker runs confirm the every-other-day spacing and that PROP-030 backlog-trend pre-flight still lands.",
+    "No Mode 1/2 red flag goes undetected across the wider gap (verify against dome-integrity daily output for the off-day)."
+  ],
+  "implementation_authority": "operator",
+  "implementation_files": [],
+  "related_props": ["PROP-101", "PROP-102", "PROP-108", "PROP-030", "PROP-034", "PROP-038", "PROP-060", "PROP-110"],
+  "related_directives": [],
+  "open_questions_for_operator": [
+    "Prefer every-other-day (`30 3 */2 * *`, Recommendation A) or jump straight to a 3-slots-per-week / event-gated cadence?",
+    "Should Recommendation B (Haiku/script pre-flight gate) be queued now as a tracked future project, or held until the dome drought ends and the pipeline reverts to active cadence?",
+    "Is there appetite to apply the same 'is this Opus agent still daily during quiet period?' audit to confirm no other agent was missed in the 2026-06-23 sweep? (This audit found only tinker.)"
+  ]
+}
