@@ -1,0 +1,66 @@
+{
+  "id": "PROP-117",
+  "prop_id": "PROP-117",
+  "title": "Inbound-burst auto-detection + cadence-revert recommendation signal — close the 'quiet-period throttle has no automated un-throttle' gap surfaced by the pre-active-period readiness audit (DIRECTIVE-20260628-002 / PROP-116 Candidate C)",
+  "authored_by": "tinker",
+  "authored_at": "2026-06-28T08:10:00Z",
+  "authored_by_run": "tinker-2026-06-28T08-03",
+  "status": "proposed",
+  "category": "pipeline-resilience",
+  "priority": "high",
+  "directive": "DIRECTIVE-20260628-002",
+  "directive_id": "DIRECTIVE-20260628-002",
+  "source_directive": "DIRECTIVE-20260628-002",
+  "supersedes_prop": null,
+  "supersedes_props": [],
+  "amends": null,
+  "depends_on": [],
+  "deliverable_type": "propose-only design (no implementation this run)",
+  "addresses_weak_link": "WL-2 (rank-1) in monitor/tinker/readiness-audits/pre-active-period-2026-06-28.md; collapses recovery latency for WL-1 (curmudgeon HOL) and WL-4 (verify paused)",
+  "problem_statement": "The 2026-06-23 quiet-period sweep throttled analyst, curmudgeon, and decider to 1 run/day and PAUSED curmudgeon-verify (enabled:false). Each throttle's revert is documented as MANUAL and operator-triggered ('REVERT … if dome breaks drought / work volume returns'; 'Re-enable when verify-class items appear'). Nothing in the pipeline detects an inbound burst and re-escalates. The poller already detects new WINs (writes status.json + monitor/changes/) but touches no cadence. Result under a 3-WIN drought-break: curmudgeon reviews 1 fresh WIN/run (curmudgeon.md:72,160; win-new not batchable curmudgeon.md:243 gate5) at 1 run/day → the burst crawls for ~5-6 days for first-review+first-patch, versus ~1 day at reverted 3-slot cadence. The throughput collapse is real and deterministic; the recovery is entirely detection-latency-bound.",
+  "design_principles": [
+    "RECOMMEND, NEVER AUTO-FLIP. The PROP emits a loud, structured signal recommending the specific cron reverts; a human (or a future, separately-approved enforce phase) actually flips crons. This preserves operator control and respects DIRECTIVE-20260628-001's rejection of tinker-initiated throttle changes — by only ever recommending UP-throttle in response to measured inbound load, never down-throttle.",
+    "PRIMARY DETECTOR = POLLER (earliest signal, same detection cycle). FALLBACK DETECTOR = TINKER backlog-trend pre-flight (PROP-030), which already runs every tinker run and already writes latest-tinker-summary.txt that the operator reads each morning. Two detectors because poller is Sonnet/once-daily and could itself be slow under burst; tinker is the safety net with <=24h latency.",
+    "CONSERVATIVE THRESHOLD. Fire on >=2 new WINs detected in one poll OR priority-queue depth of unreviewed win-new items >=2 OR new-wins/ backlog >=2. Single-WIN inbound is normal quiet-period work and must NOT fire (avoids false-alarm cron churn).",
+    "NO NEW STATE-FILE OWNERSHIP DISPUTES. The signal is an HNOTE (dual-write per CLAUDE.md Human Notes Rule) + a summary line. No new owned file, no build.js OWNERSHIP / workspace-sync NEVER_PUSH change."
+  ],
+  "proposed_mechanism": {
+    "detector_A_poller": {
+      "where": "poller.md, after the change-classification step that already counts new dome WINs",
+      "logic": "Compute new_win_delta = dome_win_count(status.json, freshly polled) - len(data/wins.json from GitHub raw). If new_win_delta >= 2, write a burst-signal HNOTE to monitor/decisions/human-notes.json (dual-write FUSE+clone) with action:'recommend_cadence_revert', a fields block listing the recommended reverts (dome-curmudgeon 0 2,6,10 ; dome-analyst 0 1,5,9 ; dome-decider 0 3,7,11 ; re-enable dome-curmudgeon-verify), the measured new_win_delta, and detected_at. Idempotency: guard on an existing pending HNOTE with the same action AND new_win_delta within the same UTC day (do not spam one HNOTE per poll).",
+      "no_op_path": "new_win_delta < 2 → no HNOTE, no behavior change. Pure additive read + conditional write."
+    },
+    "detector_B_tinker_fallback": {
+      "where": "tinker backlog-trend pre-flight (this prompt, the PROP-030 metrics block) — ADDITIVE metric only",
+      "logic": "Add metric inbound_burst_winnew_unreviewed = count of priority-queue.json items with target_type=='win-new' that have no matching review file in monitor/curmudgeon/reviews/. If >=2, emit a findings[] object category='inbound-burst' severity='major' AND write a one-line escalation to latest-tinker-summary.txt recommending the same cron reverts. This is the safety net if detector_A (poller) missed or was slow.",
+      "no_op_path": "metric < 2 → metric still recorded in queue-history.jsonl for trend, no finding."
+    },
+    "operator_consumption": "Operator sees the HNOTE (decider surfaces pending human-notes) and/or the tinker summary line, and flips the crons via update_scheduled_task. Optional future enforce-phase (SEPARATE PROP, explicitly not in scope here) could let an empowered agent flip the crons after an approval HNOTE — deliberately deferred so the first version cannot mis-fire a cron flip."
+  },
+  "acceptance_criteria": [
+    "AC1: When >=2 new WINs are detected in a single poll, a burst-signal HNOTE with action:'recommend_cadence_revert' appears in monitor/decisions/human-notes.json (both FUSE and git), listing the four specific recommended cron reverts and the measured new_win_delta.",
+    "AC2: When <2 new WINs are detected, NO burst HNOTE is written and no cadence behavior changes (verified by a single-WIN onboarding leaving human-notes.json burst-HNOTE-free).",
+    "AC3: Idempotency — repeated polls on the same burst-day do not append duplicate burst HNOTEs (guarded by same-action + same-day check).",
+    "AC4: tinker's queue-history.jsonl gains an inbound_burst_winnew_unreviewed metric every run; when >=2 it produces a findings[] category='inbound-burst' AND a latest-tinker-summary.txt escalation line.",
+    "AC5: No cron is ever flipped automatically by this PROP. (Verified by code-read: the only writes are HNOTE + summary line + metric.)",
+    "AC6: No change to build.js OWNERSHIP or workspace-sync NEVER_PUSH (the HNOTE and summary are already-classified surfaces)."
+  ],
+  "verification_pattern": {
+    "grade": "B",
+    "note": "Multi-agent prompt change (poller + tinker) — not a single mechanical script, so a clean exit-0 verification_pattern is not fully expressible until implemented. Manual acceptance: simulate by temporarily setting a 2-WIN delta in a scratch status.json and confirming AC1/AC2/AC3 in a dry-run, then confirm AC4 by injecting two unreviewed win-new queue items and running tinker's pre-flight.",
+    "command": "grep -q \"recommend_cadence_revert\" monitor/prompts/poller.md && grep -q \"inbound_burst_winnew_unreviewed\" monitor/prompts/tinker.md && echo FIXED || echo NOT-IMPLEMENTED"
+  },
+  "out_of_scope": [
+    "Any automated cron flip (recommendation only).",
+    "An enforce phase where an agent flips crons after approval (deferred to a separate future PROP).",
+    "Down-throttle / re-quieting logic (the existing manual quiet-period sweep already covers de-escalation; this PROP is up-throttle-on-burst only).",
+    "Changing dome-tinker's own cadence (rejected per DIRECTIVE-20260628-001)."
+  ],
+  "counter_arguments": [
+    "Premature for a 67-day drought? The signal is dormant at zero cost until a burst, and recommendation-only avoids the real risk (an over-eager auto-flip on a single-WIN false alarm). Conservative >=2 threshold + idempotency guard keep false positives near zero.",
+    "Two detectors is redundant. Intentional: poller is Sonnet/once-daily and is itself slower under burst (more changes/ to write); tinker is the <=24h safety net. Redundancy is cheap (one metric + one conditional HNOTE).",
+    "Why not auto-revert? Auto-flipping crons from an LLM agent is exactly the class of action that caused the 2026-05-21 workspace-sync disaster (LLM improvising an operation under pressure). Recommendation-only is the deliberately conservative first version."
+  ],
+  "estimated_effort": "Small. ~15 lines in poller.md (conditional HNOTE write) + ~6 lines in tinker.md backlog-trend block (one metric + one finding). No new files, no schema/ownership changes.",
+  "relationship_to_other_props": "Independent of PROP-118 (which addresses WL-3, the poller->analyst ordering gap). Complements PROP-030 (reuses its backlog-trend machinery for detector B). Does not supersede or amend any PROP."
+}

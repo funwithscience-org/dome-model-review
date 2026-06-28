@@ -1,0 +1,116 @@
+{
+  "run_id": "tinker-2026-06-28T08-03",
+  "generated_at": "2026-06-28T08:11:40Z",
+  "agent": "tinker",
+  "model": "opus",
+  "mode_selected": "operator-directive (DIRECTIVE-20260628-002, Candidate C pre-active-period readiness audit) — preempts Mode 1-4 per dispatcher priority order",
+  "mode_selection_reason": "Top-priority pending operator directive found in discovery scan (priority:high). Directives override the Mode 1-4 trigger logic. Mode 0 assigned-to-tinker scan returned empty; backlog-trend pre-flight all-green.",
+  "modes_checked": {
+    "operator_directives": "4 pending (DIRECTIVE-20260628-002 high [executed], -003 high, -004 medium, -005 low). Standalone deep-dive: processed ONLY -002 this run per directive constraint; 003-005 sequenced for subsequent runs.",
+    "mode_0_assigned_to_tinker": "empty (no open-issues status=assigned-tinker, no expansion-tracker assigned_to=tinker)",
+    "backlog_trend": "GREEN — open_issues_total=3 (all pending-human), net_velocity_7d=+24, root_fs_free=3295MB, closed_issues=3.11MB. No thresholds fired.",
+    "prop_auto_close_shadow": "128 PROPs walked, 3 eligible, 0 would-close (shadow)",
+    "directive_auto_close_shadow": "116 directives walked, 4 pending, 0 would-close (shadow; the 4 pending include the 3 unprocessed deep-dives 003-005 + ... no linkage resolved)"
+  },
+  "directive_executed": {
+    "directive_id": "DIRECTIVE-20260628-002",
+    "title": "Deep-dive #1 of 4 — Candidate C: Pre-Active-Period Readiness Audit",
+    "deliverables": [
+      "monitor/tinker/readiness-audits/pre-active-period-2026-06-28.md",
+      "monitor/tinker/proposals/PROP-117-inbound-burst-autodetect-cadence-revert-signal.json",
+      "monitor/tinker/proposals/PROP-118-widen-poller-analyst-ordering-gap.json"
+    ],
+    "gate_satisfied": true,
+    "gate_note": "Concrete weak links with prompt-line/cadence evidence were found (WL-1..WL-5); proposals map to named links, not manufactured."
+  },
+  "findings": [
+    {
+      "id": "WL-1",
+      "category": "head-of-line-blocking",
+      "severity": "major",
+      "title": "Curmudgeon reviews 1 fresh WIN/run x 1 run/day; win-new not batchable",
+      "evidence": "curmudgeon.md:72 ('Full stop after one queue item'), :160 ('review ONE queue item per run'), :243 Step 8a gate 5 (win-new always singleton); cron dome-curmudgeon '0 2 * * *' = 1/day",
+      "burst_impact": "3 WINs need >=3 curmudgeon days for first-pass review; +1 day because curmudgeon (01:05 UTC) precedes decider (02:03 UTC) on detection day. Full burst clears first-review+first-patch ~Day 5-6 at quiet cadence vs ~1 day at reverted 3-slot."
+    },
+    {
+      "id": "WL-2",
+      "category": "missing-automation",
+      "severity": "major",
+      "title": "Quiet-period throttle (cadence cuts + verify pause) has no burst-triggered un-throttle — RANK 1",
+      "evidence": "task descriptions 'REVERT ... if dome breaks drought' (manual); curmudgeon-verify 'Re-enable when verify-class items appear' (manual); poller detects WINs but touches no cadence",
+      "burst_impact": "Root cause of WL-1 and WL-4 recovery latency. Burst crawls at 1/day until a human notices and flips 3 crons + re-enables verify. Recovery is purely detection-latency-bound.",
+      "addressed_by": "PROP-117"
+    },
+    {
+      "id": "WL-3",
+      "category": "ordering-risk",
+      "severity": "moderate",
+      "title": "Poller->analyst ordering gap ~3 min (00:05 -> 00:08 UTC)",
+      "evidence": "nextRunAt poller 00:05:03Z vs analyst 00:07:53Z; analyst Mode 0 reads poller-written status.json (analyst.md:141)",
+      "burst_impact": "Under burst poller is slower (more changes/ work) exactly when analyst needs its output; stale status.json read can skip Mode 0 for a full day. Self-heals next day via GitHub raw-count curl — latency, not data loss.",
+      "addressed_by": "PROP-118"
+    },
+    {
+      "id": "WL-4",
+      "category": "stalled-consumer",
+      "severity": "moderate",
+      "title": "curmudgeon-verify PAUSED -> post-patch verification re-reviews stall",
+      "evidence": "curmudgeon.md:141-147 (verify-mode handoff gates); dome-curmudgeon-verify enabled:false",
+      "burst_impact": "Manifests Day 2-3 of burst (after first review + patch). Items pass main-curmudgeon skip-gate but have no consumer. Same root cause as WL-2; folds into PROP-117's signal."
+    },
+    {
+      "id": "WL-5",
+      "category": "cascade-contention",
+      "severity": "minor",
+      "title": "Integrity build-drift cascade contends for the single daily decider slot",
+      "evidence": "CLAUDE.md PRED-073 precedent (2026-05-24 missed build.js -> CRITICAL); integrity 01:08 precedes decider 02:03; decider Priority 2b mandatory intake",
+      "burst_impact": "Larger 3-WIN commit surface raises missed-build-step odds; resulting CRITICAL ISS eats a decider slot. Largely guarded by PROP-080/083 pre-push hooks; lowest priority."
+    }
+  ],
+  "ranking": {
+    "method": "likelihood-under-burst x recovery-cost (recovery-cost dominated by detection latency, not mechanical effort)",
+    "order": [
+      "WL-2 (rank 1, root cause)",
+      "WL-1 (rank 2, symptom of WL-2)",
+      "WL-3 (rank 3)",
+      "WL-4 (rank 4)",
+      "WL-5 (rank 5)"
+    ]
+  },
+  "is_tinker_the_weak_link": "No on capacity (quiet period, Opus, ample quota). But tinker once/day has up to 24h detection latency, worse than poller's same-cycle detection. Tinker is the right escalation/fallback surface (owns PROP-030 backlog-trend pre-flight + latest-tinker-summary.txt) but poller is the right PRIMARY detector. This shaped PROP-117's two-detector design.",
+  "props_authored": [
+    "PROP-117",
+    "PROP-118"
+  ],
+  "previous_followup": "Prior runs (2026-06-28T02-40, T07-38) ran their own modes; PROP-116 (the parent catalog) was authored T07-38 and is referenced by this directive. No prior unresolved tinker findings reopened this run — directive work preempted Mode 1-4 follow-up walk. PROP lifecycle verification deferred (directive-mode run); next Mode 3 run resumes the verification_pattern walk.",
+  "out_of_scope_honored": [
+    "no fixes applied",
+    "no dome-tinker cron change",
+    "no existing-PROP edits",
+    "directives 003-005 not processed"
+  ],
+  "cleanup_actions": [],
+  "self_cost": {
+    "transcript": "964e2fdf-d490-4a16-a61b-28633244c2ad.jsonl",
+    "model": "claude-opus-4-8",
+    "assistant_msgs": 69,
+    "tokens": {
+      "input": 19643,
+      "output": 100697,
+      "cache_write_5m": 0,
+      "cache_write_1h": 517033,
+      "cache_read": 9107160
+    },
+    "cost_usd": {
+      "input_usd": 0.098215,
+      "output_usd": 2.517425,
+      "cache_write_5m_usd": 0,
+      "cache_write_1h_usd": 5.17033,
+      "cache_read_usd": 4.55358,
+      "total_usd": 12.33955
+    },
+    "transcript_duration_sec": 559.4,
+    "first_ts": "2026-06-28T08:02:40.522Z",
+    "last_ts": "2026-06-28T08:11:59.883Z"
+  }
+}

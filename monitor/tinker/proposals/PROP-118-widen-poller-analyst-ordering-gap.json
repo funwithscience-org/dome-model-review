@@ -1,0 +1,47 @@
+{
+  "id": "PROP-118",
+  "prop_id": "PROP-118",
+  "title": "Widen the poller→analyst start spacing so a burst-day poll reliably lands in status.json before analyst Mode 0 reads it (WL-3 from the pre-active-period readiness audit)",
+  "authored_by": "tinker",
+  "authored_at": "2026-06-28T08:12:00Z",
+  "authored_by_run": "tinker-2026-06-28T08-03",
+  "status": "proposed",
+  "category": "pipeline-resilience",
+  "priority": "medium",
+  "directive": "DIRECTIVE-20260628-002",
+  "directive_id": "DIRECTIVE-20260628-002",
+  "source_directive": "DIRECTIVE-20260628-002",
+  "supersedes_prop": null,
+  "supersedes_props": [],
+  "amends": null,
+  "depends_on": [],
+  "deliverable_type": "propose-only design (no implementation this run)",
+  "addresses_weak_link": "WL-3 (rank-3) in monitor/tinker/readiness-audits/pre-active-period-2026-06-28.md",
+  "problem_statement": "Live UTC fire times (list_scheduled_tasks 2026-06-28T08:03Z): poller nextRunAt 00:05:03Z, analyst nextRunAt 00:07:53Z — a ~3-minute gap. Analyst Mode 0's trigger ('Dome has more WINs than our wins.json', analyst.md:141) reads poller-written monitor/status.json. Under a drought-break burst the poller has MORE work (3 new WINs to characterize into monitor/changes/, larger diffs, a push) precisely when its output must be ready by 00:08. If the poll+push runs long, analyst reads a stale status.json and Mode 0 may not fire that cycle. Failure mode is latency, not data loss: analyst's live GitHub raw-count curl (analyst.md:145-147) catches the delta on the NEXT day's run, so the burst self-heals within 24h — but a full day of onboarding latency is added on top of WL-1's multi-day curmudgeon serialization, exactly when the active period needs the chain to be tight. The 3-minute gap has never been stress-tested: the dome has been in a 67-day manual drought with zero new WINs.",
+  "proposed_mechanism": {
+    "option_1_preferred": "Move analyst's quiet-period start later relative to poller: e.g. analyst cron 0 1 -> a slot giving ~25-30 min of poller headroom (keep poller at ~00:05; move analyst to ~00:30). This costs nothing in steady state (analyst simply runs 25 min later) and gives the poller a comfortable margin to finish detection+push under a 3-WIN burst before analyst's Mode 0 freshness read.",
+    "option_2_alternative": "Make analyst Mode 0 detection poller-lag-robust: if the GitHub raw wins.json count (which analyst already curls) exceeds status.json's dome_win_count, treat status.json as stale and trigger Mode 0 from the GitHub delta directly rather than gating on status.json freshness. This removes the ordering dependency entirely but is a deeper prompt change than option 1.",
+    "recommendation": "Option 1 for the quiet period (cheap, low-risk, immediately reversible). Re-evaluate option 2 if/when the 3-slot reverted cadence reintroduces tight spacing under active-period load."
+  },
+  "acceptance_criteria": [
+    "AC1: Under the quiet-period schedule, the gap between poller's scheduled fire and analyst's scheduled fire is >= 20 minutes (verified against list_scheduled_tasks nextRunAt deltas).",
+    "AC2: A simulated burst-day where the poll takes up to ~15 minutes still has status.json updated before analyst's Mode 0 read (verified by the AC1 margin).",
+    "AC3: No change to poller or analyst behavior other than the start-time spacing (option 1), OR — if option 2 is chosen instead — analyst Mode 0 fires whenever GitHub raw wins.json count > status.json dome_win_count, independent of status.json freshness."
+  ],
+  "verification_pattern": {
+    "grade": "C",
+    "note": "Cron-spacing change is verified by inspecting scheduled-task deltas, not by a repo-local script; cannot be auto-verified from the clone. Manual: compare poller vs analyst nextRunAt after the change.",
+    "command": "echo 'manual: list_scheduled_tasks; assert analyst.nextRunAt - poller.nextRunAt >= 20min' && echo NOT-AUTO-VERIFIABLE"
+  },
+  "out_of_scope": [
+    "Any change to dome-tinker cadence (rejected per DIRECTIVE-20260628-001).",
+    "Re-throttling the 3-slot active-period cadence (that is the operator's manual revert, informed by PROP-117's signal).",
+    "Changing detection thresholds (PROP-117 owns burst thresholds)."
+  ],
+  "counter_arguments": [
+    "Self-heals next day, so is it worth doing? It is pure latency-reduction. Ranked secondary in the audit precisely for this reason. Included because (a) it is an independent root cause (ordering, not throttle), (b) the mitigation is near-free, and (c) the gap is untested under load and the active period is near (eclipse T-45, PRED-FIELD-2026Q2 closing).",
+    "Why not just rely on option 2 (GitHub-delta detection) and skip the cron change? Option 2 is more robust but a deeper, higher-risk prompt change; option 1 buys most of the safety at near-zero risk. Operator can choose."
+  ],
+  "estimated_effort": "Trivial for option 1 (one update_scheduled_task on dome-analyst). Small for option 2 (~8 lines in analyst.md Mode 0 trigger).",
+  "relationship_to_other_props": "Independent of and complementary to PROP-117. PROP-117 detects the burst once it lands; PROP-118 ensures the burst is detected on its first cycle rather than a day late. Together they tighten both detection latency and onboarding latency."
+}
