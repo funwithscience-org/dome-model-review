@@ -199,6 +199,84 @@ Update `monitor/status.json` with:
 - `changes_pending_analysis` count (non-automated changes)
 - `consecutive_quiet_polls` counter (reset on substantive change)
 
+### 8b. Burst-Signal HNOTE (PROP-117 Detector A, 2026-06-29)
+
+If this poll detected `new_win_delta >= 2` (i.e., the freshly-polled dome WIN count exceeds our `data/wins.json` length by ≥2), write a one-shot burst-signal HNOTE to `monitor/decisions/human-notes.json` recommending operator-driven cadence revert. This is the burst auto-detection PROP-117 designed against PROP-116/Candidate-C readiness-audit WL-2 (no automated un-throttle during quiet period).
+
+```bash
+# Compute new_win_delta: count of new dome WINs beyond our wins.json length.
+# dome_win_count is what step 1 already polled; our_win_count is read from GitHub raw.
+OUR_WIN_COUNT=$(curl -fsS https://raw.githubusercontent.com/funwithscience-org/dome-model-review/main/data/wins.json | node -e "const w=JSON.parse(require('fs').readFileSync(0,'utf8'));const a=Array.isArray(w)?w:(w.wins||[]);console.log(a.filter(x=>/^\d{3}$/.test(x.id||'')).length)" 2>/dev/null || echo 0)
+NEW_WIN_DELTA=$((${DOME_WIN_COUNT:-0} - ${OUR_WIN_COUNT:-0}))
+echo "[PROP-117] new_win_delta=${NEW_WIN_DELTA} (dome=${DOME_WIN_COUNT}, ours=${OUR_WIN_COUNT})"
+
+if [ "$NEW_WIN_DELTA" -ge 2 ]; then
+  # Idempotency: skip if a same-day HNOTE with action:recommend_cadence_revert already exists.
+  TODAY_UTC=$(date -u +%Y-%m-%d)
+  ALREADY_FIRED=$(node -e "
+    try {
+      const h = JSON.parse(require('fs').readFileSync('monitor/decisions/human-notes.json','utf8'));
+      const notes = h.notes || [];
+      const m = notes.find(n =>
+        (n.action || n.intent || '') === 'recommend_cadence_revert' &&
+        ((n.created_at || '').slice(0,10) === '${TODAY_UTC}')
+      );
+      console.log(m ? 'yes' : 'no');
+    } catch (e) { console.log('no'); }
+  " 2>/dev/null || echo no)
+
+  if [ "$ALREADY_FIRED" = "yes" ]; then
+    echo "[PROP-117] burst HNOTE already fired today — skip (idempotent)"
+  else
+    HNOTE_ID="HNOTE-BURST-CADENCE-REVERT-$(date -u +%Y%m%dT%H%M%SZ)"
+    node -e "
+      const fs = require('fs');
+      const path = 'monitor/decisions/human-notes.json';
+      let h = { notes: [] };
+      try { h = JSON.parse(fs.readFileSync(path,'utf8')); } catch (_) {}
+      h.notes = h.notes || [];
+      h.notes.push({
+        id: '${HNOTE_ID}',
+        for: 'decider',
+        from: 'poller (PROP-117 burst auto-detect)',
+        created_at: new Date().toISOString(),
+        priority: 'high',
+        status: 'pending',
+        action: 'recommend_cadence_revert',
+        new_win_delta: ${NEW_WIN_DELTA},
+        dome_win_count: ${DOME_WIN_COUNT:-0},
+        our_win_count: ${OUR_WIN_COUNT:-0},
+        detected_at: new Date().toISOString(),
+        body: 'Dome WIN count exceeds our catalog by ${NEW_WIN_DELTA}. Quiet-period 1/day cadence will queue these for several days. Recommend reverting cron schedules to active-period cadence for the duration of the burst. Operator-only action — this HNOTE is a recommendation signal, NOT an automatic flip.',
+        recommended_reverts: {
+          'dome-analyst':           '0 1,5,9 * * *  (was: 30 1 * * *)',
+          'dome-curmudgeon':        '0 2,6,10 * * * (was: 0 2 * * *)',
+          'dome-decider':           '0 3,7,11 * * * (was: 0 3 * * *)',
+          'dome-curmudgeon-verify': 'enabled:true   (was: paused)'
+        },
+        revert_path: 'operator runs update_scheduled_task for each agent above; mark this HNOTE status:resolved when done',
+        cross_references: ['PROP-116 Candidate C audit', 'PROP-117', 'WL-2 from monitor/tinker/readiness-audits/pre-active-period-2026-06-28.md']
+      });
+      fs.writeFileSync(path, JSON.stringify(h, null, 2));
+      console.log('[PROP-117] wrote burst HNOTE: ${HNOTE_ID}');
+    " 2>&1
+
+    # Dual-write per CLAUDE.md Human Notes Rule: human-notes.json lives in BOTH FUSE and clone.
+    # Poller runs in its own clone (this is the clone-side write). Workspace-sync will rescue FUSE on next cycle.
+    # Surface in poll summary too:
+    echo "[PROP-117] BURST DETECTED: ${NEW_WIN_DELTA} new WINs. Wrote ${HNOTE_ID} recommending cron revert. Operator action needed."
+  fi
+fi
+```
+
+When this fires, the poll summary's "Test Windows" / changes section MUST include a top-line "BURST DETECTED" line so the operator notices on their next status check. The HNOTE is the durable artifact decider surfaces in its intake; the summary echo is the operator-readable signal in case the HNOTE is missed.
+
+**What this does NOT do (intentional):**
+- No automatic cron flipping. The operator flips crons via `update_scheduled_task`. PROP-117 is recommendation-only.
+- No HNOTE for `new_win_delta == 1` (single new WIN is normal pace; not a burst).
+- No HNOTE for negative delta (our catalog leads dome — different concern, out of scope).
+- No fallback if the GitHub raw fetch fails (echo 0 above → no false-positive HNOTE; let tinker's Detector B catch it next day).
+
 ### 9. Write Summary
 Overwrite `monitor/changes/latest-poll-summary.txt` with human-readable summary.
 

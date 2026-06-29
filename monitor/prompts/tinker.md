@@ -257,6 +257,29 @@ try {
   const st = fs.statSync('monitor/decisions/closed-issues.json');
   metrics.closed_issues_mb = +(st.size / 1024 / 1024).toFixed(2);
 } catch (_) { metrics.closed_issues_mb = null; }
+// PROP-117 Detector B (2026-06-29): inbound-burst fallback. If the poller's
+// burst-signal HNOTE (Detector A) didn't fire or got lost, this catches the
+// same shape on a 24h lag. Count priority-queue.json items with
+// target_type=='win-new' that have NO matching curmudgeon review file. This
+// is the canonical "fresh WINs queued but not yet reviewed" signal that
+// indicates a burst is in the chain.
+let burstUnreviewed = 0;
+try {
+  const pq = JSON.parse(fs.readFileSync('monitor/curmudgeon/priority-queue.json','utf8'));
+  const items = pq.items || [];
+  const winNew = items.filter(it => (it.target_type||it.class||'') === 'win-new' || (it.target||'').match(/^WIN-\d{3}$/));
+  for (const it of winNew) {
+    const target = (it.target||'').replace(/^WIN-/, '');
+    const matchPrefix = 'monitor/curmudgeon/reviews/WIN-' + target;
+    let hasReview = false;
+    try {
+      const files = fs.readdirSync('monitor/curmudgeon/reviews/');
+      hasReview = files.some(f => f.startsWith('WIN-'+target+'.'));
+    } catch (_) {}
+    if (!hasReview) burstUnreviewed++;
+  }
+} catch (_) {}
+metrics.inbound_burst_winnew_unreviewed = burstUnreviewed;
 fs.appendFileSync('monitor/tinker/queue-history.jsonl', JSON.stringify(metrics) + '\n');
 ```
 
@@ -272,6 +295,38 @@ fs.appendFileSync('monitor/tinker/queue-history.jsonl', JSON.stringify(metrics) 
 If ANY threshold fires → add a finding object to the run's report.findings[] with `category='backlog-trend'` and `severity=highest-firing-tier`. The finding lands in every report, regardless of mode selection.
 
 If the operator_escalation tier fires, ALSO write a one-line note to `monitor/tinker/latest-tinker-summary.txt` so the operator sees it in the morning summary.
+
+**PROP-117 Detector B threshold (inbound-burst fallback, 2026-06-29):** if `metrics.inbound_burst_winnew_unreviewed >= 2` AND no `recommend_cadence_revert` HNOTE was filed by poller in the last 24h (check `monitor/decisions/human-notes.json` for `action:'recommend_cadence_revert'` rows with `created_at` within 24h), emit a `category:'inbound-burst'` finding at `severity:'major'` AND write a one-line note to `monitor/tinker/latest-tinker-summary.txt` recommending the same cron reverts as poller's HNOTE Body (analyst `0 1,5,9 * * *`, curmudgeon `0 2,6,10 * * *`, decider `0 3,7,11 * * *`, re-enable curmudgeon-verify). This is the safety net when poller's same-cycle detection missed or its HNOTE write failed.
+
+```javascript
+// Detector B finding emission (after metrics row writes):
+if (metrics.inbound_burst_winnew_unreviewed >= 2) {
+  // Check if poller already filed a recommend_cadence_revert HNOTE in last 24h
+  let pollerAlreadyFiled = false;
+  try {
+    const h = JSON.parse(fs.readFileSync('monitor/decisions/human-notes.json','utf8'));
+    const notes = h.notes || [];
+    const cutoff = Date.now() - 24 * 3600 * 1000;
+    pollerAlreadyFiled = notes.some(n =>
+      (n.action || '') === 'recommend_cadence_revert' &&
+      n.created_at && new Date(n.created_at).getTime() > cutoff
+    );
+  } catch (_) {}
+  if (!pollerAlreadyFiled) {
+    report.findings.push({
+      category: 'inbound-burst',
+      severity: 'major',
+      title: 'PROP-117 Detector B: inbound-burst fallback fired (' + metrics.inbound_burst_winnew_unreviewed + ' unreviewed win-new in priority-queue; poller HNOTE not present)',
+      evidence: 'metrics.inbound_burst_winnew_unreviewed=' + metrics.inbound_burst_winnew_unreviewed + '; no recommend_cadence_revert HNOTE in last 24h',
+      recommendation: 'Operator: revert analyst to `0 1,5,9 * * *`, curmudgeon to `0 2,6,10 * * *`, decider to `0 3,7,11 * * *`, re-enable curmudgeon-verify. Detector A (poller HNOTE) is the primary detector; this is the safety net.'
+    });
+    // Also append the one-line escalation to latest-tinker-summary.txt
+    // (mirror the operator_escalation pattern above)
+  }
+}
+```
+
+**No-op behavior:** if `inbound_burst_winnew_unreviewed < 2` OR poller already filed the HNOTE, no finding emits and no summary line is added. The metric still appears in `queue-history.jsonl` for trend visibility.
 
 ### Pre-flight: Directive Lifecycle Auto-Close (PROP-108, every run, added 2026-06-20)
 
