@@ -1,0 +1,135 @@
+{
+  "id": "PROP-119",
+  "title": "Decider step-cost archaeology — relocate End-of-Run sweep + queue-management prose to conditionally-loaded reference modules to shrink the priority-step cached prefix. (DIRECTIVE-20260628-003, Candidate B + Candidate-F appendix)",
+  "authored_by": "tinker",
+  "authored_at": "2026-06-29T02-41",
+  "authored_by_run": "tinker-2026-06-29T02-41",
+  "directive_id": "DIRECTIVE-20260628-003",
+  "category": "cost-engineering",
+  "propose_only": true,
+  "do_not_implement": true,
+  "requires_human_judgment": true,
+  "why_human_needed": "Relocating correctness-critical End-of-Run prose (A0c chain-aware close has ISS-1285/PROP-070 bug history; Step B is the curmudgeon-queue single-writer) introduces a 'forgot to Read the module' failure mode. Operator must approve the unmissable-pointer mitigation and pick which diff(s) to ship.",
+  "status": "proposed",
+  "severity": "minor",
+  "target": "monitor/prompts/decider.md",
+  "do_not_auto_close": true,
+  "do_not_auto_close_reason": "propose-only + requires_human_judgment; no mechanical FIXED check until operator selects a diff and ships it.",
+  "summary": "PROP-112 step-cost data (14 decider runs + 8 integrity runs, all claude-sonnet-4-6) shows decider's cost is concentrated in two stable buckets: priority-4-completed-expansions ($1.89 mean/occ, $24.59 total, 13/14 runs) and end-of-run-B-queue-mgmt ($0.74 mean/occ, $8.17 total, 11/14). Both are 65-72% cache_read. Root cause is structural: decider.md (1377 lines / ~23K tok) carries ~17.4K tokens of End-of-Run procedure (Steps A0/A0b/A0c/A/A0d/B, L469-1324) in the cached prefix during EVERY message of the expensive priority steps, even though none of it is needed until the priority step finishes. Relocating ~10.8K tokens of that prose (the A0+A0b+A0c sweep block and Step B) into conditionally-loaded reference modules — mirroring the decider's existing decider-patches-and-selfapply.md / decider-reporting.md Read-at-end pattern and PROP-111 1C — shrinks the priority-step prefix by ~10.8K tok, saving ~$0.20/decider-run (~4%). Integrity's top bucket (check-9-build-reproducibility, $0.56) is NOT a prompt-slim candidate: its prose is ~250 tok; its cost is the build+HTML-diff tool-results. Flagged honestly per directive constraint.",
+  "the_correction_up_front": "The cost is in the PREFIX SIZE during high-message-count steps, not in the per-step prose itself. priority-4's prose can't be slimmed (it IS the work). What CAN be slimmed is everything that sits in priority-4's 34-message prefix but isn't needed yet — the End-of-Run procedure. That is why the slim targets End-of-Run sections to reduce the cost of the PRIORITY steps.",
+  "step_cost_archaeology_report": {
+    "data_basis": "monitor/decisions/step-cost-history.jsonl (14 rows, 2026-06-21..2026-06-29) + monitor/integrity/step-cost-history.jsonl (8 rows, 2026-06-22..). All runs claude-sonnet-4-6. decider mean run $5.198 (min 3.01, max 7.65); integrity mean run $3.211 (min 2.55, max 3.78). Per-step attribution 81.8% mean (both).",
+    "top_3_buckets_across_decider_and_integrity": [
+      {
+        "rank": 1,
+        "bucket": "decider / priority-4-completed-expansions",
+        "mean_usd_per_occ": 1.891,
+        "total_usd": 24.59,
+        "occurrences": "13/14 runs",
+        "cost_composition": "cache_read 67% (avg 4.22M tok/occ over 34.1 msgs), output 18%, cache_write 15%",
+        "prompt_section_driving_it": "decider.md L163-468 'Dispatcher — Priority Routing' (~5849 tok) selects priority-4; the integration work loops over completed expansions. The COST driver is the full ~17.4K-token End-of-Run procedure (L469-1324) carried in the prefix across all 34 messages even though it runs only after priority-4 completes.",
+        "slimmable": "Indirectly — cannot slim the priority-4 work itself, but can shrink its prefix by relocating End-of-Run prose (Diffs 1+2)."
+      },
+      {
+        "rank": 2,
+        "bucket": "decider / end-of-run-B-queue-mgmt",
+        "mean_usd_per_occ": 0.743,
+        "total_usd": 8.17,
+        "occurrences": "11/14 runs",
+        "cost_composition": "cache_read 72% (avg 1.79M tok/occ over 12.5 msgs), output 17%, cache_write 11%",
+        "prompt_section_driving_it": "decider.md L958-1324 'End-of-Run Step B: Curmudgeon Priority Queue Management' (~5711 tok — the single fattest section in the file).",
+        "slimmable": "Yes — Diff 2 relocates Step B to reference/decider-queue-management.md."
+      },
+      {
+        "rank": 3,
+        "bucket": "integrity / check-9-build-reproducibility",
+        "mean_usd_per_occ": 0.556,
+        "total_usd": 4.44,
+        "occurrences": "8/8 runs",
+        "cost_composition": "cache_read 65% (avg 1.20M tok/occ over 10.3 msgs), output 23%, cache_write 12%",
+        "prompt_section_driving_it": "structure-integrity.md L903-922 'Build Reproducibility' — only ~250 tok of prose.",
+        "slimmable": "NO. Prose is tiny and load-bearing. Cost is mechanical: 'node build.js html' + reading/diffing the large generated docs/index.html into context. Prompt-slimming cannot touch this. A SEPARATE fix class (out of scope) would replace read-full-HTML-and-diff with a hash/line-count/diff-brief comparison so the agent never pulls the full HTML into context. Recommended as a future PROP, NOT a prompt-slim diff here."
+      }
+    ],
+    "honorable_mentions": "decider priority-5-standard ($1.109 mean, 4/14, bursty), priority-1-new-wins ($1.900 mean but only 2/14 — outlier). integrity check-2-tab-structure ($0.327) and check-5b-win-dome-align ($0.272) — stable 8/8 but each <$0.33/run; small absolute targets."
+  },
+  "sample_size_confidence_interval": {
+    "directive_requirement": "PROP-116 flagged the ~13/7-row sample as small; report must state stability explicitly.",
+    "finding": "Top-2 ranking is STABLE; #3 is outlier-sensitive.",
+    "evidence": "Split the 14 decider runs into first-7 / last-7 and rank steps by total cost in each half. Both halves AND the all-14 aggregate put priority-4-completed-expansions at #1 and end-of-run-B-queue-mgmt at #2. The #3 slot rotates (priority-1-new-wins first half, priority-5b-m1-stale-sweep second half, priority-5-standard overall) — outlier-driven by which rare priority fired. priority-4 was the single most-expensive step in 9/14 individual runs. priority-4 per-occ cost ranges $0.04-$3.96 (mean 1.89, median 2.00) — high variance from expansion-integration volume, but rank-1 aggregate position is robust.",
+    "implication": "Diffs 1+2 target the two STABLE top buckets — safe to act on now. Any #3-targeted slim should wait for >=20-25 rows."
+  },
+  "diffs": {
+    "design_pattern": "Mirror PROP-111 1C (conditional load) + decider.md's existing 'Every run — Patches and Reporting' block (L464-467), which ALREADY relocates patch/report prose to reference modules Read at end-of-run. These diffs extend the same proven pattern. No new pattern invented.",
+    "diff_1_primary_lower_risk": {
+      "what": "Relocate the three contiguous End-of-Run sweep sections A0 + A0b + A0c (decider.md L469-839, ~5065 tok) into a new reference/decider-end-of-run-sweeps.md, replaced by an unmissable pointer stub.",
+      "rationale": "These three sweeps (status=closed normalization, blocked-on-curmudgeon residue, assigned-analyst chain-aware close) are mechanically similar, frequently no-op, contiguous (clean cut), and run only at end-of-run. ~5065 tok removed from the priority-step prefix.",
+      "old_string_anchor_start": "## End-of-Run Step A0: status='closed' Normalization Sweep (PROP-056, added 2026-05-25)",
+      "old_string_anchor_end": "...those should remain open until the parent EXP actually integrates. (end of Step A0c, L839)",
+      "new_string_pointer_stub": "## End-of-Run Steps A0 / A0b / A0c: Close-Sweep Suite\n\n**MANDATORY — do not skip.** Before the Attention Inbox step, you MUST run the three close-sweeps (PROP-056 status=closed normalization, PROP-058 blocked-on-curmudgeon residue, PROP-070 assigned-analyst chain-aware close). They are correctness-critical (ISS-1285 / PROP-070 leak class). Read `monitor/prompts/reference/decider-end-of-run-sweeps.md` NOW and execute every sweep in it in order, including the fail-loud self-test. Do not proceed to Step A until all three have run.",
+      "validated_against_current_file": "Yes — L469 header and L839 closing sentence confirmed verbatim in tinker-clone @ HEAD 5a2b943.",
+      "tokens_relocated": 5065,
+      "optional_addon": "Step A0d (close_iss_batch HNOTE handler, L877-957, ~1032 tok) can join the same module for ~6097 tok total, but it is interleaved AFTER Step A (attention inbox, L840-876), so including it needs either moving Step A too or a second pointer stub. Recommend shipping the contiguous A0+A0b+A0c block first; fold A0d in a follow-up if measured savings justify."
+    },
+    "diff_2_secondary_higher_value": {
+      "what": "Relocate End-of-Run Step B (decider.md L958-1324, ~5711 tok — the fattest single section) into a new reference/decider-queue-management.md, replaced by an unmissable pointer stub. Keep the STEP_MARKER breadcrumb in decider.md so PROP-112 attribution is unaffected.",
+      "rationale": "Step B is self-contained curmudgeon-queue management that runs last. Relocating removes ~5711 tok from the priority-step prefix AND from the A0/A/A0d prefixes that precede it; Step B prose is then cached only for its own ~12.5 messages.",
+      "old_string_anchor_start": "## End-of-Run Step B: Curmudgeon Priority Queue Management",
+      "old_string_anchor_end": "...the origin does not affect review scheduling. (end of section, L1324)",
+      "new_string_pointer_stub": "## End-of-Run Step B: Curmudgeon Priority Queue Management\n\n[STEP_MARKER breadcrumb stays here]\n\n**MANDATORY final step — do not skip.** After all other work (patches applied, commits made, report written), manage the curmudgeon priority queue and throughput mode. You are the single writer of priority-queue.json. Read `monitor/prompts/reference/decider-queue-management.md` NOW and execute it in full before the Self-Cost / Cleanup steps.",
+      "validated_against_current_file": "Yes — L958 header and L1324 closing sentence confirmed verbatim in tinker-clone @ HEAD 5a2b943.",
+      "tokens_relocated": 5711
+    },
+    "combined_effect": "Diffs 1+2 relocate ~10,776 tokens. decider.md shrinks from 1377 to ~700 lines. The relocated prose enters the prefix only when its reference module is Read (at end-of-run), so the priority steps (priority-4 = 34 msgs, priority-5, priority-1) and the early end-of-run steps no longer carry it."
+  },
+  "savings_projection": {
+    "model": "cache_read price (Sonnet) = $0.30/MTok. Saving per run = (tokens relocated) x (messages occurring BEFORE the reference module is Read) x $0.30/M, minus a one-time cache_write of the relocated tokens when the module is Read (roughly offset by the now-smaller agent-prompt cache_write).",
+    "per_run_estimate": "Relocated ~10.8K tok; ~75-80 of a typical ~99-message decider run occur before End-of-Run. Saving ~= 10,776 x 78 x $0.30/M ~= $0.25/run gross, ~$0.19-0.24 net. Call it ~$0.20/decider-run, ~4% of the $5.20 mean.",
+    "annualized": "Quiet cadence (1 decider run/day): ~$6/mo, ~$73/yr. Active cadence (3 runs/day): ~$18/mo, ~$219/yr.",
+    "why_it_compounds": "The saving scales with BOTH run frequency and messages-per-run. Active periods raise both (3x cadence + fuller priority-4/Step-B buckets as expansion + queue volume rises), so the saving is largest exactly when cost pressure returns — the highest-confidence forward-value framing from PROP-116."
+  },
+  "the_other_side_arguments": [
+    "AGAINST: ~$0.20/run (~$73-219/yr) is small; the dominant pipeline cost is the Opus agents (analyst, curmudgeon, tinker) which have NO PROP-112 data, so this optimizes a Sonnet agent that may not be the real bottleneck. Counter: it is the highest-confidence DATA-GROUNDED slim available, low-risk (extends an existing pattern), and compounds in active periods.",
+    "AGAINST: relocating A0c (chain-aware close) and Step B (queue single-writer) risks a 'forgot to Read' silent failure of correctness-critical logic. Counter: the unmissable-pointer stubs mirror the already-working decider-patches-and-selfapply.md / decider-reporting.md pattern that has not produced skip failures; integrity check-7e digest-coverage + the A0c fail-loud self-test would catch a dropped sweep. Still the load-bearing risk and WHY this PROP is requires_human_judgment.",
+    "AGAINST: a smaller decider.md means 2 extra Read tool-calls per run, each adding a round-trip + tool_result. Counter: the reference-module content is identical tokens, just deferred; the extra Read latency is negligible vs the cache_read saving on 78 messages.",
+    "AGAINST: doing nothing — data may shift once active period returns and priority-4 message counts change. Counter: top-2 rank is stable across both run-halves; waiting only forfeits the active-period compounding."
+  ],
+  "cost_burn_projection_appendix_candidate_F": {
+    "scope_note": "Per directive: model 'return to active period at modest baseline'. Inputs: 2 new WINs/week + 5 new ISSs/week (directive baseline). Covers ONLY the two PROP-112-instrumented agents (decider + integrity); Opus agents excluded for lack of step-cost data — see bottleneck note.",
+    "cadence_assumptions": "Quiet (current, per CLAUDE.md QUIET-PERIOD): decider 1/day, integrity 1/day. Active-revert (per CLAUDE.md REVERT notes): decider 3/day (0 3,7,11), integrity stays 1/day (daily build check, not cadence-coupled).",
+    "per_run_cost": "decider mean $5.20/run (quiet). Active runs do more work — priority-4 + Step B buckets fill as 2 WINs/wk + 5 ISSs/wk flow through — estimate +10-15% per-run -> ~$5.85/active-run. integrity flat ~$3.21/run.",
+    "daily_cost_instrumented_two": {
+      "quiet": "decider $5.20 + integrity $3.21 = $8.41/day",
+      "active": "decider 3 x $5.85 = $17.55 + integrity $3.21 = $20.76/day"
+    },
+    "weekly_active": "~$145/week for decider+integrity at active cadence.",
+    "bottleneck_identification": "Within the instrumented two, decider is ~84% of active-period cost and priority-4 + Step B are ~60% of decider's cost — exactly the buckets Diffs 1+2 slim. Across the WHOLE pipeline the true active-period bottleneck is almost certainly the Opus agents (analyst + curmudgeon both 3x at active cadence, Opus pricing ~5x Sonnet). Honest limitation: cannot quantify them without PROP-112 instrumentation on Opus agents — a recommended next measurement (PROP-101/112 Phase 2 already plans Opus self-cost rows).",
+    "effect_of_this_prop_on_projection": "Diffs 1+2 save ~$0.20/decider-run -> ~$0.60/day at active cadence -> active decider+integrity drops $20.76 -> ~$20.16/day (~3% on the instrumented two). Small but free once shipped and compounding with cadence."
+  },
+  "constraints_honored": [
+    "Propose-only — NO prompt diff applied this run.",
+    "Standalone deep-dive — directives 004 and 005 NOT processed this run.",
+    "Mirrored PROP-111 1C / existing decider Read-at-end pattern — no new pattern invented.",
+    "Load-bearing prose flagged honestly: integrity check-9 NOT slimmed (tool-result cost, not prose); A0c/Step B risk addressed via unmissable-pointer mitigation + requires_human_judgment.",
+    "Sample-size confidence stated explicitly: top-2 stable, #3 outlier-sensitive."
+  ],
+  "not_in_scope": [
+    "Applying any diff.",
+    "Directives 004/005.",
+    "Step-cost rollups for agents other than decider+integrity.",
+    "Worst-case cost scenarios (modest-baseline only).",
+    "The integrity check-9 build-diff tool-result fix (different fix class; future PROP)."
+  ],
+  "verification_pattern": {
+    "grade": "C",
+    "note": "Propose-only + do_not_implement + requires_human_judgment. No mechanical FIXED check until operator selects Diff 1 and/or Diff 2 and ships it. Auto-close disabled.",
+    "pattern": "echo 'PROP-119 is propose-only / requires_human_judgment; operator selects Diff 1 and/or Diff 2.' && exit 1"
+  },
+  "cross_references": {
+    "directive": "DIRECTIVE-20260628-003",
+    "parent_catalog": "PROP-116 (Candidate B + Candidate F)",
+    "design_precedent": "PROP-111 1C; decider.md L464-467 existing Read-at-end pattern",
+    "data_source": "PROP-112 step-cost-history.jsonl (decider + integrity)",
+    "related_future_work": "integrity check-9 build-diff tool-result reduction (unwritten); PROP-101/112 Phase 2 Opus self-cost instrumentation"
+  }
+}
