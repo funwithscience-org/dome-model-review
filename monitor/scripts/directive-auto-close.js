@@ -108,10 +108,16 @@ const EXPLICITLY_NOT_TERMINAL_PATTERNS = [
   /-pending-/, /-shadow-audit$/, /-shadow-pending/,
 ];
 
-function isTerminalForDirective(propStatus, directiveOptsInPhase0) {
+function isTerminalForDirective(propStatus, directiveOptsInPhase0, directiveOptsInProposeOnly) {
   if (!propStatus) return false;
   // Default conservative path.
   if (TERMINAL_PROP_STATUSES_DEFAULT.has(propStatus)) return true;
+  // PROP-120 opt-in: authoring-directives whose deliverable IS a propose-only PROP.
+  // For these, the linked PROP reaching status='proposed' IS the terminal state of the
+  // directive (the deliverable was authored; operator may or may not later ship it, but
+  // the directive's commission was 'author the PROP' which is now done). Guarded against
+  // operator-rejected states by the EXPLICITLY_NOT_TERMINAL_PATTERNS below.
+  if (directiveOptsInProposeOnly && propStatus === 'proposed') return true;
   // Opt-in expansion only if the directive declared it.
   if (directiveOptsInPhase0) {
     for (const re of TERMINAL_PROP_PATTERNS_OPT_IN) {
@@ -119,6 +125,10 @@ function isTerminalForDirective(propStatus, directiveOptsInPhase0) {
     }
   }
   // Even with opt-in, the "explicitly not terminal" patterns win.
+  // Note: 'proposed' is in EXPLICITLY_NOT_TERMINAL_PATTERNS, but it's checked AFTER the
+  // PROP-120 opt-in branch above — so the opt-in correctly bypasses the default exclusion
+  // ONLY for bare 'proposed' (not rejected/superseded/withdrawn which match other patterns
+  // here and correctly stay non-terminal).
   for (const re of EXPLICITLY_NOT_TERMINAL_PATTERNS) {
     if (re.test(propStatus)) return false;
   }
@@ -254,8 +264,13 @@ function main() {
     const linkedProp = match.prop;
     const linkedPropId = linkedProp.id || linkedProp.prop_id || match.file.replace('.json', '');
     const optsIn = d.auto_close_when_phase_0_done === true;
+    // PROP-120 (2026-06-30): authoring-directive opt-in. Set on directives whose
+    // deliverable is a propose-only PROP — the linked PROP reaching 'proposed' IS the
+    // terminal state of the directive (commission was 'author the PROP'). Default
+    // implementation directives remain unchanged.
+    const optsInProposeOnly = d.auto_close_when_deliverable_proposed === true;
 
-    if (!isTerminalForDirective(linkedProp.status, optsIn)) {
+    if (!isTerminalForDirective(linkedProp.status, optsIn, optsInProposeOnly)) {
       summary.linked_prop_not_terminal++;
       continue;
     }
@@ -263,7 +278,8 @@ function main() {
     summary.would_close++;
     const closureNote = 'directive-auto-close (PROP-108): linked PROP ' + linkedPropId
       + ' status="' + linkedProp.status + '" matched terminal whitelist via ' + via
-      + (optsIn ? ' (auto_close_when_phase_0_done=true opt-in)' : '') + '.';
+      + (optsIn ? ' (auto_close_when_phase_0_done=true opt-in)' : '')
+      + (optsInProposeOnly && linkedProp.status === 'proposed' ? ' (auto_close_when_deliverable_proposed=true opt-in)' : '') + '.';
 
     const ledgerRow = {
       ts: new Date().toISOString(), run_id: RUN_ID, dryrun: !ENFORCE,
