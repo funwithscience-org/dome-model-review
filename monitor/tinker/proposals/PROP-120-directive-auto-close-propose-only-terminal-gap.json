@@ -1,0 +1,62 @@
+{
+  "id": "PROP-120",
+  "title": "Directive auto-close can never close a propose-only authoring-directive — 'proposed' is absent from the terminal whitelist, so DIRECTIVE-001/-003-class commissions are structurally zombie-pending forever. Add a per-directive opt-in that treats the linked propose-only PROP reaching 'proposed' as terminal-for-the-directive.",
+  "authored_by": "tinker",
+  "authored_at": "2026-06-30T02-40",
+  "authored_by_run": "tinker-2026-06-30T02-40",
+  "directive_id": "DIRECTIVE-20260628-004",
+  "directive_note": "Authored during the Candidate-A (PROP/directive-graph archaeology) lane while reconciling the 06-28 deep-dive directive lifecycle. This is the highest-signal OBE-not-marked finding the graph walk surfaced. NOT a full Candidate-A deliverable — Candidate A's full ~115-PROP dependency-graph walk remains for the next run once DIRECTIVE-20260628-004's own gate (003 marked completed, done this run) clears.",
+  "category": "pipeline-self-repair",
+  "propose_only": true,
+  "do_not_implement": true,
+  "requires_human_judgment": true,
+  "why_human_needed": "Changes the directive auto-close trust graph (PROP-108). Loosening the terminal whitelist — even behind a per-directive opt-in — risks closing a directive whose propose-only PROP was authored but then rejected/superseded by the operator. Operator must approve the opt-in semantics and decide whether to also flip directive-auto-close-enforce.flag.",
+  "status": "proposed",
+  "severity": "moderate",
+  "do_not_auto_close": true,
+  "do_not_auto_close_reason": "propose-only + requires_human_judgment; and self-referentially, this PROP's own deliverable is a propose-only PROP — it cannot satisfy the very whitelist it is trying to fix. That recursion IS the bug.",
+  "problem_statement": "The PROP-108 directive auto-close (Pre-flight: Directive Lifecycle Auto-Close in tinker.md) closes a pending directive only when its linked PROP.status is in the conservative terminal whitelist {implemented, integrated, applied, self-applied, completed}. Many operator directives commission a PROPOSE-ONLY deliverable ('Author a propose-only PROP ...'). The deliverable PROP correctly terminates at status 'proposed' (it is never implemented — that is the point). 'proposed' is not in the whitelist, so these directives can NEVER auto-close. They sit status:pending forever, re-entering the dispatcher's Operator-Directive Discovery sort every single run.",
+  "evidence": {
+    "head_sha": "1a4239e (tinker-clone @ 2026-06-30)",
+    "zombie_directives_observed_this_run": [
+      {"directive": "DIRECTIVE-20260628-001", "deliverable": "propose-only PROP", "linked_prop": "PROP-116", "linked_prop_status": "proposed", "auto_closeable": false, "reason": "'proposed' not terminal; deliverable is propose-only so it never will be", "actually_OBE": true},
+      {"directive": "DIRECTIVE-20260628-002", "deliverable": "implementable PROP", "linked_prop": "PROP-117", "linked_prop_status": "integrated", "auto_closeable": true, "reason": "'integrated' IS terminal — directive-auto-close.js flagged it would-close in shadow this run", "actually_OBE": true},
+      {"directive": "DIRECTIVE-20260628-003", "deliverable": "propose-only PROP", "linked_prop": "PROP-119", "linked_prop_status": "proposed", "auto_closeable": false, "reason": "same as 001", "actually_OBE": true}
+    ],
+    "older_high_priority_zombies_same_class": [
+      {"directive": "DIRECTIVE-20260619-001", "linked_prop": "PROP-108", "linked_prop_status": "phase-0-shadow-shipped", "note": "phase-shipped, not in whitelist, HAS a directive_id back-ref. Partially OBE — deliverable shipped in shadow; enforce-mode toggle still pending. Operator judgment on whether to close."},
+      {"directive": "DIRECTIVE-20260622-001", "linked_prop": "PROP-113", "linked_prop_status": "phase-P3-shipped", "note": "PROP-113 carries NO directive_id / source_directive back-ref so auto-close linkage cannot resolve even if whitelist included phase-shipped. Same FND-03 pattern flagged in tinker report 2026-06-20 (PROP-091/092)."},
+      {"directive": "DIRECTIVE-20260623-001", "linked_prop": "PROP-114", "linked_prop_status": "phase-P2-shipped", "note": "same — no back-ref on PROP-114."}
+    ],
+    "shadow_run_this_run": "directive-auto-close.js (shadow) walked 116 directives, 24 pending, found exactly 1 would-close (DIRECTIVE-20260628-002 via PROP-117 integrated). It missed 001 and 003 BECAUSE their deliverables are propose-only ('proposed' not terminal), and missed 022/023-001 because PROP-113/114 lack back-refs. So the auto-close, even in enforce mode, would clear only 1 of the ~6 verifiable-OBE zombies."
+  },
+  "two_distinct_root_causes": {
+    "RC1_propose_only_never_terminal": "An authoring-directive whose deliverable is a propose-only PROP has no reachable terminal PROP status. 'proposed' is the END state for that deliverable but the whitelist excludes it. Structural, not a data error.",
+    "RC2_missing_back_refs": "Shipped implementation PROPs (PROP-113, PROP-114) carry no directive_id/source_directive back-ref, so the forward-back-ref linkage path can't connect them to their commissioning directive. Recurrence of FND-03 from tinker-2026-06-20 (then PROP-091/092). The mark-directive-superseded.js backfill tool exists for exactly this but wasn't run for 113/114."
+  },
+  "recommendation": {
+    "primary_RC1_fix": "Add an opt-in directive field `deliverable_is_propose_only: true` (or reuse a `auto_close_when_deliverable_proposed: true` flag mirroring the existing `auto_close_when_phase_0_done` opt-in). When present on a directive, directive-auto-close.js expands that directive's terminal whitelist to additionally accept linked-PROP.status === 'proposed'. Default behavior is UNCHANGED for implementation directives. Guard against the rejected-PROP edge: the opt-in should NOT fire if the linked PROP status indicates operator rejection (e.g. 'rejected','superseded','withdrawn'); only a bare 'proposed' counts.",
+    "secondary_RC2_fix": "Backfill directive_id back-refs on PROP-113 and PROP-114 (and audit the rest of the shipped corpus) so linkage resolves. Tool exists: `node monitor/scripts/mark-directive-superseded.js PROP-113 by DIRECTIVE-20260622-001` etc., OR add a plain `directive_id` field. Operator/next-run runs from a clone and pushes.",
+    "tertiary_operator_toggle": "Once RC1+RC2 land and a shadow run shows the expected would-close set, consider flipping `monitor/decisions/directive-auto-close-enforce.flag` to enforce so the backlog drains mechanically each run instead of needing manual flips.",
+    "interim_manual_action_taken_this_run": "This run manually flipped DIRECTIVE-20260628-001,-002,-003 to status:completed (clone-write+push, additive-edit per CLAUDE.md DIRECTIVE-LIFECYCLE exception) because all three are 100%-verified OBE (PROP-116 authored, PROP-117 integrated, PROP-119 authored). This unblocks DIRECTIVE-20260628-004 (Candidate A) whose gate is '003 marked completed'. The older highs (019/022/023-001) were NOT auto-flipped — left for operator confirmation since their phase-shipped statuses are ambiguous about full-intent completion."
+  },
+  "the_other_side_arguments": [
+    "AGAINST RC1 fix: loosening the whitelist (even per-directive) is exactly the conservatism PROP-108 was designed to preserve; a propose-only PROP can be authored and then REJECTED by the operator, and auto-closing its directive on 'proposed' would mark the commission done while its output is being thrown away. Counter: the opt-in is per-directive (operator sets it knowingly when filing a propose-only commission), and the rejected/superseded guard prevents closing on a killed PROP. Net risk low and bounded.",
+    "AGAINST acting at all: only ~3-6 directives are affected and a human can flip them in seconds; building machinery for a 6-item backlog is over-engineering. Counter: the backlog is not static — every propose-only commission (and the operator files them regularly during quiet periods) becomes a permanent zombie that re-enters the dispatcher sort on the single most expensive agent (tinker) every run. The fix is ~15 lines in directive-auto-close.js.",
+    "AGAINST the manual flips this run: tinker unilaterally marking 3 directives completed is a write into the operator-directive surface; if my OBE judgment were wrong, work could be silently dropped. Counter: all three deliverables were directly read and verified terminal; the flips are additive-only (status pending->completed + metadata) per the documented exception; and the conservative older-zombie set was deliberately left untouched.",
+    "AGAINST RC2 framing: maybe PROP-113/114 SHOULDN'T carry directive back-refs if authored independently and only incidentally satisfy a directive. Counter: DIRECTIVE-022/023-001 explicitly commission 'PROP-113 full design' / 'PROP-114 full design' by name — the back-ref is factually correct and its absence is an omission."
+  ],
+  "scope_discipline_note": "This run did NOT execute the full Candidate-A PROP-dependency-graph walk (all ~115 PROPs: supersedes/superseded_by/amends/depends_on edges, broken-link detection, wrongly-marked verification_pattern audit). That remains DIRECTIVE-20260628-004's deliverable for the NEXT tinker run, now unblocked (003 marked completed this run). PROP-120 captures the single highest-signal finding the partial walk surfaced — the propose-only terminal gap — because it explains the entire visible zombie backlog and is independently actionable.",
+  "verification_pattern": {
+    "grade": "C",
+    "note": "Propose-only + do_not_implement + requires_human_judgment. No mechanical FIXED check until operator approves the opt-in semantics and ships the directive-auto-close.js change.",
+    "pattern": "echo 'PROP-120 is propose-only / requires_human_judgment; operator approves the deliverable_is_propose_only opt-in + RC2 back-ref backfill.' && exit 1"
+  },
+  "cross_references": {
+    "directive": "DIRECTIVE-20260628-004 (Candidate A lane)",
+    "fixes_mechanism": "PROP-108 (directive auto-close); monitor/scripts/directive-auto-close.js",
+    "related_findings": "FND-03 of tinker report 2026-06-20 (PROP-091/092 missing source_directive back-refs — same RC2 class)",
+    "related_props": "PROP-102 (PROP auto-close, sibling mechanism), PROP-116 (deep-dive catalog), PROP-119 (Candidate B, also a propose-only zombie until 003 was flipped this run)",
+    "tooling": "monitor/scripts/mark-directive-superseded.js (RC2 backfill), monitor/decisions/directive-auto-close-enforce.flag (tertiary toggle)"
+  }
+}

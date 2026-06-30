@@ -1,34 +1,38 @@
-TINKER tinker-2026-06-14T07-54 — operator-directive OBE close-out
+TINKER 2026-06-30T02-40 — Directive-lifecycle reconciliation + PROP-120
 
-MODE: operator-directive (OBE). After today's 06:50 run cleared the freshest high
-directive (20260613-001 / PROP-099), the two top pending highs were both UNDATED and
-both ALREADY DONE — their work landed days ago but nobody flipped them to completed.
+MODE: Pre-flight directive reconciliation + Mode 4 PROP authoring.
 
-CLEANED UP TWO ZOMBIE-PENDING DIRECTIVES:
-  - DIRECTIVE-20260607-002 (PROP-083 hook-persistence fix) — done 06-07, pending 7d.
-    Verified: PROP-083 status=implemented, ISS-2621 closed (H1 confirmed), idempotent
-    decider hook in place, 1039 closed-issues grandfathered. Flipped -> completed.
-  - DIRECTIVE-20260603-003 (PROP-078 integrity clone-source-of-truth) — done 06-03,
-    pending 11d. Verified: PROP-078 implemented, integrity + decider prompts carry the
-    clone-source language. Flipped -> completed.
+WHAT HAPPENED
+- Operator-directive discovery surfaced 24 pending directives. The 06-28 deep-dive
+  batch (the operator's current focus) is the top-sorted high-priority work.
+- DIRECTIVE-003 (Candidate B, prompt-cost archaeology) was ALREADY DONE: its
+  deliverable PROP-119 was authored 2026-06-29. Avoided a near-duplicate. My
+  independent step-cost analysis reproduced PROP-119's top-2 buckets exactly
+  (cross-validation): decider priority-4-completed-expansions ($24.59/13 runs) and
+  end-of-run-B-queue-mgmt ($8.17/11 runs) are the stable top-2; integrity check-9 is
+  non-slimmable (build tool-result, not prose).
+- Flipped 3 verified-OBE directives to completed: 001 (->PROP-116), 002 (->PROP-117),
+  003 (->PROP-119). This UNBLOCKS Candidate A (DIRECTIVE-004), whose gate was
+  "003 marked completed."
 
-ROOT CAUSE (FND-01 write-side): operator-directives/ is append_only, so a status flip
-written to FUSE never reaches git — the directive stays git-pending and re-preempts the
-dispatcher every run. The dispatcher already guards the READ side (read directives from
-the clone); the WRITE side had no such guard.
+KEY FINDING (PROP-120, propose-only, needs your decision)
+- Root cause of the zombie-directive backlog: PROP-108 directive auto-close only
+  closes when the linked PROP is {implemented|integrated|applied|self-applied|completed}.
+  Propose-only authoring-directives (e.g. 001, 003) have deliverables whose TERMINAL
+  state is "proposed" — never in the whitelist — so they can NEVER auto-close.
+  They sit pending forever and re-enter the dispatcher every run.
+- Fix proposed: per-directive opt-in `deliverable_is_propose_only: true` that lets
+  auto-close accept "proposed" for THAT directive only (with a rejected/superseded
+  guard). Plus RC2: backfill missing directive_id back-refs on shipped PROP-113/114
+  (same omission class as PROP-091/092, FND-03 of 06-20).
 
-SELF-FIX APPLIED: hardened tinker.md line 123 — directive completion-flips MUST be
-written from the git clone and pushed, never FUSE. 3 LOC, mirrors the existing read-side
-guard. Prevents recurrence.
+OLDER ZOMBIE HIGHS (left for your confirmation, NOT auto-flipped)
+- DIRECTIVE-019-001 (->PROP-108 shadow-shipped), -022-001 (->PROP-113 P3-shipped),
+  -023-001 (->PROP-114 P2-shipped). All look OBE but phase-shipped status is
+  ambiguous about full-intent completion — your call.
 
-PIPELINE HEALTH (PROP-030): open_issues=10, net velocity +82/7d, assigned-analyst=0,
-age>=30d=0. No backlog-trend threshold fires.
+PIPELINE: all green. open-issues=4, net velocity +19/7d, root-FS free 2886MB,
+no inbound burst, no stranded patches. Quiet-period cadence holding.
 
-CARRIED FORWARD (operator action, from 06:50 run, NOT actioned here):
-  PROP-099 still-live prune-resurrection bug for verify-pending-run (284 undrained files,
-  PROP-094 depth-gap). 3 operator items in PROP-099. workspace-sync.md is disaster-
-  sensitive -> propose-only, operator integrates.
-
-REMAINING: 11 pending directives (down from 13). Next up: 20260531-008 (PROP-069) +
-a cluster of related mediums (iss-allocator + expansion-tracker collisions look like one
-root cause). Suggest a consolidated run on the collision cluster.
+NEXT RUN: Candidate A (DIRECTIVE-004) full ~115-PROP dependency-graph walk — now
+unblocked. This run captured only its single highest-signal finding (PROP-120).
