@@ -1,0 +1,45 @@
+{
+  "directive_id": "DIRECTIVE-20260701-001",
+  "for": "tinker",
+  "status": "pending",
+  "priority": "medium",
+  "auto_close_when_deliverable_proposed": true,
+  "created_at": "2026-07-01T06:00:00.000Z",
+  "created_by": "operator (cowork session 2026-07-01)",
+  "title": "Zombie-directive audit + backfill batch — walk the ~20 pending directives tinker flagged in FND-2 (tinker-2026-07-01), determine per-directive disposition (fulfilled+needs-close / genuinely-pending / superseded), and produce a batch-applicable backfill list. PROP-108 enforce mode is now ON, so backfilling the missing PROP↔directive linkage drains each closeable zombie mechanically on the next tinker run.",
+  "context": "Tinker 2026-07-01T02-40 FND-2 MODERATE reported '20 directives remain status=pending; PROP-108 auto-close is shadow-only AND cannot reach most due to missing PROP↔directive linkage.'\\n\\nOperator has now: (a) shipped PROP-120 (2026-06-30 RC1+RC2 fixes to directive-auto-close.js + backfilled PROP-113/PROP-114 back-refs), and (b) flipped PROP-108 to enforce mode via monitor/decisions/directive-auto-close-enforce.flag (2026-07-01T06:00Z).\\n\\nWhat's still missing to drain the zombie backlog: the ~20 pending directives lack either (i) a fulfilling PROP with matching directive_id / source_directive back-ref, OR (ii) the propose-only opt-in flag (auto_close_when_deliverable_proposed) if the deliverable was propose-only.\\n\\nThis directive commissions tinker to walk all pending directives, classify each, and produce a batch-applicable disposition list. The operator will apply the backfills (or approve tinker to apply via mark-directive-superseded.js), and the enforced auto-close mechanism will drain the closeable zombies on the following tinker run.",
+  "task": "Walk every operator-directive at monitor/tinker/operator-directives/DIRECTIVE-*.json with status='pending'. For each, classify into ONE of: (A) FULFILLED — a PROP exists that resolves this directive but linkage is missing; propose the specific backfill action (add directive_id field on which PROP file, OR add supersedes_directives cross-lineage array on which PROP, OR add auto_close_when_deliverable_proposed:true on the directive itself if the deliverable is a propose-only PROP whose status is already 'proposed'); (B) GENUINELY PENDING — no fulfilling PROP exists yet; leave alone; (C) SUPERSEDED / OBE — the work was overtaken by later PROPs or the intent is no longer relevant; propose status='superseded' with superseded_reason; (D) UNCLEAR — evidence is ambiguous; recommend operator judgment. Produce a single deliverable JSON at monitor/tinker/audits/zombie-directive-audit-2026-07-01.json listing every pending directive with its category + proposed action + evidence.",
+  "deliverable_acceptance_criteria": [
+    "Every pending directive from the walk appears in the audit file exactly once (no dupes, no misses).",
+    "Category assignment is evidence-cited: each (A) or (C) case identifies the specific PROP file(s) that fulfilled or superseded the directive, with commit-SHA / date evidence for the resolution moment.",
+    "Category (A) actions are batch-applicable: each row includes the specific file path + field to add + value to write, so the operator can apply the batch mechanically (a shell one-liner walking the JSON list is acceptable).",
+    "The audit file itself is idempotent: re-running the audit against the same corpus produces the same categorization (deterministic).",
+    "Category (D) UNCLEAR rows explicitly say what evidence would resolve them (e.g., 'operator needs to confirm this directive's intent was completed by PROP-XXX not PROP-YYY').",
+    "If tinker discovers a pending directive it CANNOT categorize even with best-effort evidence walking, leave it in (D) rather than guessing."
+  ],
+  "constraints": [
+    "Propose-only on all backfills. Do NOT apply any directive_id / supersedes_directives / status changes in this run. Operator applies from the audit list.",
+    "Exception: if a directive is 100%-verified OBE with unambiguous evidence AND its fulfilling PROP already exists AND that PROP has matching content, tinker MAY additively edit the directive to status='completed' per the CLAUDE.md DIRECTIVE-LIFECYCLE exception. Any such auto-flips MUST be listed in the audit with 'auto_applied_by_this_run: true' and full evidence citation for operator retro-verification.",
+    "Do NOT open new PROPs. This audit is a categorization exercise, not new-work generation.",
+    "Do NOT re-review the propose-only chain we shipped this week (DIRECTIVE-20260628-002 → 005 already have opt-in) — those are correctly linked. Skip them.",
+    "Keep the audit tight — evidence should be 1-3 lines per directive, not narrative walls."
+  ],
+  "background_artifacts": {
+    "surfacing_report": "monitor/tinker/report-2026-07-01T02-40.json FND-2",
+    "PROP_that_fixed_the_mechanism": "monitor/tinker/proposals/PROP-120-directive-auto-close-propose-only-terminal-gap.json (integrated 2026-06-30)",
+    "enforce_flag": "monitor/decisions/directive-auto-close-enforce.flag (created 2026-07-01)",
+    "backfill_tools_already_available": [
+      "monitor/scripts/mark-directive-superseded.js (cross-lineage supersession)",
+      "Direct JSON edit to PROP-XXX.json adding directive_id field (RC2 pattern used for PROP-113/114 2026-06-30)"
+    ],
+    "affected_directive_count_estimate": "~20 pending directives (from tinker FND-2 count); actual audit may vary as tinker will find edge cases the count missed.",
+    "operator_workflow": "After tinker delivers the audit: operator reads the (A) FULFILLED batch, applies backfills via shell one-liner or manual edits, commits, pushes. Next tinker run's directive-auto-close.js pass sees the newly-linked directives and closes them mechanically (enforce mode). Any (C) SUPERSEDED cases the operator applies directly. (D) UNCLEAR cases sit for follow-up."
+  },
+  "not_in_scope": [
+    "Applying the backfills in this tinker run (propose-only unless 100%-verified OBE).",
+    "Reviewing PROPs that don't have a linked pending directive.",
+    "Auditing the closed-issues.json / closure-ledger.jsonl for zombie ISSs (separate concern; not this scope).",
+    "Modifying directive-auto-close.js or the enforce mechanism itself.",
+    "Cataloging PROPs that are wrongly-marked 'implemented' (that's the DIRECTIVE-20260628-004 Candidate A scope; overlaps but is separate)."
+  ]
+}
