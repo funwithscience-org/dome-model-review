@@ -1,24 +1,34 @@
-TINKER 2026-07-01T02-40 — directive-driven run. Pipeline GREEN.
+TINKER tinker-2026-06-14T07-54 — operator-directive OBE close-out
 
-PRIMARY: Closed OBE zombie DIRECTIVE-20260603-003 (PROP-077 Part B / integrity
-clone-source-of-truth). Work shipped via PROP-078 (implemented) — verified in
-structure-integrity.md (L59/L479/L865) + decider.md. Was git-pending 28 days
-because PROP-078 has no directive_id back-ref, so PROP-108 auto-close (no_linkage
-bucket) couldn't reach it. Flipped pending->completed via clone-write+push.
+MODE: operator-directive (OBE). After today's 06:50 run cleared the freshest high
+directive (20260613-001 / PROP-099), the two top pending highs were both UNDATED and
+both ALREADY DONE — their work landed days ago but nobody flipped them to completed.
 
-HEALTH: open-issues total=3 (0 open, 0 assigned-analyst), net velocity +15/7d,
-root free 3484MB, FUSE matches GitHub, PAT ok, 7 stranded-patches all tombstoned.
-No PROP-030 threshold fires. inbound_burst=0. No commission HNOTEs.
+CLEANED UP TWO ZOMBIE-PENDING DIRECTIVES:
+  - DIRECTIVE-20260607-002 (PROP-083 hook-persistence fix) — done 06-07, pending 7d.
+    Verified: PROP-083 status=implemented, ISS-2621 closed (H1 confirmed), idempotent
+    decider hook in place, 1039 closed-issues grandfathered. Flipped -> completed.
+  - DIRECTIVE-20260603-003 (PROP-078 integrity clone-source-of-truth) — done 06-03,
+    pending 11d. Verified: PROP-078 implemented, integrity + decider prompts carry the
+    clone-source language. Flipped -> completed.
 
-ACTION NEEDED (operator, moderate): 20 directives still status=pending. PROP-108
-auto-close is SHADOW-only and only 1 of 21 is linkage-resolvable (no_linkage=11,
-linked_prop_not_terminal=9). Several remaining are near-certainly OBE:
-  DIRECTIVE-20260614-003 -> PROP-102 (implemented)
-  DIRECTIVE-20260619-001 -> PROP-108 (implemented)  [ironically, the fix-the-zombies directive is itself a zombie]
-  DIRECTIVE-20260607-002 -> PROP-083 (done 06-07)
-Two-part drain: (1) backfill linkage via mark-directive-superseded.js for the
-no_linkage bucket; (2) create monitor/decisions/directive-auto-close-enforce.flag.
-Enforce-alone will NOT drain unlinked zombies. Until done, tinker closes one
-zombie per run by hand.
+ROOT CAUSE (FND-01 write-side): operator-directives/ is append_only, so a status flip
+written to FUSE never reaches git — the directive stays git-pending and re-preempts the
+dispatcher every run. The dispatcher already guards the READ side (read directives from
+the clone); the WRITE side had no such guard.
 
-PROP-102 shadow: 0 would-close. PROP-108 shadow: 1 would-close (DIR-20260628-004->PROP-120).
+SELF-FIX APPLIED: hardened tinker.md line 123 — directive completion-flips MUST be
+written from the git clone and pushed, never FUSE. 3 LOC, mirrors the existing read-side
+guard. Prevents recurrence.
+
+PIPELINE HEALTH (PROP-030): open_issues=10, net velocity +82/7d, assigned-analyst=0,
+age>=30d=0. No backlog-trend threshold fires.
+
+CARRIED FORWARD (operator action, from 06:50 run, NOT actioned here):
+  PROP-099 still-live prune-resurrection bug for verify-pending-run (284 undrained files,
+  PROP-094 depth-gap). 3 operator items in PROP-099. workspace-sync.md is disaster-
+  sensitive -> propose-only, operator integrates.
+
+REMAINING: 11 pending directives (down from 13). Next up: 20260531-008 (PROP-069) +
+a cluster of related mediums (iss-allocator + expansion-tracker collisions look like one
+root cause). Suggest a consolidated run on the collision cluster.
