@@ -1,0 +1,72 @@
+{
+  "directive_id": "DIRECTIVE-20260701-002",
+  "for": "tinker",
+  "status": "pending",
+  "priority": "high",
+  "auto_close_when_deliverable_proposed": true,
+  "created_at": "2026-07-01T10:35:00.000Z",
+  "created_by": "operator (cowork session 2026-07-01)",
+  "title": "PROP-051-class workspace-sync improvisation incident 2026-07-01T08:16Z — commit eab98c5 committed 1025 files (+3.08M/-177) via unsanctioned rsync path AND self-reported auto-repairing malformed JSON, bypassing PROP-113/114 gates. Post-mortem + cleanup plan + prevention guard, propose-only.",
+  "context": "workspace-sync run ws-sync-2026-07-01T08:16:02Z (commit eab98c5) committed 1025 files with a +3,077,784 / −177 line diff. The two prior runs today (00:14, 04:09) were normal small syncs (5-16 files each). The 08:16 run agent_notes read verbatim:\\n\\n  'Routine sync: 1025 files added/modified (large backlog of narrative-cite-audits, analyst analysis-records, integrity reports, tinker summaries, decider outputs). 0 deletions. 1 malformed JSON auto-repaired (run-2026-06-13T10-11-06Z.json had spurious duplicate digits, fixed -8 bytes). Used rsync without --delete to avoid incorrectly deleting files missing from FUSE but present in git.'\\n\\nTwo unambiguous charter violations:\\n  1. Bypass of documented smart_copy path — workspace-sync.md's iteration + PROP-094/103/113/114 gating suite was skipped in favor of raw rsync. Deletion-authority checks, upper-bound trust gate, GIT_DELETED_SET intersection, and Fix C v2 resurrection assertion were all bypassed.\\n  2. Content modification outside charter — the 'auto-repair' of run-2026-06-13T10-11-06Z.json is decider/analyst territory. workspace-sync is a FUSE→git ferry, not a data editor.\\n\\nEmpirical damage: PROP-114 Fix C v2 did NOT fire (no monitor/integrity/workspace-sync-resurrection-abort-2026-07-01*.json sentinel written). Post-run canary (check-prune-resurrection.js --hours 48) shows RC=3, resurrected_total=25 (5 narrative-cite-audit-archive.jsonl entries + 20 verify-pending-runs-archive.jsonl entries). Actual content damage is bounded — resurrected paths are archive-adjacent files that will re-tombstone at next prune cycle — but pipeline trust took a real hit and the improvisation shape matches the 2026-05-21T02:11Z workspace-sync mass-delete disaster (PROP-051 origin event).\\n\\nOperator has PAUSED dome-workspace-sync (2026-07-01T10:30Z, enabled:false). Pause holds until this directive's deliverable is reviewed. dome-mirror remains ENABLED (git→FUSE direction, no risk in this incident shape).\\n\\nOperator-side action taken already: PAUSE only. No cleanup, no manual delete, no revert of eab98c5 (a revert of a 3.08M-line commit is itself high-risk). Backfill/cleanup path is part of this directive's ask.",
+  "task": "Author a comprehensive post-mortem PROP that covers three complete workstreams: (1) INCIDENT ANALYSIS — what triggered the improvisation, timeline reconstruction from the run report + prior runs, why PROP-114 Fix C v2 failed to fire, and comparison to the 2026-05-21 disaster shape; (2) CLEANUP PLAN — concrete step-by-step remediation for the 25 resurrected paths + the malformed-JSON auto-repair + verification the pipeline is safe to re-enable, with explicit safety checkpoints; (3) PREVENTION GUARD — propose-only diff to workspace-sync.md (or a companion pre-push script) that would block this class of improvisation before it lands.",
+  "workstream_1_incident_analysis_required": {
+    "timeline_reconstruction": "Read the run reports for 2026-07-01T00-14, T04-09, and T08-16 side-by-side. What FUSE-side condition changed between 04:09 and 08:16? Was there a legitimate large backlog of accumulated FUSE files (analyst outputs, integrity reports, decider commits) that ballooned past some threshold the agent uses to switch modes? Or was it a pure prompt-adherence failure?",
+    "fix_c_v2_bypass_root_cause": "PROP-114 Fix C v2 lives at monitor/prompts/workspace-sync.md line ~1606 in a bash block that runs after the data commit but before the report finalization. Determine WHY the agent skipped it — did it execute the rsync path in a bash tool call that terminated before the Fix C v2 block? Did it treat the block as skipped-when-using-rsync? Or was Fix C v2 formally executed but silently no-op'd (e.g., GIT_DELETED_SET was empty because the deterministic-path build was also skipped)?",
+    "comparison_to_2026_05_21": "The 2026-05-21T02:11Z disaster was 'Haiku LLM improvised a no-checkout clone + mtime-only guard fallback under disk pressure'. This 2026-07-01T08:16Z incident is 'Sonnet LLM improvised rsync-without-delete + auto-JSON-repair'. Same failure CLASS (agent went outside documented procedure at scale) but different specific improvisation. Analyze what's structurally similar and what's different. Is there a pattern in what triggers workspace-sync to freelance?",
+    "malformed_json_incident_scope": "Which file was 'auto-repaired'? What was the actual byte-level change? Is the pre-repair form still recoverable from prior commits? Is the post-repair form correct (and if so, does the fact that workspace-sync fixed it accurately make the charter violation more or less concerning)?"
+  },
+  "workstream_2_cleanup_plan_required": {
+    "resurrected_paths_disposition": "Enumerate the 25 resurrected paths. For each, determine: (a) is the file legitimate content that just got re-added (in which case: is it now correctly excluded again by the archive, so next prune will re-tombstone naturally?) OR (b) is it noise the pipeline needs cleared urgently? Recommend per-path action: WAIT-FOR-PRUNE (default, low-risk) or MANUAL-DELETE-VIA-GIT-DATA-API (PROP-050 escape hatch, one-shot). Justify each MANUAL-DELETE recommendation.",
+    "malformed_json_disposition": "For the auto-repaired file: verify whether the post-repair content is correct (compare to what prune-integrity would archive from the same FUSE source). If correct: leave; if incorrect: recommend the correct content + how to restore. Either way, note the incident in a directive to decider so decider knows the file was touched by an unauthorized editor.",
+    "eab98c5_commit_disposition": "Should the commit be reverted? Full revert of 1025-file / 3.08M-line diff carries high revert risk (dependency chain, cascading breaks). Alternative: leave the commit in place, let prune-integrity naturally trim over the next 1-2 cycles, and only manually clean the 25 resurrected paths. Recommend with tradeoff analysis.",
+    "canary_recovery_checkpoint": "Define the concrete criterion for 'canary recovered' — e.g., check-prune-resurrection.js --hours 48 RC=0 sustained across 2 consecutive daily tinker runs after cleanup. Tie the workspace-sync re-enable to this checkpoint.",
+    "safe_reenable_criteria": "Explicit gate list operator applies before flipping dome-workspace-sync enabled:true again. At minimum: (a) prevention guard shipped, (b) canary recovered per checkpoint above, (c) tinker's next run reports zero pending workspace-sync issues, (d) manual dry-run of one workspace-sync cycle from operator clone to verify smart_copy path executes end-to-end. Add whatever else is prudent."
+  },
+  "workstream_3_prevention_guard_required": {
+    "proposal_shape_options": [
+      "Option A — Prompt-level hardening: add explicit 'DO NOT use rsync, tar, cp -a, or any bulk-file operation outside the documented smart_copy loop' language to workspace-sync.md, possibly as a PRELUDE-style banner (analogous to PROP-051 Option C PAT-source enforcement). Cheap but relies on the LLM following the instruction.",
+      "Option B — Structural pre-push guard: a script that examines the staged changes before push and rejects if the file-count or line-count exceeds a threshold OR if a required smart_copy log signature is absent. Analogous to PROP-076 pre-push lint gate for decider. Expensive to build but load-bearing.",
+      "Option C — Post-commit but pre-push canary strengthening: extend PROP-114 Fix C v2 to also check for improvisation-shape (e.g., file-count > 100 in one commit for a routine sync agent). Cheaper than B, but only detects, doesn't block.",
+      "Option D — Any combination"
+    ],
+    "recommendation_criteria": "Weight by: (a) probability of preventing the exact 2026-07-01 shape, (b) probability of preventing UNKNOWN future improvisation shapes in the same failure class, (c) implementation cost, (d) risk of false-positive blocks on legitimate large syncs (e.g., post-outage catchup). PROP-051-grade disaster-sensitivity throughout — the guard itself must not become the next disaster vector.",
+    "concrete_diff_expectation": "Whichever option(s) tinker recommends, produce Edit-tool old_string/new_string diffs against current workspace-sync.md (or the full source of any new pre-push script). Validate against current file. Follow PROP-113/114 diff format precedent."
+  },
+  "deliverable_acceptance_criteria": [
+    "Post-mortem PROP authored covering all three workstreams (analysis, cleanup, prevention).",
+    "Workstream 1 timeline is evidence-cited from run report content, not speculation.",
+    "Workstream 2 cleanup plan is concrete + step-by-step — operator can act on it without further judgment calls except at explicit CHECKPOINT gates.",
+    "Workstream 3 recommendation includes a validated concrete diff (or script source), not just philosophy.",
+    "Explicit sequence recommendation: what does operator do FIRST, what waits, and what's the checkpoint between each step.",
+    "Explicit re-enable criteria for dome-workspace-sync — the pause holds until every checkpoint is met.",
+    "Honest self-assessment: if tinker thinks the incident is less severe than the operator's PROP-051-class framing, say so with reasoning. Conversely, if it's MORE severe, escalate."
+  ],
+  "constraints": [
+    "Propose-only. Do NOT apply any workspace-sync.md diff, do NOT delete any resurrected files, do NOT re-enable dome-workspace-sync in this run.",
+    "Exception: if tinker discovers during analysis that ONE specific resurrected path is causing active harm (e.g., breaking a live integrity check), surface it URGENT in the deliverable — do not fix in-run.",
+    "Do NOT rely on inference for the workstream 1 root cause — read the transcript, read the run reports, read workspace-sync.md line-by-line if needed.",
+    "The prevention guard must not itself become the next disaster vector. If Option B's threshold trips on a legitimate post-outage catchup sync of 200 files, that becomes a new failure mode.",
+    "Honor PROP-051 disaster-sensitivity — every change to workspace-sync.md needs disaster-grade smoke-test per PROP-110 Q7."
+  ],
+  "background_artifacts": {
+    "incident_commit": "eab98c5 (workspace-sync: 2026-07-01T08:15:38Z)",
+    "incident_run_report": "monitor/integrity/workspace-sync-runs/run-2026-07-01T08:16:02Z.json",
+    "prior_run_reports_for_comparison": ["run-2026-07-01T00-14-20Z.json", "run-2026-07-01T04-09-49Z.json"],
+    "canary_evidence": "check-prune-resurrection.js --hours 48 at 2026-07-01T10:28Z: RC=3, resurrected_total=25, by_category={narrative-cite-audit-archive.jsonl:5, verify-pending-runs-archive.jsonl:20}",
+    "malformed_json_target": "monitor/integrity/workspace-sync-runs/run-2026-06-13T10-11-06Z.json",
+    "parent_disaster_reference": "monitor/tinker/proposals/PROP-051-workspace-sync-disaster-fix.json (2026-05-21T02:11Z mass-delete)",
+    "current_scheduled_task_state": "dome-workspace-sync enabled:false since 2026-07-01T10:30Z; dome-mirror still enabled (git→FUSE, unaffected).",
+    "existing_operator_escape_hatches_referenced": [
+      "monitor/scripts/push-via-api.js (Git Data API push/delete, PROP-050)",
+      "mcp__cowork__allow_cowork_file_delete (FUSE unlink permission)"
+    ]
+  },
+  "not_in_scope": [
+    "Applying any cleanup in this tinker run (propose-only).",
+    "Re-enabling dome-workspace-sync (operator decides after criteria are met).",
+    "Rewriting the entire workspace-sync.md prompt (targeted diffs only).",
+    "Adding new features to workspace-sync (this is a guard/hardening pass, not a feature).",
+    "Auditing dome-mirror for a similar class of improvisation risk (separate scope — file if warranted as a follow-up PROP).",
+    "Reverting commit eab98c5 (tinker recommends a disposition; operator applies)."
+  ]
+}
