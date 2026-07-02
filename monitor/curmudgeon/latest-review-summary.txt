@@ -1,35 +1,61 @@
-Curmudgeon run 2026-07-01T01:09Z
+curmudgeon run 2026-07-02T01:16Z (spot-check)
 
-Processed: WIN-065 c8 (queue_id 564, class=verification, singleton)
-Reviewed at: 2026-07-01T01:09:12Z
-Trigger: priority-queue-win-rewrite
+Priority resolution:
+  dispatcher-state age 0s, recommended_priority=5
+  Priority 1 (queue): empty
+  Priority 2 (notes): 0 pending
+  Priority 0c2 (major-change audit): not needed
+  Priority 3 (change-driven): drift-audit stale 465h (>168h freshness cap) → not usable
+  Priority 4 (holistic): no pending checks
+  Priority 5 (spot-check): fires
 
-Result: PATCH VERIFIED CLEAN. Zero new findings.
-- ISS-2915 (c7 H1 tldr_evidence subject-ambiguity patch) landed in commit 1a4239e
-  as one-clause substitution: "No error budget accounts for..." → "The dome
-  provides no error budget for..."
-- verification_pattern grep -q 'The dome provides no error budget for atmospheric'
-  data/wins.json matches on HEAD b5571bb.
-- Stale phrase "No error budget accounts for" fully purged (grep -c = 0).
-- Zero regressions across all 8 WIN-065 text fields vs c1–c7 baselines.
+Target selection:
+  WIN-027 "Southern distance quadratic + V50.6 H(r)" — reviewed_at c6 = 2026-04-16, ~77 days idle
+  Fingerprint unchanged since c6 except tldr_verdict +5 chars (matches c6-flagged sub-meter → sub-millimetre patch)
 
-The c5→c8 subject-ambiguity patch chain is now CLOSED across all four
-always-visible WIN-065 surfaces (finding, detail_verdict_text, tldr_verdict,
-tldr_evidence). Verdict "Refuted by Data" holds unconditionally (defense_survives
-0 across c3–c8). Confidence 0.96 (+0.01 over c7).
+Findings (WIN-027.c7.json, 4 holes):
+  MAJOR: "Scale comparison and the long-haul kill" paragraph asserts Sydney/Santiago at
+         r ≈ 16,000 km, planar chord >30,000 km, "almost three times" great-circle.
+         Verified: under V50.6 r·tan(lat)=8537·exp(−r/8619), Sydney lat=−33.86 maps to r ≈ 6,198 km,
+         Santiago lat=−33.45 to r ≈ 6,255 km. Planar chord with EW-scaled Δθ=137.33°
+         ≈ 11,600 km — within ~3% of the WGS84 great-circle 11,349 km. Under naive V9
+         (90−lat)·111.1, r ≈ 13,779 km / chord ≈ 25,600 km — still not 30,000 km.
+         A dome-defender with a calculator can reverse this "kill shot" in 30 seconds.
+         Underlying critique (V50.6 = post-hoc projection calibration with no out-of-sample
+         validation) is fine; the specific numerical example needs replacement with an
+         in-sample/out-of-sample framing.
+  MODERATE: code_analysis_tags.monitoring = "hardcoded" is incorrect. Live monitor.py
+            (john09289/predictions main HEAD, 1069 lines, 39 domains) has NO WIN-027 or
+            distance-projection domain — none of the 39 domain names in the latest
+            status_history.json entry references distance, projection, or the V50.6 H(r)
+            mechanism. Per curmudgeon.md tag rule, WIN-027 fits "none". Flip the tag.
+            Downstream: Part 2b aggregate "hardcoded" count decrements by 1, "none" +1.
+  MINOR: "find_curve.py contains only 6 hardcoded city-pair distances and an empty function
+         body (a bare `pass`)" — 6 pairs correct; the `pass` refers only to calc_r_v506;
+         the file also has a working print loop reporting "Required H(lat) to maintain
+         perfect WGS84 map radius". Framing survives ("no script performs the claimed
+         regression on 20 routes") but a defender could nitpick the "empty" phrasing.
+         Suggested tighter wording in the review.
+  MINOR: Sydney-Santiago 11,338 km vs Vincenty 11,349 km — 0.1% off, within rounding, flagged
+         only for internal consistency when the major-severity rewrite lands.
 
-Recommended decider action: no_change. Suggest throttling further WIN-065 review
-cadence unless a substantive new triggering event fires (dome-site Polaris
-update, PRED-NEW-001 status change, or Section-2b aggregate stat drift).
+Verdict:
+  Verdict "Misleading" holds. current_verdict_holds = true.
+  recommended_action = minor_edit (scoped to one paragraph + one tag; core argument intact).
 
-Operator-actionable observation (carried forward from c7, not addressed by
-verify re-enable in 4a4e7f3): PROP-038 gate (d) literally FAILS because decider
-stopped writing monitor/decisions/applied-patches/*.json files (newest is
-2026-05-27, ~35 days stale as of this c8). This verification-class item stayed
-in full-Opus curmudgeon scope because of the gate failure, though the work
-was archetypal Sonnet verify-mode material. Suggest a tinker directive to
-either (1) tighten gate (d) to recognize decider report-*.json artifacts, or
-(2) instruct decider to write stub applied-patches files on self-apply.
+Advocate mode:
+  defense_survives = 4. Best defense = plug numbers into V50.6 and show the "kill" fails.
+  Preemptive fix = do the paragraph rewrite before the dome-author (who reads the review per
+  the CLAUDE.md author-contact record) or any AI-assisted defender surfaces this.
 
-Dispatcher-state: PROP-021 stage-1 precompute used (recommended_priority=1,
-age 126s, well under 5-minute freshness threshold).
+Cross-WIN consistency: compatible with WIN-030, WIN-057, WIN-058, WIN-069. No new inconsistencies.
+
+Quantitative verification: 11/13 checks pass; 2 (r ≈ 16,000 km / chord >30,000 km) contradict
+V50.6 solved coordinates. WGS84 constants, R²=0.7874 → 21% unexplained, 5.2%·1km=52m,
+adjusted R²≈0.75 (n=20,k=3), longitude sep 138.15°, Vincenty DOI, Karney arxiv — all verified.
+
+Citations:
+  Vincenty 1975 Survey Review 23(176):88-93 — DOI 10.1179/sre.1975.23.176.88 confirmed via Crossref
+  Karney 2013 arxiv:1109.4448 "Algorithms for geodesics" — title confirmed via direct fetch
+
+Alerts appended: WIN-027.c7 (1 major + 1 moderate).
