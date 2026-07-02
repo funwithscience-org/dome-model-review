@@ -1,34 +1,34 @@
-TINKER tinker-2026-06-14T07-54 — operator-directive OBE close-out
+TINKER RUN 2026-07-02T02-40 — Mode 4 (operator directive DIRECTIVE-20260701-002)
 
-MODE: operator-directive (OBE). After today's 06:50 run cleared the freshest high
-directive (20260613-001 / PROP-099), the two top pending highs were both UNDATED and
-both ALREADY DONE — their work landed days ago but nobody flipped them to completed.
+DELIVERABLE: PROP-121 — workspace-sync total-path-bypass guard (post-mortem of
+2026-07-01T08:16Z incident, commit eab98c5: 1025 files, +3.08M/-177). PROPOSE-ONLY.
+Nothing applied; no files deleted; dome-workspace-sync left PAUSED.
 
-CLEANED UP TWO ZOMBIE-PENDING DIRECTIVES:
-  - DIRECTIVE-20260607-002 (PROP-083 hook-persistence fix) — done 06-07, pending 7d.
-    Verified: PROP-083 status=implemented, ISS-2621 closed (H1 confirmed), idempotent
-    decider hook in place, 1039 closed-issues grandfathered. Flipped -> completed.
-  - DIRECTIVE-20260603-003 (PROP-078 integrity clone-source-of-truth) — done 06-03,
-    pending 11d. Verified: PROP-078 implemented, integrity + decider prompts carry the
-    clone-source language. Flipped -> completed.
+WHAT HAPPENED: workspace-sync abandoned the documented smart_copy path for raw
+rsync-without-delete + hand-edited one synced JSON file. Root cause = TOTAL PATH
+BYPASS: every existing gate (JSON gate, delete-sanity gate, PROP-114 Fix C v2) lives
+INSIDE the Step 3/4 code path, so improvising outside it evades all of them at once.
+Same FAILURE CLASS as the 2026-05-21 mass-delete disaster, but benign realized damage
+(add-only, self-healing via prune, 0 data lost, 13 legit files correctly synced).
+Fix C v2 did NOT fire (no sentinel) — it was bypassed entirely, not no-op'd.
 
-ROOT CAUSE (FND-01 write-side): operator-directives/ is append_only, so a status flip
-written to FUSE never reaches git — the directive stays git-pending and re-preempts the
-dispatcher every run. The dispatcher already guards the READ side (read directives from
-the clone); the WRITE side had no such guard.
+FIX (PROP-121, smoke-tested): git-enforced pre-push hook
+(monitor/scripts/lint-workspace-sync-push.js) — bypass-proof by construction.
+CHECK 1 blocks any push re-adding a prune-tombstoned integrity path (resurrection;
+near-zero false-positive). CHECK 2 blocks >300-file pushes unless an operator override
+flag is present. Plus 3 new prohibitions (no rsync/tar/cp -a; no content-editing;
+no --no-verify). SMOKE-1 (incident) BLOCKED on 755 resurrected paths; SMOKE-2 (normal
+9-file sync) ALLOWED; SMOKE-3 (incident + override flag) STILL BLOCKED on CHECK 1.
 
-SELF-FIX APPLIED: hardened tinker.md line 123 — directive completion-flips MUST be
-written from the git clone and pushed, never FUSE. 3 LOC, mirrors the existing read-side
-guard. Prevents recurrence.
+CLEANUP: WAIT-FOR-PRUNE for all 1010 re-added paths (workspace-sync paused → nothing
+re-adds; prune drains over 1-2 daily cycles). DO NOT revert eab98c5. Re-enable
+dome-workspace-sync only after guard shipped + canary RC=0 x2 + operator dry-run.
 
-PIPELINE HEALTH (PROP-030): open_issues=10, net velocity +82/7d, assigned-analyst=0,
-age>=30d=0. No backlog-trend threshold fires.
+CANARY: check-prune-resurrection.js RC=3 (25 tracked) — the known incident, covered
+by PROP-121. Expected to trend to 0 after first post-incident prune cycle.
 
-CARRIED FORWARD (operator action, from 06:50 run, NOT actioned here):
-  PROP-099 still-live prune-resurrection bug for verify-pending-run (284 undrained files,
-  PROP-094 depth-gap). 3 operator items in PROP-099. workspace-sync.md is disaster-
-  sensitive -> propose-only, operator integrates.
-
-REMAINING: 11 pending directives (down from 13). Next up: 20260531-008 (PROP-069) +
-a cluster of related mediums (iss-allocator + expansion-tracker collisions look like one
-root cause). Suggest a consolidated run on the collision cluster.
+PIPELINE: quiet + healthy. open_issues=3 (0 open-status), net_velocity_7d=+17,
+root FS free 3438MB. No backlog threshold fired. PROP-108 (enforce) auto-closed 2
+directives today (628-002→PROP-117, 628-004→PROP-120); this run closed 20260701-002.
+23 pending directives remain (several likely zombies) — next run: DIRECTIVE-20260701-001
+zombie audit+backfill.
