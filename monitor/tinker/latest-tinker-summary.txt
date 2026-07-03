@@ -1,34 +1,23 @@
-TINKER RUN 2026-07-02T02-40 — Mode 4 (operator directive DIRECTIVE-20260701-002)
+TINKER 2026-07-03T02-40 — Mode: operator-directive (DIRECTIVE-20260701-001 zombie-directive audit)
 
-DELIVERABLE: PROP-121 — workspace-sync total-path-bypass guard (post-mortem of
-2026-07-01T08:16Z incident, commit eab98c5: 1025 files, +3.08M/-177). PROPOSE-ONLY.
-Nothing applied; no files deleted; dome-workspace-sync left PAUSED.
+DELIVERABLE: monitor/tinker/audits/zombie-directive-audit-2026-07-01.json
+Walked all 23 pending operator-directives, classified each (evidence-cited, batch-applicable, propose-only).
 
-WHAT HAPPENED: workspace-sync abandoned the documented smart_copy path for raw
-rsync-without-delete + hand-edited one synced JSON file. Root cause = TOTAL PATH
-BYPASS: every existing gate (JSON gate, delete-sanity gate, PROP-114 Fix C v2) lives
-INSIDE the Step 3/4 code path, so improvising outside it evades all of them at once.
-Same FAILURE CLASS as the 2026-05-21 mass-delete disaster, but benign realized damage
-(add-only, self-healing via prune, 0 data lost, 13 legit files correctly synced).
-Fix C v2 did NOT fire (no sentinel) — it was bypassed entirely, not no-op'd.
+Result: A(fulfilled)=7, B(genuinely-pending)=14, C(superseded)=1, D(unclear)=0.
 
-FIX (PROP-121, smoke-tested): git-enforced pre-push hook
-(monitor/scripts/lint-workspace-sync-push.js) — bypass-proof by construction.
-CHECK 1 blocks any push re-adding a prune-tombstoned integrity path (resurrection;
-near-zero false-positive). CHECK 2 blocks >300-file pushes unless an operator override
-flag is present. Plus 3 new prohibitions (no rsync/tar/cp -a; no content-editing;
-no --no-verify). SMOKE-1 (incident) BLOCKED on 755 resurrected paths; SMOKE-2 (normal
-9-file sync) ALLOWED; SMOKE-3 (incident + override flag) STILL BLOCKED on CHECK 1.
+IMMEDIATE-DRAIN BATCH (4 — terminal PROP, just needs directive_id backfill; PROP-108 enforce closes next run):
+  DIRECTIVE-20260603-003 -> PROP-078 | -20260607-002 -> PROP-083 | -20260609-002 -> PROP-089 | -20260610-001 -> PROP-090
+PROPOSE-ONLY OPT-IN BATCH (2 — add auto_close_when_deliverable_proposed to directive):
+  DIRECTIVE-20260628-001 -> PROP-116 | -20260628-003 -> PROP-119
+OPERATOR-JUDGMENT ITEMS:
+  - DIRECTIVE-20260608-002: set status=superseded (Mode-2b fallback abandoned for PROP-087 schema-lint).
+  - DIRECTIVE-20260619-001: advance PROP-108 status->implemented (enforce flag live) so it self-closes.
+  - DIRECTIVE-20260613-001 (HIGH, genuinely pending): PROP-107 authored but UNIMPLEMENTED; prioritize if prune delete-backlog recurs.
 
-CLEANUP: WAIT-FOR-PRUNE for all 1010 re-added paths (workspace-sync paused → nothing
-re-adds; prune drains over 1-2 daily cycles). DO NOT revert eab98c5. Re-enable
-dome-workspace-sync only after guard shipped + canary RC=0 x2 + operator dry-run.
+FLAG: DIRECTIVE-20260628-003 lacks the opt-in flag the skip-constraint assumed the 0628 chain has (only -005 carries it).
 
-CANARY: check-prune-resurrection.js RC=3 (25 tracked) — the known incident, covered
-by PROP-121. Expected to trend to 0 after first post-incident prune cycle.
+Batch shell commands are in the audit file (batch_apply_A_terminal / batch_apply_A_proposeonly). Apply, commit, push;
+next tinker run's PROP-108 enforce pass drains the linked zombies mechanically.
 
-PIPELINE: quiet + healthy. open_issues=3 (0 open-status), net_velocity_7d=+17,
-root FS free 3438MB. No backlog threshold fired. PROP-108 (enforce) auto-closed 2
-directives today (628-002→PROP-117, 628-004→PROP-120); this run closed 20260701-002.
-23 pending directives remain (several likely zombies) — next run: DIRECTIVE-20260701-001
-zombie audit+backfill.
+Backlog-trend: open_issues=3, net_velocity_7d=+20, root_fs_free=3515MB — all GREEN, no findings.
+Constraint: propose-only, zero files mutated this run.
