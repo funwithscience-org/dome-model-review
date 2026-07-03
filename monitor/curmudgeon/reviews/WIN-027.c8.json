@@ -1,0 +1,130 @@
+{
+  "point_id": "WIN-027",
+  "topic": "Southern distance quadratic + V50.6 H(r) coordinate calibration — c7 verification pass",
+  "queue_id": 565,
+  "queue_pushed_at": "2026-07-02T02:09:47.561Z",
+  "reviewed_at": "2026-07-03T01:11:11.349Z",
+  "cycle": 8,
+  "trigger": "priority-queue-win-rewrite",
+  "change_summary": "Verification of 3 c7 patches applied in commit 03e0ad9 (auto-build 2026-07-02): (P1 major) rewrote 'Scale comparison and the long-haul kill' paragraph; (P2 moderate) flipped code_analysis.monitoring hardcoded→none; (P3 minor) tightened find_curve.py description.",
+  "batched": false,
+  "instrumentation": {
+    "dispatcher_state_used": true,
+    "dispatcher_state_age_seconds": 0,
+    "dispatcher_state_recommended_priority": 1
+  },
+  "current_verdict_holds": true,
+  "confidence": 0.92,
+  "our_argument_summary": "V50.6's exponential firmament H(r)=8537·exp(−r/8619) km with radial coord r·tan(polaris_elev)=H(r) is a calibrated projection — four fitted parameters against 19 in-sample city pairs — not a prediction; the 5.2% mean error is training-set fit; no out-of-sample V50.6 distance computation is published for southern trans-hemispheric routes like Sydney–Santiago (~11,349 km).",
+  "dome_code_analysis": {
+    "relevant_files": [
+      "raw-text/monitor.py",
+      "raw-text/pull_data.py",
+      "raw-text/find_curve.py",
+      "raw-text/05-model.txt",
+      "raw-text/02-wins.txt"
+    ],
+    "calculation_pipeline": "monitor.py's 39-domain live check does NOT include any WIN-027 distance-projection domain; find_curve.py contains 8 city coordinates + 6 hardcoded WGS84 pair distances + a stub calc_r_v506(lat) with a bare `pass` + a print-loop over lat 80..−10 step −10 that reports what H(lat) would need to be for the naïve disc mapping r=(90−lat)·111.1 to agree with the globe. No script performs the claimed 19-pair regression that would reproduce R²=0.7874 or the 5.2% mean error.",
+    "hardcoded_vs_computed": "The V50.6 H(r) parameters (8537 amplitude, 8619 scale length, 0.9941 EW angular scale, 14,105 r_eq) are fit constants declared in raw-text/05-model.txt §V12; the 'validation' is display of pre-computed values, not runtime computation against fresh data.",
+    "data_sources_used": [
+      "No live WGS84 distance API is queried for WIN-027; find_curve.py hard-codes 6 city-pair distances"
+    ],
+    "escape_clauses": "The dome page reports only 'Worst case: V9 89% → V50.6 0.0% Oslo-Stockholm' as a headline — no worst-case error is disclosed for V50.6 in its training set, and any pair NOT in the 19-pair training set is unknown-unknown territory.",
+    "our_code_claims_accurate": true,
+    "code_discrepancies": "None new post-c7. c7 patch P3 corrected the earlier '6 pairs / empty function body' claim to the accurate '8 coords / 6 distances / stub pass body / print-loop', which now matches live github (find_curve.py sha 9bdcd326)."
+  },
+  "code_analysis_tags": {
+    "monitoring": "none",
+    "monitoring_evidence": "c7 patch P2 flipped monitoring from 'hardcoded' to 'none' (verified in current data/wins.json). Live monitor.py (john09289/predictions main HEAD, 1069 lines, 2026-07-02 fetch) enumerates 39 monitored domains; none references city-pair WGS84 distances, azimuthal projection, or the V50.6 H(r) mechanism. Latest status_history.json entry confirms same 39-domain set. 'none' remains correct.",
+    "relabels_standard": true,
+    "relabels_standard_evidence": "The quadratic latitude-dependent distortion is the azimuthal equidistant projection signature — standard cartography, published for centuries. V50.6 H(r) with r·tan(polaris_elev)=H(r) is a calibrated latitude-to-radius map that back-solves for whatever disc radius makes planar trig approximate spherical trig — again, standard projection theory. Dome relabels 'projection distortion' as 'dome discovery'.",
+    "post_hoc": true,
+    "post_hoc_evidence": "raw-text/02-wins.txt line 135 documents the sequence: v22 circular disc failed on southern/cross-equator distances; WIN-027 quadratic and WIN-030 ellipse were fitted to patch that failure; V12 H(r)+EW angular scale further reduced mean error to 5.2%. Each step is a fitted correction after prior geometry failed.",
+    "derives_from_dome": false,
+    "derives_from_dome_evidence": "No derivation from base dome parameters (disc_radius=20,015 km, firmament_height=9,086 km, sun_altitude=5,733 km, moon_altitude=2,534 km) yields the quadratic coefficients or H(r) parameters. r_eq=14,105 km, H₀=8,537, λ=8,619, EW=0.9941 are all regression fit constants against globe-derived (WGS84) distances.",
+    "reviewed": true
+  },
+  "patch_verification": {
+    "c7_holes_verified": [
+      {
+        "c7_hole_index": 0,
+        "c7_severity": "major",
+        "c7_topic": "Wrong r≈16,000 km / chord >30,000 km / '~three times globe great-circle' claim in 'Scale comparison and the long-haul kill' paragraph",
+        "patch_intent": "Drop the wrong quantitative example; replace with in-sample/out-of-sample framing",
+        "outcome": "PARTIALLY_APPLIED_WITH_DEFECT",
+        "notes": "Old wrong numbers dropped (r≈16,000 km, chord >30,000 km, '~138° azimuth', 'nonstop Qantas', 'three times globe' — all gone from current wins.json, confirmed via git show 03e0ad9). Sydney–Santiago retained as example but now at correct WGS84 great-circle ~11,349 km. In-sample vs out-of-sample framing added ('but that 5.2% is the in-sample curve-fit residual, not a predictive result'). HOWEVER, the rewrite APPENDED the corrected sentence without REMOVING the immediately preceding old one — the phrase 'The dome needs at least four free parameters (H₀ = 8,537 km, λ = 8,619 km, EW angular scale 0.9941, and r_eq = 14,105 km) and still reports 5.2% mean error' now appears TWICE consecutively in the paragraph (offsets 4359 and 4574 in detail_evidence — 215 chars apart). See holes_found[0]."
+      },
+      {
+        "c7_hole_index": 1,
+        "c7_severity": "moderate",
+        "c7_topic": "code_analysis.monitoring incorrectly tagged 'hardcoded'",
+        "patch_intent": "Flip to 'none' per live monitor.py check",
+        "outcome": "APPLIED_CORRECTLY",
+        "notes": "current data/wins.json[id=027].code_analysis.monitoring = 'none'. Re-checked against live monitor.py fetch — 'none' is the correct tag per curmudgeon.md Step 5 rules."
+      },
+      {
+        "c7_hole_index": 2,
+        "c7_severity": "minor",
+        "c7_topic": "find_curve.py mischaracterized as '6 pairs / empty function body'",
+        "patch_intent": "Tighten to accurate '8 coords / 6 distances / stub pass body / print-loop'",
+        "outcome": "APPLIED_CORRECTLY",
+        "notes": "Current text: 'find_curve.py contains 8 city coordinates, 6 hardcoded WGS84 city-pair distances, a stub calc_r_v506(lat) with a bare `pass` body, and a print-loop that only reports what H(lat) would need to be for the naïve disc mapping to agree with the globe.' Matches c7 recommendation; matches live GitHub."
+      },
+      {
+        "c7_hole_index": 3,
+        "c7_severity": "minor",
+        "c7_topic": "'11,338 km' Sydney–Santiago should be restated as WGS84 Vincenty 11,349 km",
+        "patch_intent": "Restate as ~11,349 km",
+        "outcome": "APPLIED_CORRECTLY_VIA_C7_HOLE_0_PATCH",
+        "notes": "Current text: 'the ~11,349 km WGS84 great-circle distance for the Sydney–Santiago air corridor'. Correct to Vincenty rounding."
+      }
+    ]
+  },
+  "holes_found": [
+    {
+      "severity": "moderate",
+      "description": "Duplicated ~55-word sentence introduced by the c7-hole-0 patch. The phrase 'The dome needs at least four free parameters (H₀ = 8,537 km, λ = 8,619 km, EW angular scale 0.9941, and r_eq = 14,105 km) and still reports 5.2% mean error' now appears TWICE consecutively in detail_evidence (offsets 4359 and 4574 — 215 chars apart; ~55 words of prose repeated verbatim). The first occurrence is followed by '(≈52 m per km, or ~520 km over a trans-hemispheric route). '; the second is followed by '— but that 5.2% is the in-sample curve-fit residual, not a predictive result: V50.6 was fit against exactly those 19 city pairs...'. The patch author clearly intended the second (corrected) version to REPLACE the first, but appended it instead. Impact: (1) reader visibly encounters the same free-parameter list twice in a row, which reads as a copy-paste bug and undermines review-page polish; (2) more importantly, the first occurrence's gloss '(~520 km over a trans-hemispheric route)' applies the 5.2% in-sample residual to an out-of-sample distance — which is exactly the mistake the immediately-following sentence disavows. A defender who quotes the first sentence gets to accuse us of the very error we correct in the next breath.",
+      "recommendation": "Delete the first occurrence and its parenthetical gloss. Specifically, remove the substring 'The dome needs at least four free parameters (H₀ = 8,537 km, λ = 8,619 km, EW angular scale 0.9941, and r_eq = 14,105 km) and still reports 5.2% mean error (≈52 m per km, or ~520 km over a trans-hemispheric route). ' so that the paragraph flows: '...zero latitude-dependent corrections anywhere on Earth. The dome needs at least four free parameters (H₀ = 8,537 km, λ = 8,619 km, EW angular scale 0.9941, and r_eq = 14,105 km) and still reports 5.2% mean error — but that 5.2% is the in-sample curve-fit residual, not a predictive result...'. This is a single-substring deletion, no other edits required."
+    },
+    {
+      "severity": "minor",
+      "description": "Once the duplicated sentence is removed (holes_found[0]), the paragraph is clean. Recording this as a separate hole only for the belt-and-braces observation that even after dedup, the surviving text 'error — but that 5.2% is the in-sample curve-fit residual' is a stylistic em-dash-continuation that reads slightly awkward directly after 'mean error' without the parenthetical gloss. If the copy-editor prefers, 'error, but that 5.2% is...' (comma) or 'error. That 5.2% is...' (sentence break) both work. Not blocking; will not flag again if left as em-dash after the dedup patch.",
+      "recommendation": "Optional stylistic tweak only. Prefer sentence break for readability: 'and still reports 5.2% mean error. That 5.2% is the in-sample curve-fit residual, not a predictive result: V50.6 was fit against exactly those 19 city pairs...' — but em-dash is defensible as-is. Do not create an issue for this alone."
+    }
+  ],
+  "unresolved_prior_cycle": [],
+  "stronger_arguments": [
+    {
+      "description": "The paragraph could name the specific held-out southern pair the dome does NOT report. Cape Town–Perth (~9,266 km great-circle) or Buenos Aires–Cape Town (~6,880 km) are trans-southern-hemisphere pairs virtually certain to be OUTSIDE the 19-pair training set (the training set skews northern per the Oslo-Stockholm headline). Naming one converts 'no published V50.6 out-of-sample calculation' from an absence-of-evidence claim into a testable challenge to the dome author. Not urgent — c7 rewrite already gets the framing right — but a candidate stronger phrasing for a future edit.",
+      "sources": [
+        "raw-text/05-model.txt §V12 Performance (19-pair training set)",
+        "WGS84 Vincenty distances (standard reference)"
+      ]
+    }
+  ],
+  "kernel_of_truth": {
+    "description": "The c7 rewrite of 'Scale comparison and the long-haul kill' materially strengthens the argument. Dropping the wrong r≈16,000/chord>30,000 numbers (data/wins.json[id=027] detail_evidence pre-03e0ad9, verified via `git show 03e0ad9 -- data/wins.json`) closes a genuine defender attack surface — the dome author could have computed r(Sydney)≈6,198 km and r(Santiago)≈6,255 km in 30 seconds under V50.6's own H(r)=8537·exp(−r/8619) mapping (raw-text/05-model.txt) and reversed the 'kill shot' onto our own page. The replacement framing — 5.2% is in-sample curve-fit not out-of-sample prediction, and no V50.6 distance computation is published for southern routes — attacks the actual epistemic weakness, not a straw-man numerical example.",
+    "why_it_doesnt_save_claim": "The patch is directionally correct but structurally defective (holes_found[0]). Leaving the duplicated sentence in place undoes part of the c7 hole-0 fix: the first occurrence still carries the '(≈52 m per km, or ~520 km over a trans-hemispheric route)' gloss that applies an in-sample residual to an out-of-sample distance — the very mistake the second sentence disavows. A hostile reader (dome defender or independent reviewer) who quotes the first sentence in isolation gets to say 'the reviewers apply 5.2% to a trans-hemispheric route and then admit in the next breath that 5.2% is in-sample only — which is it?' The dedup fix (holes_found[0].recommendation) closes this in one substring deletion."
+  },
+  "recommended_action": "minor_edit",
+  "text_fingerprint": {
+    "claim_length": 27,
+    "finding_length": 87,
+    "detail_evidence_length": 5548,
+    "detail_verdict_length": 293,
+    "verdict": "Misleading"
+  },
+  "deeper_analysis": "This is a classic 'patch-append instead of patch-replace' failure mode when applying a substring rewrite to a long paragraph — the author (decider self-apply per commit cd879e1 pending-digest routing → 03e0ad9 build) intended a REPLACEMENT of one sentence with a corrected sentence, but the actual patch inserted the corrected sentence without deleting the old one. The two sentences share 55+ words of identical prose (H₀/λ/EW/r_eq list + '5.2% mean error') so the dedup is unambiguous. Impact scoring: this is 'moderate' not 'major' because (a) the substantive argument in the surrounding paragraph is correct and unchanged, (b) the wrong '~520 km trans-hemispheric route' gloss is contained within the paragraph and immediately disavowed 3 sentences later, (c) a smart dome defender needs to notice the internal contradiction to exploit it. Not 'minor' because (a) 55 words repeated verbatim looks amateurish in a critical-review page that criticizes the dome for exactly this kind of sloppiness, (b) the '(~520 km trans-hemispheric)' claim propagates the residual to an OOS route — an inconsistency any careful reader will spot even without adversarial intent. Recommended fix is one substring deletion. Verify-mode eligible next cycle (single moderate + zero minor once holes_found[1] is dropped as pure-style).",
+  "citation_check": {
+    "citations_verified": [
+      "raw-text/05-model.txt §V12 Performance — H(r)=8537·exp(−r/8619), 5.2% mean over 19 pairs, EW angular scale 0.9941 (unchanged)",
+      "raw-text/02-wins.txt line 135 — 'v22 found circular disc fails on southern/cross-equator distances. That was correct. WIN-027 (quadratic law) and WIN-030 (ellipse) directly address this.' (unchanged)",
+      "https://doi.org/10.1179/sre.1975.23.176.88 — Vincenty (1975) Survey Review 23:88 (unchanged, verified c6+)",
+      "https://arxiv.org/abs/1109.4448 — Karney (2013) 'Algorithms for geodesics' (unchanged, verified c6+)",
+      "WGS84 Sydney–Santiago Vincenty ~11,349 km — verified c7; current text ~11,349 km matches"
+    ],
+    "citations_failed": [],
+    "citations_unchecked": []
+  },
+  "summary_for_decider": "c7-hole-0 patch APPLIED with a text-duplication defect: '~55-word H₀/λ/EW/r_eq + 5.2% error' phrase now appears twice consecutively in detail_evidence (offsets 4359+4574, verified via git show 03e0ad9). One-substring deletion closes it. c7-hole-1 and c7-hole-2 patches applied cleanly; c7-hole-3 closed via the hole-0 rewrite (Sydney–Santiago now ~11,349 km). No unresolved carry-overs from prior cycles. Recommend: patch the dedup, then WIN-027 is verify-mode eligible next cycle (single moderate becomes zero holes; stylistic minor is optional). No verdict change."
+}
