@@ -274,6 +274,14 @@ const OWNERSHIP = {
   // path-regex validation + .. traversal guard. Replaces the inline jq/node|
   // awk|sort pipeline. Source code; same classification as compute-* helpers.
   'monitor/scripts/build-git-deleted-set.js': 'git',
+  // PROP-121 (2026-07-04): lint-workspace-sync-push.js — git-enforced pre-push
+  // hook installed into workspace-sync's clone. Fires on every git push regardless
+  // of whether the agent used the documented smart_copy path or improvised.
+  // CHECK 1 = resurrection intersection (uses build-git-deleted-set.js).
+  // CHECK 2 = bulk-change ceiling (default 300 files, override via
+  // monitor/integrity/workspace-sync-bulk-override.flag). Closes the total-path
+  // bypass failure class that evaded all in-path gates on 2026-07-01 (eab98c5).
+  'monitor/scripts/lint-workspace-sync-push.js': 'git',
   'monitor/integrity/integrity-mechanical-state.json': 'git',
 
   // PROP-041 Phase 2: rewriter's per-run sentinel summary. Workspace-owned,

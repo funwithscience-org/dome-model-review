@@ -16,6 +16,9 @@ The disaster of 2026-05-21T02:11:18Z (commit ea785c49, +274/-14,904,949) was cau
 2. **Never substitute file-by-file mtime comparison for git's working-tree diff.** The smart_copy mtime check is a per-path filter ON TOP OF a fully-populated working tree, not a replacement for one.
 3. **Never skip the post-clone working-tree-size sanity check (Step 1.5 below).** If the clone has fewer than 100 tracked files, ABORT — the clone is empty or partial.
 4. **Never commit when the staged-delete count exceeds the delete-sanity gate threshold (Step 3.7 below).** If `git diff --cached --numstat` shows more than 50 deletions OR more than 10% of `git ls-tree --recursive HEAD` entries, ABORT with a sentinel file in monitor/integrity/.
+5. **Never populate the clone or stage changes with `rsync`, `tar`, `cp -a`, or any bulk-copy tool.** The ONLY sanctioned copy path is the `smart_copy` loop (Step 2). Bulk-copy bypasses every in-path safety gate at once (JSON-validity gate, delete-sanity gate, PROP-114 resurrection assertion). This is exactly how the 2026-07-01 mass-add (commit eab98c5, 1012 files, +3.08M lines) evaded all of them.
+6. **Never edit the CONTENT of a file you are syncing.** workspace-sync is a FUSE->git ferry, not a data editor. The ONLY sanctioned content modification is the documented JSON-validity gate (Step 3, `build-scripts/fix-json-quotes.js`, +0..32 byte delta). Any other "repair" - removing digits, hand-fixing malformed JSON - is FORBIDDEN and out of charter. A -8-byte "duplicate-digit auto-repair" was part of the 2026-07-01 violation; the documented gate would have ABORTED on a negative delta, not committed.
+7. **Never `git push --no-verify`.** A pre-push hook (Step 1.6 below) enforces the resurrection + bulk-add gates that survive even a total path-bypass. `--no-verify` re-opens the exact hole. If the hook blocks you, fix the underlying cause (re-run via smart_copy) - never strip or skip it.
 
 **If disk pressure prevents the safe path:** ABORT the run with a clear log line. Write `monitor/integrity/workspace-sync-abort-<ts>.json` with `{reason: 'disk-pressure', sessions_fs_pct, root_fs_pct, action: 'no commit this cycle, hourly retry'}`. Do NOT improvise around it. A skipped cycle is ~1h of drift, fully recoverable via the next cycle once disk frees. A mass-delete is not recoverable except via force-reset, which is operator-only.
 
@@ -146,6 +149,22 @@ fi
 # CORRECTION-001 for the full diagnostic chain.
 git config user.email "russelst@melrosecastle.com"
 git config user.name "steve"
+
+# --- Step 1.6 (PROP-121): install the pre-push guard (git-enforced, bypass-proof) ---
+# This hook fires on EVERY `git push` from this clone, regardless of HOW the staged
+# changes were produced. It is the only defense against a total-path bypass
+# (rsync/tar/cp -a + manual commit) - the 2026-07-01 (eab98c5) failure shape that
+# evaded every in-path gate because the whole Step 3/4 code path was abandoned.
+# CHECK 1 blocks any push that re-adds a prune-tombstoned integrity path (resurrection;
+# near-zero false-positive). CHECK 2 blocks any push changing > ceiling (default 300)
+# files unless monitor/integrity/workspace-sync-bulk-override.flag is present (operator
+# escape hatch for legitimate post-outage catchup). --no-verify is forbidden (prohibition 7).
+cat > "$CLONE/.git/hooks/pre-push" <<'HOOK'
+#!/bin/sh
+# PROP-121: workspace-sync pre-push guard. Do NOT bypass with --no-verify.
+exec node "$(git rev-parse --show-toplevel)/monitor/scripts/lint-workspace-sync-push.js"
+HOOK
+chmod +x "$CLONE/.git/hooks/pre-push"
 
 # EXIT trap REMOVED (2026-05-31 — operator observation of live agent run).
 # Previously (PROP-051 patch B2): trap 'rm -rf "$CLONE" 2>/dev/null' EXIT INT TERM
@@ -302,6 +321,10 @@ NEVER_PUSH=(
   # invoked by THIS prompt to build GIT_DELETED_SET. Source code; never round-
   # trips from FUSE (mirrors check-prune-resurrection.js / compute-*.js).
   'monitor/scripts/build-git-deleted-set.js'
+  # PROP-121 (2026-07-04): lint-workspace-sync-push.js — pre-push guard installed
+  # into workspace-sync's own clone as .git/hooks/pre-push at Step 1.6. Source code;
+  # never round-trips from FUSE (mirrors build-git-deleted-set.js).
+  'monitor/scripts/lint-workspace-sync-push.js'
   # PROP-101 Phase 1 (2026-06-14): real per-run cost measurement.
   # compute-run-cost.js prices Claude session JSONL transcripts (cache-aware,
   # 5m/1h cache-write split, cache_read 0.1x). write-self-cost.sh is the
