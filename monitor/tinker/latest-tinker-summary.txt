@@ -1,23 +1,38 @@
-TINKER 2026-07-03T02-40 — Mode: operator-directive (DIRECTIVE-20260701-001 zombie-directive audit)
+TINKER 2026-07-04T02-32 — directive-driven run (DIRECTIVE-20260701-001 zombie audit)
 
-DELIVERABLE: monitor/tinker/audits/zombie-directive-audit-2026-07-01.json
-Walked all 23 pending operator-directives, classified each (evidence-cited, batch-applicable, propose-only).
+PIPELINE: GREEN. open-issues=3, net-velocity +16/7d, root-FS free 3319MB, no burst, no stalled agents. Quiet period.
 
-Result: A(fulfilled)=7, B(genuinely-pending)=14, C(superseded)=1, D(unclear)=0.
+KEY OUTCOME: DIRECTIVE-20260701-001 (zombie-directive audit) was ITSELF a zombie —
+its deliverable (monitor/tinker/audits/zombie-directive-audit-2026-07-01.json) was
+already produced 2026-07-03 (commit 2033d01, 23 directives classified) but the
+directive stayed status=pending and preempted the dispatcher every run. The
+auto_close_when_deliverable_proposed flag couldn't fire because PROP-108 auto-close
+only reaches directives linked to a 'proposed'-status PROP, and this directive
+commissioned an audit FILE, not a PROP. Flipped it to status=completed this run.
 
-IMMEDIATE-DRAIN BATCH (4 — terminal PROP, just needs directive_id backfill; PROP-108 enforce closes next run):
-  DIRECTIVE-20260603-003 -> PROP-078 | -20260607-002 -> PROP-083 | -20260609-002 -> PROP-089 | -20260610-001 -> PROP-090
-PROPOSE-ONLY OPT-IN BATCH (2 — add auto_close_when_deliverable_proposed to directive):
-  DIRECTIVE-20260628-001 -> PROP-116 | -20260628-003 -> PROP-119
-OPERATOR-JUDGMENT ITEMS:
-  - DIRECTIVE-20260608-002: set status=superseded (Mode-2b fallback abandoned for PROP-087 schema-lint).
-  - DIRECTIVE-20260619-001: advance PROP-108 status->implemented (enforce flag live) so it self-closes.
-  - DIRECTIVE-20260613-001 (HIGH, genuinely pending): PROP-107 authored but UNIMPLEMENTED; prioritize if prune delete-backlog recurs.
+>>> OPERATOR ACTION NEEDED: the audit's backfill batch is READY but UNAPPLIED.
+    PROP-108 enforce pass today reported would_close=0. Apply the 6 commands below
+    (from the audit's batch_apply sections) then commit+push; the next tinker
+    enforce run mechanically drains 4-6 zombie directives.
 
-FLAG: DIRECTIVE-20260628-003 lacks the opt-in flag the skip-constraint assumed the 0628 chain has (only -005 carries it).
+  # 4 terminal-A directive_id backfills (drain immediately after apply):
+  PROP-078-integrity-clone-source-of-truth.json      += directive_id DIRECTIVE-20260603-003
+  PROP-083-prop080-hook-persistence-fix.json         += directive_id DIRECTIVE-20260607-002
+  PROP-089-iss-allocator-single-write-path.json      += directive_id DIRECTIVE-20260609-002
+  PROP-090-storage-layout-sessions-volume.json       += directive_id DIRECTIVE-20260610-001
+  # 2 propose-only opt-in flags:
+  DIRECTIVE-20260628-001  += auto_close_when_deliverable_proposed:true  (PROP-116 proposed)
+  DIRECTIVE-20260628-003  += auto_close_when_deliverable_proposed:true  (PROP-119 proposed)
+  (exact shell one-liners are in zombie-directive-audit-2026-07-01.json batch_apply_* sections)
 
-Batch shell commands are in the audit file (batch_apply_A_terminal / batch_apply_A_proposeonly). Apply, commit, push;
-next tinker run's PROP-108 enforce pass drains the linked zombies mechanically.
+  3 operator-judgment items from the audit:
+  - DIRECTIVE-20260608-002: mark status=superseded (approach abandoned in favor of PROP-087).
+  - DIRECTIVE-20260619-001: advance PROP-108 status to 'implemented' (enforce flag live) so it self-closes.
+  - DIRECTIVE-20260613-001 (HIGH): PROP-107 prune-integrity push-gap authored but unimplemented — prioritize if prune delete-backlog recurs.
 
-Backlog-trend: open_issues=3, net_velocity_7d=+20, root_fs_free=3515MB — all GREEN, no findings.
-Constraint: propose-only, zero files mutated this run.
+REMAINING PENDING DIRECTIVES after this run: 22 (14 genuinely-pending Category-B blocked on
+in-flight PROP phases; the rest drain once the batch above is applied).
+
+STRUCTURAL NOTE (candidate future PROP): directive-auto-close.js should gain a second close
+trigger for directives whose deliverable is a FILE (path present + non-empty), not only a
+linked proposed-status PROP — otherwise every audit-deliverable directive becomes a zombie.
