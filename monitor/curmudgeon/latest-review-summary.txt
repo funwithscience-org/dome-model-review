@@ -1,61 +1,62 @@
-curmudgeon run 2026-07-02T01:16Z (spot-check)
+=== Curmudgeon Run 2026-07-04 (Priority 5 — Spot-Check) ===
 
-Priority resolution:
-  dispatcher-state age 0s, recommended_priority=5
-  Priority 1 (queue): empty
-  Priority 2 (notes): 0 pending
-  Priority 0c2 (major-change audit): not needed
-  Priority 3 (change-driven): drift-audit stale 465h (>168h freshness cap) → not usable
-  Priority 4 (holistic): no pending checks
-  Priority 5 (spot-check): fires
+Target: WIN-015 (Meyl scalar Faraday cage penetration)
+Cycle: 5 (previous: c4 at 2026-04-17, ~78 days ago)
+Trigger: spot-check
+Verdict: Not Demonstrated — HOLDS
+Confidence: 0.93
+Recommended action: no_change
 
-Target selection:
-  WIN-027 "Southern distance quadratic + V50.6 H(r)" — reviewed_at c6 = 2026-04-16, ~77 days idle
-  Fingerprint unchanged since c6 except tldr_verdict +5 chars (matches c6-flagged sub-meter → sub-millimetre patch)
+Priority routing:
+- Dispatcher-state recommended_priority=5 (age 0s, freshly computed).
+- Priority 1 (queue): empty.
+- Priority 2 (notes): empty.
+- Priority 3 (change-detected): drift-audit shows 0 candidates
+  (fingerprint drift under 7% threshold across all 59 comparable WINs).
+- Priority 4 (holistic): all HOL checks status=reviewed.
+- Fall-through to Priority 5. WIN-015 selected: oldest most-recent review
+  in the WIN cohort.
 
-Findings (WIN-027.c7.json, 4 holes):
-  MAJOR: "Scale comparison and the long-haul kill" paragraph asserts Sydney/Santiago at
-         r ≈ 16,000 km, planar chord >30,000 km, "almost three times" great-circle.
-         Verified: under V50.6 r·tan(lat)=8537·exp(−r/8619), Sydney lat=−33.86 maps to r ≈ 6,198 km,
-         Santiago lat=−33.45 to r ≈ 6,255 km. Planar chord with EW-scaled Δθ=137.33°
-         ≈ 11,600 km — within ~3% of the WGS84 great-circle 11,349 km. Under naive V9
-         (90−lat)·111.1, r ≈ 13,779 km / chord ≈ 25,600 km — still not 30,000 km.
-         A dome-defender with a calculator can reverse this "kill shot" in 30 seconds.
-         Underlying critique (V50.6 = post-hoc projection calibration with no out-of-sample
-         validation) is fine; the specific numerical example needs replacement with an
-         in-sample/out-of-sample framing.
-  MODERATE: code_analysis_tags.monitoring = "hardcoded" is incorrect. Live monitor.py
-            (john09289/predictions main HEAD, 1069 lines, 39 domains) has NO WIN-027 or
-            distance-projection domain — none of the 39 domain names in the latest
-            status_history.json entry references distance, projection, or the V50.6 H(r)
-            mechanism. Per curmudgeon.md tag rule, WIN-027 fits "none". Flip the tag.
-            Downstream: Part 2b aggregate "hardcoded" count decrements by 1, "none" +1.
-  MINOR: "find_curve.py contains only 6 hardcoded city-pair distances and an empty function
-         body (a bare `pass`)" — 6 pairs correct; the `pass` refers only to calc_r_v506;
-         the file also has a working print loop reporting "Required H(lat) to maintain
-         perfect WGS84 map radius". Framing survives ("no script performs the claimed
-         regression on 20 routes") but a defender could nitpick the "empty" phrasing.
-         Suggested tighter wording in the review.
-  MINOR: Sydney-Santiago 11,338 km vs Vincenty 11,349 km — 0.1% off, within rounding, flagged
-         only for internal consistency when the major-severity rewrite lands.
+Findings (3 minor, 0 major/critical):
+  1. MINOR — Bruhn (2006) double-standard rhetorical vulnerability. Text
+     criticizes Meyl for non-peer-reviewed sourcing then rests its math
+     refutation on a single TU Darmstadt preprint. The internal-vs-external
+     evidentiary distinction is the correct rebuttal but is not spelled out.
+     Recommend one-sentence caveat when introducing Bruhn.
+  2. MINOR (carry-over from c4 hole #2) — the 20–350 mV coupling range now
+     carries a parenthetical noting the two orientations, but c4's proposed
+     "20–200 mV coplanar / 35–350 mV coaxial" split was not applied. Partial
+     fix; defensible on a careful read. Optional final tightening remains.
+  3. MINOR — code_analysis tag definitional edge case: monitoring="hardcoded"
+     vs "none". WIN-015 fits "none" strictly (monitor.py has no domain);
+     hardcoded confirmation lives in inject_ai_layer.py. Coordinate across
+     the bare-metadata WIN cluster (WIN-003/011/014/015) before shifting.
 
-Verdict:
-  Verdict "Misleading" holds. current_verdict_holds = true.
-  recommended_action = minor_edit (scoped to one paragraph + one tag; core argument intact).
+Progress since c4:
+- c4 hole #1 (Kuhlke 2010 JSE citation) — RESOLVED. Grep confirms Kuhlke absent.
+- c4 hole #2 (blended coupling range) — PARTIALLY RESOLVED (parenthetical added).
+- c4 hole #3 (pedagogically compressed formula) — UNCHANGED, non-blocking.
 
-Advocate mode:
-  defense_survives = 4. Best defense = plug numbers into V50.6 and show the "kill" fails.
-  Preemptive fix = do the paragraph rewrite before the dome-author (who reads the review per
-  the CLAUDE.md author-contact record) or any AI-assisted defender surfaces this.
+Quantitative verification (independently reproduced in Python):
+  M_coplanar = 4.000 nH exact (N=20, A=0.01 m², d=1 m)
+  M_coaxial  = 8.000 nH exact
+  V(0.1A) = 17.59 / 35.19 mV (coplanar / coaxial)
+  V(1.0A) = 175.93 / 351.86 mV
+  λ/2π    = 6.82 m at 7 MHz
+  cage/λ ratio at 7 MHz: 0.147 — deep sub-wavelength
+All claims verified within colloquial rounding.
 
-Cross-WIN consistency: compatible with WIN-030, WIN-057, WIN-058, WIN-069. No new inconsistencies.
+Cross-WIN consistency (WIN-003/011/014/015): compatible. Verdict spread
+(Misleading / Not Demonstrated / Refuted by Data / Not Demonstrated) reflects
+real evidentiary differences. FLAGGED FOR VERDICT REVIEW cross-WIN fix from
+c3/c4 has held across the 11-week gap.
 
-Quantitative verification: 11/13 checks pass; 2 (r ≈ 16,000 km / chord >30,000 km) contradict
-V50.6 solved coordinates. WGS84 constants, R²=0.7874 → 21% unexplained, 5.2%·1km=52m,
-adjusted R²≈0.75 (n=20,k=3), longitude sep 138.15°, Vincenty DOI, Karney arxiv — all verified.
+Advocate mode: three angles surfaced with fresh eyes. Q-factor resonant
+enhancement and Bruhn double-standard are actionable one-line preemptive
+additions (defense_survives=3). Cage-integrity attack self-defeats.
 
-Citations:
-  Vincenty 1975 Survey Review 23(176):88-93 — DOI 10.1179/sre.1975.23.176.88 confirmed via Crossref
-  Karney 2013 arxiv:1109.4448 "Algorithms for geodesics" — title confirmed via direct fetch
+TLDR check: both TLDRs accurate and quantitatively grounded. No corrections.
 
-Alerts appended: WIN-027.c7 (1 major + 1 moderate).
+Written: monitor/curmudgeon/reviews/WIN-015.c5.json (23 KB, valid).
+Tracker: appended to tracker-archive.jsonl.
+Alerts: no critical/major findings — no alert append.
