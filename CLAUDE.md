@@ -223,7 +223,7 @@ Each agent should read ONLY the reference files relevant to its work (all under 
 | Poller | (none beyond this file) |
 | Analyst | `SCIENTIFIC-CONTEXT.md`, `DATA-SCHEMAS.md` |
 | Curmudgeon | `SCIENTIFIC-CONTEXT.md`, `DATA-SCHEMAS.md` |
-| Decider | `SCIENTIFIC-CONTEXT.md`, `DATA-SCHEMAS.md`, `BUILD-AND-CHANGE.md` |
+| Decider | `SCIENTIFIC-CONTEXT.md`, `DATA-SCHEMAS.md`, `BUILD-AND-CHANGE.md`, `decider-end-of-run-sweeps.md` (PROP-119), `decider-queue-management.md` (PROP-119) |
 | Integrity | `DATA-SCHEMAS.md` |
 | Tinker | all reference files |
 | Social | (none beyond this file) |
