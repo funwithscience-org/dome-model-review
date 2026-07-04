@@ -249,7 +249,12 @@ function main() {
       continue;
     }
 
-    const directiveId = d.directive_id || f.replace('.json', '');
+    // PROP-122: normalize filename-derived id to its canonical DIRECTIVE-\d{8}-\d{3}
+    // prefix so legacy directives (missing directive_id field) auto-close correctly.
+    // Full basename retained as fallback if the regex doesn't match.
+    const _base = f.replace(/\.json$/, '');
+    const _m = _base.match(/^(DIRECTIVE-\d{8}-\d{3})/);
+    const directiveId = d.directive_id || (_m ? _m[1] : _base);
     const { match, via } = findLinkedProp(directiveId, allProps);
 
     if (!match) {
