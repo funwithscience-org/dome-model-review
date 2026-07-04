@@ -1,0 +1,57 @@
+name: Deploy Pages
+
+# Custom Pages deployment workflow — replaces GitHub's built-in
+# "pages build and deployment" workflow that started failing at the deploy
+# step on 2026-06-16 when GitHub runners defaulted to Node 24 and the
+# built-in workflow's actions/deploy-pages@v4 could not survive the
+# forced Node-20-target → Node-24-runtime hybrid state.
+#
+# Requires GitHub UI: Settings > Pages > Source = "GitHub Actions"
+# (switch from "Deploy from a branch"). Once set, this workflow becomes
+# the sole Pages deployment path and GitHub's built-in workflow is
+# skipped.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Prevent overlapping deploys. cancel-in-progress:false so a new commit
+# queues behind an in-flight deploy rather than killing it.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Force every JavaScript action in this workflow to run on Node 24
+# explicitly. Eliminates the hybrid Node-20-target / Node-24-runtime state
+# that broke GitHub's built-in workflow. Remove once actions/deploy-pages
+# bumps to a Node-24-native version.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload docs/ as Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./docs
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
