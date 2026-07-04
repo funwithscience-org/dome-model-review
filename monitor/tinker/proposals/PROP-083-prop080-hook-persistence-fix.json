@@ -1,51 +1,54 @@
 {
- "id": "PROP-083",
- "title": "PROP-080 hook-persistence fix: idempotent pre-push hook install on every decider cycle (clone-reuse-safe)",
- "filed_by": "tinker-2026-06-07T06-10",
- "filed_at": "2026-06-07T06:19:08.532Z",
- "status": "implemented",
- "implementation_commit": "this commit",
- "implemented_at": "2026-06-07T06:19:08.532Z",
- "implemented_by_run": "tinker-2026-06-07T06-10",
- "directive": "DIRECTIVE-20260607-002",
- "problem_statement": "Integrity run 2026-06-07T01:18Z fired ISS-2621 (critical): decider close-records lacking verification_pattern despite PROP-080's structural pre-push hook (deployed ed511b16, 2026-06-06T05:43:41Z). Forensic audit of origin/main closed-issues.json found 954 total entries matching the lint's violation filter: 937 with fixed_at predating the deploy (historical sunk-cost, hook could not have protected them) and 17 with fixed_at after it (ISS-2599, 2602-2606, 2609-2617, 2619, 2620) — the real bug. ISS-2563 (cited by integrity) falls in the pre-deploy bucket; ISS-2600 is status=wontfix which the canonical lint filter correctly ignores.",
- "dominant_failure_mode": {
-  "hypothesis": "H1 (operator hypothesis, forensically CONFIRMED with a sharper mechanism)",
-  "mechanism": "PROP-080's diff (ed511b16) touched ONLY monitor/prompts/reference/decider-patches-and-selfapply.md and monitor/scripts/push-via-api.js. The hook-install lines (L132-137) sit immediately after an UNCONDITIONAL `git clone ... ${CLONE}` (L119) inside the self-apply clone-setup block. Decider's clone (${SESSION}/dome-review-clean) persists across runs in the decider session sandbox; on every post-deploy run the `git clone` step errors on the existing path ('destination path already exists'), the agent skips the clone-setup block including the hook install, and pushes from a hook-less clone. Additionally, decider.md's prelude (the code path that explicitly HANDLES the existing-clone case, L75-105: refresh remote URL + pull --rebase) was never given a hook-install step by PROP-080. Net effect: the hook never existed in the pushing clone on ANY post-deploy run.",
-  "evidence": [
-   "ed511b16 file list: only decider-patches-and-selfapply.md + push-via-api.js + tinker artifacts; decider.md untouched (git show --stat).",
-   "decider-patches-and-selfapply.md L119 `git clone` is unconditional in both the ed511b16 tree and current main (grep verified identical line numbers).",
-   "decider.md prelude reuse branch (if [ -d ${CLEAN_CLONE}/.git ]) refreshes remote URL and pulls but contains no hook install (L75-105).",
-   "Violations recurred on EVERY closure-bearing post-deploy decider run: d4fa543 09:16Z (ISS-2599, 2602-2606), a4e464f 17:14Z (ISS-2609-2617, 2619, 2620) — persistent absence, not intermittent failure.",
-   "Lint replay (H2 test): the exact 11 entries added by a4e464f trigger 11 violations under the current lint, which is md5-identical (43d33c4953f5a86a28c416445aa99916) to the copy in a4e464f's tree. The gate logic is correct; it simply never ran.",
-   "push-via-api.js (H3 test): PROP-080's lint guard IS present (L60-78) and fires when closed-issues.json is in --files; no evidence of API-fallback use on 2026-06-06 (no 403s — workspace-sync plain-git pushes succeeded minutes before a4e464f; decider run summary records no push failure; no stranded-patches sentinel).",
-   "No --no-verify (H4 test) anywhere in prompts/scripts outside prohibition text (grep).",
-   "Single-commit pushes per run (H6 test): each violating batch landed in one decider commit; no concurrent decider pushes in the window."
+  "id": "PROP-083",
+  "title": "PROP-080 hook-persistence fix: idempotent pre-push hook install on every decider cycle (clone-reuse-safe)",
+  "filed_by": "tinker-2026-06-07T06-10",
+  "filed_at": "2026-06-07T06:19:08.532Z",
+  "status": "implemented",
+  "implementation_commit": "this commit",
+  "implemented_at": "2026-06-07T06:19:08.532Z",
+  "implemented_by_run": "tinker-2026-06-07T06-10",
+  "directive": "DIRECTIVE-20260607-002",
+  "problem_statement": "Integrity run 2026-06-07T01:18Z fired ISS-2621 (critical): decider close-records lacking verification_pattern despite PROP-080's structural pre-push hook (deployed ed511b16, 2026-06-06T05:43:41Z). Forensic audit of origin/main closed-issues.json found 954 total entries matching the lint's violation filter: 937 with fixed_at predating the deploy (historical sunk-cost, hook could not have protected them) and 17 with fixed_at after it (ISS-2599, 2602-2606, 2609-2617, 2619, 2620) — the real bug. ISS-2563 (cited by integrity) falls in the pre-deploy bucket; ISS-2600 is status=wontfix which the canonical lint filter correctly ignores.",
+  "dominant_failure_mode": {
+    "hypothesis": "H1 (operator hypothesis, forensically CONFIRMED with a sharper mechanism)",
+    "mechanism": "PROP-080's diff (ed511b16) touched ONLY monitor/prompts/reference/decider-patches-and-selfapply.md and monitor/scripts/push-via-api.js. The hook-install lines (L132-137) sit immediately after an UNCONDITIONAL `git clone ... ${CLONE}` (L119) inside the self-apply clone-setup block. Decider's clone (${SESSION}/dome-review-clean) persists across runs in the decider session sandbox; on every post-deploy run the `git clone` step errors on the existing path ('destination path already exists'), the agent skips the clone-setup block including the hook install, and pushes from a hook-less clone. Additionally, decider.md's prelude (the code path that explicitly HANDLES the existing-clone case, L75-105: refresh remote URL + pull --rebase) was never given a hook-install step by PROP-080. Net effect: the hook never existed in the pushing clone on ANY post-deploy run.",
+    "evidence": [
+      "ed511b16 file list: only decider-patches-and-selfapply.md + push-via-api.js + tinker artifacts; decider.md untouched (git show --stat).",
+      "decider-patches-and-selfapply.md L119 `git clone` is unconditional in both the ed511b16 tree and current main (grep verified identical line numbers).",
+      "decider.md prelude reuse branch (if [ -d ${CLEAN_CLONE}/.git ]) refreshes remote URL and pulls but contains no hook install (L75-105).",
+      "Violations recurred on EVERY closure-bearing post-deploy decider run: d4fa543 09:16Z (ISS-2599, 2602-2606), a4e464f 17:14Z (ISS-2609-2617, 2619, 2620) — persistent absence, not intermittent failure.",
+      "Lint replay (H2 test): the exact 11 entries added by a4e464f trigger 11 violations under the current lint, which is md5-identical (43d33c4953f5a86a28c416445aa99916) to the copy in a4e464f's tree. The gate logic is correct; it simply never ran.",
+      "push-via-api.js (H3 test): PROP-080's lint guard IS present (L60-78) and fires when closed-issues.json is in --files; no evidence of API-fallback use on 2026-06-06 (no 403s — workspace-sync plain-git pushes succeeded minutes before a4e464f; decider run summary records no push failure; no stranded-patches sentinel).",
+      "No --no-verify (H4 test) anywhere in prompts/scripts outside prohibition text (grep).",
+      "Single-commit pushes per run (H6 test): each violating batch landed in one decider commit; no concurrent decider pushes in the window."
+    ],
+    "ruled_out": {
+      "H2": "Filter bug — ruled out by replay: 11/11 violations fire on a4e464f's added entries.",
+      "H3": "API-path bypass — ruled out: push-via-api.js is lint-patched and was not used (no 403 conditions that day).",
+      "H4": "--no-verify — ruled out by repo-wide grep.",
+      "H5": "chmod/exec failure — moot: the install block never executed at all on reuse cycles (decider sandbox not directly inspectable from tinker session, but H5 requires the block to have run, which the unconditional-clone-error mechanism precludes). The fix's [ -x ] check covers H5 defensively anyway.",
+      "H6": "Concurrent pushes — ruled out: single-commit batches, no racing decider instances in the window."
+    }
+  },
+  "proposed_fix": "Two-layer idempotent install, matching operator's pre-approved H1 fix: (1) decider.md prelude — after the existing-clone if/else, when ${CLEAN_CLONE}/.git exists, (re)install the hook unless it is executable AND references lint-close-records (covers reuse cycles AND H5-style exec loss AND stale hook content). (2) decider-patches-and-selfapply.md — make the self-apply clone step reuse-safe (`if [ ! -d ${CLONE}/.git ]; then git clone ...; fi`) so the existing cat-overwrite hook install (naturally idempotent) executes on every pass, clone-create or reuse alike. Both paths write byte-identical hook content.",
+  "files_touched": [
+    "monitor/prompts/decider.md (prelude: +22 lines idempotent hook install)",
+    "monitor/prompts/reference/decider-patches-and-selfapply.md (clone step reuse-safe +8 lines; comment +4 lines)",
+    "monitor/decisions/closed-issues.json (954 audit_grandfathered annotations: 937 pre-deploy + 17 post-deploy; +ISS-2621 close record)",
+    "monitor/decisions/open-issues.json (ISS-2621 removed)",
+    "monitor/tinker/operator-directives/DIRECTIVE-20260607-002-prop080-hook-persistence-investigation.json (status=completed)",
+    "monitor/tinker/proposals/PROP-080-lint-gate-structural-enforcement.json (status note referencing PROP-083)"
   ],
-  "ruled_out": {
-   "H2": "Filter bug — ruled out by replay: 11/11 violations fire on a4e464f's added entries.",
-   "H3": "API-path bypass — ruled out: push-via-api.js is lint-patched and was not used (no 403 conditions that day).",
-   "H4": "--no-verify — ruled out by repo-wide grep.",
-   "H5": "chmod/exec failure — moot: the install block never executed at all on reuse cycles (decider sandbox not directly inspectable from tinker session, but H5 requires the block to have run, which the unconditional-clone-error mechanism precludes). The fix's [ -x ] check covers H5 defensively anyway.",
-   "H6": "Concurrent pushes — ruled out: single-commit batches, no racing decider instances in the window."
-  }
- },
- "proposed_fix": "Two-layer idempotent install, matching operator's pre-approved H1 fix: (1) decider.md prelude — after the existing-clone if/else, when ${CLEAN_CLONE}/.git exists, (re)install the hook unless it is executable AND references lint-close-records (covers reuse cycles AND H5-style exec loss AND stale hook content). (2) decider-patches-and-selfapply.md — make the self-apply clone step reuse-safe (`if [ ! -d ${CLONE}/.git ]; then git clone ...; fi`) so the existing cat-overwrite hook install (naturally idempotent) executes on every pass, clone-create or reuse alike. Both paths write byte-identical hook content.",
- "files_touched": [
-  "monitor/prompts/decider.md (prelude: +22 lines idempotent hook install)",
-  "monitor/prompts/reference/decider-patches-and-selfapply.md (clone step reuse-safe +8 lines; comment +4 lines)",
-  "monitor/decisions/closed-issues.json (954 audit_grandfathered annotations: 937 pre-deploy + 17 post-deploy; +ISS-2621 close record)",
-  "monitor/decisions/open-issues.json (ISS-2621 removed)",
-  "monitor/tinker/operator-directives/DIRECTIVE-20260607-002-prop080-hook-persistence-investigation.json (status=completed)",
-  "monitor/tinker/proposals/PROP-080-lint-gate-structural-enforcement.json (status note referencing PROP-083)"
- ],
- "estimated_loc": 34,
- "q_ops": [],
- "verification_pattern": "grep -q 'PROP-083' monitor/prompts/decider.md && grep -q 'if \\[ ! -d \"${CLONE}/.git\" \\]' monitor/prompts/reference/decider-patches-and-selfapply.md && node monitor/scripts/lint-close-records.js",
- "validation_simulation": {
-  "sim_1_reuse_cycle_installs_hook": "Scratch git repo with no pre-push hook; ran the new decider.md prelude block verbatim → hook written, chmod +x, output \"PROP-083 pre-push hook (re)installed\". Second pass → \"present and current\" (no rewrite). See report-2026-06-07T06-10.json validation section.",
-  "sim_2_gate_blocks_violations": "Lint replay on a4e464f's 11 violating entries exits 1 (PROP-076 FAIL banner) — with the hook now guaranteed present on every cycle, that push would have been refused.",
-  "sim_3_current_tree_passes": "node monitor/scripts/lint-close-records.js on post-annotation tree: pass (1 newly-added entry = ISS-2621 close record, 0 violations)."
- },
- "relationship_to_prop_080": "Does NOT supersede PROP-080 — the filter + gate spec remains canonical. PROP-083 hardens hook persistence only (analogous to PROP-077 Part A defense-in-depth vs PROP-078 structural fix)."
+  "estimated_loc": 34,
+  "q_ops": [],
+  "verification_pattern": "grep -q 'PROP-083' monitor/prompts/decider.md && grep -q 'if \\[ ! -d \"${CLONE}/.git\" \\]' monitor/prompts/reference/decider-patches-and-selfapply.md && node monitor/scripts/lint-close-records.js",
+  "validation_simulation": {
+    "sim_1_reuse_cycle_installs_hook": "Scratch git repo with no pre-push hook; ran the new decider.md prelude block verbatim → hook written, chmod +x, output \"PROP-083 pre-push hook (re)installed\". Second pass → \"present and current\" (no rewrite). See report-2026-06-07T06-10.json validation section.",
+    "sim_2_gate_blocks_violations": "Lint replay on a4e464f's 11 violating entries exits 1 (PROP-076 FAIL banner) — with the hook now guaranteed present on every cycle, that push would have been refused.",
+    "sim_3_current_tree_passes": "node monitor/scripts/lint-close-records.js on post-annotation tree: pass (1 newly-added entry = ISS-2621 close record, 0 violations)."
+  },
+  "relationship_to_prop_080": "Does NOT supersede PROP-080 — the filter + gate spec remains canonical. PROP-083 hardens hook persistence only (analogous to PROP-077 Part A defense-in-depth vs PROP-078 structural fix).",
+  "directive_id": "DIRECTIVE-20260607-002",
+  "directive_id_backfilled_at": "2026-07-04T08:30:00.000Z",
+  "directive_id_backfilled_by": "operator (cowork 2026-07-04; zombie audit batch apply)"
 }
