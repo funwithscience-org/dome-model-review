@@ -1,0 +1,49 @@
+{
+  "directive_id": "DIRECTIVE-20260705-001",
+  "for": "tinker",
+  "status": "pending",
+  "priority": "high",
+  "auto_close_when_deliverable_proposed": false,
+  "created_at": "2026-07-05T13:50:00Z",
+  "created_by": "steve (operator, via cowork)",
+  "title": "Add pages-deploy-freshness safety check to integrity — detect when live site is stale relative to git HEAD (safety net for paths-filter mis-scoping in .github/workflows/pages.yml)",
+  "context": {
+    "why_now": "Companion to the pages.yml paths-filter change landing this same session. Before the filter, every push (including monitor/** housekeeping) triggered a Pages redeploy — wasteful but self-healing since even non-docs-affecting pushes eventually kept the site in sync via the natural jitter. With the filter now scoped to docs/** + data/** + build.js + build-scripts/** + .github/workflows/pages.yml, a mis-scoped filter could silently let a docs-affecting change land in git without a corresponding Pages deploy. Operator wants a durable safety net that catches this class of drift, so that adding new build inputs later doesn't require perfect vigilance about updating the filter.",
+    "trigger_events_that_prompted_this": [
+      "2026-07-04 14:55 UTC — commit ba81df4 Pages deploy failed transiently (Deployment failed, try again later); auto-recovered on next commit 4f0dc08.",
+      "2026-07-05 12:12 UTC — commits 24762294 + 2f0db5db both Pages-deploy-failed at 12:13:02 with the same error message; rapid-fire (16 sec apart) concurrent workflow runs raced at the Pages backend. Both commits touched only monitor/** files (open-issues.json + decisions/cost-history.jsonl) — neither actually needed a Pages redeploy.",
+      "Root cause: pages.yml ran on every push without paths filter, so agent housekeeping commits (jsonl appends, tracker updates) triggered full docs/ rebuilds and racing deploys.",
+      "Applied fix this session: paths filter added to pages.yml, scoped to files that actually feed docs/ output. Fix commit landing alongside this directive."
+    ]
+  },
+  "task": {
+    "part_A_design": "Design a check that compares the live deployed site against what git HEAD would produce, and flags drift. Two possible shapes: (1) SEMANTIC signature — extract a stable machine-readable summary from the live site (WIN count via regex on the HTML, verdict-tally-by-class from data attributes if present, etc.) and compare to what git HEAD's wins.json + sections.json would yield. (2) HASH — compute a deterministic hash over the built HTML (needs build.js to be deterministic; timestamps and generated-at fields would need to be stripped or the check ignores them). Semantic signature is more robust; hash is simpler. Recommend the tinker chooses based on how deterministic build.js output is.",
+    "part_B_ship": "Ship as a script under monitor/scripts/ (e.g., check-pages-freshness.js) that: (a) fetches https://funwithscience.net/dome-model-review/ index.html; (b) computes signature both from live HTML and from git HEAD state; (c) compares; (d) exits 0 with FRESH or non-zero with STALE + evidence. Wire into integrity's daily 02:00 UTC run via structure-integrity.md prompt edit (natural fit — integrity already does 'build drift' checks per CLAUDE.md agent table). When STALE is detected, integrity writes a finding to monitor/integrity/ per its normal reporting shape.",
+    "part_C_calibration": "Any check that compares live-site to git HEAD will show transient STALE during the window between commit-lands and Pages-deploys-completes (2-3 minutes typically). Calibrate the check to avoid crying wolf: only flag STALE if the drift persists across multiple integrity cycles OR if the drift exceeds some grace window (e.g., last successful Pages deploy was > 24h ago AND git HEAD has a docs-affecting commit). Also fail-safe: if the live site is unreachable, log as UNKNOWN and don't flag (avoids false alarms during GitHub Pages backend brownouts like the ones that motivated this)."
+  },
+  "deliverable_acceptance_criteria": [
+    "One PROP authored with a shipping plan (probably: monitor/scripts/check-pages-freshness.js + a minimal structure-integrity.md prompt edit).",
+    "Verification pattern: grade B or higher — demonstrate on a fixture that the check exits FRESH when git and live agree, STALE when they diverge, UNKNOWN when live is unreachable.",
+    "Calibration reasoning documented — explicit design decision on the grace window, hash vs semantic, and how to avoid crying wolf during normal Pages-deploy latency.",
+    "If the check surfaces a drift in real deployment, integrity's finding must include: (a) what field/element differed, (b) which git commit landed the diff, (c) whether pages.yml paths filter covered any of the commit's files."
+  ],
+  "constraints": {
+    "budget_soft_limit_tokens": 50000,
+    "do_not_make_check_too_noisy": "The point of this safety net is to catch a rare failure class (paths filter mis-scoping). If it fires on every 15-minute normal-latency window, it becomes noise and operators start ignoring it. Calibration is more important than fanciness.",
+    "do_not_couple_to_pages_workflow_internals": "Don't have the check parse GitHub Actions workflow-run status via API just to know when a deploy is in-flight. That's brittle. A time-based grace window + intermittency filter is more durable.",
+    "single_agent_domain": "This is a structural addition to integrity's prompt + a new script. Do not spread the change across multiple agents. Tinker designs + ships as PROP; integrity picks up the amended prompt on next cycle."
+  },
+  "background_artifacts": {
+    "pages_yml_current_state": ".github/workflows/pages.yml as of the same-session commit — includes paths filter scoped to docs/** + data/** + build.js + build-scripts/** + .github/workflows/pages.yml.",
+    "integrity_prompt": "monitor/prompts/structure-integrity.md — agent table lists it as 'Site health: links, tabs, build drift, data-prose consistency' — pages-freshness is the natural fifth item in that class.",
+    "companion_context": "See also HNOTE-DECIDER-ECLIPSE-PREREG-PROMINENCE-2026-07-04T18Z which asks decider to add a callout box on the review page. If that change lands via a docs/index.html modification (which it will), it exercises the paths filter — a useful natural test.",
+    "hint_on_semantic_signature": "data/wins.json length is trivially available via node -e; the live site's WIN count appears in visible HTML (search for 'WIN-070' or Wins nav badge). data/sections.json section-count is similarly available. A signature like {win_count, section_count, verdict_tally_hash} is stable and 3 numbers — easy to compare."
+  },
+  "not_in_scope": [
+    "Do NOT redesign pages.yml further. The paths filter is the durable fix; this directive is about the safety net.",
+    "Do NOT retroactively check historical commits. The check begins with next integrity cycle after ship.",
+    "Do NOT add GitHub Actions webhook processing to detect deploy state. Time-based grace window only."
+  ],
+  "supersedes_directives": [],
+  "operator_notes": "Small directive, focused ask. Should fit one tinker run comfortably. If tinker finds a simpler approach (e.g., 'just check that data/wins.json HEAD hash matches what the live HTML advertises as its build hash' would work if build.js writes a build-hash meta tag) — take it. The requested-deliverable list is a guide, not a prescription."
+}
