@@ -1,0 +1,78 @@
+{
+  "report_id": "2026-07-05T02-40",
+  "run_at": "2026-07-05T02:46:00.000Z",
+  "agent": "tinker",
+  "mode_selected": "Operator-Directive run. Pre-flight Operator-Directive Discovery surfaced DIRECTIVE-20260613-001 (high priority, prune-integrity silent-push gap) as top pending — directives override Mode 1-4 selection. Resolved as zombie-pending/OBE: its requested deliverable (a propose-only PROP) exists as PROP-107, and the observable symptom is no longer present. Closed the directive via clone-write+push.",
+  "modes_checked": {
+    "operator_directive_discovery": "9 pending directives at run start. Top-sorted: DIRECTIVE-20260613-001 (high). Handled this run.",
+    "mode_0_assigned_to_tinker": "no assigned-to-tinker items pending (open-issues.json status=assigned-tinker: 0; expansion-tracker assigned_to=tinker: 0)",
+    "prop_lifecycle_auto_close": "PROP-102 shadow: 134 props walked, 0 would-close, 0 closed. prop-auto-close-enforce.flag absent (shadow).",
+    "directive_lifecycle_auto_close": "PROP-108 ENFORCE (flag present): 119 directives walked, 9 pending, 1 would-close, 1 actually_closed -> DIRECTIVE-20260704-001 (linked terminal PROP-122 via directive_id). Change landed in working tree, included in this run's push.",
+    "mode_1_pipeline_health": "GREEN (not run — directive preempted). open_issues_total=6, all pending-human or minor analyst work. No stalled agents observed.",
+    "mode_2_infra": "GREEN (not run). root-FS free 2707MB (healthy). monitor/integrity/ at 76MB, down from ~387MB disaster state; narrative-cite-audit healthy at 8 files (oldest 2026-06-28, within retention).",
+    "mode_3_cost": "not run (directive preempted)",
+    "mode_4_proposals": "not run (directive preempted)"
+  },
+  "backlog_trend": {
+    "open_issues_total": 6,
+    "open_status_count": 0,
+    "assigned_analyst_count": 3,
+    "age_ge_14d_count": 3,
+    "age_ge_30d_count": 2,
+    "new_issues_velocity_7d": 3,
+    "closed_issues_velocity_7d": 14,
+    "net_velocity_7d": 11,
+    "root_fs_free_mb": 2707,
+    "closed_issues_mb": 3.13,
+    "inbound_burst_winnew_unreviewed": 0,
+    "wow_note": "open_issues_total grew 3 (7d ago) -> 6 (+100% WoW), which mechanically trips the '>20% WoW' major rule. Recorded as INFO only: at N=6 absolute this is a small-denominator artifact, not a real backlog trend — net_velocity_7d is +11 (14 closed vs 3 new, backlog shrinking), and the percentage thresholds were calibrated for the 200+ era. No operator escalation (that tier needs >400 total or 7-run negative velocity). All 6 open issues are pending-human (ISS-2341/2342/2709) or minor/moderate analyst work (ISS-2926/2927/2928)."
+  },
+  "findings": [
+    {
+      "category": "directive-lifecycle",
+      "severity": "moderate",
+      "title": "DIRECTIVE-20260613-001 (prune-integrity silent-push gap) was zombie-pending ~22 days after its deliverable landed",
+      "evidence": "Directive created 2026-06-13, status:pending. Its deliverable — a propose-only PROP investigating the prune push gap — was authored as PROP-107 on 2026-06-19 (PROP-107.directive === 'DIRECTIVE-20260613-001'). Auto-close (PROP-108, enforce) never caught it because: (a) the directive lacks the auto_close_when_deliverable_proposed opt-in added by PROP-120; (b) PROP-107 uses field name 'directive' rather than the 'directive_id'/'source_directive' that directive-auto-close.js reads for forward back-refs; (c) PROP-107 status is 'pending', not 'proposed' (PROP-120's opt-in treats 'proposed' as terminal-for-directive, not 'pending'). Zombie-pending directives re-preempt the tinker dispatcher every run, starving other work.",
+      "resolution": "Closed manually via clone-write+push (additive-edit per CLAUDE.md DIRECTIVE-LIFECYCLE exception: status pending->completed + completed_at + completed_by_run + prop_id_authored=PROP-107 + closure_note). Matches the PROP-120 interim-manual-flip pattern used for the -0628 batch."
+    },
+    {
+      "category": "infra-status",
+      "severity": "info",
+      "title": "prune-integrity silent-push symptom is empirically DORMANT (the concern behind DIRECTIVE-20260613-001)",
+      "evidence": "prune-integrity is landing archive+delete commits on origin/main normally: git commits 1bf7fcc (2026-07-03, '13 sources removed') and 951dedf (2026-07-04, '29 sources removed'). monitor/integrity/ is 76MB (vs the ~387MB disaster state that prompted the directive); narrative-cite-audit at 8 files with oldest 2026-06-28 (within retention). The prune-integrity-runs/ sentinels in git stop at 2026-06-16, but that is a sentinel-mechanism change (PROP-113/114 shipped ~06-23), NOT a live push failure — deletes are demonstrably landing. NOTE: PROP-107's proposed fix (script-owned commit+push + sentinel-without-commit canary) remains pending-integration; the directive is satisfied (PROP authored) and the symptom is currently dormant, but the structural fix is not yet merged. Track PROP-107 on the normal PROP-review radar."
+    }
+  ],
+  "actions_taken": [
+    "Closed DIRECTIVE-20260613-001 (status pending->completed, prop_id_authored=PROP-107) via clone-write+push.",
+    "Included PROP-108 enforce-mode auto-close of DIRECTIVE-20260704-001 (script-written, linked terminal PROP-122) in this run's push.",
+    "Appended PROP-030 backlog-trend metrics row to queue-history.jsonl.",
+    "Updated latest-tinker-summary.txt."
+  ],
+  "previous_followup": {
+    "note": "Prior run (2026-07-04T15-13, DIRECTIVE-20260704-001 archaeology) surfaced the pending-directive landscape and authored PROP-122 (filename-id normalization) + flagged 6 ratify-close candidates and unclear bucket-D directives for operator. This run drains one of the remaining zombie-pending directives (DIRECTIVE-20260613-001) that the 07-04 archaeology classified as still-owed. No prior finding regressed. Full PROP verification-pattern sweep of implemented PROPs remains DEFERRED (needs full clone; tinker already runs a full clone, candidate for a future Mode 3 run)."
+  },
+  "next_run_guidance": "8 pending directives remain after this run's closes (the 07-04 audit's 6 ratify-close + unclear bucket-D set still await operator ruling per HNOTE-TINKER-DIRECTIVE-AUDIT-2026-07-04T15-13). Consider: (1) a structural fix so propose-only authoring directives whose PROP is 'pending' (not just 'proposed') and/or uses the field name 'directive' resolve through auto-close — this is the residual gap PROP-120 did not cover; (2) operator ruling on the outstanding ratify-close directives to stop them re-preempting the dispatcher. If no directive is pending next run, default to Mode 3 (cost engineering / CLAUDE.md audit).",
+  "self_cost": {
+    "transcript": "38a2d6d0-2f18-49be-87e9-5d91ad1de7c5.jsonl",
+    "model": "claude-opus-4-8",
+    "assistant_msgs": 67,
+    "tokens": {
+      "input": 20197,
+      "output": 84589,
+      "cache_write_5m": 0,
+      "cache_write_1h": 468477,
+      "cache_read": 8647464
+    },
+    "cost_usd": {
+      "input_usd": 0.100985,
+      "output_usd": 2.114725,
+      "cache_write_5m_usd": 0,
+      "cache_write_1h_usd": 4.68477,
+      "cache_read_usd": 4.323732,
+      "total_usd": 11.224212
+    },
+    "transcript_duration_sec": 454.3,
+    "first_ts": "2026-07-05T02:40:05.634Z",
+    "last_ts": "2026-07-05T02:47:39.932Z"
+  }
+}
