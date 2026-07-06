@@ -1,0 +1,65 @@
+{
+  "id": "PROP-123",
+  "prop_id": "PROP-123",
+  "title": "Pages-deploy-freshness safety check for integrity — detect when the live site is stale relative to git HEAD (safety net for pages.yml paths-filter mis-scoping)",
+  "authored_by": "tinker",
+  "authored_at": "2026-07-06T02:50:00Z",
+  "authored_by_run": "tinker-2026-07-06T02-40",
+  "status": "implemented",
+  "category": "pipeline-resilience",
+  "priority": "high",
+  "directive": "DIRECTIVE-20260705-001",
+  "directive_id": "DIRECTIVE-20260705-001",
+  "source_directive": "DIRECTIVE-20260705-001",
+  "supersedes_props": [],
+  "amends": null,
+  "depends_on": [],
+  "deliverable_type": "ship (new script + integrity prompt edit), demonstrated on fixtures",
+  "problem_statement": "The pages.yml paths filter added this session (scoped to docs/** + data/** + build.js + build-scripts/** + .github/workflows/pages.yml) stops agent housekeeping commits from triggering wasteful, racing Pages redeploys. But it introduces a new silent-failure class: if a docs-affecting build input is added later WITHOUT extending the filter, a docs-affecting commit can land in git with no corresponding Pages deploy, and the live site silently falls out of sync with git. Before the filter, every push redeployed, so drift self-healed via jitter; after the filter, nothing catches a mis-scoped filter. Integrity's Section 9 (Build Reproducibility) only verifies docs/index.html matches source data IN GIT — it never looks at the deployed site. Operator wants a durable safety net so future build-input additions don't require perfect vigilance about the filter.",
+  "design_decisions": {
+    "semantic_signature_over_hash": "Chosen: semantic signature. build.js stamps a human BUILD_DATE ('July 6, 2026') and a Version number into every build, so a full-HTML hash is non-deterministic day-to-day even with zero data change — a hash check would either cry wolf daily or require fragile timestamp-stripping. A signature over stable, data-derived quantities is deterministic and robust.",
+    "signature_fields": "Four signals, each rendered verbatim in the live HTML AND identically computable from data/wins.json + data/uncounted-failures.json: (1) win_count = build.js counts.total = wins with /^\\d{3}$/ id, live as '<meta name=description> ... N claims evaluated'; (2) catalog_total = wins.length incl. collision sub-IDs, live as '... of N catalog entries'; (3) failures_count = uncounted-failures entries.length, live as '<meta property=og:description> ... N acknowledged failures'; (4) verdict_tally = {verdict: count} over wins.json, live as '<Verdict>: N of M catalog entries'. These cover the two data pipelines that feed the site (wins + failures) — adds/removals, re-classifications, and collision-ID churn all move the signature.",
+    "coverage_limitation": "The signature does NOT move on pure-prose sections.json edits or build-scripts/*.js template changes that leave the four quantities unchanged. That is an accepted trade: those are a smaller drift class, and the directive explicitly prioritizes calibration over coverage ('Calibration is more important than fanciness'). The high-frequency, high-value drift (wins/verdicts/failures) is fully covered. A future PROP could add a section_count signal if warranted.",
+    "calibration_grace_window": "Primary anti-cry-wolf gate is a stateless commit-age grace window (default 20 min, --grace-minutes / PAGES_FRESHNESS_GRACE_MIN). If the signature diverges but the newest docs-affecting commit is younger than the grace window, the result is STALE-TRANSIENT (exit 0, no finding) — this is normal commit-lands→Pages-deploys latency (2-3 min typically). Only drift where the newest docs-affecting commit is older than the grace window escalates to STALE (exit 1, finding). This beats the directive's alternative 'persist across multiple integrity cycles' idea because a 20-min grace resolves faster than waiting a full 24h integrity cycle for a second observation.",
+    "no_mutable_state_file": "The persistence signal (part_C 'drift persists across multiple cycles') is derived READ-ONLY by scanning prior monitor/integrity/report-*.json for a prior checks.pages_freshness.status of STALE within 48h, used to escalate severity moderate→major. Deliberately NOT a mutable state file: monitor/integrity/ is an append-only directory in build.js OWNERSHIP (new files only, never overwrite), so a rewritten pages-freshness-state.json would violate ownership. Zero new ownership surface.",
+    "fail_safe_unknown": "If the live site is unreachable/empty (curl error, <500 bytes), result is UNKNOWN (exit 0, no finding) — avoids false alarms during the exact GitHub Pages backend brownouts (2026-07-04 ba81df4, 2026-07-05 12:12 UTC) that motivated this directive.",
+    "no_workflow_internals_coupling": "Per the directive's not_in_scope + constraints: the check does NOT parse GitHub Actions workflow-run status. Time-based grace window only. The pages.yml filter globs are parsed from a hardcoded mirror of the filter list inside the script (PAGES_FILTER_GLOBS) so the finding can report per-file filter coverage; if the filter changes, this list should be updated (noted in-script)."
+  },
+  "implementation": {
+    "new_file": "monitor/scripts/check-pages-freshness.js (200 lines). Reads git HEAD data files, curls live site (or --live-file for offline testing), computes + diffs the 4-part signature, classifies FRESH/STALE/STALE-TRANSIENT/UNKNOWN, prints one JSON object with full evidence (head_signature, live_signature, diff[], newest_docs_commit{sha,age,files,files_covered_by_pages_filter,files_NOT_covered}, severity). Exit 1 only on escalated STALE.",
+    "prompt_edit": "monitor/prompts/structure-integrity.md: new '### 9b. Live Pages Freshness' check after Section 9 (Build Reproducibility — the natural sibling per CLAUDE.md's 'build drift' framing), wiring `node monitor/scripts/check-pages-freshness.js`; exit 1 → emit issues_found[] with category 'pages_drift'. Added a checks.pages_freshness field to the report schema (must be written every run so the persistence check can read prior status) and added 'pages_drift' to the issues_found[].category enum.",
+    "ownership_impact": "None. check-pages-freshness.js is git-owned source under monitor/scripts/ (NEVER_PUSH in workspace-sync.md via the existing monitor/scripts/ source-code convention — no OWNERSHIP table edit needed, same class as push-via-api.js / prune-integrity.js). structure-integrity.md is git-owned via the dynamic monitor/prompts/*.md rule. No new mutable data file, no build.js OWNERSHIP change, no workspace-sync array change."
+  },
+  "acceptance_criteria": [
+    "AC1: check-pages-freshness.js exits 0 + prints result:FRESH when git HEAD signature matches the live site. VERIFIED — fixture test + live-network test both FRESH exit 0.",
+    "AC2: exits 1 + prints result:STALE with full evidence (diff[] fields, newest_docs_commit.sha, files_covered_by_pages_filter vs files_NOT_covered) when signatures diverge and the newest docs-affecting commit is older than the grace window. VERIFIED — stale.html fixture (68/70/18 + Refuted 10) produced 4 diff fields, sha d41e73a8e6, and the split filter-coverage lists; exit 1.",
+    "AC3: exits 0 + result:STALE-TRANSIENT when signatures diverge but the newest docs-affecting commit is within the grace window (normal deploy latency). VERIFIED — stale.html + --grace-minutes 999999 → STALE-TRANSIENT exit 0.",
+    "AC4: exits 0 + result:UNKNOWN when the live site is unreachable (fail-safe). VERIFIED — nonexistent --live-file → UNKNOWN exit 0.",
+    "AC5: severity escalates moderate→major on >24h-old drift OR a prior STALE integrity report within 48h, read-only from report-*.json (no mutable state file). VERIFIED by code-read + the persistence helper priorStaleWithin48h().",
+    "AC6: integrity picks up the check on its next daily 02:00 UTC cycle via the amended structure-integrity.md; no other agent is touched (single_agent_domain constraint honored)."
+  ],
+  "verification_pattern": {
+    "grade": "A",
+    "note": "Single mechanical script with a --live-file test hook that makes all four result classes demonstrable offline against fixtures. Demonstrated FRESH/STALE/STALE-TRANSIENT/UNKNOWN on fixtures plus a live-network FRESH during this authoring run.",
+    "command": "cd \"$(git rev-parse --show-toplevel)\" && node --check monitor/scripts/check-pages-freshness.js && grep -q 'check-pages-freshness' monitor/prompts/structure-integrity.md && grep -q 'pages_freshness' monitor/prompts/structure-integrity.md && echo FIXED || echo NOT-IMPLEMENTED"
+  },
+  "out_of_scope": [
+    "Do NOT redesign pages.yml further — the paths filter is the durable fix; this is only the safety net.",
+    "Do NOT retroactively check historical commits — the check begins with the next integrity cycle after ship.",
+    "Do NOT add GitHub Actions webhook/workflow-run polling — time-based grace window only.",
+    "Do NOT add a section_count or full-prose signal in this PROP — deferred; the four data-derived signals cover the high-value drift class."
+  ],
+  "counter_arguments": [
+    "Coverage gap: a docs-affecting change that leaves win_count/catalog_total/failures/verdict_tally unchanged (pure prose reword via sections.json, or a CSS/template tweak in build-scripts) will not be caught. Mitigation: those are lower-frequency and lower-stakes than data drift; the directive explicitly accepts a calibrated-but-narrower check over a noisy-but-broad one. Section 9 (build reproducibility in git) still catches template/prose regressions at the git layer — this check is specifically about the git→live deploy gap.",
+    "Regex brittleness: the live-signature extraction depends on the exact phrasings 'N claims evaluated', 'N acknowledged failures', 'N of M catalog entries'. If a future generate-html.js rewording drops these, the live signature fields go null and every field reports 'not-extractable-from-live', which would surface as spurious diff. Mitigation: the diff marks such fields note:'not-extractable-from-live' distinctly, and a wholesale extraction failure (all fields null) is a visible signal that the extractor needs updating rather than a silent false-STALE; a future hardening could treat all-null as UNKNOWN. Acceptable for v1.",
+    "Grace-window tuning: 20 min is a guess at the p99 commit→deploy latency. If real deploys occasionally take longer (queued behind an in-flight deploy under concurrency:group=pages), a slow deploy could momentarily read STALE. Mitigation: severity starts at moderate (not major) for fresh drift, and the operator can raise --grace-minutes via the integrity prompt if false-moderate findings appear. The escalation to major requires either >24h age or cross-cycle persistence, both of which a slow-but-successful deploy will not satisfy."
+  ],
+  "estimated_effort": "Small. One new ~200-line script + a ~1-screen integrity prompt section + 2 report-schema field additions. No schema/ownership changes, no other agent touched.",
+  "relationship_to_other_props": "Companion to the same-session pages.yml paths-filter change. Independent of all open PROPs. Uses integrity's existing report/finding machinery; adds no new pipeline loop.",
+  "operator_deployment": {
+    "shipped_this_run": true,
+    "files": ["monitor/scripts/check-pages-freshness.js", "monitor/prompts/structure-integrity.md"],
+    "picks_up_automatically": "dome-integrity next daily 02:00 UTC run reads the amended structure-integrity.md and runs the check. No operator action required. First real STALE, if any, will carry the (a) differed-field, (b) landing-commit, (c) filter-coverage evidence the directive's acceptance list requires.",
+    "natural_first_test": "The eclipse-prereg-prominence docs/index.html change (HNOTE-DECIDER-ECLIPSE-PREREG-PROMINENCE-2026-07-04) exercises the paths filter when it lands — a useful live exercise of both the filter and this check."
+  }
+}

@@ -918,6 +918,30 @@ rm -rf ${SESSION}/dome-integrity-clone
 
 Do NOT leave clones in `/tmp`. They accumulate across runs — each adds ~40MB — and cannot be cleaned up from other sessions due to Linux user-ownership. Our 9.6G sandbox has only ~1.8G headroom; five un-cleaned clones will fill it and break every agent.
 
+### 9b. Live Pages Freshness (PROP-123 / DIRECTIVE-20260705-001, added 2026-07-06)
+
+```bash
+echo "STEP_MARKER check-9b-pages-freshness $(date +%s)" >&2
+```
+
+Safety net for `.github/workflows/pages.yml` paths-filter mis-scoping. Section 9 (Build Reproducibility) confirms `docs/index.html` matches source data *in git*; this check confirms the **deployed live site** matches git HEAD — catching the class where a docs-affecting commit lands in git but no Pages redeploy fires (e.g. a build input is added later without extending the pages.yml paths filter).
+
+Run the script (from your integrity clone or the workspace — it reads git HEAD's `data/wins.json` + `data/uncounted-failures.json` and curls the live site):
+
+```bash
+node monitor/scripts/check-pages-freshness.js --repo "$(pwd)"
+RC=$?
+```
+
+The script prints one JSON object and uses a simple exit convention:
+
+- **exit 0** → `FRESH` (signatures match), `STALE-TRANSIENT` (drift but newest docs-affecting commit is within the grace window — normal deploy latency), or `UNKNOWN` (live site unreachable — fail-safe, no alarm during Pages backend brownouts). **No finding in any of these cases.**
+- **exit 1** → `STALE` (drift AND newest docs-affecting commit is older than the grace window). **Emit a finding.**
+
+Only on exit 1, add an `issues_found[]` entry with `category: "pages_drift"`, `severity` = the script's `severity` field (`moderate`, or `major` when the drift is >24h old or persisted across cycles), and copy into the description the evidence the directive requires: (a) which signature field(s) differed (`diff[]`), (b) the git commit that landed the diff (`newest_docs_commit.sha`), and (c) whether the pages.yml paths filter covered any of that commit's files (`newest_docs_commit.files_covered_by_pages_filter` vs `files_NOT_covered`). Also record the result in `checks.pages_freshness` (see report schema below) — the script's own persistence check reads prior reports' `checks.pages_freshness.status`, so this field must be written every run (including on FRESH/UNKNOWN).
+
+The check is calibrated to not cry wolf: the grace window (default 20 min) absorbs the commit-lands→Pages-deploys latency, and severity escalates only when drift is genuinely persistent. Do NOT lower the grace window or add GitHub Actions workflow-run polling — the durable design is the time-based grace window (see PROP-123 / the directive's `not_in_scope`).
+
 ## Output
 
 ### Write the Report
@@ -973,12 +997,19 @@ Write to `monitor/integrity/report-YYYY-MM-DDTHH-MM.json` (include hour and minu
       "status": "pass|fail",
       "diff_lines": 0,
       "details": "summary or first 20 diff lines"
+    },
+    "pages_freshness": {
+      "status": "FRESH|STALE|STALE-TRANSIENT|UNKNOWN",
+      "severity": "moderate|major|null",
+      "diff": [],
+      "newest_docs_commit": null,
+      "details": "PROP-123: live-site vs git-HEAD semantic-signature drift. status MUST be written every run (the script's persistence check reads prior reports' checks.pages_freshness.status)."
     }
   },
   "issues_found": [
     {
       "severity": "critical|major|moderate|minor",
-      "category": "broken_anchor|broken_link|nav_chain|data_mismatch|build_drift|heading_hierarchy",
+      "category": "broken_anchor|broken_link|nav_chain|data_mismatch|build_drift|pages_drift|heading_hierarchy",
       "description": "What's wrong",
       "location": "file:line or URL",
       "suggested_fix": "How to fix it",
