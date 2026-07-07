@@ -1,0 +1,97 @@
+{
+  "directive_id": "DIRECTIVE-20260707-001",
+  "for": "tinker",
+  "status": "pending",
+  "priority": "high",
+  "auto_close_when_deliverable_proposed": false,
+  "created_at": "2026-07-07T09:15:00Z",
+  "created_by": "steve (operator, via cowork)",
+  "title": "dome-mirror delete-propagation Phase 0 → Phase 2 transition: flip enabled=true, drain the 1,118-file backlog safely, restore normal thresholds. Supersedes DIRECTIVE-20260610-002.",
+  "context": {
+    "why_now": "Today's 2026-07-07T08:35Z dome-mirror sentinel (commit e715a84) reported delete_propagation.candidates: 1118 with abort fired (candidates > abort_abs=500). This is the third-such abort this week and the count is growing (~30-40 new candidates per day as prune-integrity works and dome-mirror can't propagate). The code is DONE — PROP-091 shipped the entire delete-propagation logic on 2026-06-11 with three-guard rule (pattern match + git ls-files absent + past retention window) and full sentinel reporting. It's been sitting in Phase 0 (config enabled=false, manifest-only) for 27 days. The design's own docstring says: 'operator reviews ≥3 days of manifests, then flips enabled=true via clone-and-push.' Every day of stall grows the backlog and shrinks the signal-to-noise on sentinels (each dome-mirror run at UTC 00:30/04:30/08:30 emits the same 1,118-candidate abort message).",
+    "prior_directive": "DIRECTIVE-20260610-002-dome-mirror-delete-propagation-gap.json filed 2026-06-10 — one day BEFORE PROP-091 shipped the code. Preserved that directive's context is the identification of the gap; supersede reason is that PROP-091 addressed the code and the remaining work is the operational Phase 2 transition. Please mark DIRECTIVE-20260610-002 as superseded (status transition pending → superseded, with superseded_reason pointing at this directive).",
+    "evidence_from_todays_sentinel": {
+      "commit": "e715a84",
+      "candidates": 1118,
+      "category_total": 1285,
+      "aborted": "delete-sanity gate: 1118 candidates exceeds abort_abs=500 or 50% of category (642); zero deletions this cycle",
+      "sample_pattern": "monitor/integrity/narrative-cite-audit-YYYY-MM-DDTHHhmmZ.json (all June 12-14 timestamps in the visible sample) — matches PROP-091 DELETE_PATTERNS entry {re: /^monitor\\/integrity\\/narrative-cite-audit-.*\\.json$/, days: 14} exactly. Every sampled candidate is past 14-day retention (today is 2026-07-07, candidates span 2026-06-12 through 2026-06-14, all >23 days old). Three-guard rule already passed on all 1,118. No false-positive risk in the visible sample."
+    },
+    "manifest_review_already_effectively_done": "Operator has been implicitly reviewing manifests for 27 days by observing that every dome-mirror sentinel reports the same pattern of stale-integrity-artifact candidates (all monitor/integrity/*.json past retention). The '≥3 days' threshold in the PROP-091 docstring has been satisfied 9× over. Tinker: please verify by walking the last 3-5 dome-mirror sentinels from monitor/integrity/sync-workspace-runs-*.json — expect the same pattern with steadily-growing candidate counts."
+  },
+  "task": {
+    "part_A_pre_flip_verification": {
+      "why": "Do NOT skip this. The three-guard rule is designed to be safe, but the last operational check before flipping enabled=true is confirming the manifests match expectations.",
+      "steps": [
+        "Walk the last 5 monitor/integrity/sync-workspace-runs-*.json sentinels.",
+        "For each: assert delete_propagation.candidates > 0, ran=false, mode=manifest-only, aborted starts with 'delete-sanity gate:' OR the candidate count is below the abort threshold (in which case a Phase 2 flip would drain safely).",
+        "Compute a union set of candidate paths across the 5 sentinels (from the visible sample field, so this is not exhaustive but is representative). Confirm 100% match DELETE_PATTERNS in monitor/scripts/sync-workspace-step4c.js.",
+        "If anything doesn't match — stop. File a HNOTE to operator explaining what looked wrong. Do NOT proceed with the flip."
+      ]
+    },
+    "part_B_backlog_drain_strategy": {
+      "why": "1118 candidates > abort_abs=500 → straight enabled=true flip would deadlock (abort fires forever, backlog never drains). Two options:",
+      "option_B1_recommended": {
+        "title": "Temporary threshold raise + drain + restore",
+        "steps": [
+          "Update sync-workspace-step4c.config.json: delete_propagation.enabled=true AND delete_propagation.abort_abs=1500 AND delete_propagation.per_cycle_cap=200 (unchanged). Commit + push. Include explicit comment stating this is a temporary backlog-drain config and citing this directive.",
+          "Watch the next 6-8 dome-mirror cycles (UTC 00:30/04:30/08:30 at quiet cadence = ~1 day). Each should delete ~200 files and self-report in the sentinel. After ~6 cycles (~2 days at 4h cadence, ~6 days at 12h cadence) the backlog reaches zero.",
+          "Once candidate count drops below 200 in a sentinel (i.e., steady state), commit a follow-up config change restoring abort_abs=500. Include commit message noting the drain completed.",
+          "Total wall-clock: ~1-6 days depending on dome-mirror cadence. No operator involvement between the two config commits (self-draining)."
+        ]
+      },
+      "option_B2_alternative": {
+        "title": "Operator-side bulk cleanup with allow_cowork_file_delete, then flip enabled=true with abort_abs=500 unchanged",
+        "steps": [
+          "Operator obtains the full delete candidate list from a dome-mirror sentinel (or by running the check standalone).",
+          "Uses allow_cowork_file_delete + rm to bulk-remove all 1,118 files from FUSE in one operator session.",
+          "Verifies no delete candidates remain by running one dome-mirror cycle in manifest-only mode first.",
+          "Then flips enabled=true with abort_abs=500 unchanged for future steady-state operation."
+        ],
+        "cost_vs_B1": "Same end state but requires operator session bandwidth. B1 is fully automated after the initial config push."
+      },
+      "recommend": "B1 (temporary threshold raise). Fully automated after 1 commit; self-limits via per_cycle_cap=200 so at most 200 files delete per cycle; falls back to Phase 0 with a single config revert if anything goes wrong."
+    },
+    "part_C_post_drain_monitoring": {
+      "why": "Even after Phase 2 flips, dome-mirror should NEVER have candidates > per_cycle_cap = 200 in steady state (prune-integrity generates ~20-40 new deletable files per day, well within self-draining capacity per 4h cycle). If candidates ever rise above 200 in steady state, that's a signal something changed upstream.",
+      "steps": [
+        "After drain complete + abort_abs restored to 500: watch 3 dome-mirror cycles.",
+        "Expected pattern: delete_propagation.candidates < 100, ran=true, deleted matches candidates (or per_cycle_cap when constrained).",
+        "If candidates > 200 in any post-drain steady-state cycle, add a finding to integrity's next report calling it out — probably means prune-integrity is running faster than expected or a new pattern was added to DELETE_PATTERNS."
+      ]
+    },
+    "part_D_close_prior_directive": {
+      "action": "Mark DIRECTIVE-20260610-002-dome-mirror-delete-propagation-gap.json status: pending → superseded with superseded_at, superseded_reason='PROP-091 shipped the code 2026-06-11; DIRECTIVE-20260707-001 handles Phase 2 operational transition + backlog drain.'",
+      "additive_edit_permission": "This is an allowed additive-edit per the DIRECTIVE-LIFECYCLE exception in CLAUDE.md — pending → superseded transition with matching superseded_at."
+    }
+  },
+  "deliverable_acceptance_criteria": [
+    "One PROP authored covering all four parts (or one PROP + one config-only push if tinker prefers to split the pre-flip verification from the flip).",
+    "Verification pattern grade B+: (a) source-presence — `test $(node -e \"console.log(JSON.parse(require('fs').readFileSync('monitor/scripts/sync-workspace-step4c.config.json','utf8')).delete_propagation.enabled)\") = true` post-flip. (b) behavioral — the next dome-mirror sentinel after flip shows delete_propagation.ran=true AND delete_propagation.deleted > 0.",
+    "DIRECTIVE-20260610-002 marked status=superseded.",
+    "Post-drain: at least one dome-mirror sentinel with candidates < 200 AND ran=true, confirming steady state reached."
+  ],
+  "constraints": {
+    "budget_soft_limit_tokens": 40000,
+    "do_not_touch_overwrite_propagation": "PROP-092 overwrite_propagation is a sibling Phase 0 that is working correctly in manifest-only (today's sentinel shows 0 candidates, 4 fuse-ahead-skip decisions — all in the allow-list, no drift). Do NOT flip overwrite_propagation.enabled in this directive. If operator wants that flipped, it's a separate commission.",
+    "do_not_raise_per_cycle_cap": "per_cycle_cap=200 is the throttle that limits blast radius per cycle. Do NOT raise it just to drain the backlog faster. abort_abs is the temporary-raise lever; per_cycle_cap is the durable throttle.",
+    "restore_abort_abs_after_drain": "The temporary raise to 1500 is EXPLICITLY temporary. Failing to restore abort_abs=500 after drain removes the mass-delete disaster gate (PROP-051 class). Verification pattern must catch this — cite the second config commit restoring abort_abs=500 in the PROP's operator_deployment field.",
+    "config_is_git_owned_operator_writeable": "monitor/scripts/sync-workspace-step4c.config.json is operator-writable per its own updated_by field. Tinker authoring config changes via PROP is fine; the operator is the acknowledged authority on the file's contents."
+  },
+  "background_artifacts": {
+    "code": "monitor/scripts/sync-workspace-step4c.js — PROP-091 Phase 0 (2026-06-11) and PROP-092 Phase 0 (2026-06-13). Three-guard delete rule (line ~75-105 docstring), config-driven gate (line ~131-140), abort logic (line ~186-193), per-cycle cap application below.",
+    "config": "monitor/scripts/sync-workspace-step4c.config.json — current delete_propagation.enabled=false, abort_abs=500, per_cycle_cap=200, abort_pct_of_category=50.",
+    "prior_directive": "monitor/tinker/operator-directives/DIRECTIVE-20260610-002-dome-mirror-delete-propagation-gap.json",
+    "triggering_sentinel": "monitor/integrity/sync-workspace-runs-2026-07-07T08-35-32Z.json (in commit e715a84)",
+    "companion": "PROP-051 established the mass-delete disaster class (2026-05-21 workspace-sync commit ea785c49 wiped 14.9M lines). abort_abs=500 is one of the disaster-prevention gates that came out of PROP-051. This directive is temporarily raising that gate for a controlled drain and then restoring it — treat with the same care as any PROP-051-class change."
+  },
+  "not_in_scope": [
+    "Fixing overwrite_propagation Phase 0 → Phase 2 (PROP-092 — separate commission).",
+    "Changing DELETE_PATTERNS. All 6 patterns are stable and correct; the backlog is entirely from existing patterns matching stale files.",
+    "Retroactively archiving anything into monitor/integrity/*-archive.jsonl. prune-integrity already handles that; the backlog is FUSE-only stragglers, not missed archival."
+  ],
+  "supersedes_directives": [
+    "DIRECTIVE-20260610-002"
+  ],
+  "operator_notes": "Steve today (2026-07-07): 'fix directive'. The gap has been visible for 27 days and became actionable today when the sentinel numbers hit 1,118. This is small operational work — probably one PROP with 2-3 config commits and a monitoring window. Please prioritize (routing this above analyst's external-Claude-review EXPs if there's a conflict — the delete-propagation gate keeps firing every dome-mirror cycle and is degrading sentinel signal-to-noise noticeably)."
+}
