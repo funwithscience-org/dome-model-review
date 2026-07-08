@@ -4,10 +4,12 @@
   "created_at": "2026-07-08T02:43:25.203Z",
   "authored_by": "tinker",
   "authored_by_run": "tinker-2026-07-08T02-40",
-  "status": "phase-2-drain-in-progress",
+  "status": "integrated",
   "directive": "DIRECTIVE-20260707-001",
   "directive_id": "DIRECTIVE-20260707-001",
-  "supersedes_directives": ["DIRECTIVE-20260610-002"],
+  "supersedes_directives": [
+    "DIRECTIVE-20260610-002"
+  ],
   "category": "operational",
   "target": "monitor/scripts/sync-workspace-step4c.config.json (delete_propagation block)",
   "problem": "PROP-091 shipped the full dome-mirror delete-propagation logic on 2026-06-11 (three-guard rule: DELETE_PATTERNS match + git ls-files absent + past retention window) but it has sat in Phase 0 (config enabled=false, manifest-only) for 27 days. Meanwhile prune-integrity keeps generating ~20-40 stale monitor/integrity/*.json files/day that dome-mirror cannot propagate as deletions to FUSE. The Phase-0 backlog has grown to 1,135 candidates (2026-07-08T00:34 sentinel), each dome-mirror cycle (UTC 00:30/04:30/08:30) re-emits the same delete-sanity-gate abort, degrading sentinel signal-to-noise. A straight enabled=true flip would deadlock forever because 1,135 > abort_abs=500.",
@@ -41,12 +43,29 @@
   "requires_human_judgment": false,
   "why_human_needed": "Config is operator-writable but the directive explicitly authorizes tinker to author + apply the config change (config_is_git_owned_operator_writeable constraint). The follow-up abort_abs restore is mechanical (triggered by candidates<200 sentinel).",
   "verification_pattern": "test \"$(node -e \"console.log(JSON.parse(require('fs').readFileSync('monitor/scripts/sync-workspace-step4c.config.json','utf8')).delete_propagation.enabled)\")\" = true && echo FIXED || echo STILL_BROKEN",
-  "operator_deployment": "Commit 1 (enabled=true, abort_abs=1500) applied by tinker run tinker-2026-07-08T02-40. Commit 2 (restore abort_abs=500) PENDING — fires when a dome-mirror sentinel reports delete_propagation.candidates<200. That restore commit is a hard requirement per constraint restore_abort_abs_after_drain and must be cited here when done.",
-  "cross_references": ["PROP-091", "PROP-092", "PROP-051", "DIRECTIVE-20260707-001", "DIRECTIVE-20260610-002"],
+  "operator_deployment": {
+    "chosen_option_by_tinker": "B1 (temporary abort_abs raise + auto-drain over ~6 cycles)",
+    "chosen_option_by_operator": "B2 (manual bulk drain in single session) — filed as directive Part B2 alternative",
+    "execution_hybrid": "Tinker executed B1 config-side (enabled=true, abort_abs=1500 raised) at 02:42 UTC. Operator accelerated drain via B2 manual execution (three-guard-rule replication + bulk rm) at 05:49 UTC — 1,137 files removed, 0 errors, 0 candidates remain post-drain. abort_abs restored to 500 immediately since manual drain completed drainage that tinker B1 would have taken 6 cycles to complete.",
+    "files_drained": 1137,
+    "drain_execution_time_seconds": 1,
+    "post_drain_candidates": 0,
+    "git_tracked_files_affected": 0,
+    "abort_abs_final_value": 500
+  },
+  "cross_references": [
+    "PROP-091",
+    "PROP-092",
+    "PROP-051",
+    "DIRECTIVE-20260707-001",
+    "DIRECTIVE-20260610-002"
+  ],
   "non_goals_honored": [
     "overwrite_propagation Phase 0→2 NOT touched (PROP-092 separate).",
     "DELETE_PATTERNS unchanged.",
     "per_cycle_cap NOT raised (only abort_abs is the drain lever).",
     "No retroactive archival (prune-integrity owns that; backlog is FUSE-only stragglers)."
-  ]
+  ],
+  "integrated_at": "2026-07-08T05:50:32.430Z",
+  "integrated_by": "steve (operator, via cowork) — B2 execution accelerated PROP-124 B1 drain"
 }
