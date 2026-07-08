@@ -1,0 +1,40 @@
+{
+  "prop_id": "PROP-125",
+  "title": "Delete-propagation steady-state acceptance (FIX-5): backlog canary in integrity + documented operator drain playbook",
+  "status": "proposed",
+  "priority": "medium",
+  "created_at": "2026-07-08T20:16:00Z",
+  "created_by": "tinker-2026-07-08T20-16",
+  "directive_id": "DIRECTIVE-20260708-001",
+  "problem": "PROP-091/PROP-124 delete-propagation is enabled=true but scheduled dome-mirror sessions cannot unlink() FUSE files: the platform's FUSE mount is deny-unlink by default, lifted only by the interactive mcp__cowork__allow_cowork_file_delete grant, which requires a present human to approve and therefore cannot be held by any scheduled agent. Every cycle attempts one unlink, gets EPERM, and falls back to manifest-only (first observed sentinel: monitor/integrity/sync-workspace-runs-2026-07-08T08-35-10Z.json, candidates=8, deleted=0). Candidates will re-accumulate until an operator drains from a granted cowork session. Without instrumentation the operator has no signal for WHEN — the failure mode is silent growth to the abort_abs=500 delete-sanity gate (the pre-drain backlog reached 1,137).",
+  "root_cause_reference": "monitor/tinker/reports/fuse-unlink-eperm-investigation-2026-07-08.md — full Q1-Q5 analysis. Key conclusions: (Q1) the discriminator is granted-vs-ungranted session, not cowork-vs-scheduled (ungranted cowork sessions EPERM too, per PROP-065 + report-2026-05-31T05-42.json); (Q2) the grant is human-approval-gated, scheduled runs have no human; (Q5) the deny-by-default policy is load-bearing for disaster recovery — FUSE's independence from agent deletion is why the 2026-05-21 git mass-delete was recoverable (SESSION-CONTEXT.md L723). FIX-1 (grant in dome-mirror), FIX-2 (move to workspace-sync), FIX-4 (git-side redesign) were evaluated and rejected: each either requires the ungrantable grant or merely relocates the EPERM, and FIX-1/FIX-2 carry PROP-051-class blast-radius risk.",
+  "proposal": {
+    "change_1": {
+      "what": "Ship monitor/scripts/check-delete-propagation-backlog.js (read-only canary; authored this run alongside this PROP).",
+      "detail": "Reads newest monitor/integrity/sync-workspace-runs-*.json sentinel; RC=3 when delete_propagation.candidates >= threshold (default 200); RC=2 when no usable sentinel within 48h (dome-mirror liveness signal); RC=0 clean. No writes anywhere."
+    },
+    "change_2": {
+      "what": "structure-integrity.md: add one check block to the daily run.",
+      "detail": "Run `node monitor/scripts/check-delete-propagation-backlog.js --root <clone>`; RC=3 -> emit finding category='delete-propagation-backlog' severity='moderate' recommending an operator drain (the script's stdout contains the full playbook text); RC=2 -> emit severity='minor' dome-mirror-liveness note. Mirrors the existing check-prune-resurrection.js consumption pattern already in tinker's Mode 2 quick-checks.",
+      "estimated_size": "~10 lines of prompt text"
+    },
+    "change_3": {
+      "what": "CLAUDE.md (project): one-sentence addendum to the existing 'Operator-side allow_cowork_file_delete' subsection.",
+      "detail": "Document that periodic operator drain is the ACCEPTED steady-state deletion mechanism for prune-managed FUSE orphans (DIRECTIVE-20260708-001 decision), with the canary as the trigger signal. Prevents future sessions from re-litigating FIX-1/FIX-2."
+    },
+    "explicitly_not_proposed": [
+      "No change to sync-workspace-step4c.js — the EPERM fallback is graceful (one wasted unlink attempt per cycle) and preserves manifest visibility.",
+      "No change to delete_propagation config — enabled=true stays; gates stay at abort_abs=500 / abort_pct_of_category=50 / per_cycle_cap=200.",
+      "No grant-request step in dome-mirror.md — rejected per investigation Q2/Q5.",
+      "No new scheduled task for automated draining — a scheduled cowork session is still unattended and cannot hold the grant (FIX-3 degrades to a reminder; operator may optionally add a personal calendar reminder, outside pipeline scope)."
+    ]
+  },
+  "threshold_rationale": "200 chosen per the directive's own suggestion. Observed pre-drain growth was ~+30/day (sentinels 07-07 to 07-08: 1105->1118->1135), but that rate includes June high-cadence-era files still aging through the 7-14d retention windows; post-quiet-period production is ~10-15 in-category files/day, so steady-state inflow should settle near that. At 10-30/day, canary-at-200 fires with ~10-30 days of headroom before the 500 abort gate — a drain every 1-2 months, seconds of operator time each.",
+  "bonus_finding_recorded": "PROP-124 Option B1 (temporary abort_abs=1500 self-drain) could never have worked even without EPERM: the 2026-07-08T04:34Z sentinel shows candidates=1135 aborted on the abort_pct_of_category=50 gate (1135 < 1500 but > 50% of category_total). Future bulk-drain plans must raise or waive BOTH gates. The operator's manual B2 drain was the only viable path, not merely the faster one.",
+  "prop_051_review": "Blast radius of this PROP is zero-by-construction: change_1 and change_2 are read-only checks; change_3 is documentation. No deletion path is created, moved, or re-gated. The existing disaster gates are untouched.",
+  "verification_pattern": "cd <clone> && node monitor/scripts/check-delete-propagation-backlog.js --root . --threshold 200; RC=0 with current post-drain backlog (candidates ~8) prints FIXED-equivalent clean JSON; after change_2 lands, additionally grep structure-integrity.md for 'check-delete-propagation-backlog' (expect 1+ hit). Echo FIXED if script exits 0/3 with valid JSON and the grep hits; STILL_BROKEN if the script is missing or errors.",
+  "verification_grade": "B+ per directive acceptance criteria (text-analysis directive + shipped canary script).",
+  "effort_estimate": "change_1 shipped this run; change_2 ~10 prompt lines + one test invocation; change_3 one sentence. Total follow-through well under one tinker run.",
+  "requires_human_judgment": false,
+  "do_not_auto_close": false
+}
