@@ -942,6 +942,29 @@ Only on exit 1, add an `issues_found[]` entry with `category: "pages_drift"`, `s
 
 The check is calibrated to not cry wolf: the grace window (default 20 min) absorbs the commit-lands→Pages-deploys latency, and severity escalates only when drift is genuinely persistent. Do NOT lower the grace window or add GitHub Actions workflow-run polling — the durable design is the time-based grace window (see PROP-123 / the directive's `not_in_scope`).
 
+### 9c. Delete-Propagation Backlog (PROP-125 / DIRECTIVE-20260708-001, added 2026-07-08)
+
+```bash
+echo "STEP_MARKER check-9c-delete-propagation-backlog $(date +%s)" >&2
+```
+
+Signal to the operator when the FUSE delete-propagation backlog has accumulated to the point where a manual drain is warranted. Scheduled `dome-mirror` sessions cannot `unlink()` FUSE files (deny-by-default policy, lifted only by the interactive `mcp__cowork__allow_cowork_file_delete` grant which needs a present human — see `monitor/tinker/reports/fuse-unlink-eperm-investigation-2026-07-08.md`). Deletion candidates therefore accumulate cycle-over-cycle; this canary tells the operator when to run a manual drain from a granted cowork session, well before the `abort_abs=500` delete-sanity gate would start aborting the delete pass.
+
+```bash
+node monitor/scripts/check-delete-propagation-backlog.js --root "$(pwd)"
+RC=$?
+```
+
+Exit codes:
+
+- **exit 0** → clean (candidates below threshold). **No finding.**
+- **exit 2** → no usable sentinel within 48h (dome-mirror liveness signal — the agent may not have run recently). Emit `issues_found[]` entry with `category: "delete-propagation-liveness"`, `severity: "minor"`, describing the missing sentinel window.
+- **exit 3** → canary FIRED: `candidates >= 200`. Emit `issues_found[]` entry with `category: "delete-propagation-backlog"`, `severity: "moderate"`, and copy the script's stdout drain-playbook into the description so the operator sees the recommended action inline.
+
+Also record the result in `checks.delete_propagation_backlog` every run (including on RC=0) — mirrors the persistence pattern used by `pages_freshness`.
+
+Do NOT lower the 200 threshold or auto-execute a drain from the integrity agent — the deny-unlink default is load-bearing disaster-recovery (see PROP-051 postmortem + PROP-125 investigation Q5); the operator drain from a granted cowork session is the intended mechanism.
+
 ## Output
 
 ### Write the Report
@@ -1004,12 +1027,19 @@ Write to `monitor/integrity/report-YYYY-MM-DDTHH-MM.json` (include hour and minu
       "diff": [],
       "newest_docs_commit": null,
       "details": "PROP-123: live-site vs git-HEAD semantic-signature drift. status MUST be written every run (the script's persistence check reads prior reports' checks.pages_freshness.status)."
+    },
+    "delete_propagation_backlog": {
+      "status": "clean|backlog|liveness-gap",
+      "candidates": 0,
+      "threshold": 200,
+      "newest_sentinel": null,
+      "details": "PROP-125: dome-mirror delete-propagation candidate accumulation. Scheduled sessions cannot unlink() FUSE; operator drain triggered at candidates>=200. Status MUST be written every run."
     }
   },
   "issues_found": [
     {
       "severity": "critical|major|moderate|minor",
-      "category": "broken_anchor|broken_link|nav_chain|data_mismatch|build_drift|pages_drift|heading_hierarchy",
+      "category": "broken_anchor|broken_link|nav_chain|data_mismatch|build_drift|pages_drift|heading_hierarchy|delete-propagation-backlog|delete-propagation-liveness",
       "description": "What's wrong",
       "location": "file:line or URL",
       "suggested_fix": "How to fix it",
