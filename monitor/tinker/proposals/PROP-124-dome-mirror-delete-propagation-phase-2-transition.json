@@ -1,0 +1,52 @@
+{
+  "id": "PROP-124",
+  "title": "dome-mirror delete-propagation Phase 0 → Phase 2 transition + backlog drain (DIRECTIVE-20260707-001)",
+  "created_at": "2026-07-08T02:43:25.203Z",
+  "authored_by": "tinker",
+  "authored_by_run": "tinker-2026-07-08T02-40",
+  "status": "phase-2-drain-in-progress",
+  "directive": "DIRECTIVE-20260707-001",
+  "directive_id": "DIRECTIVE-20260707-001",
+  "supersedes_directives": ["DIRECTIVE-20260610-002"],
+  "category": "operational",
+  "target": "monitor/scripts/sync-workspace-step4c.config.json (delete_propagation block)",
+  "problem": "PROP-091 shipped the full dome-mirror delete-propagation logic on 2026-06-11 (three-guard rule: DELETE_PATTERNS match + git ls-files absent + past retention window) but it has sat in Phase 0 (config enabled=false, manifest-only) for 27 days. Meanwhile prune-integrity keeps generating ~20-40 stale monitor/integrity/*.json files/day that dome-mirror cannot propagate as deletions to FUSE. The Phase-0 backlog has grown to 1,135 candidates (2026-07-08T00:34 sentinel), each dome-mirror cycle (UTC 00:30/04:30/08:30) re-emits the same delete-sanity-gate abort, degrading sentinel signal-to-noise. A straight enabled=true flip would deadlock forever because 1,135 > abort_abs=500.",
+  "investigation_answers": {
+    "part_A_pre_flip_verification": "PASS. Walked the 5 latest sync-workspace-runs sentinels (2026-07-06T08-35 through 2026-07-08T00-34). All show delete_propagation.ran=false, mode=manifest-only, deleted=0, abort fired via delete-sanity gate. Candidate count growing monotonically 1091→1105→1105→1118→1135 (~26/day, matches directive's ~30-40/day estimate). Sampled paths (20/sentinel) are 100% DELETE_PATTERNS matches — 0 non-matching across all 5 sentinels. Latest-sentinel full-sample retention check: all 20 sampled paths are narrative-cite-audit-*.json, min age 23.8 days, 0 under the 14-day retention window. No false-positive risk in the visible sample; the three-guard rule already filtered the candidate set (category_total 1289 vs candidates 1135 → 154 category files correctly held back as within-retention or git-present).",
+    "why_B1_over_B2": "B1 (temporary abort_abs raise + self-drain) chosen per directive recommendation. Fully automated after 1 config commit; per_cycle_cap=200 self-limits blast radius to 200 deletions/cycle; single config revert rolls back to Phase 0 if anything goes wrong. B2 (operator bulk allow_cowork_file_delete) reaches the same end state but consumes operator session bandwidth."
+  },
+  "proposed_fix": "Two config commits on monitor/scripts/sync-workspace-step4c.config.json (git-owned, operator-writable). Commit 1 (THIS RUN): delete_propagation.enabled=true, abort_abs=500→1500 (temporary drain lever), per_cycle_cap=200 UNCHANGED (durable throttle), abort_pct_of_category=50 unchanged. Commit 2 (FOLLOW-UP, future tinker/operator run once a sentinel reports candidates<200): restore abort_abs=1500→500 to re-arm the PROP-051-class mass-delete disaster gate.",
+  "safety_gates": [
+    "per_cycle_cap=200 UNCHANGED — at most 200 files delete per dome-mirror cycle regardless of backlog size. This is the durable blast-radius throttle and is NOT touched.",
+    "abort_pct_of_category=50 UNCHANGED — deletes still abort if candidates exceed 50% of the FUSE category file count. At drain start category_total≈1289 so 50%≈644; the 1500 abort_abs is the binding limit during drain, not the pct gate. As the backlog drains, category_total shrinks and the pct gate re-tightens naturally.",
+    "abort_abs=1500 is EXPLICITLY TEMPORARY. Restoring it to 500 after drain is a hard requirement (constraint restore_abort_abs_after_drain). Leaving it at 1500 removes the mass-delete disaster gate.",
+    "Rollback: single config push delete_propagation.enabled=false returns to Phase 0 manifest-only with zero FUSE behavior.",
+    "overwrite_propagation NOT touched (PROP-092 sibling stays Phase 0, per directive do_not_touch_overwrite_propagation constraint).",
+    "DELETE_PATTERNS NOT changed (all 6 stable; backlog is entirely existing patterns matching stale files)."
+  ],
+  "test_plan": [
+    "Post-commit-1: assert config.delete_propagation.enabled===true and abort_abs===1500.",
+    "Behavioral: next dome-mirror sentinel (monitor/integrity/sync-workspace-runs-*.json) after the flip shows delete_propagation.ran=true AND deleted>0 (expect deleted≈200 = per_cycle_cap).",
+    "Drain monitoring (Part C): watch ~6-8 cycles; each deletes up to 200 until candidates<200. Confirm no sentinel deletes a within-retention or git-present file (cross-check any listed path against the corresponding *-archive.jsonl in git).",
+    "Post-drain: at least one sentinel with candidates<200 AND ran=true → steady state reached → trigger Commit 2 (restore abort_abs=500)."
+  ],
+  "rollout_plan": [
+    "Commit 1 (this run, tinker tinker-2026-07-08T02-40): enabled=true, abort_abs=1500. Drain begins next dome-mirror cycle.",
+    "Drain window (~1-2 days at quiet 3-cycle/day cadence, self-draining via per_cycle_cap=200): ~6 cycles to clear 1,135 candidates.",
+    "Commit 2 (follow-up): restore abort_abs=500 once a sentinel shows candidates<200. Future tinker run detects the steady-state sentinel and pushes the restore, OR operator does it.",
+    "Part C post-drain monitoring: 3 steady-state cycles; if candidates>200 ever recurs, flag in integrity's next report (prune-integrity running faster than expected or new DELETE_PATTERNS entry)."
+  ],
+  "tradeoffs": "During the drain window the mass-delete disaster gate is raised from 500 to 1500, a PROP-051-class relaxation. Mitigated by: (a) per_cycle_cap=200 unchanged caps per-cycle blast radius, (b) verified-clean Part A manifest (100% pattern match, all past retention), (c) the raise is temporary with an explicit restore step, (d) single-push rollback to Phase 0. The alternative (leaving Phase 0 indefinitely) grows the backlog ~26/day and degrades sentinel signal permanently.",
+  "estimated_impact": "Drains 1,135-file FUSE backlog of stale monitor/integrity/*.json; restores dome-mirror sentinel signal-to-noise; completes the Phase 0→2 transition PROP-091 designed. Steady-state expectation post-drain: candidates<100/cycle, well within per_cycle_cap self-draining capacity.",
+  "requires_human_judgment": false,
+  "why_human_needed": "Config is operator-writable but the directive explicitly authorizes tinker to author + apply the config change (config_is_git_owned_operator_writeable constraint). The follow-up abort_abs restore is mechanical (triggered by candidates<200 sentinel).",
+  "verification_pattern": "test \"$(node -e \"console.log(JSON.parse(require('fs').readFileSync('monitor/scripts/sync-workspace-step4c.config.json','utf8')).delete_propagation.enabled)\")\" = true && echo FIXED || echo STILL_BROKEN",
+  "operator_deployment": "Commit 1 (enabled=true, abort_abs=1500) applied by tinker run tinker-2026-07-08T02-40. Commit 2 (restore abort_abs=500) PENDING — fires when a dome-mirror sentinel reports delete_propagation.candidates<200. That restore commit is a hard requirement per constraint restore_abort_abs_after_drain and must be cited here when done.",
+  "cross_references": ["PROP-091", "PROP-092", "PROP-051", "DIRECTIVE-20260707-001", "DIRECTIVE-20260610-002"],
+  "non_goals_honored": [
+    "overwrite_propagation Phase 0→2 NOT touched (PROP-092 separate).",
+    "DELETE_PATTERNS unchanged.",
+    "per_cycle_cap NOT raised (only abort_abs is the drain lever).",
+    "No retroactive archival (prune-integrity owns that; backlog is FUSE-only stragglers)."
+  ]
+}
