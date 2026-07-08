@@ -1,0 +1,111 @@
+{
+  "directive_id": "DIRECTIVE-20260708-001",
+  "for": "tinker",
+  "status": "pending",
+  "priority": "medium",
+  "auto_close_when_deliverable_proposed": false,
+  "created_at": "2026-07-08T19:42:00Z",
+  "created_by": "steve (operator, via cowork)",
+  "title": "FUSE unlink() EPERM investigation: why does delete-propagation succeed from cowork but fail from scheduled dome-mirror? Root-cause + inventory of fix paths, including moving delete-propagation to a different agent/mechanism if that's the right answer.",
+  "context": {
+    "why_now": "The Phase 2 transition finalized this morning (2026-07-08T05:52Z, commit 543350f6, DIRECTIVE-20260707-001 + PROP-124) put delete_propagation.enabled=true and drained the 1,137-file backlog manually. Steady state is now 8 candidates per dome-mirror cycle — great. But the first post-drain sentinel (2026-07-08T08:35Z, commit 408d77dd) revealed that scheduled dome-mirror CAN'T actually unlink FUSE files: EPERM, aborts to manifest-only, deleted=0. The operator-side manual drain worked (cowork session), but automated draining doesn't. So 'Phase 2 live' is currently an overstatement — it's more accurately 'Phase 2 opt-in from cowork, Phase 0 fallback from scheduled agents'. The gap is small in absolute terms (candidates accumulate ~30-40/day, months before another 500-abort would fire) but it's a real semantic mismatch: the code was designed to do the work automatically and doesn't.",
+    "evidence": {
+      "commit": "408d77dd",
+      "sentinel_path": "monitor/integrity/sync-workspace-runs-2026-07-08T08-35-10Z.json",
+      "candidates": 8,
+      "deleted": 0,
+      "errors": 1,
+      "aborted_verbatim": "unlink-unsupported-on-fuse: EPERM: operation not permitted, unlink '/sessions/brave-eloquent-albattani/mnt/dome-model-review/monitor/integrity/sync-workspace-runs-2026-06-23T08-34-42Z.json' — falling back to manifest-only",
+      "documented_expectation_in_code": "sync-workspace-step4c.js docstring L102-108: 'EPERM fallback: if FUSE refuses unlink (cross-session permission, no allow_cowork_file_delete grant), the pass records unlink-unsupported-on-fuse in the sentinel and stops. Manifest-only mode is still net positive — converts invisible accumulation into a visible deletion queue.' So the code EXPECTED this could happen and the design accepts it as a fallback. But that's a rationalization not a fix — Phase 2's purpose was actual automated deletion.",
+      "operator_side_success_evidence": "Operator's cowork session (intelligent-brave-lamport) successfully rm'd 1,137 files at 05:49 UTC 2026-07-08 with 0 errors. Same FUSE mount, same physical paths, just different session context. The permission gap is scheduled-context vs cowork-context, not the FUSE mount itself.",
+      "sched_session_ids_observed": [
+        "relaxed-determined-pascal (dome-mirror 2026-07-07T08:35Z)",
+        "brave-eloquent-albattani (dome-mirror 2026-07-08T08:35Z)"
+      ]
+    }
+  },
+  "task": {
+    "part_A_root_cause": {
+      "questions_to_answer": [
+        "Q1 — Why does unlink() succeed from cowork sessions but fail from scheduled agent sessions? Is it (a) an implicit allow_cowork_file_delete grant that only interactive cowork sessions get, (b) a FUSE mount option difference between session types, (c) a Unix uid/gid difference, (d) a mount-namespace difference, or (e) something else?",
+        "Q2 — Is allow_cowork_file_delete a per-session grant that can be programmatically requested at the start of a scheduled agent run? If yes, why doesn't dome-mirror.md already request it?",
+        "Q3 — Do OTHER agents ever need FUSE unlink? Poller writes to changes/, decider writes to decisions/, but do any of them ever need to DELETE from FUSE? If not, we may be the first case that needs this and there simply isn't an established pattern.",
+        "Q4 — What does the prune-integrity agent do that WORKS? It commits deletions via git (which doesn't need FUSE unlink) — is that the pattern to copy? Its Haiku prompt at monitor/prompts/... (script-only via SKILL.md — see monitor/scripts/prune-integrity.js) is the reference implementation of 'delete from git and let workspace-sync/dome-mirror propagate'.",
+        "Q5 — Is there a technical reason (safety, sandbox policy, session-lifecycle) why scheduled agents SHOULDN'T be able to unlink FUSE files? If yes, that's a strong signal to move delete-propagation elsewhere rather than try to enable it here."
+      ],
+      "investigation_scope": "Read the shipped code + docstrings + CLAUDE.md + any operator-directive or PROP that touched allow_cowork_file_delete. Do NOT attempt to modify sandbox policy or FUSE mount options — those are operator-infrastructure territory. Do a text-based investigation and report findings.",
+      "output": "Written analysis: monitor/tinker/reports/fuse-unlink-eperm-investigation-2026-07-08.md — plain-language answers to Q1-Q5 with evidence citations from the codebase."
+    },
+    "part_B_inventory_of_fix_paths": {
+      "candidates_to_evaluate": [
+        {
+          "id": "FIX-1",
+          "label": "Request allow_cowork_file_delete grant at start of dome-mirror.md prompt",
+          "if_feasible": "Cheapest fix. dome-mirror.md gets a new 'Step 0: request delete grant' block; each scheduled run acquires the grant fresh."
+        },
+        {
+          "id": "FIX-2",
+          "label": "Move delete-propagation into workspace-sync (which may or may not have the same EPERM issue)",
+          "if_feasible": "workspace-sync already runs cross-session. If it can unlink, dome-mirror wraps thin over a workspace-sync deletion capability."
+        },
+        {
+          "id": "FIX-3",
+          "label": "Move delete-propagation OUT of scheduled agents entirely — a periodic operator-triggered cowork task (scheduled task with mcp__scheduled-tasks__create_scheduled_task that fires a cowork session monthly to run the drain)",
+          "if_feasible": "Guaranteed to work (proven today). Not automated in the pure sense, but eliminates the EPERM dependency. Cost: monthly operator attention (a few seconds)."
+        },
+        {
+          "id": "FIX-4",
+          "label": "Redesign: git-side reconciliation only. prune-integrity already commits deletions to git; workspace-sync could implement 'FUSE files not in git = candidate for lazy deletion during next FUSE→git write cycle' via git-add-then-fs-check.",
+          "if_feasible": "Architecturally cleanest but most work. Might just push the EPERM problem to workspace-sync."
+        },
+        {
+          "id": "FIX-5",
+          "label": "Accept steady state. Document that periodic manual drain is the operational pattern. Add a canary check to integrity that fires at 200+ candidates so operator knows when to drain.",
+          "if_feasible": "Zero code work. Explicit acceptance of the constraint. Fine as long as steady state doesn't drift toward the abort threshold quickly."
+        }
+      ],
+      "for_each_candidate_report": [
+        "Feasibility: can it actually be implemented given what we know?",
+        "Effort: rough token/wall-clock estimate.",
+        "Risk: what could go wrong. Especially: PROP-051-class risks (mass-delete anywhere near the workflow).",
+        "Does it fully solve the problem or just move it?"
+      ],
+      "output": "Table appended to Part A's report — 5 rows, 4 columns each."
+    },
+    "part_C_recommendation": {
+      "ask": "One clear recommendation. If more than one path is viable, rank them and explain the tradeoff. Explicitly acceptable outcome: 'FIX-5 (accept steady state) is the right answer; document the periodic-drain pattern and add the 200-candidate canary.' Operator does not require an active fix if the investigation shows one isn't warranted.",
+      "output": "One-paragraph recommendation at the top of the report, above the analysis."
+    }
+  },
+  "deliverable_acceptance_criteria": [
+    "Written report at monitor/tinker/reports/fuse-unlink-eperm-investigation-2026-07-08.md answering Q1-Q5 with codebase citations.",
+    "5-row feasibility table for FIX-1..FIX-5 with the four columns.",
+    "One-paragraph recommendation.",
+    "One follow-up: either (a) a PROP proposing the recommended fix (if it's small enough that tinker can author + ship it in the same or next run), or (b) a new DIRECTIVE-20260708-002 with a scoped commission to whichever agent should own the follow-up work.",
+    "Verification pattern grade C acceptable — this is a text-analysis directive, not a code change. Grade B+ if the deliverable includes a small canary script (FIX-5 direction)."
+  ],
+  "constraints": {
+    "budget_soft_limit_tokens": 60000,
+    "text_investigation_only_in_this_directive": "Do NOT modify sync-workspace-step4c.js, dome-mirror.md, or the config in this directive. Investigate and recommend; a follow-up directive/PROP does the code change if warranted.",
+    "do_not_experiment_on_fuse_permissions": "Do NOT experiment with allow_cowork_file_delete grants, mount option probes, or setuid workarounds. If Part A finds the answer requires those experiments, note it in the report and stop — operator decides whether to authorize experimentation in a follow-up.",
+    "prop_051_awareness_required": "Any FIX candidate that involves delete-propagation running from ANY new context must pass PROP-051 disaster-class review: what's the blast radius if this deletion path malfunctions? What's the abort/gate mechanism? Reject any FIX candidate that removes disaster gates."
+  },
+  "background_artifacts": {
+    "prior_completed_directive": "monitor/tinker/operator-directives/DIRECTIVE-20260707-001-dome-mirror-delete-propagation-phase-2-transition.json (completed 2026-07-08T05:52Z, closure_note documents the hybrid B1+B2 execution)",
+    "prior_superseded_directive": "monitor/tinker/operator-directives/DIRECTIVE-20260610-002-dome-mirror-delete-propagation-gap.json (superseded 2026-07-08T05:52Z)",
+    "shipped_code": "monitor/scripts/sync-workspace-step4c.js — see especially L75-108 for the PROP-091 delete-propagation docstring including the EPERM fallback comment.",
+    "shipped_config": "monitor/scripts/sync-workspace-step4c.config.json — current state: enabled=true, abort_abs=500, per_cycle_cap=200. Do not modify.",
+    "prop_124": "monitor/tinker/proposals/PROP-124-dome-mirror-delete-propagation-phase-2-transition.json (integrated 2026-07-08T05:52Z) — includes operator_deployment field explaining the hybrid execution.",
+    "prune_integrity_reference": "monitor/scripts/prune-integrity.js is the working example of 'delete via git commit' — no FUSE unlink required. Useful reference for FIX-4 (git-side reconciliation) analysis.",
+    "todays_sentinel_evidence": "monitor/integrity/sync-workspace-runs-2026-07-08T08-35-10Z.json — the smoking gun.",
+    "operator_positioning": "Operator (Steve) explicitly said: 'the right place might be outside that agent, so be it.' Do not treat 'delete-propagation stays in dome-mirror' as a fixed constraint. Any FIX candidate that moves ownership is on the table."
+  },
+  "not_in_scope": [
+    "Do NOT flip overwrite_propagation.enabled — that's PROP-092 and a separate commission.",
+    "Do NOT modify sandbox policy, FUSE mount options, or session-lifecycle infrastructure. Those are operator/platform territory. If your recommendation requires those changes, note it and stop.",
+    "Do NOT chase the same-day accumulation in the current run — 8 candidates and a bit more each day is the expected steady state until this investigation lands.",
+    "Do NOT change per_cycle_cap or abort_abs values — the disaster gates stay at their current durable thresholds."
+  ],
+  "supersedes_directives": [],
+  "operator_notes": "Operator's framing (2026-07-08 cowork session): 'I chose 2 and 2 can include 3 — i.e. if the right place is outside that agent so be it.' So: Part A investigation, then follow through even if the answer is 'move it elsewhere' or 'accept the constraint'. Steady state is fine while this investigation runs — no urgency, medium priority. If tinker finds a small elegant fix, ship it as a PROP in the same run. If it's larger, file a follow-up DIRECTIVE-20260708-002 with scope."
+}
