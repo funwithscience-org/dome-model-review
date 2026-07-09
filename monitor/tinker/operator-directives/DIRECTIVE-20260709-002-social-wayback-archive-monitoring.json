@@ -1,0 +1,81 @@
+{
+  "directive_id": "DIRECTIVE-20260709-002",
+  "for": "tinker",
+  "status": "pending",
+  "priority": "medium",
+  "auto_close_when_deliverable_proposed": false,
+  "created_at": "2026-07-09T18:30:00Z",
+  "created_by": "steve (operator, via cowork)",
+  "title": "Wayback Machine archive monitoring: extend social.md daily run to verify Wayback snapshot presence/age for dome + review URLs, alert on removal or extended staleness. Companion to the operator-triggered save-baseline landed 2026-07-09T18:13-18:28Z.",
+  "context": {
+    "why_now": "Operator observation 2026-07-09: neither the dome model site (john09289.github.io/predictions) nor our review site (funwithscience.net/dome-model-review) were on the Internet Archive. Operator triggered Save Page Now for 14 canonical URLs during today's cowork session (see baseline_snapshots below) — that establishes the initial third-party archive. The gap this directive closes: (a) alert if any snapshot gets REMOVED (Wayback accepts removal requests from site owners; the dome author is a plausible requester), (b) alert if the newest snapshot ages past a threshold without a fresh save (we're not actively re-saving on every dome change, so long-drift means our archive is behind live), (c) track snapshot count over time as a monitoring signal for coverage growth or attrition.",
+    "why_social_not_poller": "Poller's job is detecting live-site changes on the dome. Wayback monitoring is a read-only availability check adjacent to social's existing discoverability domain (llms.txt, sitemap, GSC verification, search rankings). Adding it here matches the domain and reuses social's daily 04:30 UTC cadence.",
+    "why_not_automated_save": "The Save Page Now (SPN2) endpoint accepts anonymous POSTs but requires ~30-90s per URL, a realistic User-Agent, and follow-redirects. Scheduled agents doing this at scale would trip Wayback rate limits from the sandbox's fixed IP block and would degrade their run budgets. Save-triggering stays operator-side (cowork session) or is deferred entirely. This directive is READ-ONLY monitoring, not save-triggering.",
+    "baseline_snapshots": {
+      "captured_by": "operator cowork 2026-07-09",
+      "capture_method": "curl -sSL -A '<realistic Chrome UA>' --max-time 120 https://web.archive.org/save/<URL>",
+      "dome_urls_saved": [
+        "https://john09289.github.io/predictions/ → web/20260709181304",
+        "https://john09289.github.io/predictions/index.html → web/20260709182656",
+        "https://john09289.github.io/predictions/wins.html → web/20260709181553",
+        "https://john09289.github.io/predictions/model.html → web/20260709181615",
+        "https://john09289.github.io/predictions/predictions.html → web/20260709181750",
+        "https://john09289.github.io/predictions/killshot.html → web/20260709181853",
+        "https://john09289.github.io/predictions/live.html → web/20260709182001",
+        "https://john09289.github.io/predictions/review-response.html → web/20260709182059",
+        "https://john09289.github.io/predictions/audit.html → web/20260709182124",
+        "https://john09289.github.io/predictions/context.html → web/20260709182225",
+        "https://john09289.github.io/predictions/coordinates.html → web/20260709182255",
+        "https://john09289.github.io/predictions/evolution.html → web/20260709182418",
+        "https://john09289.github.io/predictions/tracking.html → web/20260709182548"
+      ],
+      "review_urls_saved": [
+        "https://funwithscience.net/dome-model-review/ → web/20260709182824"
+      ],
+      "not_saved_this_pass": [
+        "ai_manifest.json, llms.txt, api/*.json — machine-readable layer; JSON URLs may need a separate SPN pass. Consider in follow-up if operator wants coverage."
+      ]
+    }
+  },
+  "task": {
+    "part_A_add_availability_check_to_social": {
+      "shape": "Extend social.md daily run with a new pass: 'Wayback Archive Presence Verification'. For each URL in a maintained MONITORED_URLS list (initially the 14 above), call `https://archive.org/wayback/available?url=<url>` (JSON API, no auth) and record: (a) archived (true/false), (b) closest snapshot URL, (c) closest snapshot timestamp. Emit findings when: (i) archived flips from true → false (removal); (ii) newest snapshot age exceeds a threshold (default 90 days) suggesting we should re-run the operator save-baseline; (iii) API is unreachable (log as UNKNOWN, do not alarm).",
+      "monitored_urls_list_location": "Store as a top-of-social.md const or in a small config file at monitor/social/wayback-monitored-urls.json — operator-editable. Include all 14 baseline URLs. Add new dome pages as they appear in poller changes.",
+      "cadence": "Daily inside the existing social 04:30 UTC run. Cost: 14 HTTP GETs to a public JSON API — negligible.",
+      "reporting": "Add a Wayback section to social's daily report (monitor/social/report-YYYY-MM-DD.json) with a wayback_status object: {monitored_url_count, all_archived, oldest_snapshot_age_days, newest_snapshot_age_days, removal_alerts, staleness_alerts}. If any alerts fire, also add an entry to author_activity[] with platform:'wayback', signal:<alert type>, evidence:<URL + snapshot ts>."
+    },
+    "part_B_operator_save_reminder": {
+      "why": "Since we're not auto-saving on every dome change, snapshots go stale relative to live. Establish a re-save cadence.",
+      "shape": "In the same Wayback section: if the newest snapshot for any monitored URL is >90 days old, emit a moderate finding recommending an operator re-save session. Include the SPN command template (`curl -sSL -A <UA> --max-time 120 https://web.archive.org/save/<url>`) in the finding body so the operator can copy-paste.",
+      "threshold_rationale": "90 days matches the dome author's typical version-bump cadence (V13 → V51.1 across ~2 years ≈ one bump per ~19 days on average, but the author has been in a manual-commit drought at d=83 as of today so a 90-day re-save floor is conservative)."
+    },
+    "part_C_do_not_auto_save": {
+      "constraint": "This directive is READ-ONLY monitoring only. Social must NOT attempt Save Page Now from its scheduled run. Rationale: SPN needs 30-90s per URL, a realistic UA, IP-rate-limit avoidance, and would consume most of social's daily budget on save-side latency. Re-saves stay operator-triggered from cowork sessions. If tinker's design proposes auto-saving, the operator will veto — this constraint is non-negotiable in the initial ship."
+    }
+  },
+  "deliverable_acceptance_criteria": [
+    "One PROP authored proposing the social.md addition + optionally the wayback-monitored-urls.json config file.",
+    "Verification pattern grade B minimum: fixture-test that (a) an archived URL returns archived:true, (b) an unarchived URL (e.g. a fresh test URL) returns archived:false, (c) API unreachable returns UNKNOWN not alarm.",
+    "PROP includes explicit not-in-scope: no auto-save.",
+    "First actual run of the check happens on social's next 04:30 UTC cycle after ship. Expected: all 14 baseline URLs return archived:true, no alerts fire."
+  ],
+  "constraints": {
+    "budget_soft_limit_tokens": 30000,
+    "no_auto_save": "See Part C. Operator veto in advance.",
+    "read_only_api_calls_only": "Availability API is public + rate-lenient. CDX search API is also public but returns more data — use only if availability API is insufficient.",
+    "not_a_poller_task": "Poller detects dome-site changes; social does discoverability/machine-layer monitoring. Wayback presence is discoverability-adjacent. Do NOT propose moving this to poller."
+  },
+  "background_artifacts": {
+    "prior_related_hnote": "HNOTE-SOCIAL-JESUSRULES-TIKTOK-VERIFY-2026-07-09 filed earlier today — social's other 2026-07-09 commission (verify @jesusrules27163822 TikTok status). Consider whether to bundle Wayback presence + TikTok verify into one social.md 'External Verification' section or keep them as separate concerns.",
+    "wayback_availability_api_docs": "https://archive.org/help/wayback_api.php — 'Wayback Machine API Availability' endpoint: GET https://archive.org/wayback/available?url=<url>&timestamp=<optional>. Returns JSON: {url, archived_snapshots: {closest: {status, available, url, timestamp}} | {}}. No auth, no rate limit for reasonable use.",
+    "cdx_api_docs": "https://archive.org/help/wayback_api.php — CDX Server returns full snapshot history. Consider if we want snapshot COUNT over time (monotonic growth check) — availability API only returns the closest, not the count."
+  },
+  "not_in_scope": [
+    "Do NOT auto-trigger Save Page Now from any scheduled agent (see Part C).",
+    "Do NOT add Wayback checking to poller (see Part D constraint).",
+    "Do NOT extend to non-dome, non-review sites (e.g. don't try to archive the whole InternetArchive/Wayback ecosystem).",
+    "Do NOT modify the archived snapshots themselves (this is public infrastructure, we consume only)."
+  ],
+  "supersedes_directives": [],
+  "operator_notes": "Operator (Steve, 2026-07-09 cowork): 'is the dome site on the internet archive?' → answer was NO for both dome and review → operator triggered manual Save Page Now for 14 URLs → this directive commissions the monitoring layer. Small directive; probably one social.md prompt-edit PROP + one config file. Priority medium — not urgent, but the alerting side matters (removal request would be a strong signal about the dome author's engagement state)."
+}
