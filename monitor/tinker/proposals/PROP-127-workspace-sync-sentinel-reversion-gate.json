@@ -5,7 +5,7 @@
   "authored_by": "tinker",
   "authored_by_run": "tinker-2026-07-09T17-33",
   "directive_id": "DIRECTIVE-20260709-001",
-  "status": "proposed",
+  "status": "integrated",
   "category": "infrastructure-safety",
   "relationship_to_prior_art": "Direct extension of PROP-121 (lint-workspace-sync-push.js pre-push hook: CHECK 1 resurrection, CHECK 2 bulk ceiling). Sibling of PROP-045 (anti-reversion, prompt-layer — bypassable), PROP-065 (GIT_APPEND_ONLY deny for .jsonl), PROP-077 (recent-commit guard, prompt-layer). Closes the enforcement gap those prompt-layer guards cannot: commit 4a5b8115 (2026-07-07) was produced by a cycle that skipped the entire smart_copy block (skips_total:0 sentinel), so every prompt-layer guard was inert; the PROP-121 hook fired but neither existing check covers a 5-modified-file reversion push. Forensics: monitor/tinker/reports/workspace-sync-reversion-4a5b8115-forensics-2026-07-09.md.",
   "problem": "workspace-sync can silently push stale FUSE copies of git-owned / multi-writer files over fresh git commits when the agent improvises around smart_copy. On 2026-07-07 (commit 4a5b8115) this byte-reverted data/wins.json and monitor/decisions/open-issues.json to their pre-decider state, dropped EXP-654 from expansion-tracker.json, and reverted docs/index.html (a NEVER_PUSH file). Detection was fortuitous (duplicate-EXP-id collision two days later); decider's WIN-032 c7 wins.json patches are STILL lost at HEAD as of 2026-07-09. A 30-day sweep found a second, smaller instance (85ae4222, 07-01, next_iss_id rollback). Prompt-level guards cannot close this class because the failure IS the prompt not being followed; only git-hook enforcement fires unconditionally.",
@@ -35,5 +35,18 @@
     "docs/index.html blob walk cost (~330KB file): rev-parse blob-SHA comparison never materializes content; cost is subprocess spawn only."
   ],
   "estimated_cost": "~60 lines of code in lint-workspace-sync-push.js + 1 paragraph in workspace-sync.md + 1 sentence in CLAUDE.md. No new scheduled task, no new file surfaces.",
-  "notes_for_decider_and_operator": "Companion recovery item shipped in the same tinker run: HNOTE-TINKER-WIN032-C7-REAPPLY-2026-07-09 (decider must re-apply the still-lost WIN-032 c7 wins.json patches from commit 82399139 and rebuild HTML). ISS-2953 closed as fixed per DIRECTIVE-20260709-001 Part D citing this PROP + the forensic report."
+  "notes_for_decider_and_operator": "Companion recovery item shipped in the same tinker run: HNOTE-TINKER-WIN032-C7-REAPPLY-2026-07-09 (decider must re-apply the still-lost WIN-032 c7 wins.json patches from commit 82399139 and rebuild HTML). ISS-2953 closed as fixed per DIRECTIVE-20260709-001 Part D citing this PROP + the forensic report.",
+  "integrated_at": "2026-07-09T18:05:24.978Z",
+  "integrated_by": "steve (operator, via cowork)",
+  "operator_deployment": {
+    "chosen_option": "Ship now (Recommended)",
+    "chosen_at": "2026-07-09T18:05:24.979Z",
+    "applied_edits": [
+      "monitor/scripts/lint-workspace-sync-push.js: added CHECK 3 sentinel-file byte-reversion block between CHECK 1 and CHECK 2 (~80 lines). SENTINEL_FILES const (9 files), historicCommits + blobAt helpers, per-range per-modified-sentinel walk over last 30 base-side commits, block on tip-blob byte-match to any strictly-older historic blob, CHECK-3-scoped override flag, try/catch fail-open wrapper per PROP-051 discipline.",
+      "monitor/prompts/workspace-sync.md: extended Step 1.6 hook-install comment block to describe CHECK 3 alongside CHECK 1 + CHECK 2. No behavioral change to prompt path.",
+      "CLAUDE.md: extended the PROP-051 safety-gates paragraph with a one-sentence PROP-127 addendum."
+    ],
+    "behavioral_test": "Fixture replay: BASE → decider commit (adds WIN-002 to wins.json) → workspace-sync commit (reverts to BASE content). Hook against decider..reversion range: BLOCKED with clear message identifying data/wins.json + matched historic commit. Control (push decider clean): PASSED exit 0.",
+    "verification_grade": "B (fixture-verified)"
+  }
 }

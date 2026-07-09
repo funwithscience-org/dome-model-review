@@ -141,6 +141,83 @@ if (resurrected.length > 0) {
   process.exit(1);
 }
 
+// ---- CHECK 3: sentinel-file byte-reversion (PROP-127, 2026-07-09) ----
+//
+// Catches the 4a5b8115 (2026-07-07) failure shape: a workspace-sync cycle
+// that skipped smart_copy and pushed a stale FUSE view over decider's
+// fresh commit, byte-reverting 5 git-owned files. CHECK 1 misses this
+// (not a resurrected integrity path); CHECK 2 misses it (only 5 files,
+// well under the 300-ceiling). CHECK 3 walks the last 30 commits behind
+// the base for each modified sentinel file and blocks the push if the
+// tip blob byte-matches any historic blob — legitimate new content on
+// these monotonically-evolving JSON/HTML files with embedded timestamps
+// and counters never byte-matches a historic state.
+//
+// FAIL-OPEN discipline (unlike CHECKS 1/2 which fail-closed on internal
+// error): CHECK 3 wraps its entire body in try/catch. Any internal error
+// (shallow-history miss, git command failure, OOM on blob walk) logs a
+// WARN and falls through to allow the push. Rationale: a CHECK 3 bug
+// must degrade to the pre-PROP-127 status quo (no reversion protection)
+// rather than block all syncs and degrade FUSE→git rescue latency
+// (PROP-051 disaster-class discipline). Positive detection still
+// process.exit(1) with a clear message — that IS a clear exit.
+const SENTINEL_FILES = [
+  'data/wins.json',
+  'data/sections.json',
+  'data/predictions.json',
+  'data/uncounted-failures.json',
+  'docs/index.html',
+  'monitor/decisions/open-issues.json',
+  'monitor/decisions/closed-issues.json',
+  'monitor/analyst/expansion-tracker.json',
+  'monitor/analyst/attention-inbox.json'
+];
+const REVERSION_OVERRIDE_FLAG = path.join(ROOT, 'monitor/integrity/workspace-sync-reversion-override.flag');
+
+function historicCommits(base, file, n) {
+  const out = sh('git log --format=%H -n ' + n + ' ' + base + ' -- ' + JSON.stringify(file));
+  return out.split('\n').filter(Boolean);
+}
+function blobAt(commit, file) {
+  return sh('git rev-parse ' + commit + ':' + JSON.stringify(file)).trim();
+}
+
+try {
+  for (const r of ranges) {
+    const modified = changedFiles(r.base, r.tip).filter(f => SENTINEL_FILES.includes(f));
+    for (const f of modified) {
+      let tipBlob;
+      try { tipBlob = blobAt(r.tip, f); } catch (e) { continue; }
+      let baseBlob = null;
+      try { baseBlob = blobAt(r.base, f); } catch (e) {}
+      const history = historicCommits(r.base, f, 30);
+      for (const c of history) {
+        let hb;
+        try { hb = blobAt(c, f); } catch (e) { continue; }
+        if (hb === baseBlob) continue; // current remote state, not a reversion target
+        if (hb === tipBlob) {
+          if (fs.existsSync(REVERSION_OVERRIDE_FLAG)) {
+            console.error('[ws-sync-guard] CHECK 3: reversion of ' + f + ' matches historic '
+              + c.slice(0, 8) + ' but operator override flag present ('
+              + REVERSION_OVERRIDE_FLAG + '). Allowing.');
+            break;
+          }
+          console.error('[ws-sync-guard] BLOCK (CHECK 3 sentinel reversion): pushing ' + f
+            + ' would BYTE-REVERT it to the content of historic commit ' + c.slice(0, 8)
+            + '. This is the 4a5b8115 (2026-07-07) failure shape: a stale FUSE copy carried'
+            + ' over fresh git content. Do NOT --no-verify. Re-run the sync via the'
+            + ' documented smart_copy loop; if this reversion is operator-intended,'
+            + ' touch ' + REVERSION_OVERRIDE_FLAG + ' and re-push, then remove the flag.');
+          process.exit(1);
+        }
+      }
+    }
+  }
+} catch (e) {
+  console.error('[ws-sync-guard] WARN: CHECK 3 degraded (' + e.message + ') — reversion detection'
+    + ' unavailable this push; allowing (fail-open by design, PROP-127).');
+}
+
 // ---- CHECK 2: bulk-change ceiling ----
 if (allChanged.size > CEILING) {
   if (fs.existsSync(OVERRIDE_FLAG)) {

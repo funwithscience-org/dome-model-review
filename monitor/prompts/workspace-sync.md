@@ -150,7 +150,7 @@ fi
 git config user.email "russelst@melrosecastle.com"
 git config user.name "steve"
 
-# --- Step 1.6 (PROP-121): install the pre-push guard (git-enforced, bypass-proof) ---
+# --- Step 1.6 (PROP-121 + PROP-127): install the pre-push guard (git-enforced, bypass-proof) ---
 # This hook fires on EVERY `git push` from this clone, regardless of HOW the staged
 # changes were produced. It is the only defense against a total-path bypass
 # (rsync/tar/cp -a + manual commit) - the 2026-07-01 (eab98c5) failure shape that
@@ -158,7 +158,14 @@ git config user.name "steve"
 # CHECK 1 blocks any push that re-adds a prune-tombstoned integrity path (resurrection;
 # near-zero false-positive). CHECK 2 blocks any push changing > ceiling (default 300)
 # files unless monitor/integrity/workspace-sync-bulk-override.flag is present (operator
-# escape hatch for legitimate post-outage catchup). --no-verify is forbidden (prohibition 7).
+# escape hatch for legitimate post-outage catchup). CHECK 3 (PROP-127, 2026-07-09) blocks
+# any push that byte-reverts a sentinel git-owned file (wins.json, sections.json, index.html,
+# open/closed-issues.json, expansion-tracker.json, attention-inbox.json, etc.) to a historic
+# commit's content — the 4a5b8115 (2026-07-07) failure shape where a stale FUSE view carried
+# over decider's fresh work. CHECK 3 has a CHECK-3-scoped operator override flag
+# (monitor/integrity/workspace-sync-reversion-override.flag) for rare intentional whole-file
+# restores, and is fail-open on internal error so a hook bug degrades to pre-PROP-127 status
+# quo rather than blocking all syncs. --no-verify is forbidden (prohibition 7).
 cat > "$CLONE/.git/hooks/pre-push" <<'HOOK'
 #!/bin/sh
 # PROP-121: workspace-sync pre-push guard. Do NOT bypass with --no-verify.
