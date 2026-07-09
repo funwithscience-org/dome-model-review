@@ -1,0 +1,100 @@
+{
+  "id": "PROP-126",
+  "title": "Attention-inbox tolerant reader: script-extracted divergent-record translator for analyst Mode 2b + integrity schema-drift surfacing (layer 2 of two-fold defense, DIRECTIVE-20260608-002)",
+  "created_at": "2026-07-09T02:45:00.000Z",
+  "authored_by": "tinker",
+  "authored_by_run": "tinker-2026-07-09T02-41",
+  "directive_id": "DIRECTIVE-20260608-002",
+  "status": "proposed",
+  "category": "structural_guard + helper_script_extraction",
+  "relationship_to_prior_art": {
+    "PROP-093": "PROP-093 C1 (implemented 2026-06-13) put prompt-level tolerance INLINE in analyst.md L275/L279: filter widened to pending||open, audience!=='operator' guard, body||reason shim. This PROP does NOT undo C1's behavior — it lifts that behavior out of the inline bash heredoc into a helper script (the directive's constraint 4: PROP-050/066/080/081/082/084 extraction precedent), ADDS the ATTN-NNN/resolved:false translation C1 never handled, and ADDS the integrity surfacing C1 lacks entirely. PROP-093 C2 (decider writer normalization) and C3 (operator-FYI routing) remain pending and are untouched — writer-side normalization is still the durable fix; this reader is the structural safety net beneath it.",
+    "PROP-087_089": "lint-decider-surfaces.js already lints decider's attention-inbox writes at push time from decider's CLONE. But attention-inbox.json is FUSE-canonical for Mode 2b (analyst.md L267) and multi-writer, so records can enter via paths the decider pre-push hook never sees (FUSE-direct writes, analyst Mode 6, future agents). A read-side translator + audit closes the residual gap.",
+    "layer_1": "decider.md Step A 'SCHEMA — DO NOT DEVIATE' block (~L481) is the prompt-layer defense, applied 2026-06-08. This PROP is the commissioned structural layer 2."
+  },
+  "problem": "analyst.md Mode 2b reads attention-inbox.json via an inline node heredoc that filters on exact status/audience values and reads fields by name. When a writer improvises schema (observed 2026-06-07: decider wrote {id:ATTN-NNN, resolved:false, subject, detail} against the documented {id:ATT-<ISO>, status:'pending', reason} canon), items are silently stranded — no agent notices until a random-look pass stumbles on them. Three schema variants have been observed in this single file. The current C1 inline filter tolerates variant 3 (status:'open' + body) but NOT variant 2 (ATTN-NNN/resolved:false, the original stranding pattern), and nothing surfaces schema drift to the operator when it recurs.",
+  "design_decision_reader_vs_integrity_synthesis": {
+    "question": "Directive constraint 3: should the fallback live in Mode 2b, or should the integrity agent pre-walk attention-inbox.json and SYNTHESIZE canonical ATT-<ISO> records from non-canonical entries before Mode 2b reads?",
+    "decision": "Read-side translation (no mutation) + integrity audit-only surfacing. REJECT integrity-synthesis.",
+    "rationale": [
+      "attention-inbox.json is Unclassified multi-writer (decider writes items + analyst marks resolved) per CLAUDE.md File Ownership. Integrity-synthesis adds a THIRD writer to an unclassified file — exactly what the ownership rules say to stop and reconsider. Read-side translation changes no ownership.",
+      "Synthesis is not idempotent across the FUSE/git split: a synthesized record written to FUSE plus the original record creates duplicates that workspace-sync round-trips; dedup logic then needs its own guard. A pure-function translator applied at read time is idempotent by construction.",
+      "Integrity runs daily; Mode 2b may run before integrity has 'repaired' the file — the stranding window would persist up to 24h. Read-side translation closes the window to zero.",
+      "Integrity still gets the DETECTION role (the part it is good at): audit mode + finding. Repair-by-mutation and detect-and-surface are separated, per the directive's own constraint 1 (do not mask the bug)."
+    ]
+  },
+  "changes": [
+    {
+      "id": "C1-script",
+      "path": "monitor/scripts/read-attention-inbox.js (NEW)",
+      "change": "Canonical tolerant reader, read-only, no mutation ever. CLI: --file <path> (default monitor/analyst/attention-inbox.json), --mode live|audit|self-test. Classify every record into a variant, normalize to canonical shape, emit per mode.",
+      "variant_classification": {
+        "canonical": "id matches /^ATT-/ AND status field present. Live iff status==='pending'.",
+        "open_backcompat": "status==='open' (PROP-093 C1 transition window). Live. Counted as DRIFT in audit (writers should emit 'pending'; C2 pending).",
+        "attn_drift": "id matches /^ATTN-\\d+$/ AND resolved===false. TRANSLATED to live-equivalent of status:'pending': reason := [subject, detail||details].filter(Boolean).join(' — '); _synth_note records the translation; original id preserved for audit trail. Live. Counted as DRIFT in audit. resolved===true → not live (treated as archived-in-place).",
+        "resolved": "resolved===true OR status==='resolved'. Not live. Not drift (legacy archived-in-place records tolerated silently).",
+        "unknown_drift": "Anything else (no recognizable status, no resolved boolean, unparseable). NOT accepted as live — per directive constraint 1, arbitrary keys are never silently accepted. Listed in audit drift_records with the record's actual key set so the operator can see exactly what the writer improvised."
+      },
+      "normalization_shims": "reason := reason||body||[subject,detail,details] join; target_type/target_id fallback: token regex over reason text for WIN-\\d{3}|SEC-\\d+(\\.\\d+)?|PRED-\\d+|ISS-\\d+|EXP-\\d+ (same regex family Mode 2b already uses); pushed_by := pushed_by||created_by; audience defaults to 'analyst' when absent (canonical schema predates the audience field — absence means analyst work).",
+      "audience_guard": "audience==='operator' records are excluded from live output and returned in a separate fyi[] bucket (PROP-093 C1 behavior, preserved).",
+      "output_modes": {
+        "live": "JSON array of normalized live items to stdout. Exit 0 always (Mode 2b consumption path must not die on drift — that is the whole point).",
+        "audit": "JSON report {total, live_count, fyi_count, by_variant:{canonical,open_backcompat,attn_drift,resolved,unknown_drift}, drift_records:[{id, variant, writer, keys, translated}]}. Exit 0 if by_variant.open_backcompat+attn_drift+unknown_drift===0, else exit 3 (RC=3 drift-present convention, mirrors check-prune-resurrection.js).",
+        "self-test": "Runs the classifier against the embedded fixture (test_fixture below), asserts all expectations, prints PASS/FAIL per assertion, exit 0 iff all pass."
+      }
+    },
+    {
+      "id": "C2-mode2b-invocation",
+      "path": "monitor/prompts/analyst.md (Mode 2b, ~L275 quick-check + Phase 1/2/3 item loops)",
+      "change": "Replace the inline node heredoc filter with a 3-line invocation: node monitor/scripts/read-attention-inbox.js --file \"${WORKSPACE}/monitor/analyst/attention-inbox.json\" --mode live. Phase loops consume the normalized records (reason is always populated post-shim; target fallback pre-computed). Keep the L279 prose paragraph but rewrite it to describe the script as the single source of truth for read tolerance, so prompt prose and code cannot drift apart again. FUSE-canonical read path (L267 rule) unchanged — the script is pointed at the FUSE file.",
+      "rationale": "PROP-066 precedent: 140-line inline blocks get skipped ~94% of the time; 3-line script invocations are structurally hard to skip. Also ends the C1 inline-filter era where tolerance logic lived in a heredoc the next prompt-edit could silently regress."
+    },
+    {
+      "id": "C3-integrity-surfacing",
+      "path": "monitor/prompts/structure-integrity.md (new daily check)",
+      "change": "Add a check that runs node monitor/scripts/read-attention-inbox.js --file \"${WORKSPACE}/monitor/analyst/attention-inbox.json\" --mode audit. RC=3 → append findings[] entry {category:'attention-inbox-schema-drift', severity:'moderate', evidence: drift_records with writer attribution via pushed_by/created_by, recommendation:'writer at fault violated decider.md Step A DO-NOT-DEVIATE (layer 1); items ARE reachable via the tolerant reader (layer 2) but the writer should be corrected'}. Integrity does NOT mutate attention-inbox.json.",
+      "rationale": "Directive constraint 2: acceptance without surfacing would mask the bug. The finding names the improvising writer so the fix lands on the write site, not just the symptom."
+    },
+    {
+      "id": "C4-ownership-classification",
+      "path": "CLAUDE.md File Ownership + workspace-sync.md NEVER_PUSH",
+      "change": "Classify monitor/scripts/read-attention-inbox.js as git-owned source code (NEVER_PUSH), same as audit-rewrite.js / push-via-api.js / lint-decider-surfaces.js.",
+      "rationale": "Every file crossing the boundary needs exactly one authoritative side; helper scripts are uniformly git-owned."
+    }
+  ],
+  "test_fixture": {
+    "note": "Embedded per the directive deliverable item 4. Implementation ships this as the self-test fixture inside read-attention-inbox.js (embedded constant, so the script is self-contained and the fixture cannot be lost to FUSE/git divergence).",
+    "fixture_records": [
+      { "id": "ATT-2026-01-01T00:00:00.000Z", "status": "pending", "audience": "analyst", "target_type": "win", "target_id": "WIN-001", "reason": "canonical pending item", "pushed_by": "decider", "pushed_at": "2026-01-01T00:00:00.000Z", "related_issues": ["ISS-1"] },
+      { "id": "ATTN-001", "resolved": false, "subject": "Patched WIN-014 evidence text", "detail": "Decider self-applied c6 hole; analyst previously wrote EXP-401 against this WIN" },
+      { "id": "ATTN-002", "resolved": true, "subject": "already handled", "detail": "resolved drift record" },
+      { "id": "ATT-2026-06-12T02:18:20.000Z-selfapply", "status": "open", "audience": "analyst", "created_by": "decider", "priority": "medium", "body": "decider self-applied WIN-044 c6 holes, build on top; see EXP-617" },
+      { "id": "ATT-2026-06-07T23:15:48.452Z-mode6", "status": "open", "audience": "operator", "created_by": "analyst", "priority": "low", "body": "Mode 6 random-look examined WIN-064, no action needed." },
+      { "id": "NOTE-999", "improvised_field": true, "text": "totally unknown shape" }
+    ],
+    "expected_assertions": [
+      "T1 (directive core): live output CONTAINS a record for ATTN-001, normalized to status-equivalent pending, reason==='Patched WIN-014 evidence text — Decider self-applied c6 hole; analyst previously wrote EXP-401 against this WIN', target fallback resolves target_id WIN-014 (token regex), variant==='attn_drift'.",
+      "T2: ATTN-002 (resolved:true) is NOT in live output.",
+      "T3: ATT-...-selfapply (status:open, audience:analyst) IS live, reason shimmed from body, target token EXP-617 resolvable, variant==='open_backcompat'.",
+      "T4: ATT-...-mode6 (audience:operator) is NOT in live output; appears in fyi[] bucket.",
+      "T5: NOTE-999 is NOT live; appears in audit drift_records as variant unknown_drift with its key set listed.",
+      "T6: canonical ATT-2026-01-01 record passes through byte-identical on all canonical fields (no-regression).",
+      "T7 (directive core, integrity half): --mode audit against this fixture exits RC=3 and drift_records has exactly 3 entries (ATTN-001, ATT-...-selfapply, NOTE-999) — demonstrating the ATTN-NNN record BOTH routes through Mode 2b as live AND produces the integrity finding.",
+      "T8: live count === 3 (canonical + attn-translated + open-backcompat)."
+    ]
+  },
+  "rollout_plan": [
+    "Phase 1: ship read-attention-inbox.js with self-test; run --self-test in CI-style manual check (node monitor/scripts/read-attention-inbox.js --mode self-test).",
+    "Phase 2: land C2 (analyst.md invocation swap) + C3 (integrity check) in one commit — reader and detector together.",
+    "Phase 3: after PROP-093 C2 (writer normalization) lands and 7 drift-free days pass (integrity finding silent), OPTIONALLY tighten: drop open_backcompat from live acceptance. The script makes this a one-constant change.",
+    "Propose-only per directive: no prompt file, script, or CLAUDE.md change is made by this PROP's authoring run. Operator reviews before implementation."
+  ],
+  "verification_pattern": "test -f monitor/scripts/read-attention-inbox.js && node monitor/scripts/read-attention-inbox.js --mode self-test >/dev/null 2>&1 && grep -q 'read-attention-inbox.js' monitor/prompts/analyst.md && grep -q 'attention-inbox-schema-drift' monitor/prompts/structure-integrity.md && echo FIXED || echo STILL_BROKEN",
+  "verification_grade": "A",
+  "estimated_cost": "Script ~150 lines (single file, no deps). analyst.md net -20 lines (heredoc removed). structure-integrity.md +12 lines. One-time; zero recurring token cost (script output is smaller than the heredoc it replaces).",
+  "risks": [
+    "Translator acceptance could reduce pressure to fix writers (masking). Mitigated by C3: every drift record generates a moderate integrity finding until the writer is corrected — drift is MORE visible after this PROP, not less.",
+    "Fixture drift if canonical schema evolves: self-test embedded in the script fails loudly on next run, which is the desired behavior.",
+    "If analyst.md Phase loops still reference raw fields the normalizer renames, a partial implementation could break Mode 2b. Mitigation: T6 no-regression assertion + implement C2 as a single commit swapping both quick-check and loops."
+  ]
+}
