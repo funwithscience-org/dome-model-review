@@ -1,0 +1,59 @@
+{
+  "id": "PROP-128",
+  "title": "Wayback Archive Presence Verification — read-only daily check in social.md for dome + review URL snapshot presence/age, with removal + staleness alerting",
+  "created_at": "2026-07-10T02:40:00Z",
+  "authored_by": "tinker",
+  "authored_by_run": "tinker-2026-07-10T02-40",
+  "directive_id": "DIRECTIVE-20260709-002",
+  "status": "proposed",
+  "category": "monitoring-extension",
+  "relationship_to_prior_art": {
+    "companion_to": "Operator-triggered Save Page Now baseline of 14 URLs landed 2026-07-09T18:13-18:28Z (13 dome pages + review root); snapshot IDs recorded in DIRECTIVE-20260709-002.background_artifacts.",
+    "pattern_reused": "Helper-script extraction (PROP-050 push-via-api.js, PROP-066 sync-workspace-step4c.js lineage): the check lives in a Node script invoked by a 3-line prompt block, not an inline bash wall, because inline walls get skipped by scheduled agents (~94% skip rate measured on PROP-061 Step 4c before extraction).",
+    "ownership_precedent": "monitor/sloppytoppy/scores.json — 'git-owned-with-clone-writer': classified git in build.js OWNERSHIP; the producing agent writes from its clone and pushes; FUSE receives via the git->FUSE path.",
+    "bundling_note": "HNOTE-SOCIAL-JESUSRULES-TIKTOK-VERIFY-2026-07-09 is a separate one-shot commission; this PROP deliberately does NOT create a shared 'External Verification' section. Wayback is a recurring daily pass; TikTok-verify is a one-off HNOTE. Keeping them separate avoids coupling a permanent prompt section to a transient task."
+  },
+  "problem": "Neither the dome site nor the review site had ANY Internet Archive presence until the operator's manual save-baseline on 2026-07-09. Nothing now watches that baseline. Two silent failure modes: (1) snapshot REMOVAL — Wayback honors site-owner removal requests, and the dome author (in direct contact with the operator since 2026-04-26) is a plausible requester; a removal would be a strong engagement signal that currently nobody would notice; (2) staleness drift — we do not re-save on every dome change, so the archive silently falls behind live; without an age alarm the baseline decays to uselessness. There is also no coverage trend signal (snapshot count over time).",
+  "changes": [
+    {
+      "n": 1,
+      "what": "NEW config file monitor/social/wayback-monitored-urls.json",
+      "detail": "Operator-editable JSON: { \"urls\": [ ...14 baseline URLs... ], \"staleness_threshold_days\": 90 }. Initial contents: the 13 john09289.github.io/predictions pages + https://funwithscience.net/dome-model-review/ from the directive's baseline_snapshots. Social may APPEND new dome page URLs when poller changes reveal new pages (append-only guidance in prompt; removals are operator-only).",
+      "ownership": "git-owned (operator-curated config, precedent: monitor/sloppytoppy/rubric-config.json). Add to build.js OWNERSHIP as 'git' + workspace-sync.md NEVER_PUSH + CLAUDE.md File Ownership table at implementation time."
+    },
+    {
+      "n": 2,
+      "what": "NEW script monitor/scripts/check-wayback.js",
+      "detail": "Read-only availability check. For each URL in the config: GET https://archive.org/wayback/available?url=<url> (public JSON API, no auth). Compute per-URL: archived (bool), closest_snapshot_url, closest_snapshot_ts, snapshot_age_days. Compare against previous state in monitor/social/wayback-state.json (if present). Emit alerts: REMOVAL (archived true->false vs previous state), STALE (newest snapshot age > staleness_threshold_days), UNKNOWN (API unreachable/timeout/non-JSON — logged, never alarmed, previous state retained for that URL). Write new wayback-state.json (full per-URL state + run ts). Print JSON summary to stdout: {monitored_url_count, all_archived, oldest_snapshot_age_days, newest_snapshot_age_days, removal_alerts[], staleness_alerts[], unknown[]}. Exit 0 always (alert presence is in the JSON, not the exit code — social's run must not die on an alert). Env override WAYBACK_API_BASE for fixture testing. 10s timeout per URL, sequential with 500ms spacing (14 URLs ~ <30s worst case).",
+      "ownership": "git-owned source code (NEVER_PUSH in workspace-sync.md), like all monitor/scripts/*.js."
+    },
+    {
+      "n": 3,
+      "what": "NEW state file monitor/social/wayback-state.json",
+      "detail": "Written by check-wayback.js from social's clone each run; pushed with social's normal end-of-run commit. Removal detection requires last-known state; deriving it from the previous report-YYYY-MM-DD.json was considered and rejected (reports are per-day named, occasionally missing on failed runs, and parsing them couples the checker to the report schema).",
+      "ownership": "git-owned-with-clone-writer (precedent: monitor/sloppytoppy/scores.json). Classified 'git' in build.js OWNERSHIP + NEVER_PUSH in workspace-sync.md; social writes from clone and pushes."
+    },
+    {
+      "n": 4,
+      "what": "social.md prompt addition — new pass 'Wayback Archive Presence Verification' (after section 5, before Self-Cost Report)",
+      "detail": "3-line invocation block: node monitor/scripts/check-wayback.js --config monitor/social/wayback-monitored-urls.json --state monitor/social/wayback-state.json, capture JSON. Reporting instructions: (a) always write the summary object into the daily report as wayback_status: {monitored_url_count, all_archived, oldest_snapshot_age_days, newest_snapshot_age_days, removal_alerts, staleness_alerts}; (b) if removal_alerts non-empty -> also append to author_activity[] with platform:'wayback', signal:'snapshot-removal', evidence:<URL + last-known snapshot ts> AND surface in latest-summary.txt (removal is the high-signal case per operator_notes); (c) if staleness_alerts non-empty -> moderate finding in the report recommending an operator re-save session, including the copy-paste SPN template: curl -sSL -A '<realistic Chrome UA>' --max-time 120 https://web.archive.org/save/<url>; (d) UNKNOWN entries are reported but never alarmed. Explicit prompt-level prohibition: NEVER call https://web.archive.org/save/ from a scheduled run (operator veto in advance, DIRECTIVE-20260709-002 part C)."
+    }
+  ],
+  "code_sketch": "async function check(url, apiBase){ try { const r = await fetchJson((apiBase||'https://archive.org')+'/wayback/available?url='+encodeURIComponent(url), {timeout:10000}); const c = r && r.archived_snapshots && r.archived_snapshots.closest; if(!c || !c.available) return {url, archived:false}; return {url, archived:true, snapshot_url:c.url, snapshot_ts:c.timestamp, age_days:ageDays(c.timestamp)}; } catch(e){ return {url, status:'UNKNOWN', error:String(e).substring(0,120)}; } } // alerts: prev.archived===true && cur.archived===false -> REMOVAL; cur.age_days > cfg.staleness_threshold_days -> STALE; UNKNOWN -> carry prev state forward, no alarm.",
+  "test_fixture": "check-wayback.js --self-test runs three cases without touching live state: (a) archived: query https://john09289.github.io/predictions/ against the live availability API, expect archived:true (baseline saved 2026-07-09); (b) unarchived: query https://john09289.github.io/predictions/definitely-not-a-page-<random-hex>.html, expect archived:false and NO alert classification (absence of snapshot for a never-monitored URL is not a removal); (c) unreachable: run with WAYBACK_API_BASE=http://127.0.0.1:1 and expect every result status:UNKNOWN, exit 0, no alarm. Self-test prints SELFTEST-PASS/SELFTEST-FAIL per case.",
+  "verification_pattern": "cd $CLONE && node monitor/scripts/check-wayback.js --self-test 2>&1 | grep -c 'SELFTEST-PASS' | grep -q '^3$' && echo FIXED || echo STILL_BROKEN",
+  "verification_grade": "B (fixture-test per DIRECTIVE-20260709-002 acceptance criteria: archived:true case, archived:false case, API-unreachable->UNKNOWN case; case (a) depends on live API availability so it is B not A)",
+  "rollout_plan": {
+    "phase_0": "Decider/operator applies: land config + script + state-file classification (build.js OWNERSHIP, workspace-sync.md NEVER_PUSH, CLAUDE.md table) + social.md prompt pass. Run check-wayback.js once manually from the applying clone to seed wayback-state.json (first run has no previous state, so removal detection is inert until state exists — seeding closes that same-day).",
+    "phase_1": "Observe: social's next 04:30 UTC run executes the pass. Expected per acceptance criteria: all 14 URLs archived:true, zero alerts, wayback_status present in that day's report. Tinker verifies on next Mode 3 run via the report field.",
+    "no_phase_2": "Read-only monitoring; no enforce/shadow split needed."
+  },
+  "risks": [
+    "Availability API returns the CLOSEST snapshot only, not count — snapshot-count trend (directive context item c) is NOT covered; would need the CDX API. Deliberately deferred: CDX returns bulk data and the directive marks it use-only-if-insufficient. If the operator wants count trends, a follow-up adds a weekly CDX pass.",
+    "False REMOVAL alarm if the availability API transiently returns empty archived_snapshots with HTTP 200. Mitigation: REMOVAL requires prev.archived===true AND current archived:false on a well-formed 200 response; malformed/timeout responses classify UNKNOWN and carry previous state.",
+    "URL canonicalization: availability API may match with/without trailing slash inconsistently. Mitigation: store URLs in config exactly as saved in the baseline; compare state per config-string, never normalize.",
+    "social agent budget: +14 sequential GETs (~15-30s wall clock) — negligible vs social's existing search passes."
+  ],
+  "estimated_cost": "One-time: ~150 lines of Node + ~40 lines of prompt/config + 3 classification-table edits. Recurring: ~zero tokens (script does the work; agent reads one JSON summary).",
+  "notes_for_decider_and_operator": "NOT-IN-SCOPE (operator veto declared in advance): no auto-save from any scheduled agent; no poller involvement; no non-dome/non-review URLs; no modification of archived snapshots. The removal-alert path is the load-bearing feature — a Wayback removal request would be a strong dome-author engagement signal (author has had direct operator contact since 2026-04-26). Directive carries auto_close_when_deliverable_proposed:false, so DIRECTIVE-20260709-002 stays pending until the first successful social run lands; tinker recorded a progress field on the directive."
+}
