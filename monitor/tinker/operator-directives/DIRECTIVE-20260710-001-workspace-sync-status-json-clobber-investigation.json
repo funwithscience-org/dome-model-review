@@ -1,0 +1,93 @@
+{
+  "directive_id": "DIRECTIVE-20260710-001",
+  "for": "tinker",
+  "status": "pending",
+  "priority": "medium",
+  "auto_close_when_deliverable_proposed": false,
+  "created_at": "2026-07-10T05:30:00Z",
+  "created_by": "steve (operator, via cowork)",
+  "title": "workspace-sync status.json clobber — investigate the 2026-07-10 00:0x-window mini-incident (poller commit 25a79b0 references phantom SHA a88d026 as the culprit), assess whether the workspace-owned surface needs protection analogous to PROP-127 CHECK 3 (sentinel-file reversion), or whether the clobber class is best left to poller's self-heal.",
+  "context": {
+    "why_now": "Poller commit 25a79b0 (2026-07-10T00:14:37Z, message 'poller: 2026-07-10T00:09Z poll — net quiet, PRED-FIELD-2026Q2 d=10 (HIGH heartbeat), PRED-073 d=40 (terminal heartbeat); restores status.json fields after workspace-sync clobber incident (a88d026)') explicitly cites a workspace-sync clobber of status.json fields that poller had to self-heal. The referenced SHA a88d026 is NOT findable in current git history (either rebased away, force-pushed over, or the SHA in the message is truncated/mistyped). status.json is workspace-owned per CLAUDE.md OWNERSHIP, so PROP-127 CHECK 3 (which protects SENTINEL_FILES = 9 canonical git-owned files) would not have caught this by design. But 'workspace-sync improvised the sync path and clobbered a workspace-owned file such that a downstream agent had to self-heal' is the same behavioral class as the 2026-07-07 4a5b8115 incident that PROP-127 addressed for git-owned files. Question: should the workspace-owned surface get its own protective mechanism, or is the ~30-day cadence of this class of incident + downstream self-heal sufficient?",
+    "evidence_pointers": {
+      "poller_self_heal_commit": "25a79b0 (2026-07-10T00:14:37Z, message quoted above)",
+      "workspace_sync_run_that_probably_did_it": "72aa269 (2026-07-10T00:08:08Z, 'Workspace sync: 2026-07-10T00:08:08Z' — the cycle immediately preceding poller's restore). Modified curmudgeon/latest-verify-summary.txt + closed-issues.json + narrative-cite-audit sentinel — 3 files. status.json not visibly in the file list at the top level but a diff-inspection of the commit would confirm whether status.json fields were touched via a sneak edit or if the clobber was in a different neighboring cycle.",
+      "phantom_sha_a88d026": "Not findable via git log --all in the current clone. Possibilities: (a) truncated SHA prefix (poller may have written a hash prefix that no longer matches after a subsequent history change); (b) rebased-away commit (unlikely — workspace-sync clones fresh and pushes normally; no rebase in the flow); (c) typo in poller's message string. Not blocking — the point is that poller detected AND fixed a status.json regression, so the incident is real regardless of which upstream commit caused it."
+    },
+    "prior_related": {
+      "PROP-127": "sentinel-file byte-reversion CHECK 3 — protects 9 git-owned files against pre-push byte-reversion. Would NOT have caught status.json because status.json is workspace-owned (only workspace-sync writes it FUSE→git).",
+      "DIRECTIVE-20260709-001": "workspace-sync 4a5b8115 multi-file reversion — root cause was workspace-sync improvisation (skipped smart_copy, pushed stale FUSE view). Same behavioral class likely applies here.",
+      "poller_prompt": "monitor/prompts/poller.md — poller's built-in status.json field restoration mechanism is a durable self-heal, but relies on poller running WITHIN a window after the clobber. Timeline: workspace-sync 00:08 → poller 00:14 = 6 minutes. Poller's own scheduled cadence is daily, so this happens to be one of the moments-per-day poller can catch a fresh clobber. If workspace-sync clobbered status.json at, say, 04:08 UTC (its most common cadence slot), poller wouldn't run until ~24h later — much longer stale window."
+    }
+  },
+  "task": {
+    "part_A_forensic_confirmation": {
+      "questions_to_answer": [
+        "Q1 — Confirm the culprit workspace-sync commit that clobbered status.json. Was it 72aa269 (00:08), or a different neighboring cycle (04:08, 08:08, 12:08)? git diff the working tree of status.json across the workspace-sync cycles on 2026-07-10 to identify which cycle wrote the stale content.",
+        "Q2 — What FIELDS in status.json got clobbered? Poller's message says 'restores status.json fields' plural — enumerate them from the diff to understand the impact class.",
+        "Q3 — Was this the same improvisation-path signature as 4a5b8115 (skips_total=0 while neighbors had 1,169+ skips)? Check the workspace-sync run report for the identified culprit cycle and compare its skips_total to neighboring cycles."
+      ],
+      "output": "monitor/tinker/reports/workspace-sync-status-json-clobber-2026-07-10.md — one-page report answering Q1-Q3 with commit + report SHAs."
+    },
+    "part_B_protection_options_inventory": {
+      "candidates_to_evaluate": [
+        {
+          "id": "OPT-1",
+          "label": "Extend PROP-127 CHECK 3 SENTINEL_FILES to include workspace-owned files (status.json, review-state.json, latest-*-summary.txt)",
+          "notes": "Simplest technical fit. But: workspace-owned files LEGITIMATELY get overwritten by workspace-sync every cycle (that's the whole point). CHECK 3 blocks BYTE-REVERSIONS to historic commit content — for a monotonically-evolving workspace-owned file, that shouldn't trip for legitimate updates. If it does, the fail-open discipline catches it. Worth evaluating: does status.json evolve monotonically enough that byte-reversion would be a valid signal?"
+        },
+        {
+          "id": "OPT-2",
+          "label": "Add pre-push hook CHECK 4: workspace-owned drift semantic check",
+          "notes": "Different mechanism from CHECK 3. Instead of byte-reversion, walk fields of specific workspace-owned files (status.json fields, review-state.json fields) and compare against last commit's values. If a field got zeroed or reverted to a much older value without a corresponding decider/agent commit that ATTRIBUTED the field change, block. More complex, more targeted, more prone to false positives."
+        },
+        {
+          "id": "OPT-3",
+          "label": "Rely on downstream self-heal (poller, decider) as the protection layer",
+          "notes": "Do nothing. Poller already caught this one. Decider re-writes status.json on every run. Analyst re-writes review-state.json. Steady state: any workspace-sync clobber gets healed within one downstream agent cycle. Cost: transient staleness (minutes to hours) for readers of the workspace-owned files during the window between clobber and heal."
+        },
+        {
+          "id": "OPT-4",
+          "label": "Move status.json to git-owned classification",
+          "notes": "Reclassifies the file. Then workspace-sync NEVER pushes it and the clobber class disappears. But status.json is written by MANY agents (poller updates poll counters; decider updates prev_decider_run; analyst updates review_state; etc.) — moving to git-owned means every agent writes from clone, not from FUSE. Big refactor. Probably not worth it for one file."
+        },
+        {
+          "id": "OPT-5",
+          "label": "Instrument workspace-sync's own logic to detect its own improvisation",
+          "notes": "PROP-128-like semantic canary but for workspace-sync itself. If a workspace-sync run's skips_total is 0 while the running average is ~1,000, log a WARN sentinel. Doesn't PREVENT the clobber but SURFACES the class earlier. Could feed integrity's daily audit."
+        }
+      ],
+      "output": "5-row feasibility table appended to Part A report."
+    },
+    "part_C_recommendation": {
+      "ask": "One clear recommendation. Explicitly acceptable outcome: 'OPT-3 (rely on downstream self-heal). Frequency of the clobber class + fast self-heal + high false-positive risk of the alternatives makes protection not worth building.' Operator does not require a fix if the investigation shows the current state is fine.",
+      "output": "One-paragraph recommendation at the top of the Part A report."
+    }
+  },
+  "deliverable_acceptance_criteria": [
+    "monitor/tinker/reports/workspace-sync-status-json-clobber-2026-07-10.md answering Q1-Q3 with concrete evidence.",
+    "5-row feasibility table for OPT-1..OPT-5.",
+    "One-paragraph recommendation.",
+    "If recommendation is a code change (OPT-1, OPT-2, or OPT-5), a follow-up PROP with verification pattern grade B."
+  ],
+  "constraints": {
+    "budget_soft_limit_tokens": 40000,
+    "text_investigation_only_in_this_directive": "Do NOT modify sync-workspace-step4c.js, workspace-sync.md, poller.md, or the PROP-121/PROP-127 hook script in this directive. Investigate and recommend; a follow-up PROP does the code change if warranted.",
+    "prop_051_disaster_class_review_required": "Any protection option that changes workspace-sync's push behavior (OPT-1, OPT-2) must pass PROP-051-class review: fail-open discipline (bug degrades to status quo, not blocking all syncs). PROP-127 established the pattern.",
+    "do_not_pause_agents_during_investigation": "Do NOT pause dome-workspace-sync or dome-poller during investigation. This class of incident is rare and self-heals; investigation shouldn't degrade steady-state operation."
+  },
+  "background_artifacts": {
+    "prior_directive_completed": "DIRECTIVE-20260709-001 workspace-sync multi-file reversion — completed 2026-07-09T17:46Z via PROP-127 CHECK 3. Focus: git-owned SENTINEL_FILES.",
+    "this_directive_scope": "Same behavioral class (workspace-sync improvisation) applied to workspace-owned files. Distinct from DIRECTIVE-20260709-001 by ownership category.",
+    "prop_127_ship": "monitor/scripts/lint-workspace-sync-push.js CHECK 3, shipped 2026-07-09 in commit d1c43385. This directive asks whether the same pattern extends to workspace-owned.",
+    "poller_prompt": "monitor/prompts/poller.md — implicit protection mechanism for status.json (poller re-writes fields it maintains).",
+    "specific_evidence_commit": "25a79b0 poller commit (2026-07-10T00:14:37Z) references clobber via SHA a88d026 (phantom in current history)."
+  },
+  "not_in_scope": [
+    "Do NOT investigate the workspace-sync improvisation ROOT CAUSE further — DIRECTIVE-20260709-001 already root-caused it (agent skipped smart_copy path). This directive is about whether the workspace-owned surface needs its own protection.",
+    "Do NOT modify OWNERSHIP classification of status.json (would need much broader review than this scope).",
+    "Do NOT change poller.md's status.json restoration logic (working correctly)."
+  ],
+  "supersedes_directives": [],
+  "operator_notes": "Small follow-up to yesterday's DIRECTIVE-20260709-001. Not urgent — the incident self-healed. Filing to document the pattern and get a durable answer on whether to extend protection. If Part C recommends OPT-3 (no fix), that's a legitimate close."
+}

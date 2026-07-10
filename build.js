@@ -151,6 +151,13 @@ const OWNERSHIP = {
   'monitor/sloppytoppy/math-dense-surfaces.json': 'git',
   'monitor/sloppytoppy/content-dense-surfaces.json': 'git',
 
+  // PROP-128 (2026-07-10): social Wayback presence monitoring.
+  // wayback-monitored-urls.json is operator-curated config; wayback-state.json
+  // is social-clone-writer (last-run state for removal detection). Both git-owned;
+  // build.js publish copies git→workspace.
+  'monitor/social/wayback-monitored-urls.json': 'git',
+  'monitor/social/wayback-state.json': 'git',
+
   // PROP-041 Phase 2 (2026-05-16): sloppytoppy-rewrite state files.
   // - rewrite-attempts.json is a sidecar counter (rewriter increments,
   //   decider clears on integration success). Git-owned because writers

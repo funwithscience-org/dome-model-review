@@ -305,6 +305,16 @@ NEVER_PUSH=(
   # quick-checks. Reads prune archive JSONL tombstones + working tree.
   # Same classification as the other clone-invoked scripts above.
   'monitor/scripts/check-prune-resurrection.js'
+  # PROP-128 (2026-07-10): check-wayback.js is the read-only availability
+  # check social invokes in its daily 04:30 UTC run — reads the
+  # wayback-monitored-urls.json config + the last-run wayback-state.json
+  # and calls archive.org's availability API for each URL. Same source-code
+  # classification as check-prune-resurrection.js. Config + state files are
+  # git-owned (operator + social clone writer respectively); listed
+  # explicitly below because they're not source code but ARE clone-written.
+  'monitor/scripts/check-wayback.js'
+  'monitor/social/wayback-monitored-urls.json'
+  'monitor/social/wayback-state.json'
   # PROP-021 Phase 1 (2026-06-14): compute-curmudgeon-dispatcher-state.js
   # is the precompute that resolves curmudgeon's pre-review priorities
   # deterministically (~3-5KB output instead of ~150KB of state-file reads).

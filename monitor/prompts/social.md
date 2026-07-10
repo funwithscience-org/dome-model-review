@@ -353,6 +353,42 @@ You own the *strategy* for how our content is seen by machines — LLMs, search 
 }
 ```
 
+### 6. Wayback Archive Presence Verification (PROP-128 / DIRECTIVE-20260709-002, added 2026-07-10)
+
+Read-only daily check that the operator-triggered save-baseline (2026-07-09T18:13-18:28Z, 14 URLs — 13 dome tabs + our review) still exists on the Internet Archive, and alerts if snapshots get removed or age past the staleness threshold.
+
+```bash
+echo "STEP_MARKER wayback-archive-check $(date +%s)" >&2
+node monitor/scripts/check-wayback.js \
+  --config monitor/social/wayback-monitored-urls.json \
+  --state  monitor/social/wayback-state.json
+```
+
+The script always exits 0. Alert presence is in the JSON summary on stdout. Copy that summary into your daily report as `wayback_status`:
+
+```json
+"wayback_status": {
+  "ran_at": "<from script>",
+  "monitored_url_count": <int>,
+  "all_archived": <bool>,
+  "oldest_snapshot_age_days": <number|null>,
+  "newest_snapshot_age_days": <number|null>,
+  "removal_alerts": [ ... ],
+  "staleness_alerts": [ ... ],
+  "unknown": [ ... ]
+}
+```
+
+Alert handling:
+
+- **`removal_alerts` non-empty** — a monitored URL has flipped `archived: true → false`. This is a HIGH-signal event (Wayback honors site-owner removal requests; the dome author is a plausible requester). ALSO append an `author_activity[]` entry: `{platform: "wayback", signal: "snapshot-removal", url: <affected URL>, last_known_snapshot_ts: <ts>, evidence: <last-known snapshot URL>}`. Surface the removal in `latest-summary.txt` so the operator sees it immediately.
+- **`staleness_alerts` non-empty** — newest snapshot for a monitored URL is older than the config's `staleness_threshold_days` (default 90). Emit a moderate finding in the daily report recommending an operator re-save session. Include the copy-paste SPN command template in the finding body: `curl -sSL -A '<realistic Chrome UA>' --max-time 120 https://web.archive.org/save/<url>`.
+- **`unknown` non-empty** — API unreachable, timeout, or non-JSON response. Report the entry but NEVER alarm on it. The script itself carries the previous state forward for UNKNOWN URLs so removal detection isn't triggered by a transient failure.
+
+**Absolute prohibition:** NEVER call `https://web.archive.org/save/` from a scheduled run. Re-saves are operator-triggered from cowork sessions only. This is a hard operator veto (DIRECTIVE-20260709-002 Part C — operator veto in advance). SPN takes 30-90s per URL with realistic UA + follow-redirects and would trip Wayback rate limits from the sandbox IP block. Read-only availability API only.
+
+**Adding new dome pages:** if poller has surfaced a new dome-site page not in the current monitored URL list, APPEND it to `monitor/social/wayback-monitored-urls.json` `urls` array (append-only guidance). Removals from the list are operator-only.
+
 ## Self-Cost Report (PROP-101 Phase 2, added 2026-06-14)
 
 Append one JSON line to `${CLONE}/monitor/social/cost-history.jsonl` with this run's actual token usage + USD cost. Non-fatal: any failure logs to stderr and exits 0.
