@@ -168,7 +168,7 @@ function check_4_data_prose() {
   const base = winsArr.filter(w => /^\d{3}$/.test(w.id || ''));
   const sub = winsArr.filter(w => /^\d{3}[a-z]$/.test(w.id || ''));
   const baseCount = base.length;
-  const failsArr = Array.isArray(fails) ? fails : (fails.failures || []);
+  const failsArr = Array.isArray(fails) ? fails : (fails.entries || fails.failures || []);
   const failsCount = failsArr.length;
   const verdictTally = {};
   for (const w of winsArr) {
