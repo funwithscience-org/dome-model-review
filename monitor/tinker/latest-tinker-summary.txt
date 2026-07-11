@@ -1,26 +1,28 @@
-TINKER RUN 2026-07-11T02-40 (mode: operator-directive)
+TINKER RUN 2026-07-11T11-37 (operator-directive mode)
 
-DIRECTIVE-20260710-001 (status.json clobber investigation) — COMPLETED this run.
-Headline findings:
- - "Phantom" SHA a88d026 is real — it's on origin/main (2026-07-09T04:10:12Z workspace-sync
-   commit); it was invisible only because agent clones are --depth 50. No rebase, no typo.
- - The directive's suspect 72aa269 is exonerated (no status.json in its file list). The clobber
-   happened a day before the directive assumed; poller detected on its next daily run (~20h later).
- - NOT improvisation: culprit cycle skips_total=81, identical to neighbors. workspace-sync followed
-   its spec. Root cause is a two-writer/two-path race: poller committed poll fields git-only
-   (07-05..07-09) while FUSE held 07-04 content; decider's FUSE write of last_run armed the mtime;
-   whole-file smart_copy then published a chimera (fresh last_run + 5-day-reverted poll fields).
- - PROP-127 CHECK 3 could not have caught it (novel bytes, not a historic-commit reversion).
-Recommendation: OPT-2-lite — PROP-129 authored: CHECK 4 monotonic-timestamp guard (last_poll,
-last_run, last_analysis) in lint-workspace-sync-push.js, fail-open, override flag, ~60 lines.
-If operator prefers zero new code, OPT-3 (self-heal) is defensible — directive said so — but the
-race stays latent. Full report: monitor/tinker/reports/workspace-sync-status-json-clobber-2026-07-10.md
+PRIMARY: DIRECTIVE-20260711-001 (status.json two-writer race fix design) — COMPLETED.
+- Designed 7-option fix matrix (INST-1..4, STRUCT-1..3); full table in
+  monitor/tinker/reports/status-json-two-writer-race-fix-design-2026-07-11.md
+- RECOMMENDATION: instrumentation, not structural surgery (per your explicit permission).
+  INST-1 shipped THIS RUN as PROP-130 (self-applied): new read-only canary
+  monitor/scripts/check-status-json-provenance.js + integrity prompt Section 9d.
+  Detects field regressions + the a88d026 "chimera" signature in status.json git
+  history daily; self-test fixture PASS; live history clean (rc=0, 4 versions).
+- PROP-129 (push-time monotonic guard in workspace-sync hook, authored 07-11T02-40)
+  remains PENDING YOUR RATIFICATION as an optional prevention layer — PROP-130 works
+  standalone either way. STRUCT-1/2/3 rejected (STRUCT-3 = PROP-051-class hot-path risk).
+- ISS-2962 left OPEN per directive constraint. Close it once integrity's next daily run
+  writes checks.status_json_provenance (integration proof), or on your design review.
 
-Pre-flights:
- - Directive auto-close (ENFORCE): closed DIRECTIVE-20260709-002 (PROP-128 terminal-implemented).
- - PROP auto-close (shadow): 140 walked, 0 would-close.
- - Backlog trend: open=13, net_velocity_7d=+22 (healthy). WoW +333% major trigger is the known
-   small-denominator artifact (base was 3) — no action; suggested min-base gate for the threshold.
- - Root FS 3380MB free; no disk pressure; Mode 0 queue empty.
+PRE-FLIGHTS: prop-auto-close shadow 0/141 would-close; directive-auto-close (ENFORCE) 0
+closed, no linkage on the 2 pending. Mode 0 empty. Remaining pending directive:
+DIRECTIVE-20260628-005 (low, DR playbooks) — next run's candidate.
 
-Remaining pending directive: DIRECTIVE-20260628-005 (low prio, disaster-recovery playbooks) — next run.
+BACKLOG: open_issues=13 (all routed, 0 unrouted), net velocity +22/7d, root-FS 3480MB
+free (healthy). WoW% trigger fired mechanically again (3->13 off a tiny base, 3rd
+consecutive report) — no action; will propose a min-base floor if it fires a 4th time.
+
+STRANDED PATCH (action for you, ~30s): stranded-patches-2026-07-10T02-08-04Z.json is
+>24h old and non-tombstoned, but its CLAUDE.md diff (ISS-2946 kill-shots bullet) is
+verifiably already applied at HEAD. Just flip tombstone_status="applied" in the sentinel
+(FUSE + clone) to stop it tripping the Mode-1 scan.

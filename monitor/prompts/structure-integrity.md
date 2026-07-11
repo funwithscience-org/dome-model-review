@@ -965,6 +965,29 @@ Also record the result in `checks.delete_propagation_backlog` every run (includi
 
 Do NOT lower the 200 threshold or auto-execute a drain from the integrity agent — the deny-unlink default is load-bearing disaster-recovery (see PROP-051 postmortem + PROP-125 investigation Q5); the operator drain from a granted cowork session is the intended mechanism.
 
+### 9d. status.json Field-Provenance / Two-Writer-Race Canary (PROP-130 / DIRECTIVE-20260711-001, added 2026-07-11)
+
+```bash
+echo "STEP_MARKER check-9d-status-json-provenance $(date +%s)" >&2
+```
+
+Detect the status.json two-writer race after the fact (ISS-2962; incident a88d026, 2026-07-09: a whole-file mtime-driven FUSE->git copy published a chimera — decider's fresh `last_run` + poller's poll fields reverted 5 days). Poller self-heals its own fields within ~24h, but only audits ITS fields; this canary audits the whole file's history so any writer's field regression surfaces in the daily report.
+
+```bash
+node monitor/scripts/check-status-json-provenance.js --root "$(pwd)" --commits 30
+RC=$?
+```
+
+Exit codes:
+
+- **exit 0** → clean (no field regression in the window). **No finding.**
+- **exit 2** → insufficient history (<2 readable status.json versions in the last 30 commits — shallow-clone truncation or status.json untouched). Emit `issues_found[]` entry with `category: "status-json-provenance-insufficient-history"`, `severity: "info"`. NOT a race finding.
+- **exit 3** → canary FIRED: >=1 field regression detected. Emit `issues_found[]` entry with `category: "status-json-provenance"`, `severity: "moderate"`, copying the script's JSON findings (commit SHA, regressed fields, chimera flag) into the description. If `chimera: true`, name it explicitly — that is the two-writer-race signature, and the operator should check whether poller's next run self-healed (look for a subsequent poller commit restoring the fields).
+
+Also record the result in `checks.status_json_provenance` every run (including on RC=0) — same persistence pattern as `delete_propagation_backlog`.
+
+Do NOT attempt to auto-restore status.json fields from the integrity agent — poller's self-heal is the designated restore path (it recomputes from chg-*.json history, which stays intact). This canary is detection-only; run `node monitor/scripts/check-status-json-provenance.js --self-test` if you suspect the canary itself is broken.
+
 ## Output
 
 ### Write the Report
@@ -1034,12 +1057,18 @@ Write to `monitor/integrity/report-YYYY-MM-DDTHH-MM.json` (include hour and minu
       "threshold": 200,
       "newest_sentinel": null,
       "details": "PROP-125: dome-mirror delete-propagation candidate accumulation. Scheduled sessions cannot unlink() FUSE; operator drain triggered at candidates>=200. Status MUST be written every run."
+    },
+    "status_json_provenance": {
+      "status": "clean|fired|insufficient-history",
+      "versions_checked": 0,
+      "findings": [],
+      "details": "PROP-130: status.json two-writer-race canary (ISS-2962). Detects field regressions / chimera commits in status.json git history. Status MUST be written every run."
     }
   },
   "issues_found": [
     {
       "severity": "critical|major|moderate|minor",
-      "category": "broken_anchor|broken_link|nav_chain|data_mismatch|build_drift|pages_drift|heading_hierarchy|delete-propagation-backlog|delete-propagation-liveness",
+      "category": "broken_anchor|broken_link|nav_chain|data_mismatch|build_drift|pages_drift|heading_hierarchy|delete-propagation-backlog|delete-propagation-liveness|status-json-provenance|status-json-provenance-insufficient-history",
       "description": "What's wrong",
       "location": "file:line or URL",
       "suggested_fix": "How to fix it",
