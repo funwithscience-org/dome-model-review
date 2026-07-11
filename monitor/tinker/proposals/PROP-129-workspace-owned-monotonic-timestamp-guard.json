@@ -1,0 +1,29 @@
+{
+  "prop_id": "PROP-129",
+  "title": "CHECK 4 (monotonic-timestamp guard) for workspace-owned status.json in the workspace-sync pre-push hook",
+  "status": "proposed",
+  "created_at": "2026-07-11T02:55:00Z",
+  "created_by": "tinker run 2026-07-11T02-40",
+  "directive_id": "DIRECTIVE-20260710-001",
+  "problem": "workspace-sync's smart_copy is mtime-driven and whole-file. When FUSE status.json is newer-by-mtime but stale-by-content in a subset of fields (two-writer/two-path split: poller committed poll fields via git clone+push 07-05..07-09 while FUSE retained 07-04 content; decider's FUSE write of last_run armed the mtime), the sync publishes a chimera that silently reverts the other writer's fields. Incident a88d026 (2026-07-09T04:10:12Z) reverted last_poll/consecutive_quiet_polls/last_poll_note by 5 days; poller self-healed ~20h later (25a79b0). NOT an improvisation incident: culprit cycle skips_total=81, identical to neighbors — PROP-127 CHECK 3 cannot catch it (pushed bytes were novel, not a historic-commit reversion), and an improvisation canary (OPT-5) would not fire. Full forensics: monitor/tinker/reports/workspace-sync-status-json-clobber-2026-07-10.md.",
+  "proposal": {
+    "mechanism": "Add CHECK 4 to monitor/scripts/lint-workspace-sync-push.js: for monitor/status.json (extensible map MONOTONIC_FIELDS = { 'monitor/status.json': ['last_poll', 'last_run', 'last_analysis'] }), parse the push-candidate blob and the current origin-HEAD blob; if any listed field's timestamp in the candidate is STRICTLY OLDER than in HEAD, block the push with a named error identifying file+field+both values, unless override flag monitor/integrity/workspace-sync-monotonic-override.flag is present.",
+    "scope_discipline": "Timestamp monotonicity ONLY. Do NOT generalize to arbitrary field-drift comparison (the directive's OPT-2-full) — free-form fields (notes, counters that can legitimately reset) have high false-positive risk. consecutive_quiet_polls is deliberately EXCLUDED (legitimately resets to 0 on substantive dome change).",
+    "fail_open": "Entire CHECK 4 body wrapped in try/catch; any internal error logs a WARN and allows the push (PROP-127 CHECK 3 precedent). A hook bug degrades to pre-PROP-129 status quo, never blocks all syncs (PROP-051-class review requirement from the directive).",
+    "blocked_path_behavior": "When CHECK 4 blocks, workspace-sync excludes status.json from the commit and proceeds with the rest of the cycle (per-file exclusion mirrors smart_copy's existing NEVER_PUSH short-circuit); the fresh FUSE-side fields (e.g. decider's last_run) reach git on a later cycle once FUSE has been healed, or via the writing agent's own git path. Transient loss: one field-advance delayed one cycle. Prevented loss: silent 5-day reversion of another agent's fields.",
+    "companion_note_not_in_this_prop": "poller.md §8 says only 'Update monitor/status.json' without specifying FUSE-vs-clone write path; this ambiguity enabled the race. Directive 20260710-001 forbids poller.md changes in its scope; a future prompt-clarity pass should specify dual-write (FUSE canonical + git push), matching the CLAUDE.md Human Notes Rule pattern."
+  },
+  "alternatives_considered": {
+    "OPT-1_byte_reversion_extension": "Ineffective — incident bytes were novel (chimera), not historic-commit-identical.",
+    "OPT-3_rely_on_self_heal": "Acceptable fallback, explicitly sanctioned by operator. Leaves up-to-24h wrong-data windows; latent to write-path drift. If operator rejects this PROP, close directive with OPT-3 as the standing posture.",
+    "OPT-4_reclassify_git_owned": "Disproportionate refactor; out of directive scope.",
+    "OPT-5_improvisation_canary": "Would not have fired (normal skips_total); class already guarded by PROP-121/127."
+  },
+  "verification_pattern": "if grep -q 'CHECK 4' monitor/scripts/lint-workspace-sync-push.js && grep -q 'MONOTONIC_FIELDS' monitor/scripts/lint-workspace-sync-push.js && grep -q 'last_poll' monitor/scripts/lint-workspace-sync-push.js; then echo FIXED; else echo STILL_BROKEN; fi",
+  "verification_grade": "B",
+  "verification_grade_note": "Grade B: presence-of-implementation grep, not a behavioral replay. A grade-A pattern would need a fixture push simulating a backward last_poll, which requires hook-harness plumbing not yet built.",
+  "estimated_effort": "small — ~60 lines in lint-workspace-sync-push.js following the CHECK 3 structural pattern, plus a workspace-sync.md one-paragraph note",
+  "risk": "low — fail-open, single-file scope, override flag escape hatch",
+  "requires_human_judgment": false,
+  "do_not_auto_close": false
+}
