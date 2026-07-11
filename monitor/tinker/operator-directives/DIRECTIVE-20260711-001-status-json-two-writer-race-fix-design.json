@@ -1,0 +1,109 @@
+{
+  "directive_id": "DIRECTIVE-20260711-001",
+  "for": "tinker",
+  "status": "pending",
+  "priority": "medium",
+  "auto_close_when_deliverable_proposed": true,
+  "created_at": "2026-07-11T11:05:00Z",
+  "created_by": "steve (operator, via cowork)",
+  "title": "Design a fix for the status.json two-writer race (ISS-2962). Explicit permission: 'ship better post-hoc instrumentation so poller/decider/integrity can heal after the fact' is an ACCEPTABLE recommendation vs. structural change. Not a mandate to redesign ownership.",
+  "context": {
+    "why_now": "DIRECTIVE-20260710-001 (completed 2026-07-11T02-40) surfaced the real root cause of the 2026-07-05..09 status.json regressions: NOT workspace-sync improvisation, but a two-writer race. Poller commits status.json fields git-only (5 days of poll updates). FUSE stays at older content because workspace-sync's git→FUSE step doesn't run every cycle for status.json (it's workspace-owned; the natural direction is FUSE→git). Decider's FUSE write of `last_run` arms the mtime. workspace-sync's whole-file smart_copy then publishes a CHIMERA — fresh `last_run` (decider's write) + 5-day-reverted poll fields (stale FUSE view). Poller catches its own field regressions on next daily run (~20h max). Decider auto-generated ISS-2962 (moderate, pending-human) from tinker's investigation. This directive asks tinker to DESIGN the fix — not necessarily a structural one.",
+    "the_key_operator_instruction": "'Just ship better instrumentation so this can get fixed after the fact by poller/decider/integrity' is an ACCEPTABLE and possibly PREFERRED recommendation vs. a structural change. The status quo (poller detects + self-heals within ~24h) is not disaster-class. If the operational cost of the structural fix exceeds the value of preventing ~24h regression windows, tinker should recommend instrumentation + accept. Do NOT default-recommend structural surgery.",
+    "prior_directive": "DIRECTIVE-20260710-001 (completed 2026-07-11T02-40, closure_note documents the a88d026 diagnosis + skips_total=81 exoneration of workspace-sync + two-writer race root cause). Tinker's forensics report at monitor/tinker/reports/workspace-sync-status-json-clobber-2026-07-10.md (assumed) contains the technical detail.",
+    "iss_2962": "monitor/decisions/open-issues.json:ISS-2962 (moderate, pending-human, title 'Infrastructure: status.json two-writer race — poller direct-commit vs workspace-sync FUSE overwrite'). Close this ISS as fixed once the PROP designed here reaches integrated."
+  },
+  "task": {
+    "part_A_options_inventory": {
+      "instrumentation_options_treat_these_as_first_class": [
+        {
+          "id": "INST-1",
+          "label": "Integrity field-provenance check",
+          "shape": "Extend integrity's daily audit with a status.json field-attribution check. Read the last N commits touching status.json, verify each field's most recent write matches the field's declared owner (poller for poll counters, decider for last_run, etc.). Flag chimeric states (fresh fields + stale fields from different commits) as a moderate finding.",
+          "cost": "Small integrity prompt edit + small script. Reuses PROP-125 canary pattern.",
+          "detection_latency": "Daily 01:15 UTC — up to 24h after the race."
+        },
+        {
+          "id": "INST-2",
+          "label": "Workspace-sync pre-push field-regression sentinel for status.json",
+          "shape": "In workspace-sync's smart_copy path (or the PROP-121/127 hook), add a status.json-specific check: for each JSON field, compare the value about-to-be-pushed against the field's most recent commit-side value. If a field REGRESSED (value went backward in ways that make sense to check for that field type — e.g., a monotonic counter went down), warn to a sentinel and either allow-with-warning or block.",
+          "cost": "Moderate hook extension. JSON-schema aware.",
+          "detection_latency": "At push time (immediate) — but false-positive risk for fields that legitimately reset."
+        },
+        {
+          "id": "INST-3",
+          "label": "Poller self-audit: 'my fields since I last committed' check",
+          "shape": "At the top of every poller run, poller reads current status.json, compares its own fields against the values it last wrote (recorded in poller's own state), and if any of its fields regressed BETWEEN its runs (without an intervening poll commit), it logs a finding + self-heals in the same run. Extends poller's existing implicit heal mechanism to be explicit + logged.",
+          "cost": "Poller.md prompt edit.",
+          "detection_latency": "Daily — but poller was already the self-heal path per the 07-10 incident, so this formalizes what's happening."
+        },
+        {
+          "id": "INST-4",
+          "label": "Decider FUSE-write suppression for status.json + write git-only",
+          "shape": "Change decider to write status.json changes to git only (via clone), not FUSE. Removes decider from the race entirely without changing the ownership model. Poller stays git-only. workspace-sync still copies FUSE→git but only ever sees stale FUSE (never chimeric) so it either publishes stale (self-heal via poller) or matches git and no-ops. Preserves the workspace-owned classification while eliminating the specific decider-triggers-smart-copy mechanism.",
+          "cost": "Decider prompt edit. Might have side effects elsewhere — decider currently writes to FUSE for other reasons.",
+          "detection_latency": "N/A — this is prevention, not detection."
+        }
+      ],
+      "structural_options_less_preferred_per_operator": [
+        {
+          "id": "STRUCT-1",
+          "label": "Single-writer refactor",
+          "shape": "Designate ONE agent (probably decider, since it already integrates across surfaces) as the sole status.json writer. Poller writes to a poller-owned intermediate file; decider reads it and merges into status.json. Eliminates race by design.",
+          "cost": "Large. Ripple effects across 3+ agent prompts. High test surface.",
+          "risk": "New race between decider reading poller-intermediate and workspace-sync — could just move the problem."
+        },
+        {
+          "id": "STRUCT-2",
+          "label": "Split status.json into per-writer files",
+          "shape": "poller-status.json (poller-only), decider-status.json (decider-only), etc. Each agent writes only its own file. Consumers merge on read.",
+          "cost": "Very large. Every reader of status.json now needs to merge N files."
+        },
+        {
+          "id": "STRUCT-3",
+          "label": "Atomic field-level merge in workspace-sync",
+          "shape": "workspace-sync's smart_copy for status.json parses the JSON, merges FIELD BY FIELD against the current git state (taking newer per field), writes the merged result. Preserves whole-file semantics from the outside but avoids the whole-file overwrite hazard.",
+          "cost": "Moderate. But: JSON semantic merges are edge-case-heavy (arrays, nested objects, null vs missing). Adds JSON-schema-aware code to workspace-sync's hot path."
+        }
+      ],
+      "output": "Table appended to Part A report (7 rows: INST-1..INST-4 + STRUCT-1..STRUCT-3), 4 columns: feasibility, effort, detection/prevention latency, PROP-051-class risk."
+    },
+    "part_B_recommendation": {
+      "ask": "One clear recommendation. Ranking OK if multiple viable. Explicit permission to recommend INST-1 alone (or any INST-* combo) with structural options rejected — that's an acceptable close if the reasoning is 'the current self-heal latency of ~24h is operationally fine, and instrumentation surfaces the class without adding new race surface.'",
+      "constraint": "If recommendation is INST-*, must include the follow-up PROP shape (which agent, which prompt section, what verification pattern). If recommendation is STRUCT-*, must include a risk analysis specifically addressing 'does this move the problem or eliminate it' with concrete evidence."
+    },
+    "part_C_ship_or_follow_up": {
+      "if_recommendation_is_small_INST": "Ship the PROP in the same tinker run if it fits in the run's remaining budget. Small INST options (INST-1, INST-3) are single-file prompt edits + optional small script — should fit.",
+      "if_recommendation_is_larger": "Author the PROP as propose-only + do_not_implement + requires_human_judgment. Operator reviews next session."
+    }
+  },
+  "deliverable_acceptance_criteria": [
+    "monitor/tinker/reports/status-json-two-writer-race-fix-design-2026-07-11.md — 1-page report with the 7-row options table + one-paragraph recommendation.",
+    "One PROP authored covering the recommended fix. Verification pattern grade B minimum for INST options (fixture proves the check fires on a chimeric state, doesn't fire on clean state). Structural PROPs may be grade C if the change is 'design + operator judgment required'.",
+    "Close ISS-2962 as fixed once PROP reaches integrated (may be operator-manual close since the acceptance criterion is a design not a working code fix)."
+  ],
+  "constraints": {
+    "budget_soft_limit_tokens": 40000,
+    "prop_051_disaster_class_awareness": "STRUCT-2 (split-into-files) and STRUCT-3 (atomic-merge) touch workspace-sync's hot path. If tinker recommends either, must analyze PROP-051 disaster-class risk in the PROP. STRUCT-1 (single-writer) touches 3+ agent prompts and has ripple-effect risk. INST options generally don't have disaster-class risk (they're read-only checks) but INST-2 modifies the pre-push hook, so needs the same fail-open discipline as PROP-127 CHECK 3.",
+    "no_experimental_config_changes_in_this_directive": "Investigate + recommend + design. If ship-in-same-run happens, it must be small enough to fit and pass verification. Otherwise operator reviews.",
+    "do_not_close_iss_2962_before_prop_ships": "The ISS captures the RACE. The PROP captures the FIX. Close ISS-2962 only when the recommended fix's PROP reaches integrated."
+  },
+  "background_artifacts": {
+    "iss_2962": "monitor/decisions/open-issues.json:ISS-2962",
+    "prior_directive": "monitor/tinker/operator-directives/DIRECTIVE-20260710-001-workspace-sync-status-json-clobber-investigation.json (completed)",
+    "tinker_forensics_report_expected": "monitor/tinker/reports/workspace-sync-status-json-clobber-2026-07-10.md (created by the 07-10 directive)",
+    "poller_prompt": "monitor/prompts/poller.md — has implicit status.json restoration; INST-3 formalizes it",
+    "workspace_sync_prompt": "monitor/prompts/workspace-sync.md — smart_copy logic + PROP-121/127 pre-push hook",
+    "decider_prompt": "monitor/prompts/decider.md — FUSE writes of status.json fields",
+    "integrity_prompt": "monitor/prompts/structure-integrity.md — natural home for INST-1",
+    "prop_125_canary_precedent": "monitor/scripts/check-delete-propagation-backlog.js + structure-integrity.md Section 9c — the pattern INST-1 would extend"
+  },
+  "not_in_scope": [
+    "Do NOT change status.json's ownership classification (workspace-owned per CLAUDE.md OWNERSHIP). Reclassification is much broader than this directive's scope.",
+    "Do NOT retroactively re-heal past status.json regressions — poller has already self-healed all observed cases (07-05..09 series).",
+    "Do NOT design a fix that removes poller's self-heal mechanism. Even if a structural fix eliminates the race, poller's self-heal is a durable backstop.",
+    "Do NOT propose a fix that requires operator granting new PAT permissions or changing sandbox policy."
+  ],
+  "supersedes_directives": [],
+  "operator_notes": "Operator (Steve) explicit instruction: 'ship better instrumentation so this can get fixed after the fact by poller/decider/integrity is an ACCEPTABLE recommendation vs. structural change.' The status quo self-heal is fine at ~24h latency. Structural fix only if the added complexity is genuinely justified by risk reduction; instrumentation-only close is legitimate. auto_close_when_deliverable_proposed:true because if tinker recommends INST-* + authors a proposed PROP, that's the deliverable; operator ratifies at the PROP integration stage."
+}
