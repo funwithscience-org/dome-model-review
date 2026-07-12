@@ -1,0 +1,76 @@
+{
+  "directive_id": "DIRECTIVE-20260712-002",
+  "for": "tinker",
+  "status": "pending",
+  "priority": "medium",
+  "auto_close_when_deliverable_proposed": true,
+  "created_at": "2026-07-12T09:32:00Z",
+  "created_by": "steve (operator, via cowork)",
+  "title": "Study cost/benefit of migrating PROP-121/127 pre-push hook enforcement from client-side (bypass-able) to CI-required-status-check (server-enforced). Include latency measurements, fail-open preservation, and a specific PROP-051 disaster-class review.",
+  "context": {
+    "why_now": "Operator upgraded to GitHub Team on 2026-07-12, which unlocks Rulesets with required-status-check enforcement. Two org-UI-level safety features shipped in the same session: (a) secret_scanning_push_protection enabled on all 3 org repos (dome-model-review, funwithscience-org.github.io, space-compression-model-review), (b) main-branch rulesets active blocking force-push + branch deletion (ruleset ids 18827810/11/12). The remaining upgrade is the biggest architectural one: move PROP-121/127 pre-push checks (currently client-side, bypass-able if an agent skips smart_copy — the eab98c5 2026-07-01 failure shape) to CI required-status-checks (server-enforced, no agent can skip). Before we ship that, want tinker's cost/benefit analysis.",
+    "the_current_state": {
+      "hook_script": "monitor/scripts/lint-workspace-sync-push.js — three checks: CHECK 1 (resurrection intersection), CHECK 2 (bulk-change ceiling), CHECK 3 (sentinel-file byte-reversion, PROP-127). Installed into workspace-sync's clone as .git/hooks/pre-push at Step 1.6 of workspace-sync.md. Fires on every push from that clone.",
+      "known_gap": "Any agent that CLONES the repo and pushes WITHOUT running the workspace-sync.md Step 1.6 hook install (or that improvises around it) can push without hook enforcement. That's how the eab98c5 2026-07-01 failure landed — the agent went total-path-bypass on smart_copy. PROP-121 was the response, installing the hook to catch improvised pushes. PROP-127 CHECK 3 extended it. But the hook still lives inside agent clones — a bad enough improvisation could skip Step 1.6 too.",
+      "similar_hooks_that_would_benefit": "monitor/scripts/lint-decider-surfaces.js (PROP-087/089), monitor/scripts/lint-exp-allocations.js (PROP-106), monitor/scripts/lint-close-records.js (PROP-083), lint-workspace-sync-push.js (PROP-121/127)"
+    },
+    "what_ci_enforcement_would_look_like": ".github/workflows/lint-push.yml runs on push (or pull_request) events, executes the same lint scripts, sets a required status check. Combined with a ruleset rule requiring the check to pass, no push can land on main unless the check passes — REGARDLESS of what the agent did or didn't do client-side. Server-side, bypass-proof.",
+    "the_wrinkles": "Costs to consider: (1) added latency — CI adds ~30-60s per push vs. current 2-3s git push; (2) required-status-checks can be bypassed by admins (i.e. Steve as sole admin) unless the ruleset is configured to include admins in enforcement; (3) fail-open discipline currently in CHECK 3 (a hook internal error allows the push) would need to be preserved in CI — a broken workflow file must NOT block all workspace-sync pushes forever (that class of self-inflicted disaster is worse than the class the hook prevents)."
+  },
+  "task": {
+    "part_A_measurement": {
+      "questions_to_answer": [
+        "Q1 — Current push cadence: how many pushes per day across all agents? Sum from workspace-sync/dome-mirror/decider/analyst/social/tinker/etc. Rough answer OK (30-60 estimate).",
+        "Q2 — What would a 30-60s CI-added-latency-per-push cost in aggregate? At 60 pushes/day × 45s = 45 min/day of added serialization if pushes are strictly sequential. Are they? Or are they concurrent enough that added latency doesn't stack?",
+        "Q3 — Which of our documented incidents (2026-05-21 mass-delete, 2026-07-01 eab98c5 improvisation, 2026-07-07 4a5b8115 reversion, 2026-07-10 status.json race) would have been CAUGHT by a CI-required-status-check version of the current hooks? Cross-reference each incident against the hook rules.",
+        "Q4 — Fail-open preservation: if the CI workflow itself has a bug and always fails, we've locked ourselves out of pushing to main. What's the escape hatch — admin bypass, ruleset disable, or something else? Design it EXPLICITLY in the PROP."
+      ],
+      "output": "monitor/tinker/reports/ci-hook-migration-study-2026-07-12.md — 1-page report answering Q1-Q4 with concrete measurements."
+    },
+    "part_B_recommendation": {
+      "ask": "One clear recommendation. Ranking OK if multiple viable. Explicitly acceptable outcome: 'the client-side hook is sufficient; CI migration is not worth the added latency + fail-open complexity — stay with the current design + accept the residual bypass risk.' Operator does NOT require CI migration if the analysis shows the trade doesn't warrant it.",
+      "if_recommendation_is_ship": "Author the PROP with a concrete .github/workflows/lint-push.yml design + a ruleset config extension (require the check) + the fail-open escape hatch. Verification pattern grade B: fixture proves the workflow blocks a synthesized reversion (replay of 4a5b8115) while allowing a clean push.",
+      "if_recommendation_is_stay": "Author a short PROP documenting the analysis + reasoning + operational triggers that would flip the decision later (e.g. 'if another PROP-051-class incident happens WHERE the current hook would have caught it if enforced, revisit CI migration')."
+    }
+  },
+  "deliverable_acceptance_criteria": [
+    "monitor/tinker/reports/ci-hook-migration-study-2026-07-12.md — 1-page report with Q1-Q4 answers.",
+    "One PROP authored covering the recommendation (either 'ship CI migration' or 'stay with client-side'). Verification pattern grade B if shipping; grade C if staying (documentation-only).",
+    "If PROP recommends shipping, must include:",
+    "  - Concrete .github/workflows/lint-push.yml design",
+    "  - Ruleset config extension (add required_status_checks rule with the workflow as required)",
+    "  - Fail-open escape hatch (documented + tested)",
+    "  - Migration plan: which hook checks move first (probably just PROP-127 CHECK 3 as pilot, keep others client-side initially)"
+  ],
+  "constraints": {
+    "budget_soft_limit_tokens": 40000,
+    "prop_051_disaster_class_review_required": "Any 'ship' recommendation MUST address the disaster-class: if the CI workflow breaks, workspace-sync stops working, FUSE→git rescue latency degrades. Explicit failure mode analysis required. The current CHECK 3 fail-open discipline (hook bug degrades to no-protection) is the reference for what fail-open in CI should look like.",
+    "not_a_wholesale_migration": "Do NOT propose migrating ALL lint hooks (workspace-sync + decider-surfaces + exp-allocations + close-records) in one shot. If shipping, pilot with lint-workspace-sync-push.js CHECK 3 only — that's the highest-value / most-tested. Others can follow if the pilot works.",
+    "do_not_touch_the_rulesets_created_2026_07_12_in_this_directive": "The 3 rulesets already created (main-branch-safety, ids 18827810/11/12) block force-push + deletion. Do NOT modify them without a separate operator instruction. Any CI required-check would be a new ruleset rule added, not a modification of the existing rules.",
+    "do_not_disable_client_side_hooks_even_if_ci_migrates": "If CI migration lands, the client-side pre-push hook stays as a fast-fail belt (catches bad pushes before they hit the network). Server-side CI is the durable enforcement. Defense in depth."
+  },
+  "background_artifacts": {
+    "prop_121_client_hook": "monitor/scripts/lint-workspace-sync-push.js (PROP-121, CHECK 1+2)",
+    "prop_127_check_3": "same file, CHECK 3 (PROP-127) — sentinel-file byte-reversion",
+    "workspace_sync_step_1_6": "monitor/prompts/workspace-sync.md line 153-167 — hook install block",
+    "incident_reports": [
+      "2026-05-21 mass-delete (workspace-sync ea785c49): 14.9M-line wipe, PROP-051 disaster class",
+      "2026-07-01 eab98c5 improvisation: agent skipped smart_copy path entirely",
+      "2026-07-07 4a5b8115 multi-file reversion: DIRECTIVE-20260709-001 forensics",
+      "2026-07-10 status.json race: DIRECTIVE-20260710-001 + PROP-130 canary"
+    ],
+    "team_plan_upgrades_landed_2026_07_12": {
+      "secret_scanning_push_protection": "enabled on all 3 org repos",
+      "main_branch_rulesets": "ids 18827810 (dome), 18827811 (fws-org), 18827812 (space-compression), enforcement=active, block force-push + deletion",
+      "not_yet_shipped": "required-status-check enforcement (this directive's subject)"
+    }
+  },
+  "not_in_scope": [
+    "Do NOT migrate other lint hooks (decider-surfaces, exp-allocations, close-records) in the pilot PROP.",
+    "Do NOT modify the existing main-branch-safety rulesets.",
+    "Do NOT propose disabling client-side hooks.",
+    "Do NOT investigate GitHub Advanced Security features (would require Enterprise upgrade, out of scope for Team)."
+  ],
+  "supersedes_directives": [],
+  "operator_notes": "Small, focused directive with an explicit 'stay-put is acceptable' branch. Operator wants tinker's honest analysis, not a default-to-shipping recommendation. If the answer is 'client-side is fine', that's a legitimate close. auto_close_when_deliverable_proposed:true — authoring the PROP (whether ship or stay) is the deliverable."
+}
