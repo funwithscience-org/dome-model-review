@@ -49247,6 +49247,26 @@
       "verified_at": "2026-07-12T02:13:40.337Z",
       "verified_by_run": "verify-pending-2026-07-12T0213Z-3",
       "verifier_script_version": "1.1.0"
+    },
+    {
+      "id": "ISS-2962",
+      "title": "Infrastructure: status.json two-writer race -- poller direct-commit vs workspace-sync FUSE overwrite",
+      "description": "Poller-run 2026-07-09T00:08Z committed fresh status.json fields directly via git clone+push (commit 7dd1b3c). The VERY NEXT commit (a88d026, \"Workspace sync: 2026-07-09T04:10:12Z\") overwrote those same fields back to stale 2026-06-07T21:30:00Z content by copying a months-old FUSE-mount copy over the fresh git commit -- a content-unaware, evidently mtime-driven overwrite. This silently erased 5 days (07-05 through 07-09) of poll-tracking history (last_poll, consecutive_quiet_polls, last_poll_note) from status.json, even though the underlying chg-*.json history and poll summaries remained intact elsewhere. status.json is declared workspace-owned in CLAUDE.md (workspace-sync pushes workspace->git direction only) yet poller has historically committed it directly via git clone+push, creating exactly the two-writer race PROP-051/PROP-065/PROP-066 were built to prevent for other files. This decider run (2026-07-10) recomputed/restored current values from first principles via the poller run at 2026-07-10T00:09:34Z, but the underlying race is NOT fixed and could recur on the next workspace-sync cycle.",
+      "location": "monitor/status.json ownership boundary (poller.md direct-commit path vs workspace-sync.md smart_copy)",
+      "category": "infrastructure",
+      "severity": "moderate",
+      "status": "fixed",
+      "source": "poller-2026-07-10T00-09-self-observed",
+      "found_by": "decider-priority5-pipeline-health",
+      "suggested_fix": "Either (a) reclassify status.json as git-owned in CLAUDE.md/build.js OWNERSHIP (poller becomes sole writer, workspace-sync stops round-tripping it), or (b) stop poller from committing status.json directly and require it to go through the FUSE workspace-owned path exclusively so workspace-sync remains sole writer. Mirrors the PROP-051/065/066 fix pattern applied to other two-writer files. Self-healed this run (poller recomputed values from chg-*.json history); recurrence risk remains until ownership is unambiguous.",
+      "created_at": "2026-07-10T02:15:10.117Z",
+      "created_by": "decider-2026-07-10T02-06",
+      "escalation_reason": "BAU triage: narrowness gate fails NOT_NEVER_PUSH — both remediation options (reclassify status.json ownership in CLAUDE.md, or change poller.md/workspace-sync.md write paths) target NEVER_PUSH files (CLAUDE.md, monitor/prompts/*.md). This is also a genuine architecture/ownership-model decision, not a mechanical fix. Self-healed this run cycle already (poller recomputed values); recurrence risk stands until an operator/tinker ownership decision lands.",
+      "escalated_by_run": "decider-2026-07-11T02-05",
+      "escalated_at": "2026-07-11T02:12:14.817Z",
+      "closed_at": "2026-07-12T06:10:17.439Z",
+      "closed_by": "steve (operator, via cowork)",
+      "closure_note": "PROP-130 (integrity status.json provenance canary, INST-1 pattern from DIRECTIVE-20260711-001) ratified 2026-07-12 with tinker self-applied ship (script + Section 9d + report schema). Canary detected a live chimera on first fire at 06:04Z (workspace-sync commit 27bf1e4b, 3h after morning integrity). Race class is now DETECTED — poller's existing self-heal remains as backstop. Instrumentation-only close per operator explicit preference (DIRECTIVE-20260711-001 context.the_key_operator_instruction). No structural change made; two-writer race can still occur but will be flagged in the next integrity daily cycle, attributed to a specific commit, and self-healed by poller within ~24h."
     }
   ],
   "total_items": 2570,
