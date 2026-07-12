@@ -1,0 +1,93 @@
+{
+  "directive_id": "DIRECTIVE-20260712-001",
+  "for": "tinker",
+  "status": "pending",
+  "priority": "medium",
+  "auto_close_when_deliverable_proposed": true,
+  "created_at": "2026-07-12T06:30:00Z",
+  "created_by": "steve (operator, via cowork)",
+  "title": "expansion-tracker status vocabulary drift: analyst.md writes 'ready-for-integration', decider.md Priority 4 filter only matches 'complete' || 'revised'. 75+ days of silent integration blockage. Design a durable fix (widen decider filter, normalize analyst vocab, or add integrity check — operator's choice, small directive).",
+  "context": {
+    "why_now": "Operator investigation 2026-07-12 (following morning check-in on the external Claude review EXPs stuck at ready-for-integration for 6+ days) found the root cause: decider's Priority 4 filter at decider.md:248 checks (i.status === 'complete' || i.status === 'revised') && !i.integrated. Analyst.md line 287 explicitly documents 'ready-for-integration' as a valid status (with a 2026-04-27-vintage 'tracker-staleness fallback' comment), but decider was never updated to accept it. Result: 75+ days of silent integration drift. EXP-626 (from 2026-04-27) is the oldest surviving witness — sitting at ready-for-integration since the day the vocabulary was introduced.",
+    "the_smoking_gun": {
+      "decider_filter": "decider.md:248 — node -e \"const t=JSON.parse(require('fs').readFileSync('monitor/analyst/expansion-tracker.json','utf8'));const c=t.items.filter(i=>(i.status==='complete'||i.status==='revised')&&!i.integrated);console.log(c.length?'EXPANSIONS: '+c.length+' ready to integrate':'NO PENDING EXPANSIONS')\"",
+      "analyst_documentation": "analyst.md:287 — 'if status: \"ready-for-integration\" BUT the EXP's content can be cross-checked... Tracker-staleness fallback (added 2026-04-27 per analyst report)'",
+      "current_tracker_state": "5 items stuck at ready-for-integration: EXP-626 (build-scripts/generate-html.js 4-cluster generalization, from 2026-04-27), EXP-650/651/652/653 (external Claude review commissions from 2026-07-05/06)",
+      "why_it_took_75_days_to_notice": "EXPs at ready-for-integration accumulate silently; decider prints 'NO PENDING EXPANSIONS' when its filter matches nothing. Cross-prompt vocabulary drift has no automated check. Nobody caught it until this morning's report from operator on the specific external-review commissions."
+    },
+    "immediate_state": "Operator flipped EXP-650/651/652/653 to status='complete' in the same commit that files this directive. Decider's next 02:07 UTC run will integrate them. EXP-626 NOT flipped — needs content cross-check against current build-scripts/generate-html.js first (may be OBE-integrated but tracker-stale, may be legitimate 75-day backlog). Operator will decide on EXP-626 after tinker recommends the durable vocabulary fix."
+  },
+  "task": {
+    "part_A_options_inventory": {
+      "options_to_evaluate": [
+        {
+          "id": "OPT-1",
+          "label": "Widen decider Priority 4 filter to accept 'ready-for-integration' alongside 'complete' and 'revised'",
+          "shape": "One-line change to decider.md:248 filter. Preserves analyst's existing vocabulary without asking analyst to change.",
+          "cost": "Minimal. Single string edit in a prompt.",
+          "risk": "Very low. Filter widening never blocks legitimate items; if a status shouldn't-be-integrable slips in, that's a separate schema-integrity check's job.",
+          "downstream_effect": "EXP-626 gets integrated on decider's next run (assuming Q4 filter widening lands before EXP-626's operator investigation, need to be handled)."
+        },
+        {
+          "id": "OPT-2",
+          "label": "Normalize analyst.md (and analyst-baby.md) to write 'complete' instead of 'ready-for-integration'",
+          "shape": "Update analyst prompt(s) so future EXPs use the older vocabulary. Retroactively flip existing ready-for-integration items in expansion-tracker.json to complete.",
+          "cost": "Small. Prompt edit + a one-shot tracker sweep.",
+          "risk": "Analyst prompt has other references to ready-for-integration (the tracker-staleness fallback comment) that would need updating.",
+          "downstream_effect": "Preserves decider's existing filter; commits the analyst to the older vocabulary."
+        },
+        {
+          "id": "OPT-3",
+          "label": "Add integrity vocabulary-drift check across prompts (broader class fix)",
+          "shape": "New integrity Section 9e: parse enum-value references across analyst/decider/curmudgeon/etc. prompts and flag any status vocabulary used by one prompt that is not accepted by any consumer. Would have caught this in ~1 day instead of 75.",
+          "cost": "Moderate. Not just this bug — needs a small parser for prompt-referenced status enums.",
+          "risk": "Prompts aren't machine-readable in a strict sense, so the parser needs heuristics; false positives possible.",
+          "downstream_effect": "Catches similar drifts across other multi-prompt schemas (issue status, EXP status, review class, priority tiers, etc.). Bigger scope than this one bug but might be the honest fix if we care about the class."
+        },
+        {
+          "id": "OPT-4",
+          "label": "OPT-1 + OPT-3 combined",
+          "shape": "Ship the small filter widening AND the integrity drift check. Belt + suspenders.",
+          "cost": "Moderate. Sum of the two.",
+          "risk": "Low.",
+          "downstream_effect": "Immediate unblock + durable class detection."
+        }
+      ],
+      "output": "4-row feasibility table in the design report, then a one-paragraph recommendation."
+    },
+    "part_B_recommendation": {
+      "ask": "One clear recommendation. Operator preference: instrumentation-friendly answer (per DIRECTIVE-20260711-001 posture). If tinker recommends OPT-1 alone (cheapest fix), that's fine. If recommendation is OPT-3 or OPT-4, must justify why the broader-class investigation is worth the effort vs. just fixing this one drift.",
+      "output": "One-paragraph recommendation at the top of the design report."
+    },
+    "part_C_ship_or_follow_up": {
+      "if_small_option": "OPT-1 alone is a single-line prompt edit — tinker MAY ship in the same run as the recommendation. Author + apply + close directive in one cycle.",
+      "if_larger_option": "OPT-3 or OPT-4 requires new script + integrity prompt edit — author as PROP, propose-only, operator ratifies next session."
+    }
+  },
+  "deliverable_acceptance_criteria": [
+    "monitor/tinker/reports/tracker-status-vocabulary-drift-2026-07-12.md — 1-page report with the 4-row options table + one-paragraph recommendation.",
+    "One PROP authored covering the recommended fix. Grade-B verification (fixture proves the fix works, doesn't break existing decider behavior).",
+    "If recommendation is OPT-1: may ship in the same run (small enough).",
+    "EXP-626 investigation NOT in scope for this directive — operator handles separately after tinker's fix lands."
+  ],
+  "constraints": {
+    "budget_soft_limit_tokens": 30000,
+    "prompt_edit_discipline": "If OPT-1 or OPT-2 recommended and shipped, the prompt edit must be minimal and preserve all other decider/analyst semantics. Do NOT refactor Priority 4 broader than the single filter widening.",
+    "no_workspace_sync_hot_path_changes": "None of the options touch workspace-sync. If tinker somehow proposes touching it, flag as scope creep.",
+    "do_not_touch_exp_626_in_this_directive": "EXP-626 is a separate operator-side investigation (content cross-check needed). This directive is about the FILTER/VOCAB, not the accumulated backlog. Flipping EXP-626 to 'complete' inside this directive without content check would risk re-integrating an already-integrated item."
+  },
+  "background_artifacts": {
+    "decider_priority_4_check": "monitor/prompts/decider.md line 248",
+    "analyst_documentation_of_ready_for_integration": "monitor/prompts/analyst.md line 287 (includes 2026-04-27-vintage tracker-staleness fallback comment)",
+    "expansion_tracker_snapshot_pre_flip": "5 items at ready-for-integration: EXP-626 (from 2026-04-27), EXP-650/651/652/653 (external Claude review)",
+    "flip_evidence": "Same commit as this directive flips EXP-650/651/652/653 to complete for immediate unblock; EXP-626 explicitly NOT touched"
+  },
+  "not_in_scope": [
+    "Do NOT investigate EXP-626 in this directive (operator handles separately).",
+    "Do NOT change any tracker items' status beyond the operator's same-commit flip of EXP-650/651/652/653.",
+    "Do NOT touch workspace-sync or its hooks.",
+    "Do NOT design a full multi-prompt schema-normalization initiative — OPT-3 is 'add ONE integrity check for this class', not 'formalize all prompt enums'."
+  ],
+  "supersedes_directives": [],
+  "operator_notes": "Small directive. Answers to the class question uncovered by this morning's investigation. auto_close_when_deliverable_proposed:true — authoring the PROP (recommendation + shape) is the deliverable. If OPT-1 ships in the same run, this directive closes on next PROP-108 cycle."
+}
