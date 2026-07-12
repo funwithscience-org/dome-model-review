@@ -1,0 +1,42 @@
+{
+  "prop_id": "PROP-131",
+  "title": "Disaster-recovery playbook expansion (Candidate D): PAT-revoked-mid-pipeline + integrity-false-negative playbooks, with two propose-only DETECT canary specs",
+  "status": "proposed",
+  "created_at": "2026-07-12T02:47:00.728Z",
+  "created_by": "tinker run 2026-07-12T02-40 (operator directive DIRECTIVE-20260628-005)",
+  "directive_id": "DIRECTIVE-20260628-005",
+  "problem": "PROP-051 covers the workspace-sync mass-delete disaster shape, but the DIRECTIVE-20260628-001 Candidate D scoping listed six other disaster shapes with no ready-to-hand operator playbook. Tail-risk insurance: if one manifests during the expected active period, recovery time is dominated by figuring out what to do rather than doing it.",
+  "proposal": "Two playbooks authored at monitor/tinker/disaster-playbooks/ following the PROP-051 DETECT/DIAGNOSE/RECOVER/VERIFY format: (1) pat-revoked-mid-pipeline.md (shape d) and (2) integrity-false-negative.md (shape e). Each references existing escape hatches (push-via-api.js PROP-050, workspace-sync universal-pusher, PRELUDE fail-closed, tombstone convention) rather than reinventing them. Each playbook's DETECT section flags that no consolidated canary exists and carries a propose-only canary spec: (A) PAT-expiry pre-warning — integrity's daily PRELUDE parses the GitHub-Authentication-Token-Expiration response header and emits a major finding when <14 days remain (~6 lines, near-zero cost); (B) integrity mutation self-test — weekly synthetic-defect injection into scratch copies, asserting each checker FLAGS its mutant; plus fail-loud schema guards retrofitted onto the silent '|| []' fallbacks in compute-integrity-mechanical.js-family scripts. Canary implementation requires operator ratification; playbooks themselves are documentation-only and carry no behavioral change.",
+  "selection_rationale": {
+    "criterion": "likelihood given current pipeline state (per directive; not severity)",
+    "chosen": [
+      "(d) PAT revoked/expired mid-pipeline",
+      "(e) integrity false-negative on real drift"
+    ],
+    "evidence_d": "Direct precedent 2026-06-22: monitor/integrity/report-2026-06-22T17-28.json prelude_status 'FAILED — workspace .git/config PAT returned HTTP 401 (expired/revoked)... Git push blocked — report written to FUSE only'. Fine-grained PATs carry a mandatory expiry date, so recurrence is a scheduled certainty with unknown date. Highest likelihood of all six shapes.",
+    "evidence_e": "Two instances in 3 weeks: the 2026-06-22 silent-fail mode cited in the directive, and 2026-07-10/11 acknowledged_failures schema-key bug (compute-integrity-mechanical.js check_4 reported 0 instead of 19 because it read 'failures' where the payload key is 'entries'; silent-empty-array fallback; monitor/integrity/report-2026-07-11T01-15.json). The class recurs by construction as JSON schemas evolve under checkers with silent fallbacks.",
+    "updated_ranking_vs_prop_116": "PROP-116 scoped Candidate D as '403-cascade + PAT-revoked'. This proposal swaps 403-cascade OUT for integrity-false-negative. Reasons: (i) the 1,347-row push-failure-archive.jsonl is entirely Apr-May 2026 Devilwench-era; post PROP-051 Option C PRELUDE (2026-05-23) the 403 class collapsed to ~zero (the one recent stranded patch, 2026-07-10, was a NEVER_PUSH-file case, not a 403); (ii) shape (a) recovery machinery already exists in documented form — push-via-api.js (PROP-050), decider push-failure block, workspace-sync universal-pusher rescue, tombstone convention — so a playbook would mostly duplicate CLAUDE.md's escape-hatch documentation, which the directive's own constraint ('don't author playbooks for shapes that already have one') discourages; (iii) shape (e) has the freshest recurrence evidence and is the shape most likely to let a wrong public claim sit uncorrected during an active period.",
+    "rejected": {
+      "a_403_cascade": "substantially covered (see above); likelihood of recurrence sharply reduced post-PRELUDE",
+      "b_fuse_unmount": "no full-unmount incident on record; staleness class already covered by PROP-061/066/074 machinery and PROP-051 degraded-mode gates",
+      "c_github_outage": "external base-rate event, self-healing (agents re-run on next cron); playbook value beyond 'wait, then verify backlog drained' is minimal",
+      "f_prune_over_delete": "PROP-051 Workstream C caps + pre-push delete-sanity gate + PROP-099 resurrection canary already form detect+prevent; the observed live failure mode was resurrection (re-add), the opposite direction"
+    }
+  },
+  "alternatives_considered": "Authoring all 6 playbooks (rejected: directive constraint 'tail-risk discipline: 2 playbooks, not 6'); implementing the canaries in-run (rejected: directive constraint 'propose-only on any new sentinel canary specifications').",
+  "verification_pattern": "test -s monitor/tinker/disaster-playbooks/pat-revoked-mid-pipeline.md && test -s monitor/tinker/disaster-playbooks/integrity-false-negative.md && grep -lq 'DETECT' monitor/tinker/disaster-playbooks/pat-revoked-mid-pipeline.md && grep -lq 'VERIFY' monitor/tinker/disaster-playbooks/integrity-false-negative.md && echo FIXED",
+  "verification_grade": "A",
+  "verification_grade_note": "Deliverable is documentation; pattern verifies both playbook files exist with the required section structure.",
+  "estimated_effort": "done in-run (playbooks authored); canary A ~6 lines in integrity PRELUDE if ratified; canary B ~1 day (mutation harness + schema-guard retrofit) if ratified",
+  "risk": "none for the playbooks (documentation-only). Canary A: none (read-only header parse). Canary B: mutation harness must never touch guarded surfaces in place — scratch-copy discipline mandatory.",
+  "requires_human_judgment": false,
+  "do_not_auto_close": false,
+  "related": [
+    "DIRECTIVE-20260628-005",
+    "PROP-116",
+    "PROP-051",
+    "PROP-050",
+    "PROP-099",
+    "PROP-130"
+  ]
+}
