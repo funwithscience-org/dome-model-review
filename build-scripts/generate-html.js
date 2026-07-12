@@ -1616,6 +1616,22 @@ ${CSS}
 </ul>
 </section>
 
+
+<section class="ds-headline-killshots" aria-labelledby="ds-hk-heading" style="margin:1.5rem 0 1.8rem;padding:1.1rem 1.2rem;border:1px solid var(--rule);border-radius:6px;background:var(--card-bg)">
+<h2 id="ds-hk-heading" style="font-family:var(--sans);font-size:0.82rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--ink-2);margin:0 0 0.15rem;font-weight:600;border:none;padding:0">Two mathematical kill-shots the dome's own equations can't dodge</h2>
+<p style="font-family:var(--sans);font-size:0.88rem;color:var(--ink-2);margin:0 0 1rem">These are the two arguments a mathematically literate reader can verify in one paragraph each. Neither requires an outside authority — only arithmetic on the dome's own published formula. Both survive every rhetorical countermove because they are dimensional / geometric impossibilities, not fitting-quality disputes.</p>
+<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1.2rem">
+<div>
+<h3 style="font-family:var(--sans);font-size:0.95rem;font-weight:700;color:var(--heading);margin:0 0 0.4rem;border:none;padding:0">Schumann 7.83 Hz vs. the dome's 8,537 km ceiling</h3>
+<p style="margin:0 0 0.5rem;font-size:0.92rem">The dome's own field equation <code>H(r) = 8,537 &times; exp(&minus;r / 8,619)</code> km reaches its maximum at <code>H(0) = 8,537 km</code>. That is a hard supremum on the dome's cavity height, published by the dome author himself. The Earth-ionosphere Schumann cavity produces a 7.83 Hz fundamental because the cavity's circumference is ~40,030 km (the Earth's circumference). Reproducing 7.83 Hz from a cavity capped at 8,537 km &mdash; anywhere &mdash; is arithmetically impossible; the dome's own geometry, worked through the same cavity-eigenvalue math, produces a fundamental near ~22 Hz. No refinement of the exponential decay constant closes this: the ceiling <em>is</em> the ceiling. <a href="#2-1-schumann-resonance-7-83-hz-vs-22-hz" onclick="showTab('selftest');return false">Full derivation in Section 2.1 &rarr;</a></p>
+</div>
+<div>
+<h3 style="font-family:var(--sans);font-size:0.95rem;font-weight:700;color:var(--heading);margin:0 0 0.4rem;border:none;padding:0">Longitude-dependent WINs vs. a formula with no longitude variable</h3>
+<p style="margin:0 0 0.5rem;font-size:0.92rem">The dome's field equation depends only on <em>r</em> &mdash; radial distance from the disc's pole. It has no angular (longitude) variable. It generates the same field value at every point on any given ring around the pole. Yet the dome claims twelve confirmed WINs whose observations depend on <em>longitude</em> &mdash; the South Atlantic Anomaly's two lobes (near 50&deg;W and 20&deg;E), the North Magnetic Pole's specific trajectory, hemispheric asymmetries. A function of one spatial variable cannot encode a phenomenon that depends on two: this is a subspace-inclusion argument, not a fitting-quality complaint. Every past and future dome version whose equation stays radial-only inherits the same gap. <a href="#radial-only-invariant" onclick="showTab('selftest');return false">The invariant, spelled out</a> &middot; <a href="#2-10-axial-symmetry" onclick="showTab('selftest');return false">Full derivation in Section 2.10 &rarr;</a></p>
+</div>
+</div>
+<p style="font-family:var(--sans);font-size:0.78rem;color:var(--ink-3);margin:0.9rem 0 0;font-style:italic">Both arguments have been sitting in the review at positions 1 and 10 of a 16-item list. They earn front-page real estate because they answer the dome author's own equations with the dome author's own numbers, and because no version bump inside the current formula family can rescue either.</p>
+</section>
 ${generateVerdictBarChart(tally, wins.length, collisionWins.length)}
 
 <section class="ds-falsifiability-module" aria-labelledby="ds-fm-heading">
