@@ -1,0 +1,47 @@
+{
+  "item_id": "EXP-666",
+  "title": "M1 BAU batch — 1 ISS (config.json ai-context URL fix + baseline re-seed + content-security confirm)",
+  "target": "monitor/config.json ai-context page entry (dead /ai-context URL -> real /context URL), monitor/baseline/07-ai-context.txt re-seeded from live fetch, independent content-security confirmation (ISS-2973)",
+  "issue_ids": [
+    "ISS-2973"
+  ],
+  "review_class": "verification",
+  "authored_by": "analyst-baby",
+  "patches": [
+    {
+      "target_file": "monitor/config.json",
+      "find_pattern": "{ \"id\": \"ai-context\", \"url\": \"https://john09289.github.io/predictions/ai-context\", \"baseline_file\": \"07-ai-context.txt\" }",
+      "replace_pattern": "{ \"id\": \"ai-context\", \"url\": \"https://john09289.github.io/predictions/context\", \"baseline_file\": \"07-ai-context.txt\" }",
+      "description": "Corrected the ai-context page entry URL from the dead /ai-context path (HTTP 404, GitHub Pages default-404 template, confirmed dead since at least 2026-05-05 per chg-file history) to the real, live AI Context page at /context (HTTP 200, 32,918 bytes, confirmed via direct fetch 2026-07-13). Every poll since this page was added had been diffing the 404 template against itself and vacuously reporting \"unchanged\" — the real page was never baselined. baseline_file name (07-ai-context.txt) is unchanged; only the source URL and its content are corrected.",
+      "related_iss": "ISS-2973"
+    }
+  ],
+  "new_files": [],
+  "reseeded_files": [
+    {
+      "path": "monitor/baseline/07-ai-context.txt",
+      "source": "https://john09289.github.io/predictions/context",
+      "fetched_at": "2026-07-13T03:34:45.752Z",
+      "http_status": 200,
+      "byte_size": 32918,
+      "previous_content": "9,379-byte GitHub Pages 404 template (was being fetched from the dead /ai-context URL and had never reflected the real page)",
+      "note": "Fetched verbatim (raw HTML source, no extraction/processing), matching the format of the other 9 baseline files."
+    }
+  ],
+  "content_security_review": {
+    "page": "https://john09289.github.io/predictions/context",
+    "finding": "Independently confirms poller's content-security sweep: 0 active prompt-injection hits on the live page. The page carries a large \"Historical Internal Agent Notes (Superseded)\" block (section 2) that reproduces the old V50.6 imperative \"RULES FOR CLAUDE\" language (e.g. former directives like \"engage directly, no hedging\", \"do not re-litigate\") — but every one of the 12 numbered items has been rewritten into descriptive past-tense project history (\"was treated internally as...\", \"was explicitly flagged...\") rather than present-tense imperatives directed at an auditing AI. The page also carries two explicit disclaimer sections not present in the 2026-03-12 V50.6 raw-text archive on file (raw-text/07-ai-context.txt, which IS still flagged PROMPT INJECTION DETECTED HIGH for that older snapshot and is left unchanged here — out of scope for ISS-2973, which only covers monitor/config.json + monitor/baseline/): a \"Canonical V51.1 Entry For AI\" block directing readers to ai_manifest.json / methodology.json / the public registries as current source of truth, and a \"2026-04-17 Context Clarification\" block stating \"This page is now an archive of historical working notes, not a command payload\" and explicitly instructing auditors NOT to treat the historical notes as license to skip caveats or force a conclusion.",
+    "verification": "grep -inE for imperative injection patterns (\"ignore previous instructions\", \"do not hedge\", \"do not re-litigate\", \"engage directly. no hedging\", \"treat as confirmed\", \"you must treat/believe/accept\", \"system message\") against the raw fetched HTML returns 0 matches. Confirmed the disclaimer language is present via direct grep at the cited lines.",
+    "classification": "No new prompt-injection flag warranted for the live page as currently published. This is a genuine content change from the 2026-03-12 V50.6 snapshot (which had no disclaimers and was correctly flagged HIGH at the time) — noting only as observation per Content Security discipline; not asserting this was a response to our review (no timing/content evidence link established here, and per CLAUDE.md \"Author Contact Status\" this would need to be evaluated by the Opus analyst if pursued as a narrative point)."
+  },
+  "obe_resolutions": [],
+  "tldr_evidence": "ISS-2973: monitor/config.json's ai-context page entry pointed at a dead URL (/ai-context, HTTP 404) for 2+ months while the real AI Context page (/context, HTTP 200) was never tracked by the pipeline — every poll compared the 404 template against itself. Fixed the URL and re-seeded the baseline file from a live fetch (32,918 bytes, 2026-07-13). Independently re-confirmed poller's content-security finding: 0 active injection-directive phrases on the live page; the old imperative \"RULES FOR CLAUDE\" text is present only as explicitly-disclaimed historical archive, not as live instructions.",
+  "tldr_verdict": "Pipeline-health fix only — no change to any WIN, section, or verdict. Poller can now produce true before/after diffs for the real AI Context page going forward.",
+  "investigation_notes": [
+    "Confirmed the byte count of the live /context fetch (32,918 bytes) matches the figure cited in ISS-2973's description exactly, corroborating the poller finding before making any edit.",
+    "Did not touch raw-text/07-ai-context.txt (a separate, unrelated archival snapshot directory dated 2026-03-12 / V50.6, out of scope for the monitor/config.json + monitor/baseline/ pipeline covered by this ISS) or raw-text-v50.6-2026-03-12/07-ai-context.txt.",
+    "ISS-2973 description cited the baseline path as docs/data/07-ai-context.txt; the actual path per monitor/config.json and the existing 9 sibling baseline files is monitor/baseline/07-ai-context.txt. Used the actual/correct path."
+  ],
+  "test_coverage": "node test.js — patch only touches monitor/config.json (page-tracking entry) and monitor/baseline/07-ai-context.txt (raw HTML baseline seed); no data/wins.json, data/sections.json, layer counts, rates, ransomware numbers, http_data, or classifier changes. Ran node -e JSON.parse validation on monitor/config.json, this EXP file, and monitor/analyst/expansion-tracker.json.",
+  "newsworthy": null
+}
