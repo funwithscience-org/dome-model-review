@@ -1,0 +1,31 @@
+{
+  "prop_id": "PROP-133",
+  "title": "Widen decider Priority 4 expansion filter to accept 'ready-for-integration' (tracker status vocabulary drift fix, OPT-1)",
+  "status": "self-applied",
+  "directive_id": "DIRECTIVE-20260712-001",
+  "authored_by": "tinker",
+  "authored_at_run": "2026-07-13T02-40",
+  "created_at": "2026-07-13T02:55:00Z",
+  "problem": "decider.md:248 Priority 4 trigger (and the duplicated filter in decider-curmudgeon-pq-mechanics.md lines 3 + 13) only matched status 'complete' || 'revised'. analyst vocabulary circa 2026-04-27 also produced 'ready-for-integration', which no consumer accepted — items at that status accumulated silently for 75+ days (EXP-626 from 2026-04-27; EXP-650/651/652/653 from 2026-07-05/06, unblocked by operator manual flip 2026-07-12). decider prints 'NO PENDING EXPANSIONS' when the filter matches nothing, so the blockage was invisible.",
+  "fix": {
+    "shape": "Pure filter widening — same string edit at all three duplicated sites. No Priority 4 refactor, no analyst prompt change, no workspace-sync involvement.",
+    "edits": [
+      "monitor/prompts/decider.md:248 — filter now (i.status==='complete'||i.status==='revised'||i.status==='ready-for-integration')&&!i.integrated",
+      "monitor/prompts/reference/decider-curmudgeon-pq-mechanics.md:3 — load-condition doc sentence widened to match",
+      "monitor/prompts/reference/decider-curmudgeon-pq-mechanics.md:13 — Step 2a enumeration filter widened to match"
+    ],
+    "three_site_note": "The directive framed this as a one-line change; implementation found the filter duplicated in the Step 2a mechanics file. Widening only decider.md:248 would have made Priority 4 fire while Step 2a's enumeration skipped RFI items — a new drift of the same class. All three sites shipped in one commit."
+  },
+  "design_report": "monitor/tinker/reports/tracker-status-vocabulary-drift-2026-07-12.md",
+  "options_rejected": {
+    "OPT-2_normalize_analyst_vocab": "No current prompt writes 'ready-for-integration' (whole-prompt grep; only reference is analyst.md:287 read-side staleness fallback). Nothing to normalize.",
+    "OPT-3_prompt_enum_parser": "Heuristic parsing of markdown prose; false-positive-prone; misses non-vocabulary stuck causes. Better class detector is a data-side stuck-item staleness canary (>14d non-terminal non-integrated) — noted in design report as optional operator-commissioned follow-up, not authored here per directive scope.",
+    "OPT-4": "Inherits OPT-3's false-positive tax."
+  },
+  "operator_action_required": "EXP-626 hazard window: decider's next Priority 4 run (~2026-07-14T02:07Z) will integrate EXP-626 (sole current RFI item, no no_op marker) unless the operator first (a) content-checks and marks it integrated-OBE, or (b) parks it at status 'escalated'. Flagged in latest-tinker-summary.txt.",
+  "verification_grade": "B",
+  "verification_pattern": "grep -q \"i.status==='ready-for-integration'\" monitor/prompts/decider.md && grep -q \"i.status==='ready-for-integration'\" monitor/prompts/reference/decider-curmudgeon-pq-mechanics.md && node -e \"const items=[{id:'A',status:'complete',integrated:false},{id:'B',status:'revised'},{id:'C',status:'ready-for-integration'},{id:'D',status:'ready-for-integration',integrated:true},{id:'E',status:'pending'},{id:'F',status:'complete',integrated:true},{id:'G',status:'consolidated-into-EXP-448'}];const c=items.filter(i=>(i.status==='complete'||i.status==='revised'||i.status==='ready-for-integration')&&!i.integrated);process.exit(c.map(x=>x.id).join()==='A,B,C'?0:1)\" && echo FIXED || echo STILL_BROKEN",
+  "verification_result_at_authoring": "FIXED (fixture pass: A,B,C caught; integrated/pending/consolidated excluded — existing complete/revised semantics preserved)",
+  "rollback": "Revert the three edits (git revert of the shipping commit). No data files touched.",
+  "do_not_auto_close": false
+}

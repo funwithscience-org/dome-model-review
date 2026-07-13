@@ -245,7 +245,7 @@ Apply the routing-matrix.md 5-action decision tree per item (same as M1 Priority
 **Priority 4 — Completed Expansions**
 ```bash
 echo "STEP_MARKER priority-4-completed-expansions $(date +%s)" >&2
-node -e "const t=JSON.parse(require('fs').readFileSync('monitor/analyst/expansion-tracker.json','utf8'));const c=t.items.filter(i=>(i.status==='complete'||i.status==='revised')&&!i.integrated);console.log(c.length?'EXPANSIONS: '+c.length+' ready to integrate':'NO PENDING EXPANSIONS')"
+node -e "const t=JSON.parse(require('fs').readFileSync('monitor/analyst/expansion-tracker.json','utf8'));const c=t.items.filter(i=>(i.status==='complete'||i.status==='revised'||i.status==='ready-for-integration')&&!i.integrated);console.log(c.length?'EXPANSIONS: '+c.length+' ready to integrate':'NO PENDING EXPANSIONS')"
 ```
 Trigger: Completed expansions not yet integrated into sections.json/wins.json.
 → **IF this priority fires** (the bash check above prints `EXPANSIONS: N ready to integrate`), read `monitor/prompts/reference/decider-curmudgeon-pq-mechanics.md` for Step 2a integration mechanics (no-op handling, category-proposal-writeup routing, progressive-disclosure validation, integration mechanics, queue push at Step 7, issue closure at Step 8, M2 EXP-tied auto-close at Step 8b, M3 carry-over enforcement at Step 8c, out-of-scope-issue-filing rule at Step 9). Then execute Step 2a from that file. **DO NOT load this file when Priority 4 does NOT fire** — it is 265L of integration mechanics not needed for Priority 3 (digest processing) or Priority 3b (BAU triage), both of which continue to use `decider-curmudgeon.md` alone.

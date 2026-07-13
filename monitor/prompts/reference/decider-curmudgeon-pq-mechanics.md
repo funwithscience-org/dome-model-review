@@ -1,6 +1,6 @@
 # Decider: Expansion Integration Mechanics (Priority-4-conditional)
 
-**This file is loaded ONLY when decider.md Priority 4 fires** — i.e., `monitor/analyst/expansion-tracker.json` has items with `(status==='complete' || status==='revised') && !integrated`. When Priority 4 does NOT fire, this file is NOT read.
+**This file is loaded ONLY when decider.md Priority 4 fires** — i.e., `monitor/analyst/expansion-tracker.json` has items with `(status==='complete' || status==='revised' || status==='ready-for-integration') && !integrated`. When Priority 4 does NOT fire, this file is NOT read.
 
 Contains: Step 2a expansion integration (Steps 1-9 — no-op handling, category-proposal-writeup routing, progressive-disclosure validation, integration mechanics, queue push at Step 7, issue closure at Step 8, M2 EXP-tied auto-close at Step 8b, M3 carry-over enforcement at Step 8c, out-of-scope-issue-filing rule at Step 9).
 
@@ -10,7 +10,7 @@ For Step 2 (digest processing), Step 4/4b (staleness gates), Step 2b (yeet scan)
 ## Step 2a: Integrate Completed Expansions (EVERY run, do FIRST)
 
 ```bash
-node -e "const t=JSON.parse(require('fs').readFileSync('monitor/analyst/expansion-tracker.json','utf8'));t.items.filter(i=>(i.status==='complete'||i.status==='revised')&&!i.integrated).forEach(i=>console.log(i.id,i.status,i.target.slice(0,60)))"
+node -e "const t=JSON.parse(require('fs').readFileSync('monitor/analyst/expansion-tracker.json','utf8'));t.items.filter(i=>(i.status==='complete'||i.status==='revised'||i.status==='ready-for-integration')&&!i.integrated).forEach(i=>console.log(i.id,i.status,i.target.slice(0,60)))"
 ```
 
 For each completed/revised expansion not yet integrated:
