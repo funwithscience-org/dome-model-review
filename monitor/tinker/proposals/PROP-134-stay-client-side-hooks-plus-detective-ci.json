@@ -1,0 +1,40 @@
+{
+  "prop_id": "PROP-134",
+  "title": "Stay with client-side pre-push hook enforcement; decline CI required-status-check migration; optional detective (non-required) CI replay of CHECK 1/2/3",
+  "status": "pending-operator-review",
+  "created_at": "2026-07-14T02:41:00Z",
+  "created_by": "tinker (run 2026-07-14T02-41)",
+  "directive_id": "DIRECTIVE-20260712-002",
+  "verification_grade": "C",
+  "verification_pattern": "documentation-only: test -f monitor/tinker/reports/ci-hook-migration-study-2026-07-12.md && echo FIXED",
+  "recommendation": "STAY",
+  "summary": "DIRECTIVE-20260712-002 asked for a cost/benefit study of migrating PROP-121/127 pre-push hook enforcement from client-side to CI required-status-checks. Full study at monitor/tinker/reports/ci-hook-migration-study-2026-07-12.md. Verdict: the trade does not warrant migration. Marginal detection gain is exactly one incident class (hook-install-skip, observed once: eab98c5 2026-07-01); required-status-checks cannot pass on direct pushes, forcing a PR-based re-architecture of ~12 agent push paths whose new improvisation surface plausibly exceeds the risk retired; and 'required' checks are fail-CLOSED by platform construction - a broken workflow blocks all pushes to main until the operator intervenes, killing FUSE-to-git rescue for hours-to-days, which is precisely the PROP-051 disaster-class property (2026-05-21 recovery used direct pushes + Git Data API force-reset, both of which strict enforcement blocks or slows).",
+  "analysis": {
+    "q1_push_cadence": "~27.9 commits/day (404 commits 2026-06-30..07-14), ~15-25 push events/day; 70% in UTC 01-05 window, 21% at UTC 09.",
+    "q2_latency": "Real cost is not 30-60s: required checks reject direct pushes outright (no check has run on a new commit), forcing PR flow at 1-3+ min/push plus stale-base retry races in burst windows (139/404 inter-commit gaps <120s). PAT subtlety: agents push with the operator PAT; bypass-actor config either swallows enforcement (agents bypass too) or blocks the operator's own disaster-recovery path.",
+    "q3_incident_coverage": {
+      "2026-05-21_ea785c49_mass_delete": {"rule": "CHECK 2 bulk ceiling", "client_side": "CAUGHT (hook now exists)", "ci": "CAUGHT"},
+      "2026-07-01_eab98c5_improvisation": {"rule": "CHECK 1 resurrection", "client_side": "MISSED (install skipped)", "ci": "CAUGHT - sole differentiator"},
+      "2026-07-07_4a5b8115_reversion": {"rule": "CHECK 3 sentinel reversion", "client_side": "CAUGHT", "ci": "CAUGHT"},
+      "2026-07-10_status_json_chimera": {"rule": "none (novel bytes, status.json not sentinel)", "client_side": "NOT caught (PROP-130 canary is the instrument)", "ci": "NOT caught"}
+    },
+    "q4_fail_open": "Unpreservable in required-CI: 'required' and 'fail-open' contradict at platform level. Escape hatches (ruleset bypass actor; API enforcement=disabled) both bound unblock time by operator availability, during which workspace-sync FUSE-to-git rescue is dead. Client-side CHECK 3 fail-open costs one WARN line and zero availability. CI migration also adds a hard runtime dependency on GitHub Actions where none exists today."
+  },
+  "phase_1_optional_detective_ci": {
+    "status": "not-implemented; operator-approvable separately",
+    "design": "Add a second job 'push-lint-replay' to the existing .github/workflows/ci.yml (on: push to main). Steps: checkout with fetch-depth 50; run a thin adapter (monitor/scripts/ci-lint-replay.js, ~30 lines) that feeds the range ${{ github.event.before }}..${{ github.sha }} into the CHECK 1/2/3 logic of lint-workspace-sync-push.js; exit nonzero on violation. NOT added to any ruleset as required - a red X + GitHub notification email is the whole mechanism. Zero push latency (post-land), zero fail-closed risk, converts the install-skip class from silent-until-integrity-run to alarmed-within-~2-min.",
+    "constraint_compliance": "Does not modify rulesets 18827810/11/12; does not disable client-side hooks; not a wholesale migration."
+  },
+  "flip_triggers_to_revisit_ship": [
+    "A second install-skip-class incident occurs that installed client hooks would have blocked.",
+    "GitHub ships required checks compatible with direct pushes (no PR flow) - watch push-rules / merge-queue evolution.",
+    "Agent push cadence falls below ~5/day, making PR-flow latency immaterial."
+  ],
+  "constraints_honored": {
+    "not_a_wholesale_migration": true,
+    "rulesets_untouched": true,
+    "client_hooks_retained": true,
+    "prop_051_disaster_class_review": "See analysis.q4_fail_open and study Q4 - the 2026-05-21 recovery path itself is the canonical case that strict server enforcement would have blocked."
+  },
+  "requires_human_judgment": true
+}
