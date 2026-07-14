@@ -233,3 +233,5 @@ Each agent should read ONLY the reference files relevant to its work (all under 
 | Tinker | all reference files |
 | Social | (none beyond this file) |
 | Workspace-sync | (none beyond this file) |
+
+*Note (ISS-2980, 2026-07-14): this table lists each agent's primary/top-level references only. Agents may load additional `monitor/prompts/reference/*.md` files as documented in their own individual prompt (`monitor/prompts/<agent>.md`); the table above is not an exhaustive enumeration of every reference file an agent reads.*
