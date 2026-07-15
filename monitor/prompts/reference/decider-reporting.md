@@ -224,6 +224,15 @@ Include:
 
 Update `monitor/status.json` and `monitor/review-state.json` if needed.
 
+**status.json fresh-git-base rule (PROP-135, 2026-07-15 — chimera source fix).** status.json has two writers on two paths: poller commits poll fields git-only; you write run fields to the FUSE copy. The FUSE copy NEVER receives poller's git-only commits (status.json is workspace-owned, so every git-to-FUSE sync path skips it) — its poll fields are permanently stale. If you read-modify-write the FUSE copy's content, you arm the workspace-sync mtime with stale poll fields, and the next 04:0x UTC sync publishes a chimera that clobbers poller's same-day commit (the PROP-130 pattern: commits 27bf1e4b, 19b70279, 25a4825 — three consecutive days). Therefore, every time you update monitor/status.json:
+
+1. **Base on git, not FUSE.** Read `monitor/status.json` from your fresh clone (git HEAD — it has poller's latest commit). Never use the FUSE copy's content as the base of your update.
+2. **Field-merge.** Carry every poll-owned field (`last_poll`, `last_poll_note`, `last_poll_note_prev`, `consecutive_quiet_polls`, `changes_pending_analysis`) verbatim from the git base. Overwrite only decider-owned fields (`last_run`, `last_agent`, `run_type`, `mode`, `status`, `last_decider_*`, `prev_decider_run`, `open_issues*`, `issues_*`, `patches_applied_this_run`, `curmudgeon_*`, `notes_this_run`, `push_status`, `last_updated`).
+3. **Newest-poll wins.** If the FUSE copy's `last_poll` is somehow NEWER than the git base's (poller landed between your clone and now), take the poll-owned fields from FUSE instead. Compare timestamps; never regress `last_poll` or `consecutive_quiet_polls`.
+4. **Write the merged result to the FUSE copy** as usual (status.json stays workspace-owned; workspace-sync publishes it on its next slot).
+
+This makes the file workspace-sync pushes correct by construction. PROP-129 CHECK 4 (monotonic guard in the ws-sync pre-push hook) is the enforcement backstop for the same shape from any other writer.
+
 ## Code Analysis Tag Tracking
 
 When curmudgeon reviews include `code_analysis_tags`, note unsynced count. Tags applied via: `node build-scripts/sync-code-analysis.js --apply --workspace`. Recommend in run summary if gap exists.

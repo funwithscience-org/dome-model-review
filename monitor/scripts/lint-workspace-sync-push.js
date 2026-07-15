@@ -218,6 +218,73 @@ try {
     + ' unavailable this push; allowing (fail-open by design, PROP-127).');
 }
 
+// ---- CHECK 4: monotonic-timestamp guard for workspace-owned status.json (PROP-129, 2026-07-15) ----
+//
+// The PROP-130 two-writer race (poller writes git-only, workspace-sync copies stale
+// FUSE-side status.json, publishing a chimera that reverts poller's same-day fields)
+// fired on 3 consecutive days (27bf1e4b 07-12, 19b70279 07-13, 25a4825 07-14). PROP-135
+// codifies a decider-side write discipline to fix at source; CHECK 4 is the enforcement
+// backstop for the same shape arriving via any OTHER writer.
+//
+// Mechanism: for a per-file MONOTONIC_FIELDS map, parse the push-candidate blob and the
+// current origin-HEAD blob; block if ANY listed field's timestamp in the candidate is
+// STRICTLY OLDER than in HEAD. Timestamp fields only — free-form fields and legit-reset
+// counters (consecutive_quiet_polls) are excluded to keep false-positive risk low.
+//
+// Fail-open: entire body wrapped in try/catch (PROP-127 CHECK 3 precedent). A hook bug
+// degrades to pre-PROP-129 status quo, never blocks all syncs.
+//
+// Override: monitor/integrity/workspace-sync-monotonic-override.flag lets legitimate
+// timestamp-regression pushes through (e.g., disaster recovery replaying an older state).
+const MONOTONIC_FIELDS = {
+  'monitor/status.json': ['last_poll', 'last_run', 'last_analysis']
+};
+const MONOTONIC_OVERRIDE_FLAG = path.join(ROOT, 'monitor/integrity/workspace-sync-monotonic-override.flag');
+
+try {
+  for (const r of ranges) {
+    const modified = changedFiles(r.base, r.tip);
+    for (const f of modified) {
+      const fields = MONOTONIC_FIELDS[f];
+      if (!fields) continue;
+      let tipBlob, baseBlob;
+      try { tipBlob = sh('git show ' + r.tip + ':' + JSON.stringify(f)); } catch (e) { continue; }
+      try { baseBlob = sh('git show ' + r.base + ':' + JSON.stringify(f)); } catch (e) { continue; }
+      let tipJson, baseJson;
+      try { tipJson = JSON.parse(tipBlob); baseJson = JSON.parse(baseBlob); } catch (e) { continue; }
+      const regressions = [];
+      for (const field of fields) {
+        const tv = tipJson[field], bv = baseJson[field];
+        if (!tv || !bv) continue;
+        const td = Date.parse(tv), bd = Date.parse(bv);
+        if (isNaN(td) || isNaN(bd)) continue;
+        if (td < bd) regressions.push({ field, base_value: bv, tip_value: tv });
+      }
+      if (regressions.length) {
+        if (fs.existsSync(MONOTONIC_OVERRIDE_FLAG)) {
+          console.error('[ws-sync-guard] CHECK 4: ' + regressions.length + ' monotonic-timestamp regression(s) in '
+            + f + ' but operator override flag present (' + MONOTONIC_OVERRIDE_FLAG + '). Allowing.');
+          for (const r2 of regressions) console.error('  ' + r2.field + ': ' + r2.base_value + ' -> ' + r2.tip_value);
+          continue;
+        }
+        console.error('[ws-sync-guard] BLOCK (CHECK 4 monotonic guard): pushing ' + f
+          + ' would REGRESS ' + regressions.length + ' monotonic timestamp field(s):');
+        for (const r2 of regressions) {
+          console.error('  ' + r2.field + ': HEAD=' + r2.base_value + ' PUSH=' + r2.tip_value);
+        }
+        console.error('  This is the PROP-130 two-writer-race chimera shape (workspace-sync publishing stale');
+        console.error('  FUSE-side content over a fresher git-side write). PROP-135 is the decider-side source fix;');
+        console.error('  CHECK 4 catches the same shape from any writer. If this reversion is operator-intended,');
+        console.error('  touch ' + MONOTONIC_OVERRIDE_FLAG + ' and re-push, then remove the flag.');
+        process.exit(1);
+      }
+    }
+  }
+} catch (e) {
+  console.error('[ws-sync-guard] WARN: CHECK 4 degraded (' + e.message + ') — monotonic-timestamp guard'
+    + ' unavailable this push; allowing (fail-open by design, PROP-129).');
+}
+
 // ---- CHECK 2: bulk-change ceiling ----
 if (allChanged.size > CEILING) {
   if (fs.existsSync(OVERRIDE_FLAG)) {
