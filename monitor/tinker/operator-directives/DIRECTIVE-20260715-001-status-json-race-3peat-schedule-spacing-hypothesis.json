@@ -1,0 +1,94 @@
+{
+  "directive_id": "DIRECTIVE-20260715-001",
+  "for": "tinker",
+  "status": "pending",
+  "priority": "medium",
+  "auto_close_when_deliverable_proposed": true,
+  "created_at": "2026-07-15T14:48:00Z",
+  "created_by": "steve (operator, via cowork)",
+  "title": "PROP-130 canary is firing 3 consecutive days (ISS-2984). Investigate the RECURRENCE PATTERN — is this a schedule-spacing issue we can fix by spreading poller/workspace-sync/decider further apart in time? Operator's explicit hypothesis: 'we might just need to space out the schedule a bit more'.",
+  "context": {
+    "why_now": "Decider's 2026-07-15T02:07Z run flagged PROP-130 status.json two-writer race canary firing on 3 CONSECUTIVE days (ISS-2984). Each firing is followed by poller's self-heal on next daily cycle — the instrumentation-only close of DIRECTIVE-20260711-001 / ISS-2962 is doing what it was designed to do. But 3-consecutive-days is a signal worth investigating: (a) the race may be triggered by a reliable-clockwork condition we didn't understand at ISS-2962 close time, (b) if that condition is timing-adjacent (agents running too close together), simple schedule spacing may eliminate the class without structural surgery.",
+    "operator_hypothesis": "'We might just need to space out the schedule a bit more.' — Steve, 2026-07-15 morning check-in. Motivation: the race is documented as poller-writes-git-only vs workspace-sync-whole-file-copies-FUSE-view. If those two writers are scheduled close enough together in wall-clock time, FUSE has a stale poller-side view when workspace-sync fires; if they're spaced further apart, FUSE has time to re-sync via dome-mirror's git→FUSE pass before workspace-sync's next FUSE→git pass. Testable + cheap to try if the schedule diagnosis holds.",
+    "current_schedules": {
+      "poller": "0 1 * * * local (throttled 2026-05-28) — UTC 00:09-ish per today's evidence",
+      "decider": "0 3 * * * local (quiet-period 1 slot) — UTC 02:07-ish",
+      "workspace-sync": "0 1,5,9 * * * local — UTC 00, 04, 08 (3 slots)",
+      "dome-mirror": "30 1,5,9 * * * local — UTC 00:30, 04:30, 08:30 (paired with workspace-sync at :30 offset)",
+      "integrity": "0 2 * * * local — UTC 01:15-ish"
+    },
+    "the_3_recurrences_data": {
+      "day_1": "2026-07-12 chimera on workspace-sync commit 27bf1e4b (04:09Z)",
+      "day_2": "2026-07-13 canary refired on same 27bf1e4b (still in 30-commit window, no new race)",
+      "day_3_probably": "2026-07-14 or 2026-07-15 — NEW chimera commit on some agent's push; tinker to identify",
+      "3rd_day_new_incident": "Per decider's ISS-2984 title ('status.json field regression on commit 25a4825'), a NEW chimera occurred at 25a4825. Confirm the commit's timestamp + author + which fields regressed vs advanced."
+    }
+  },
+  "task": {
+    "part_A_recurrence_forensics": {
+      "questions_to_answer": [
+        "Q1 — For each of the 3 chimera-firing incidents (27bf1e4b on 07-12, 25a4825 on 07-15, plus any other in the 30-commit window), identify: commit timestamp (down to the second), commit author agent, which fields advanced, which fields regressed, and what the wall-clock gap was between the last poller push and this culprit push.",
+        "Q2 — Is there a deterministic timing pattern? E.g., 'every time workspace-sync's UTC 04:00 slot runs less than N minutes after poller's UTC 00:xx slot commits AND decider's UTC 02:00 slot has written to status.json in between, the race triggers.' Look for a rule.",
+        "Q3 — Operator's spacing hypothesis test: if we moved workspace-sync's UTC 04:00 slot to UTC 06:00 (or later), would the race window close? Model this against the 3 observed incidents — would each have been eliminated by the delay?",
+        "Q4 — Alternative: is the race triggered by something OTHER than pure agent timing? (e.g., a specific state transition on status.json fields that only certain sequences of writes produce)"
+      ],
+      "investigation_scope": "Read commit history for the 30-commit window that PROP-130 canary looks at. Cross-reference agent scheduled-task cron entries against actual commit timestamps. Do NOT change any schedules in this directive — investigate and recommend."
+    },
+    "part_B_recommendation": {
+      "options_to_consider": [
+        {
+          "id": "OPT-1",
+          "label": "Space out the schedule (per operator hypothesis)",
+          "shape": "If Part A shows the race triggers only when agents run within a certain window of each other, propose specific cron changes to widen the gaps. Update-scheduled-task API calls documented in the PROP.",
+          "cost": "Very small — 2-3 scheduled_tasks update_scheduled_task calls."
+        },
+        {
+          "id": "OPT-2",
+          "label": "Accept the 3-per-30-days steady state as pipeline noise",
+          "shape": "If Part A shows the race triggers randomly / not tied to schedule, and poller self-heal is bounded (~24h max), just document the steady-state cost + tune the canary's noise threshold if appropriate.",
+          "cost": "Zero to trivial (maybe a canary-cadence change)."
+        },
+        {
+          "id": "OPT-3",
+          "label": "Add a workspace-sync-side pre-check: skip status.json overwrite if git-side is fresher than FUSE",
+          "shape": "Modify workspace-sync's smart_copy for status.json only: read git-side, read FUSE-side, if git's mtime > FUSE's mtime OR git's status.json fields are strictly newer than FUSE's, skip the overwrite. Prevents the chimera even if timing hits the race window.",
+          "cost": "Moderate. Workspace-sync hot-path change — needs PROP-051 disaster-class review."
+        }
+      ],
+      "operator_preference": "OPT-1 (schedule spacing) is the LOW-COMPLEXITY option operator explicitly hypothesized. If Part A supports it, ship OPT-1 (or propose it as PROP with cron updates). OPT-2 (accept) is legitimate close if the race is not schedule-attributable. OPT-3 (workspace-sync change) is a fallback only if neither of the first two work."
+    },
+    "part_C_ship_or_follow_up": {
+      "if_OPT_1_supported": "Ship a PROP with concrete cron updates + call the scheduled_tasks update_scheduled_task tool from operator's approval. Tinker MAY author the PROP + provide the operator with the exact update-task calls to make.",
+      "if_OPT_2_supported": "Author a short PROP documenting the steady state + accepting it. No code change. Optionally tune PROP-130 canary threshold if 1-in-N cycles becomes noise.",
+      "if_OPT_3_supported": "Author PROP with the workspace-sync-side skip logic + PROP-051-class review + fail-open discipline (bug in the pre-check must not block workspace-sync entirely). Propose-only, operator ratifies next session."
+    }
+  },
+  "deliverable_acceptance_criteria": [
+    "monitor/tinker/reports/status-json-race-3peat-forensics-2026-07-15.md — 1-page report answering Q1-Q4 with commit SHAs + timestamps + regressed/advanced field lists.",
+    "One PROP recommending OPT-1, OPT-2, or OPT-3 with clear reasoning tied back to Part A's evidence.",
+    "If PROP recommends OPT-1: include the specific cron changes as a table (agent, current cron, proposed cron, rationale) + operator-copy-paste update_scheduled_task calls.",
+    "If PROP recommends OPT-2: include the accepted steady-state rate + criterion that would flip the decision (e.g., '≥5 consecutive days OR ≥10 fires in 30 days → revisit')."
+  ],
+  "constraints": {
+    "budget_soft_limit_tokens": 40000,
+    "no_actual_schedule_changes_in_this_directive": "Investigate + recommend + propose (via PROP). Actual scheduled_tasks update calls are operator action, not tinker action. If tinker recommends OPT-1, tinker provides the specific update payload but operator makes the call.",
+    "prop_051_awareness_for_OPT_3": "Any workspace-sync hot-path change (OPT-3) MUST include fail-open discipline: a bug in the pre-check must not halt all workspace-sync pushes. PROP-127 CHECK 3 is the reference pattern.",
+    "do_not_touch_prop_130_canary_thresholds_without_evidence": "The canary is working as designed (detects + attributes + confirms self-heal). Tuning its threshold is only appropriate if OPT-2 wins and only if the current rate genuinely becomes noise."
+  },
+  "background_artifacts": {
+    "prop_130_ship": "monitor/tinker/proposals/PROP-130-integrity-status-json-provenance-canary.json (status=integrated 2026-07-12)",
+    "directive_20260711_001": "monitor/tinker/operator-directives/DIRECTIVE-20260711-001-status-json-two-writer-race-fix-design.json (completed) — set the instrumentation-only close posture",
+    "iss_2962": "closed 2026-07-12 with closure_note documenting the instrumentation-only close",
+    "iss_2984": "monitor/decisions/open-issues.json:ISS-2984 (moderate, opened 2026-07-15) — the 3rd-consecutive-day fire trigger for this directive",
+    "prop_130_canary_script": "monitor/scripts/check-status-json-provenance.js — walks last 30 commits touching status.json, detects monotonic-timestamp regressions + consecutive_quiet_polls decreases-to-nonzero + chimera flag",
+    "the_original_incident_diagnosis": "monitor/tinker/reports/workspace-sync-status-json-clobber-2026-07-10.md (from DIRECTIVE-20260710-001) — established the two-writer race root cause"
+  },
+  "not_in_scope": [
+    "Do NOT restructure status.json (ownership reclassification, per-field split, etc.). Prior directive (DIRECTIVE-20260711-001) already ruled out structural fixes.",
+    "Do NOT remove PROP-130 canary. Even if OPT-1 or OPT-3 eliminates the race, the canary stays as durable detection.",
+    "Do NOT change poller.md self-heal logic. Poller is the backstop; keep it working.",
+    "Do NOT modify any cron entries in this directive — operator makes those changes based on the PROP's recommendation."
+  ],
+  "supersedes_directives": [],
+  "operator_notes": "Operator (Steve, 2026-07-15): 'raise the 3peat function with tinker. we might just need to space out the schedule a bit more'. Explicit hypothesis embedded in Part A Q3. Small directive; probably ships as OPT-1 or OPT-2 with a concrete recommendation in one tinker cycle. auto_close_when_deliverable_proposed:true — the PROP is the deliverable."
+}
