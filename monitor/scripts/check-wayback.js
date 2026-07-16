@@ -9,8 +9,10 @@
  * Compare to previous state in wayback-state.json (if present) and emit:
  *   - REMOVAL alert if prev.archived===true && cur.archived===false
  *   - STALE alert if newest snapshot age > staleness_threshold_days
- *   - UNKNOWN entry if API unreachable/timeout/non-JSON — logged, NEVER alarmed,
- *     previous state retained for that URL.
+ *   - UNKNOWN entry if API unreachable/timeout/non-JSON, OR if the availability
+ *     response is empty but uncorroborated (ISS-2987 guard: unencoded retry +
+ *     CDX cross-check) — logged, NEVER alarmed, previous state retained.
+ *     archived:false (removal-eligible) requires CDX to affirmatively agree.
  *
  * Writes new wayback-state.json (full per-URL state + run timestamp).
  * Prints JSON summary to stdout for the caller (social.md daily run).
@@ -79,11 +81,57 @@ function ageDays(ts) {
   return (Date.now() - d.getTime()) / (86400 * 1000);
 }
 
+/**
+ * cdxHasSnapshot — ISS-2987 / PROP-136 false-positive guard.
+ * Independent read-only cross-check against the CDX Server API before
+ * accepting an empty availability response as a confirmed removal.
+ * Returns: true (>=1 200-status snapshot exists), false (CDX affirmatively
+ * empty), null (CDX unreachable/non-JSON — cannot confirm either way).
+ * Read-only; never calls /save/ (DIRECTIVE-20260709-002 Part C constraint).
+ */
+async function cdxHasSnapshot(url) {
+  const cdxBase = process.env.WAYBACK_CDX_BASE || 'https://web.archive.org';
+  try {
+    const j = await fetchJson(cdxBase + '/cdx/search/cdx?url=' + encodeURIComponent(url) +
+      '&output=json&limit=1&filter=statuscode:200', 15000);
+    return Array.isArray(j) && j.length > 1; // row 0 is the CDX header row
+  } catch (e) {
+    return null;
+  }
+}
+
 async function checkOne(url, apiBase) {
   try {
-    const j = await fetchJson(apiBase + '/wayback/available?url=' + encodeURIComponent(url), 10000);
-    const c = j && j.archived_snapshots && j.archived_snapshots.closest;
-    if (!c || !c.available) return { url, archived: false };
+    let j = await fetchJson(apiBase + '/wayback/available?url=' + encodeURIComponent(url), 10000);
+    let c = j && j.archived_snapshots && j.archived_snapshots.closest;
+    if (!c || !c.available) {
+      // ISS-2987: the availability API is encoding-sensitive — the percent-
+      // encoded query form intermittently returns {} for URLs that ARE
+      // archived (verified 2026-07-14 on predictions/live.html; the same
+      // endpoint returned a valid snapshot when queried unencoded, and CDX
+      // confirmed 3 snapshots). Retry once with the URL passed unencoded
+      // before treating the empty response as meaningful.
+      try {
+        j = await fetchJson(apiBase + '/wayback/available?url=' + url, 10000);
+        c = j && j.archived_snapshots && j.archived_snapshots.closest;
+      } catch (e) { /* fall through to CDX cross-check */ }
+    }
+    if (!c || !c.available) {
+      // Still empty. Distinguish "affirmatively no snapshot" (genuine
+      // removal — CDX is also empty when Wayback honors an exclusion
+      // request) from an availability-API quirk (CDX still shows the
+      // snapshot). Only a corroborated negative may become archived:false;
+      // anything else is UNKNOWN so the caller carries forward previous
+      // state and does NOT fire removal_alerts.
+      const cdx = await cdxHasSnapshot(url);
+      if (cdx === true) {
+        return { url, status: 'UNKNOWN', error: 'availability API empty but CDX shows a 200-status snapshot (ISS-2987 encoding-quirk guard)' };
+      }
+      if (cdx === null) {
+        return { url, status: 'UNKNOWN', error: 'availability API empty and CDX unreachable — removal not corroborated' };
+      }
+      return { url, archived: false };
+    }
     const age = ageDays(c.timestamp);
     return {
       url,

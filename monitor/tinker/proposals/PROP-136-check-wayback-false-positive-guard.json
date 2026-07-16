@@ -1,0 +1,37 @@
+{
+  "id": "PROP-136",
+  "created_at": "2026-07-16T02:48:25Z",
+  "created_by": "tinker-2026-07-16T02-42",
+  "category": "new_script",
+  "target": "monitor/scripts/check-wayback.js",
+  "source_iss": "ISS-2987",
+  "source_evidence": "monitor/social/drafts/check-wayback-encoding-quirk-2026-07-14.md",
+  "problem": "checkOne() treated ANY JSON-parseable availability response with empty archived_snapshots.closest as confirmed archived:false — the same code path as a genuine removal. The Wayback Availability API is encoding-sensitive: the percent-encoded query form intermittently returns {} for URLs that ARE archived (verified by social 2026-07-14 on https://john09289.github.io/predictions/live.html: encoded form returned {} across curl + node repro; unencoded form returned a valid 20260709182001 snapshot; CDX confirmed 3 snapshots). This fired a false HIGH-signal removal_alert — the one signal PROP-128 exists to catch. The flap self-repaired on the 2026-07-15 run (state back to archived:true), which means WITHOUT a guard every future true->false flap fires another false alarm, eroding removal-alert credibility.",
+  "proposed_fix": {
+    "summary": "Two-layer guard in checkOne() before accepting an empty availability response as archived:false: (1) retry the availability call once with the URL passed unencoded (the form that consistently succeeded in social's repro); (2) if still empty, cross-check the independent CDX Server API — if CDX shows a 200-status snapshot, return status:UNKNOWN (carry forward previous state, no removal_alert); if CDX is unreachable, also UNKNOWN (uncorroborated negative); only when CDX affirmatively agrees (empty) does the result become archived:false. Genuine removals still alert: Wayback exclusion requests empty CDX too. New helper cdxHasSnapshot() honors WAYBACK_CDX_BASE env override for fixture testing, read-only, never calls /save/ (DIRECTIVE-20260709-002 Part C constraint preserved).",
+    "files_to_modify": [
+      {
+        "path": "monitor/scripts/check-wayback.js",
+        "find": "checkOne(): if (!c || !c.available) return { url, archived: false };",
+        "replace": "unencoded retry -> cdxHasSnapshot() cross-check -> UNKNOWN unless CDX corroborates; new cdxHasSnapshot() helper; doc-comment updated to state archived:false requires CDX corroboration",
+        "explanation": "See git diff of the self-apply commit (this run) for the exact code."
+      }
+    ],
+    "files_to_create": [],
+    "files_to_delete": []
+  },
+  "tradeoffs": "Adds up to 2 extra read-only HTTP calls per URL, only on the empty-response path (normal path: zero extra calls; 2026-07-16 test run: 14/14 URLs took the fast path). CDX outage now yields UNKNOWN instead of a removal alert — a genuine removal during a CDX outage is detected one run later (24h); acceptable vs recurring false HIGH-signal alarms. Counter-argument considered: 'retry-unencoded alone is simpler' — rejected because the unencoded form working is itself an undocumented API quirk that could invert; CDX corroboration is the principled independent check.",
+  "estimated_impact": "Eliminates the false-positive removal_alert class (1 observed in 5 days of PROP-128 operation). Preserves genuine-removal detection with at most +1 run latency when CDX is down.",
+  "requires_human_judgment": false,
+  "why_human_needed": null,
+  "status": "self-applied",
+  "implemented_at": "2026-07-16T02:48:25Z",
+  "implemented_by": "tinker-2026-07-16T02-42 (Mode 0 -> Mode 4 self-apply; ISS-2987 was assigned-tinker with fully-specified, socially-verified fix)",
+  "verification_pattern": "grep -q 'cdxHasSnapshot' monitor/scripts/check-wayback.js && node --check monitor/scripts/check-wayback.js 2>/dev/null && echo FIXED || echo STILL_BROKEN",
+  "test_evidence": {
+    "happy_path": "2026-07-16 live run, real config, state to /tmp: 14/14 monitored URLs archived:true, removal_alerts:[], unknown:[] — no regression",
+    "genuine_negative_path": "never-archived URL (zzz-nonexistent-page-ISS2987-test.html) -> CDX affirmatively empty -> corroborated archived:false (genuine-removal detection intact)",
+    "guard_path": "CDX for live.html returns 2 rows (header+snapshot) -> cdxHasSnapshot=true -> an empty availability response for it now yields UNKNOWN, not a removal alert",
+    "syntax": "node --check passes"
+  }
+}
