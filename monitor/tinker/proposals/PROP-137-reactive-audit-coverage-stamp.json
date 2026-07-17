@@ -1,0 +1,37 @@
+{
+  "id": "PROP-137",
+  "created_at": "2026-07-17T02:52:00Z",
+  "created_by": "tinker-2026-07-17T02-41",
+  "category": "new_script",
+  "target": "monitor/scripts/compute-curmudgeon-dispatcher-state.js (resolvePriorityAudit, Step 3)",
+  "source_iss": "ISS-2986",
+  "source_evidence": "REACTIVE-AUDIT-2026-07-14 F3; five consecutive daily Priority 0c2 re-audits of the same change file chg-20260712-0010-003 (REACTIVE-AUDIT-2026-07-13 .. 2026-07-17, cycle 5 confirms current_verdict_holds=true each time)",
+  "problem": "resolvePriorityAudit() uses c.audited_at on monitor/changes/*.json as the Priority 0c2 closure signal, but monitor/changes/ is append-only (writes to existing chg files are forbidden by the File Ownership rules) and 0 of 210 change files have ever been stamped. Every critical/strategic change therefore re-fires the 0c2 audit branch daily until the 7d natural cutoff, burning one redundant curmudgeon reactive-audit run per day per change (5 wasted cycles on chg-20260712-0010-003 alone). The class recurs with every future critical/strategic dome-site change.",
+  "options_considered": {
+    "a_reactive_audit_coverage_scan": "Dispatcher scans REACTIVE-AUDIT-*.json review files for chg-id references as the stamp-equivalent. No writes to changes/, no ownership-table changes, no new files. CHOSEN.",
+    "b_claude_md_additive_edit_exception": "Extend the append-only additive-edit exceptions to permit audited_at on chg files (popped_by_queue_id precedent). Rejected: requires CLAUDE.md + build.js + workspace-sync.md triple-edit (CLAUDE.md is NEVER_PUSH, would strand a patch), adds a fourth additive-edit exception for a problem solvable read-side, and the writer would be curmudgeon — a new write surface on an append-only dir.",
+    "c_sidecar_files": "monitor/changes/audited/chg-<id>.audited.json sidecars. Rejected: new write surface needing ownership classification, doubles file count in a 210-file dir over time, and the reviews dir already durably records exactly this fact."
+  },
+  "proposed_fix": {
+    "summary": "In resolvePriorityAudit(), build a coverage set of chg ids referenced by completed REACTIVE-AUDIT-*.json reviews — union of (a) instrumentation.dispatcher_flagged_files basenames (field present since 2026-07-16, emitted from this same script's out.files) and (b) chg-\\d{8}-\\d{4}-\\d{3} ids regexed from the audit's topic string (covers legacy audits that predate the instrumentation field; reactive-audit convention always names the audited chg id in topic). A change passing the classification+7d filters that is in the coverage set is counted in a new covered_by_reactive_audit_count observability field and skipped instead of firing 0c2. Failure-safe: unreadable reviews dir degrades to pre-fix re-fire behavior, never suppresses by error. The existing c.audited_at skip is preserved.",
+    "files_to_create": [],
+    "files_to_modify": [
+      {
+        "path": "monitor/scripts/compute-curmudgeon-dispatcher-state.js",
+        "find": "resolvePriorityAudit() body: loop over monitor/changes/*.json with only `if (c.audited_at) continue;` as the audited check",
+        "replace": "Same loop preceded by an auditedChgIds Set built from monitor/curmudgeon/reviews/REACTIVE-AUDIT-*.json (dispatcher_flagged_files basenames + topic-string chg-id regex), with `if (auditedChgIds.has(f.replace(/\\.json$/, ''))) { out.covered_by_reactive_audit_count++; continue; }` placed after the classification and 7d-cutoff filters so the counter only counts changes that would otherwise have fired; header doc block updated to document the stamp-equivalent semantics",
+        "explanation": "Applied in full in the same commit as this PROP (tinker self-apply per ISS-2986's explicit 'Design + implement ... (tinker judgment call)' assignment; PROP-136/ISS-2987 precedent). See commit diff for exact text."
+      }
+    ],
+    "files_to_delete": []
+  },
+  "tradeoffs": "Gain: kills the daily 0c2 re-fire class at the read side with zero new write surfaces; one redundant Opus-class reactive-audit run saved per day per open critical/strategic change; observability via covered_by_reactive_audit_count. Lose/risk: (1) topic-regex matching could over-suppress if a future reactive-audit merely MENTIONS a chg id it did not actually audit in its topic — mitigated because reactive-audit convention puts only the audited chg id in topic, and the 7d cutoff already bounds any residual exposure; (2) an audit that crashed AFTER writing its review file would still count as coverage — acceptable, review files are written at completion; (3) deliberate re-audit of an already-covered change now requires a priority-queue item or human-note rather than relying on the daily re-fire — which is the correct routing anyway (the re-fires were adding no information: 5/5 cycles returned current_verdict_holds=true).",
+  "estimated_impact": "~1 redundant curmudgeon reactive-audit run avoided per day per open critical/strategic change (each a full Opus review cycle); dispatcher-state artifact now converges to the correct 0c2 state the day after the first audit lands instead of day 8.",
+  "requires_human_judgment": false,
+  "why_human_needed": null,
+  "status": "self-applied",
+  "implemented_at": "2026-07-17T02:52:00Z",
+  "implemented_by": "tinker-2026-07-17T02-41 (Mode 0 -> Mode 4 self-apply; ISS-2986 was assigned-tinker with explicit design+implement delegation)",
+  "verification_pattern": "grep -q 'covered_by_reactive_audit_count' monitor/scripts/compute-curmudgeon-dispatcher-state.js && node --check monitor/scripts/compute-curmudgeon-dispatcher-state.js 2>/dev/null && echo FIXED || echo STILL_BROKEN",
+  "test_evidence": "Live: pre-patch run against clone HEAD -> 0c2 needed=true, files=[chg-20260712-0010-003.json]; post-patch -> needed=false, covered_by_reactive_audit_count=1, rest of dispatcher-state artifact byte-identical modulo timestamps/timing. Synthetic 4-change workspace: topic-only-referenced chg suppressed (legacy path), dispatcher_flagged_files-referenced chg suppressed, UNCOVERED critical chg still fires (needed=true, count=1, correct file listed), audited_at-stamped chg still skipped. exit=0 on all runs."
+}

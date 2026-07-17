@@ -1,0 +1,154 @@
+{
+  "generated_at": "2026-07-17T02:55:00Z",
+  "report_date": "2026-07-17",
+  "run_id": "2026-07-17T02-41",
+  "mode_selected": "Mode 0 (assigned-to-tinker top-pick ISS-2986) routed to Mode 4 self-apply",
+  "mode_reason": "No pending operator directive (129 walked, 0 pending). Mode 0 scan found exactly 1 assigned-to-tinker item: ISS-2986 (minor, audited_at stamping, class_hint null). Content is structural/design with explicit 'Design + implement (tinker judgment call)' delegation from decider — routed to Mode 4 PROP authoring + self-apply per the PROP-136/ISS-2987 precedent (previous run). Per-run cap 1 honored.",
+  "modes_checked": {
+    "pipeline_health": "green — poller 2h, curmudgeon 22h, decider 24h, analyst tracker 0h, all within 2x quiet-period cadence; one stranded-patches sentinel >24h found and resolved this run (see findings)",
+    "infrastructure": "green — FUSE 5-file md5 check matches git HEAD; PAT auth 200; clone-leak 0MB; root-FS free 3385MB; PROP-099 prune-resurrection canary clean (rc=0)",
+    "cost_engineering": "not run this cycle (Mode 0 preempted); last full Mode 3 predates 07-09",
+    "proposals": "1 PROP authored + self-applied this run (PROP-137); prop-auto-close shadow: 148 walked, 0 would-close; directive-auto-close enforce: 129 walked, 0 pending"
+  },
+  "pipeline_health": {
+    "agents_stalled": [],
+    "output_freshness": {
+      "poller": "2h (latest-poll-summary.txt)",
+      "analyst": "0h (expansion-tracker.json)",
+      "curmudgeon": "22h (tracker.json); reactive-audit cycle-5 landed 01:10Z today",
+      "decider": "24h (latest-decider-summary.txt) — consistent with daily quiet-period slot",
+      "tinker": "23h (previous run 2026-07-16T02-42)"
+    }
+  },
+  "findings": [
+    {
+      "severity": "minor",
+      "category": "self",
+      "description": "ISS-2986 root cause confirmed and fixed: resolvePriorityAudit() keyed Priority 0c2 closure on c.audited_at, which can never be stamped on append-only monitor/changes/ files (0/210 ever stamped). chg-20260712-0010-003 drew 5 consecutive daily reactive-audits (2026-07-13..07-17), each returning current_verdict_holds=true — pure waste. Fixed via option (a): REACTIVE-AUDIT-*.json coverage scan (dispatcher_flagged_files basenames + topic chg-id regex) as the stamp-equivalent, with covered_by_reactive_audit_count observability field and fail-safe degradation to pre-fix behavior on reviews-dir read error.",
+      "evidence": "monitor/curmudgeon/reviews/REACTIVE-AUDIT-2026-07-{13,14,15,16,17}.json (cycle field 1..5); pre-patch dispatcher-state 0c2 needed=true files=[chg-20260712-0010-003.json], post-patch needed=false covered_by_reactive_audit_count=1, rest of artifact identical modulo timestamps; synthetic 4-change test: both coverage paths suppress, uncovered critical still fires, audited_at legacy path preserved",
+      "suggested_fix": {
+        "file": "monitor/scripts/compute-curmudgeon-dispatcher-state.js",
+        "find": "audited_at-only closure check in resolvePriorityAudit()",
+        "replace": "auditedChgIds Set from REACTIVE-AUDIT reviews + skip-with-counter after classification/cutoff filters (see PROP-137 + commit diff)",
+        "rationale": "Read-side fix; no new write surfaces on append-only dirs; kills the daily re-fire class for all future critical/strategic changes"
+      },
+      "self_fixable": true,
+      "fix_applied": true,
+      "prop_id": "PROP-137"
+    },
+    {
+      "severity": "moderate",
+      "category": "handoff",
+      "description": "Stranded-patches sentinel stranded-patches-2026-07-10T02-08-04Z.json sat 7 days non-tombstoned even though its underlying CLAUDE.md patch (kill-shots.json file-map bullet, ISS-2946) landed in commit 369d3b8c ~3h after the sentinel was written — the operator applied the patch but skipped tombstone step 5. Every daily tinker/decider scan re-counted it as actionable. Tombstoned this run per the convention: audit record at monitor/decisions/applied-stranded-patches/applied-ISS-2946-claudemd-killshots-2026-07-17T02-41.json, tombstone written in place in both clone and FUSE, tombstone_by_commit=369d3b8c.",
+      "evidence": "GitHub diff of 369d3b8c adds the exact per_file_diffs CLAUDE.md hunk; HEAD CLAUDE.md line 105 carries the bullet; ISS-2946 status=fixed closed 2026-07-10T05:23Z",
+      "self_fixable": true,
+      "fix_applied": true
+    },
+    {
+      "severity": "minor",
+      "category": "handoff",
+      "description": "FUSE copy of monitor/decisions/human-notes.json carried yesterday's HNOTE-TINKER-ISS-2987-CLOSE-001 still at status=pending even though decider consumed+archived it in git at 2026-07-17T02:16Z (ISS-2987 closed). Stale consumed-note divergence on a dual-write file is a resurrection hazard. Resolved this run by overwriting the FUSE copy with the git-clone content (which includes this run's new ISS-2986 close HNOTE). Watch item, not a PROP: single stale note, known dual-write/archive-rotation interaction, self-corrected same-day.",
+      "evidence": "human-notes-archive.jsonl row for HNOTE-TINKER-ISS-2987-CLOSE-001 shows consumed_at=2026-07-17T02:16:03Z; FUSE live file still listed it as pending before this run's sync",
+      "self_fixable": true,
+      "fix_applied": true
+    }
+  ],
+  "previous_followup": [
+    {
+      "finding": "self/moderate (07-16): check-wayback.js false-positive removal_alert → PROP-136 self-applied",
+      "status": "FIXED",
+      "evidence": "PROP-136 verification_pattern → FIXED at HEAD; ISS-2987 status=fixed in closed-issues.json; closure HNOTE consumed by decider 2026-07-17T02:16Z"
+    },
+    {
+      "finding": "backlog-trend/info (07-16): >20% WoW growth technically fired on small N (10→14)",
+      "status": "STALE_FALSE_ALARM",
+      "evidence": "This run: open_issues_total 10, WoW 10→10 (0.0%), net_velocity_7d +20. Small-N noise as diagnosed; no threshold fires today"
+    },
+    {
+      "finding": "self/minor (07-16): report filename drift (report-tinker-<ts>.json vs report-<ts>.json on 07-08/07-09 runs)",
+      "status": "FIXED",
+      "evidence": "This run writes report-2026-07-17T02-41.json per the dominant convention; the two drifted filenames remain as historical artifacts only"
+    }
+  ],
+  "open_issue_health": {
+    "total_open": 10,
+    "aged_out": [],
+    "repeated_deferrals": [],
+    "missing_patches": [],
+    "zombie_fixes": [],
+    "note": "2 issues >=30d are long-tail assigned items; oldest status=open age 0d; assigned-analyst 0. Healthy."
+  },
+  "preflight": {
+    "prop_auto_close": {
+      "mode": "shadow",
+      "props_walked": 148,
+      "mechA_would_close": 0,
+      "mechB_would_close": 0,
+      "actually_closed": 0
+    },
+    "directive_auto_close": {
+      "mode": "enforce",
+      "directives_walked": 129,
+      "pending": 0,
+      "actually_closed": 0
+    },
+    "operator_directives": "none pending",
+    "mode0_scan": "1 item (ISS-2986) — taken as this run's top-pick",
+    "backlog_trend": {
+      "row_appended": true,
+      "open_issues_total": 10,
+      "wow_pct": 0,
+      "net_velocity_7d": 20,
+      "pending_commission_hnotes_count": 0,
+      "inbound_burst_winnew_unreviewed": 0,
+      "detector_b": "no-op",
+      "root_fs_free_mb": 3385,
+      "closed_issues_mb": 3.23,
+      "thresholds_fired": "none"
+    }
+  },
+  "cost_engineering": {},
+  "recommendations": [
+    {
+      "priority": 1,
+      "type": "human_decision",
+      "description": "None required. PROP-137 shipped self-applied with tests; ISS-2986 closure HNOTE filed for decider (HNOTE-TINKER-ISS-2986-CLOSE-001). Curmudgeon's next run should show 0c2 quiet for chg-20260712-0010-003; if a 6th reactive-audit cycle appears after this commit propagates, re-open ISS-2986.",
+      "prop_id": "PROP-137"
+    }
+  ],
+  "cleanup_actions": [
+    {
+      "path": "monitor/decisions/stranded-patches-2026-07-10T02-08-04Z.json",
+      "action": "tombstone-in-place (clone + FUSE) + audit record",
+      "reason": "underlying patch verified landed in 369d3b8c; sentinel was operator-forgotten step 5"
+    },
+    {
+      "path": "/sessions/<session>/tinker-clone",
+      "action": "rm -rf at end of run",
+      "reason": "mandatory run-local clone hygiene"
+    }
+  ],
+  "self_cost": {
+    "transcript": "518a5fc0-f48b-4155-8486-1de53fd26ff4.jsonl",
+    "model": "claude-fable-5",
+    "assistant_msgs": 107,
+    "tokens": {
+      "input": 214,
+      "output": 105952,
+      "cache_write_5m": 0,
+      "cache_write_1h": 356277,
+      "cache_read": 16016633
+    },
+    "cost_usd": {
+      "input_usd": 0.00107,
+      "output_usd": 2.6488,
+      "cache_write_5m_usd": 0,
+      "cache_write_1h_usd": 3.56277,
+      "cache_read_usd": 8.008316,
+      "total_usd": 14.220956
+    },
+    "transcript_duration_sec": 859.1,
+    "first_ts": "2026-07-17T02:40:07.423Z",
+    "last_ts": "2026-07-17T02:54:26.494Z"
+  }
+}

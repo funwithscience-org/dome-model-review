@@ -29,7 +29,11 @@
  *   1 → priority queue has an un-reviewed item
  *   2 → human notes has a pending entry
  *   audit → monitor/changes/ has unaudited classification:critical|strategic
- *           within the last 7 days (the existing Step 0c2 audit branch)
+ *           within the last 7 days (the existing Step 0c2 audit branch).
+ *           "Audited" = c.audited_at present OR the chg id is referenced by a
+ *           REACTIVE-AUDIT-*.json review (ISS-2986: changes/ is append-only,
+ *           so audited_at can never be stamped post-hoc; the reactive-audit
+ *           review file is the durable stamp-equivalent)
  *   3 → drift-audit.json has a non-OBE candidate AND is fresh (<168h)
  *   4 → tracker.holistic_checks has a status:pending entry
  *   5 → spot-check fallback
@@ -239,12 +243,45 @@ function resolvePriorityAudit() {
     needed: false,
     unaudited_critical_count: 0,
     unaudited_strategic_count: 0,
+    covered_by_reactive_audit_count: 0,
     files: [],
   };
   const changesDir = path.join(WORKSPACE, 'monitor/changes');
   let files = [];
   try { files = fs.readdirSync(changesDir).filter(f => f.endsWith('.json')); }
   catch (e) { stats.changes_scan_ms = Date.now() - t0; return out; }
+
+  // ISS-2986 (option a — REACTIVE-AUDIT coverage scan): monitor/changes/ is
+  // append-only, so nothing can ever stamp audited_at onto an existing change
+  // file (0 of 210 files have ever carried it) and Priority 0c2 re-fired
+  // daily on the same change until the 7d cutoff (5 consecutive re-audits of
+  // chg-20260712-0010-003, 2026-07-13..07-17). Instead, treat a change as
+  // audited when a completed reactive-audit review references it. Two id
+  // sources per REACTIVE-AUDIT-*.json:
+  //   (a) instrumentation.dispatcher_flagged_files — the files THIS script
+  //       flagged on the cycle that audit consumed (present since 07-16);
+  //   (b) chg ids named in the audit's topic string — legacy audits predate
+  //       the instrumentation field but always name the audited chg id there.
+  // Failure-safe: if the reviews dir is unreadable, the set stays empty and
+  // behavior degrades to pre-ISS-2986 re-fire (never suppresses a needed
+  // audit by error).
+  const auditedChgIds = new Set();
+  try {
+    const revDir = path.join(WORKSPACE, 'monitor/curmudgeon/reviews');
+    for (const rf of fs.readdirSync(revDir)) {
+      if (!/^REACTIVE-AUDIT-.*\.json$/.test(rf)) continue;
+      let ra;
+      try { ra = JSON.parse(fs.readFileSync(path.join(revDir, rf), 'utf8')); }
+      catch (e) { continue; }
+      const flagged = (ra.instrumentation && ra.instrumentation.dispatcher_flagged_files) || [];
+      for (const p of flagged) {
+        const base = String(p).split('/').pop().replace(/\.json$/, '');
+        if (base) auditedChgIds.add(base);
+      }
+      const topicIds = String(ra.topic || '').match(/chg-\d{8}-\d{4}-\d{3}/g) || [];
+      for (const id of topicIds) auditedChgIds.add(id);
+    }
+  } catch (e) { /* reviews dir unreadable — fall back to audited_at-only behavior */ }
 
   const cutoff = Date.now() - (7 * 24 * 3600 * 1000);
   for (const f of files) {
@@ -256,6 +293,7 @@ function resolvePriorityAudit() {
     if (cl !== 'critical' && cl !== 'strategic') continue;
     const ct = c.detected_at || c.created_at;
     if (ct && Date.parse(ct) < cutoff) continue;
+    if (auditedChgIds.has(f.replace(/\.json$/, ''))) { out.covered_by_reactive_audit_count++; continue; }
     if (cl === 'critical') out.unaudited_critical_count++;
     else out.unaudited_strategic_count++;
     if (out.files.length < 20) out.files.push('monitor/changes/' + f);
