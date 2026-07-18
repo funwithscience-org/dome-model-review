@@ -1,0 +1,107 @@
+{
+  "directive_id": "DIRECTIVE-20260718-001",
+  "for": "tinker",
+  "status": "pending",
+  "priority": "medium",
+  "auto_close_when_deliverable_proposed": true,
+  "created_at": "2026-07-18T12:26:00Z",
+  "created_by": "steve (operator, via cowork)",
+  "title": "Cross-session FUSE persistence investigation: tinker's 2026-07-18 run reported FUSE missing 6 days of tinker report-*.json files (07-12 through 07-17) despite dome-mirror running successfully every day. Diagnose whether scheduled-agent FUSE mounts share persistent state, and if not, recommend the routing pattern.",
+  "context": {
+    "why_now": "Tinker's 2026-07-18T02:40Z summary flagged a housekeeping finding directly to operator: FUSE workspace was missing six days of prior tinker reports (2026-07-12 through 2026-07-17). Tinker verified via a fresh clone that git had all six reports fine, and pushed today's outputs through the clone-based path so they're not dependent on FUSE sync timing. This is not a data-loss incident — nothing was lost. But it exposes an unresolved question about how scheduled-agent FUSE mounts interact with each other.",
+    "what_is_demonstrably_true_no_speculation": {
+      "dome_mirror_was_running": "Sentinels exist in monitor/integrity/sync-workspace-runs-*.json for every day 2026-07-08 through 2026-07-18, three per day (00:35 / 04:35 / 08:35 UTC). No gap in dome-mirror's scheduled runs.",
+      "sync_script_reported_success": "Latest sentinel (2026-07-18T08-34-59Z) shows classification=equal, files_copied=116, new_files=5, sync_exit_code=0, upstream_newer_than_last_sync=true. dome-mirror's script successfully invoked build.js sync-workspace and it copied files.",
+      "ownership_routes_report_files_correctly": "monitor/tinker/ is classified 'append_only_glob' in build.js OWNERSHIP. syncToWorkspace's walkAppendOnly branch recursively copies files from git to FUSE when they don't already exist in FUSE. Code path is correct.",
+      "the_reports_were_in_git": "Fresh clone (git HEAD) had all six reports 07-12 through 07-17 with correct timestamps and content. Tinker confirmed."
+    },
+    "the_operator_working_hypothesis_unverified": "Scheduled agent sessions may have per-session FUSE mounts that don't share state cleanly with subsequent scheduled sessions. Dome-mirror writes into its session's mount, session ends, and the next scheduled session (e.g., tinker's later run) starts from a fresh FUSE snapshot that doesn't reflect dome-mirror's writes. Same architectural theme as DIRECTIVE-20260708-001's EPERM finding (per-session FUSE mounts with deny-by-default unlink) — the scheduled-session FUSE has isolation properties that don't match the 'shared persistent workspace' mental model the pipeline was designed around.",
+    "why_this_matters": "If the working hypothesis is correct, dome-mirror's git→FUSE work is largely ineffective for cross-session propagation to scheduled agents. Its writes evaporate at session-end. This would mean the 'FUSE workspace' as-designed is really a per-session workspace for scheduled agents, and any cross-session sharing depends on git as the shared substrate. Every agent that reads its own prior outputs (or another agent's prior outputs) would need to read from a fresh clone, not FUSE — the PROP-135 pattern extended.",
+    "why_operator_cowork_doesnt_see_this_class_of_problem": "The Cowork FUSE at /sessions/<cowork-session>/mnt/dome-model-review/ persists across the operator's interactions with Claude — it's warm across the entire conversation. Scheduled agent sessions get fresh sandboxes on each firing. Whatever cross-session persistence the platform provides, it's imperfect for scheduled contexts."
+  },
+  "task": {
+    "part_A_observational_diagnosis": {
+      "why_first": "Cheaper than experimental probe. Use existing sentinel + git-log data to determine whether the working hypothesis is supported.",
+      "questions_to_answer": [
+        "Q1 — When dome-mirror's sentinel reports files_copied=N and new_files=K for a given day, does a LATER scheduled session (from a different agent, say tinker or integrity that runs after dome-mirror) actually see those N+K files in its own FUSE view when it runs? Look at each scheduled agent's run logs or self-cost outputs — did they read files that dome-mirror had just copied 'to FUSE', or did they clone-based read from git?",
+        "Q2 — Is there any evidence that scheduled sessions share FUSE state successfully? Check whether any agent writes to FUSE and a later scheduled agent reads from that exact FUSE-written state (as opposed to reading from git via clone).",
+        "Q3 — Look at the specific 6-day gap tinker observed: for 07-12 through 07-17, do dome-mirror's sentinels for those days claim to have copied the corresponding tinker report-*.json files (or claim they were already present)? If dome-mirror's script claims success but tinker's FUSE didn't have them, that quantifies the gap.",
+        "Q4 — Are there prior tinker reports (before 07-12) that DID make it to FUSE somehow? If yes, when did they arrive, from what agent/session, and via what mechanism? This bounds when the class of failure began."
+      ],
+      "investigation_scope": "Read-only. Analyze sentinels + git log + prior tinker reports' file-presence signals. Do NOT write probe files, do NOT modify scheduled tasks, do NOT modify sync-workspace-step4c.js. If a probe is needed, propose it in Part C for operator authorization.",
+      "output": "monitor/tinker/reports/cross-session-fuse-persistence-diagnosis-2026-07-18.md — 1-2 page report answering Q1-Q4 with sentinel + commit evidence."
+    },
+    "part_B_recommendation": {
+      "options_to_consider": [
+        {
+          "id": "OPT-1",
+          "label": "Extend PROP-135 clone-based-read discipline to all agents that read prior agent outputs",
+          "shape": "Codify in the relevant prompt files (tinker.md, analyst.md, curmudgeon.md, decider.md, etc.) that reads of 'prior agent outputs' (report-*.json, review files, EXPs, priority-queue, etc.) MUST come from a fresh clone, not FUSE. Small prompt edits. Same discipline PROP-135 shipped for status.json applied more broadly.",
+          "cost": "Small — prompt edits across N agents. No code changes.",
+          "risk": "Low. Agents already clone fresh; this just requires them to also READ from clone rather than reaching into FUSE.",
+          "acceptable_if_hypothesis_confirmed": true
+        },
+        {
+          "id": "OPT-2",
+          "label": "Accept the cross-session FUSE gap as documented steady state",
+          "shape": "Add a CLAUDE.md addendum documenting the observation. Note the workaround (clone-based read) for anyone hitting the class in the future.",
+          "cost": "Zero — one CLAUDE.md paragraph.",
+          "risk": "The class recurs whenever an agent forgets to clone-read. Some rate of housekeeping-finding surfacings continues.",
+          "acceptable_if_hypothesis_confirmed_and_prior_reads_are_rare": true
+        },
+        {
+          "id": "OPT-3",
+          "label": "Design a probe (experimental) to definitively confirm/refute the hypothesis",
+          "shape": "A scheduled task fires agent-A, which writes a marker file to FUSE with a known unique payload. N minutes later, scheduled task fires agent-B, which reads the marker file from FUSE and reports whether it was found. Iterate across different agent combinations and time gaps.",
+          "cost": "Moderate — new probe scheduled task + coordination code.",
+          "risk": "Low. Probe files are inert. The scheduled-task infrastructure exists.",
+          "acceptable_if_observational_part_A_is_inconclusive": true
+        },
+        {
+          "id": "OPT-4",
+          "label": "Investigate whether platform-side FUSE persistence can be configured differently",
+          "shape": "Out of scope for tinker — this would require operator escalation to Anthropic support / platform team. Note in the report if the observational diagnosis suggests this class of change is warranted.",
+          "cost": "N/A — tinker doesn't act on this option; it just flags it for operator.",
+          "risk": "N/A"
+        }
+      ],
+      "output": "One-paragraph recommendation. Explicit acceptance of OPT-2 (do nothing structural, document + accept) as legitimate outcome if the hypothesis check goes against the working hypothesis (i.e., FUSE persistence IS working but something else caused the 6-day gap)."
+    },
+    "part_C_ship_or_defer": {
+      "if_OPT_1_is_small": "Ship in the same run as small prompt edits + a PROP documenting the discipline.",
+      "if_OPT_2": "Ship the CLAUDE.md addendum, close directive.",
+      "if_OPT_3": "Design the probe in a follow-up PROP + operator ratifies before running.",
+      "if_hypothesis_refuted": "The observational diagnosis may show the working hypothesis was wrong. In that case, report what actually happened + propose the corresponding fix or close as 'unable to root-cause from observational data' with a specific request for probe."
+    }
+  },
+  "deliverable_acceptance_criteria": [
+    "monitor/tinker/reports/cross-session-fuse-persistence-diagnosis-2026-07-18.md — 1-2 page report answering Q1-Q4 with concrete sentinel + commit evidence.",
+    "One PROP or CLAUDE.md addendum implementing the recommended option (OPT-1 / OPT-2 / OPT-3-design).",
+    "If OPT-1 is chosen, the PROP includes the specific prompt edits per agent, with fixture verification.",
+    "If OPT-2 is chosen, the CLAUDE.md addendum documents the observed class + the clone-based-read workaround pattern.",
+    "If OPT-3 is chosen, the probe design PROP includes: (a) scheduled task cron for probe firing, (b) marker file format + unique-payload discipline, (c) reader script + report format, (d) fail-safe (probe files auto-expire, don't accumulate)."
+  ],
+  "constraints": {
+    "budget_soft_limit_tokens": 40000,
+    "no_production_agent_changes_in_this_directive": "Investigate + recommend. Any prompt edits (OPT-1) or CLAUDE.md addendum (OPT-2) or probe design (OPT-3) is a SEPARATE deliverable. This directive is about the diagnosis first; the ship comes second.",
+    "no_speculation_beyond_evidence": "Tinker's report should state what the sentinels + commits + prior-report file-presence data can support. Where the evidence doesn't reach, say so — do not invent architectural details about scheduled-agent FUSE that aren't observable.",
+    "prop_051_awareness_for_OPT_1": "If OPT-1 ships prompt edits touching how agents read state, ensure the edits don't accidentally introduce a new class of race (e.g., clone-based reads that miss FUSE-side workspace-owned state). Reference the PROP-135 pattern's field-merge discipline as the model.",
+    "do_not_modify_dome_mirror": "dome-mirror's script is working as-specified. The gap is architectural, not a script bug. Any recommendation that involves modifying sync-workspace-step4c.js needs a separate directive with clear rationale."
+  },
+  "background_artifacts": {
+    "tinker_housekeeping_finding_source": "monitor/tinker/latest-tinker-summary.txt (2026-07-18T02-40 run) — the paragraph verbatim: 'the FUSE workspace mount was missing six days of prior reports (07-12 through 07-17) — they existed fine on origin/main, just hadn't synced down via dome-mirror. I verified via a fresh clone that nothing was lost, and pushed this run's outputs through the same clone-based path so they're not dependent on FUSE sync timing.'",
+    "prior_related_directive": "DIRECTIVE-20260708-001 (completed) established that scheduled sessions have per-session FUSE mounts with deny-by-default unlink permissions. That investigation's findings (grant-gated deny-default, load-bearing for disaster recovery, FIX-5 accept + canary as recommended posture) are relevant precedent for how the platform treats scheduled-agent FUSE.",
+    "prop_135_pattern_precedent": "PROP-135 codified the fresh-git-base-write rule for decider's status.json update: read from clone git-HEAD, not FUSE. Same architectural theme applied to a different symptom. If OPT-1 is chosen, PROP-135's pattern is the model for the write side; the read side extension is what this directive proposes.",
+    "ownership_classification": "build.js OWNERSHIP line 335: 'monitor/tinker/': 'append_only_glob'. syncToWorkspace's walkAppendOnly branch handles this correctly — the code is not the issue.",
+    "recent_sentinels_in_repo": "monitor/integrity/sync-workspace-runs-2026-07-08T*.json through 2026-07-18T*.json exist for every day, three per day. Independently verifiable via ls or git ls-files."
+  },
+  "not_in_scope": [
+    "Do NOT modify sync-workspace-step4c.js or dome-mirror.md — the sync script is working per specification.",
+    "Do NOT design a full platform-level FUSE-persistence probe that requires Anthropic support engagement.",
+    "Do NOT re-open DIRECTIVE-20260708-001 — that closed properly with the accepted-steady-state + canary posture. This directive is adjacent, not superseding.",
+    "Do NOT retroactively try to force old tinker reports into scheduled-agent FUSE — clone-based read is the correct pattern going forward.",
+    "Do NOT touch operator cowork FUSE state — that's persistent and working correctly; the investigation is about scheduled-agent FUSE only."
+  ],
+  "supersedes_directives": [],
+  "operator_notes": "Operator (Steve, 2026-07-18): 'yea, go ahead and file a tinker directive to check' in response to my (Claude's) diagnostic offering three options. Explicit permission to conclude 'we don't have enough visibility to definitively root-cause' — the observational Part A may not resolve it, and OPT-3 (probe design) may be the recommendation. auto_close_when_deliverable_proposed:true — authoring the report + one of OPT-1/2/3-design PROPs is the deliverable."
+}
