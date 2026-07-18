@@ -1,0 +1,31 @@
+{
+  "id": "PROP-139",
+  "created_at": "2026-07-18T02:40:00Z",
+  "created_by": "tinker-2026-07-18T02-40 (Mode 3 cost engineering)",
+  "category": "signal-quality",
+  "target": "structure-integrity.md check 7b (Workspace-Only Files at Risk)",
+  "source_evidence": [
+    "monitor/integrity/report-2026-07-16T01-16.json: overall_status=fail — sole major finding: REACTIVE-AUDIT-2026-07-16.json + EXP-669-context-page-narrative-read.json on FUSE, written 00:52Z/01:10Z, 'not yet committed to git'",
+    "monitor/integrity/report-2026-07-17T01-14.json: overall_status=fail — sole major finding: EXP-669.json on FUSE written ~00:47:56Z, ~27min after the 00:04Z workspace-sync cycle",
+    "Both files were rescued by workspace-sync's 04:00 UTC slot the same morning; report-2026-07-18T01-15.json is a clean pass",
+    "Quiet-period cadence (2026-06-23): analyst 00:30 UTC, integrity 01:15 UTC, workspace-sync slots 00:00/04:00/08:00 UTC — integrity deterministically fires in the window between analyst FUSE writes and the next rescue slot"
+  ],
+  "problem": "Check 7b classifies ANY workspace-only file as major ('at risk of silent data loss') with no age awareness, and a major finding flips overall_status to fail. Under quiet cadence this is a deterministic false positive: every analyst run that writes a FUSE artifact between 00:04 and 01:15 UTC produces an integrity FAIL that self-heals by 04:00. 2 of the last 3 integrity runs failed this way. Cost is signal erosion, not dollars: 'fail' lands in the decider daily summary and operator-facing surfaces, training everyone to discount integrity fails — the boy-who-cried-wolf failure mode the PROP-123 grace-window design explicitly solved for check 9 (Pages deploy latency).",
+  "options_considered": [
+    {"option": "(a) Move integrity's cron after the 04:00 rescue slot", "verdict": "rejected — couples two agents' schedules; breaks again on any cadence change (quiet-period reverts are expected when the dome drought ends)"},
+    {"option": "(b) Age-gate inside check 7b, mirroring PROP-123's grace-window pattern", "verdict": "PROPOSED — cadence-independent, one prompt edit, keeps the genuine data-loss signal for files that MISS their rescue"},
+    {"option": "(c) Have workspace-sync run right before integrity", "verdict": "rejected — same coupling problem as (a) plus adds a 4th daily sync run (~$3.9) to fix a reporting artifact"}
+  ],
+  "proposed_fix": {
+    "file": "monitor/prompts/structure-integrity.md",
+    "section": "### 7b. Workspace-Only Files at Risk",
+    "edit": "Replace the classification line 'Classify: Any workspace-only file is **major** (at risk of silent data loss). List the specific filenames so they can be committed.' with: 'Classify by age against the FUSE→git rescue latency. Files whose FUSE mtime is YOUNGER than 9h (max workspace-sync rescue latency at quiet cadence is 8h, +1h margin) are **info**, labeled `pending-rescue` — list them with mtimes, but they do NOT count toward overall_status (workspace-sync has simply not had its slot yet; this is the pipeline working as designed). Files OLDER than 9h are **major** as before — they have survived at least one rescue slot without being committed, which is the genuine silent-data-loss signal. If the same file appears as pending-rescue in 2 consecutive daily reports, escalate to major regardless of mtime (rescue is being skipped).' Rationale pointer: 'Grace-window precedent: check 9 / PROP-123. Do not lower the 9h gate when cadence reverts to 2h sync cycles — a too-tight gate resurrects the false positive on any future cadence loosening; 9h is safe under all historical cadences.'",
+    "consecutive_rule_note": "The 2-consecutive-reports escalation closes the hole where a file could sit forever just under a per-run age check if mtime were ever refreshed by re-writes."
+  },
+  "tradeoffs": "A genuinely-orphaned file now waits up to ~9h (one daily report cycle at quiet cadence) before flagging major instead of flagging immediately. Acceptable: the file is on FUSE (durable across sessions) the whole time, workspace-sync's universal-pusher is the actual protection, and the escalation rule bounds the delay to one report cycle. Against that, integrity's fail signal regains meaning.",
+  "estimated_impact": "No direct cost change (integrity runs regardless). Signal quality: eliminates the recurring false FAIL class (2 occurrences in 3 days at current cadence, expected ~5+/week while analyst writes during the 00:04-01:15 window), keeping overall_status=fail reserved for real defects.",
+  "requires_human_judgment": false,
+  "why_human_needed": "n/a — prompt-file edit; apply via clone-and-push, then propagate to FUSE via build.js publish or manual cp per the prompt-sync gotcha in CLAUDE.md.",
+  "status": "proposed",
+  "verification_pattern": "grep -q 'pending-rescue' monitor/prompts/structure-integrity.md && echo FIXED || echo STILL_BROKEN"
+}

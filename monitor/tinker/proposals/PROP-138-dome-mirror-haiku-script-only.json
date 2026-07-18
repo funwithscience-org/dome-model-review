@@ -1,0 +1,34 @@
+{
+  "id": "PROP-138",
+  "created_at": "2026-07-18T02:40:00Z",
+  "created_by": "tinker-2026-07-18T02-40 (Mode 3 cost engineering)",
+  "category": "cost-engineering",
+  "target": "dome-mirror agent (model pin + prompt diet)",
+  "source_evidence": [
+    "monitor/dome-mirror/cost-history.jsonl: 33 runs / 14d, p50 $1.271, p95 $1.394, sum $41.32 (~$89/month at current 3-slot quiet cadence; ~$0.9k/month if hourly cadence ever returns)",
+    "monitor/prompts/dome-mirror.md: the agent's entire job is one collapsed bash block invoking monitor/scripts/sync-workspace-step4c.js — zero judgment content; every safety decision (disk-pressure abort, working-tree population check, non-ff refusal, sentinel discipline) lives in bash/script and is fail-closed",
+    "Precedent: dome-prune-integrity runs script-only via SKILL.md on Haiku since 2026-05-23 with zero incidents",
+    "Cost variance ratio 1.1 (p95/p50) — the flattest in the fleet, confirming the run is deterministic boilerplate with no long-tail analytical work to protect"
+  ],
+  "problem": "dome-mirror is a fully mechanical agent (PROP-074's single-action design achieved exactly what it intended: the LLM makes no decisions) but is pinned to Sonnet 5 and loads a 216-line prompt whose bulk is historical rationale (PROP-066..074 lineage, the 2026-06-01 multi-glob git-add postmortem, cross-bash-session lessons). The model and the context are priced for judgment work that, by deliberate design, does not exist in this agent. ~$89/month buys a script launcher.",
+  "options_considered": [
+    {"option": "(a) Leave as-is", "verdict": "rejected — pure overhead; variance 1.1 proves no judgment tail exists to protect"},
+    {"option": "(b) Consolidate back into workspace-sync", "verdict": "rejected — undoes PROP-074; the separation fixed a ~14% reliability ceiling and must stand"},
+    {"option": "(c) Haiku re-pin + prompt diet (keep agent shape, move history to a non-loaded reference file)", "verdict": "PROPOSED — mirrors the dome-prune-integrity script-only precedent; all anti-improvisation rails are in the bash block itself and are kept verbatim"},
+    {"option": "(d) Reduce cadence 3→2 slots", "verdict": "rejected — saves ~$1.3/day but raises git→FUSE propagation latency to 12h; wrong lever"}
+  ],
+  "proposed_fix": {
+    "step_1": "Operator re-pins the dome-mirror scheduled task from Sonnet 5 to Haiku (model pins are operator-set per the 2026-07-04 policy — this PROP requests the change, does not make it).",
+    "step_2": "Trim monitor/prompts/dome-mirror.md to <130 lines: KEEP verbatim — the PAT prelude, the 'Degraded-mode prohibitions' section, the single collapsed bash block (Step 1), the Step 2 sentinel-field glossary + one-line report, the Rules section, the self-cost line, cleanup note. MOVE to monitor/prompts/reference/dome-mirror-history.md (never loaded at runtime) — the PROP-074 origin narrative, the PROP-074-fix-001 cwd postmortem prose, the multi-glob git-add postmortem prose (keep a one-line 'per-glob adds are load-bearing, see reference/dome-mirror-history.md' pointer above the adds).",
+    "step_3": "14-day observation window: tinker Mode 2/3 watches for dome-mirror-abort-*.json, sync-workspace-step4c-crash-*.json, or missing-sentinel cycles attributable to the model change.",
+    "rollback_trigger": "Any improvisation-shaped failure (sentinel missing while FUSE changed, prohibited degraded-mode behavior, clone left behind) within the window → operator reverts pin to Sonnet 5; prompt trim stays either way.",
+    "phase_2": "If 14 days clean AND cost drops as projected, author a separate PROP evaluating the same treatment for workspace-sync (38 runs/14d, $136.13/14d ≈ $292/month — the larger prize). workspace-sync is NOT included here: it has real branch-judgment surface (smart_copy, NEVER_PUSH/GIT_APPEND_ONLY discipline, universal-pusher rescue) and a Haiku-improvisation disaster in its history (2026-05-21); it needs its own risk analysis on top of the PROP-121/127/129 hook rails."
+  },
+  "tradeoffs": "Risk: Haiku on a sync agent has one historical disaster (2026-05-21 workspace-sync mass-delete). Mitigation: that failure was Haiku IMPROVISING inside a 1,900-line prompt full of judgment steps under disk pressure, pre-dating the fail-closed gates. dome-mirror is the opposite shape: one bash block, explicit abort paths for every pressure scenario, and the script (not the LLM) makes every decision. Reducing the LLM's role reduces the improvisation surface. The prompt trim also cuts the context the weaker model could misread.",
+  "estimated_impact": "Direct: ~$55-65/month saved (Haiku pricing ~1/3 of Sonnet on the same token shape, plus ~40% context reduction from the trim). Strategic: validates the script-only pattern for the mechanical-agent class; unblocks the workspace-sync Phase 2 evaluation worth ~$190/month more if it clears its own risk bar.",
+  "requires_human_judgment": true,
+  "why_human_needed": "Model pins are operator-set (2026-07-04 policy); the scheduled-task config lives outside the repo. Steps 2 (prompt edit) can be decider/tinker-applied after the operator approves the pin change, so prompt and model move together.",
+  "status": "proposed",
+  "verification_pattern": "[ $(wc -l < monitor/prompts/dome-mirror.md) -lt 130 ] && [ -f monitor/prompts/reference/dome-mirror-history.md ] && echo FIXED || echo STILL_BROKEN",
+  "verification_note": "VP covers the prompt-diet half only (grade B). The model pin cannot be verified from the repo; operator confirms via list_scheduled_tasks. Post-pin, cost-history.jsonl rows self-evidence the change (p50 should drop below ~$0.6)."
+}
