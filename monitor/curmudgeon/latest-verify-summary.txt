@@ -1,44 +1,64 @@
 dome-curmudgeon-verify — run summary
-Run timestamp: 2026-07-17T08:41:59Z
+Run timestamp: 2026-07-18T00:41:00Z
 
 Verify-eligible queue items found at dispatch: 1
   - qid=585, target=WIN-015, mode=fresh-rewrite, exp=EXP-649
 
-Items processed this run: 0 (duplicate-dispatch detected — see note below)
+Items processed this run: 0 (duplicate-dispatch, confirmed for the 2nd consecutive
+  verify cycle — see note below)
 
 Duplicate-dispatch note:
-  - qid=585 was re-surfaced by this run's dispatcher (item still sits unpopped in
-    priority-queue.json), but it was already fully verified by a prior curmudgeon-verify
-    run: monitor/curmudgeon/reviews/WIN-015.c7.json (committed 2026-07-17T04:42:01+01:00,
-    same queue_id=585, same queue_pushed_at). Re-checked target state this run
-    (data/wins.json WIN-015.detail_evidence) byte-for-byte against c7's findings:
-    unchanged — Q-factor resonant-enhancement patch (EXP-649 patch 2/2) is still
-    duplicated verbatim (766 chars, back-to-back, at field offset 3134-3900);
-    Bruhn double-standard patch (patch 1/2) still landed clean, single copy.
-    No new patches or edits have landed on this target since c7 was written, so a
-    fresh c8 review would be byte-identical content to c7 — skipped to avoid
-    redundant-review churn.
-  - Root cause remains as diagnosed in c7: decider re-applied an EXP-649 patch that
-    c6 (2026-07-12) had already confirmed landed. Fix recommended in c7 still open:
-    delete the second verbatim copy at the given offset in WIN-015.detail_evidence.
-  - Flagging for decider/tinker: qid=585 has a completed verification review (c7)
-    but has not yet been popped from priority-queue.json — decider's Step E2 pop
-    filter should pick this up on its next run and apply c7's recommended fix.
-  - Flagging for tinker (dispatcher gap): Mode B (fresh-rewrite) eligibility in
-    curmudgeon-verify.md's dispatcher does not check whether a review already
-    exists for the same queue_id before marking an item VERIFY_ELIGIBLE, unlike
-    Mode A which keys off review-file existence. This run and the qid=585 case
-    show the gap causes redundant dispatch (though this run avoided redundant
-    review-writing manually). Consider adding a queue_id-already-reviewed check
-    to Mode B, mirroring Mode A's structure.
+  - qid=585 is STILL sitting unpopped in priority-queue.json, 24h+ after it was
+    pushed (queue_pushed_at=2026-07-17T02:14:15.919Z) and after the prior verify
+    run (2026-07-17T08:41:59Z) already flagged this exact situation.
+  - Re-verified target state this run (data/wins.json WIN-015.detail_evidence)
+    independently, byte-for-byte: UNCHANGED from both c7 and yesterday's run.
+    Q-factor resonant-enhancement patch (EXP-649 patch 2/2) is still duplicated
+    verbatim (766 chars, back-to-back, zero gap, at field offset 3134-3900,
+    "A defender might invoke resonant enhancement..." through "...where scalar
+    waves would be required."). Bruhn double-standard patch (patch 1/2) still
+    landed clean, single copy. Confirmed via independent grep + substring checks,
+    not just re-reading c7's claims.
+  - Root cause confirmed via git-log cross-reference (new this run): commit
+    263e6e3 "Decider 2026-07-17T02:07Z: ISS-2985/EXP-669 ... EXP-649/654/664/666
+    integrated ..." is the re-integration event that caused the duplicate — c6
+    (2026-07-12) had already confirmed EXP-649's two patches landed cleanly with
+    no duplication, so this 02:07Z re-integration re-applied the already-landed
+    Q-factor patch on top of itself. Queue item 585 was pushed by decider itself
+    7 minutes later (02:14Z), requesting fresh-rewrite verification of that
+    re-integration — c7 (curmudgeon-verify, same day) caught the duplication.
+  - No decider run has landed since 263e6e3 (2026-07-17T02:07Z) — nothing in the
+    last 15 repo commits is decider-authored; only poller, workspace-sync,
+    dome-mirror, curmudgeon-verify (c7 + this run), and prune-integrity have run
+    since. This is consistent with decider's current once-daily quiet-period
+    cadence (0 3 * * * local = UTC 02:00) — its next run is expected imminently
+    (~02:00 UTC 2026-07-18, ~1h20m after this run), which should pop qid=585 per
+    Step E2 and can apply c7's recommended fix directly. No sign of a stuck or
+    broken pipeline; this reads as a single scheduling gap, not an escalation.
+  - Skipped writing a fresh c8 review again this run: target content is
+    byte-identical to what c7 already documented, so a new review would be
+    duplicate content under a new cycle number. Same judgment as the prior run.
 
 Holes found (new, this run): 0
 Holes still open (carried from c7, unresolved): 1 (moderate) — duplicated
-  Q-factor patch text in WIN-015.detail_evidence, fix specified in c7.
+  Q-factor patch text in WIN-015.detail_evidence, fix specified in c7 (delete
+  chars [3134,3900) from the field).
 
-Carry-forwards flagged: 0 (Mode B skips Check 4 by design; and no new review written this run)
+Carry-forwards flagged: 0 (Mode B skips Check 4 by design; no new review written)
 
-Escalations to main curmudgeon: 0 (severity remains moderate, not major/critical; already
-  correctly scoped by c7; no scope growth detected this run)
+Escalations to main curmudgeon: 0 (severity remains moderate, not major/critical;
+  root cause now confirmed as a one-off decider re-integration event, not a
+  recurring/systemic issue requiring Opus adversarial review)
 
-No new review file written this run (c7 already covers qid=585 with unchanged findings).
+No new review file written this run (c7 already covers qid=585; target state
+confirmed unchanged for the 2nd consecutive cycle).
+
+Operator/tinker flag (carried forward, still open): Mode B (fresh-rewrite)
+eligibility in curmudgeon-verify.md's dispatcher does not check whether a review
+already exists for the same queue_id before marking an item VERIFY_ELIGIBLE,
+unlike Mode A. Two consecutive verify runs (2026-07-17T08:41Z, 2026-07-18T00:41Z)
+have now hit this same redundant-dispatch gap for qid=585. Recommend adding a
+queue_id-already-reviewed short-circuit to Mode B. If qid=585 is still unpopped
+at the NEXT verify cycle (after decider's imminent ~02:00Z run should have
+popped it), that would indicate decider's Step E2 pop filter itself has an issue
+worth escalating — worth checking at that point rather than now.
