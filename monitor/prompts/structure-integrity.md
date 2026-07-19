@@ -564,7 +564,9 @@ The FUSE workspace mount is read-write but git cannot operate on it. Agents that
 - **Analyst expansions**: Compare `monitor/analyst/expansions/*.json` on workspace vs git. Same risk.
 - **Analyst reports/analyses**: Check `monitor/analyst/*.json` for workspace-only files.
 
-Classify: Any workspace-only file is **major** (at risk of silent data loss). List the specific filenames so they can be committed.
+Classify by age against the FUSE→git rescue latency. Files whose FUSE mtime is YOUNGER than 9h (max workspace-sync rescue latency at quiet cadence is 8h, +1h margin) are **info**, labeled `pending-rescue` — list them with mtimes, but they do NOT count toward overall_status (workspace-sync has simply not had its slot yet; this is the pipeline working as designed). Files OLDER than 9h are **major** as before — they have survived at least one rescue slot without being committed, which is the genuine silent-data-loss signal. If the same file appears as pending-rescue in 2 consecutive daily reports, escalate to major regardless of mtime (rescue is being skipped).
+
+> Grace-window precedent: check 9 / PROP-123. Do not lower the 9h gate when cadence reverts to 2h sync cycles — a too-tight gate resurrects the false positive on any future cadence loosening; 9h is safe under all historical cadences.
 
 ### 7c. Section-New / Proposal-Writeup Priority-Queue Coupling (Phase 1 Change 1.7)
 

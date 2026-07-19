@@ -12,9 +12,18 @@
   ],
   "problem": "Check 7b classifies ANY workspace-only file as major ('at risk of silent data loss') with no age awareness, and a major finding flips overall_status to fail. Under quiet cadence this is a deterministic false positive: every analyst run that writes a FUSE artifact between 00:04 and 01:15 UTC produces an integrity FAIL that self-heals by 04:00. 2 of the last 3 integrity runs failed this way. Cost is signal erosion, not dollars: 'fail' lands in the decider daily summary and operator-facing surfaces, training everyone to discount integrity fails — the boy-who-cried-wolf failure mode the PROP-123 grace-window design explicitly solved for check 9 (Pages deploy latency).",
   "options_considered": [
-    {"option": "(a) Move integrity's cron after the 04:00 rescue slot", "verdict": "rejected — couples two agents' schedules; breaks again on any cadence change (quiet-period reverts are expected when the dome drought ends)"},
-    {"option": "(b) Age-gate inside check 7b, mirroring PROP-123's grace-window pattern", "verdict": "PROPOSED — cadence-independent, one prompt edit, keeps the genuine data-loss signal for files that MISS their rescue"},
-    {"option": "(c) Have workspace-sync run right before integrity", "verdict": "rejected — same coupling problem as (a) plus adds a 4th daily sync run (~$3.9) to fix a reporting artifact"}
+    {
+      "option": "(a) Move integrity's cron after the 04:00 rescue slot",
+      "verdict": "rejected — couples two agents' schedules; breaks again on any cadence change (quiet-period reverts are expected when the dome drought ends)"
+    },
+    {
+      "option": "(b) Age-gate inside check 7b, mirroring PROP-123's grace-window pattern",
+      "verdict": "PROPOSED — cadence-independent, one prompt edit, keeps the genuine data-loss signal for files that MISS their rescue"
+    },
+    {
+      "option": "(c) Have workspace-sync run right before integrity",
+      "verdict": "rejected — same coupling problem as (a) plus adds a 4th daily sync run (~$3.9) to fix a reporting artifact"
+    }
   ],
   "proposed_fix": {
     "file": "monitor/prompts/structure-integrity.md",
@@ -26,6 +35,9 @@
   "estimated_impact": "No direct cost change (integrity runs regardless). Signal quality: eliminates the recurring false FAIL class (2 occurrences in 3 days at current cadence, expected ~5+/week while analyst writes during the 00:04-01:15 window), keeping overall_status=fail reserved for real defects.",
   "requires_human_judgment": false,
   "why_human_needed": "n/a — prompt-file edit; apply via clone-and-push, then propagate to FUSE via build.js publish or manual cp per the prompt-sync gotcha in CLAUDE.md.",
-  "status": "proposed",
-  "verification_pattern": "grep -q 'pending-rescue' monitor/prompts/structure-integrity.md && echo FIXED || echo STILL_BROKEN"
+  "status": "implemented",
+  "verification_pattern": "grep -q 'pending-rescue' monitor/prompts/structure-integrity.md && echo FIXED || echo STILL_BROKEN",
+  "implemented_at": "2026-07-19T02:43:57.802Z",
+  "implemented_by": "tinker-2026-07-19T02-41 (Mode 4 self-apply — requires_human_judgment:false, exact edit specified in proposed_fix)",
+  "actual_result": "Applied the proposed_fix edit verbatim to monitor/prompts/structure-integrity.md check 7b: age-gated classification (info/pending-rescue <9h, major >=9h, 2-consecutive-report escalation) + grace-window precedent note. verification_pattern returns FIXED. Prompt also manually cp-ed to FUSE workspace per the CLAUDE.md prompt-sync gotcha so the next scheduled integrity run picks it up."
 }

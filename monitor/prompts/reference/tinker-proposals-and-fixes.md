@@ -81,12 +81,23 @@ Before copying last run's findings into `previous_followup`, walk `monitor/tinke
 for prop in monitor/tinker/proposals/PROP-*.json; do
   STATUS=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$prop','utf8')).status)")
   [ "$STATUS" = "implemented" ] && continue
-  PATTERN=$(node -e "const p=JSON.parse(require('fs').readFileSync('$prop','utf8'));console.log(p.verification_pattern||'')")
-  if [ -n "$PATTERN" ]; then
+  # SAFETY (2026-07-19 incident): only execute STRING patterns that carry the
+  # grade-A marker ('echo FIXED'). Object-valued or prose verification_patterns
+  # must NEVER reach bash -c: console.log() inspects objects into multi-line
+  # text, and any backticked command inside the prose EXECUTES via command
+  # substitution. On 2026-07-19 this ran PROP-107's embedded
+  # 'prune-integrity.js --apply --commit-and-push' inside the tinker clone.
+  PATTERN=$(node -e "const p=JSON.parse(require('fs').readFileSync('$prop','utf8'));const v=p.verification_pattern;process.stdout.write(typeof v==='string'?v:'')")
+  IS_OBJ=$(node -e "const p=JSON.parse(require('fs').readFileSync('$prop','utf8'));const v=p.verification_pattern;process.stdout.write(v&&typeof v!=='string'?'1':'')")
+  if [ -n "$IS_OBJ" ]; then
+    echo "$(basename $prop): OBJECT_PATTERN (manual/multi-step — inspect by reading the PROP; do NOT execute)"
+  elif [ -z "$PATTERN" ]; then
+    echo "$(basename $prop): NO_PATTERN (cannot auto-verify)"
+  elif ! printf '%s' "$PATTERN" | grep -q 'echo FIXED'; then
+    echo "$(basename $prop): UNSAFE_PATTERN (prose or no FIXED/STILL_BROKEN marker — inspect manually, do NOT execute)"
+  else
     RESULT=$(bash -c "$PATTERN" 2>/dev/null)
     echo "$(basename $prop): $RESULT"
-  else
-    echo "$(basename $prop): NO_PATTERN (cannot auto-verify)"
   fi
 done
 ```
