@@ -43,6 +43,10 @@ The dome author has made direct contact with the operator via DM (Sunday 2026-04
 
 All WIN data lives in `data/wins.json`. The HTML site and PDF are generated from this file. Never edit `docs/index.html` directly — edit `wins.json` and rebuild.
 
+### Dome API Snapshots
+
+`data/dome-api-snapshots/` holds point-in-time captures of the dome's machine-readable API endpoints (e.g. `claim_index.json`) fetched by analyst runs so sub-table content that cites live dome API data has a reproducibility anchor independent of the live site changing later. Captured on an as-needed basis (not a scheduled poll) when a section cites API content directly — see ISS-2034 and the curmudgeon SEC-4.6-EXP-397.c1 recommendation that originated the practice.
+
 ### Progressive Disclosure (UX Structure)
 
 All prose sections use `<details>`/`<summary>` with 2–3 sentence TLDRs. CSS classes: `ps-*` (prose), `ks-*` (kill-shots/predictions). Full structure docs in `reference/BUILD-AND-CHANGE.md`.
