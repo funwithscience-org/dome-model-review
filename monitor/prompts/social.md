@@ -389,6 +389,8 @@ Alert handling:
 
 **Adding new dome pages:** if poller has surfaced a new dome-site page not in the current monitored URL list, APPEND it to `monitor/social/wayback-monitored-urls.json` `urls` array (append-only guidance). Removals from the list are operator-only.
 
+**KEV never-save rule (operator rule, 2026-07-19):** URLs matching the `never_save.patterns` list in `monitor/social/wayback-monitored-urls.json` (currently the KEV-analysis project under any of its hostnames) must NEVER be submitted to the Wayback Machine or any other archiving service, and must NEVER be added to the monitored `urls` array. This is a hard prohibition — it applies to every agent and to operator-cowork sessions alike, and it exists to prevent accidental archival. If a URL you're about to append matches a never_save pattern, skip it and note the skip in your run summary.
+
 ## Self-Cost Report (PROP-101 Phase 2, added 2026-06-14)
 
 Append one JSON line to `${CLONE}/monitor/social/cost-history.jsonl` with this run's actual token usage + USD cost. Non-fatal: any failure logs to stderr and exits 0.
