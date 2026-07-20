@@ -546,13 +546,22 @@ fi
 # (the live verify-pending-run leak found 2026-06-14T03:09 was exactly
 # this case). RC=3 → emit findings[] category='prune-resurrection'
 # severity=major; RC=0 → clean. Window default 48h; widen if needed.
-RESURRECT=$(node "${WORKSPACE}/monitor/scripts/check-prune-resurrection.js" --hours 48 2>/dev/null)
+# INVOKE FROM THE CLONE, NOT FUSE (ISS-3001 audit, tinker 2026-07-20): the
+# script is classified clone-invoked-only (workspace-sync.md NEVER_PUSH)
+# and does NOT exist on FUSE. The previous ${WORKSPACE} invocation failed
+# MODULE_NOT_FOUND (RC=1) and the loose else-branch mislabeled that
+# failure "clean" — the canary was silently dead on every per-spec Mode 2
+# run since PROP-099 landed. RC discrimination below is load-bearing:
+# 0=clean, 3=loop-live, anything else=canary-did-not-run (report it).
+RESURRECT=$(node "${CLONE}/monitor/scripts/check-prune-resurrection.js" --hours 48 2>/dev/null)
 RESURRECT_RC=$?
 if [ "${RESURRECT_RC}" = "3" ]; then
   echo "PROP-099 CANARY: prune-readd loop LIVE — emit finding category=prune-resurrection severity=major"
   echo "$RESURRECT" | head -40
-else
+elif [ "${RESURRECT_RC}" = "0" ]; then
   echo "PROP-099 CANARY: clean (no resurrected pruned artifacts in last 48h)"
+else
+  echo "PROP-099 CANARY: SCRIPT ERROR (RC=${RESURRECT_RC}) — canary did NOT run; emit findings[] category=self severity=moderate, do not report clean"
 fi
 ```
 Trigger: Any STALE file, auth failure, project footprint ≥500MB, or previous report flagged FUSE/infra issues.

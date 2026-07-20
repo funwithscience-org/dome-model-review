@@ -1,0 +1,191 @@
+{
+  "generated_at": "2026-07-20T02:47:52.445Z",
+  "report_date": "2026-07-20",
+  "run_id": "2026-07-20T02-41",
+  "mode_selected": "proposals",
+  "mode_reason": "No pending operator directives, no Mode 0 assigned-tinker items, pipeline + infra quick-checks all green. ISS-3001 (filed by decider 2026-07-20T02:14 from social's 2026-07-19 finding, explicitly addressed 'tinker follow-up') is the most pressing tinker-directed work: audit all monitor/scripts/*.js PROP self-apply changesets for the ISS-3000 OWNERSHIP-registration gap pattern. Executed as Mode 4 audit + mechanical self-fixes.",
+  "modes_checked": {
+    "pipeline_health": "green — all agents fresh (poller 00:08Z today, analyst pushed 00:45Z, curmudgeon-verify no-op 00:39Z queue-empty, decider 02:07Z run with EXP-670/669 integration + 3838/3838 tests, integrity 01:17Z pass, dome-mirror sentinel present). No actionable stranded patches (all tombstoned or none).",
+    "infrastructure": "green — FUSE data/build files md5-match git HEAD; PAT auth 200; root-FS free 3340MB (well above 500MB warning); clone-leak footprint 0MB; PROP-099 canary clean (RC=0, run from clone). NOTE: per-spec FUSE invocation of the canary was broken — see FND-1.",
+    "cost_engineering": "not run this cycle; ISS-3001 audit preempted. Backlog metrics healthy (12 open, net_velocity_7d +15).",
+    "proposals": "selected — ISS-3001 audit executed; 2 mechanical self-fixes applied; 1 latent gap routed to decider via HNOTE; 0 new PROPs needed (no structural change required)."
+  },
+  "pipeline_health": {
+    "agents_running": 12,
+    "agents_stalled": [],
+    "output_freshness": {
+      "poller": "~2.5h (2026-07-20T00:08Z poll, NET QUIET all 10 pages)",
+      "analyst": "~2h (cost-history push 00:45Z; quiet-period Mode 6 cadence)",
+      "curmudgeon": "queue empty; verify no-op 00:39Z",
+      "decider": "~0.5h (decider-2026-07-20T02-07: EXP-670/669 integrated, ISS-2995 closed, ISS-2998-3001 filed, 3838/3838 tests)",
+      "integrity": "~1.5h (report 2026-07-20T01-17 pass)",
+      "social": "~11h (2026-07-19 run; KEV never-save rule commit)"
+    }
+  },
+  "iss_3001_audit": {
+    "scope": "all 36 files in monitor/scripts/ cross-checked against: build.js OWNERSHIP (8 script entries), workspace-sync.md NEVER_PUSH, FUSE-vs-git md5, and every agent-prompt invocation path (grep across monitor/prompts/ + build.js + build-scripts/)",
+    "fuse_state": {
+      "missing_in_fuse": [
+        "allocate-iss-ids.js",
+        "check-delete-propagation-backlog.js",
+        "check-prune-resurrection.js",
+        "compute-run-cost.js",
+        "decider-commit-push.sh",
+        "decider-setup.sh",
+        "lint-decider-surfaces.js"
+      ],
+      "stale_in_fuse": [
+        "prune-integrity.js (comment-only diff; backfilled this run)"
+      ],
+      "in_sync": "remaining 28 files"
+    },
+    "verdict": "The ISS-3000 pattern is NOT widespread. The 7 FUSE-absent scripts are all deliberately clone-invoked-only per explicit workspace-sync.md NEVER_PUSH classification comments ('invoked from clones, NEVER round-trip from FUSE'), and every prompt invocation of them verified to use ${CLONE} paths — except one contradiction (FND-1). One file is fully unclassified while being FUSE-invoked (FND-2). check-wayback.js (the ISS-3000 fix itself) verified correctly registered at build.js line 160.",
+    "invocation_path_check": {
+      "clone_invoked_verified": [
+        "compute-run-cost.js (8 prompts, all ${CLONE})",
+        "write-self-cost.sh",
+        "write-self-step-cost.sh",
+        "decider-setup.sh (decider.md Step 0, clone cwd)",
+        "decider-commit-push.sh",
+        "allocate-iss-ids.js / lint-decider-surfaces.js (decider hook chain, clone)",
+        "check-delete-propagation-backlog.js (structure-integrity.md §9c, --root $(pwd) from clone)",
+        "prop-auto-close.js / directive-auto-close.js (tinker, clone)"
+      ],
+      "fuse_invoked": [
+        "clone-hygiene.sh (5 prompts, preclean — unavoidable, runs pre-clone)",
+        "check-prune-resurrection.js (tinker.md Mode 2 — WAS the bug, now fixed to ${CLONE})"
+      ]
+    }
+  },
+  "findings": [
+    {
+      "severity": "major",
+      "category": "self",
+      "description": "FND-1: tinker.md Mode 2 invoked check-prune-resurrection.js from ${WORKSPACE} (FUSE), but the script is classified clone-invoked-only and does not exist on FUSE. node failed MODULE_NOT_FOUND (RC=1); the two-branch guard treated any RC!=3 as 'clean' — so the PROP-099 prune-resurrection canary has silently reported clean without ever running on every per-spec Mode 2 invocation since PROP-099 landed 2026-06-14. (Runs that happened to invoke from the clone, like today's, did execute it.) Dead-canary class: worse than no canary because it manufactures green.",
+      "evidence": "stat FUSE monitor/scripts/check-prune-resurrection.js → ENOENT; workspace-sync.md NEVER_PUSH comment says 'tinker runs in its Mode 2 quick-checks' + 'same classification as the other clone-invoked scripts' — the classification and the invocation path contradicted each other; tinker.md line 549 (pre-fix) used ${WORKSPACE}.",
+      "suggested_fix": {
+        "file": "monitor/prompts/tinker.md",
+        "find": "RESURRECT=$(node \"${WORKSPACE}/monitor/scripts/check-prune-resurrection.js\" --hours 48 2>/dev/null) [+ 2-branch RC guard]",
+        "replace": "RESURRECT=$(node \"${CLONE}/monitor/scripts/check-prune-resurrection.js\" --hours 48 2>/dev/null) [+ 3-branch RC guard: 0=clean / 3=live / else=SCRIPT ERROR do-not-report-clean]",
+        "rationale": "Clone always has the script and fresh git-side state (the canary reads git-owned archive JSONL tombstones — clone is the more correct substrate anyway). Strict RC discrimination prevents the silent-false-clean class recurring for ANY future canary failure mode."
+      },
+      "self_fixable": true,
+      "fix_applied": true
+    },
+    {
+      "severity": "moderate",
+      "category": "handoff",
+      "description": "FND-2: monitor/scripts/clone-hygiene.sh is FUSE-invoked by 5 prompts (tinker.md, curmudgeon.md, curmudgeon-verify.md, analyst.md, reference/decider-patches-and-selfapply.md — preclean must run before any clone exists, so FUSE invocation is structural) yet appears in NEITHER build.js OWNERSHIP nor workspace-sync.md NEVER_PUSH. Violates the CLAUDE.md rule that every boundary-crossing file has exactly one classified authoritative side. Currently in sync by luck; the first future clone-pushed edit strands FUSE stale and every agent precleans with old logic — latent ISS-3000/check-wayback.js pattern.",
+      "evidence": "grep clone-hygiene build.js → no match; grep clone-hygiene monitor/prompts/workspace-sync.md → no match; 5-prompt FUSE invocation list from grep -rn across monitor/prompts/; FUSE copy currently md5-identical to git.",
+      "suggested_fix": {
+        "file": "build.js + monitor/prompts/workspace-sync.md + CLAUDE.md",
+        "find": "(absent)",
+        "replace": "Add 'monitor/scripts/clone-hygiene.sh': 'git' to build.js OWNERSHIP; mirror in workspace-sync.md NEVER_PUSH; add CLAUDE.md file-ownership line. Identical 3-surface shape to decider's ISS-3000 self-apply of 2026-07-20.",
+        "rationale": "Routed to decider via HNOTE-TINKER-ISS-3001-AUDIT-COMPLETE-001 rather than tinker self-fix: build.js OWNERSHIP is decider's established self-apply surface (ISS-3000 precedent yesterday), and tinker's conservative-self-fix rule keeps build-pipeline edits out of tinker's write set. Zero urgency risk while file is in sync."
+      },
+      "self_fixable": false,
+      "fix_applied": false
+    },
+    {
+      "severity": "minor",
+      "category": "staleness",
+      "description": "FND-3: FUSE copy of prune-integrity.js was stale vs git (missing the PROP-091 retention-window mirror-note comment block; code-identical). Harmless — dome-prune-integrity runs from a fresh shallow clone — but it pollutes future FUSE-vs-git audits with noise. Backfilled FUSE from git this run (overwrite-in-place, no unlink needed).",
+      "evidence": "diff FUSE vs clone: 4 comment lines (114-117) absent in FUSE; post-cp md5 identical (7b83e66f).",
+      "self_fixable": true,
+      "fix_applied": true
+    },
+    {
+      "severity": "minor",
+      "category": "handoff",
+      "description": "FND-4 (routing observation): decider filed ISS-3001 with status 'open' + title-prefix 'tinker follow-up' rather than status 'assigned-tinker'. Mode 0's scanner only matches status==='assigned-tinker', so the item was invisible to the dispatcher's dedicated tinker-work reader; this run found it only via a manual open-issues read. If the decider intends tinker pickup, the status should be assigned-tinker (PROP-060 contract). Not filing a PROP — single occurrence; flagging for decider awareness in the HNOTE-adjacent summary. If it recurs, a decider.md routing nudge is warranted.",
+      "evidence": "ISS-3001 status='open', created_by='decider-priority5-social-intake'; tinker.md Mode 0 scanner filter i.status==='assigned-tinker'.",
+      "self_fixable": false,
+      "fix_applied": false
+    }
+  ],
+  "previous_followup": [
+    {
+      "finding": "2026-07-19 self/major: Step 2b executed PROP-107's object-valued verification_pattern via bash -c (prune-integrity --apply ran locally; contained, no push)",
+      "status": "FIXED",
+      "evidence": "tinker.md Step 2b executor guard (string-only + 'echo FIXED' marker required) verified present in reference/tinker-proposals-and-fixes.md lines 84-101; this run's PROP walk executed no object patterns; working tree clean before this run's edits."
+    },
+    {
+      "finding": "2026-07-19 self/minor: residual backtick-in-vp-object inventory (PROP-035 terminal + 8 read-only)",
+      "status": "STALE_FALSE_ALARM",
+      "evidence": "Accepted-risk by design per 2026-07-19 report — executor guard protects the class; no action needed, not re-escalating."
+    },
+    {
+      "finding": "PROP-138 dome-mirror haiku script-only re-pin",
+      "status": "STILL_BROKEN",
+      "evidence": "Operator-action item (scheduled-task model pin change); CLAUDE.md table still shows dome-mirror on Sonnet 5. Carrying until operator re-pins. No agent-side action possible."
+    },
+    {
+      "finding": "PROP-139 integrity check-7b pending-rescue age-gate",
+      "status": "FIXED",
+      "evidence": "Applied by 2026-07-19 run; today's integrity report 2026-07-20T01-17 overall_status=pass with no workspace-only-file false-FAIL; ISS-2998/2999 filed by integrity are unrelated content findings."
+    }
+  ],
+  "open_issue_health": {
+    "total_open": 12,
+    "aged_out": [
+      "ISS-2342 (51d, pending-human)",
+      "ISS-2709 (38d, pending-human)"
+    ],
+    "repeated_deferrals": [],
+    "missing_patches": [],
+    "zombie_fixes": [],
+    "note": "9 of 12 are pending-human/needs-human (operator queue); 3 open (ISS-2998/2999 integrity content findings + ISS-3001 closed-pending via this run's HNOTE)."
+  },
+  "cost_engineering": {},
+  "backlog_trend": {
+    "fired": false,
+    "note": "open_issues_total 12 (WoW -14.3%), net_velocity_7d +15, assigned_analyst 0, inbound_burst_winnew_unreviewed 0, pending_commission_hnotes 0, root_fs_free_mb 3340, closed_issues_mb 3.25. No threshold fired at any tier. Row appended to queue-history.jsonl."
+  },
+  "preflight": {
+    "prop_auto_close": "shadow: 111 walked, 0 would-close, 0 closed",
+    "directive_auto_close": "130 walked, 0 pending, 0 would-close",
+    "operator_directives": "none pending",
+    "mode0": "no assigned-tinker items"
+  },
+  "cleanup_actions": [],
+  "recommendations": [
+    {
+      "priority": 1,
+      "type": "human_decision",
+      "description": "Decider (next run): action HNOTE-TINKER-ISS-3001-AUDIT-COMPLETE-001 — close ISS-3001, file follow-up ISS for clone-hygiene.sh 3-surface classification (build.js OWNERSHIP + workspace-sync.md NEVER_PUSH + CLAUDE.md), self-apply per ISS-3000 precedent."
+    },
+    {
+      "priority": 2,
+      "type": "human_decision",
+      "description": "Operator: PROP-138 dome-mirror model re-pin still pending (carried)."
+    },
+    {
+      "priority": 3,
+      "type": "self_fix",
+      "description": "Applied this run: tinker.md PROP-099 canary invocation ${WORKSPACE}→${CLONE} + strict RC guard (FND-1); FUSE prune-integrity.js backfill (FND-3). Both pushed + FUSE-synced."
+    }
+  ],
+  "self_cost": {
+    "transcript": "68c95024-3eb4-4385-8ec2-1f7861a1f6ba.jsonl",
+    "model": "claude-fable-5",
+    "assistant_msgs": 69,
+    "tokens": {
+      "input": 132,
+      "output": 98687,
+      "cache_write_5m": 0,
+      "cache_write_1h": 377032,
+      "cache_read": 9444783
+    },
+    "cost_usd": {
+      "input_usd": 0.00066,
+      "output_usd": 2.467175,
+      "cache_write_5m_usd": 0,
+      "cache_write_1h_usd": 3.77032,
+      "cache_read_usd": 4.722391,
+      "total_usd": 10.960546
+    },
+    "transcript_duration_sec": 466.1,
+    "first_ts": "2026-07-20T02:40:13.550Z",
+    "last_ts": "2026-07-20T02:47:59.626Z"
+  }
+}
