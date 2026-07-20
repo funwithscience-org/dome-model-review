@@ -157,6 +157,7 @@ const OWNERSHIP = {
   // build.js publish copies git→workspace.
   'monitor/social/wayback-monitored-urls.json': 'git',
   'monitor/social/wayback-state.json': 'git',
+  'monitor/scripts/check-wayback.js': 'git',
 
   // PROP-041 Phase 2 (2026-05-16): sloppytoppy-rewrite state files.
   // - rewrite-attempts.json is a sidecar counter (rewriter increments,
