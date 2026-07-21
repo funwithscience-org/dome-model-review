@@ -315,6 +315,13 @@ NEVER_PUSH=(
   'monitor/scripts/check-wayback.js'
   'monitor/social/wayback-monitored-urls.json'
   'monitor/social/wayback-state.json'
+  # ISS-3001 (2026-07-21): monitor/scripts/clone-hygiene.sh is FUSE-invoked
+  # by 5 prompts (tinker.md, curmudgeon.md, curmudgeon-verify.md, analyst.md,
+  # decider-patches-and-selfapply.md preclean steps) but was previously
+  # classified in neither build.js OWNERSHIP nor here — same OWNERSHIP-
+  # registration gap ISS-3000 fixed for check-wayback.js. Same source-code
+  # classification: git-owned, NEVER round-trip from FUSE.
+  'monitor/scripts/clone-hygiene.sh'
   # PROP-021 Phase 1 (2026-06-14): compute-curmudgeon-dispatcher-state.js
   # is the precompute that resolves curmudgeon's pre-review priorities
   # deterministically (~3-5KB output instead of ~150KB of state-file reads).

@@ -159,6 +159,17 @@ const OWNERSHIP = {
   'monitor/social/wayback-state.json': 'git',
   'monitor/scripts/check-wayback.js': 'git',
 
+  // ISS-3001 (2026-07-21): monitor/scripts/clone-hygiene.sh is FUSE-invoked
+  // by 5 prompts (tinker.md, curmudgeon.md, curmudgeon-verify.md, analyst.md,
+  // reference/decider-patches-and-selfapply.md preclean steps — unavoidable,
+  // preclean runs before any clone exists) yet was classified in NEITHER
+  // build.js OWNERSHIP nor workspace-sync.md NEVER_PUSH — the same
+  // OWNERSHIP-registration gap ISS-3000 fixed for check-wayback.js. Was in
+  // sync only by luck (manual cp at PROP-084 creation); a future clone-pushed
+  // edit would strand FUSE stale silently. git-owned; build.js publish
+  // copies git→workspace.
+  'monitor/scripts/clone-hygiene.sh': 'git',
+
   // PROP-041 Phase 2 (2026-05-16): sloppytoppy-rewrite state files.
   // - rewrite-attempts.json is a sidecar counter (rewriter increments,
   //   decider clears on integration success). Git-owned because writers
