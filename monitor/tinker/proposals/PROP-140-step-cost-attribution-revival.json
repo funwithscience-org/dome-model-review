@@ -1,0 +1,74 @@
+{
+  "id": "PROP-140",
+  "created_at": "2026-07-21T02:41:00Z",
+  "created_by": "tinker-2026-07-21T02-41",
+  "category": "cost-observability",
+  "target": "monitor/scripts/compute-decider-step-cost.js + monitor/scripts/write-self-cost.sh + (Phase 1 only, conditional) monitor/prompts/decider.md + monitor/prompts/structure-integrity.md",
+  "source_evidence": {
+    "summary": "PROP-112 step-cost attribution died at the 2026-07-04/05 Sonnet 5 model pin, and per-run cost self-reports under-measure multi-segment runs. Two independent defects, same two scripts.",
+    "defect_A_dead_attribution": {
+      "decider": "monitor/decisions/step-cost-history.jsonl: every claude-sonnet-4-6 row 2026-06-21..2026-07-04 has steps_observed 1-9 (attr% 52-88), with one 0 on 07-02. Every claude-sonnet-5 row 2026-07-05..2026-07-21 (17 consecutive runs) has steps_observed=0, per_step_attribution_pct=0 — including full-size transcripts (197-238 msgs, $19-27).",
+      "integrity": "monitor/integrity/step-cost-history.jsonl: all sonnet-4-6 rows attribute (13-24 steps). Sonnet-5 rows are bimodal all-or-nothing: 7 rows attribute fully (14-18 steps), 10 rows are 0-1 steps on FULL-size transcripts (99-185 msgs) — incl. the last 3 runs consecutively (07-19/20/21).",
+      "prompt_state": "grep -c STEP_MARKER: decider.md=15, structure-integrity.md=29, decider-end-of-run-sweeps.md=3, decider-queue-management.md=1 — instructions unchanged; the marker echoes are simply not appearing in transcripts.",
+      "diagnosis": "Marker emission is model-behavioral (freestanding 'echo STEP_MARKER <step> $(date +%s)' instructions the agent must remember to prepend at each step). Sonnet 5 drops the discipline: decider always, integrity per-run all-or-nothing (adopts-or-drops the pattern at run start). Same LLM skip-by-omission class as the PROP-066 workspace-sync Step 4c skip (~94% silent-skip), which was fixed by moving logic into a script."
+    },
+    "defect_B_fragment_pricing": {
+      "evidence": "Decider rows 07-07/08/10/12(02:15)/13/17/20/21 record 4-12 msgs, 55-129s, $1.38-1.98 — on days the decider verifiably did full work (07-20: proposal-ISS-2995 processing + EXP-670 integration per latest-decider-summary.txt; 07-21: 3 WIN-030 patches ISS-3002/3003/3004 + stranded-patches-2026-07-21T02-15-55Z + queue push qid=588, a ~23-min run 02:00-02:23). 07-21 row's analyzed transcript spans only 02:04:18-02:05:21 (63s) yet was analyzed at 02:23:25 — the file had been dead for 18 min, i.e. it is an abandoned first segment of a multi-segment run.",
+      "mechanism": "write-self-cost.sh line ~50: TRANSCRIPT=$(find /sessions -path '*/.claude/projects/*' -name '*.jsonl' -readable | head -1). When the harness produces >1 .jsonl segment for a run (restart/rotation/subagent), head -1 takes arbitrary find order — some days the full segment, some days the fragment. The step-cost wrapper shares the same discovery.",
+      "impact": "Decider 14d recorded sum $148.21 is materially understated (8 of 15 rows are fragments; true full-run cost on comparable work days is $8-27). The PROP-101 Q4 variance alert this run (decider p95/p50=13.8, threshold 3) is a bimodal measurement artifact, not runaway loops. Any future Q8 composite daily-cost ranking would under-rank decider."
+    }
+  },
+  "problem": "The pipeline's only per-step cost attribution instrument (PROP-104/PROP-112) has been blind on decider for 17 consecutive runs and on integrity for 10 of 17 — exactly through the period containing the most expensive decider runs on record ($21-27). Separately, per-run total-cost self-reports (PROP-101) silently price an arbitrary transcript segment, corrupting the p50/p95 series that Mode 3 uses for variance alerts and the Q8 composite threshold. Both instruments still LOOK alive (rows keep appending), which is the dead-canary class: worse than no instrument because it reports plausible numbers.",
+  "options_considered": [
+    {
+      "option": "A1: Prompt-nag — strengthen the STEP_MARKER instructions in decider.md / structure-integrity.md (bold, repeat, 'CRITICAL')",
+      "verdict": "REJECTED. Behavioral fixes for skip-by-omission demonstrably decay (PROP-061→064→066 lineage: two prompt-level attempts failed before the script extraction held). Model pins change again; the next model re-breaks it."
+    },
+    {
+      "option": "A2: Signature-based step inference in the analyzer (zero agent cooperation)",
+      "verdict": "ADOPTED as Phase 0. The analyzer already scans every tool_result; step-entry commands are distinctive and stable (digest-reviews.js, lint-decider-surfaces.js, allocate-iss-ids.js, build.js publish, audit-rewrite.js; integrity: test.js, build.js html, check-status-json-provenance.js, check-wayback.js...). Infer window boundaries from first-seen signature per step. Works retroactively on any transcript, no prompt edits, no new agent behavior to decay."
+    },
+    {
+      "option": "A3: Structural marker emission — step-marker.sh helper folded into each step's existing mandatory first command block",
+      "verdict": "DEFERRED to Phase 1, gated on Phase 0 results. Only if signature-fallback attribution stays <70% on 5 consecutive runs. Keeps prompt churn zero if the analyzer-side fix suffices."
+    },
+    {
+      "option": "B1: Multi-segment discovery — enumerate ALL readable .jsonl, price each, sum",
+      "verdict": "ADOPTED as Phase 0. All readable segments belong to this run's session (PROP-101 Q1: other sessions are EACCES), so summing is correct by construction. Subagent segments are real run cost. Record segments_found/segments_priced/per_segment breakdown for observability."
+    },
+    {
+      "option": "B2: Pick largest segment only",
+      "verdict": "REJECTED. Still drops real cost (subagent/second-segment tokens); 'largest' can also be wrong late in a rotation."
+    }
+  ],
+  "proposed_fix": {
+    "phase_0_analyzer_side_no_prompt_changes": [
+      {
+        "file": "monitor/scripts/write-self-cost.sh",
+        "change": "Replace single-transcript discovery+pricing with: mapfile -t TRANSCRIPTS < <(find /sessions -path '*/.claude/projects/*' -name '*.jsonl' -readable 2>/dev/null); price EACH via compute-run-cost.js; sum token buckets + total_usd across segments in a small node reducer; row gains fields {segments_found, segments_priced, per_segment:[{file_basename,msgs,total_usd,first_ts,last_ts}]}. Keep the existing discovery_failed placeholder path when zero found. Backward-compatible: cost_usd.total_usd remains the (now-correct) total."
+      },
+      {
+        "file": "monitor/scripts/compute-decider-step-cost.js",
+        "change": "(1) Accept multiple transcript paths (analyze all segments, ordered by first_ts). (2) Add signature-based step inference: a SIGNATURES table mapping regex → step name, applied to tool_result text when scanning; a signature match opens/renames the active step window exactly like a STEP_MARKER. Marker matches take precedence when present. (3) summary gains attribution_mode: 'marker' | 'signature-fallback' | 'mixed' | 'none', and segments_analyzed. Suggested initial decider SIGNATURES: {digest-reviews\\.js: 'curmudgeon-digest', allocate-iss-ids\\.js: 'issue-mint', lint-decider-surfaces\\.js: 'pre-push', audit-rewrite\\.js: 'rewrite-audit', build\\.js publish: 'publish', sync-workspace: 'workspace-sync-step', stranded-patches-: 'patch-strand', priority-queue\\.json: 'queue-mgmt'}; integrity SIGNATURES: {node test\\.js: 'test-suite', build\\.js html: 'build-drift', check-status-json-provenance\\.js: '9d-provenance', check-wayback\\.js: 'wayback', lint-exp-allocations\\.js: 'exp-invariant'}. Table lives at top of script with a comment telling future editors to extend when steps change."
+      },
+      {
+        "file": "monitor/scripts/write-self-step-cost.sh",
+        "change": "Pass the full discovered transcript list (same mapfile) through to compute-decider-step-cost.js instead of head -1."
+      }
+    ],
+    "phase_1_conditional_structural_markers": "ONLY if attribution_mode stays 'none'/'signature-fallback'<70% for 5 consecutive runs per agent: add monitor/scripts/step-marker.sh (echoes STEP_MARKER to stderr AND appends '<epoch> <step>' to /tmp/step-markers-$$.log) and fold 'sh monitor/scripts/step-marker.sh <step> &&' into the FIRST existing mandatory command of each step block in decider.md / structure-integrity.md — inside command blocks the agent already copies verbatim, not as freestanding instructions it can skip.",
+    "measurement": "Tinker Mode 3 Step 4b: when reading step-cost rows, treat attribution_mode + segments_found as first-class; flag any agent with segments_found>1 whose old rows were fragment-priced and annotate historical p50/p95 as pre-PROP-140-unreliable (decider rows 2026-07-05..enactment)."
+  },
+  "tradeoffs": {
+    "signature_inference_precision": "Signature windows are coarser than markers (a step is detected at its first distinctive command, not its true start; interleaved reads before the command attribute to the prior step). Acceptable: the instrument's purpose is directional cost attribution, and 70-85% was the healthy marker-era range anyway.",
+    "signature_table_maintenance": "Steps evolve; the table can silently stale. Mitigated by attribution_mode telemetry — a drop to 'none' is visible in the row, unlike today's silent 0.",
+    "summing_segments": "If the harness ever leaves a PRIOR run's transcript readable in the same session dir, summing would over-count. Current evidence says per-run sessions are isolated (fresh -out-XXXXXX project dir per run); the per_segment field makes any future over-count auditable.",
+    "cost": "Phase 0 is two script edits + no prompt changes, no new agents, no schedule changes. Zero marginal run cost (analyzer already parses every message)."
+  },
+  "estimated_impact": "Restores the only per-step cost instrument for the two most expensive Sonnet agents (decider 14d recorded $148 understated, true likely $200+; integrity $159). Corrects the PROP-101 series that Mode 3 variance alerts and the Q8 composite threshold consume. Retires a live dead-canary (13.8x variance false alarm this run).",
+  "requires_human_judgment": false,
+  "do_not_auto_close": false,
+  "status": "proposed",
+  "verification_pattern": "node -e \"const fs=require('fs');const rows=fs.readFileSync('monitor/decisions/step-cost-history.jsonl','utf8').trim().split('\\n').map(l=>JSON.parse(l));const last=rows[rows.length-1];const s=last.step_cost&&last.step_cost.summary||{};if((s.attribution_mode&&s.attribution_mode!=='none')||s.per_step_attribution_pct>0){console.log('FIXED')}else{console.log('STILL_BROKEN: last row',last.run_at,'attr%',s.per_step_attribution_pct,'mode',s.attribution_mode)}\"",
+  "notes_for_implementer": "Decider fragment days to sanity-check the multi-segment fix against: 2026-07-20 (12 msgs recorded vs EXP-670 integration run) and 2026-07-21 (7 msgs recorded vs 3-patch + stranded-patch run). After enactment the first decider run's row should show segments_found>=1 and, on any multi-segment day, per_segment entries whose msgs sum far exceeds the old fragment counts. Do NOT retro-edit historical rows — both files are git-append-only (PROP-065); the pre-enactment unreliability window is documented here and in tinker report-2026-07-21T02-41."
+}
