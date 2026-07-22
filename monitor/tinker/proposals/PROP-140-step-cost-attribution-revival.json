@@ -68,7 +68,18 @@
   "estimated_impact": "Restores the only per-step cost instrument for the two most expensive Sonnet agents (decider 14d recorded $148 understated, true likely $200+; integrity $159). Corrects the PROP-101 series that Mode 3 variance alerts and the Q8 composite threshold consume. Retires a live dead-canary (13.8x variance false alarm this run).",
   "requires_human_judgment": false,
   "do_not_auto_close": false,
-  "status": "proposed",
+  "status": "phase-0-implemented",
   "verification_pattern": "node -e \"const fs=require('fs');const rows=fs.readFileSync('monitor/decisions/step-cost-history.jsonl','utf8').trim().split('\\n').map(l=>JSON.parse(l));const last=rows[rows.length-1];const s=last.step_cost&&last.step_cost.summary||{};if((s.attribution_mode&&s.attribution_mode!=='none')||s.per_step_attribution_pct>0){console.log('FIXED')}else{console.log('STILL_BROKEN: last row',last.run_at,'attr%',s.per_step_attribution_pct,'mode',s.attribution_mode)}\"",
-  "notes_for_implementer": "Decider fragment days to sanity-check the multi-segment fix against: 2026-07-20 (12 msgs recorded vs EXP-670 integration run) and 2026-07-21 (7 msgs recorded vs 3-patch + stranded-patch run). After enactment the first decider run's row should show segments_found>=1 and, on any multi-segment day, per_segment entries whose msgs sum far exceeds the old fragment counts. Do NOT retro-edit historical rows — both files are git-append-only (PROP-065); the pre-enactment unreliability window is documented here and in tinker report-2026-07-21T02-41."
+  "notes_for_implementer": "Decider fragment days to sanity-check the multi-segment fix against: 2026-07-20 (12 msgs recorded vs EXP-670 integration run) and 2026-07-21 (7 msgs recorded vs 3-patch + stranded-patch run). After enactment the first decider run's row should show segments_found>=1 and, on any multi-segment day, per_segment entries whose msgs sum far exceeds the old fragment counts. Do NOT retro-edit historical rows — both files are git-append-only (PROP-065); the pre-enactment unreliability window is documented here and in tinker report-2026-07-21T02-41.",
+  "phase_0_implemented_at": "2026-07-22T02:52:07.276Z",
+  "phase_0_implemented_by": "tinker-2026-07-22T02-41 (Mode 4 self-apply)",
+  "phase_0_implementation_notes": [
+    "compute-decider-step-cost.js rewritten (schema decider-step-cost/2): multi-transcript input ordered by first_ts, per-segment window reset, SIGNATURES table (8 decider entries per PROP), marker-precedence rule = once a marker is seen in a segment, signature inference is suppressed for the rest of that segment; summary gains attribution_mode + segments_analyzed.",
+    "compute-integrity-step-cost.js regenerated as structural copy with integrity SIGNATURES (5 per PROP + check-prune-resurrection.js added as prune-resurrection — extension per the extend-this-table comment).",
+    "write-self-cost.sh: mapfile multi-segment discovery + node reducer summing token buckets and USD across all readable segments; row gains segments_found/segments_priced/per_segment; cost_usd.total_usd remains the run total (backward compatible); discovery-failed placeholder path unchanged.",
+    "write-self-step-cost.sh: passes full segment list to the analyzer; success-row transcript_path now carries the comma-joined list.",
+    "TESTED: synthetic 2-segment fixture (marker seg + signature seg) -> segments ordered by ts, 4 msgs, mixed mode, hand-verified cost 0.003336 USD; live single-segment run on tinker own transcript -> merge row with segments fields, analyzer attribution_mode=signature-fallback.",
+    "OBSERVED COARSENESS (accepted per PROP tradeoffs): signature match on tool_result text can fire on prose mentions of the signature filenames, not just executed commands (tinker own transcript attributed 71% this way). attribution_mode telemetry makes this visible; Phase 1 structural markers remain the precision path if fallback quality is insufficient."
+  ],
+  "phase_1_status": "conditional-pending-observation (trigger: attribution_mode none or signature-fallback <70% for 5 consecutive runs per agent)"
 }

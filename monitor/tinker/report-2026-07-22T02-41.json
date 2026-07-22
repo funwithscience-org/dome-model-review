@@ -1,0 +1,170 @@
+{
+  "generated_at": "2026-07-22T02:58:00Z",
+  "report_date": "2026-07-22",
+  "tinker_run_id": "tinker-2026-07-22T02-41",
+  "mode_selected": "proposals (Mode 4) — PROP-140 Phase 0 self-apply",
+  "mode_reason": "No pending operator directives; Mode 0 empty. Mode 1/2 quick checks green (see modes_checked). Previous report (07-21) left a major finding (dead step-cost attribution) with an authored PROP-140 whose Phase 0 is analyzer-side-only, requires_human_judgment:false, why-human=rubber-stamp class. Dispatcher rule 3: unresolved findings needing fixes -> Mode 4.",
+  "modes_checked": {
+    "pipeline_health": "green — all agents fresh on quiet-period cadence (poller 00:09Z, analyst 00:50Z, curmudgeon 01:13Z, decider 02:11Z, integrity 01:15Z pass 0 issues, mirror 00:35Z, workspace-sync per schedule). No stranded patches (ISS-3001 patch applied+tombstoned by operator 07-21). No aged-out issues.",
+    "infrastructure": "green — root-FS 2998MB free; clone-leak 3MB; PROP-099 canary clean (RC=0, run from clone); auth HTTP 200; PROP-070 orphan counter trivially 0 (assigned-analyst=0). FUSE: data/wins.json + docs/index.html behind git HEAD, but verified as EXPECTED propagation lag, not staleness-class: sole newer commit 73a5520 landed 02:12Z, after dome-mirror's 00:35Z quiet-period slot; next slot 04:30Z heals it. 3/5 checked files match HEAD.",
+    "cost_engineering": "last full Mode 3 run 07-21 (authored PROP-140); next per rotation",
+    "proposals": "PROP-140 Phase 0 applied this run; PROP-096 auto-closed via Step 2b verification walk"
+  },
+  "pipeline_health": {
+    "agents_running": 12,
+    "agents_stalled": [],
+    "output_freshness": {
+      "poller": "2026-07-22T00:09Z",
+      "analyst": "2026-07-22T00:50Z (cost-history push)",
+      "curmudgeon": "2026-07-22T01:13Z",
+      "curmudgeon_verify": "2026-07-22T00:40Z (no-op, qid=588 gate-blocked)",
+      "decider": "2026-07-22T02:18Z",
+      "integrity": "2026-07-22T01:17Z (pass, 0 issues)",
+      "dome_mirror": "2026-07-22T00:35Z",
+      "workspace_sync": "2026-07-21T08:05Z (last scheduled slot)"
+    }
+  },
+  "backlog_trend": {
+    "row_appended": true,
+    "open_issues_total": 10,
+    "wow_delta": "12 -> 10 (-16.7%), no growth thresholds fire",
+    "net_velocity_7d": 18,
+    "assigned_analyst_count": 0,
+    "inbound_burst_winnew_unreviewed": 0,
+    "pending_commission_hnotes_count": 0,
+    "root_fs_free_mb": 2998,
+    "closed_issues_mb": 3.26,
+    "thresholds_fired": "none"
+  },
+  "auto_close_walkers": {
+    "prop_auto_close": "shadow mode; 151 walked, field_gated 43, mechA_would_close 0, mechB_would_close 0, actually_closed 0",
+    "directive_auto_close": "ENFORCE mode; 0 pending directives, 0 closed"
+  },
+  "findings": [
+    {
+      "severity": "info",
+      "category": "self",
+      "title": "PROP-140 Phase 0 self-applied: step-cost attribution revival + multi-segment cost pricing",
+      "description": "Rewrote compute-decider-step-cost.js (schema decider-step-cost/2) and regenerated compute-integrity-step-cost.js as its structural copy: both now accept multiple transcript paths (ordered by first_ts, per-segment window/pairing reset) and add signature-based step inference as fallback when STEP_MARKER discipline is absent (the Sonnet 5 failure mode, dead 17/17 decider runs + last 3 integrity runs). Marker precedence: once a marker is seen in a segment, signature inference is suppressed for that segment. summary gains attribution_mode (marker|signature-fallback|mixed|none) + segments_analyzed. write-self-cost.sh now enumerates ALL readable transcript segments and sums cost across them (row gains segments_found/segments_priced/per_segment; total_usd backward-compatible); write-self-step-cost.sh passes the full segment list through.",
+      "evidence": "Synthetic 2-segment fixture: segments ordered by ts across out-of-order argv, marker window + signature window both attributed, unattributed=2 as expected, cost hand-verified 0.003336 USD. Live: tinker-own-transcript merge row carries segments_found=1/per_segment; analyzer live run attribution_mode=signature-fallback steps=3. Both shell scripts bash -n clean; both analyzers node --check clean.",
+      "self_fixable": true,
+      "fix_applied": true,
+      "prop_id": "PROP-140"
+    },
+    {
+      "severity": "minor",
+      "category": "self",
+      "title": "Signature fallback can over-trigger on prose mentions of signature filenames",
+      "description": "The PROP-140 signature test runs against tool_use command body + head of tool_result text. Result-text matching means prose that merely mentions a signature filename (e.g. a summary discussing stranded-patches-*) can open a window without the command having run. Tinker's own transcript attributed 71% this way. Accepted for now: the instrument is directional, attribution_mode telemetry exposes fallback-mode rows, and Phase 1 structural markers are the precision path. WATCH: when next Mode 3 reads decider/integrity step-cost rows, sanity-check that signature-fallback windows correspond to steps the run actually executed; if windows look prose-polluted, narrow the test to command-body-only as a follow-up tweak.",
+      "evidence": "Live analyzer run on tinker transcript: per_step patch-strand:51 msgs driven by result-text mentions, not command executions.",
+      "self_fixable": true,
+      "fix_applied": false
+    },
+    {
+      "severity": "info",
+      "category": "staleness",
+      "title": "FUSE wins.json/index.html behind git HEAD — verified as by-design mirror lag, do not trip Mode 2",
+      "description": "Quick-check flagged 2/5 files stale. Verified: FUSE matches commit 087652e; the only newer commit touching both files is 73a5520 (decider WIN-057b self-apply, 02:12Z) which landed AFTER dome-mirror's last quiet-period slot (00:35Z). Next mirror slot 04:30Z propagates. Max designed git->FUSE delay on quiet cadence is 8h. Recorded so the next run's Mode 2 quick-check has context and does not misread the same signature as staleness-class.",
+      "evidence": "git log 087652e..HEAD -- data/wins.json => only 73a5520 2026-07-22T02:12:53Z; dome-mirror sentinel commit 2026-07-22T00:35:53Z.",
+      "self_fixable": false,
+      "fix_applied": false
+    }
+  ],
+  "step_2b_verification_walk": {
+    "props_flipped": [
+      {
+        "prop": "PROP-096",
+        "from": "pending",
+        "to": "implemented",
+        "reason": "verification_pattern FIXED; analyst.md carries isLive helper (L252) + Mode-5 active acceptance (L349)"
+      },
+      {
+        "prop": "PROP-140",
+        "from": "proposed",
+        "to": "phase-0-implemented",
+        "reason": "Phase 0 applied this run; Phase 1 conditional on fallback quality over next 5 runs/agent"
+      }
+    ],
+    "staged_status_props_left_alone": "PROP-021/091/092/093/104 returned FIXED on their patterns but carry staged statuses encoding pending phases — verification confirms the shipped portion only; not flipped (auto-close walkers govern their lifecycle).",
+    "notes": "PROP-132 and PROP-134 patterns executed but produced empty output — patterns are not grade-A (no FIXED/STILL_BROKEN on the executed path); flag for their authors' next touch, not re-escalated."
+  },
+  "previous_followup": [
+    {
+      "finding": "07-21 FND-1 major/cost-observability: PROP-112 step-cost attribution dead since Sonnet 5 pin (decider 17/17 runs 0%, integrity last 3 consecutive)",
+      "status": "FIX_APPLIED_THIS_RUN",
+      "evidence": "PROP-140 Phase 0 applied (see findings[0]). Live confirmation lands with the next decider run (02:11Z tomorrow) and integrity run (01:15Z tomorrow): their step-cost rows should show attribution_mode != 'none'. PROP-140 verification_pattern reads the last decider row, so tomorrow's Step 2b walk adjudicates FIXED/STILL_BROKEN mechanically."
+    },
+    {
+      "finding": "07-21 FND-2 moderate/cost-observability: transcript discovery (find|head -1) prices arbitrary segment of multi-segment runs",
+      "status": "FIX_APPLIED_THIS_RUN",
+      "evidence": "write-self-cost.sh + write-self-step-cost.sh multi-segment enumeration applied. Next multi-segment decider day should show segments_found>1 with per_segment breakdown (sanity anchors per PROP notes: compare against 07-20/07-21 fragment rows)."
+    },
+    {
+      "finding": "07-21 FND-3 info/variance-alert-adjudication: decider p95/p50=13.8 alert adjudicated as FND-2 measurement artifact",
+      "status": "CLOSED_AS_ADJUDICATED",
+      "evidence": "Root cause fix applied this run; historical decider rows 2026-07-05..2026-07-22 remain documented as pre-PROP-140-unreliable (do not retro-edit — git-append-only)."
+    },
+    {
+      "finding": "07-21 FND-4 info/operator-attention: stranded patch ISS-3001 (clone-hygiene.sh 3-surface ownership registration)",
+      "status": "FIXED",
+      "evidence": "Operator applied in ef0a8a3a, tombstoned 82b9ce6b, ISS-3001 closed 2026-07-21T18:22Z (commit trail in git log)."
+    }
+  ],
+  "open_issue_health": {
+    "total_open": 10,
+    "open_status": 1,
+    "aged_out": [],
+    "repeated_deferrals": [],
+    "missing_patches": [],
+    "zombie_fixes": []
+  },
+  "cleanup_actions": [],
+  "recommendations": [
+    {
+      "priority": 1,
+      "type": "human_decision",
+      "description": "PROP-140 Phase 0 was self-applied on the strength of requires_human_judgment:false and the 17-run instrument outage; if the operator would rather have reviewed the two script rewrites first, revert is a 2-file git revert and the PROP documents everything. Otherwise no action — tomorrow's decider/integrity rows verify mechanically.",
+      "prop_id": "PROP-140"
+    },
+    {
+      "priority": 2,
+      "type": "human_decision",
+      "description": "Poller's 00:08Z summary recommends closing the PROP-130 status.json-chimera tracking thread (7th consecutive clean cycle). Decider/operator call; PROP-130 itself is instrumentation-only and stays."
+    }
+  ],
+  "self_cost": {
+    "transcript": "14aaf264-6f74-4960-8031-ccaa4d458702.jsonl",
+    "model": "claude-fable-5",
+    "assistant_msgs": 95,
+    "tokens": {
+      "input": 190,
+      "output": 154132,
+      "cache_write_5m": 0,
+      "cache_write_1h": 418914,
+      "cache_read": 15594807
+    },
+    "cost_usd": {
+      "input_usd": 0.00095,
+      "output_usd": 3.8533,
+      "cache_write_5m_usd": 0,
+      "cache_write_1h_usd": 4.18914,
+      "cache_read_usd": 7.797403,
+      "total_usd": 15.840794
+    },
+    "transcript_duration_sec": 798.4,
+    "first_ts": "2026-07-22T02:40:17.567Z",
+    "last_ts": "2026-07-22T02:53:35.986Z",
+    "segments_found": 1,
+    "segments_priced": 1,
+    "per_segment": [
+      {
+        "file_basename": "14aaf264-6f74-4960-8031-ccaa4d458702.jsonl",
+        "msgs": 95,
+        "model": "claude-fable-5",
+        "total_usd": 15.840794,
+        "first_ts": "2026-07-22T02:40:17.567Z",
+        "last_ts": "2026-07-22T02:53:35.986Z"
+      }
+    ]
+  }
+}

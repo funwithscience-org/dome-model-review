@@ -64,7 +64,12 @@ fi
 # Discover the live transcript. The agent can read exactly ONE *.jsonl under
 # /sessions/*/.claude/projects/ — its own current run (PROP-101 Q1). All
 # other sessions' .claude dirs are mode 750 owned by nobody:nogroup and EACCES.
-TRANSCRIPT=$(find /sessions -path '*/.claude/projects/*' -name '*.jsonl' -readable 2>/dev/null | head -1)
+# PROP-140 (2026-07-22): enumerate ALL readable segments (harness restarts /
+# rotations / subagents produce >1 .jsonl per run; head -1 analyzed an
+# arbitrary fragment). The analyzer accepts multiple paths and orders them.
+mapfile -t TRANSCRIPTS < <(find /sessions -path '*/.claude/projects/*' -name '*.jsonl' -readable 2>/dev/null | sort)
+TRANSCRIPT="${TRANSCRIPTS[0]:-}"
+TRANSCRIPT_LIST=$(IFS=,; echo "${TRANSCRIPTS[*]:-}")
 HISTORY="${CLONE}/monitor/${AGENT}/step-cost-history.jsonl"
 mkdir -p "$(dirname "$HISTORY")" 2>/dev/null || true
 
@@ -93,7 +98,7 @@ fi
 # JSON to stdout shaped { run_meta, per_step, unattributed, tool_result_buckets }
 # (see compute-decider-step-cost.js header). They exit 0 on partial-data
 # failures with degraded output rather than 1.
-STEP_JSON=$(node "$HELPER" "$TRANSCRIPT" 2>/dev/null)
+STEP_JSON=$(node "$HELPER" "${TRANSCRIPTS[@]}" 2>/dev/null)
 if [ -z "$STEP_JSON" ]; then
   echo "write-self-step-cost: ${ANALYZER} produced no output; appending failure row" >&2
   node -e "
@@ -135,6 +140,6 @@ node -e "
     console.error('write-self-step-cost append failed: ' + (e && e.message));
     process.exit(0); // non-fatal
   }
-" "$STEP_JSON" "$AGENT" "$ANALYZER" "$TRANSCRIPT" "$HISTORY" || true
+" "$STEP_JSON" "$AGENT" "$ANALYZER" "$TRANSCRIPT_LIST" "$HISTORY" || true
 
 exit 0

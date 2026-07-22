@@ -41,11 +41,15 @@ if [ ! -f "$HELPER" ]; then
   exit 0
 fi
 
-# Discover the live transcript. The agent can read exactly ONE *.jsonl under
-# /sessions/*/mnt/.claude/projects/ — its own current run (PROP-101 Q1). All
-# other sessions' mnt/ dirs are mode 750 owned by nobody:nogroup and EACCES.
-TRANSCRIPT=$(find /sessions -path '*/.claude/projects/*' -name '*.jsonl' -readable 2>/dev/null | head -1)
-if [ -z "$TRANSCRIPT" ] || [ ! -f "$TRANSCRIPT" ]; then
+# Discover the live transcript segment(s). The agent can read only its own
+# session's *.jsonl files under /sessions/*/mnt/.claude/projects/ (PROP-101
+# Q1: other sessions are EACCES). PROP-140 (2026-07-22): the harness can
+# produce MORE THAN ONE segment per run (restart / rotation / subagent);
+# the old `head -1` priced an arbitrary segment, understating multi-segment
+# runs (8 of 15 decider rows 2026-07-05..07-21 were 4-12-msg fragments).
+# Enumerate ALL readable segments and price the sum.
+mapfile -t TRANSCRIPTS < <(find /sessions -path '*/.claude/projects/*' -name '*.jsonl' -readable 2>/dev/null | sort)
+if [ "${#TRANSCRIPTS[@]}" -eq 0 ]; then
   # 2026-06-15 hardening: poller's 00:09Z run hallucinated a row with the wrong
   # schema when the helper silent-skipped here. Always emit a row even on
   # discovery failure so the LLM has nothing to hallucinate AND tinker's
@@ -72,10 +76,49 @@ if [ -z "$TRANSCRIPT" ] || [ ! -f "$TRANSCRIPT" ]; then
   exit 0
 fi
 
-# Price it. compute-run-cost.js handles cache_creation 5m/1h split + cache_read.
-COST_JSON=$(node "$HELPER" "$TRANSCRIPT" 2>/dev/null)
+# Price ALL segments and sum (PROP-140). compute-run-cost.js handles the
+# cache_creation 5m/1h split + cache_read per segment; the reducer below sums
+# token buckets + USD across segments and records a per_segment breakdown for
+# observability. cost_usd.total_usd stays the (now-correct) run total, so the
+# row shape is backward-compatible with pre-PROP-140 consumers.
+COST_JSON=$(node -e '
+  const { execFileSync } = require("child_process");
+  const path = require("path");
+  const helper = process.argv[1];
+  const files = process.argv.slice(2);
+  const per = [];
+  const sum = { input:0, output:0, cache_write_5m:0, cache_write_1h:0, cache_read:0 };
+  const csum = { input_usd:0, output_usd:0, cache_write_5m_usd:0, cache_write_1h_usd:0, cache_read_usd:0, total_usd:0 };
+  let model = null, msgs = 0, firstTs = null, lastTs = null, priced = 0;
+  for (const f of files) {
+    let r;
+    try {
+      r = JSON.parse(execFileSync("node", [helper, f], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }));
+    } catch (e) { continue; }
+    priced++;
+    if (r.model && !model) model = r.model;
+    msgs += r.assistant_msgs || 0;
+    for (const k of Object.keys(sum)) sum[k] += (r.tokens && r.tokens[k]) || 0;
+    for (const k of Object.keys(csum)) csum[k] += (r.cost_usd && r.cost_usd[k]) || 0;
+    if (r.first_ts && (!firstTs || r.first_ts < firstTs)) firstTs = r.first_ts;
+    if (r.last_ts && (!lastTs || r.last_ts > lastTs)) lastTs = r.last_ts;
+    per.push({ file_basename: path.basename(f), msgs: r.assistant_msgs || 0, model: r.model || null,
+               total_usd: (r.cost_usd && r.cost_usd.total_usd) || 0,
+               first_ts: r.first_ts || null, last_ts: r.last_ts || null });
+  }
+  if (!priced) process.exit(0); // empty stdout -> caller skips gracefully
+  for (const k of Object.keys(csum)) csum[k] = +csum[k].toFixed(6);
+  const dur = (firstTs && lastTs) ? +(((Date.parse(lastTs) - Date.parse(firstTs)) / 1000).toFixed(1)) : null;
+  const out = {
+    transcript: per.length === 1 ? per[0].file_basename : per[0].file_basename + " (+" + (per.length - 1) + " more)",
+    model, assistant_msgs: msgs, tokens: sum, cost_usd: csum,
+    transcript_duration_sec: dur, first_ts: firstTs, last_ts: lastTs,
+    segments_found: files.length, segments_priced: priced, per_segment: per,
+  };
+  console.log(JSON.stringify(out));
+' "$HELPER" "${TRANSCRIPTS[@]}" 2>/dev/null)
 if [ -z "$COST_JSON" ]; then
-  echo "write-self-cost: compute-run-cost.js produced no output; skipping" >&2
+  echo "write-self-cost: multi-segment pricing produced no output; skipping" >&2
   exit 0
 fi
 
