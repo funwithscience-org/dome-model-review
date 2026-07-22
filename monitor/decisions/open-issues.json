@@ -1,6 +1,6 @@
 {
   "description": "Persistent issue tracker. Decider appends new issues from Curmudgeon reviews, marks resolved when wins.json no longer contains the flagged text.",
-  "last_updated": "2026-07-22T02:11:56.726Z",
+  "last_updated": "2026-07-22T02:14:17.426Z",
   "updated_at": "2026-07-06T02:15:00.000Z",
   "next_id": 2998,
   "total_items": 9,
@@ -155,8 +155,22 @@
       "escalation_reason": "M1/BAU 5-action tree Step 1 invariant: severity=MAJOR items are never auto-closed by decider regardless of apparent resolution. Re-verified this run (2026-07-17): both monitor/curmudgeon/reviews/REACTIVE-AUDIT-2026-07-16.json and monitor/analyst/expansions/EXP-669-context-page-narrative-read.json ARE now present in git (git log shows commit 538d18a1 \"Workspace sync: 2026-07-16T04:07:58Z\" landed both files, matching the predicted 04:03Z sync-slot resolution referenced in the original suggested_fix). This appears resolved as anticipated and is escalated only to satisfy the severity=MAJOR invariant -- operator action should be a quick confirm-and-close, not active troubleshooting.",
       "escalated_by_run": "decider-2026-07-17-02-07",
       "escalated_at": "2026-07-17T02:10:52.718Z"
+    },
+    {
+      "id": "ISS-3010",
+      "status": "open",
+      "severity": "minor",
+      "category": "infrastructure",
+      "title": "Pre-push structural gate finds pre-existing corruption: 2 duplicate EXP ids in archive, 1 stray win-typed entry in curmudgeon tracker.points[]",
+      "description": "While running the manual pre-push structural integrity gate (decider-patches-and-selfapply.md Step 3a) ahead of an unrelated WIN-057b patch push, the gate flagged three pre-existing issues NOT introduced by this run (confirmed via git diff HEAD~1 showing zero changes to the affected files, and the push this run was a clean fast-forward with no rebase, so the gate's stated purpose — catching post-rebase auto-merge corruption — does not apply here): (1) EXP-596 appears twice in monitor/analyst/expansion-tracker-archive.jsonl (lines ~463 and ~473) with DIFFERENT content — an analyst-authored entry and a decider-backfill entry for the same id, both from the 2026-06-06/07/08 EXP-596/WIN-042 episode; (2) EXP-666 appears twice (lines ~515 and ~520), same content but re-appended with a later integrated_at (2026-07-14 vs 2026-07-17), suggesting the archive-append path double-wrote it; (3) monitor/curmudgeon/tracker.json still carries WIN-070 as a type:'win' entry inside points[] rather than in the wins{} dict, which is the pre-PROP-022-phase-4 (2026-05-06) shape — this predates that migration and was apparently never backfilled. None of these block the live site (they are audit-trail files) but they will keep tripping the pre-push structural gate for every future decider run that manually executes it, and the underlying next_id/duplicate-detection invariant is degraded while they stand.",
+      "location": "monitor/analyst/expansion-tracker-archive.jsonl (EXP-596, EXP-666 duplicates), monitor/curmudgeon/tracker.json points[] (WIN-070 stray entry)",
+      "source": "decider-prepush-gate-selfobserved",
+      "found_by": "decider-prepush-gate",
+      "suggested_fix": "Dedup the two EXP-596 archive lines (likely keep the later decider-backfill record per historical precedent for this episode) and the two EXP-666 archive lines (keep the 2026-07-17 record, the more complete one); migrate WIN-070 out of curmudgeon/tracker.json points[] into the wins{} dict (or tracker-archive.jsonl if it is fully processed, matching the post-phase-4 convention). All three are append-only/audit-trail files, so this needs a careful one-time rewrite rather than routine decider self-apply — routing to tinker/operator.",
+      "created_at": "2026-07-22T02:14:17.426Z",
+      "created_by": "decider-prepush-gate"
     }
   ],
-  "next_iss_id": 3010,
+  "next_iss_id": 3011,
   "last_updated_by": "operator-cowork-2026-07-21-iss3001-close"
 }
