@@ -1,0 +1,130 @@
+{
+  "id": "EXP-673",
+  "type": "schema_cleanup",
+  "title": "Sweep stale imminent:true flags on 11 predictions with past-close windows",
+  "authored_at": "2026-07-23T00:44:53.037Z",
+  "authored_by": "analyst-mode6-random-look",
+  "source": "analyst-mode6-random-look",
+  "review_class": "verification",
+  "priority": "medium",
+  "mode6_target": {
+    "kind": "integrated-EXP",
+    "id": "EXP-646",
+    "title": "PRED-FIELD-2026Q2 verdict hold + re-check schedule (operator commission)",
+    "integrated_at": "2026-07-01T02:08:52.782Z",
+    "selection": "Only integrated EXP older than 14 days in tracker (deterministic seed=20260723 % 1 = idx 0)."
+  },
+  "finding": "While examining EXP-646 integration in data/predictions.json:PRED-FIELD-2026Q2, discovered that PRED-FIELD-2026Q2 still carries imminent:true despite the test window having closed 23 days ago (2026-06-30). Broadened the check: 11 of 11 entries currently marked imminent:true have already-past-close windows. Nine of them closed 2026-04-30 (84 days past), one on 2026-04-18 (96 days past), one on 2026-05-31 (53 days past), and PRED-FIELD-2026Q2 on 2026-06-30 (23 days past). This is a systematic schema-drift issue, not EXP-646-specific — the `imminent` field is never cleared once a window closes.",
+  "operational_impact": "The poller's \"IMMINENT WINDOW WATCH (next 7 days)\" scan reads `imminent:true` entries and (correctly) filters out ones that are already resolved. Because all 11 imminent-flagged entries have past-close windows, today's poll summary reads \"only pre-resolved April-2026 entries returned by the scan (PRED-087, PRED-088, PRED-111, PRED-085, PRED-077, PRED-090, PRED-081, PRED-105, PRED-106) — nothing new entering the 7-day window.\" Verified: the 9 April-2026 entries the poller lists are precisely the 9 April-2026 entries in the stale-imminent set. The scan surface is polluted; a genuinely-imminent future prediction would be indistinguishable from noise. See latest-poll-summary.txt for the affected line.",
+  "affected_entries": [
+    {
+      "id": "PRED-FIELD-2026Q2",
+      "test_window_closes": "2026-06-30",
+      "our_verdict": "pending",
+      "author_status": "dome_silent",
+      "days_past_close": 23
+    },
+    {
+      "id": "PRED-087",
+      "test_window_closes": "2026-04-30",
+      "our_verdict": "standard_physics",
+      "author_status": "dome_silent_terminal",
+      "days_past_close": 84
+    },
+    {
+      "id": "PRED-088",
+      "test_window_closes": "2026-04-30",
+      "our_verdict": "standard_physics",
+      "author_status": "dome_silent_terminal",
+      "days_past_close": 84
+    },
+    {
+      "id": "PRED-111",
+      "test_window_closes": "2026-04-30",
+      "our_verdict": "standard_physics",
+      "author_status": "dome_silent_terminal",
+      "days_past_close": 84
+    },
+    {
+      "id": "PRED-085",
+      "test_window_closes": "2026-04-30",
+      "our_verdict": "standard_physics",
+      "author_status": "dome_silent_terminal",
+      "days_past_close": 84
+    },
+    {
+      "id": "PRED-077",
+      "test_window_closes": "2026-04-30",
+      "our_verdict": "standard_physics",
+      "author_status": "dome_silent_terminal",
+      "days_past_close": 84
+    },
+    {
+      "id": "PRED-090",
+      "test_window_closes": "2026-04-30",
+      "our_verdict": "recycled",
+      "author_status": "dome_silent_terminal",
+      "days_past_close": 84
+    },
+    {
+      "id": "PRED-081",
+      "test_window_closes": "2026-04-30",
+      "our_verdict": "standard_physics",
+      "author_status": "dome_silent_terminal",
+      "days_past_close": 84
+    },
+    {
+      "id": "PRED-105",
+      "test_window_closes": "2026-04-18",
+      "our_verdict": "tacit_withdrawal",
+      "author_status": "dome_silent_terminal",
+      "days_past_close": 96
+    },
+    {
+      "id": "PRED-106",
+      "test_window_closes": "2026-04-30",
+      "our_verdict": "tacit_withdrawal",
+      "author_status": "dome_silent_terminal",
+      "days_past_close": 84
+    },
+    {
+      "id": "PRED-073",
+      "test_window_closes": "2026-05-31",
+      "our_verdict": "falsified",
+      "author_status": "dome_silent_terminal",
+      "days_past_close": 53
+    }
+  ],
+  "proposed_fix": "Mechanical sweep: for each entry in data/predictions.json where imminent === true AND (test_window_closes||window_close) < today, set imminent = false. No prose changes. No verdict changes. No author_status changes.",
+  "patch_target": "data/predictions.json",
+  "patch_kind": "field-set (mechanical, no LLM required)",
+  "ongoing_prevention": "Longer-term: either (a) compute `imminent` dynamically at read time from test_window_closes vs today (drop the stored field), or (b) have the poller sweep imminent:false as part of its window-close-detection logic. Not in scope of this cleanup EXP — file as a follow-up tinker/decider design question.",
+  "devils_advocate": [
+    "Objection 1: PRED-FIELD-2026Q2 might legitimately still be \"imminent\" because its re-check date is 2026-08-15 (24 days away). Response: `imminent` in the current schema tracks test-window-close proximity, not re-check proximity. If a separate \"re-check imminent\" concept is wanted, it needs a new field (e.g., re_check_imminent) — repurposing `imminent` conflates two things. Even by the re-check reading, the 10 other entries (verdict-set months ago) still fail the criterion.",
+    "Objection 2: The imminent flag might be preserved intentionally for historical reasons (e.g., \"this was imminent at the time verdicts were set\"). Response: (a) 8 of the 11 have their verdict field populated (standard_physics/falsified/recycled/tacit_withdrawal) — the historical fact is captured in verdict_set_at metadata, not by keeping a bool stale. (b) The poller is actively consuming this field for a forward-looking scan; the stale values are actively degrading operational output.",
+    "Objection 3: Sweeping might mask genuine imminent flags that should have been cleared but were not, hiding a bookkeeping bug elsewhere. Response: The proposed fix explicitly logs each entry it flips (verdict_notes append or ledger row); the operator can audit whether any of the 11 flips looks wrong. Nothing else in the schema is touched."
+  ],
+  "kernel_of_truth": "The imminent field was a good idea for pre-close prediction attention. The design bug is: no cleanup handler when the window closes. This is a common pattern in event-driven state fields — the setter is defined but the clearer isn't.",
+  "routing_notes": "Mechanical field-set patch — decider self-apply appropriate. Verification-class review (per PROP-025) — check that the 11 flipped entries match the affected_entries list and no other entries were touched. NARRATE-CITE not applicable (schema cleanup, not prose). Consider chaining a small tests/*.js check that fails when `imminent:true AND test_window_closes<today` (fail-loud on future recurrences).",
+  "tests_to_add": "A single new test: assert that no entry in data/predictions.json has (imminent===true) AND ((test_window_closes||window_close) < today). Fits alongside existing prediction-integrity tests.",
+  "win_overlap": null,
+  "data_sources": [
+    "data/predictions.json (source of truth for the 11 stale-imminent entries)",
+    "monitor/changes/latest-poll-summary.txt (evidence: poller output degraded by stale flags)",
+    "monitor/changes/chg-20260723-0008-001.json (heartbeat referencing PRED-FIELD-2026Q2 which is imminent:true)"
+  ],
+  "sources_cited": [
+    "data/predictions.json:PRED-FIELD-2026Q2 (Mode 6 examination target)",
+    "monitor/analyst/expansions/EXP-646-pred-field-2026q2-verdict-hold.json (originating EXP; integration verified faithful)",
+    "monitor/changes/latest-poll-summary.txt (imminent-watch line)"
+  ],
+  "mode6_no_drift_finding": "EXP-646 prose integration in data/predictions.json:PRED-FIELD-2026Q2 detail_reasoning and tldr is verbatim to the source EXP. verdict_notes has been correctly extended with the decider's 2026-07-14 author_status transition (pending -> dome_silent per Section 6.15 d=14 rule) — scheduled and expected. No scientific-argument drift.",
+  "cosmetic_notes_finding": "Separately, the `notes` field on PRED-FIELD-2026Q2 still carries the pre-close bracketed assessment string \"[Assessment: ...The test window closes 2026-06-30 — IMMINENT. The prediction is speci]\" — this is a truncated stale note. Not blocking anything, but worth clearing alongside the imminent sweep. Optional micro-patch: replace the bracketed portion with a current-state one-liner or remove the \"IMMINENT\" mention.",
+  "provenance": {
+    "our_repo_sha_at_authorship": null,
+    "dome_repo_sha_at_authorship": null,
+    "assessed_at": "2026-07-23T00:44:53.037Z",
+    "assessed_by": "analyst-mode6-2026-07-23"
+  },
+  "newsworthy": null
+}
