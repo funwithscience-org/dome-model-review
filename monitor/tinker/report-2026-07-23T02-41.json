@@ -1,0 +1,94 @@
+{
+  "run_id": "2026-07-23T02-41",
+  "agent": "tinker",
+  "ts": "2026-07-23T02:41:00Z",
+  "mode_selected": "infrastructure (Mode 2) — PROP-099 prune-resurrection canary fired RC=3 on first quick-check invocation; root-caused to cwd-sensitive root resolution in check-prune-resurrection.js, not a live prune<->workspace-sync loop. Self-fixed per Conservative Self-Fix rule (wrong-path class, mechanically verifiable).",
+  "modes_checked": {
+    "preflight_directives": "none pending",
+    "preflight_mode0": "no assigned-to-tinker items",
+    "preflight_prop_autoclose": {
+      "shadow": true,
+      "would_close": 0,
+      "field_gated": 43
+    },
+    "preflight_directive_autoclose": {
+      "enforce_flag_present": true,
+      "would_close": 0,
+      "actually_closed": 0
+    },
+    "backlog_trend": {
+      "open_issues_total": 10,
+      "open_status_count": 0,
+      "net_velocity_7d": 19,
+      "thresholds_fired": "none",
+      "note": "all 10 open are pending-human(9)/needs-human(1); healthy"
+    },
+    "mode1": "all agent outputs fresh (poller 00:11Z, curmudgeon 01:16Z, decider 02:11Z, integrity 01:18Z); no stranded patches >24h",
+    "mode2": "FUSE md5 == git HEAD on all 5 checked files; PAT auth 200; root-FS free 3482MB; clone-leak 2MB; PROP-070 orphan counter 0; PROP-099 see findings",
+    "mode3_mode4": "not evaluated — Mode 2 red condition preempted"
+  },
+  "findings": [
+    {
+      "id": "FND-01",
+      "category": "canary-correctness",
+      "severity": "moderate",
+      "title": "check-prune-resurrection.js (PROP-099) root resolution was cwd-sensitive: false LOOP-LIVE when invoked with cwd inside FUSE workspace; silent false-clean (RC=0, zero archives scanned) when cwd outside any repo",
+      "evidence": "Reproduced live this run: invocation with cwd=$WORKSPACE returned RC=3 resurrected_total=9 (5 narrative-cite-audit + 4 verify-pending-runs) — all 9 are FUSE-only undrained orphans (expected steady state per DIRECTIVE-20260708-001, unlink-impossible on FUSE), NOT git resurrections. Same command with cwd=outputs returned RC=0 resurrected_total=0 with monitor/integrity never found (canary silently dead — the exact false-clean class ISS-3001 flagged on 2026-07-20 for the RC=1 MODULE_NOT_FOUND shape; this is its RC=0 sibling, worse because it self-reports clean). cwd=clone returned the true result: 0 resurrections at git HEAD.",
+      "root_cause": "Script resolved scan root by walking UP from process.cwd() looking for monitor/integrity, falling back to cwd. tinker.md's Mode 2 snippet invokes the script by absolute clone path but does not pin cwd, so the scanned tree depended on whatever directory the agent's bash call happened to be in.",
+      "action_taken": "SELF-FIXED in monitor/scripts/check-prune-resurrection.js (this commit): (1) root resolution is now __dirname-first (script lives at <root>/monitor/scripts/, so root=path.resolve(__dirname,'../..')) — pins the scan to the clone the script was invoked from regardless of cwd; (2) added --workspace <path> override for deliberate FUSE-orphan inspection; (3) missing monitor/integrity under derived root now exits 1 with an error JSON instead of reporting clean — tinker.md's existing RC discrimination (0=clean, 3=loop, else=canary-did-not-run) handles it with no prompt change needed.",
+      "verification": "Post-fix: cwd=clone, cwd=FUSE-workspace, cwd=outputs all return identical resurrected_total=0 RC=0. --workspace <FUSE> returns RC=3 total=9 (intentional orphan view preserved for drain-backlog inspection). --workspace /tmp/nonexistent returns RC=1 with error JSON. node --check passes.",
+      "residual_risk": "Prior per-spec Mode 2 runs that invoked the canary with uncontrolled cwd may have logged false-clean results; the 2026-07-20 ISS-3001 audit already established the canary was effectively dead on per-spec runs, so no additional history correction is warranted."
+    },
+    {
+      "id": "FND-02",
+      "category": "fuse-orphan-backlog",
+      "severity": "info",
+      "title": "FUSE monitor/integrity drain backlog at 163 orphans — below PROP-125 threshold (200) but on pace to trip it in ~3-6 days",
+      "evidence": "comm -23 of FUSE vs clone monitor/integrity listings = 163 FUSE-only files (oldest: narrative-cite-audit-2026-06-25*). Accrual ~10-15/day per DIRECTIVE-20260708-001.",
+      "recommendation": "No action now — this is the accepted steady state; integrity's delete-propagation-backlog finding (PROP-125) will fire at 200 and is the designed operator-drain trigger. Heads-up only: operator should expect the drain prompt within the week and can pre-empt it from any granted cowork session (allow_cowork_file_delete + rm of FUSE copies)."
+    }
+  ],
+  "cleanup_actions": [],
+  "previous_followup": {
+    "report_2026-07-22_FND_PROP-140-phase0": "self-applied last run; step-cost attribution + multi-segment pricing shipped. Its minor signature-fallback over-trigger note remains observation-pending (no recurrence visible in today's pre-flights).",
+    "report_2026-07-22_staleness_info": "FUSE wins.json/index.html mirror lag was verified by-design last run; today's Mode 2 md5 check shows FUSE == git HEAD on all checked files — resolved by normal mirror cadence.",
+    "prop_verification_walk": "prop-auto-close.js (shadow) walked all PROPs this run: 0 mechA-closable, 0 mechB-closable, 43 field-gated. directive-auto-close.js (enforce): 0 pending-eligible. No STILL_BROKEN carryovers."
+  },
+  "claude_md_audit": "not run — Mode 3 only",
+  "notes": "Backlog metrics row appended to queue-history.jsonl per PROP-030. Inbound-burst Detector B: 0 unreviewed win-new, no finding. Commission HNOTEs pending: 0.",
+  "self_cost": {
+    "transcript": "e50bd81f-75ad-4985-99b1-7d7adfdeb4e4.jsonl",
+    "model": "claude-fable-5",
+    "assistant_msgs": 69,
+    "tokens": {
+      "input": 138,
+      "output": 79823,
+      "cache_write_5m": 0,
+      "cache_write_1h": 349467,
+      "cache_read": 9389812
+    },
+    "cost_usd": {
+      "input_usd": 0.00069,
+      "output_usd": 1.995575,
+      "cache_write_5m_usd": 0,
+      "cache_write_1h_usd": 3.49467,
+      "cache_read_usd": 4.694906,
+      "total_usd": 10.185841
+    },
+    "transcript_duration_sec": 329.8,
+    "first_ts": "2026-07-23T02:40:15.048Z",
+    "last_ts": "2026-07-23T02:45:44.856Z",
+    "segments_found": 1,
+    "segments_priced": 1,
+    "per_segment": [
+      {
+        "file_basename": "e50bd81f-75ad-4985-99b1-7d7adfdeb4e4.jsonl",
+        "msgs": 69,
+        "model": "claude-fable-5",
+        "total_usd": 10.185841,
+        "first_ts": "2026-07-23T02:40:15.048Z",
+        "last_ts": "2026-07-23T02:45:44.856Z"
+      }
+    ]
+  }
+}

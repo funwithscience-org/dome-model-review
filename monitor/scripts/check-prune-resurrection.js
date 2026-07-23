@@ -29,8 +29,29 @@ const fs=require('fs');const path=require('path');const crypto=require('crypto')
 const args=process.argv.slice(2);
 const hi=args.indexOf('--hours');
 const WINDOW_H=hi>=0&&args[hi+1]?parseInt(args[hi+1],10):48;
-const root=(()=>{let c=process.cwd();while(c!==path.dirname(c)){if(fs.existsSync(path.join(c,'monitor','integrity')))return c;c=path.dirname(c);}return process.cwd();})();
+// Root resolution (tinker 2026-07-23, ISS pending): __dirname-first, NOT cwd.
+// The cwd walk-up had two live failure modes observed on the 2026-07-23 run:
+//   (1) cwd inside the FUSE workspace -> scans FUSE, where pruned artifacts
+//       are EXPECTED undrained orphans (unlink-impossible; DIRECTIVE-20260708-001
+//       steady state) -> false LOOP-LIVE (RC=3) every run;
+//   (2) cwd outside any repo -> walk-up exhausts, falls back to cwd, IDIR
+//       missing -> every archive skipped -> silent false-clean (RC=0).
+// __dirname pins the scan to the clone the script was invoked from (script is
+// clone-only / NEVER_PUSH, absent on FUSE). --workspace <path> overrides for
+// testing. If the derived root has no monitor/integrity, exit 1 so callers'
+// RC discrimination reports canary-did-not-run instead of clean.
+const wi=args.indexOf('--workspace');
+const root=(()=>{
+  if(wi>=0&&args[wi+1])return path.resolve(args[wi+1]);
+  const selfRoot=path.resolve(__dirname,'..','..');
+  if(fs.existsSync(path.join(selfRoot,'monitor','integrity')))return selfRoot;
+  let c=process.cwd();while(c!==path.dirname(c)){if(fs.existsSync(path.join(c,'monitor','integrity')))return c;c=path.dirname(c);}return process.cwd();
+})();
 const IDIR=path.join(root,'monitor','integrity');
+if(!fs.existsSync(IDIR)){
+  console.error(JSON.stringify({event:'prune-resurrection-canary',error:'monitor/integrity not found under root '+root+' -- canary did not run'}));
+  process.exit(1);
+}
 const ARCHIVES=[
   'narrative-cite-audit-archive.jsonl',
   'verify-pending-runs-archive.jsonl',
