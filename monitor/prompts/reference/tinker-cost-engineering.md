@@ -242,7 +242,10 @@ CURM_COND=$(wc -l < monitor/prompts/reference/curmudgeon-change-and-holistic.md)
 echo "Curmudgeon dispatcher+refs (excl CLAUDE.md): ${CURM_DISP}L, conditional: ${CURM_COND}L, max total: $((CURM_DISP+CURM_COND+CLAUDE))L"
 
 # Decider: dispatcher + SCIENTIFIC-CONTEXT + DATA-SCHEMAS + all decider-*.md + BUILD-AND-CHANGE
-DECIDER=$(cat monitor/prompts/decider.md monitor/prompts/reference/SCIENTIFIC-CONTEXT.md monitor/prompts/reference/DATA-SCHEMAS.md monitor/prompts/reference/decider-intake.md monitor/prompts/reference/decider-curmudgeon.md monitor/prompts/reference/decider-curmudgeon-pq-mechanics.md monitor/prompts/reference/decider-patches-and-selfapply.md monitor/prompts/reference/decider-reporting.md monitor/prompts/reference/BUILD-AND-CHANGE.md | wc -l)
+# (2026-07-24 tinker self-fix: added decider-end-of-run-sweeps.md + decider-queue-management.md,
+# the two PROP-119 reference files missing since 2026-06-29 — the legacy formula understated
+# decider's real context load by ~750L. Flagged by 2026-07-21 Mode 3 context_load alert.)
+DECIDER=$(cat monitor/prompts/decider.md monitor/prompts/reference/SCIENTIFIC-CONTEXT.md monitor/prompts/reference/DATA-SCHEMAS.md monitor/prompts/reference/decider-intake.md monitor/prompts/reference/decider-curmudgeon.md monitor/prompts/reference/decider-curmudgeon-pq-mechanics.md monitor/prompts/reference/decider-patches-and-selfapply.md monitor/prompts/reference/decider-reporting.md monitor/prompts/reference/decider-end-of-run-sweeps.md monitor/prompts/reference/decider-queue-management.md monitor/prompts/reference/BUILD-AND-CHANGE.md | wc -l)
 echo "Decider total (excl CLAUDE.md): ${DECIDER}L, with CLAUDE.md: $((DECIDER+CLAUDE))L"
 
 # Tinker: dispatcher + all tinker-*.md + all reference files (reads everything)
