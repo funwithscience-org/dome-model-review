@@ -1,0 +1,81 @@
+{
+  "item_id": "EXP-674",
+  "target": "build-scripts/generate-html.js:880 and :892 escapeHtml() calls on tldr_evidence / tldr_verdict — c7 hole #1 systemic-fix regression predicted by c8 has fired. WIN-044.tldr_evidence contains raw <sub>BOU</sub> HTML that renders in docs/index.html as literal escaped text (line 1956: `tan(lat&lt;sub&gt;BOU&lt;/sub&gt;)`).",
+  "issue_ids": [],
+  "review_class": "verification",
+  "authored_by": "analyst-mode6-random-look",
+  "source": "analyst-mode6-random-look",
+  "category": "build-pipeline-bug + content-update",
+  "priority": "medium",
+  "status": "pending",
+  "hnote_source": null,
+  "assigned_to": "decider",
+  "claimed_by": null,
+  "created_at": "2026-07-24T00:46:32.677Z",
+  "provenance": {
+    "our_repo_sha": "a701c464e9badc588e386a3d14c1e3392d57fb36",
+    "assessed_at": "2026-07-24T00:46:32.677Z",
+    "assessed_by": "analyst-2026-07-24-mode6",
+    "mode6_target": "WIN-004 (random-roll fell on 'random-WIN'; picked idx=3 -> id=004, SAA exponential separation). Latest curmudgeon review WIN-004.c8 (2026-05-31) verdict_holds:true confidence:0.92 recommended_action:minor_edit. c8 flagged a major systemic hole (see below) whose recommended systemic fix has NOT been applied.",
+    "mode6_finding": "Fresh-eyes audit found the c8-predicted regression pattern has fired on a NEW WIN not in the c7/c8 cohort. c8 said: 'the per-WIN-004 fix is a content-only workaround; the next edit that introduces HTML in any tldr field will silently regress.' That next edit is now on disk: WIN-044.tldr_evidence contains raw <sub>BOU</sub> markup, and docs/index.html (line 1956) renders it as escaped text visible to readers."
+  },
+  "finding_narrative": {
+    "what": "Two-part finding. (1) WIN-044 SURFACE-BUG: data/wins.json id=044.tldr_evidence contains the raw HTML substring `tan(lat<sub>BOU</sub>)`; the surrounding phrase is `the formula collapses to tan(lat)/tan(lat<sub>BOU</sub>), pure globe trigonometry`. Build pipeline escapes this via `escapeHtml(win.tldr_evidence)` at build-scripts/generate-html.js:880, so the rendered docs/index.html line 1956 contains the literal string `tan(lat&lt;sub&gt;BOU&lt;/sub&gt;)` — readers see <sub>BOU</sub> as visible text rather than a subscripted BOU. (2) SYSTEMIC-BUG ROOT CAUSE: c7 originally recommended (option b) a curated allow-list sanitizer replacing the two escapeHtml() calls; c8 restated this recommendation as major-severity with a concrete regression prediction. The systemic fix was NOT taken — build-scripts/generate-html.js:880 and :892 still call escapeHtml() on tldr_evidence and tldr_verdict respectively. Only per-WIN content-scrubs of WIN-052/053/064/070 landed. Cohort audit today (2026-07-24) shows those 4 cohort entries are now sanitized (0 raw HTML in their tldr fields) but WIN-044 slipped past because it wasn't in the c7 cohort at all.",
+    "why_it_matters": "The rendered dome-model-review surface has literal <sub>BOU</sub> visible to readers on WIN-044 evidence TLDR. It reads as sloppy formatting on a page whose credibility rests on being noticeably tidier than the dome. Zero open ISS tracks either the WIN-044 content patch or the systemic sanitizer change. Closed-issues search shows the only tracked c7 followups were ISS-2291 (c7 hole #2, minor) and ISS-2256 (c7 hole #3, minor) — the most severe c7 hole (hole #1, major) never got a tracked closure; the fix was applied in-line without an ISS to close against.",
+    "corroborating_evidence": [
+      "data/wins.json id=044 tldr_evidence: literal substring `<sub>BOU</sub>` present (JSON.stringify shows \"tan(lat<sub>BOU</sub>)\").",
+      "docs/index.html line 1956 grep: `<p class=\"ks-tldr\">...tan(lat)/tan(lat&lt;sub&gt;BOU&lt;/sub&gt;)...</p>` — one occurrence of `&lt;sub&gt;` inside a ks-tldr block.",
+      "build-scripts/generate-html.js:880: ` ? `<p class=\"ks-tldr\">${escapeHtml(win.tldr_evidence)}</p>` `",
+      "build-scripts/generate-html.js:892: ` ? `<p class=\"ks-tldr\">${escapeHtml(win.tldr_verdict)}</p>` `",
+      "monitor/curmudgeon/reviews/WIN-004.c8.json holes_found[0].severity=major, recommendation names both option (a) content-patch and option (b) allow-list sanitizer with tests/run.sh grep-guard. c8 recommended option (b).",
+      "grep of all 72 WINs for raw HTML in tldr_evidence + tldr_verdict returns exactly 1 hit: WIN-044.tldr_evidence with <sub> tags."
+    ]
+  },
+  "proposed_patches": {
+    "option_a_content_patch_only": {
+      "target": "data/wins.json id=044 tldr_evidence",
+      "old_string": "the formula collapses to tan(lat)/tan(lat<sub>BOU</sub>), pure globe trigonometry",
+      "new_string": "the formula collapses to tan(lat)/tan(lat_BOU), pure globe trigonometry",
+      "risk": "Very low. Mirrors the WIN-004 c8 pattern (plain-text underscore in place of HTML subscript). No scientific-argument change. Build pipeline still vulnerable to the next raw-HTML addition to any tldr field — this is a symptom-only fix.",
+      "test_added": "Optional but strongly recommended: add a tests/run.sh assertion that greps docs/index.html for `&lt;sub&gt;|&lt;sup&gt;|&lt;em&gt;|&lt;a ` inside `class=\"ks-tldr\"` blocks (fail-loud on match). This catches option-(a) regressions cheaply without doing option (b)."
+    },
+    "option_b_systemic_sanitizer": {
+      "target_1": "build-scripts/generate-html.js:880",
+      "target_2": "build-scripts/generate-html.js:892",
+      "change": "Replace escapeHtml(win.tldr_evidence) and escapeHtml(win.tldr_verdict) with a curated allow-list sanitizer permitting <a>, <em>, <strong>, <sub>, <sup>, <br> and escaping everything else. Same recommendation c8 made 2026-05-31.",
+      "risk": "Medium — allow-list sanitizer is easy to get wrong (unclosed tags, attribute injection). Reference the same pattern used elsewhere in the codebase if one exists; if not, a small tested helper (~20 lines) with an allow-list of tags + no attribute passthrough except href on <a> is standard shape. Must include a test: parse docs/index.html post-build and assert every <a> inside ks-tldr has href pointing at either `#<anchor>` or `https://` (no javascript: or data:).",
+      "test_added": "tests/run.sh assertion: (i) `&lt;a `, `&lt;em&gt;`, `&lt;sub&gt;`, `&lt;sup&gt;` MUST NOT appear inside any `class=\"ks-tldr\"` block; (ii) any raw <a>, <em>, <sub>, <sup> inside ks-tldr blocks MUST parse as valid balanced HTML."
+    }
+  },
+  "recommendation": "Do BOTH (a) and (b). (a) is a 1-line data patch that clears the visible surface bug immediately. (b) is the architectural durability fix c8 already recommended. Together, close ISS-NEW (WIN-044-tldr-html-render). c8 hole #1 (major) has never been formally closed via an ISS — this is the natural moment to open+close one. Also: refresh the c7/c8 cohort audit; verify WIN-052/053/064/070 have NOT re-regressed (spot-check today confirms clean, but the systemic escape means any future edit reopens the door).",
+  "devils_advocate": [
+    "Objection 1: Maybe escapeHtml() on tldr fields is a deliberate XSS-defense choice; any HTML in the source is intentionally-escaped output. Response: (a) c7 and c8 both explicitly frame the escape as a bug not a feature — the design intent stated in both reviews is 'HTML markup renders as escaped text (bug)'. (b) The parallel detail_evidence and detail_verdict_text fields are inserted un-escaped and DO render HTML (that is where the <sub> tags in `tan(lat<sub>BOU</sub>)` live successfully elsewhere on the page). Treating tldr differently to those two adjacent fields is inconsistent with the site pattern. (c) An allow-list sanitizer preserves XSS defense while permitting the small set of tags the review copy actually uses.",
+    "Objection 2: Maybe WIN-044.tldr_evidence should be treated as an isolated one-off — do the content patch and skip the systemic fix. Response: The systemic fix is the entire point of c8's major-severity finding. The content patch alone is exactly the mode of failure c8 predicted ('per-WIN workaround; next edit silently regresses'). Deferring option (b) again just resets the regression clock.",
+    "Objection 3: The fresh-eyes finding may be over-scoped for Mode 6 — the analyst is not supposed to remediate build pipeline bugs. Response: Correct — this is a surfacing pass, not a fix. The EXP proposes patches for the decider (option a is a 2-line find/replace; option b is a source-code change the decider routes for review). Mode 6 discipline (READ-ONLY) is honored: no direct mutation of wins.json, generate-html.js, or the tracker."
+  ],
+  "kernel_of_truth": "The escapeHtml() calls at generate-html.js:880 and :892 are structurally the right defense against unknown/adversarial input. TLDR fields are user-visible copy and should get the same XSS protection every other content field gets. The problem is scope: we want XSS defense AND allow a small set of formatting tags. That is exactly what a sanitizer (not a plain escape) provides. c8's option (b) is not a rejection of the defensive intent; it is a refinement of the defense.",
+  "routing_notes": "Verification-class per the recent Mode 6 EXP-672/EXP-673 pattern. Route via curmudgeon (verification-class). Both patches are mechanical enough that curmudgeon-verify (Sonnet) is appropriate — no deep-attack analysis needed. Decider should allocate EXP-674 in expansion-tracker.json (per PROP-106 allocate-exp-ids.js note: tracker next_id currently stale at 671 while files EXP-671/672/673 already exist on disk unallocated — this EXP takes EXP-674 as the next-available-file-id, decider will need to reconcile tracker.next_id when it allocates all four).",
+  "mode6_target_note": "WIN-004 itself is stable per c8 (verdict_holds true, confidence 0.92). No changes proposed to WIN-004 content. The Mode 6 EXP is about a WIN-004-adjacent systemic issue (build pipeline bug affecting a different WIN, surfaced by re-reading c8 during Mode 6).",
+  "win_overlap": {
+    "directly_affected": [
+      "WIN-044 (tldr_evidence)"
+    ],
+    "watch_list_still_clean": [
+      "WIN-052",
+      "WIN-053",
+      "WIN-064",
+      "WIN-070"
+    ],
+    "watch_list_note": "c8-identified cohort spot-checked 2026-07-24; all 4 are HTML-free in current tldr fields. Their content-side scrub landed. But the systemic escape remains, so any future rewrite that adds even a single <sup>/<sub>/<em>/<a> tag re-regresses."
+  },
+  "tests_to_add": [
+    "docs/index.html grep guard: no `&lt;(sub|sup|em|a|strong)` inside any `class=\"ks-tldr\"` block (fail-loud). Runs post-build. Cheap.",
+    "If option (b) lands: parse-time assertion that ks-tldr innerHTML contains only allow-list tags with balanced structure; no javascript:/data: URLs."
+  ],
+  "newsworthy": null,
+  "provenance_extra": {
+    "latest_curmudgeon_review": "monitor/curmudgeon/reviews/WIN-004.c8.json (2026-05-31)",
+    "c8_verdict": "current_verdict_holds=true, confidence=0.92, recommended_action=minor_edit; hole #1 (major) still-open per this Mode 6 finding",
+    "closed_issues_search": "ISS-2291 (c7 hole #2), ISS-2256 (c7 hole #3) — c7 hole #1 never got a tracked ISS; per c8: 'Closed-issues search shows only ISS-2291 (c7 hole #2) and ISS-2256 (c7 hole #3) were tracked — the most severe c7 hole was the least formally tracked.'"
+  }
+}
