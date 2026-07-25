@@ -170,6 +170,26 @@ const OWNERSHIP = {
   // copies git→workspace.
   'monitor/scripts/clone-hygiene.sh': 'git',
 
+  // ISS-3011 / PROP-141 (2026-07-25): the 10 dome-page baseline captures are
+  // the poller's primary change-detection surface. Written via poller/operator
+  // clone-and-push, read by poller from FUSE — but registered NOWHERE, so
+  // git→FUSE sync never propagated them and FUSE served a frozen 2026-05-24
+  // snapshot (3 files missing, 07-ai-context.txt an 11-day-stale 404-stub).
+  // Third instance of the OWNERSHIP-registration gap class (ISS-3000, ISS-3001).
+  // git-owned; build.js publish copies git→workspace. NOTE: any NEW dome
+  // baseline page file MUST be added here too (and to workspace-sync.md
+  // NEVER_PUSH) or it is born unregistered and reproduces ISS-3011.
+  'monitor/baseline/01-home.txt': 'git',
+  'monitor/baseline/02-wins.txt': 'git',
+  'monitor/baseline/03-predictions.txt': 'git',
+  'monitor/baseline/04-coordinates.txt': 'git',
+  'monitor/baseline/05-model.txt': 'git',
+  'monitor/baseline/06-evolution.txt': 'git',
+  'monitor/baseline/07-ai-context.txt': 'git',
+  'monitor/baseline/08-killshot.txt': 'git',
+  'monitor/baseline/09-audit.txt': 'git',
+  'monitor/baseline/10-review-response.txt': 'git',
+
   // PROP-041 Phase 2 (2026-05-16): sloppytoppy-rewrite state files.
   // - rewrite-attempts.json is a sidecar counter (rewriter increments,
   //   decider clears on integration success). Git-owned because writers

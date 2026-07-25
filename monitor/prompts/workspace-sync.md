@@ -322,6 +322,23 @@ NEVER_PUSH=(
   # registration gap ISS-3000 fixed for check-wayback.js. Same source-code
   # classification: git-owned, NEVER round-trip from FUSE.
   'monitor/scripts/clone-hygiene.sh'
+  # ISS-3011 / PROP-141 (2026-07-25): the 10 dome-page baseline captures are
+  # git-authoritative poller change-detection references, written via
+  # poller/operator clone-and-push and read by poller from FUSE. A stale FUSE
+  # copy pushed back would corrupt the poller's baseline and produce false
+  # "dome changed" alerts — NEVER round-trip these from FUSE. Third instance of
+  # the OWNERSHIP-registration gap class (ISS-3000, ISS-3001). Any NEW dome
+  # baseline page file MUST be added here too (and to build.js OWNERSHIP).
+  'monitor/baseline/01-home.txt'
+  'monitor/baseline/02-wins.txt'
+  'monitor/baseline/03-predictions.txt'
+  'monitor/baseline/04-coordinates.txt'
+  'monitor/baseline/05-model.txt'
+  'monitor/baseline/06-evolution.txt'
+  'monitor/baseline/07-ai-context.txt'
+  'monitor/baseline/08-killshot.txt'
+  'monitor/baseline/09-audit.txt'
+  'monitor/baseline/10-review-response.txt'
   # PROP-021 Phase 1 (2026-06-14): compute-curmudgeon-dispatcher-state.js
   # is the precompute that resolves curmudgeon's pre-review priorities
   # deterministically (~3-5KB output instead of ~150KB of state-file reads).
