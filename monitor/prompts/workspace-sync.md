@@ -400,6 +400,11 @@ NEVER_PUSH=(
   # directive_id back-ref). Both git-owned source code; invoked from clones.
   'monitor/scripts/directive-auto-close.js'
   'monitor/scripts/mark-directive-superseded.js'
+  # PROP-141 Phase 2 / DIRECTIVE-20260725-001 (2026-07-26): ownership-
+  # registration-gap lint (read-only canary for the ISS-3000/3001/3011 defect
+  # class). Git-owned source code; invoked from integrity's clone; NEVER
+  # round-trip from FUSE.
+  'monitor/scripts/check-ownership-registration-gap.js'
   # All .md files under monitor/prompts/ are operator-edited (dynamic rule
   # in is_never_push() below). Covers monitor/prompts/sloppytoppy-rewrite.md
   # and monitor/prompts/reference/sloppytoppy-rewrite-rubric.md automatically.

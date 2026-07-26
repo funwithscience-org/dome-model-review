@@ -170,6 +170,12 @@ const OWNERSHIP = {
   // copies git→workspace.
   'monitor/scripts/clone-hygiene.sh': 'git',
 
+  // PROP-141 Phase 2 / DIRECTIVE-20260725-001 (2026-07-26): read-only
+  // registration-gap lint invoked daily from integrity's clone (structure-
+  // integrity.md §9e). Registered here at creation time so the lint does not
+  // become an instance of the defect class it detects. git-owned source code.
+  'monitor/scripts/check-ownership-registration-gap.js': 'git',
+
   // ISS-3011 / PROP-141 (2026-07-25): the 10 dome-page baseline captures are
   // the poller's primary change-detection surface. Written via poller/operator
   // clone-and-push, read by poller from FUSE — but registered NOWHERE, so

@@ -990,6 +990,29 @@ Also record the result in `checks.status_json_provenance` every run (including o
 
 Do NOT attempt to auto-restore status.json fields from the integrity agent — poller's self-heal is the designated restore path (it recomputes from chg-*.json history, which stays intact). This canary is detection-only; run `node monitor/scripts/check-status-json-provenance.js --self-test` if you suspect the canary itself is broken.
 
+### 9e. Ownership-Registration-Gap Lint (PROP-141 Phase 2 / DIRECTIVE-20260725-001, added 2026-07-26)
+
+```bash
+echo "STEP_MARKER check-9e-ownership-registration-gap $(date +%s)" >&2
+```
+
+Auto-detected canary for the OWNERSHIP-registration defect class: a file crosses the workspace<->git boundary but is registered in NEITHER `build.js` OWNERSHIP NOR `workspace-sync.md` NOR an append-only walked directory, so git->FUSE propagation is structurally blind for it and FUSE serves a stale copy indefinitely. Three instances in one month before this lint existed: ISS-3000 (`check-wayback.js`), ISS-3001 (`clone-hygiene.sh`), ISS-3011 (`monitor/baseline/` — FUSE served a frozen 2026-05-24 snapshot for 11 days).
+
+READ-ONLY. Invoke from YOUR CLONE (the script is clone-invoked source code and does not ship to FUSE), passing the FUSE workspace root for the existence check:
+
+```bash
+node "${CLONE}/monitor/scripts/check-ownership-registration-gap.js"   --workspace "${CLONE}" --fuse "${WORKSPACE}" --days 14
+RC=$?
+```
+
+Exit codes (same convention as 9d / PROP-099):
+
+- **exit 0** → clean. **No finding.** Record in `checks.ownership_registration_gap`.
+- **exit 3** → gaps found. Emit `issues_found[]` entry with `category: "ownership-registration-gap"`, `severity: "moderate"`, copying the script's `gaps[]` (path, last_commit, last_commit_at) into the description. Recommended routing: `assigned-tinker` (the fix is a 3-surface registration edit — build.js OWNERSHIP + workspace-sync.md + CLAUDE.md — plus possibly a new append-only directory classification; per-file judgment on git-owned vs workspace-owned vs append-only is required, so do NOT auto-patch).
+- **exit 2 (or any other non-0/non-3)** → SCRIPT ERROR: the canary did NOT run. Emit `issues_found[]` with `category: "self"`, `severity: "moderate"`. Do NOT report clean (same fail-loud rule as the PROP-099 canary — a dead canary silently reporting clean is how ISS-3001's own detection gap survived 6+ months).
+
+Notes baked into the script (do not re-derive): the allow-list {`monitor/curmudgeon/tracker.json`, `monitor/analyst/expansion-tracker.json`, `monitor/analyst/attention-inbox.json`} covers the deliberately-unclassified multi-writer files per CLAUDE.md — never flag them. Bulk commits touching >200 files are skipped (imports/restructures, not agent-clone writes) and the shallow-clone graft boundary commit is always excluded — in a `--depth` clone the boundary commit falsely presents the ENTIRE tree as added (~4,990 files); treating it as real would flood the lint. `fuse_checked:false` in the output means you forgot `--fuse` — the run is still valid but over-inclusive; prefer passing it.
+
 ## Output
 
 ### Write the Report
