@@ -369,11 +369,29 @@ const OWNERSHIP = {
   'monitor/analyst/category-proposals/': 'append_only',
   'monitor/analyst/issue-proposals/': 'append_only',
   'monitor/analyst/globe-fingerprints/': 'append_only',
+  // ISS-3019 (2026-07-27, tinker): analyst per-change analysis records.
+  // Per-run immutable .json files written via analyst clone-and-push
+  // (analyst-normal-analysis.md). Fourth instance of the
+  // OWNERSHIP-registration gap class (ISS-3000/3001/3011) — was invisible
+  // to git→FUSE propagation until classified. Pure append_only dir, same
+  // semantics as new-wins/ and expansions/.
+  'monitor/analyst/analysis-records/': 'append_only',
   'monitor/decisions/': 'append_only_glob',   // daily-report-*.json, suggested-patches-*.json
   'monitor/tinker/': 'append_only_glob',      // report-*.json
   'monitor/tinker/proposals/': 'append_only',
   'monitor/integrity/': 'append_only',
   'monitor/changes/': 'append_only',
+  // ISS-3019 (2026-07-27, tinker): social's per-run report-YYYY-MM-DD.json
+  // files live at the top of monitor/social/ (social.md writes one per run
+  // via clone-and-push; immutable once written). Classified as
+  // append_only_glob mirroring the monitor/decisions/ + monitor/tinker/
+  // mixed-directory precedent: explicit per-file entries above
+  // (wayback-*.json 'git', cost-history.jsonl / human-notes-archive.jsonl
+  // 'git-append-only') keep their categories — 'git'/'git-append-only'
+  // copies overwrite unconditionally, while the glob walker only ever
+  // copies NEW files (skip-if-exists), so mutable siblings
+  // (human-notes.json, latest-summary.txt) are never clobbered by it.
+  'monitor/social/': 'append_only_glob',      // report-YYYY-MM-DD*.json
   'monitor/social/drafts/': 'append_only',
 };
 
