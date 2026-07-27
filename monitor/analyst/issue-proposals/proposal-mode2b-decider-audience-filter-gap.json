@@ -1,0 +1,28 @@
+{
+  "type": "analyst_finding",
+  "proposal_id": "proposal-mode2b-decider-audience-filter-gap",
+  "authored_by": "analyst-mode2b-singleton",
+  "authored_at": "2026-07-27T00:44:59.952Z",
+  "category": "pipeline-hygiene",
+  "severity": "moderate",
+  "summary": "Mode 2b filter includes audience=decider ATTN items, causing analyst-authored Mode-6 routing notes to be re-surfaced to the analyst on every run instead of only to the decider.",
+  "finding": {
+    "what": "analyst.md Mode 2b live-filter at L275 is x.status===pending/open AND x.audience!==operator. This excludes operator-FYI Mode-6 notes (correct) but does NOT exclude audience=decider items. Mode-6 (via prior runs 2026-07-22/-23/-24) wrote three ATTN inbox notes with audience=decider requesting the decider allocate tracker slots for EXP-672 (WIN-065 crossref), EXP-673 (stale-imminent-sweep), EXP-674 (WIN-044 tldr HTML render). These items keep surfacing to Mode 2b on every analyst run even though the analyst is not the audience.",
+    "where": "monitor/prompts/analyst.md Mode 2b filter (~L275, L279 prose paragraph, and the Phase 1/2/3 item loops that reuse the same criteria).",
+    "observed_examples": [
+      "ATTN-2026-07-22T00-48-34-242Z-mode6-WIN-065-broken-crossref  (audience=decider, EXP-672 file still un-integrated)",
+      "ATTN-2026-07-23T00-45-09-027Z-mode6-stale-imminent-sweep      (audience=decider, EXP-673 not in tracker)",
+      "ATTN-2026-07-24T00-49-11-355Z-mode6-WIN-044-tldr-html-render  (audience=decider, EXP-674 not in tracker)"
+    ],
+    "re_examination_result": "All three referenced EXPs are still legitimately pending decider action against current repo state, so I cannot mark the ATTN items resolved without stranding the decider routing signal. Verified 2026-07-27: (1) WIN-065.detail_verdict_text still contains #part7/showTab(falsify) — EXP-672 patch still applies; (2) data/predictions.json still has 11 imminent=true entries whose test_window_closes<today — EXP-673 sweep still applies; (3) data/wins.json WIN-044.tldr_evidence still contains raw <sub>BOU</sub> — EXP-674 patch still applies.",
+    "design_gap": "PROP-093 C1 (2026-06-13) documents the transition-window filter with audience!==operator. It notes C2 (writer normalization) and C3 (operator-FYI routing) as pending follow-ups. Neither C2 nor C3 addresses the audience=decider case. PROP-126 (2026-07-09, proposed) adds a tolerant reader script but its audience_guard preserves only the operator exclusion.",
+    "proposed_fix": "In PROP-126 read-attention-inbox.js audience_guard: also route audience==decider items to a decider[] bucket (or the existing fyi[] bucket) so Mode 2b live output excludes them. Alternately: update Mode 6 prompt to explicitly forbid writing audience=decider ATTN notes (route via EXP file + expect decider to poll expansions/). The former is minimally invasive; the latter is more principled but affects Mode 6 authoring behavior."
+  },
+  "recommendation": "tinker: extend PROP-126 (or file a small follow-up PROP) to exclude audience==decider from Mode 2b live output. Also: consider whether Mode 6 should be authoring decider-audience ATTN routing notes at all, given the same signal is conveyed by writing the EXP file (decider polls expansions/).",
+  "no_action_analyst_side": "The three referenced EXPs are still legitimately pending and should NOT be manually resolved by the analyst — that would strand the decider routing signal for genuine work not yet integrated.",
+  "cross_ref": {
+    "PROP_093": "Documents the current audience!==operator filter and lists C2/C3 as pending.",
+    "PROP_126": "Proposes tolerant-reader script; audience_guard currently only excludes operator.",
+    "Mode_6_discipline": "monitor/prompts/analyst.md Mode 6 explicitly authorizes writing only audience=operator ATTN notes (no-issue case). Writing audience=decider ATTN routing notes for the has-issue case is an implicit accretion not covered by the prompt."
+  }
+}
