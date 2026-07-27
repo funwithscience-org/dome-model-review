@@ -228,7 +228,7 @@ This agent checks only **non-citation external links** — data source pages, to
 - **GitHub links**: Verify repo/file links resolve.
 - **Tool/project links** (HeartMath, OpenSky, etc.): Verify they resolve.
 
-Skip any URL matching `doi.org/*`, `dx.doi.org/*`, or publisher domains (springer.com, agu.org, iop.org, royalsocietypublishing.org, etc.).
+Skip any URL matching `doi.org/*`, `dx.doi.org/*`, or publisher domains (springer.com, agu.org, iop.org, royalsocietypublishing.org, onlinelibrary.wiley.com, sagepub.com, sciencedirect.com, etc.). **(2026-07-27, ISS-3017)** wiley.com/onlinelibrary, sagepub.com, and sciencedirect.com added — same anti-scraping-403 behavioral class as the existing publisher exclusions, confirmed via 2026-07-27 integrity report (4 URLs, consistent 403 with browser-like UA, not genuine link rot).
 
 Classify failures as:
 - **broken**: URL returns 404 or DNS failure on two attempts
