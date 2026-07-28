@@ -1,0 +1,95 @@
+{
+  "id": "PROP-142",
+  "created_at": "2026-07-28T02:50:00Z",
+  "created_by": "tinker-2026-07-28T02-41",
+  "category": "new_script",
+  "status": "proposed",
+  "source_iss": "ISS-3012",
+  "target": "monitor/scripts/lint-decider-surfaces.js (next_id hardening + top-level schema conformance) + DATA-SCHEMAS.md + flag classification surfaces (build.js, workspace-sync.md, CLAUDE.md)",
+  "problem": "ISS-3012 Phase 2 (structural half; operator completed the live-data cleanup 2026-07-26). Two defects let the 2026-07-18 shadow-field cruft (queue_length / queue_depth / next_queue_id:587) sit unnoticed on priority-queue.json for 6 days: (1) lint-decider-surfaces.js lines 209/219 read next_queue_id as a FALLBACK for next_id. The stale-low shadow value (587 vs canonical 591) was a poisoned fallback in the trust path: masked while next_id is present, but any future edit that dropped or nulled next_id would silently authorize reuse of queue_ids 587-590 — the exact qid-collision class PROP-089 exists to prevent. (2) Nothing lints the queue file's own top-level field-set for schema conformance — the lint validates items[] and next-id monotonicity but accepts arbitrary unknown/stale shadow fields, so operator/decider edits can silently reintroduce cruft. Evidence: ISS-3012 (found_by curmudgeon-verify + operator-cowork 2026-07-24); live-file state before cleanup per issue description; current live top-level keys enumerated by tinker 2026-07-28 from clone HEAD 638f04e.",
+  "proposed_fix": {
+    "summary": "Three-part hardening, all operator-applied in one commit. (a) next_id becomes REQUIRED on priority-queue.json: the next_queue_id fallback is deleted on both the local and base read paths, and a missing next_id is a blocking violation (kind 'next_id-missing'). Fail-closed replaces poisoned-fallback. (b) A top-level schema-conformance check rejects any field not in a canonical allowlist (kind 'unknown-top-level-field'), derived from DATA-SCHEMAS.md + the operator-ratified live field-set (includes description, schedule_state, depth, last_updated_by which were undocumented). Gated by a PROP-106-convention shadow flag (presence = log-only soak, absence = enforce) shipped PRESENT for a 7-day soak. (c) DATA-SCHEMAS.md's 'Live file top-level fields' list is updated to match the allowlist exactly, with a same-change discipline note, and the new flag is classified in build.js OWNERSHIP + workspace-sync.md NEVER_PUSH + CLAUDE.md per the file-ownership rule.",
+    "files_to_create": [
+      {
+        "path": "monitor/decisions/prop-142-queue-schema-shadow.flag",
+        "content": "PROP-142 shadow-mode flag for lint-decider-surfaces.js 'unknown-top-level-field' check on priority-queue.json. Presence = shadow (log, allow push). Absence = enforce (block push). Remove after a clean 7-day soak. Polarity mirrors prop-106-shadow.flag.\n",
+        "purpose": "Soak-period gate so an incomplete allowlist cannot block decider pushes on day one. Ship present; operator removes after 7 clean days (check decider run logs for 'SHADOW (prop-142' lines — zero lines means the allowlist matches reality and enforcement is safe)."
+      }
+    ],
+    "files_to_modify": [
+      {
+        "path": "monitor/scripts/lint-decider-surfaces.js",
+        "find": "const QUEUE_ITEM_REQUIRED = ['queue_id', 'target_type', 'target_id', 'class', 'reason', 'pushed_by', 'pushed_at'];",
+        "replace": "const QUEUE_ITEM_REQUIRED = ['queue_id', 'target_type', 'target_id', 'class', 'reason', 'pushed_by', 'pushed_at'];\n\n// PROP-142 (ISS-3012): canonical top-level field-set for priority-queue.json.\n// Must mirror DATA-SCHEMAS.md § priority-queue.json 'Live file top-level\n// fields' — if you add a genuinely new top-level field, update BOTH in the\n// same change. Unknown fields (e.g. the 2026-07-18 queue_length/queue_depth/\n// next_queue_id cruft) are rejected so shadow fields cannot silently reappear.\nconst QUEUE_TOPLEVEL_ALLOWED = [\n  'description',\n  'schema_version', 'schema_version_set_at', 'schema_version_set_by',\n  'mode', 'mode_legal_values', 'mode_set_by', 'mode_set_at', 'mode_rules',\n  'writers', 'readers',\n  'queue', 'next_id',\n  'schedule_state',\n  'last_updated', 'last_updated_by',\n  'depth',\n];\n// Shadow gate for the unknown-field check only (PROP-106 polarity:\n// presence = shadow/log-only, absence = enforce).\nconst QUEUE_SCHEMA_SHADOW_FLAG = 'monitor/decisions/prop-142-queue-schema-shadow.flag';",
+        "explanation": "Adds the canonical allowlist + shadow-flag path constant next to the existing canonical-schema definitions."
+      },
+      {
+        "path": "monitor/scripts/lint-decider-surfaces.js",
+        "find": "function lintQueue(localJ, baseJ, archiveText) {\n  const violations = [];\n  if (!localJ) return violations;",
+        "replace": "function lintQueue(localJ, baseJ, archiveText) {\n  const violations = [];\n  if (!localJ) return violations;\n\n  // PROP-142 (ISS-3012): top-level schema conformance. Reject unknown fields\n  // so operator/decider edits cannot silently reintroduce shadow cruft\n  // (queue_length/queue_depth/next_queue_id class). shadow_eligible marks\n  // these rows for the soak-period gate in main().\n  for (const k of Object.keys(localJ)) {\n    if (!QUEUE_TOPLEVEL_ALLOWED.includes(k)) {\n      violations.push({\n        surface: 'priority-queue.json',\n        qid: '(meta)',\n        kind: 'unknown-top-level-field',\n        shadow_eligible: true,\n        detail: `top-level field '${k}' is not in the canonical schema (DATA-SCHEMAS.md § priority-queue.json). Remove it, or if genuinely new, add it to DATA-SCHEMAS.md AND QUEUE_TOPLEVEL_ALLOWED in the same change.`,\n      });\n    }\n  }",
+        "explanation": "The conformance check itself. Runs on every lint invocation (decider pre-push hook + replay mode)."
+      },
+      {
+        "path": "monitor/scripts/lint-decider-surfaces.js",
+        "find": "  const nextId = localJ.next_id != null ? localJ.next_id : (localJ.next_queue_id != null ? localJ.next_queue_id : null);",
+        "replace": "  // PROP-142 (ISS-3012): next_id is REQUIRED; the next_queue_id fallback is\n  // retired. A stale shadow value (587 vs canonical 591, operator edit\n  // 2026-07-18) sat poised to authorize qid reuse if next_id was ever\n  // dropped. Fail closed instead of falling back.\n  const nextId = localJ.next_id != null ? localJ.next_id : null;\n  if (nextId == null) {\n    violations.push({\n      surface: 'priority-queue.json',\n      qid: '(meta)',\n      kind: 'next_id-missing',\n      detail: 'next_id is required on priority-queue.json (no fallback; the legacy next_queue_id shadow field is retired per ISS-3012/PROP-142)',\n    });\n  }",
+        "explanation": "Fail-closed next_id requirement on the local (about-to-be-pushed) side. Blocking (NOT shadow_eligible): a missing next_id is exactly the state in which the old fallback would have poisoned allocation, and no current writer ever omits next_id, so this cannot false-positive on healthy pushes."
+      },
+      {
+        "path": "monitor/scripts/lint-decider-surfaces.js",
+        "find": "    const baseNext = baseJ.next_id != null ? baseJ.next_id : (baseJ.next_queue_id != null ? baseJ.next_queue_id : null);",
+        "replace": "    const baseNext = baseJ.next_id != null ? baseJ.next_id : null;  // PROP-142: no next_queue_id fallback on the base side either; a base commit without next_id just skips the regression check (history can't be repaired)",
+        "explanation": "Base-side fallback removal. Base being null only skips the regression comparison — historical commits are not lint targets."
+      },
+      {
+        "path": "monitor/scripts/lint-decider-surfaces.js",
+        "find": "  const violations = [\n    ...lintQueue(queueLocal, queueBase, archiveText),\n    ...lintInbox(inboxLocal, inboxBase),\n    ...lintIssCrossFile(openLocal, closedLocal),\n  ];\n\n  if (violations.length === 0) {",
+        "replace": "  const allViolations = [\n    ...lintQueue(queueLocal, queueBase, archiveText),\n    ...lintInbox(inboxLocal, inboxBase),\n    ...lintIssCrossFile(openLocal, closedLocal),\n  ];\n\n  // PROP-142 (ISS-3012) shadow gate: 'unknown-top-level-field' rows are\n  // advisory while monitor/decisions/prop-142-queue-schema-shadow.flag exists\n  // (soak period); enforced once the flag is removed. Polarity matches\n  // prop-106-shadow.flag (presence = shadow, absence = enforce) so the safer\n  // default after flag removal is enforcement. All other violation kinds are\n  // unaffected by the flag.\n  const shadowMode = fs.existsSync(QUEUE_SCHEMA_SHADOW_FLAG);\n  const violations = shadowMode ? allViolations.filter(v => !v.shadow_eligible) : allViolations;\n  if (shadowMode) {\n    for (const v of allViolations.filter(v => v.shadow_eligible)) {\n      console.warn(`SHADOW (prop-142 flag present, not blocking): [${v.surface}] ${v.kind}: ${v.detail}`);\n    }\n  }\n\n  if (violations.length === 0) {",
+        "explanation": "Gates ONLY the new unknown-field kind through the soak flag; every pre-existing check and the new next_id-missing check keep their current blocking behavior. Downstream code (violation printing, exit code) is untouched because the filtered array keeps the name 'violations'."
+      },
+      {
+        "path": "monitor/prompts/reference/DATA-SCHEMAS.md",
+        "find": "- `writers`, `readers`: schema metadata.\n- `last_updated` (ISO timestamp).",
+        "replace": "- `writers`, `readers`: schema metadata.\n- `last_updated` (ISO timestamp); `last_updated_by` (string, optional provenance note).\n- `description` (string): standing documentation blurb at the top of the file.\n- `schedule_state` (object): churn-and-burn schedule bookkeeping (read by decider Step E3/E4 and tinker pipeline-health metadata-vs-reality check).\n- `depth` (integer): denormalized `queue.length` snapshot, display-only. Retained per operator decision in the ISS-3012 cleanup (2026-07-26); consumers MUST compute live depth from `queue.length`, never from this field.\n\n**Top-level conformance is LINTED (PROP-142, ISS-3012):** `lint-decider-surfaces.js` rejects any top-level field not in the list above (violation kind `unknown-top-level-field`) and requires `next_id` to be present (kind `next_id-missing` — the legacy `next_queue_id` fallback is retired; a stale shadow value would have silently authorized queue_id reuse). The lint's `QUEUE_TOPLEVEL_ALLOWED` array must mirror this list: if you add a genuinely new top-level field, update BOTH in the same change. Shadow gating: presence of `monitor/decisions/prop-142-queue-schema-shadow.flag` logs the unknown-field check without blocking (soak); absence enforces.",
+        "explanation": "Docs catch up to reality (four live fields were undocumented) and the lint-mirror discipline is stated where the schema lives."
+      },
+      {
+        "path": "build.js",
+        "find": "  'monitor/decisions/prop-106-shadow.flag': 'git',",
+        "replace": "  'monitor/decisions/prop-106-shadow.flag': 'git',\n  // PROP-142 (2026-07-28): shadow-mode toggle for lint-decider-surfaces.js\n  // 'unknown-top-level-field' check on priority-queue.json. Same conventions\n  // as prop-106-shadow.flag (presence = shadow, absence = enforce; git-owned\n  // so publish ferries operator toggles clone→FUSE; NEVER_PUSH in\n  // workspace-sync).\n  'monitor/decisions/prop-142-queue-schema-shadow.flag': 'git',",
+        "explanation": "OWNERSHIP classification per the CLAUDE.md file-ownership rule (three-surface duplication: build.js + workspace-sync.md + CLAUDE.md)."
+      },
+      {
+        "path": "monitor/prompts/workspace-sync.md",
+        "find": "  'monitor/decisions/prop-106-shadow.flag'",
+        "replace": "  'monitor/decisions/prop-106-shadow.flag'\n  # PROP-142 (2026-07-28): shadow-mode flag for lint-decider-surfaces.js\n  # queue top-level schema check. Same discipline as prop-106-shadow.flag.\n  'monitor/decisions/prop-142-queue-schema-shadow.flag'",
+        "explanation": "NEVER_PUSH registration so the flag never round-trips from FUSE."
+      },
+      {
+        "path": "CLAUDE.md",
+        "find": "- `monitor/decisions/prop-106-shadow.flag` — PROP-106 shadow-mode toggle for `lint-exp-allocations.js`. Presence = shadow mode (log + allow push), absence = enforce mode (block push on violation). Classified `git` in both `build.js` OWNERSHIP and `workspace-sync.md` NEVER_PUSH; mirrors `prop-009-enforce.flag` conventions (opposite polarity).",
+        "replace": "- `monitor/decisions/prop-106-shadow.flag` — PROP-106 shadow-mode toggle for `lint-exp-allocations.js`. Presence = shadow mode (log + allow push), absence = enforce mode (block push on violation). Classified `git` in both `build.js` OWNERSHIP and `workspace-sync.md` NEVER_PUSH; mirrors `prop-009-enforce.flag` conventions (opposite polarity).\n- `monitor/decisions/prop-142-queue-schema-shadow.flag` — PROP-142 (ISS-3012, 2026-07-28) shadow-mode toggle for `lint-decider-surfaces.js`'s priority-queue.json top-level schema-conformance check (`unknown-top-level-field`). Presence = shadow (log + allow push), absence = enforce. Ships present for a 7-day soak; operator removes after zero SHADOW lines in decider runs. The companion `next_id-missing` check is NOT flag-gated (always blocking — it replaces the retired `next_queue_id` fallback). Classified `git` in `build.js` OWNERSHIP and `workspace-sync.md` NEVER_PUSH; same conventions as `prop-106-shadow.flag`.",
+        "explanation": "Third surface of the classification rule, plus operator-facing lifecycle note."
+      }
+    ],
+    "files_to_delete": []
+  },
+  "application_notes": "Apply from a clean clone (lint-decider-surfaces.js is git-owned source code, NEVER_PUSH). After applying, sanity-run: (1) `node monitor/scripts/lint-decider-surfaces.js` from the clone root against current HEAD — expect pass with zero SHADOW lines (live file's 17 top-level keys are all in the allowlist); (2) `node monitor/scripts/lint-decider-surfaces.js --replay 3d9675d` — expect the historical drift catches unchanged; (3) temporarily add a bogus top-level key to a scratch copy and confirm the SHADOW line prints with the flag present and blocks with it absent. Then `node build.js publish` so the flag + script reach FUSE.",
+  "tradeoffs": "GAIN: the poisoned-fallback path is gone (fail-closed on missing next_id), and shadow-field reintroduction is detected at push time instead of by a curmudgeon-verify no-op observation 6 days later. Docs and lint are forced into lockstep by the same-change rule. COST/RISK: (1) an allowlist is a maintenance surface — any legitimately new top-level field now requires touching DATA-SCHEMAS.md + the lint together; forgetting blocks decider's push (mitigated by the 7-day shadow soak and by the violation message saying exactly what to do). (2) next_id-missing is deliberately not flag-gated; if some unknown legacy flow pushes a queue file without next_id it will be blocked — judged correct because that flow would have been silently corrupting allocation via the 587 fallback anyway. (3) The operator-retained `depth` field is ratified into the schema rather than removed; if it drifts from queue.length the lint will NOT catch it (display-only field, documented as such). Alternative considered and rejected: flooring the next_queue_id fallback at max(live∪archive qid) — keeps a second source of truth alive for no benefit; no current writer maintains next_queue_id, so requiring next_id is strictly simpler.",
+  "estimated_impact": "Risk reduction on the queue_id-allocation trust path (the PROP-089 collision class). Zero steady-state token cost: the check is ~15 lines of node in an already-running pre-push script. Closes ISS-3012's remaining scope; the decider can close the ISS when this PROP is applied.",
+  "requires_human_judgment": true,
+  "why_human_needed": "Two ratification calls: (a) confirm the 17-field allowlist — especially that `depth` and `last_updated_by` stay canonical (operator kept them in the 2026-07-26 cleanup; removing them instead would shrink the allowlist and this PROP's DATA-SCHEMAS text) — and (b) remove the shadow flag after the 7-day soak. Also touches CLAUDE.md + build.js + workspace-sync.md, which are operator-applied surfaces (tinker does not self-apply changes to the decider pre-push trust path).",
+  "verification_pattern": "grep -q 'next_queue_id != null' monitor/scripts/lint-decider-surfaces.js && echo STILL_BROKEN || echo FIXED",
+  "escalation_history": [],
+  "pre_application_verification": {
+    "by": "tinker-2026-07-28T02-41",
+    "at": "2026-07-28T02:55:00Z",
+    "results": [
+      "all 9 find-strings match their target files exactly once at clone HEAD 638f04e",
+      "patched script passes node --check (syntax)",
+      "clean run: patched lint passes 0 violations against current live priority-queue.json in ENFORCE mode (allowlist matches all 17 live top-level keys)",
+      "negative/enforce: reinjecting next_queue_id:587 -> RC=1, kind unknown-top-level-field",
+      "negative/shadow: same injection with flag present -> SHADOW warn line + RC=0 pass"
+    ]
+  }
+}
