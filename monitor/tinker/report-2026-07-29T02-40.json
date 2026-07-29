@@ -1,0 +1,161 @@
+{
+  "generated_at": "2026-07-29T02:50:00Z",
+  "report_date": "2026-07-29",
+  "run_id": "2026-07-29T02-40",
+  "mode_selected": "Mode 0 (assigned-to-tinker top-pick ISS-3012, class_hint=structural) — resolved as outcome (d) DEFER: remaining scope is fully covered by PROP-142 (authored by yesterday's run 2026-07-28T02-41, status=proposed, requires_human_judgment=true). No new work product shipped for the item; see findings[1] for the in-run duplicate-work near-miss that was caught and reverted before push.",
+  "mode_reason": "No pending operator directives (131 walked, 0 pending; directive auto-close enforce-mode walked 0). Mode 0 scan surfaced 4 assigned-to-tinker items; top-pick ISS-3012 (only one with a class_hint, age 4d). Dispatch table sent structural → Mode 4, but the correct outcome after checking existing proposals was defer-to-pending-PROP: PROP-142 already contains the complete, more conservative fix (shadow-flag soak + flag classification across build.js/workspace-sync.md/CLAUDE.md) and is explicitly operator-gated on two ratification calls (allowlist contents; soak-flag removal).",
+  "modes_checked": {
+    "pipeline_health": "green — decider ran 02:08 today (commit e81196a), queue depth 1 (fresh verify-class push), no stranded-patch sentinels flagged, no stalled-agent signals in pre-flight",
+    "infrastructure": "green — root-FS free 3393MB (well above 500MB warning floor); clone hygiene preclean ran; PAT verified HTTP 200",
+    "cost_engineering": "not run this cycle; self_cost merged into this report per PROP-101",
+    "proposals": "PROP auto-close: 154 walked, 0 would-close, 0 closed. Directive auto-close: 131 walked, 0 pending. PROP-142 remains proposed / operator-gated."
+  },
+  "mode0_scan": {
+    "items_pending": 4,
+    "items": [
+      "ISS-3012 (top-pick, deferred to PROP-142)",
+      "ISS-3020 (no class_hint, young)",
+      "ISS-3025 (no class_hint, young)",
+      "ISS-3029 (no class_hint, young — decider pre-push gate failure record from 02:08 run)"
+    ],
+    "top_pick_outcome": "(d) defer — pending PROP-142 covers the full remaining scope; item stays open until operator applies PROP-142"
+  },
+  "findings": [
+    {
+      "severity": "moderate",
+      "category": "backlog-trend",
+      "description": "open_issues_total 10 → 16 WoW (+60.0%) mechanically trips the >20% major tier, downgraded to moderate as a small-denominator artifact for the 3rd consecutive run (07-27: 12→14; 07-28: 10→15; today 10→16). Absolute base is 16; net_velocity_7d = +7 (13 closed vs 6 new); open_status_count = 0 (every open item is assigned and tracked); oldest untracked age 0d. No backlog risk signature.",
+      "evidence": "queue-history.jsonl row ts=2026-07-29T02:41:21Z: open_issues_total=16, net_velocity_7d=7, assigned_analyst_count=0, root_fs_free_mb=3393, closed_issues_mb=3.29, inbound_burst_winnew_unreviewed=0, pending_commission_hnotes_count=0",
+      "suggested_fix": {
+        "file": "monitor/prompts/tinker.md",
+        "find": "percent-based WoW triggers in the PROP-030 threshold table",
+        "replace": "gate percent-based WoW triggers behind an absolute floor (apply only when open_issues_total >= 30); keep absolute-count triggers unchanged",
+        "rationale": "Three consecutive benign trips on a base of 10-16 items is threshold noise, not signal. The percent tiers were calibrated on the 200+ era. An absolute floor removes the flapping without weakening detection at scale."
+      },
+      "self_fixable": true,
+      "fix_applied": false
+    },
+    {
+      "severity": "moderate",
+      "category": "self",
+      "description": "Mode 0 dispatch near-miss: this run re-picked ISS-3012 and initially re-implemented its fix from the routing_reason spec (divergent variant of PROP-142's design: no soak flag, base-side fallback retained, no flag classification), including a self-applied code edit and a duplicate PROP-143 — before discovering yesterday's report had already authored PROP-142 for the same ISS with requires_human_judgment=true. All divergent work was reverted in-run (git checkout of lint-decider-surfaces.js + DATA-SCHEMAS.md, PROP-143 file deleted) and nothing shipped. Root cause: the Mode 0 scan surfaces items but carries no cross-check against existing non-terminal PROPs' source_iss, and the previous-report read happens after mode work begins, not before.",
+      "evidence": "This run's transcript; PROP-142-queue-schema-conformance-lint.json (status=proposed, created 2026-07-28, source ISS-3012); report-2026-07-28T02-41.json recommendations[1] ('Review + apply PROP-142'); git status clean of code edits at commit time.",
+      "suggested_fix": {
+        "file": "monitor/prompts/tinker.md",
+        "find": "Mode 0 scan snippet (Pre-flight: Mode 0)",
+        "replace": "annotate each scanned item with any non-terminal PROP whose source_iss matches the item id, and instruct: an item with a pending operator-gated PROP defaults to outcome (c)/(d), not re-implementation. Additionally: read the previous run's report BEFORE starting Mode work, not after.",
+        "rationale": "Prevents duplicate/divergent work on items whose deliverable already exists and is awaiting operator action. Same defect class as the pre-PROP-102 zombie-pending directives: a completed-elsewhere signal with no reader at dispatch time."
+      },
+      "self_fixable": true,
+      "fix_applied": false
+    },
+    {
+      "severity": "moderate",
+      "category": "ops-watch",
+      "description": "curmudgeon-verify re-enable criterion holds for a 2nd consecutive day: a verify-class item sits in the priority queue (qid 592, class='verification', WIN-031 c11 re-review, pushed by decider 2026-07-29T02:09Z) while dome-curmudgeon-verify remains PAUSED (re-paused 2026-07-27 per quiet-period criterion). The documented re-enable trigger (CLAUDE.md agent table: 'RE-ENABLE when a verify-class item appears in the priority queue') fired yesterday on qid 591 and again today on qid 592.",
+      "evidence": "priority-queue.json: queue=[{queue_id:592, class:'verification', target_id:'WIN-031', pushed_at:'2026-07-29T02:09:05.892Z'}], next_id=593; report-2026-07-28T02-41.json ops-watch finding (qid 591).",
+      "suggested_fix": {
+        "file": "(operator action — scheduled-tasks UI)",
+        "find": "dome-curmudgeon-verify PAUSED",
+        "replace": "re-enable at existing cron `30 1,5,9 * * *`",
+        "rationale": "Verify-class items singleton into main curmudgeon otherwise (expensive Opus run for a ≤2-minor-hole verification) or sit undrained. This is the exact q564-precedent trigger."
+      },
+      "self_fixable": false,
+      "fix_applied": false
+    }
+  ],
+  "previous_followup": [
+    {
+      "finding": "07-28 moderate/backlog-trend — open_issues_total 10→15 WoW small-base trip",
+      "status": "STILL_FIRING_BENIGN",
+      "evidence": "Today 10→16 (+60%); net_velocity_7d=+7; open_status_count=0. Third consecutive benign trip — threshold-recalibration recommendation escalated (see findings[0].suggested_fix)."
+    },
+    {
+      "finding": "07-28 moderate/ops-watch — curmudgeon-verify re-enable trigger fired (qid 591 verify-class in queue, task paused)",
+      "status": "STILL_BROKEN",
+      "evidence": "Task still paused; a fresh verify-class item (qid 592) was pushed 02:09 today. Re-escalated as findings[2] and in latest-tinker-summary.txt."
+    },
+    {
+      "finding": "07-28 info/proposals — PROP-142 authored and pre-verified for ISS-3012; operator apply is next step",
+      "status": "STILL_PENDING_OPERATOR",
+      "evidence": "PROP-142 status=proposed, requires_human_judgment=true (allowlist ratification + soak-flag removal decision). Not auto-closable by design. ISS-3012 deferred to it this run."
+    },
+    {
+      "finding": "PROP verification sweep",
+      "status": "CLEAN",
+      "evidence": "prop-auto-close.js walked 154 PROPs: 49 grade-A patterns, 0 mechA would-close, 0 mechB would-close, 0 closed. No STILL_BROKEN escalations surfaced by the walker."
+    }
+  ],
+  "open_issue_health": {
+    "total_open": 16,
+    "aged_out": [],
+    "repeated_deferrals": [
+      "ISS-3012 — 2nd consecutive run at Mode 0 top-pick without closure; blocked on operator applying PROP-142 (correctly, not pathologically: the deliverable exists)"
+    ],
+    "missing_patches": [],
+    "zombie_fixes": []
+  },
+  "cost_engineering": {},
+  "cleanup_actions": [],
+  "recommendations": [
+    {
+      "priority": 1,
+      "type": "human_decision",
+      "description": "Re-enable dome-curmudgeon-verify (cron `30 1,5,9 * * *`). Verify-class qid 592 is in the queue; documented re-enable criterion has now fired two consecutive days (qids 591, 592).",
+      "prop_id": null
+    },
+    {
+      "priority": 2,
+      "type": "human_decision",
+      "description": "Review + apply PROP-142 (queue schema-conformance lint hardening; closes ISS-3012 remaining scope). Two ratification calls documented in the PROP: (a) confirm the 17-field allowlist incl. depth/last_updated_by; (b) soak-flag removal after 7 days.",
+      "prop_id": "PROP-142"
+    },
+    {
+      "priority": 3,
+      "type": "prop",
+      "description": "Add a pending-PROP cross-check to the tinker.md Mode 0 scan (annotate items whose id appears in a non-terminal PROP's source_iss; default such items to outcome (c)/(d)) and move the previous-report read ahead of mode-work start. Prevents the duplicate-work near-miss documented in findings[1].",
+      "prop_id": null
+    },
+    {
+      "priority": 4,
+      "type": "prop",
+      "description": "Recalibrate PROP-030 percent-based WoW backlog triggers with an absolute floor (open_issues_total >= 30) to stop small-base flapping (3 consecutive benign trips).",
+      "prop_id": null
+    }
+  ],
+  "self_cost": {
+    "transcript": "2bc81f7e-054b-45b5-b344-eb80b24e347c.jsonl",
+    "model": "claude-fable-5",
+    "assistant_msgs": 52,
+    "tokens": {
+      "input": 101,
+      "output": 88911,
+      "cache_write_5m": 0,
+      "cache_write_1h": 338496,
+      "cache_read": 7209995
+    },
+    "cost_usd": {
+      "input_usd": 0.000505,
+      "output_usd": 2.222775,
+      "cache_write_5m_usd": 0,
+      "cache_write_1h_usd": 3.38496,
+      "cache_read_usd": 3.604998,
+      "total_usd": 9.213237
+    },
+    "transcript_duration_sec": 418.5,
+    "first_ts": "2026-07-29T02:40:03.876Z",
+    "last_ts": "2026-07-29T02:47:02.341Z",
+    "segments_found": 1,
+    "segments_priced": 1,
+    "per_segment": [
+      {
+        "file_basename": "2bc81f7e-054b-45b5-b344-eb80b24e347c.jsonl",
+        "msgs": 52,
+        "model": "claude-fable-5",
+        "total_usd": 9.213237,
+        "first_ts": "2026-07-29T02:40:03.876Z",
+        "last_ts": "2026-07-29T02:47:02.341Z"
+      }
+    ]
+  }
+}
