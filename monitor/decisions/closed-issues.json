@@ -1,6 +1,6 @@
 {
   "description": "Archived closed issues. Decider does not need to read this file.",
-  "last_updated": "2026-07-30T04:06:59.459Z",
+  "last_updated": "2026-07-30T09:40:00Z",
   "issues": [
     {
       "id": "ISS-042",
@@ -50330,9 +50330,24 @@
       "verified_at": "2026-07-30T04:06:59.459Z",
       "verified_by_run": "verify-pending-2026-07-30T0406Z-11472",
       "verifier_script_version": "1.1.0"
+    },
+    {
+      "id": "ISS-3012",
+      "title": "Queue metadata: stray non-schema fields + poisoned next_queue_id lint fallback",
+      "description": "priority-queue.json carries three stray, non-schema top-level fields introduced 2026-07-18 by an operator cowork edit (file last_updated=2026-07-18T08:45Z, by=steve operator via cowork) and never removed since (decider pop/push only rewrites the queue array): queue_length:1, queue_depth:1, next_queue_id:587. Per DATA-SCHEMAS.md the live queue file carries ONLY the active queue + schema metadata + next_id; these three are not in the schema. queue_length and queue_depth are read by NOTHING (queue depth is computed live from pq.queue.length) -- pure cosmetic cruft. next_queue_id is NOT harmless: lint-decider-surfaces.js lines 209 and 219 read it as a FALLBACK for next_id (next_id if non-null else next_queue_id if non-null else null). It is stale-low (587 vs canonical next_id 591). Today masked because next_id is present; but if any future edit drops or nulls next_id, the lint silently falls back to 587 and would authorize reuse of queue_ids 587-590 -- the exact queue_id-collision class PROP-089/lint exists to prevent. A poisoned fallback in the trust path. Went uncaught for 6 days because nothing lints the queue file's own top-level field-set for schema conformance (the lint validates issue surfaces + next-id monotonicity but does not reject unknown/stale shadow fields on priority-queue.json).",
+      "location": "monitor/curmudgeon/priority-queue.json (top-level metadata) + monitor/scripts/lint-decider-surfaces.js (next_id fallback)",
+      "category": "infrastructure",
+      "severity": "minor",
+      "status": "fixed",
+      "source": "curmudgeon-verify no-op-run observation (flagged in summary, no write access to queue) + operator-cowork verification 2026-07-24",
+      "found_by": "curmudgeon-verify / operator-cowork",
+      "fixed_by": "operator-cowork-2026-07-30-prop142-apply",
+      "fixed_at": "2026-07-30T09:40:00Z",
+      "closure_reason": "Two-part resolution. Live-data half: operator removed the three stray fields (queue_length/queue_depth/next_queue_id:587) from priority-queue.json on 2026-07-26 (commit f0a3ed68). Structural half: PROP-142 applied 2026-07-30 (commit dfe40d4e) — lint-decider-surfaces.js now requires next_id (poisoned next_queue_id fallback retired, fail-closed) and rejects unknown top-level fields on priority-queue.json (unknown-top-level-field, shadow-gated by prop-142-queue-schema-shadow.flag for a 7-day soak). DATA-SCHEMAS.md field list updated; flag classified in the three ownership surfaces. Sanity all green (see PROP-142 operator_decision). This removes ISS-3012 from tinker's assigned queue (it had been re-picked-and-deferred 07-28/29/30 while PROP-142 awaited approval; tinker's 07-30 self-fix added the PROP-PENDING skip).",
+      "verification_pattern": "grep -q 'next_queue_id != null' monitor/scripts/lint-decider-surfaces.js && echo STILL_BROKEN || echo FIXED"
     }
   ],
-  "total_items": 2834,
-  "last_updated_by": "operator-cowork-2026-07-21",
+  "total_items": 2841,
+  "last_updated_by": "operator-cowork-2026-07-30",
   "updated_at": "2026-07-27T02:10:04.991Z"
 }

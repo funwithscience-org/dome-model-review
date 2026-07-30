@@ -3,7 +3,7 @@
   "created_at": "2026-07-28T02:50:00Z",
   "created_by": "tinker-2026-07-28T02-41",
   "category": "new_script",
-  "status": "proposed",
+  "status": "implemented",
   "source_iss": "ISS-3012",
   "target": "monitor/scripts/lint-decider-surfaces.js (next_id hardening + top-level schema conformance) + DATA-SCHEMAS.md + flag classification surfaces (build.js, workspace-sync.md, CLAUDE.md)",
   "problem": "ISS-3012 Phase 2 (structural half; operator completed the live-data cleanup 2026-07-26). Two defects let the 2026-07-18 shadow-field cruft (queue_length / queue_depth / next_queue_id:587) sit unnoticed on priority-queue.json for 6 days: (1) lint-decider-surfaces.js lines 209/219 read next_queue_id as a FALLBACK for next_id. The stale-low shadow value (587 vs canonical 591) was a poisoned fallback in the trust path: masked while next_id is present, but any future edit that dropped or nulled next_id would silently authorize reuse of queue_ids 587-590 — the exact qid-collision class PROP-089 exists to prevent. (2) Nothing lints the queue file's own top-level field-set for schema conformance — the lint validates items[] and next-id monotonicity but accepts arbitrary unknown/stale shadow fields, so operator/decider edits can silently reintroduce cruft. Evidence: ISS-3012 (found_by curmudgeon-verify + operator-cowork 2026-07-24); live-file state before cleanup per issue description; current live top-level keys enumerated by tinker 2026-07-28 from clone HEAD 638f04e.",
@@ -91,5 +91,15 @@
       "negative/enforce: reinjecting next_queue_id:587 -> RC=1, kind unknown-top-level-field",
       "negative/shadow: same injection with flag present -> SHADOW warn line + RC=0 pass"
     ]
+  },
+  "operator_decision": {
+    "decided_by": "steve (operator, via cowork 2026-07-30)",
+    "decided_at": "2026-07-30T09:40:00Z",
+    "decision": "APPROVED and applied.",
+    "applied_commit": "dfe40d4e",
+    "applied_by": "operator-cowork (all targets NEVER_PUSH — operator-applied, tinker would strand under Mech A)",
+    "ratifications": "17-field allowlist confirmed (depth + last_updated_by retained canonical per the 2026-07-26 cleanup); next_queue_id fallback retired; shadow flag shipped PRESENT for 7-day soak.",
+    "sanity": "node --check clean; lint 0 violations on live HEAD, zero SHADOW lines; replay 3d9675d still catches drift; bogus-field injection -> SHADOW warn (flag present) / RC=1 block (flag absent); verification_pattern FIXED.",
+    "soak_action_pending_operator": "Remove monitor/decisions/prop-142-queue-schema-shadow.flag after ~7 clean days (zero 'SHADOW (prop-142' lines in decider run logs) to flip the unknown-field check from log-only to enforce."
   }
 }

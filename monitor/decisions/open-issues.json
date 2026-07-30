@@ -1,6 +1,6 @@
 {
   "description": "Persistent issue tracker. Decider appends new issues from Curmudgeon reviews, marks resolved when wins.json no longer contains the flagged text.",
-  "last_updated": "2026-07-30T02:12:23.077Z",
+  "last_updated": "2026-07-30T09:40:00Z",
   "updated_at": "2026-07-28T02:11:15.317Z",
   "next_id": 2998,
   "total_items": 16,
@@ -174,25 +174,6 @@
       "escalated_at": "2026-07-23T02:08:24.266Z"
     },
     {
-      "id": "ISS-3012",
-      "status": "assigned-tinker",
-      "severity": "minor",
-      "category": "infrastructure",
-      "target": "monitor/curmudgeon/priority-queue.json (top-level metadata) + monitor/scripts/lint-decider-surfaces.js (next_id fallback)",
-      "description": "priority-queue.json carries three stray, non-schema top-level fields introduced 2026-07-18 by an operator cowork edit (file last_updated=2026-07-18T08:45Z, by=steve operator via cowork) and never removed since (decider pop/push only rewrites the queue array): queue_length:1, queue_depth:1, next_queue_id:587. Per DATA-SCHEMAS.md the live queue file carries ONLY the active queue + schema metadata + next_id; these three are not in the schema. queue_length and queue_depth are read by NOTHING (queue depth is computed live from pq.queue.length) -- pure cosmetic cruft. next_queue_id is NOT harmless: lint-decider-surfaces.js lines 209 and 219 read it as a FALLBACK for next_id (next_id if non-null else next_queue_id if non-null else null). It is stale-low (587 vs canonical next_id 591). Today masked because next_id is present; but if any future edit drops or nulls next_id, the lint silently falls back to 587 and would authorize reuse of queue_ids 587-590 -- the exact queue_id-collision class PROP-089/lint exists to prevent. A poisoned fallback in the trust path. Went uncaught for 6 days because nothing lints the queue file's own top-level field-set for schema conformance (the lint validates issue surfaces + next-id monotonicity but does not reject unknown/stale shadow fields on priority-queue.json).",
-      "source": "curmudgeon-verify no-op-run observation (flagged in summary, no write access to queue) + operator-cowork verification 2026-07-24",
-      "found_at": "2026-07-24T09:05:00Z",
-      "found_by": "curmudgeon-verify / operator-cowork",
-      "assigned_to": "tinker",
-      "class_hint": "structural",
-      "notes": "OPERATOR OWNS THE LIVE-DATA CLEANUP. The one-time removal of the three stray fields from priority-queue.json (esp. clearing the stale next_queue_id:587) will be applied by the operator directly -- priority-queue.json is operator/decider-owned and this is operator-introduced cruft, so tinker should NOT edit the queue data. Assume the operator clears the value. Tinker scope is the STRUCTURAL fix only.",
-      "routing_reason": "Structural/lint hardening is tinker-lane: (1) harden lint-decider-surfaces.js so next_id is required (drop the next_queue_id fallback, fail-closed) OR gate the fallback with a monotonic sanity floor (fallback must be >= max allocated queue_id across live+archive); (2) add a schema-conformance guard rejecting unknown top-level fields on priority-queue.json, mirroring the PROP-089/PROP-106 lint discipline, so operator/decider edits cannot silently reintroduce shadow fields. Recurrence-prevention is the real deliverable; the data cleanup is a one-off the operator handles.",
-      "routed_by_run": "operator-cowork-2026-07-24",
-      "routed_at": "2026-07-24T09:05:00Z",
-      "last_modified": "2026-07-26T09:30:00Z",
-      "operator_progress": "[2026-07-26] Operator cleared the live-data half: removed the three stray fields (queue_length, queue_depth, next_queue_id:587) from priority-queue.json. Canonical fields intact (next_id=591, depth=1, empty array); verified no lost item (next_id advanced 587->591 = 4 items pushed+popped since the 2026-07-18 snapshot, all accounted for). REMAINING tinker scope is Phase-2 STRUCTURAL only: (a) harden lint-decider-surfaces.js so next_id is required / floor the next_queue_id fallback, (b) add schema-conformance rejection of unknown top-level fields on priority-queue.json so this cruft cannot silently reappear. Do NOT re-flag the data cleanup as operator-owed; it is done."
-    },
-    {
       "id": "ISS-3018",
       "title": "Infra moderate: delete-propagation-backlog canary fired (204/200 FUSE candidates)",
       "description": "check-delete-propagation-backlog.js canary fired: 204 FUSE delete-propagation candidates (threshold 200), sentinel sync-workspace-runs-2026-07-27T00-34-49Z.json is 0.7h old (dome-mirror running normally; genuine accumulation, not a liveness gap). Scheduled dome-mirror sessions cannot unlink() FUSE files by design (PROP-051/PROP-125 deny-by-default), so candidates accumulate cycle-over-cycle until an operator drain.",
@@ -301,5 +282,5 @@
     }
   ],
   "next_iss_id": 3033,
-  "last_updated_by": "operator-cowork-2026-07-26-iss3012-data-cleared"
+  "last_updated_by": "operator-cowork-2026-07-30-iss3012-close"
 }
