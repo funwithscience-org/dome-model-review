@@ -146,7 +146,12 @@ Live-state file at `monitor/curmudgeon/priority-queue.json` carrying ONLY the ac
 - `mode`, `mode_legal_values`, `mode_set_by`, `mode_set_at`, `mode_rules`: queue-mode metadata (PROP-009 enforce/shadow/etc.).
 - `schema_version` (integer, PROP-025): `2` after PROP-025 land. `schema_version_set_at` and `schema_version_set_by` track the bump.
 - `writers`, `readers`: schema metadata.
-- `last_updated` (ISO timestamp).
+- `last_updated` (ISO timestamp); `last_updated_by` (string, optional provenance note).
+- `description` (string): standing documentation blurb at the top of the file.
+- `schedule_state` (object): churn-and-burn schedule bookkeeping (read by decider Step E3/E4 and tinker pipeline-health metadata-vs-reality check).
+- `depth` (integer): denormalized `queue.length` snapshot, display-only. Retained per operator decision in the ISS-3012 cleanup (2026-07-26); consumers MUST compute live depth from `queue.length`, never from this field.
+
+**Top-level conformance is LINTED (PROP-142, ISS-3012):** `lint-decider-surfaces.js` rejects any top-level field not in the list above (violation kind `unknown-top-level-field`) and requires `next_id` to be present (kind `next_id-missing` — the legacy `next_queue_id` fallback is retired; a stale shadow value would have silently authorized queue_id reuse). The lint's `QUEUE_TOPLEVEL_ALLOWED` array must mirror this list: if you add a genuinely new top-level field, update BOTH in the same change. Shadow gating: presence of `monitor/decisions/prop-142-queue-schema-shadow.flag` logs the unknown-field check without blocking (soak); absence enforces.
 
 **`class` field semantics (PROP-025):** drives curmudgeon's batchability gate (curmudgeon.md Step 8a gate 1). The class is set at push time by whoever creates the work. `'verification'` items can be batched up to 3 per run with ≤20 KB combined diff-to-read; `'deep-attack'` and `'holistic'` items singleton always. Source-of-truth rules:
 - For decider-initiated pushes (new WIN onboard, prediction-batch, patch self-apply, operator manual push): the pusher declares `class` directly.

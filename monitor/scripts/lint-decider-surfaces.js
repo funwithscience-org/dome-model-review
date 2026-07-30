@@ -61,6 +61,25 @@ const { execSync } = require('child_process');
 // -----------------------------------------------------------------------
 
 const QUEUE_ITEM_REQUIRED = ['queue_id', 'target_type', 'target_id', 'class', 'reason', 'pushed_by', 'pushed_at'];
+
+// PROP-142 (ISS-3012): canonical top-level field-set for priority-queue.json.
+// Must mirror DATA-SCHEMAS.md § priority-queue.json 'Live file top-level
+// fields' — if you add a genuinely new top-level field, update BOTH in the
+// same change. Unknown fields (e.g. the 2026-07-18 queue_length/queue_depth/
+// next_queue_id cruft) are rejected so shadow fields cannot silently reappear.
+const QUEUE_TOPLEVEL_ALLOWED = [
+  'description',
+  'schema_version', 'schema_version_set_at', 'schema_version_set_by',
+  'mode', 'mode_legal_values', 'mode_set_by', 'mode_set_at', 'mode_rules',
+  'writers', 'readers',
+  'queue', 'next_id',
+  'schedule_state',
+  'last_updated', 'last_updated_by',
+  'depth',
+];
+// Shadow gate for the unknown-field check only (PROP-106 polarity:
+// presence = shadow/log-only, absence = enforce).
+const QUEUE_SCHEMA_SHADOW_FLAG = 'monitor/decisions/prop-142-queue-schema-shadow.flag';
 const QUEUE_ITEM_LEGAL_CLASS = ['verification', 'deep-attack', 'holistic', 'rewrite-verify'];
 const QUEUE_ITEM_FORBIDDEN_KEYS = ['target', 'type', 'added_at', 'added_by', 'priority'];
 
@@ -133,6 +152,22 @@ function readSurface(repoPath, localRef) {
 function lintQueue(localJ, baseJ, archiveText) {
   const violations = [];
   if (!localJ) return violations;
+
+  // PROP-142 (ISS-3012): top-level schema conformance. Reject unknown fields
+  // so operator/decider edits cannot silently reintroduce shadow cruft
+  // (queue_length/queue_depth/next_queue_id class). shadow_eligible marks
+  // these rows for the soak-period gate in main().
+  for (const k of Object.keys(localJ)) {
+    if (!QUEUE_TOPLEVEL_ALLOWED.includes(k)) {
+      violations.push({
+        surface: 'priority-queue.json',
+        qid: '(meta)',
+        kind: 'unknown-top-level-field',
+        shadow_eligible: true,
+        detail: `top-level field '${k}' is not in the canonical schema (DATA-SCHEMAS.md § priority-queue.json). Remove it, or if genuinely new, add it to DATA-SCHEMAS.md AND QUEUE_TOPLEVEL_ALLOWED in the same change.`,
+      });
+    }
+  }
   const items = Array.isArray(localJ.queue) ? localJ.queue : (Array.isArray(localJ.items) ? localJ.items : []);
   const baseItems = baseJ ? (Array.isArray(baseJ.queue) ? baseJ.queue : (Array.isArray(baseJ.items) ? baseJ.items : [])) : [];
   const baseQids = new Set(baseItems.map(it => it.queue_id).filter(x => x != null));
@@ -206,7 +241,19 @@ function lintQueue(localJ, baseJ, archiveText) {
 
   // next_id invariant: must be > max(live queue_id) and > base next_id (monotone non-decreasing).
   const liveMax = Math.max(0, ...items.map(it => it.queue_id || 0));
-  const nextId = localJ.next_id != null ? localJ.next_id : (localJ.next_queue_id != null ? localJ.next_queue_id : null);
+  // PROP-142 (ISS-3012): next_id is REQUIRED; the next_queue_id fallback is
+  // retired. A stale shadow value (587 vs canonical 591, operator edit
+  // 2026-07-18) sat poised to authorize qid reuse if next_id was ever
+  // dropped. Fail closed instead of falling back.
+  const nextId = localJ.next_id != null ? localJ.next_id : null;
+  if (nextId == null) {
+    violations.push({
+      surface: 'priority-queue.json',
+      qid: '(meta)',
+      kind: 'next_id-missing',
+      detail: 'next_id is required on priority-queue.json (no fallback; the legacy next_queue_id shadow field is retired per ISS-3012/PROP-142)',
+    });
+  }
   if (nextId != null && nextId <= liveMax) {
     violations.push({
       surface: 'priority-queue.json',
@@ -216,7 +263,7 @@ function lintQueue(localJ, baseJ, archiveText) {
     });
   }
   if (baseJ) {
-    const baseNext = baseJ.next_id != null ? baseJ.next_id : (baseJ.next_queue_id != null ? baseJ.next_queue_id : null);
+    const baseNext = baseJ.next_id != null ? baseJ.next_id : null;  // PROP-142: no next_queue_id fallback on the base side either; a base commit without next_id just skips the regression check (history can't be repaired)
     if (nextId != null && baseNext != null && nextId < baseNext) {
       violations.push({
         surface: 'priority-queue.json',
@@ -447,11 +494,25 @@ function main() {
   const openLocal = readSurface('monitor/decisions/open-issues.json', localRef);
   const closedLocal = readSurface('monitor/decisions/closed-issues.json', localRef);
 
-  const violations = [
+  const allViolations = [
     ...lintQueue(queueLocal, queueBase, archiveText),
     ...lintInbox(inboxLocal, inboxBase),
     ...lintIssCrossFile(openLocal, closedLocal),
   ];
+
+  // PROP-142 (ISS-3012) shadow gate: 'unknown-top-level-field' rows are
+  // advisory while monitor/decisions/prop-142-queue-schema-shadow.flag exists
+  // (soak period); enforced once the flag is removed. Polarity matches
+  // prop-106-shadow.flag (presence = shadow, absence = enforce) so the safer
+  // default after flag removal is enforcement. All other violation kinds are
+  // unaffected by the flag.
+  const shadowMode = fs.existsSync(QUEUE_SCHEMA_SHADOW_FLAG);
+  const violations = shadowMode ? allViolations.filter(v => !v.shadow_eligible) : allViolations;
+  if (shadowMode) {
+    for (const v of allViolations.filter(v => v.shadow_eligible)) {
+      console.warn(`SHADOW (prop-142 flag present, not blocking): [${v.surface}] ${v.kind}: ${v.detail}`);
+    }
+  }
 
   if (violations.length === 0) {
     console.log('lint-decider-surfaces: pass (0 violations across all surfaces)');

@@ -111,6 +111,12 @@ const OWNERSHIP = {
   // logging to blocking). Git-owned so build.js publish ferries operator
   // flag toggles clone→FUSE; workspace-sync NEVER_PUSH.
   'monitor/decisions/prop-106-shadow.flag': 'git',
+  // PROP-142 (2026-07-28): shadow-mode toggle for lint-decider-surfaces.js
+  // 'unknown-top-level-field' check on priority-queue.json. Same conventions
+  // as prop-106-shadow.flag (presence = shadow, absence = enforce; git-owned
+  // so publish ferries operator toggles clone→FUSE; NEVER_PUSH in
+  // workspace-sync).
+  'monitor/decisions/prop-142-queue-schema-shadow.flag': 'git',
   // PROP-026 Phase 1 (2026-05-10): mode toggle for decider's burndown vs BAU
   // operation against open-issues.json. Operator manually flips mode='burndown'
   // (sets reason, auto_revert_when_open_below, auto_revert_after, dryrun=true);

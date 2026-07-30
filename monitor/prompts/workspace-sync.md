@@ -248,6 +248,9 @@ NEVER_PUSH=(
   # presence = shadow, absence = enforce). Operator edits in clone, ferried
   # to FUSE by build.js publish; NEVER round-trip from FUSE.
   'monitor/decisions/prop-106-shadow.flag'
+  # PROP-142 (2026-07-28): shadow-mode flag for lint-decider-surfaces.js
+  # queue top-level schema check. Same discipline as prop-106-shadow.flag.
+  'monitor/decisions/prop-142-queue-schema-shadow.flag'
   # PROP-026 Phase 1: mode toggle and auto-closure ledger (decider M2). Both
   # are git-owned — decider writes from clone, never round-trip from FUSE.
   'monitor/decisions/decider-mode.json'
