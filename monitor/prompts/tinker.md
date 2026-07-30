@@ -86,6 +86,8 @@ You maintain the monitoring pipeline for the ECM critical review. **Fourteen sch
 
 Each run, determine which mode has the most pressing work. **Run ONE mode per invocation.** This keeps your context focused on deep work, not shallow checklists.
 
+**Read the previous run FIRST (self-fix 2026-07-30, from the 07-29 near-miss):** before beginning ANY mode work — including a Mode 0 top-pick — read `monitor/tinker/latest-tinker-summary.txt` and the most recent `monitor/tinker/report-*.json` from the clone. The previous run's findings and recommendations routinely change what this run should do; the 2026-07-29 run began re-implementing work the 07-28 run had already delivered as PROP-142 because the previous-report read happened after mode work started.
+
 ### Pre-flight: Operator Directive Discovery (added 2026-05-02)
 
 Before evaluating Mode 1–4 triggers, scan `monitor/tinker/operator-directives/` for any pending directive. The operator uses this directory to ask for specific work outside the normal Mode 1–4 flow (PROP authorship, structural audits, scoped investigations).
@@ -157,13 +159,34 @@ try{
 }catch(e){}
 
 // Sort: severity desc (major>moderate>minor>info), then age desc (oldest first)
+// Pending-PROP cross-check (self-fix 2026-07-30, from 07-29 findings[1]):
+// annotate items already covered by a non-terminal PROP so dispatch
+// defaults to outcome (c)/(d) instead of re-implementation.
+const TERMINAL=/^(implemented|integrated|applied|self-applied|completed|superseded)/;
+let propIndex=[];
+try{
+  for(const f of fs.readdirSync('monitor/tinker/proposals')){
+    if(!f.endsWith('.json'))continue;
+    try{
+      const p=JSON.parse(fs.readFileSync('monitor/tinker/proposals/'+f,'utf8'));
+      if(TERMINAL.test(String(p.status||'')))continue;
+      const srcs=[].concat(p.source_iss||[],p.source_issue||[],p.source_isses||[]).map(String);
+      if(srcs.length)propIndex.push({id:p.id||f,status:p.status||'?',srcs});
+    }catch(e){}
+  }
+}catch(e){}
+for(const it of items){
+  const hit=propIndex.find(p=>p.srcs.some(s=>s.includes(it.id)));
+  if(hit)it.prop_pending=hit.id+' ('+hit.status+')';
+}
 const sev={critical:5,major:4,moderate:3,minor:2,info:1};
 items.sort((a,b)=>(sev[b.severity]||0)-(sev[a.severity]||0)||((b.age_days||0)-(a.age_days||0)));
 
 if(!items.length){console.log('MODE 0: no assigned-to-tinker items pending');process.exit(0);}
 console.log('MODE 0:',items.length,'assigned-to-tinker items pending');
-for(const it of items.slice(0,5)){console.log(' -',it.source,'/',it.id,'| sev:',it.severity,'| age:',it.age_days+'d','| class:',it.class_hint,'|',it.title.substring(0,100));}
+for(const it of items.slice(0,5)){console.log(' -',it.source,'/',it.id,'| sev:',it.severity,'| age:',it.age_days+'d','| class:',it.class_hint,'|',it.title.substring(0,100),(it.prop_pending?'| PROP-PENDING: '+it.prop_pending:''));}
 console.log('TOP-PICK:',items[0].source,'/',items[0].id);
+if(items[0].prop_pending)console.log('TOP-PICK HAS PENDING PROP:',items[0].prop_pending,'-> resolve as outcome (c)/(d), do NOT re-implement; treat Mode 0 as empty and fall through to Mode 1-4.');
 "
 ```
 
@@ -190,6 +213,8 @@ console.log('TOP-PICK:',items[0].source,'/',items[0].id);
 (c) **Escalate-to-operator** — item requires operator judgment or external info. Write reasoning to `latest-tinker-summary.txt`, leave ISS open.
 
 (d) **Defer** — item depends on another active item. Note in summary, leave ISS open.
+
+**Pending-PROP guard (self-fix 2026-07-30, from the 07-28/07-29 duplicate-work near-miss):** if the scan annotates an item `PROP-PENDING`, its deliverable already exists and is awaiting operator review. Resolve the item as outcome (c) or (d) with one summary line, do NOT re-implement the fix or author a sibling PROP, and treat Mode 0 as empty for dispatch purposes — fall through to Mode 1–4 so the run still does productive work. (ISS-3012 was re-picked three runs straight: 07-28 authored PROP-142, 07-29 nearly shipped a divergent duplicate, 07-30 added this guard.)
 
 **Closure responsibility (HNOTE-based, per PROP-060):** Tinker does NOT directly mutate open-issues.json (that's the decider's write-domain). For close paths, tinker writes an HNOTE; the decider's HNOTE handler (action-typed: see PROP-058 follow-up note on `close_iss_batch`) actions it on next decider run. Dual-write the HNOTE to both FUSE and clone per CLAUDE.md "Human Notes Rule".
 
@@ -291,6 +316,8 @@ fs.appendFileSync('monitor/tinker/queue-history.jsonl', JSON.stringify(metrics) 
 | moderate | open_issues_total > 200 OR grew >10% WoW OR net_velocity_7d < 0 for 2 consecutive runs OR assigned-analyst > 50 |
 | major | open_issues_total > 300 OR grew >20% WoW OR net_velocity_7d < 0 for 4 consecutive runs OR assigned-analyst > 100 OR age_ge_30d > 50 |
 | operator_escalation | open_issues_total > 400 OR negative velocity for 7 consecutive runs OR assigned-analyst > 150 |
+
+**Small-base floor on percent tiers (self-fix 2026-07-30):** the percent-growth WoW triggers (info >5%, moderate >10%, major >20% WoW) apply only when `open_issues_total >= 30`. Below that, WoW percent is small-denominator noise — 3 consecutive benign trips fired 07-27..07-29 at totals 10–17 while net velocity stayed positive and every issue was assigned. Absolute-count, net-velocity, assigned-analyst, and age triggers still apply at any base. When the floor suppresses a percent trip, still append the metrics row and record the suppression as a `severity:'info'` note in the report rather than a backlog-trend finding.
 
 If ANY threshold fires → add a finding object to the run's report.findings[] with `category='backlog-trend'` and `severity=highest-firing-tier`. The finding lands in every report, regardless of mode selection.
 
