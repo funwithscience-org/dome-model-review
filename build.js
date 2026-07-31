@@ -123,6 +123,12 @@ const OWNERSHIP = {
   // decider's auto-revert path flips back to mode='bau' when conditions fire.
   // Git-owned so build.js publish ferries operator edits clone→workspace.
   'monitor/decisions/decider-mode.json': 'git',
+  // PROP-143 (ISS-3020, 2026-07-31): decider-curated watch list of adjudicated
+  // monitoring-only dome-site conditions (integrity re-derives a state-hash per
+  // recipe; match = reconfirm on the original closed ISS, mismatch = escalate).
+  // Decider writes from clone; integrity reads. Explicitly 'git' (overrides the
+  // monitor/decisions/ append_only_glob, same pattern as decider-mode.json).
+  'monitor/decisions/known-monitoring-conditions.json': 'git',
   // PROP-026 Phase 1 (2026-05-10): append-only auto-closure ledger. Decider M2
   // writes one JSON line per closure (or candidate-closure when dryrun=true).
   // Same git-override pattern as workspace-sync-skips.jsonl (a .jsonl in

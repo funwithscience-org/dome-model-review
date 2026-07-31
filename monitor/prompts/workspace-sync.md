@@ -255,6 +255,9 @@ NEVER_PUSH=(
   # are git-owned — decider writes from clone, never round-trip from FUSE.
   'monitor/decisions/decider-mode.json'
   'monitor/decisions/closure-ledger.jsonl'
+  # PROP-143 (2026-07-31): known-monitoring-conditions.json — decider writes
+  # from clone, integrity reads; git-owned, never round-trip a stale FUSE copy.
+  'monitor/decisions/known-monitoring-conditions.json'
   # PROP-041 Phase 2 (2026-05-16): audit-rewrite.js is a runtime audit script
   # (source code), edited only via git. Not in monitor/prompts/ so the dynamic
   # rule does not cover it — must be listed explicitly here.

@@ -75,6 +75,8 @@ Comment on the GitHub issue: `gh issue comment {number} --body "..."`
 
 For each finding `F` in `R.issues_found` (or whichever field contains the findings array — same field in current integrity schema):
 
+0. **If `F.monitoring_condition === "unchanged"` (PROP-143):** do NOT create an ISS and do NOT route to analyst. Append a row to the ORIGINAL closed ISS record (`F.tracked_under`) in closed-issues.json: `monitoring_reconfirmations: [{at, by_run, integrity_run, note: 'state-hash match, condition unchanged'}]` (create the array if absent — closed-issues.json is decider-owned, additive append). Also refresh `last_reconfirmed_at` on the matching entry in monitor/decisions/known-monitoring-conditions.json. If `F.monitoring_condition === "changed"`, create the ISS as normal and reference `F.monitoring_condition_key` in the description.
+
 1. **If `F.tracked_under` is a non-empty string** (e.g., `"ISS-1218"`):
    - Integrity already deduped this finding against the existing ISS.
    - **No action.** Skip. This is the steady-state "already tracked" path.
