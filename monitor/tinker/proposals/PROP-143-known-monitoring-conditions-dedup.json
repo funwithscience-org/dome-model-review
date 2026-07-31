@@ -1,0 +1,85 @@
+{
+  "id": "PROP-143",
+  "created_at": "2026-07-31T02:41:00Z",
+  "created_by": "tinker-2026-07-31T02-41 (Mode 0 top-pick ISS-3020, outcome b)",
+  "category": "workflow_redesign",
+  "status": "proposed",
+  "source_iss": "ISS-3020",
+  "related_iss": ["ISS-2961", "ISS-3013"],
+  "target": "monitor/prompts/structure-integrity.md (section 5b + tracked_under dedup), monitor/prompts/reference/decider-intake.md (Step 1d), new file monitor/decisions/known-monitoring-conditions.json, build.js OWNERSHIP, monitor/prompts/workspace-sync.md NEVER_PUSH, CLAUDE.md ownership table",
+  "problem": "Integrity's tracked_under dedup (structure-integrity.md ~line 1144) searches OPEN issues only. When a dome-site condition is adjudicated as monitoring-only and its ISS closes, the next integrity re-detection finds no open match, emits tracked_under:null, and decider Step 1d mints a fresh ISS -> full BAU round-trip (decider route -> analyst-baby re-fetch -> reconfirm -> close). This has happened twice for the identical unchanged WIN-062 duplicate-numbering condition: ISS-2961 (2026-07-10 -> closed 07-14 via EXP-661/663) and ISS-3013 (2026-07-25 -> closed 07-27 via EXP-672). Both EXP-663 and EXP-672 investigation notes independently recommended suppression; the recommendation sat unactioned between the two cycles. Cost per recurrence: 1 ISS + 1 tracker item + 1 analyst-baby run + 2 decider touches, all to reconfirm a condition already known unchanged.",
+  "proposed_fix": {
+    "summary": "Add a small decider-curated watch file, monitor/decisions/known-monitoring-conditions.json, holding fingerprints of closed monitoring-only conditions. Integrity, which has already fetched the dome page in section 5b, re-derives each entry's condition-state string from the live page and compares hashes: match -> emit finding with tracked_under=<original closed ISS> and monitoring_condition:'unchanged' (info-level in summary; decider appends a monitoring_reconfirmations[] row to the ORIGINAL closed ISS record instead of minting a new ISS — no analyst round-trip, since integrity's own fetch IS the reconfirmation); hash mismatch at same location -> emit at original severity with monitoring_condition:'changed' (the real signal, e.g. author finally splits WIN-062B) and normal ISS creation. Entries may carry optional review_after; past that date the condition re-enters normal flow once, and the decider refreshes the date on reconfirm.",
+    "files_to_create": [
+      {
+        "path": "monitor/decisions/known-monitoring-conditions.json",
+        "purpose": "Decider-written (clone-and-push), integrity-read watch list of adjudicated monitoring-only dome-site conditions. Explicitly classified 'git' (overrides the monitor/decisions/ append_only_glob, same pattern as decider-mode.json).",
+        "content": {
+          "version": 1,
+          "description": "Adjudicated monitoring-only conditions. Integrity 5b re-derives state_string from the live dome page per state_recipe and compares sha256. Writers: decider only (clone-and-push). See PROP-143.",
+          "conditions": [
+            {
+              "key": "dome-wins-dup-id-win-062",
+              "first_iss": "ISS-2961",
+              "later_iss": ["ISS-3013"],
+              "location": "https://john09289.github.io/predictions/wins.html (WIN-062)",
+              "category": "integrity_finding",
+              "original_severity": "moderate",
+              "state_recipe": {
+                "type": "dome-wins-dup-ids",
+                "id_prefix": "win-062",
+                "rule": "From the dome wins page, collect all element ids matching ^win-062 plus each one's data-claim-key; state_string = sorted ids joined '|' + '::' + sorted unique claim-keys joined '|'"
+              },
+              "state_string": "win-062|win-062-constant::win-062-tesla-wave-speed",
+              "state_sha256": "TO-BE-COMPUTED-AT-APPLY (sha256 of state_string above)",
+              "note": "Two dome entries share number WIN-062 and data-claim-key win-062-tesla-wave-speed. Our WIN-062 verdict (Misleading) covers the claim regardless of dome-side numbering. Watch is for an author-side split into WIN-062B.",
+              "review_after": "2026-10-31",
+              "added_at": "APPLY-DATE",
+              "added_by": "operator-apply-of-PROP-143"
+            }
+          ]
+        }
+      }
+    ],
+    "files_to_modify": [
+      {
+        "path": "monitor/prompts/structure-integrity.md",
+        "find": "For every finding (any severity), before emitting it, search `monitor/decisions/open-issues.json` for an existing ISS that matches this finding by `category` + `location` (or close textual match). If matched, set `tracked_under: \"ISS-NNN\"` on the finding.",
+        "replace": "For every finding (any severity), before emitting it, FIRST check `monitor/decisions/known-monitoring-conditions.json` (PROP-143): if the finding's location+category match an entry, re-derive the entry's state_string from the live page per its state_recipe and compare sha256. On hash MATCH with review_after not yet passed: set `tracked_under: <entry.first_iss>` AND `monitoring_condition: \"unchanged\"` (downgrade to info in the human summary; the fetch you just did IS the reconfirmation). On hash MISMATCH: emit at original severity with `monitoring_condition: \"changed\"` and `monitoring_condition_key: <entry.key>` — this is a genuine state change (e.g. WIN-062B split) and takes the normal untracked path. On review_after passed: emit normally with `monitoring_condition: \"review-due\"`. THEN, for findings not matched above, search `monitor/decisions/open-issues.json` for an existing ISS that matches this finding by `category` + `location` (or close textual match). If matched, set `tracked_under: \"ISS-NNN\"` on the finding.",
+        "explanation": "Extends the existing dedup to closed monitoring-only conditions via explicit fingerprints, with a state-hash escape so real changes still escalate."
+      },
+      {
+        "path": "monitor/prompts/reference/decider-intake.md",
+        "find": "1. **If `F.tracked_under` is a non-empty string** (e.g., `\"ISS-1218\"`):",
+        "replace": "0. **If `F.monitoring_condition === \"unchanged\"` (PROP-143):** do NOT create an ISS and do NOT route to analyst. Append a row to the ORIGINAL closed ISS record (`F.tracked_under`) in closed-issues.json: `monitoring_reconfirmations: [{at, by_run, integrity_run, note: 'state-hash match, condition unchanged'}]` (create the array if absent — closed-issues.json is decider-owned, additive append). Also refresh `last_reconfirmed_at` on the matching entry in monitor/decisions/known-monitoring-conditions.json. If `F.monitoring_condition === \"changed\"`, create the ISS as normal and reference `F.monitoring_condition_key` in the description.\n\n1. **If `F.tracked_under` is a non-empty string** (e.g., `\"ISS-1218\"`):",
+        "explanation": "Decider-side handler: reconfirmations land on the original closed ISS; no new ISS, no tracker item, no analyst-baby cycle."
+      },
+      {
+        "path": "build.js",
+        "find": "OWNERSHIP entry block for monitor/decisions/decider-mode.json (exact text located at apply time)",
+        "replace": "Add 'monitor/decisions/known-monitoring-conditions.json': 'git' alongside decider-mode.json",
+        "explanation": "Ownership registration — MANDATORY per the ISS-3000/ISS-3001/ISS-3011/ISS-3019 registration-gap class (4 instances; check-ownership-registration-gap.js will flag this file if skipped)."
+      },
+      {
+        "path": "monitor/prompts/workspace-sync.md",
+        "find": "NEVER_PUSH array (exact text located at apply time)",
+        "replace": "Add monitor/decisions/known-monitoring-conditions.json (git-owned; decider writes from clone)",
+        "explanation": "Prevents FUSE-stale copies overwriting decider's fresh writes."
+      },
+      {
+        "path": "CLAUDE.md",
+        "find": "ownership table row for decider-mode.json (exact text located at apply time)",
+        "replace": "Add a git-owned row for monitor/decisions/known-monitoring-conditions.json documenting writer=decider, reader=integrity, PROP-143",
+        "explanation": "Third surface of the triple-registration rule."
+      }
+    ],
+    "files_to_delete": []
+  },
+  "application_notes": "Decider close-path addition (also at apply time, in decider prompt or decider-reporting.md): when closing an ISS as monitoring-only (fixed_by=exp-chain-endpoint + monitoring_note present), decider MAY add a known-monitoring-conditions entry using state inputs from the analyst's monitoring_note; keep entries rare and operator-reviewable (expected steady state 1-5 entries). Compute the seed entry's state_sha256 at apply time (sha256 of the state_string literal). WIN-057/057b + WIN-058/058b precedents may be candidate entries later — do NOT seed them in this PROP; only WIN-062 has two completed round-trips of evidence.",
+  "tradeoffs": "Gain: eliminates a repeating ~5-touch pipeline cycle per recurrence; converts reconfirmation into a zero-marginal-cost side effect of integrity's existing page fetch; makes real author-side changes MORE visible (hash mismatch escalates at original severity with an explicit changed flag). Risk: a badly-chosen state_recipe could mask a real change -> mitigated by recipe living in the entry (reviewable), hash-mismatch fail-open to normal flow, and review_after forcing periodic full-cycle re-verification. Cost: one more small cross-agent file surface + the triple-registration burden it carries.",
+  "estimated_impact": "Per suppressed recurrence: -1 ISS, -1 tracker item, -1 analyst-baby run, -2 decider touches (~1 full Sonnet run + associated Opus routing tokens). WIN-062 alone has recurred 2x in 15 days; integrity re-flags on each dome-page change while the condition persists, so expected savings recur indefinitely until the author fixes his page.",
+  "requires_human_judgment": true,
+  "why_human_needed": "New cross-agent file + edits to two agent prompts + build.js/workspace-sync.md/CLAUDE.md registration = operator-applied (most targets are NEVER_PUSH; tinker self-apply would strand). Ratification calls: (a) file location monitor/decisions/ (proposed; decider is sole writer, matches decider-mode.json precedent) vs monitor/integrity/ (ISS-3020 text suggested it; rejected here because monitor/integrity/ is append-only and prune-managed); (b) review_after default 90d — or none; (c) seed entry scope (WIN-062 only).",
+  "verification_pattern": "grep -q 'known-monitoring-conditions' monitor/prompts/structure-integrity.md && grep -q 'monitoring_reconfirmations' monitor/prompts/reference/decider-intake.md && test -f monitor/decisions/known-monitoring-conditions.json && echo FIXED || echo STILL_BROKEN",
+  "escalation_history": []
+}
