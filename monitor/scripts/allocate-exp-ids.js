@@ -144,6 +144,25 @@ function maxExpIdInArchive(archivePath) {
   return max;
 }
 
+// PROP-144 (2026-08-01, ISS-3033): orphan-file guard. Mode-6 self-initiated
+// EXP files (EXP-673/674/675) existed in monitor/analyst/expansions/ with NO
+// tracker entry while tracker.next_id sat at 673 — the next allocation would
+// have minted a duplicate EXP-673. Scan expansions/ filenames so orphan files
+// participate in the clamp even when the tracker never saw them.
+function maxExpIdInFiles(dir) {
+  let max = -1;
+  try {
+    for (const f of fs.readdirSync(dir)) {
+      const m = /^EXP-(\d+)/.exec(f);
+      if (m) {
+        const n = parseInt(m[1], 10);
+        if (n > max) max = n;
+      }
+    }
+  } catch (e) { /* dir missing — best-effort guard */ }
+  return max;
+}
+
 function padId(n) {
   const s = String(n);
   return ID_PREFIX + (s.length >= PAD_WIDTH ? s : ('0'.repeat(PAD_WIDTH - s.length) + s));
@@ -157,7 +176,8 @@ function main() {
   const archMax = maxExpIdInArchive(ARCHIVE_PATH);
   const declaredNext = (typeof tracker.next_id === 'number') ? tracker.next_id : 0;
 
-  const safeNext = Math.max(declaredNext, liveMax + 1, archMax + 1);
+  const filesMax = maxExpIdInFiles('monitor/analyst/expansions'); // PROP-144
+  const safeNext = Math.max(declaredNext, liveMax + 1, archMax + 1, filesMax + 1);
 
   if (verify) {
     // Invariant: next_id > max(live ∪ archive).
