@@ -2,11 +2,22 @@
   "id": "PROP-144",
   "created_at": "2026-08-01T02:41:00Z",
   "created_by": "tinker-2026-08-01T02-41",
-  "source_iss": ["ISS-3033"],
-  "related": ["ISS-3021", "EXP-671", "EXP-673", "EXP-674", "EXP-675", "PROP-093", "PROP-106", "PROP-126"],
+  "source_iss": [
+    "ISS-3033"
+  ],
+  "related": [
+    "ISS-3021",
+    "EXP-671",
+    "EXP-673",
+    "EXP-674",
+    "EXP-675",
+    "PROP-093",
+    "PROP-106",
+    "PROP-126"
+  ],
   "category": "workflow_redesign",
   "target": "monitor/prompts/analyst.md (Mode 6 Outcomes) + monitor/scripts/allocate-exp-ids.js (orphan-file clamp) + one-off drain of stranded Mode-6 artifacts",
-  "status": "pending-operator-review",
+  "status": "implemented",
   "problem": "Mode 6 (analyst random-look, drought fallthrough) is a producer with no consumer. Actionable Mode-6 findings are written as self-initiated monitor/analyst/expansions/EXP-NNN.json files + an audience=decider attention-inbox note requesting allocation, but the decider has NO intake path for analyst-self-initiated expansions (grep decider.md for 'Mode 6'/'self-initiated'/'random-look' = zero hits; verified again this run). It only ingests decider-ASSIGNED expansions (Priority 4). Consequences observed: (1) EXP-671 (07-21), EXP-673/674/675 (07-23..29) stranded unallocated 8-10 days until the operator hand-fixed two of them (commit 3415f0f9); (2) ID-collision hazard LIVE at authoring time: files EXP-673/674/675 exist in expansions/ with no tracker entry while expansion-tracker.json next_id=673 and tracker live-max=671 — the next legit allocate-exp-ids.js run would mint a duplicate EXP-673 (the allocator clamps on tracker items + archive only, never on files in the expansions/ dir; verified: grep 'expansions' allocate-exp-ids.js = zero hits); (3) each stranding spawns symptom-issues (ISS-3021 Mode 2b re-surfacing; ATTN-2026-07-26 exp-allocation-backlog note).",
   "root_cause": "Mode 6 uses the wrong output channel. The decider DOES drain monitor/analyst/issue-proposals/ every run (Priority 1b, ledger-deduped, verified working). Mode-6 findings should enter there and route through ISS -> curmudgeon like all other work. The self-initiated-EXP path institutionalizes a channel that has no consumer, and additionally corrupts the EXP id space because the analyst is (correctly) READ-ONLY on the tracker.",
   "proposed_fix": {
@@ -48,8 +59,14 @@
           "category": "content-update",
           "summary": "PRED-072 detail_reasoning/tldr still carry the Tsumeb/TTB station mislabel that EXP-646 routing_notes flagged as companion cleanup on 2026-07-01. Sibling files were patched (WIN-037 via EXP-597, WIN-042.c4 via ISS-2627); PRED-072 prose was not. Decider: create ISS, apply the ready patches in monitor/analyst/expansions/EXP-671-pred072-station-mislabel-fix.json (patches[] array is fully drafted there), route through curmudgeon per normal flow.",
           "detail": "See monitor/analyst/expansions/EXP-671-pred072-station-mislabel-fix.json — authored by analyst Mode 6 on 2026-07-21 but stranded because the self-initiated-EXP channel has no decider intake (ISS-3033). The EXP file stays in place as the patch payload and historical record (expansions/ is append-only; FUSE cannot unlink). If an expansion is warranted rather than a direct patch, allocate a FRESH id via allocate-exp-ids.js — do NOT adopt the orphan id EXP-671 (tracker already shows EXP-671 consolidated-into-EXP-672).",
-          "affected_files": ["data/predictions.json"],
-          "related_analysis": ["ISS-3033", "EXP-646", "PROP-144"],
+          "affected_files": [
+            "data/predictions.json"
+          ],
+          "related_analysis": [
+            "ISS-3033",
+            "EXP-646",
+            "PROP-144"
+          ],
           "created_at": "2026-08-01T02:41:00Z",
           "proposal_id": "proposal-mode6-exp671-pred072-station-mislabel-1785552000"
         }
@@ -64,8 +81,14 @@
           "category": "schema-cleanup",
           "summary": "11 of 11 predictions.json entries marked imminent:true have already-past-close windows (nine closed 2026-04-30, one 2026-04-18, one 2026-05-31, PRED-FIELD-2026Q2 2026-06-30 — now resolved terminal 07-31, so re-verify the live count at intake). The imminent flag is never cleared once a window closes; the poller's IMMINENT WINDOW WATCH scan re-filters them every run. Decider: create ISS, sweep stale imminent:true -> false (or remove the field) per the full enumeration in monitor/analyst/expansions/EXP-673-mode6-stale-imminent-sweep.json, route through curmudgeon.",
           "detail": "See monitor/analyst/expansions/EXP-673-mode6-stale-imminent-sweep.json for the complete 11-entry enumeration with per-entry close dates. Same stranding story as EXP-671 (ISS-3033). NOTE: PRED-FIELD-2026Q2 went terminal on 2026-07-31 (decider dome_silent_terminal), so its row may already be moot — verify each entry's current state before patching rather than blind-applying the 07-23 snapshot.",
-          "affected_files": ["data/predictions.json"],
-          "related_analysis": ["ISS-3033", "EXP-646", "PROP-144"],
+          "affected_files": [
+            "data/predictions.json"
+          ],
+          "related_analysis": [
+            "ISS-3033",
+            "EXP-646",
+            "PROP-144"
+          ],
           "created_at": "2026-08-01T02:41:00Z",
           "proposal_id": "proposal-mode6-exp673-stale-imminent-sweep-1785552001"
         }
@@ -84,5 +107,15 @@
   "requires_human_judgment": true,
   "why_human_needed": "All four modify-targets are NEVER_PUSH surfaces (monitor/prompts/*.md + git-owned script), so this is operator-apply like PROP-142/143. Ratification calls: (1) confirm no-throttle on Mode 6; (2) confirm draining EXP-671/673 via ready-made issue-proposals rather than one-off decider allocation; (3) confirm the 4 ATTN-note resolutions and the ISS-3021 OBE re-check.",
   "verification_pattern": "grep -q 'PROP-144' monitor/prompts/analyst.md && grep -q 'maxExpIdInFiles' monitor/scripts/allocate-exp-ids.js && echo FIXED || echo STILL_BROKEN",
-  "escalation_history": 0
+  "escalation_history": 0,
+  "operator_decision": {
+    "decided_by": "steve (operator, via cowork 2026-08-01)",
+    "decided_at": "2026-08-01T18:05:00Z",
+    "decision": "APPROVED and applied.",
+    "applied_commit": "b665415c",
+    "applied_by": "operator-cowork (analyst.md + allocate-exp-ids.js are NEVER_PUSH)",
+    "ratifications": "(a) no-throttle on Mode 6 — confirmed (it catches real bugs). (b) drain via issue-proposals — confirmed; EXP-671/673 filed as issue-proposals for decider Priority 1b. (c) ISS-3021 OBE re-check — NOT OBE: PROP-144 stops NEW audience=decider Mode-6 ATTN notes at the source, but the Mode 2b filter gap itself (excludes operator but not decider) is unchanged, and pre-existing audience=decider notes remain. ISS-3021 stays open pending the filter fix (PROP-093 C2/C3 / PROP-126 territory).",
+    "sanity": "node --check clean; verification_pattern FIXED; lint-exp-allocations PASS; 3838/3838; clamp dry-run confirmed 673->677 (prevents the duplicate-EXP-673 mint the old code would have made).",
+    "residual": "EXP-676 was created (Mode 6) overnight before this landed and is another stranded self-initiated EXP file — the re-route stops future ones and the clamp prevents id collisions, but EXP-676 itself still needs draining (analyst can re-file it as an issue-proposal, or operator one-off). EXP-674/675 were operator-hand-fixed 2026-07-31 (3415f0f9)."
+  }
 }
