@@ -1,0 +1,31 @@
+{
+  "directive_id": "DIRECTIVE-20260801-001",
+  "for": "tinker",
+  "status": "pending",
+  "priority": "medium",
+  "created_at": "2026-08-01T18:55:00Z",
+  "created_by": "steve (operator, via cowork 2026-08-01)",
+  "title": "Make prune-integrity's FUSE cleanup a non-issue: stop mirroring disposable per-run integrity artifacts to FUSE (Option 1). Design as a PROP for operator review.",
+  "goal": "Eliminate the recurring ~1-2-month manual operator FUSE-drain of monitor/integrity/ per-run artifacts. Root approach chosen by operator 2026-08-01: OPTION 1 — never copy the transient per-run integrity .json files into the FUSE workspace, so prune-integrity deleting them from git creates zero FUSE orphans and nothing accumulates to drain.",
+  "context": {
+    "operator_framing": "The integrity per-run .json files (narrative-cite-audit, verify-pending-run, sync-workspace-runs, per-run report-*, push-failure, git-to-fuse-divergence, workspace-sync-abort) are DISPOSABLE forensic logs — NOT load-bearing for the site the way wins.json/sections.json/docs are. Their durable record already lives in the git-owned *-archive.jsonl files + git history. The recurring drain pain exists ONLY because we mirror these throwaway logs into the disaster-protected FUSE space and then cannot clean them (FUSE unlink deny). It is a lot of protection applied on the PRINCIPLE of protection, not because these particular files are valuable. So: don't put them on FUSE at all.",
+    "why_the_existing_mechanism_cant_self_heal": "sync-workspace-step4c.js already HAS FUSE delete-propagation with the correct prune DELETE_PATTERNS (lines ~107-114) + git-ls-files keep-set. It cannot execute because (a) fs.unlinkSync EPERMs on FUSE in scheduled sessions — no allow_cowork_file_delete grant, which requires a present human — and (b) the 50%-of-category delete-sanity gate aborts first. The FUSE-unlink deny is LOAD-BEARING: it is the 2026-05-21 disaster-recovery property (FUSE independence from git mass-deletes). Do NOT weaken it. Option 1 sidesteps it entirely by not creating the orphans.",
+    "operator_action_already_taken": "Operator manually drained ~260 FUSE orphans on 2026-08-01 (candidate list built in the cloud VM via prune-integrity eligibility, then xargs rm from the native Mac Terminal; ISS-3018 closed in commit 9f99bd3b). Backlog is currently ~0 — clean slate to land the structural fix against."
+  },
+  "task": {
+    "part_A_confirm_no_fuse_readers": "The ONE thing that must be verified before pulling the sync: confirm NO agent reads the transient per-run integrity .json files from the FUSE workspace (all consumers should read from their fresh clone / git). Operator's grep suggests integrity/tinker/decider all clone-and-read, but verify each per-run pattern's readers. If any agent genuinely reads a per-run .json from FUSE, either repoint it to the clone or keep that specific pattern synced (and fall back to Option 2 — scheduled candidate-list + operator one-liner — for just that subset).",
+    "part_B_design_the_exclusion": "Design (as a PROP) the exclusion of the transient per-run integrity .json artifacts from git->FUSE propagation (build.js sync-workspace / sync-workspace-step4c.js copy scope), so they never land on FUSE. Enumerate the exact patterns to exclude. This is per-run .json ONLY.",
+    "part_C_preserve_the_durable_record": "PRESERVE the *-archive.jsonl files (narrative-cite-audit-archive.jsonl, verify-pending-runs-archive.jsonl, push-failure-archive.jsonl, workspace-sync-runs-archive.jsonl, report-archive.jsonl, etc.) — these are the durable record, git-owned/git-append-only, and legitimately synced+read. They are NOT in scope for exclusion. Also preserve any per-run file with a confirmed FUSE reader from Part A.",
+    "part_D_disposition_the_delete_propagation": "Once the per-run artifacts no longer reach FUSE, the sync-workspace-step4c.js delete_propagation pass + the config's unreachable 'steady-state' become dead code. Recommend the right disposition: either flip delete_propagation.enabled=false and document 'not needed — artifacts no longer mirrored to FUSE (DIRECTIVE-20260801-001)', or remove the pass. Do NOT leave the config claiming a steady-state that never happens."
+  },
+  "constraints": {
+    "do_not_weaken_fuse_disaster_property": "Site-critical data (wins.json, sections.json, predictions.json, uncounted-failures.json, docs/index.html, open/closed-issues.json, etc.) MUST keep full FUSE protection + the unlink deny. This directive is 'don't mirror disposable logs to FUSE', NOT 'unprotect FUSE'. Keep the guard uniform and dumb for what matters.",
+    "archives_are_sacred": "Never exclude or risk the *-archive.jsonl durable records. If in doubt about whether a file is transient-vs-durable, treat it as durable and keep it.",
+    "safety_critical_lineage": "This touches PROP-051 / PROP-091 lineage (disaster-prevention + delete-propagation). Ship behind the usual PROP review; operator applies (targets are NEVER_PUSH)."
+  },
+  "deliverable_acceptance_criteria": [
+    "A PROP that: (1) lists the exact per-run integrity patterns excluded from git->FUSE, (2) shows Part-A reader verification results, (3) preserves all *-archive.jsonl, (4) dispositions the now-dead delete_propagation pass/config, (5) includes a verification_pattern.",
+    "Post-apply expectation: monitor/integrity/ per-run .json files stop appearing on FUSE; the delete-propagation-backlog canary (PROP-125) never fires again because there is nothing to accumulate; git-side prune-integrity is unchanged and keeps working."
+  ],
+  "operator_notes": "Operator (2026-08-01): 'yes option 1 and tinker.' Route the design to you; operator applies the resulting PROP. The key insight to preserve in the writeup: these integrity files aren't necessary to the site's integrity the way the other FUSE files are — so the drain burden was protection-for-principle on disposable logs. Fixing it is 'stop mirroring them', not 'protect them better'."
+}
