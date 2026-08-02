@@ -1,42 +1,51 @@
-TINKER RUN 2026-08-01T02-41 (Mode 0 top-pick ISS-3033 -> PROP-144 authored)
+TINKER RUN 2026-08-02T02-41 (operator directive DIRECTIVE-20260801-001 -> PROP-145 authored, directive COMPLETED)
 
-TOP LINE: ISS-3033 (Mode 6 producer-without-consumer) now has its fix on paper:
-PROP-144 "Mode-6 issue-proposal re-route". Root cause confirmed: actionable Mode-6
-findings go out as self-initiated EXP files + decider-audience ATTN notes, but the
-decider has NO intake for analyst-self-initiated expansions — EXP-671/673/674/675
-stranded 8-10 days. WORSE, found a LIVE id-collision hazard while verifying: tracker
-next_id=673 with orphan files EXP-673/674/675 on disk and no tracker entries — the
-next allocate-exp-ids.js mint would duplicate EXP-673. PROP-144 does three things:
-(1) analyst.md Mode 6 re-route -> issue-proposals (existing Priority 1b drain, no new
-pipeline); (2) allocate-exp-ids.js orphan-file clamp (scans expansions/ filenames;
-retroactively clamps to 676, no hand-edit of next_id); (3) drains still-stranded
-EXP-671 (PRED-072 station mislabel) + EXP-673 (11 stale imminent:true flags) via two
-ready-made issue-proposal files, and resolves the 4 stale Mode-6 ATTN notes.
-Throttle decision (ISS-3033 asked): NO throttle — Mode 6 is fallthrough-only (zero
-marginal run cost) and caught 2 real live-site bugs in 3 weeks; the channel was the
-bug, not the cadence.
+TOP LINE: The recurring 1-2-month FUSE-drain chore now has its structural fix on
+paper. PROP-145 "transient integrity artifacts off FUSE" (Option 1, as you chose):
+per-run integrity .json files stop being mirrored git->FUSE at the source — a
+13-pattern FUSE_EXCLUDE_TRANSIENT regex array + one guard line in build.js
+walkAppendOnly, which is the single git->FUSE conduit (publish, sync-workspace,
+and dome-mirror's step4c all route through syncToWorkspace).
 
-BONUS FLAG ACTIONED: dead Springer DOI 10.1007/978-3-662-03137-4_11 confirmed 1
-remaining occurrence in wins.json on a Nickolaenko 2002 cite (can't be right — it was
-the Sentman 1995 chapter DOI). Routed to analyst via HNOTE (dual-written FUSE+clone,
-non-commission): verify correct identifier, file issue-proposal per the new channel.
+PART A (the load-bearing verification): NO agent reads any per-run integrity .json
+from FUSE — zero, across all prompts + scripts. Decider reads integrity reports via
+its sparse-clone re-include; step4c + the PROP-125 canary read sentinels from the
+invoking clone; workspace-sync-runs/ soft-complaint greps run from tinker's clone.
+The only ${WORKSPACE} hits are degraded-path abort-sentinel WRITES (workspace-sync.md,
+dome-mirror.md, decider push-failure) — FUSE-born, rescued FUSE->git, read git-side.
+So no Option-2 fallback subset is needed for any pattern.
+PART C: every *-archive.jsonl is double-protected (fails the walker's .json filter
+AND flows via explicit 'git-append-only' copyIfExists) — untouched. workspace-sync-
+skips.jsonl ('git', integrity §7d FUSE read by design) untouched.
+PART D: flip delete_propagation.enabled=false + rewrite the config _notes honestly.
+KEEP the pass manifest-only — its candidates count feeds the PROP-125 canary, which
+now becomes a free exclusion-regression detector (new unregistered per-run pattern
+-> candidates grow -> canary fires at 200).
+
+HEADS-UP baked into the PROP: one FINAL tail drain ~2026-09/10. ~142 files currently
+on FUSE match prune patterns while still git-fresh; as prune deletes them from git
+over 7-90d they become the last orphan cohort. After that: candidates ~0 permanently
+(only rare abort/crash sentinels, ~10 per 2 months historically).
+
+BONUS FINDING (minor): prune-integrity never prunes its own run reports —
+monitor/integrity/prune-integrity-runs/ is at 119 files, +1/day, no policy. Suggested
+policy included in the report; can ride along with the PROP-145 apply.
 
 OPERATOR ACTIONS:
-  1. Review + apply PROP-144 (operator-apply — targets are NEVER_PUSH, like PROP-142/143).
-     Ratify: (a) no-throttle, (b) drain-via-issue-proposals, (c) ISS-3021 OBE re-check
-     after apply. Don't forget analyst.md FUSE sync (prompt-sync gotcha).
-  2. PROP-142 soak: if zero SHADOW lines through ~08-06, delete
+  1. Review + apply PROP-145 (operator-apply — targets are NEVER_PUSH: build.js,
+     sync-workspace-step4c.config.json, CLAUDE.md ownership paragraph, mirror
+     comments in prune-integrity.js/step4c/workspace-sync.md).
+  2. PROP-142 soak unchanged: if zero SHADOW lines through ~08-06, delete
      monitor/decisions/prop-142-queue-schema-shadow.flag to go enforce.
 
-CLEARED: PROP-143 applied by operator 07-31 (4d231e66), ISS-3020 closed — last run's
-#1 carried action is done.
+CLEARED SINCE LAST RUN: PROP-144 applied (status=implemented at HEAD) — last run's
+#1 action done. ISS-3018 closed by your ~260-file drain 08-01 (candidates=0 in the
+08-02 00:35Z sentinel); PROP-145 is the fix that makes ISS-3018 the last of its kind.
 
-HEALTH: pipeline green — poller 00:08Z (quiet d=26, PRED-FIELD-2026Q2 resolved
-terminal), workspace-sync 00:10Z, dome-mirror 00:36Z, analyst 00:46Z, curmudgeon
-01:15Z (WIN-021.c5), integrity 01:18Z (WARN: known ISS-3018 delete-propagation
-backlog 250->260 — operator drain approaching), decider 02:18Z (WIN-047.c7 +
-PROP-101/112 instrumentation). Root-FS free 3366MB. Backlog: 17 open (all assigned,
-0 unassigned), net velocity +4/7d; WoW +21% suppressed by small-base floor (base<30).
-PROP auto-close shadow: 155 walked, 0 would-close. Directive auto-close (enforce):
-0 pending. Commission HNOTEs: 0. Detector B: 0. Stranded patches >24h: none.
-Mode 0 remainder: ISS-3025, ISS-3029 (minor) queue for next runs.
+HEALTH: pipeline green — all agents fired cleanly overnight (poller 00:08Z quiet,
+workspace-sync 00:10Z, dome-mirror 00:35Z, analyst, curmudgeon, integrity, decider
+02:1xZ). Root-FS free 3499MB. Backlog: 19 open (3 unassigned-status, 1 assigned-
+analyst), net velocity 0/7d (9 in, 9 out); WoW +35.7% suppressed by small-base floor
+(base 19 < 30). PROP auto-close shadow: 0 would-close. Directive auto-close
+(enforce): 0. Commission HNOTEs: 0. Detector B: 0. Stranded patches >24h: none.
+Mode 0 remainder: ISS-3025, ISS-3029 (minor) — top of queue next run.
