@@ -11,7 +11,7 @@
  *   - Amendment-001 Q3:      monitor/tinker/proposals/PROP-014-amendment-001.json
  *   - Recalibration:         monitor/tinker/proposals/PROP-069-narrative-cite-recalibration.json
  *   - Canonical disciplines: monitor/prompts/reference/state-verification.md
- *   - Version:               1.1.0  (PROP-069 recalibration)
+ *   - Version:               1.2.0  (DIRECTIVE-20260802-001 Stage-2 resolver fixes)
  *   - Invocation:            node monitor/scripts/audit-narrative-citations.js [--dry-run] [--since=YYYY-MM-DD] [--all]
  *                            (typically from monitor/prompts/workspace-sync.md
  *                            alongside verify-pending-state.js)
@@ -69,7 +69,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const VERSION = '1.1.0';
+const VERSION = '1.2.0';
 const NOW_ISO = new Date().toISOString();
 const RUN_ID = process.env.RUN_ID
   || ('narrative-audit-' + NOW_ISO.replace(/[:.]/g, '').slice(0, 15) + 'Z-' + process.pid);
@@ -126,6 +126,20 @@ const WELL_KNOWN_PATHS = {
   'decider-mode.json': 'monitor/decisions/',
   'closure-ledger.jsonl': 'monitor/decisions/',
 };
+
+// v1.2.0 (DIRECTIVE-20260802-001): bare-filename fallback directories.
+// Bare citations like (EXP-322.json) or (SEC-4.6-EXP-397.c1.json) are
+// unambiguous under this repo's artifact naming scheme; resolve against the
+// canonical artifact directories, first hit wins. Existence is still
+// required — a genuinely-missing file still reports file_missing.
+const BARE_FALLBACK_DIRS = [
+  'monitor/curmudgeon/reviews/',
+  'monitor/analyst/expansions/',
+  'monitor/analyst/new-wins/',
+  'raw-text/',
+  'monitor/baseline/',
+  'data/dome-api-snapshots/',
+];
 
 // PROP-069 Stage 1D: claim-shape paragraph filter. Applied only to surfaces
 // whose extractor sets _check_claim_shape (tinker findings). A paragraph
@@ -258,6 +272,64 @@ function findCitations(paragraph) {
   return out;
 }
 
+// v1.2.0 (DIRECTIVE-20260802-001): exact id-field value match. Citing
+// (wins.json:PRED-073)-style anchors means "the record whose id is X" —
+// record ids live as VALUES of id-like fields, which jsonHasKey cannot see.
+// Exact string equality on id-named fields only; no substring relaxation.
+function jsonHasIdValue(node, anchor) {
+  if (node === null || node === undefined) return false;
+  if (Array.isArray(node)) {
+    for (const v of node) {
+      if (jsonHasIdValue(v, anchor)) return true;
+    }
+    return false;
+  }
+  if (typeof node === 'object') {
+    for (const k of Object.keys(node)) {
+      const v = node[k];
+      if (typeof v === 'string' && v === anchor && /(^|_)id$/i.test(k)) return true;
+      if (jsonHasIdValue(v, anchor)) return true;
+    }
+  }
+  return false;
+}
+
+// v1.2.0: unified JSON anchor check. Verified iff the anchor is
+//   (a) an object key anywhere in the tree (original v1.1.0 rule);
+//   (b) the exact string value of an id-like field (id, *_id);
+//   (c) the wins.json convention WIN-NNN → bare id 'NNN' (wins.json stores
+//       ids as '004'/'058b'; the project-wide handle is WIN-004/WIN-058b);
+//   (d) an HTML anchor id embedded in prose content — sections.json carries
+//       rendered-page anchors as id=\"...\" inside JSON strings. Quoted
+//       exact form only.
+// All four are exact matches — no substring relaxation of the anchor rule.
+function jsonAnchorMatch(data, rawContent, anchor) {
+  if (jsonHasKey(data, anchor)) return true;
+  if (jsonHasIdValue(data, anchor)) return true;
+  if (/^WIN-/.test(anchor) && jsonHasIdValue(data, anchor.slice(4))) return true;
+  if (rawContent && (
+    rawContent.includes('id=\\"' + anchor + '\\"') ||
+    rawContent.includes('id="' + anchor + '"') ||
+    rawContent.includes("id='" + anchor + "'")
+  )) return true;
+  return false;
+}
+
+// v1.2.0: numeric / numeric-range anchors on text files are line references
+// (raw-text/05-model.txt:38, :236-238 style), not substrings. Verified iff
+// the range is within the file's line count; out-of-range stays bogus.
+function lineRefMatch(txt, anchor) {
+  const m = anchor.match(/^(\d+)(?:-(\d+))?$/);
+  if (!m) return null;
+  const start = parseInt(m[1], 10);
+  const end = m[2] ? parseInt(m[2], 10) : start;
+  const lines = txt.split('\n').length;
+  if (start >= 1 && end >= start && end <= lines) {
+    return { decision: 'verified', detail: 'line-ref ' + anchor + ' within 1-' + lines };
+  }
+  return { decision: 'bogus_anchor', detail: 'line-ref ' + anchor + ' out of range (file has ' + lines + ' lines)' };
+}
+
 function jsonHasKey(node, key) {
   // Recursive search: returns true if `key` appears as an object key anywhere.
   if (node === null || node === undefined) return false;
@@ -287,6 +359,16 @@ function resolveCitationFile(file) {
       return { file: resolved, auto_resolved: true };
     }
   }
+  // Path exists as cited → no fallback needed.
+  if (fs.existsSync(file)) return { file, auto_resolved: false };
+  // v1.2.0: bare filename → canonical artifact directories (exact name).
+  if (!file.includes('/')) {
+    for (const dir of BARE_FALLBACK_DIRS) {
+      if (fs.existsSync(dir + file)) {
+        return { file: dir + file, auto_resolved: true };
+      }
+    }
+  }
   // Optional glob expansion for paths containing '*'.
   if (file.includes('*')) {
     const dir = path.dirname(file);
@@ -298,6 +380,24 @@ function resolveCitationFile(file) {
         return { file: path.join(dir, matches[0]), auto_resolved: true };
       }
     } catch (e) { /* dir missing — fall through to file_missing */ }
+  }
+  // v1.2.0: EXP-id prefix resolution. EXP ids are unique; a citation carrying
+  // the right EXP number but a truncated/renamed descriptive suffix (the
+  // observed 'EXP-435-...json' case) resolves iff the expansions dir has an
+  // exact-id file or exactly one file with that EXP-id prefix. Absent or
+  // ambiguous → fall through to file_missing.
+  const base = path.basename(file);
+  const em = base.match(/^EXP-\d+[a-z]?(?=[-.])/);
+  if (em) {
+    try {
+      const dir = 'monitor/analyst/expansions';
+      const matches = fs.readdirSync(dir).filter((f) => f === em[0] + '.json' || f.startsWith(em[0] + '-'));
+      const exact = matches.find((f) => f === em[0] + '.json');
+      if (exact) return { file: path.join(dir, exact), auto_resolved: true };
+      if (matches.length === 1) {
+        return { file: path.join(dir, matches[0]), auto_resolved: true };
+      }
+    } catch (e) { /* fall through */ }
   }
   return { file, auto_resolved: false };
 }
@@ -314,7 +414,20 @@ function checkAnchor(citation) {
   if (/\.jsonl?$/.test(f)) {
     const r = safeJson(f);
     if (!r.ok) return { decision: 'bogus_anchor', detail: 'JSON parse failed: ' + r.err, auto_resolved: auto };
-    if (jsonHasKey(r.data, citation.anchor)) return { decision: 'verified', auto_resolved: auto };
+    let rawContent = '';
+    try { rawContent = fs.readFileSync(f, 'utf8'); } catch (e) { /* tree-only check */ }
+    if (jsonAnchorMatch(r.data, rawContent, citation.anchor)) return { decision: 'verified', auto_resolved: auto };
+    // v1.2.0: cross-ledger fallback. ISS records move open→closed on closure;
+    // the record still exists and the citation was correct when written.
+    // Check the sibling ledger before declaring the anchor bogus.
+    const bn = path.basename(f);
+    if (/^ISS-\d+$/.test(citation.anchor) && (bn === 'open-issues.json' || bn === 'closed-issues.json')) {
+      const sibling = 'monitor/decisions/' + (bn === 'open-issues.json' ? 'closed-issues.json' : 'open-issues.json');
+      const rs = safeJson(sibling);
+      if (rs.ok && jsonAnchorMatch(rs.data, '', citation.anchor)) {
+        return { decision: 'verified', detail: 'anchor found in sibling ledger ' + sibling + ' (record moved on closure)', auto_resolved: true };
+      }
+    }
     return { decision: 'bogus_anchor', detail: 'anchor "' + citation.anchor + '" not found in JSON tree', auto_resolved: auto };
   }
 
@@ -322,6 +435,8 @@ function checkAnchor(citation) {
     try {
       const txt = fs.readFileSync(f, 'utf8');
       if (txt.includes(citation.anchor)) return { decision: 'verified', auto_resolved: auto };
+      const lr = lineRefMatch(txt, citation.anchor);
+      if (lr) return { decision: lr.decision, detail: lr.detail, auto_resolved: auto };
       return { decision: 'bogus_anchor', detail: 'anchor "' + citation.anchor + '" not present in file text', auto_resolved: auto };
     } catch (e) {
       return { decision: 'bogus_anchor', detail: 'read failed: ' + e.message, auto_resolved: auto };
