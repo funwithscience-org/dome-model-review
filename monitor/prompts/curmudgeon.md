@@ -306,6 +306,8 @@ Think like a smart dome defender. For each piece of our evidence:
 - Are we strawmanning? Does the dome model actually say what we claim it says?
 - Are there stronger arguments we're missing?
 
+**Citation shape (when you cite evidence in a hole or kernel):** follow `monitor/prompts/reference/state-verification.md` Discipline 3 → Citation shape rules — no `/tmp` paths, no un-snapshotted dome-live artifacts, exact filenames (no `...` truncation), full or bare record ids.
+
 ### 4. Find the Kernel of Truth
 The dome model is built by a capable AI. Almost every claim has some genuine insight. Find it, acknowledge it, and show why it doesn't save the claim. This is how credibility works — we never strawman.
 

@@ -146,6 +146,16 @@ fi
 
 **Failure mode (intentionally accepted):** Catches obvious bogus citations but not citations to real fields whose value doesn't support the claim.
 
+#### Citation shape rules (PROP-146, 2026-08-02)
+
+When you emit a citation, shape it so the Stage-2 resolver (`audit-narrative-citations.js` v1.2.0+) can verify it against durable content:
+
+1. **Record ids** may be cited in full-handle form OR bare-id form — both resolve (`wins.json:WIN-004` and `wins.json:067` both match, since `wins.json` stores the bare id as the field value).
+2. **Never cite `/tmp/*` or any ephemeral fetch path.** The evidence disappears when the clone is destroyed. Copy it into `raw-text/` or `data/dome-api-snapshots/` first and cite the durable copy.
+3. **Never cite a live dome-site artifact** (`status_history.json`, `daily_review.json`, `claim_index.json`) that isn't in the repo. Snapshot it into `data/dome-api-snapshots/` first (the ISS-2034 practice) and cite the snapshot.
+4. **Never truncate a filename with `...`** — cite the exact basename (`EXP-NNN.json` alone is enough; the resolver expands a unique EXP-id prefix).
+5. **Line-number anchors on `.txt` baselines** are accepted (`file.txt:38`, `file.txt:236-238`) and verified against the file's actual line count, but **content-substring anchors are preferred** because they survive a baseline reseed that shifts line numbers.
+
 ### Stage 3 — semantic match (MANUAL or LLM-as-judge sampling)
 
 **Rule.** Sampled paragraph-claim/citation-content pairs evaluated for semantic match.

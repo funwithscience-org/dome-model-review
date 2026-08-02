@@ -411,6 +411,27 @@ NEVER_PUSH=(
   # class). Git-owned source code; invoked from integrity's clone; NEVER
   # round-trip from FUSE.
   'monitor/scripts/check-ownership-registration-gap.js'
+  # PROP-146 / DIRECTIVE-20260802-001 (2026-08-02): bulk-register the remaining
+  # git-owned monitor/scripts source files caught by that run's static sweep —
+  # same ISS-3000/3001/3011/3019 registration-gap class. All are invoked from a
+  # fresh clone (NOT FUSE-resident, so NO OWNERSHIP entry — adding one would
+  # wrongly start publishing them to FUSE); the only risk is a stale FUSE copy
+  # round-tripping via universal-pusher and silently reverting source semantics.
+  # audit-narrative-citations.js is the load-bearing case: its v1.2.0 resolver
+  # semantics gate the Mech3 Stage-2 metric, and a stale-copy reversion would
+  # re-RED it with no error anywhere. NEVER round-trip any of these from FUSE.
+  'monitor/scripts/audit-narrative-citations.js'
+  'monitor/scripts/backfill-expansion-tracker-archive.js'
+  'monitor/scripts/check-delete-propagation-backlog.js'
+  'monitor/scripts/check-pages-freshness.js'
+  'monitor/scripts/check-status-json-provenance.js'
+  'monitor/scripts/compute-decider-step-cost.js'
+  'monitor/scripts/compute-drift-audit.js'
+  'monitor/scripts/compute-integrity-step-cost.js'
+  'monitor/scripts/cron-tz-sanity.js'
+  'monitor/scripts/lint-close-records.js'
+  'monitor/scripts/lint-required-artifacts.js'
+  'monitor/scripts/verify-pending-state.js'
   # All .md files under monitor/prompts/ are operator-edited (dynamic rule
   # in is_never_push() below). Covers monitor/prompts/sloppytoppy-rewrite.md
   # and monitor/prompts/reference/sloppytoppy-rewrite-rubric.md automatically.
