@@ -11,7 +11,10 @@
  *   - Amendment-001 Q3:      monitor/tinker/proposals/PROP-014-amendment-001.json
  *   - Recalibration:         monitor/tinker/proposals/PROP-069-narrative-cite-recalibration.json
  *   - Canonical disciplines: monitor/prompts/reference/state-verification.md
- *   - Version:               1.2.0  (DIRECTIVE-20260802-001 Stage-2 resolver fixes)
+ *   - Version:               1.3.0  (PROP-147 / DIRECTIVE-20260802-002: R1 widened
+ *                            citation acceptance, R2 Stage-1E repo-state filter on
+ *                            the review surface, R3 in-document dating window.
+ *                            Threshold UNCHANGED at ≤15%.)
  *   - Invocation:            node monitor/scripts/audit-narrative-citations.js [--dry-run] [--since=YYYY-MM-DD] [--all]
  *                            (typically from monitor/prompts/workspace-sync.md
  *                            alongside verify-pending-state.js)
@@ -69,7 +72,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const VERSION = '1.2.0';
+const VERSION = '1.3.0';
 const NOW_ISO = new Date().toISOString();
 const RUN_ID = process.env.RUN_ID
   || ('narrative-audit-' + NOW_ISO.replace(/[:.]/g, '').slice(0, 15) + 'Z-' + process.pid);
@@ -79,17 +82,27 @@ const DRY_RUN = args.includes('--dry-run');
 const ALL = args.includes('--all');
 const sinceArg = args.find((a) => a.startsWith('--since='));
 
-// Default scan window = last 14 days (matches amendment-001 Q3 acceptance window).
-// `--all` overrides to scan every file. `--since=YYYY-MM-DD` narrows or widens.
+// PROP-147 (R3): default scan window = last 30 days, compared against each
+// file's IN-DOCUMENT date (reviews: reviewed_at; tinker reports: filename date),
+// NOT filesystem mtime. The old mtime window was structurally dead: workspace-sync
+// runs from a fresh clone where every file's mtime is checkout time, so nothing
+// was ever out of window and the metric scored a frozen April corpus. Legacy
+// pre-window records are grandfathered (append-only history that can never be
+// retro-cited). `--all` scans every file (ad-hoc full audits); `--since=YYYY-MM-DD`
+// narrows or widens.
+const WINDOW_DAYS = 30;
 let SINCE_MS;
 if (ALL) {
   SINCE_MS = 0;
 } else if (sinceArg) {
   const parsed = Date.parse(sinceArg.split('=')[1]);
-  SINCE_MS = Number.isFinite(parsed) ? parsed : (Date.now() - 14 * 24 * 3600 * 1000);
+  SINCE_MS = Number.isFinite(parsed) ? parsed : (Date.now() - WINDOW_DAYS * 24 * 3600 * 1000);
 } else {
-  SINCE_MS = Date.now() - 14 * 24 * 3600 * 1000;
+  SINCE_MS = Date.now() - WINDOW_DAYS * 24 * 3600 * 1000;
 }
+// Provenance token surfaced in the console line so soft-complaint greps show the
+// spec explicitly (and prove v1.3.0 is live, not a stale-FUSE reversion).
+const WINDOW_LABEL = ALL ? 'all' : (sinceArg ? ('since:' + sinceArg.split('=')[1]) : (WINDOW_DAYS + 'd'));
 
 // Citation regex. Matches:
 //   (path/file.ext)
@@ -100,6 +113,20 @@ if (ALL) {
 // [^)]+ (any char except close-paren). Suppresses ~42% of file-missing and
 // ~10-20% of bogus-anchor that were prose-with-trailing-filename mis-captures.
 const CITATION_RE = /\(([./\w-]+\.(?:json|jsonl|txt|md))(?::([\w-]+))?\)/g;
+
+// PROP-147 (R1): widened citation acceptance. The strict CITATION_RE above stays
+// the DOCUMENTED convention (PROP-146 shape rules); these looser forms are
+// ACCEPTED, not encouraged, so organically-emitted real cites are not miscounted
+// as uncited (26.6% of the flagged population were real cites in these formats).
+//   WIDE_BRACKET_RE : file.json[id=012]        → anchor = the selector value
+//   WIDE_PAREN_RE   : (file.json:WIN-028.verdict — explanatory tail)  (dotted anchor + tail)
+//   WIDE_INLINE_RE  : file.json:WIN-057         (no surrounding parens)
+// Anchors may be dotted; Stage 2 checks the full dotted string first, then the
+// head [\w-]+ token (see anchorHead()). Scan order (bracket → paren → inline)
+// with span-dedup keeps a single cite from being counted more than once.
+const WIDE_BRACKET_RE = /([./\w-]+\.(?:json|jsonl|txt|md))\[[\w-]+=([\w.-]+)\]/g;
+const WIDE_PAREN_RE   = /\(([./\w-]+\.(?:json|jsonl|txt|md))(?::([\w.-]+))?[^)]*\)/g;
+const WIDE_INLINE_RE  = /([./\w-]+\.(?:json|jsonl|txt|md)):([\w][\w.-]*)/g;
 
 // Sentence boundary: '.', '!', '?' followed by whitespace + capital letter.
 // Counts boundaries; sentence count = boundaries + 1 for any non-empty paragraph.
@@ -148,7 +175,9 @@ const BARE_FALLBACK_DIRS = [
 const ENTITY_ID_RE = /\b(WIN|EXP|SEC|HOL|PRED)-[\d.]+\b/;
 const CLAIM_VERB_RE = /\b(refute[ds]?|contradicts?|contradicted|supports?|fails?|fail(?:ed|ing)|succeed[sing]*|explain[s]?|matches?|claim[s]?|predict[s]?|measure[ds]?|observe[ds]?|shows?|demonstrate[ds]?|require[ds]?|prove[ds]?|disprove[ds]?|conflict[s]?|agree[ds]?|disagree[ds]?|imply|implies)\b/i;
 const SPECIFIC_NUM_RE = /\b\d+(\.\d+)?\s*(%|σ|sigma|nT|μGal|km|m\/s|degrees?|deg|N=\d|n=\d)/;
-const SCI_REF_RE = /\b(DOI|et\s+al|paper|study|dataset|firmament|aether|cavity|geomag|seismic|spectra|spectrum|atmosphere|halo|cluster|CMB|CMBR|H\(r\)|B\(r\)|dome|ECM|sphere|V51)\b/i;
+// PROP-147 (R2): `dome(?!-)` so pipeline agent names (dome-social, dome-workspace-sync,
+// dome-integrity…) no longer trip clause-c on pure ops narration.
+const SCI_REF_RE = /\b(DOI|et\s+al|paper|study|dataset|firmament|aether|cavity|geomag|seismic|spectra|spectrum|atmosphere|halo|cluster|CMB|CMBR|H\(r\)|B\(r\)|dome(?!-)|ECM|sphere|V51)\b/i;
 const NAMED_LIT_RE = /\b(Mohe|Christchurch|El Gordo|Halloween|Gutenberg|3C\d+|NGC\d+|HD\d+|Hartland|Ebro|Tesla|wolfSSL)\b/i;
 
 function claimShapeFires(paragraph) {
@@ -156,6 +185,45 @@ function claimShapeFires(paragraph) {
   if (SPECIFIC_NUM_RE.test(paragraph)) return 'b';
   if (SCI_REF_RE.test(paragraph) || NAMED_LIT_RE.test(paragraph)) return 'c';
   return null;
+}
+
+// PROP-147 (R2): repo-state-claim filter for the curmudgeon-review surface. That
+// surface has no claim-shape gate, so it audits every ≥2-sentence paragraph —
+// including external-science argumentation (Gaia parallax, MHD core dynamics) and
+// editorial judgment, whose evidence is literature/DOIs the resolver cannot check
+// (Stage-3 territory). Audit a review paragraph only if it asserts repo/dome-artifact
+// state: (i) it names a tracked file, OR (ii) it pairs an entity id with a
+// state-assertion word. Genuine repo-state claims stay IN the metric (Path E
+// enforces cites on them); category-error prose is exempt.
+const TRACKED_FILE_RE = /\b(wins\.json|sections\.json|predictions\.json|(?:closed|open)-issues\.json|expansion-tracker\.json|claim_index|monitor\.py)\b|\b(?:raw-text|dome-api-snapshots)\//i;
+const STATE_ENTITY_RE = /\b(WIN|EXP|SEC|HOL|PRED|ISS)-[\d.]+\b/;
+const STATE_ASSERT_RE = /\b(verdict|status|finding|label|field|detail_[a-z]+|tldr_[a-z]+|says|reads|currently|now\s+(?:sits|reads|says)|patched|fixed_at|integrated)\b/i;
+
+function repoStateClaimFires(paragraph) {
+  if (TRACKED_FILE_RE.test(paragraph)) return true;
+  if (STATE_ENTITY_RE.test(paragraph) && STATE_ASSERT_RE.test(paragraph)) return true;
+  return false;
+}
+
+// PROP-147 (R3): in-document date helpers. reviewed_at / ISO fields → ms;
+// a YYYY-MM-DD in the filename → ms; caller falls back to fs mtime last.
+function parseDateMs(s) {
+  if (typeof s !== 'string') return null;
+  const t = Date.parse(s);
+  return Number.isFinite(t) ? t : null;
+}
+function filenameDateMs(fp) {
+  const m = path.basename(fp).match(/(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return null;
+  const t = Date.parse(m[0] + 'T00:00:00Z');
+  return Number.isFinite(t) ? t : null;
+}
+// PROP-147 (R1): first [\w-]+ token of a (possibly dotted) anchor expression,
+// e.g. 'WIN-028.verdict' → 'WIN-028', 'id=012' selector value stays '012'.
+function anchorHead(a) {
+  if (typeof a !== 'string') return a;
+  const m = a.match(/[\w-]+/);
+  return m ? m[0] : a;
 }
 
 // ---- Surface configuration ----
@@ -171,18 +239,23 @@ const SURFACES = [
     name: 'curmudgeon.reviews.kernel_of_truth+our_argument_summary',
     dir: 'monitor/curmudgeon/reviews',
     re: /\.json$/,
+    // PROP-147 (R3): in-document date = reviewed_at, then filename date, then mtime.
+    docDate: (data, fp, stat) => parseDateMs(data && data.reviewed_at)
+      ?? filenameDateMs(fp) ?? (stat ? stat.mtimeMs : null),
     extract: (data) => {
+      // PROP-147 (R2): _check_repo_state gates each paragraph through
+      // repoStateClaimFires — external-science / editorial prose is exempt.
       const out = [];
       if (!data || typeof data !== 'object') return out;
       const k = data.kernel_of_truth || {};
       if (typeof k.description === 'string') {
-        out.push({ label: 'kernel_of_truth.description', prose: k.description });
+        out.push({ label: 'kernel_of_truth.description', prose: k.description, _check_repo_state: true });
       }
       if (typeof k.why_it_doesnt_save_claim === 'string') {
-        out.push({ label: 'kernel_of_truth.why_it_doesnt_save_claim', prose: k.why_it_doesnt_save_claim });
+        out.push({ label: 'kernel_of_truth.why_it_doesnt_save_claim', prose: k.why_it_doesnt_save_claim, _check_repo_state: true });
       }
       if (typeof data.our_argument_summary === 'string') {
-        out.push({ label: 'our_argument_summary', prose: data.our_argument_summary });
+        out.push({ label: 'our_argument_summary', prose: data.our_argument_summary, _check_repo_state: true });
       }
       return out;
     },
@@ -191,6 +264,8 @@ const SURFACES = [
     name: 'tinker.report.findings[].description',
     dir: 'monitor/tinker',
     re: /^report-.*\.json$/,
+    // PROP-147 (R3): in-document date = filename date, then mtime.
+    docDate: (data, fp, stat) => filenameDateMs(fp) ?? (stat ? stat.mtimeMs : null),
     extract: (data) => {
       // PROP-069 Stage 1C+1D: only claim-shaped findings at moderate+ severity.
       const out = [];
@@ -262,13 +337,30 @@ function countSentences(paragraph) {
   return matches ? matches.length + 1 : 1;
 }
 
+// PROP-147 (R1): collect strict + widened citations, de-duplicated by text span.
+// Scan order bracket → paren → inline; a later match whose span overlaps an
+// already-claimed span is dropped, so a single cite is never counted twice.
+// WIDE_PAREN_RE is a superset of the strict CITATION_RE, so it covers the
+// documented form too.
 function findCitations(paragraph) {
   const out = [];
-  CITATION_RE.lastIndex = 0;
-  let m;
-  while ((m = CITATION_RE.exec(paragraph)) !== null) {
-    out.push({ file: m[1], anchor: m[2] || null, raw: m[0] });
-  }
+  const claimed = [];
+  const overlaps = (s, e) => claimed.some(([cs, ce]) => s < ce && e > cs);
+  const scan = (re, mk) => {
+    re.lastIndex = 0;
+    let m;
+    while ((m = re.exec(paragraph)) !== null) {
+      const s = m.index;
+      const e = s + m[0].length;
+      if (m[0].length === 0) { re.lastIndex++; continue; }
+      if (overlaps(s, e)) continue;
+      claimed.push([s, e]);
+      out.push(mk(m));
+    }
+  };
+  scan(WIDE_BRACKET_RE, (m) => ({ file: m[1], anchor: m[2] || null, raw: m[0] }));
+  scan(WIDE_PAREN_RE,   (m) => ({ file: m[1], anchor: m[2] || null, raw: m[0] }));
+  scan(WIDE_INLINE_RE,  (m) => ({ file: m[1], anchor: m[2] || null, raw: m[0] }));
   return out;
 }
 
@@ -417,14 +509,20 @@ function checkAnchor(citation) {
     let rawContent = '';
     try { rawContent = fs.readFileSync(f, 'utf8'); } catch (e) { /* tree-only check */ }
     if (jsonAnchorMatch(r.data, rawContent, citation.anchor)) return { decision: 'verified', auto_resolved: auto };
+    // PROP-147 (R1): widened anchors may be dotted ('WIN-028.verdict'); fall back
+    // to the head [\w-]+ token when the full expression doesn't match.
+    const head = anchorHead(citation.anchor);
+    if (head && head !== citation.anchor && jsonAnchorMatch(r.data, rawContent, head)) {
+      return { decision: 'verified', detail: 'matched anchor head token "' + head + '"', auto_resolved: auto };
+    }
     // v1.2.0: cross-ledger fallback. ISS records move open→closed on closure;
     // the record still exists and the citation was correct when written.
     // Check the sibling ledger before declaring the anchor bogus.
     const bn = path.basename(f);
-    if (/^ISS-\d+$/.test(citation.anchor) && (bn === 'open-issues.json' || bn === 'closed-issues.json')) {
+    if (/^ISS-\d+$/.test(head) && (bn === 'open-issues.json' || bn === 'closed-issues.json')) {
       const sibling = 'monitor/decisions/' + (bn === 'open-issues.json' ? 'closed-issues.json' : 'open-issues.json');
       const rs = safeJson(sibling);
-      if (rs.ok && jsonAnchorMatch(rs.data, '', citation.anchor)) {
+      if (rs.ok && jsonAnchorMatch(rs.data, '', head)) {
         return { decision: 'verified', detail: 'anchor found in sibling ledger ' + sibling + ' (record moved on closure)', auto_resolved: true };
       }
     }
@@ -435,6 +533,8 @@ function checkAnchor(citation) {
     try {
       const txt = fs.readFileSync(f, 'utf8');
       if (txt.includes(citation.anchor)) return { decision: 'verified', auto_resolved: auto };
+      const head = anchorHead(citation.anchor);
+      if (head && head !== citation.anchor && txt.includes(head)) return { decision: 'verified', detail: 'matched anchor head token "' + head + '"', auto_resolved: auto };
       const lr = lineRefMatch(txt, citation.anchor);
       if (lr) return { decision: lr.decision, detail: lr.detail, auto_resolved: auto };
       return { decision: 'bogus_anchor', detail: 'anchor "' + citation.anchor + '" not present in file text', auto_resolved: auto };
@@ -451,16 +551,21 @@ function auditFile(filePath, surface) {
   try { stat = fs.statSync(filePath); } catch (e) {
     return { file: filePath, error: 'stat_failed: ' + e.message };
   }
-  if (stat.mtimeMs < SINCE_MS) return null; // out of window
 
   const r = safeJson(filePath);
   if (!r.ok) return { file: filePath, error: 'json_parse_failed: ' + r.err };
+
+  // PROP-147 (R3): window on the in-document date (reviewed_at / filename date),
+  // not fs mtime — mtime is checkout time in a fresh clone and never filters.
+  const docDateMs = (surface.docDate ? surface.docDate(r.data, filePath, stat) : null) ?? stat.mtimeMs;
+  if (docDateMs < SINCE_MS) return null; // out of window
 
   const proseEntries = surface.extract(r.data);
   const result = {
     file: filePath,
     surface_name: surface.name,
     mtime: new Date(stat.mtimeMs).toISOString(),
+    doc_date: new Date(docDateMs).toISOString(),
     paragraphs_total: 0,
     paragraphs_uncited: 0,
     citations_total: 0,
@@ -479,6 +584,8 @@ function auditFile(filePath, surface) {
       if (sCount <= 1) continue;
       // PROP-069 Stage 1D: on claim-shape surfaces, skip non-claim paragraphs.
       if (entry._check_claim_shape && !claimShapeFires(p)) continue;
+      // PROP-147 (R2): on the review surface, skip prose that asserts no repo state.
+      if (entry._check_repo_state && !repoStateClaimFires(p)) continue;
       result.paragraphs_total++;
 
       const cits = findCitations(p);
@@ -529,6 +636,9 @@ function main() {
     started_at: NOW_ISO,
     dry_run:    DRY_RUN,
     since_iso:  SINCE_MS > 0 ? new Date(SINCE_MS).toISOString() : null,
+    window:     WINDOW_LABEL,          // PROP-147 R3 provenance
+    stage1E_filter: true,              // PROP-147 R2 repo-state filter active
+    wide_citation_accept: true,        // PROP-147 R1 widened cite acceptance active
     surfaces:   [],
     totals: {
       files_audited:           0,
@@ -648,7 +758,8 @@ function main() {
     ' citation-resolve=' + resolveRate.toFixed(1) +
     ' bogus-anchor=' + t.citations_bogus_anchor +
     ' file-missing=' + t.citations_file_missing +
-    ' auto-resolved=' + t.citations_auto_resolved
+    ' auto-resolved=' + t.citations_auto_resolved +
+    ' window=' + WINDOW_LABEL + ' filter=stage1E'
   );
 
   if (claimUncitedRate > TH.claim_uncited_pct) {

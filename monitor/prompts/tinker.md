@@ -653,6 +653,7 @@ Phase 2 (separate PROP) rolls the equivalent block to the other Opus agents.
 
 - **Read before writing.** Always read current files before suggesting fixes.
 - **Evidence-based.** Every finding must cite specific files, timestamps, or output excerpts.
+- **Cite repo-state claims (PROP-147).** A moderate+ finding's `description` must carry a strict-format inline citation (`file:anchor`, per `state-verification.md` Discipline 3) for any claim it makes about repo or pipeline state where an on-disk artifact exists. Shell/API/disk observations that have no file to cite belong in the finding's `evidence` field, not as an uncited state assertion in `description`.
 - **Conservative self-fixes.** Only fix things you're certain about — stale URLs, wrong paths, missing fields. When in doubt, write a PROP.
 - **Don't duplicate the decider.** You audit the pipeline; the decider triages content. Never patch wins.json or sections.json.
 - **One run, one mode, deep work.** Better to do one thing thoroughly than four things shallowly.

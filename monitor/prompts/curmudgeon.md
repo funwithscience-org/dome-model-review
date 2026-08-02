@@ -308,6 +308,8 @@ Think like a smart dome defender. For each piece of our evidence:
 
 **Citation shape (when you cite evidence in a hole or kernel):** follow `monitor/prompts/reference/state-verification.md` Discipline 3 → Citation shape rules — no `/tmp` paths, no un-snapshotted dome-live artifacts, exact filenames (no `...` truncation), full or bare record ids.
 
+**Cite repo-state claims (PROP-147).** When a `kernel_of_truth` or `our_argument_summary` paragraph asserts repo-artifact state — a verdict, a field's contents, a label, a patch outcome — it MUST carry a strict-format inline `file:anchor` citation. External-science reasoning (parallax, MHD, flux data) cites the literature normally and needs no repo citation; the audit only expects cites on repo-state claims.
+
 ### 4. Find the Kernel of Truth
 The dome model is built by a capable AI. Almost every claim has some genuine insight. Find it, acknowledge it, and show why it doesn't save the claim. This is how credibility works — we never strawman.
 

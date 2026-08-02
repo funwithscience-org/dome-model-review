@@ -156,6 +156,15 @@ When you emit a citation, shape it so the Stage-2 resolver (`audit-narrative-cit
 4. **Never truncate a filename with `...`** — cite the exact basename (`EXP-NNN.json` alone is enough; the resolver expands a unique EXP-id prefix).
 5. **Line-number anchors on `.txt` baselines** are accepted (`file.txt:38`, `file.txt:236-238`) and verified against the file's actual line count, but **content-substring anchors are preferred** because they survive a baseline reseed that shifts line numbers.
 
+#### What needs a citation (PROP-147 — checker and generators share this spec)
+
+The Stage-1E filter (`audit-narrative-citations.js` v1.3.0) and the generator prompts use one definition of a **repo-state claim** — the only paragraph shape the citation gate expects to carry a `file:anchor` cite. A paragraph is a repo-state claim if either:
+
+- it **names a tracked artifact** — `wins.json`, `sections.json`, `predictions.json`, `open-issues.json` / `closed-issues.json`, `expansion-tracker.json`, `claim_index`, `monitor.py`, or a `raw-text/` or `dome-api-snapshots/` path; **or**
+- it **pairs an entity id** (`WIN`/`EXP`/`SEC`/`HOL`/`PRED`/`ISS-N`) **with a state-assertion word** — verdict, status, finding, label, field, `detail_*`, `tldr_*`, says, reads, currently, "now sits/reads/says", patched, `fixed_at`, integrated.
+
+Everything else is **exempt**: external-science argumentation (its evidence is DOIs/literature, checked at Stage 3 not here) and editorial/process judgment. Windowing (rolling 30 days on the in-document date) scopes the metric to forward behavior; legacy append-only records that can never be retro-cited are grandfathered.
+
 ### Stage 3 — semantic match (MANUAL or LLM-as-judge sampling)
 
 **Rule.** Sampled paragraph-claim/citation-content pairs evaluated for semantic match.
