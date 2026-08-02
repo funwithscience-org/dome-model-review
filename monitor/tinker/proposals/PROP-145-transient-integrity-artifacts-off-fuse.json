@@ -3,18 +3,28 @@
   "created_at": "2026-08-02T02:41:00Z",
   "created_by": "tinker-2026-08-02T02-41",
   "directive_id": "DIRECTIVE-20260801-001",
-  "source_iss": ["ISS-3018 (closed 2026-08-01 by operator drain — this PROP is the structural fix so it never recurs)"],
-  "related": ["PROP-051", "PROP-091", "PROP-124", "PROP-125", "DIRECTIVE-20260707-001", "DIRECTIVE-20260708-001"],
+  "source_iss": [
+    "ISS-3018 (closed 2026-08-01 by operator drain — this PROP is the structural fix so it never recurs)"
+  ],
+  "related": [
+    "PROP-051",
+    "PROP-091",
+    "PROP-124",
+    "PROP-125",
+    "DIRECTIVE-20260707-001",
+    "DIRECTIVE-20260708-001"
+  ],
   "category": "structural",
-  "target": ["build.js (syncToWorkspace/walkAppendOnly)", "monitor/scripts/sync-workspace-step4c.config.json", "CLAUDE.md File Ownership prose"],
-  "status": "design-pending-operator-review",
+  "target": [
+    "build.js (syncToWorkspace/walkAppendOnly)",
+    "monitor/scripts/sync-workspace-step4c.config.json",
+    "CLAUDE.md File Ownership prose"
+  ],
+  "status": "implemented",
   "requires_human_judgment": true,
   "why_human_needed": "Targets are NEVER_PUSH source code (build.js) in PROP-051 disaster-prevention lineage; the directive itself mandates operator apply. Also ratifies the Part-D disposition choice (manifest-only retained as canary instrument vs. full removal).",
-
   "problem": "Transient per-run integrity artifacts (sync-workspace-runs sentinels, verify-pending-run reports, narrative-cite-audits, push-failure logs, git-to-fuse-divergence reports, integrity daily report-*.json, abort sentinels, prune-integrity run reports) are clone-written, pushed to git, then mirrored down to FUSE by build.js syncToWorkspace's append_only walker ('monitor/integrity/': 'append_only' → walkAppendOnly copies every new .json, recursively). prune-integrity later deletes them from git per retention policy, but FUSE cannot unlink() in scheduled sessions (deny-by-default is the 2026-05-21 disaster-recovery property and is load-bearing), so every pruned file becomes a permanent FUSE orphan. Candidates accumulate ~10-15/day; operator manually drains every 1-2 months (2026-07-08: 1,137 files; 2026-08-01: ~260 files, ISS-3018). These files are disposable forensic logs — their durable record is the git-owned *-archive.jsonl files + git history. Mirroring them to the disaster-protected FUSE space is protection-for-principle applied to throwaway logs; the drain burden exists ONLY because of that mirroring.",
-
   "root_cause": "The blanket 'monitor/integrity/': 'append_only' OWNERSHIP classification predates prune-integrity (PROP-051 Workstream C). It was correct when everything under monitor/integrity/ was durable; once retention-pruning was added, the combination [create-only FUSE mirror] + [git-side deletion] + [FUSE unlink deny] mechanically produces unbounded orphan accumulation. No single component is wrong — the composition is.",
-
   "part_A_reader_verification": {
     "method": "grep of monitor/prompts/**, monitor/scripts/**, build-scripts/**, build.js, test.js for every per-run pattern stem; each hit classified as clone-read, FUSE-write, or definition-site. Then a targeted second grep for ${WORKSPACE}-prefixed READS of any per-run integrity path (zero found — the only ${WORKSPACE} hits are degraded-path abort-sentinel WRITES in workspace-sync.md lines 47/127).",
     "verdict": "NO agent reads any transient per-run integrity .json from FUSE. All consumers are clone/git-side. Exclusion is safe for every pattern listed in part_B.",
@@ -32,7 +42,6 @@
     },
     "explicitly_out_of_scope_and_unaffected": "workspace-sync-skips.jsonl (classified 'git', read by integrity §7d from the workspace mount BY DESIGN — it is a growing .jsonl copied via copyIfExists, not the append_only walker; untouched). latest-integrity-summary.txt (.txt — synced via step4c OVERWRITE_ALLOWLIST, untouched). alerts.txt, drift-audit.json, human-notes.json, curmudgeon-dispatcher-state.json ('git'), integrity-mechanical-state.json ('git') — none match the excluded patterns."
   },
-
   "part_B_exclusion_design": {
     "mechanism": "Add a module-level FUSE_EXCLUDE_TRANSIENT regex array to build.js next to OWNERSHIP, and one guard line inside walkAppendOnly's walk(): after computing rel, `if (FUSE_EXCLUDE_TRANSIENT.some(re => re.test(rel))) continue;`. This is the single git→FUSE conduit for these files — syncToWorkspace() is called by build.js publish, build.js sync-workspace, and sync-workspace-step4c.js line ~507 (`execSync('node build.js sync-workspace')`), so one edit covers decider publishes, dome-mirror cycles, and manual syncs. No change to workspace-sync.md (FUSE→git rescue direction must keep working for degraded-path FUSE-born sentinels), no change to prune-integrity.js, no change to the FUSE unlink deny.",
     "patterns_excluded": [
@@ -54,7 +63,6 @@
     "claude_md_edit": "Add one paragraph to CLAUDE.md File Ownership rules documenting the new class: 'transient-no-fuse: per-run integrity artifacts are git-only by design (DIRECTIVE-20260801-001/PROP-145); never add a FUSE read of these paths; new per-run integrity patterns MUST be added to FUSE_EXCLUDE_TRANSIENT in build.js at creation time (same discipline as OWNERSHIP registration — this is now part of the ISS-3000/3001/3011/3019 registration-gap class).'",
     "registration_gap_guard": "check-ownership-registration-gap.js (PROP-141) continues to require OWNERSHIP/append-only classification for new files; the CLAUDE.md paragraph extends the same checklist with the FUSE_EXCLUDE_TRANSIENT question. Optional Phase 2 (not required for apply): teach the lint to flag new monitor/integrity per-run-shaped patterns absent from FUSE_EXCLUDE_TRANSIENT."
   },
-
   "part_C_preserved_durable_record": {
     "preserved_unconditionally": [
       "monitor/integrity/narrative-cite-audit-archive.jsonl ('git-append-only')",
@@ -70,34 +78,34 @@
     ],
     "part_A_retained_syncs": "None — Part A found zero FUSE readers, so no per-run pattern needs retained sync."
   },
-
   "part_D_delete_propagation_disposition": {
     "recommendation": "Flip delete_propagation.enabled=false (manifest-only) and REWRITE the config _notes/_phase to the new reality — do NOT remove the pass.",
     "rationale": "(1) The candidate computation is the live instrument behind the PROP-125 delete-propagation-backlog canary (check-delete-propagation-backlog.js reads delete_propagation.candidates from the newest sentinel). Post-exclusion, candidates≈0 is the EXPECTED steady state, which converts the canary into a free regression detector: if anyone adds a new per-run pattern without registering it in FUSE_EXCLUDE_TRANSIENT, candidates resume growing and the canary fires at 200 — exactly the failure class this PROP creates. (2) There is a known final tail: ~142 FUSE files currently matching DELETE_PATTERNS (category_total in sentinel sync-workspace-runs-2026-08-02T00-35-11Z.json) are still git-tracked/fresh; over the next 7-90 days prune will delete them from git and they become the LAST orphan cohort (~142 max, minus any the operator's 08-01 drain already removed once aged). One final small operator drain around 2026-09/10 clears it; after that only rare degraded-path FUSE-born sentinels (aborts/crashes/push-failures, historically ~10 files in 2 months) trickle in — decades from the 200 threshold. (3) enabled=true is currently a false claim: scheduled sessions EPERM on unlink, so 'delete' mode never deletes; manifest-only is the honest description of what the pass can actually do without a present human.",
     "config_notes_replacement": "delete_propagation._notes → 'MANIFEST-ONLY by design since DIRECTIVE-20260801-001/PROP-145 (2026-08): per-run integrity artifacts are no longer mirrored to FUSE (FUSE_EXCLUDE_TRANSIENT in build.js), so no new orphans accumulate. candidates = final pre-exclusion tail aging out through ~2026-10 (≤142 files; one last operator drain) + rare degraded-path FUSE-born sentinels thereafter. Steady state: candidates ≈ 0. The PROP-125 canary (threshold 200) now doubles as the exclusion-regression detector — if candidates trend up again, a new per-run pattern is missing from FUSE_EXCLUDE_TRANSIENT. Do not flip enabled=true: scheduled sessions EPERM on FUSE unlink; drains are operator-interactive by design (the deny is the 2026-05-21 disaster-recovery property).' _phase → 'post-DIRECTIVE-20260801-001 — mirroring stopped at source'.",
     "delete_patterns_kept_in_sync": "The three-way mirror rule (prune-integrity POLICIES ↔ step4c DELETE_PATTERNS ↔ workspace-sync is_prune_expired) stays as-is; FUSE_EXCLUDE_TRANSIENT becomes the FOURTH surface in that edit-one-edit-all comment set. Update the mirror comments in all three existing files to mention it."
   },
-
   "secondary_observations_not_blocking": [
     "prune-integrity-runs/run-*.json has NO prune policy — prune-integrity never prunes its own run reports (119 git-tracked and growing ~1/day). Suggest a follow-up policy {retention_days: 30, keep_last_n: 20, archive: prune-integrity-runs-archive.jsonl}. Independent of this PROP; the exclusion already stops their FUSE mirroring.",
     "dome-mirror-abort-*.json, sync-workspace-step4c-crash-*.json, workspace-sync-delete-gate-*.json also lack prune policies (low volume; aborts are operator-significant). Fine to leave; noting for completeness.",
     "monitor/integrity/disk-test.txt and .touchtest are junk tracked in git — operator may delete at leisure."
   ],
-
   "proposed_fix_summary": "1-line guard + regex array in build.js walkAppendOnly (git→FUSE create-only walker); config flip enabled=false + honest _notes rewrite in sync-workspace-step4c.config.json; one CLAUDE.md ownership paragraph; mirror-comment updates in prune-integrity.js / sync-workspace-step4c.js / workspace-sync.md. Zero changes to: FUSE unlink deny, workspace-sync FUSE→git rescue, prune-integrity behavior, any archive, any site-critical FUSE protection.",
-
   "tradeoffs": {
     "cost_1": "Ad-hoc humans browsing FUSE (Finder/iCloud) lose local visibility of per-run integrity artifacts — must use git/GitHub instead. These are agent forensics, not operator artifacts; CLAUDE.md already directs all agents to clone-reads for them.",
     "cost_2": "If a FUTURE consumer legitimately needs a FUSE read of one of these patterns, it must either repoint to clone (preferred, matches PROP-078 clone-source-of-truth discipline) or remove that pattern from the exclusion list (one-line, reviewable).",
     "cost_3": "The final ~142-file tail still needs ONE more operator drain (~2026-09/10) — this PROP prevents recurrence, it does not retroactively clean FUSE (cannot: unlink deny)."
   },
-
   "estimated_impact": "Eliminates the recurring 1-2-month operator FUSE-drain chore permanently (2 drains so far: 1,137 + ~260 files). Removes ~10-15 orphan-candidates/day accumulation. PROP-125 canary repurposed from drain-timer to regression-detector at zero cost. FUSE workspace stops growing with forensic noise (~119-file prune-integrity-runs mirror, 94 report mirrors, etc. stop at current size).",
-
   "verification_pattern": "POST-APPLY (grade A, mechanical): (1) node -e \"const s=require('fs').readFileSync('build.js','utf8'); if(!/FUSE_EXCLUDE_TRANSIENT/.test(s)) {console.log('MISSING array');process.exit(1)}; if(!/FUSE_EXCLUDE_TRANSIENT\\.some/.test(s)){console.log('guard not wired into walkAppendOnly');process.exit(1)}; console.log('FIXED')\" — exits 0 with FIXED when both the array and the walker guard exist. (2) Behavioral: from a clone, run `node build.js sync-workspace` and confirm its output line reports 0 new append-only files under monitor/integrity/ matching the excluded patterns while a deliberately-new monitor/analyst/analysis-records/*.json still syncs (walker otherwise intact). (3) Config: node -e \"const c=require('./monitor/scripts/sync-workspace-step4c.config.json'); process.exit(c.delete_propagation.enabled===false&&/DIRECTIVE-20260801-001/.test(c.delete_propagation._notes)?0:1)\". (4) Steady-state (2+ weeks post-apply): newest sync-workspace-runs-*.json sentinel delete_propagation.candidates does not exceed the pre-apply final-tail projection (≤142) and trends down after the final drain; PROP-125 canary silent.",
-
   "rollback": "Single revert of the build.js guard line + array (git revert or manual). Config flip back is one push. No data migration in either direction — the exclusion only affects future copies.",
-
-  "operator_decision": null,
+  "operator_decision": {
+    "decided_by": "steve (operator, via cowork 2026-08-02)",
+    "decided_at": "2026-08-02T06:00:00Z",
+    "decision": "APPROVED and applied.",
+    "applied_commit": "59124488",
+    "applied_by": "operator-cowork (build.js/config/CLAUDE.md/scripts/workspace-sync.md are NEVER_PUSH)",
+    "sanity": "node --check clean (build.js + both scripts); config json valid; verification pattern 1 (FUSE_EXCLUDE_TRANSIENT array + walkAppendOnly guard) FIXED; pattern 3 (config enabled=false + DIRECTIVE-20260801-001 stamp) FIXED; exclusion unit-test all-correct (13 transient patterns excluded; archives, workspace-sync-skips.jsonl, dispatcher-state, analysis-records, curmudgeon reviews all KEPT); 3838/3838 tests. Behavioral sync test (pattern 2) not runnable in cloud container (sync-workspace no-ops without a FUSE mount) — substituted by the regex unit-test.",
+    "followups": "(1) 2-week steady-state watch (pattern 4): backlog trends down + PROP-125 canary silent. (2) One final small operator drain ~2026-09/10 clears the pre-exclusion tail (<=142 files aging out of git). (3) Optional Phase 2: teach check-ownership-registration-gap.js to flag new per-run integrity patterns missing from FUSE_EXCLUDE_TRANSIENT (not required for this apply)."
+  },
   "escalation_history": []
 }
