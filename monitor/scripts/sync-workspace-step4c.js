@@ -104,7 +104,9 @@ function writeSentinel(name, body) {
 // visible deletion queue.
 //
 // PATTERN TABLE — mirrored in workspace-sync.md is_prune_expired() and
-// prune-integrity.js POLICIES. Edit one → edit all three.
+// prune-integrity.js POLICIES. Edit one → edit all three. FOURTH surface
+// (PROP-145): build.js FUSE_EXCLUDE_TRANSIENT — a new per-run integrity
+// pattern must also be added there so it is never mirrored to FUSE.
 const DELETE_PATTERNS = [
   { re: /^monitor\/integrity\/workspace-sync-runs\/run-.*\.json$/, days: 7 },
   { re: /^monitor\/integrity\/verify-pending-run-.*\.json$/, days: 14 },

@@ -115,6 +115,9 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 // monitor/scripts/sync-workspace-step4c.js DELETE_PATTERNS and the
 // is_prune_expired() helper in monitor/prompts/workspace-sync.md. If you
 // add a category here or change retention_days, propagate to all three.
+// FOURTH surface (PROP-145, 2026-08): a new per-run integrity pattern must
+// also be added to build.js FUSE_EXCLUDE_TRANSIENT so it is never mirrored to
+// FUSE (git-only by design; otherwise it re-creates the drain backlog).
 const policies = [
   {
     name: 'workspace-sync-runs',

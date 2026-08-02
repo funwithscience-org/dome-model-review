@@ -577,6 +577,8 @@ declare -A NEVER_PUSH_STRANDS
 # NOTE (PROP-091, 2026-06-11): this pattern table is mirrored in
 # monitor/scripts/sync-workspace-step4c.js DELETE_PATTERNS and
 # monitor/scripts/prune-integrity.js POLICIES. If you edit one, edit all three.
+# FOURTH surface (PROP-145, 2026-08): a new per-run integrity pattern must also
+# be added to build.js FUSE_EXCLUDE_TRANSIENT (git-only; never mirrored to FUSE).
 # (Drift between the three would degrade to FUSE-side accumulation — never to
 # over-deletion — but the lint signal of mismatch should still be addressed.)
 is_prune_expired() {

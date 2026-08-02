@@ -407,6 +407,35 @@ const OWNERSHIP = {
   'monitor/social/drafts/': 'append_only',
 };
 
+// PROP-145 / DIRECTIVE-20260801-001 (2026-08): transient per-run integrity
+// artifacts are git-only BY DESIGN — never mirror them into the FUSE workspace.
+// They are disposable forensic logs (their durable record lives in the git-owned
+// *-archive.jsonl files + git history), NOT site-critical data. Mirroring them to
+// FUSE and then being unable to unlink them (the FUSE deny is the 2026-05-21
+// disaster-recovery property) is what produced the recurring delete-propagation
+// backlog + manual-drain burden. Excluding them at this single git→FUSE conduit
+// stops the accumulation at source. Archives (*.jsonl) are unaffected — they fail
+// the walker's .json filter and flow via copyIfExists, not walkAppendOnly.
+// REGISTRATION DISCIPLINE: a NEW per-run integrity pattern MUST be added here at
+// creation time (same checklist as OWNERSHIP registration — ISS-3000/3001/3011/
+// 3019 class). The PROP-125 delete-propagation-backlog canary doubles as the
+// regression detector: if candidates trend up again, a pattern is missing here.
+const FUSE_EXCLUDE_TRANSIENT = [
+  /^monitor\/integrity\/report-\d{4}-\d{2}-\d{2}.*\.json$/,
+  /^monitor\/integrity\/verify-pending-run-.*\.json$/,
+  /^monitor\/integrity\/narrative-cite-audit-.*\.json$/,
+  /^monitor\/integrity\/push-failure-.*\.json$/,
+  /^monitor\/integrity\/git-to-fuse-divergence-.*\.json$/,
+  /^monitor\/integrity\/sync-workspace-runs-.*\.json$/,
+  /^monitor\/integrity\/sync-workspace-non-ff-abort-.*\.json$/,
+  /^monitor\/integrity\/sync-workspace-step4c-crash-.*\.json$/,
+  /^monitor\/integrity\/workspace-sync-abort-.*\.json$/,
+  /^monitor\/integrity\/workspace-sync-delete-gate-.*\.json$/,
+  /^monitor\/integrity\/workspace-sync-runs\/.*\.json$/,
+  /^monitor\/integrity\/prune-integrity-runs\/.*\.json$/,
+  /^monitor\/integrity\/dome-mirror-abort-.*\.json$/,
+];
+
 // Dynamic category: all .md files under monitor/prompts/ are git-owned.
 // These are walked at publish time (same walker as the pre-Phase-1 build.js)
 // and each is treated as if it were listed above with category 'git'.
@@ -601,6 +630,10 @@ function syncToWorkspace() {
         if (!entry.isFile()) continue;
         if (globExt && !entry.name.endsWith(globExt)) continue;
         const rel = path.relative(ROOT, full);
+        // PROP-145 / DIRECTIVE-20260801-001: skip transient per-run integrity
+        // artifacts — git-only by design, never mirrored to FUSE. (See the
+        // FUSE_EXCLUDE_TRANSIENT definition above for the full rationale.)
+        if (FUSE_EXCLUDE_TRANSIENT.some(re => re.test(rel))) continue;
         const dst = path.join(workspace, rel);
         if (fs.existsSync(dst)) continue;
         fs.mkdirSync(path.dirname(dst), { recursive: true });
