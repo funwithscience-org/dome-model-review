@@ -1,0 +1,123 @@
+{
+  "run_id": "2026-08-08T18-15",
+  "agent": "tinker",
+  "started_at": "2026-08-08T18:15:00Z",
+  "mode_selected": "Mode 2 (Infrastructure) — 6-day disk-pressure pipeline outage 2026-08-02..2026-08-08. Red infra condition overrides Mode 0 top-pick per dispatcher step 2 ('anything red -> that mode'); the two pending Mode 0 items (ISS-3025, ISS-3029, both minor) are deferred with reasoning under findings. This tinker run itself was blocked by the same outage: git clone into ${SESSION}/tinker-clone failed ENOSPC (/sessions device 0 MB available); run completed via legacy /tmp/tinker-clone fallback on the root FS (3.0 GB free) — the same escape path poller validated at 16:20 local. No tinker run landed 08-03..08-07 (last report-2026-08-02T09-35.json), consistent with the outage rather than a tinker-specific defect.",
+  "modes_checked": {
+    "mode1_pipeline_health": "RED — no analyst/curmudgeon/decider/social/workspace-sync/dome-mirror/tinker commits 08-03..08-07 (git log). Poller/integrity/prune-integrity/analyst-baby recovered 08-08. No stranded-patches sentinels >24h (checked, none non-tombstoned).",
+    "mode2_infrastructure": "RED (selected) — /sessions device 100% full (df: 9464/9980 MB, avail 0); workspace-sync abort sentinels x4 (08-05T00-38, 08-06T14-12, 08-07T06-17, 08-08T14-53), dome-mirror abort sentinels x2 on FUSE (08-06T03-18, 08-08T15-00); FUSE<->git divergence on 16 files (inventoried + rescued this run); git auth OK (PRELUDE HTTP 200); FUSE git-owned spot-checks all matched GitHub (wins.json, sections.json, digest-reviews.js, generate-html.js, index.html, build.js, CLAUDE.md).",
+    "mode3_cost_engineering": "not run — infra red",
+    "mode4_proposals": "folded into Mode 2 output: PROP-148 authored (clone-target disk-pressure fallback + gate parity + host-level drain escalation)"
+  },
+  "previous_followup": {
+    "PROP-147": "implemented (operator-applied 2026-08-02, v1.3.0 commit). Not re-verified this run — infra outage takes precedence; Stage-1 metric re-check belongs to the next Mode 3 run.",
+    "PROP-146": "implemented (operator-applied 2026-08-02 commit 'Apply PROP-146'). Same deferral.",
+    "PROP-142 soak": "operator action still pending: monitor/decisions/prop-142-queue-schema-shadow.flag still present at HEAD (soak target was ~08-06; the outage consumed the soak-observation window — recommend one more clean decider run post-recovery before deleting the flag).",
+    "Mode 0 remainder from 08-02 (ISS-3025, ISS-3029)": "deferred again (4th deferral) — critical outage preempted; they are the top Mode 0 picks for the next non-red run."
+  },
+  "findings": [
+    {
+      "category": "infrastructure",
+      "severity": "critical",
+      "title": "6-day, ~7-of-11-agent pipeline outage 2026-08-02..2026-08-08 — /sessions device 100% full at host level; agents cloning to ${SESSION}/<agent>-clone all ENOSPC while root FS had ~2.8 GB free",
+      "description": "Root cause chain: (1) the scheduled-sandbox /sessions device (nvme1n1, 9.98 GB) is at 0 MB available; (2) all ${SESSION}-clone agents (workspace-sync per monitor/prompts/workspace-sync.md:dome-sync-clone, dome-mirror per monitor/prompts/dome-mirror.md:dome-mirror-clone, curmudgeon per monitor/prompts/curmudgeon.md:dome-curmudgeon-clone, tinker per monitor/prompts/tinker.md:tinker-clone, curmudgeon-verify per monitor/prompts/curmudgeon-verify.md:dome-curmudgeon-verify-clone) fail at clone; (3) gated agents aborted fail-closed (monitor/integrity/workspace-sync-abort-2026-08-08T14-53-33Z.json: clone_fs_avail_mb=0, root_fs_avail_mb=2782 — the discriminator proving root-FS headroom existed throughout); (4) ungated agents either went dark (decider: no commit after 'Decider run 2026-08-02T02:15Z', social: none after 'social 2026-08-02') or improvised degraded-FUSE writes (curmudgeon, analyst — see stranded-artifacts finding). The accumulation is host-level: 5,701 session dirs on the device, each unreadable/un-deletable from other sessions' uids; in-sandbox cleanup is impossible. Poller's same-day finding (monitor/changes/chg-20260808-1620-001.json) and integrity's (monitor/integrity/report-2026-08-08T15-25.json issues_found[0]) are the sibling detections; this report adds the clone-target discriminator and the fix path.",
+      "evidence": "df -m /sessions => 9980 total / 9464 used / 0 avail (this run); ls /sessions | wc -l => 5701; du -sm /sessions (uid-visible only) => 352 MB, i.e. ~9.1 GB is other-session-owned; git clone into /sessions/epic-zen-ramanujan/tinker-clone => 'fatal: could not create work tree dir ... No space left on device' while df -m / => 3180 MB free; git log gap 08-03..08-07 for analyst/curmudgeon/decider/social/workspace-sync/dome-mirror/tinker",
+      "recommendation": "PROP-148 (authored this run): Part A clone-target fallback to /tmp when sessions-FS < 700 MB; Part B fail-closed disk gates + no-FUSE-improvisation prohibition on the five ungated prompts; Part C OPERATOR/HOST drain of /sessions (the actual root cause — no sandbox workaround); Part D sessions_fs_avail_mb telemetry (shipped this run in queue-history.jsonl)."
+    },
+    {
+      "category": "degraded-mode-improvisation",
+      "severity": "major",
+      "title": "curmudgeon (08-05 and 08-08) and analyst (08-08) ran without disk gates and improvised FUSE-only writes instead of aborting — the exact class PROP-051 gates were designed to prevent, but gate coverage stops at workspace-sync/dome-mirror",
+      "description": "Gate coverage audit (grep 'disk-pressure|free space for a full clone|avail_mb' over monitor/prompts/*.md): workspace-sync.md=7 hits, dome-mirror.md=7, analyst-baby.md=1, ALL OTHERS ZERO (curmudgeon.md, curmudgeon-verify.md, decider.md, analyst.md, social.md, poller.md, structure-integrity.md). Result during the outage: curmudgeon wrote monitor/curmudgeon/reviews/WIN-021.c6.json (FUSE mtime 2026-08-05T05:11 local) and monitor/curmudgeon/reviews/WIN-002.c5.json (08-08T16:21 local) plus tracker.json/tracker-archive.jsonl appends to FUSE only; analyst wrote monitor/analyst/expansions/expansion-iss3043-win021-defense-confirm.json + monitor/analyst/issue-proposals/proposal-ISS-3043-resolution.json + status.json analyst fields (last_analyst_run=2026-08-08T15:19:09.991Z) to FUSE only. All were append-only/low-risk THIS time; the 2026-05-07/08 precedent (degraded-FUSE decider patch breaking wins.json) shows the class is not benign. PROP-148 Part B closes it.",
+      "evidence": "find FUSE monitor/ -newermt 2026-08-02 inventory (16 divergent files); monitor/curmudgeon/latest-review-summary.txt FUSE mtime 08-08T16:22; status.json FUSE last_analyst_mode='assigned-analyst→ISS-3043-mode3-confirm'",
+      "recommendation": "PROP-148 Part B. Until applied, operator should treat any FUSE-only agent artifact during disk pressure as unrescued work — check monitor/integrity/ abort sentinels AND run the find-newer inventory after any future outage."
+    },
+    {
+      "category": "data-stranding-rescue",
+      "severity": "moderate",
+      "title": "16 divergent FUSE<->git files inventoried; 12 rescued/merged into git this run; 4 were FUSE-stale (git ahead) and refreshed git->FUSE",
+      "description": "Rescued FUSE->git via this clone (all verified superset/new/union before copy): NEW append-only files monitor/curmudgeon/reviews/WIN-021.c6.json, monitor/curmudgeon/reviews/WIN-002.c5.json, monitor/analyst/expansions/expansion-iss3043-win021-defense-confirm.json, monitor/analyst/issue-proposals/proposal-ISS-3043-resolution.json; FUSE-superset whole-files monitor/curmudgeon/tracker.json (delta: last_updated bump only), monitor/curmudgeon/tracker-archive.jsonl (+2 rows: WIN-021 c6 2026-08-05, WIN-002 c5 2026-08-08; verified all 379 git rows present in FUSE before copy), monitor/analyst/latest-analysis-summary.txt, monitor/curmudgeon/latest-review-summary.txt, monitor/analyst-baby/latest-baby-summary.txt; UNION merge monitor/analyst/attention-inbox.json (git 39 entries + 1 FUSE-only ATTN-2026-08-01T00-45-28Z-mode6-WIN-051-noop = 40; git-only ATT-2026-08-01/08-02 entries preserved); FIELD merge monitor/status.json per PROP-135 semantics (git base with poller-fresh fields kept; lifted analyst-owned last_analyst_run/last_analyst_mode from FUSE — no timestamp regressions, CHECK-4-safe). FUSE-STALE (git authoritative, refreshed git->FUSE after push): monitor/analyst/expansion-tracker.json (FUSE was a pre-archival 2026-07-17 snapshot — all apparent 'FUSE-only' entries EXP-649/654/664/666/669 verified present in monitor/analyst/expansion-tracker-archive.jsonl; git next_id=678 > FUSE 670; a FUSE->git copy would have regressed allocations), monitor/curmudgeon/pending-digest.json, per-agent cost-history.jsonl files, monitor/tinker/queue-history.jsonl. Decider will intake the two rescued reviews via digest on its next run.",
+      "evidence": "diff transcripts in this session; expansion-tracker archive greps (EXP-649:1, EXP-654:1, EXP-664:1, EXP-666:2, EXP-669:1 rows in archive, 0 in live git)",
+      "recommendation": "None further — reconciliation complete this run. Next decider run should confirm WIN-021.c6/WIN-002.c5 flow through pending-digest normally."
+    },
+    {
+      "category": "backlog-trend",
+      "severity": "info",
+      "title": "Backlog steady through the outage: 19 open (0.0% WoW), net_velocity_7d=-1 (first negative run — threshold needs 2 consecutive), expected artifact of 6 days without decider closes",
+      "description": "Row appended to monitor/tinker/queue-history.jsonl (ts 2026-08-08T18:16:37Z): open=19, open_status=3, assigned_analyst=1, age>=14d=10, age>=30d=5, new_7d=4, closed_7d=3, net=-1, baby_drain=0, verify_drain=0, commission_hnotes=0, root_fs_free_mb=3001, closed_issues_mb=3.3, burst_unreviewed=0, sessions_fs_avail_mb=0 (new field, PROP-148 Part D). Small-base floor active (19<30). No thresholds fire.",
+      "evidence": "monitor/tinker/queue-history.jsonl final row",
+      "recommendation": "Watch net_velocity next run; two consecutive negatives => moderate per PROP-030, though the outage explains this one."
+    },
+    {
+      "category": "mode0-deferral",
+      "severity": "info",
+      "title": "Mode 0 items ISS-3025, ISS-3029 (both minor, class_hint null) deferred 4th time — outcome (d) per PROP-060, blocked by critical infra work",
+      "description": "Dispatcher priority normally puts Mode 0 above Mode 1-4, but the mode-selection red-condition rule and severity comparison (critical outage vs two minor pipeline-design questions) justify deferral. They are the committed top picks for the next non-red run.",
+      "evidence": "monitor/decisions/open-issues.json ISS-3025/ISS-3029 status=assigned-tinker",
+      "recommendation": "Next run: if no red condition and no pending directive, take ISS-3025 first (older)."
+    }
+  ],
+  "directive_lifecycle": {
+    "pending_directives": 0,
+    "prop_auto_close": {
+      "mechA_would_close": 0,
+      "mechB_would_close": 0,
+      "actually_closed": 0,
+      "mode": "shadow"
+    },
+    "directive_auto_close": {
+      "would_close": 0,
+      "actually_closed": 0,
+      "mode": "shadow"
+    }
+  },
+  "artifacts": [
+    "monitor/tinker/report-2026-08-08T18-15.json",
+    "monitor/tinker/latest-tinker-summary.txt",
+    "monitor/tinker/queue-history.jsonl (row appended, + new sessions_fs_avail_mb field)",
+    "monitor/tinker/proposals/PROP-148-clone-target-disk-pressure-fallback.json",
+    "12 rescued/merged files (see data-stranding-rescue finding)"
+  ],
+  "cleanup_actions": [
+    {
+      "path": "/tmp/tinker-clone",
+      "reason": "end-of-run clone cleanup (legacy /tmp path used because ${SESSION}/tinker-clone was ENOSPC)",
+      "note": "removed at run end per Cleanup section"
+    }
+  ],
+  "self_cost": {
+    "transcript": "e35aec97-bee0-4709-8aba-a5f8bee602fb.jsonl",
+    "model": "claude-fable-5",
+    "assistant_msgs": 80,
+    "tokens": {
+      "input": 152,
+      "output": 108773,
+      "cache_write_5m": 0,
+      "cache_write_1h": 398615,
+      "cache_read": 12266677
+    },
+    "cost_usd": {
+      "input_usd": 0.00076,
+      "output_usd": 2.719325,
+      "cache_write_5m_usd": 0,
+      "cache_write_1h_usd": 3.98615,
+      "cache_read_usd": 6.133338,
+      "total_usd": 12.839574
+    },
+    "transcript_duration_sec": 708.3,
+    "first_ts": "2026-08-08T18:13:10.966Z",
+    "last_ts": "2026-08-08T18:24:59.272Z",
+    "segments_found": 1,
+    "segments_priced": 1,
+    "per_segment": [
+      {
+        "file_basename": "e35aec97-bee0-4709-8aba-a5f8bee602fb.jsonl",
+        "msgs": 80,
+        "model": "claude-fable-5",
+        "total_usd": 12.839574,
+        "first_ts": "2026-08-08T18:13:10.966Z",
+        "last_ts": "2026-08-08T18:24:59.272Z"
+      }
+    ]
+  }
+}
