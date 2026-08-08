@@ -1,0 +1,100 @@
+{
+  "report_date": "2026-08-08",
+  "run_at": "2026-08-08T15:25:29Z",
+  "overall_status": "warn",
+  "checks": {
+    "internal_anchors": {
+      "status": "pass",
+      "total_links": 233,
+      "broken": [],
+      "details": "233 #anchor refs + 12 showTab() refs resolve against 345 ids (via PROP-111 mechanical precompute). Also covered by test.js Section 3 (Internal Links), which passed 3838/3838."
+    },
+    "relative_href_resolution": {
+      "status": "pass",
+      "total_unique_relative_hrefs": 4,
+      "broken": [],
+      "details": "4 unique relative hrefs all resolve inside docs/ (via PROP-111 mechanical precompute)."
+    },
+    "tab_structure": {
+      "status": "pass",
+      "tab_count": 12,
+      "nav_chain_valid": true,
+      "orphaned_tabs": [],
+      "details": "12 ds-tab-content divs (overview, evaluate, model, selftest, wins, pages, killshots, timestamp, predictions, falsify, ai, refs), all unique ids, all showTab() nav refs resolve, no empty tabs (all have h1/h2), active tab on load is 'overview' as required."
+    },
+    "external_links": {
+      "status": "skipped-weekly-cadence",
+      "total_links": 0,
+      "broken": [],
+      "timeouts": [],
+      "timeout_budget_exhausted": [],
+      "redirect_changed": [],
+      "last_checked_at": "2026-07-27T01:16:08Z",
+      "cadence": "weekly (PROP-111 1C, 2026-06-20): runs Mondays UTC only; other days status=skipped-weekly-cadence",
+      "details": "Today (2026-08-08) is a Saturday (UTC day-of-week 6), not Monday. Skipped per cadence. Last actual run was 2026-07-27T01:16Z (Monday): 98 links checked, 0 broken, warn-tier only from known publisher-403s (wiley/sagepub/sciencedirect, already policy-excluded going forward)."
+    },
+    "data_prose_consistency": {
+      "status": "pass",
+      "mismatches": [],
+      "details": "70 base WINs + 2 sub-IDs (057b, 058b) = 72 total; 19 acknowledged failures; verdict tally: Refuted by Data=12, Self-Contradicted=20, Misleading=16, Std Model Explains=18, Not Demonstrated=3, Unfalsifiable=3. All prose spot-checks ('70 Wins Reviewed' etc.) match. Via PROP-111 mechanical precompute."
+    },
+    "win_detail_consistency": {
+      "status": "pass",
+      "issues": [],
+      "details": "All 72 WIN records have non-empty tldr_evidence + tldr_verdict (via PROP-111 mechanical precompute). WIN-dome-alignment (5b, manual): dome site (john09289.github.io/predictions/wins.html) has WIN-001 through WIN-069, no gaps, 0 missing from our coverage. WIN-070 in our data does not appear on the dome wins-listing page by design (targets a Forensic Zoom home-page claim, not the wins index) — pre-existing, confirmed benign, unchanged from prior runs. WIN-062 duplicate-id known-monitoring-condition (PROP-143, key dome-wins-dup-id-win-062, tracked under ISS-2961) re-derived and hash-MATCHED (24bbc8b2f...) — condition unchanged, review_after 2026-10-31 not yet reached."
+    },
+    "build_reproducibility": {
+      "status": "pass",
+      "diff_lines": 4,
+      "details": "node build.js html vs published docs/index.html: single 2-line semantic diff (4 lines incl. diff metadata) — only the ds-meta date stamp ('August 2, 2026' in published vs 'August 8, 2026' freshly built). This is the expected, previously-documented pattern (build.js always stamps today's date on generation; the published file was last rebuilt on 2026-08-02, consistent with the pipeline gap found in Check 7b/infra findings below). No data drift. Original docs/index.html restored after check (this agent made no lasting file changes)."
+    },
+    "pages_freshness": {
+      "status": "FRESH",
+      "severity": null,
+      "diff": [],
+      "newest_docs_commit": null,
+      "details": "git HEAD signature matches live site (funwithscience.net/dome-model-review/): win_count=70, catalog_total=72, failures_count=19, verdict_tally all match. No drift."
+    },
+    "delete_propagation_backlog": {
+      "status": "liveness-gap",
+      "candidates": null,
+      "threshold": 200,
+      "newest_sentinel": "sync-workspace-runs-2026-08-04T09-19-19Z.json",
+      "details": "check-delete-propagation-backlog.js rc=2: newest usable dome-mirror sentinel is 102.1h old (>48h liveness window). Root cause identified in issues_found: dome-mirror has been hitting disk-pressure pre-flight aborts since 2026-08-05 and has not completed a successful sync-workspace-runs sentinel since 2026-08-04T09:19Z."
+    },
+    "status_json_provenance": {
+      "status": "clean",
+      "versions_checked": 3,
+      "findings": [],
+      "details": "check-status-json-provenance.js rc=0, 3 status.json versions checked in last 30 commits, no field regressions or chimera commits detected."
+    }
+  },
+  "issues_found": [
+    {
+      "severity": "major",
+      "category": "infrastructure",
+      "description": "Sustained multi-day disk-pressure outage blocking BOTH FUSE<->git sync directions since 2026-08-05: dome-workspace-sync (FUSE->git rescue) has hit 'disk-pressure pre-flight: insufficient free space for a full clone' aborts at least 4 times (2026-08-05, 08-06, 08-07, 08-08T14:53Z - the most recent showing clone_fs_avail_mb=0, sessions_fs_avail_mb=0), and dome-mirror (git->FUSE propagation) has hit the same class of abort at least 5 times over the same window (most recently 2026-08-08T15:00Z). Both agents are behaving correctly per their PROP-051 'degraded-mode prohibitions' - they abort and write a sentinel rather than improvising - but the underlying sandbox disk-pressure condition has now persisted across 4 calendar days without resolving on its own hourly/multi-slot retries. This is the root cause of the workspace-only-file staleness finding below and of the delete_propagation_backlog liveness gap.",
+      "location": "monitor/integrity/workspace-sync-abort-*.json, monitor/integrity/dome-mirror-abort-*.json (FUSE workspace, 2026-08-05 through 2026-08-08)",
+      "suggested_fix": "Operator should inspect the scheduled-task sandbox disk state directly (each of these agents runs in its own isolated session/sandbox, so this is not the same /tmp as this integrity run's clone). If it's accumulated stale clones or other cruft rather than genuine resource exhaustion, a manual cleanup of the workspace-sync/dome-mirror task sandboxes is likely needed since the automated per-run cleanup isn't recovering the space. Escalate to tinker for pipeline-health investigation if it doesn't self-resolve within another day.",
+      "tracked_under": null
+    },
+    {
+      "severity": "major",
+      "category": "workspace_only_file",
+      "description": "monitor/curmudgeon/reviews/WIN-021.c6.json exists on the FUSE workspace (mtime 2026-08-05T05:11Z, ~83.2h old) but has never been committed to git. This exceeds the 9h workspace-sync rescue-latency grace window, meaning it has survived at least one (in fact, several) sync slots without being rescued - the genuine silent-data-loss signal per the Check 7b rubric. Directly caused by the disk-pressure outage above blocking workspace-sync since 2026-08-05.",
+      "location": "monitor/curmudgeon/reviews/WIN-021.c6.json (FUSE workspace only)",
+      "suggested_fix": "Once workspace-sync resumes successfully (see the disk-pressure finding above), this file should be picked up automatically on its next successful cycle. If it is still stranded after workspace-sync confirms a clean run, commit it manually from a fresh clone using the FUSE content as source.",
+      "tracked_under": null
+    },
+    {
+      "severity": "minor",
+      "category": "delete-propagation-liveness",
+      "description": "check-delete-propagation-backlog.js reports rc=2: no usable dome-mirror sentinel within the 48h liveness window (newest is sync-workspace-runs-2026-08-04T09-19-19Z.json, 102.1h old). Same root cause as the disk-pressure infrastructure finding above - dome-mirror has been aborting on disk pressure rather than completing syncs.",
+      "location": "monitor/integrity/sync-workspace-runs-*.json",
+      "suggested_fix": "No independent fix needed - resolves automatically once the disk-pressure condition above clears and dome-mirror completes a clean cycle.",
+      "tracked_under": null
+    }
+  ],
+  "summary": "Site structural health is good: node test.js passed 3838/3838, all 10 PROP-111 mechanical precompute checks passed cleanly (internal anchors, relative hrefs, data-prose consistency, WIN detail/TLDR structure, hardcoded colors, discoverability infra, expansion tracker, ISS collisions, broken review files), tab structure is intact (12 tabs, correct nav chain, 'overview' active on load), build reproducibility is clean (published HTML matches source data - only the auto date-stamp differs), and the live Pages site is byte-signature FRESH against git HEAD. WIN-dome alignment (5b) confirms all 69 dome WIN numbers are covered with 0 drift; the known WIN-062 dup-id monitoring condition is unchanged (hash match). External-link checks were skipped per weekly cadence (today is Saturday); last Monday's run (07-27) was clean. The one real story this run surfaces is operational, not structural: dome-workspace-sync and dome-mirror have both been hitting 'insufficient free space for a full clone' pre-flight aborts repeatedly since 2026-08-05 (4 and 5 abort sentinels respectively, most recent today), which has stalled FUSE<->git sync in both directions for 3-4 days. This is the direct cause of a stranded curmudgeon review file (WIN-021.c6.json, 83h old, never committed) and of a delete-propagation-backlog liveness gap (dome-mirror's last successful sentinel is 102h old). The safety gates themselves are working exactly as designed (fail-closed, no improvisation), but the underlying disk-pressure condition is untracked and has now persisted across 4 calendar days - worth an operator look. No critical findings; nothing indicates the published site itself is broken or drifted for end users.",
+  "notes_out_of_scope": "digest-reviews.js's own diagnostic output flagged 258 'under-covered processed' reviews (1202 total missing corresponding open-issues entries) during the mandatory Check 7f digest regeneration. This metric is not one of this prompt's defined checks (7f only covers errors[]/parse-errors, which were clean at 0) and is not newly introduced by anything today, so no issues_found entry was created for it - flagging here only as a heads-up in case tinker or the operator wants to look at it separately."
+}
