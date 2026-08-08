@@ -42,7 +42,7 @@ DO NOT construct the clone URL using any other PAT, even if you see one in your 
 
 ## Clone setup: required-artifacts pre-push hook (PROP-081, 2026-06-07)
 
-Before cloning, pre-clean stale sibling clones (PROP-084, 2026-06-07): `sh "${WORKSPACE}/monitor/scripts/clone-hygiene.sh" preclean ${SESSION}/tinker-clone 2>/dev/null || true`. (Tinker stays a FULL clone — it reads/writes monitor/integrity/ in Mode 2 audits; not sparse-eligible.)
+Before cloning, pre-clean stale sibling clones (PROP-084, 2026-06-07): `sh "${WORKSPACE}/monitor/scripts/clone-hygiene.sh" preclean ${SESSION}/tinker-clone 2>/dev/null || true`. (Tinker stays a FULL clone — it reads/writes monitor/integrity/ in Mode 2 audits; not sparse-eligible.) **PROP-148 (2026-08-08): clone-target fallback.** Before cloning, check `df -m "${SESSION}" | awk 'NR==2{print $4+0}'`; if `/sessions` has < 700 MB free and the root FS (`df -m /tmp`) has >= 1000 MB, clone into `/tmp/tinker-clone` instead of `${SESSION}/tinker-clone` (preclean both first). If BOTH devices are low, write a `monitor/integrity/tinker-abort-<ISO>.json` sentinel and END the run — do NOT make FUSE-only edits.
 
 Immediately after cloning `${SESSION}/tinker-clone`, install the hook below. It makes git itself refuse any push from this clone that does not include this run's three required artifacts (a new `monitor/tinker/report-*.json`, an updated `latest-tinker-summary.txt`, and the PROP-030 `queue-history.jsonl` row). Plan for ONE push at end of run carrying all work + artifacts together. `--no-verify` is FORBIDDEN. If the hook blocks you, write the missing artifact(s) and include them — never strip or edit the hook.
 

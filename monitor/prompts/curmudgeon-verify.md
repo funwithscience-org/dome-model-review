@@ -72,6 +72,24 @@ The workspace FUSE mount can serve stale content. Clone the repo fresh:
 ```bash
 SESSION=$(pwd | grep -oP '/sessions/[^/]+' | head -1)
 CLEAN_CLONE="${CLEAN_CLONE:-${SESSION}/dome-curmudgeon-verify-clone}"
+# --- PROP-148 (2026-08-08): clone-target fallback under /sessions disk pressure ---
+# The ${SESSION} device (/sessions) can reach 0 MB free from accumulated dead
+# session dirs while the root FS (/tmp) still has headroom; a full /sessions makes
+# git clone fail ENOSPC. Preclean, then retarget this clone to /tmp when /sessions
+# is low. If BOTH devices are low, FAIL CLOSED (abort sentinel, no FUSE-only edits).
+sh "${WORKSPACE:-.}/monitor/scripts/clone-hygiene.sh" preclean "$CLEAN_CLONE" 2>/dev/null || true
+__SESS_AV=$(df -m "${SESSION}" 2>/dev/null | awk 'NR==2{print $4+0}')
+__ROOT_AV=$(df -m /tmp 2>/dev/null | awk 'NR==2{print $4+0}')
+if [ "${__SESS_AV:-0}" -lt 700 ] && [ "${__ROOT_AV:-0}" -ge 1000 ]; then
+  CLEAN_CLONE="/tmp/dome-curmudgeon-verify-clone"
+  echo "PROP-148: /sessions ${__SESS_AV}MB low -> cloning under /tmp (root ${__ROOT_AV}MB)"
+elif [ "${__SESS_AV:-0}" -lt 700 ]; then
+  echo "PROP-148 ABORT: /sessions ${__SESS_AV}MB and root ${__ROOT_AV}MB both low"
+  # FAIL-CLOSED: write monitor/integrity/curmudgeon-verify-abort-<ISO>.json with
+  # sessions_fs_avail_mb, root_fs_avail_mb, reason -> then END THE RUN. Do NOT
+  # fall back to editing the FUSE workspace directly.
+fi
+# --- end PROP-148 ---
 
 WORKSPACE=$(find /sessions/*/mnt/dome-model-review -maxdepth 0 2>/dev/null | head -1)
 AUTH_URL=$(git -C "${WORKSPACE}" remote get-url origin 2>/dev/null)

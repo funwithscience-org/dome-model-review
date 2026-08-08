@@ -10,6 +10,12 @@ Run this block at the very start of your procedure, BEFORE any `git clone`, `git
 ```bash
 SESSION=$(pwd | grep -oP '/sessions/[^/]+' | head -1)
 WORKSPACE="${SESSION}/mnt/dome-model-review"
+# PROP-148 (2026-08-08): clone-target fallback under /sessions disk pressure.
+# Before any git clone, if `df -m "${SESSION}"` shows < 700 MB free on /sessions AND
+# `df -m /tmp` shows >= 1000 MB on the root FS, clone under /tmp/dome-social-clone
+# instead of ${SESSION}/... (preclean both first via clone-hygiene.sh). If BOTH
+# devices are low, write monitor/integrity/social-abort-<ISO>.json and END the run —
+# do NOT fall back to FUSE-only edits.
 PRELUDE_AUTH=$(git -C "${WORKSPACE}" remote get-url origin 2>/dev/null)
 if [ -z "$PRELUDE_AUTH" ] || [[ "$PRELUDE_AUTH" != *"x-access-token"* ]]; then
   # Defensive secondary: direct grep of .git/config

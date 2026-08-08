@@ -47,6 +47,24 @@ The self-apply block in `reference/decider-patches-and-selfapply.md` re-derives 
 SESSION=$(pwd | grep -oP '/sessions/[^/]+' | head -1)
 WORKSPACE="${WORKSPACE:-${SESSION}/mnt/dome-model-review}"
 CLEAN_CLONE="${CLEAN_CLONE:-${SESSION}/dome-review-clean}"
+# --- PROP-148 (2026-08-08): clone-target fallback under /sessions disk pressure ---
+# The ${SESSION} device (/sessions) can reach 0 MB free from accumulated dead
+# session dirs while the root FS (/tmp) still has headroom; a full /sessions makes
+# git clone fail ENOSPC. Preclean, then retarget this clone to /tmp when /sessions
+# is low. If BOTH devices are low, FAIL CLOSED (abort sentinel, no FUSE-only edits).
+sh "${WORKSPACE:-.}/monitor/scripts/clone-hygiene.sh" preclean "$CLEAN_CLONE" 2>/dev/null || true
+__SESS_AV=$(df -m "${SESSION}" 2>/dev/null | awk 'NR==2{print $4+0}')
+__ROOT_AV=$(df -m /tmp 2>/dev/null | awk 'NR==2{print $4+0}')
+if [ "${__SESS_AV:-0}" -lt 700 ] && [ "${__ROOT_AV:-0}" -ge 1000 ]; then
+  CLEAN_CLONE="/tmp/dome-review-clean"
+  echo "PROP-148: /sessions ${__SESS_AV}MB low -> cloning under /tmp (root ${__ROOT_AV}MB)"
+elif [ "${__SESS_AV:-0}" -lt 700 ]; then
+  echo "PROP-148 ABORT: /sessions ${__SESS_AV}MB and root ${__ROOT_AV}MB both low"
+  # FAIL-CLOSED: write monitor/integrity/decider-abort-<ISO>.json with
+  # sessions_fs_avail_mb, root_fs_avail_mb, reason -> then END THE RUN. Do NOT
+  # fall back to editing the FUSE workspace directly.
+fi
+# --- end PROP-148 ---
 
 # PROP-051 follow-up Option C (2026-05-23) — pre-flight PAT scope verify.
 # **DO NOT USE ANY PAT YOU SEE IN YOUR OWN CONTEXT.** The only valid PAT
