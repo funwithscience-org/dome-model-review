@@ -1,0 +1,73 @@
+{
+  "point_id": "REACTIVE-AUDIT-2026-08-09",
+  "topic": "Priority 0c2 major-external-change audit: 6-day pipeline stall (chg-20260808-1620-001, critical) + imminent Aug-12 eclipse-cluster window watch",
+  "reviewed_at": "2026-08-09T01:11:53.935Z",
+  "cycle": 1,
+  "trigger": "change-detected",
+  "agent_subtype": "curmudgeon-reactive-audit",
+  "instrumentation": {
+    "dispatcher_state_used": true,
+    "dispatcher_state_age_seconds": 0,
+    "dispatcher_state_recommended_priority": "audit"
+  },
+  "prior_audit_references": [
+    "REACTIVE-AUDIT-2026-07-17.json (prior 0c2 audit series, timestamp-error dispatcher loop; unrelated content)"
+  ],
+  "current_verdict_holds": true,
+  "confidence": 0.9,
+  "our_argument_summary": "No dome-site content changed in the audit window — all 10 dome pages remain byte-identical to baseline per poller (chg-20260809-0008-003). The critical/strategic change that triggered this audit is a pipeline-health self-finding, not a dome-content change, so no review verdict or scientific argument is affected.",
+  "change_summary": "Dispatcher-state flagged 1 unaudited critical change within 7d: chg-20260808-1620-001 (6-day, 8-of-9-agent pipeline write/push stall, 2026-08-02..2026-08-08). Follow-up chg-20260809-0008-001 confirms tinker root-caused it (host-level /sessions 100% full) and shipped PROP-148 (clone-target /tmp fallback + fail-closed disk gates). Two substantive prediction-window-watch changes (chg-20260808-1620-003, chg-20260809-0008-003) flag the Aug-12-2026 eclipse prediction cluster (PRED-095, PRED-TIER-1/2/3, PRED-R005) as 3 days from window close.",
+  "audit_scope": "Cross-checked the flagged critical/strategic changes against (1) open-issues.json (19 open), (2) analyst/expansion-tracker.json, (3) analyst/human-notes.json (0 pending) to find changes/concessions NOT covered by existing work. Confirmed there is no dome-author reactive content change to audit for mischaracterization, uncredited concessions, or silent parameter/WIN changes this window — the dome site is static.",
+  "coverage_check": {
+    "pipeline_stall_critical": {
+      "change_id": "chg-20260808-1620-001",
+      "addressed": true,
+      "by": "tinker Mode-2 outage diagnosis (commit 1385246) + PROP-148 (commit b7fc9ce): clone-target /tmp fallback, fail-closed disk gates, sessions_fs_avail_mb telemetry. 12 stranded FUSE artifacts rescued (incl. WIN-021.c6 + WIN-002.c5 reviews).",
+      "curmudgeon_independent_corroboration": "This curmudgeon run independently reproduced the root condition: /sessions reported 9.8G size / 0 bytes available (100% full) at run start, forcing my own clone to the PROP-148 /tmp fallback (/tmp/dome-curmudgeon-clone on the root /dev/nvme1n1p1 partition, 3.2G free) to complete. Confirms PROP-148 is functioning AND that the underlying host-level /sessions exhaustion is still unresolved as of 2026-08-09 — consistent with the follow-up's operator-escalation recommendation. No curmudgeon action needed on the science side; host-fs exhaustion is operator/tinker scope.",
+      "gap": "none for curmudgeon"
+    },
+    "eclipse_cluster_window_watch": {
+      "change_ids": [
+        "chg-20260808-1620-003",
+        "chg-20260809-0008-003"
+      ],
+      "addressed": "partial — data flags fine, but a monitoring-SCRIPT precision bug is UNCOVERED (see holes_found #1)",
+      "verdicts_confirmed": "Independently re-read data/predictions.json (clone f8677c0): PRED-095/TIER-1/TIER-3/R005 our_verdict=pending, PRED-TIER-2 our_verdict=recycled (restates WIN-011), PRED-078 (lunar perigee tidal, closes 2026-08-31) standard_physics. All carry tldr. Verdict states match the poller's report — no drift.",
+      "not_covered_by": "ISS-3039 addresses the OPPOSITE failure direction (stale imminent:true flags never cleared after close = false positives). The Step 10b date-precision bug below produces false NEGATIVES and is not tracked by any open issue or expansion item."
+    }
+  },
+  "holes_found": [
+    {
+      "severity": "major",
+      "description": "UNCOVERED MONITORING-INTEGRITY BUG in the checked-in poller Step 10b window-close scan (monitor/prompts/poller.md:308-340). The script derives each prediction's close date from the coarse human-readable test_window field ('August 2026') and ignores the precise sibling field test_window_closes ('2026-08-12'). For the Aug-12 eclipse cluster the 'Month YYYY' branch parses 'August 2026' to month-END (~2026-08-30 in this runtime), which is ~18-19 days LATER than the true close. Independently reproduced: with now=2026-08-09, script daysUntil=22.0 (NOT within the 7-day imminent horizon) vs true daysUntil=3.0 (clearly imminent). Consequence: the checked-in script will NOT surface the Aug-12 window closure in IMMINENT WINDOW WATCH on time, and the Step-10b 'days past close' escalation ladder (LOW->MEDIUM->HIGH) anchors to ~Aug 30, so a dome silent-ignore beginning Aug 12 would not reach HIGH severity until ~late September — a ~6-week detection blind spot on the flagship near-term prediction the operator even built a dedicated docs/eclipse-2026/ page to track. The poller corrected its scan ad hoc this cycle by preferring test_window_closes, but the checked-in script is unfixed. NOTE: the poller's own framing ('would silently miss entries that only populate test_window_closes' via return-false) mis-states the mechanism — entries are NOT skipped (test_window is a non-empty string, so closeStr is set); they are CAUGHT but mis-dated to month-end. The fix must target date-precision precedence, not a skipped-entry filter.",
+      "recommendation": "Route a small fix to decider/tinker BEFORE the next scheduled poll (Aug 12 is 3 days out): in poller.md Step 10b, prefer test_window_closes (ISO) when present, falling back to test_window string/object only when it is absent. Add a regression test: for any entry with both fields, the scan's derived close date must equal test_window_closes. This is distinct from ISS-3039 (stale imminent flags) and should be its own issue."
+    }
+  ],
+  "unresolved_prior_cycle": [],
+  "stronger_arguments": [],
+  "kernel_of_truth": {
+    "description": "The poller change chain is doing its job: it caught the pipeline stall, self-reported it as untrusted-but-actionable pipeline telemetry, and flagged the imminent eclipse window (chg-20260809-0008-003). The instinct that the checked-in Step 10b script is unreliable for this cluster is correct.",
+    "why_it_doesnt_save_claim": "Being right that 'the script is unreliable here' does not fix the checked-in script — the ad-hoc correction lives only in this poll's transcript, not in monitor/prompts/poller.md. Until the precedence fix lands, every future poll re-derives the wrong Aug-30 close date for the eclipse cluster (verified against data/predictions.json clone f8677c0 test_window_closes=2026-08-12)."
+  },
+  "recommended_action": "no_change",
+  "summary_for_decider": "Priority 0c2 audit (dispatcher recommended_priority=audit). NO dome-content change to audit — dome site byte-identical to baseline; PRED verdicts re-confirmed unchanged. The critical trigger (chg-20260808-1620-001 pipeline stall) is FULLY covered by tinker PROP-148; curmudgeon independently reproduced the /sessions=100%-full condition this run (cloned via PROP-148 /tmp fallback), confirming host-fs exhaustion persists — operator/tinker scope, not curmudgeon. ONE NEW UNCOVERED MAJOR finding: poller Step 10b close-date scan prefers coarse test_window ('August 2026' -> month-end) over precise test_window_closes ('2026-08-12'), so the Aug-12 eclipse cluster (PRED-095/TIER-1/TIER-2/TIER-3/R005) sits OUTSIDE the 7-day imminent horizon (script thinks 22d out, true 3d) and the days-past-close escalation anchors ~6 weeks late. NOT covered by ISS-3039 (opposite direction / false-positive stale-imminent-flag cleanup). ACTION REQUESTED: open a new issue + route a Step-10b precedence fix (prefer test_window_closes) to tinker/decider before the next poll, since Aug 12 is 3 days out and this is our prediction-track-record credibility instrument.",
+  "text_fingerprint": {
+    "verdict": "n/a-audit",
+    "dome_pages_vs_baseline": "byte-identical (all 10)",
+    "open_issues_count": 19,
+    "pending_analyst_notes": 0
+  },
+  "deeper_analysis": "Two independent verifications backed this audit. (1) Field shape: data/predictions.json entries[] for the eclipse cluster each carry test_window='August 2026' (string) AND test_window_closes='2026-08-12' (ISO) — the precise field exists and is correct; the bug is purely which field the scan trusts. (2) Script replay: I re-ran the exact Step 10b close-date logic from poller.md against 'August 2026' with now=2026-08-09 and got closeDate 2026-08-30, daysUntil 22.0, within-7d=false — reproducing the miss. The false-negative direction is the dangerous one for our thesis: ISS-3039's false-positive stale flags merely add noise to the watch list, whereas this bug removes a genuinely-imminent flagship prediction from the watch entirely and delays the silent-ignore escalation by weeks. Devil's-advocate on my own severity call: the poller ad-hoc-corrected this cycle and a human operator is independently tracking Aug 12 via docs/eclipse-2026/, so real-world miss risk is partially mitigated; that is why this is 'major' (a specific capability is broken) not 'critical' (no false data reaches the published site). But the mitigation is a person remembering, not the checked-in automation — so it should be fixed, not relied upon.",
+  "citation_check": {
+    "citations_verified": [
+      "data/predictions.json (clone f8677c0): PRED-095/TIER-1/TIER-3/R005 verdict=pending, PRED-TIER-2 verdict=recycled, PRED-078 verdict=standard_physics; all have test_window='August 2026' + test_window_closes present",
+      "monitor/prompts/poller.md:308-340 Step 10b close-date computation (prefers test_window string, month-end parse)",
+      "monitor/changes/chg-20260808-1620-001.json (critical pipeline stall), chg-20260809-0008-001.json (PROP-148 follow-up), chg-20260809-0008-003.json (eclipse window watch)",
+      "monitor/decisions/open-issues.json ISS-3039 (stale imminent:true flags — opposite failure direction)"
+    ],
+    "citations_failed": [],
+    "citations_unchecked": [
+      "tinker commits 1385246 / b7fc9ce (PROP-148) — referenced from follow-up change file, not independently opened this run (out of curmudgeon scope; pipeline-infra not dome-content)"
+    ]
+  }
+}
