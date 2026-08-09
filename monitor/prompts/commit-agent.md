@@ -115,12 +115,23 @@ fi
 If push is non-fast-forward (remote moved), `git pull --rebase origin main` ONCE and re-push; if the rebase
 conflicts, ABORT with a sentinel (do not resolve blindly).
 
-## STEP 6 — archive the manifest + clean up
+## STEP 6 — archive the manifest + clean up (FUSE-safe: never unlink workspace files)
 
-On successful push: move `${WORKSPACE}/monitor/commit-queue/pending.json` →
-`${WORKSPACE}/monitor/commit-queue/done-<ISO>.json` (so the next run is a clean no-op), and `rm -rf "$CLONE"`.
-Write a one-line `${WORKSPACE}/monitor/commit-queue/latest-commit-summary.txt` with the commit SHA + message
-+ paths for the operator. END.
+The workspace is a FUSE/iCloud mount that **cannot `unlink`** — `mv`/`rm` on any workspace file fails
+(unlink-deny) and leaves an orphan. So archive by **copy-then-truncate**, never by move/delete:
+
+- `cp "${WORKSPACE}/monitor/commit-queue/pending.json" "${WORKSPACE}/monitor/commit-queue/done-<ISO>.json"`
+  (a copy — not `mv`).
+- Truncate the manifest in place to empty: `: > "${WORKSPACE}/monitor/commit-queue/pending.json"`
+  (a write, which FUSE allows). Do NOT delete it — STEP 1 treats an absent-or-empty manifest as a clean no-op,
+  so an empty file is the correct "nothing queued" state.
+- Write `${WORKSPACE}/monitor/commit-queue/latest-commit-summary.txt` (commit SHA + message + paths).
+- `rm -rf "$CLONE"` IS fine — the clone lives under `${SESSION}` or `/tmp` (a real filesystem, not FUSE).
+
+Report the SHA. END.
+
+**Rule: never `mv`/`rm`/`unlink` any path under `${WORKSPACE}`.** FUSE denies unlink for unattended agents and
+leaves orphans that need an `allow_cowork_file_delete` drain to clear. Writes and truncation are always safe.
 
 ## What this agent will NOT do (by design)
 
