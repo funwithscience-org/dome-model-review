@@ -317,11 +317,22 @@ const now=new Date();
 const horizon=new Date(now.getTime()+7*86400000);
 const items=entries.filter(e=>{
   if(e.entry_type!=='prediction'&&e.entry_type!=='tracking')return false;
-  const tw=e.test_window;
+  // PROP-fix ISS-3056 (2026-08-10): prefer precise test_window_closes (ISO) when
+  // present; only fall back to the coarse test_window string/object when it is
+  // absent. The old code always trusted test_window, which for 'Month YYYY'
+  // strings parses to month-END -- for the Aug-12 eclipse cluster this derived
+  // ~2026-08-30 (22d out) instead of the true 2026-08-12 (3d out), pushing the
+  // window entirely outside the 7-day imminent horizon. Entries were never
+  // skipped (test_window is non-empty), they were CAUGHT but mis-dated.
   let closeStr;
-  if(typeof tw==='string')closeStr=tw;
-  else if(tw&&tw.closes)closeStr=tw.closes;
-  else return false;
+  if(typeof e.test_window_closes==='string'&&/^\d{4}-\d{2}-\d{2}/.test(e.test_window_closes)){
+    closeStr=e.test_window_closes;
+  } else {
+    const tw=e.test_window;
+    if(typeof tw==='string')closeStr=tw;
+    else if(tw&&tw.closes)closeStr=tw.closes;
+    else return false;
+  }
   // Parse: accept ISO date, 'YYYY-MM-DD', or 'Month YYYY' (use month-end)
   let closeDate;
   if(/^\d{4}-\d{2}-\d{2}/.test(closeStr))closeDate=new Date(closeStr);
@@ -333,8 +344,13 @@ const items=entries.filter(e=>{
   const daysUntil=(closeDate-now)/86400000;
   return daysUntil<=7;  // within 7 days, includes already-past
 }).map(e=>{
-  const tw=e.test_window;
-  const closeStr=typeof tw==='string'?tw:(tw&&tw.closes)||'';
+  let closeStr;
+  if(typeof e.test_window_closes==='string'&&/^\d{4}-\d{2}-\d{2}/.test(e.test_window_closes)){
+    closeStr=e.test_window_closes;
+  } else {
+    const tw=e.test_window;
+    closeStr=typeof tw==='string'?tw:(tw&&tw.closes)||'';
+  }
   return {id:e.id,closes:closeStr,verdict:e.our_verdict,claim:(e.claim||'').substring(0,80)};
 });
 console.log(JSON.stringify(items,null,2));
