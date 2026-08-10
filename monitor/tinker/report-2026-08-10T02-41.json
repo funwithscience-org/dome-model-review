@@ -1,0 +1,125 @@
+{
+  "run_id": "tinker-2026-08-10T02-41",
+  "ts": "2026-08-10T02:47:13.022Z",
+  "mode_selected": "Mode 0 (assigned-to-tinker top actionable pick ISS-3029) dispatched to Mode 4 mechanical self-fix per tinker-discretion rule (class_hint null, suggested_fix fully mechanical). Sorted top-pick ISS-3025 is PROP-PENDING (PROP-149, pending-operator-review) -> deferred per the 2026-07-30 pending-PROP guard, one-line outcome (d). ISS-3029 was also the previous run's explicit NEXT RUN designation.",
+  "modes_checked": {
+    "mode0": "3 items: ISS-3025 (PROP-PENDING PROP-149, deferred), ISS-3029 (DISPATCHED this run), ISS-3052 (held — folds into PROP-148 apply per 08-09 operator action #4)",
+    "mode1": "no stalled agents. WATCH from 08-09 CLEARED: workspace-sync + dome-mirror left commits/sentinels at 08-09 04:xx + 08:xx and 08-10 00:xx slots (commits 29cf2f1/f87fe07/6749762/735a148/cc084b3, sentinel run-2026-08-10T00-07-30Z.json). No stranded patches flagged.",
+    "mode2": "sessions FS RECOVERED: 9266MB free (was 0MB across 08-08/08-09 runs) — this run cloned to ${SESSION}/tinker-clone normally, no /tmp fallback needed. Root FS 3149MB free. Auth 200. FUSE prompt file re-synced post-edit.",
+    "mode3": "not run — Mode 0 item took the run. PROP-146/147 detailed verify still owed to next Mode 3 run.",
+    "mode4": "ran as the dispatch target for ISS-3029"
+  },
+  "preflight": {
+    "pending_directives": 0,
+    "prop_auto_close": {
+      "props_walked": 161,
+      "mechA_would_close": 0,
+      "mechB_would_close": 0,
+      "actually_closed": 0
+    },
+    "directive_auto_close": {
+      "directives_walked": 134,
+      "pending": 0,
+      "actually_closed": 0,
+      "enforce_mode": true
+    },
+    "backlog_trend": "no thresholds fired: total 19 (flat WoW vs 08-02 baseline 19, base<30 so percent floor applies regardless), net_velocity_7d=+11 (closed 15 / new 4), assigned_analyst 0, queue depth 0"
+  },
+  "findings": [
+    {
+      "category": "self-fix",
+      "severity": "minor",
+      "title": "ISS-3029 all three items fixed: Step 3a gate next_iss_id check + EXP-596/666 archive dedupe + stray WIN-070 tracker migration",
+      "description": "(a) monitor/prompts/reference/decider-patches-and-selfapply.md:\"Invariant 2\" now checks canonical next_iss_id (PROP-089) with fallback to vestigial next_id only when next_iss_id absent — the old check false-positived on every decider push since the counters diverged (open-issues.json:next_id=3053 vs max live ISS-3058; next_iss_id=3059 correct). (b) monitor/analyst/expansion-tracker-archive.jsonl deduped keep-first per ISS-3029 suggested_fix: EXP-596 later row (decider-backfill-from-proposal, line 472) and EXP-666 later row (line 519) dropped, 525->523 lines. (c) monitor/curmudgeon/tracker.json:points[] stray WIN-070 win-typed entry migrated: status=processed + processed_at=2026-05-19T17:45:28Z merged onto the existing wins{}.WIN-070 record (which had said pending); points[] now 15 entries, 0 stray.",
+      "evidence": "Fixed gate logic re-run against repaired data: PRE-PUSH GATE OK. lint-exp-allocations.js --verify: PASS (next_id=682 > max=681; 80 items, 0 duplicates). Prompt file synced clone->FUSE, md5-identical both sides. Closure HNOTE close_iss_batch [ISS-3029] dual-written FUSE+clone.",
+      "recommendation": "Decider closes ISS-3029 on next run via the HNOTE handler."
+    },
+    {
+      "category": "data-hygiene",
+      "severity": "info",
+      "title": "Two schema-variant rows in expansion-tracker-archive.jsonl use exp_id/item_id instead of id (EXP-620, EXP-622)",
+      "description": "monitor/analyst/expansion-tracker-archive.jsonl:\"exp_id\":\"EXP-620\" and :\"item_id\":\"EXP-622\" — two archive rows written with non-canonical key names. Both EXPs also have proper id-keyed rows elsewhere in the archive, so no id is lost; but the gate/lint scripts parse only .id, so these rows are invisible to archMax/duplicate computations. Harmless today (not the max ids), left untouched — out of ISS-3029 scope.",
+      "evidence": "grep counts: EXP-620 proper-id rows=1, EXP-622 proper-id rows=1; variant rows at archive lines 480-481 (post-dedupe numbering may shift by up to 2).",
+      "recommendation": "No action needed now. If a future archive consumer starts keying on these rows, normalize the two keys to id in the same batch."
+    },
+    {
+      "category": "infrastructure",
+      "severity": "info",
+      "title": "/sessions host FS recovered: 9266MB free (was 0MB) — PROP-148 Part C operator drain appears done or host recycled",
+      "description": "monitor/tinker/proposals/PROP-148-clone-target-disk-pressure-fallback.json:status remains pending-operator-review, but the urgent Part C condition (sessions FS 0MB) has cleared — this run cloned to the normal ${SESSION}/tinker-clone path with 9.2GB headroom. The /tmp fallback logic in the 9 prompts stays valuable as a standing guard.",
+      "evidence": "df -m /sessions/<session>: 9266MB free at run time vs 0MB reported by the 08-08 and 08-09 runs.",
+      "recommendation": "Operator can treat the URGENT carried action #1 from 08-09 as resolved; PROP-148 close-out now only awaits the ISS-3052 scope amendment (add structure-integrity.md to Part A) at apply time."
+    },
+    {
+      "category": "self",
+      "severity": "minor",
+      "title": "queue-history run_id env-passing bug recurred (second consecutive run) — corrected in place pre-commit",
+      "description": "monitor/tinker/queue-history.jsonl: this run first appended tinker_run_id=\"tinker-undefined\" (env var passed as node argv instead of environment, same shape as the 08-09 self-note), fixed in place before commit. Two consecutive runs hitting it means the prompt spec should carry the correct invocation pattern.",
+      "evidence": "Corrected row now reads tinker_run_id=tinker-2026-08-10T02-41.",
+      "recommendation": "Next prompt-file touch: add an explicit \"RID=x node -e ... reads process.env.RID; pass VAR=val BEFORE the node command\" example to the PROP-030 pre-flight block in tinker.md."
+    }
+  ],
+  "previous_followup": [
+    {
+      "finding": "08-09 WATCH: workspace-sync + dome-mirror traceless since PROP-148 apply",
+      "status": "RESOLVED",
+      "evidence": "Both agents committed through 08-09 04:xx/08:xx and 08-10 00:xx slots; sentinel run-2026-08-10T00-07-30Z.json present. Gate-A2 retarget path exercised without incident."
+    },
+    {
+      "finding": "08-09 operator action #1: /sessions host drain (PROP-148 Part C) URGENT",
+      "status": "RESOLVED",
+      "evidence": "sessions FS 9266MB free this run (was 0MB)."
+    },
+    {
+      "finding": "08-09 operator action #3: delete prop-142-queue-schema-shadow.flag (soak met)",
+      "status": "STILL_PENDING",
+      "evidence": "monitor/decisions/prop-142-queue-schema-shadow.flag still present at HEAD 80979ca. Re-recommending."
+    },
+    {
+      "finding": "08-09: PROP-149 review",
+      "status": "STILL_PENDING",
+      "evidence": "PROP-149 status pending-operator-review; source ISS-3025 deferred this run per pending-PROP guard."
+    },
+    {
+      "finding": "PROP-146/147 detailed verify owed to next Mode 3 run",
+      "status": "CARRIED",
+      "evidence": "This run was consumed by Mode 0/ISS-3029; still owed."
+    }
+  ],
+  "cleanup_actions": [],
+  "self_cost": {
+    "transcript": "b12b5df8-438c-42c1-811c-bd763562139b.jsonl",
+    "model": "claude-fable-5",
+    "assistant_msgs": 59,
+    "tokens": {
+      "input": 118,
+      "output": 64673,
+      "cache_write_5m": 0,
+      "cache_write_1h": 357436,
+      "cache_read": 8190963
+    },
+    "cost_usd": {
+      "input_usd": 0.00059,
+      "output_usd": 1.616825,
+      "cache_write_5m_usd": 0,
+      "cache_write_1h_usd": 3.57436,
+      "cache_read_usd": 4.095481,
+      "total_usd": 9.287256
+    },
+    "transcript_duration_sec": 363.4,
+    "first_ts": "2026-08-10T02:40:13.846Z",
+    "last_ts": "2026-08-10T02:46:17.235Z",
+    "segments_found": 1,
+    "segments_priced": 1,
+    "per_segment": [
+      {
+        "file_basename": "b12b5df8-438c-42c1-811c-bd763562139b.jsonl",
+        "msgs": 59,
+        "model": "claude-fable-5",
+        "total_usd": 9.287256,
+        "first_ts": "2026-08-10T02:40:13.846Z",
+        "last_ts": "2026-08-10T02:46:17.235Z"
+      }
+    ]
+  }
+}

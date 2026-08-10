@@ -411,15 +411,22 @@ try {
   }
 } catch (e) { errors.push('expansion-tracker: read/parse failed: '+e.message); }
 
-// Invariant 2: no duplicate ISS ids, next_id monotonicity (if present)
+// Invariant 2: no duplicate ISS ids, ISS-counter monotonicity (if present).
+// PROP-089 made next_iss_id the canonical counter (allocate-iss-ids.js);
+// next_id is a vestigial pre-PROP-089 field that is no longer advanced.
+// Check next_iss_id when present; fall back to next_id ONLY if next_iss_id
+// is absent (ISS-3029: the old next_id-only check false-positived on every
+// push once the two counters diverged, e.g. next_id=3053 vs max live 3058).
 try {
   const o=JSON.parse(fs.readFileSync('monitor/decisions/open-issues.json','utf8'));
   const ids=(o.issues||[]).map(i=>i.id).filter(Boolean);
   const seen=new Set();
   for(const id of ids){ if(seen.has(id)) errors.push('open-issues: duplicate id '+id); seen.add(id); }
-  if(typeof o.next_id==='number'){
-    const maxId=ids.reduce((m,id)=>Math.max(m,parseInt((id||'ISS-0').replace('ISS-',''))||0),0);
-    if(o.next_id<=maxId) errors.push('open-issues: next_id='+o.next_id+' <= max_id='+maxId);
+  const maxId=ids.reduce((m,id)=>Math.max(m,parseInt((id||'ISS-0').replace('ISS-',''))||0),0);
+  if(typeof o.next_iss_id==='number'){
+    if(o.next_iss_id<=maxId) errors.push('open-issues: next_iss_id='+o.next_iss_id+' <= max_id='+maxId);
+  } else if(typeof o.next_id==='number'){
+    if(o.next_id<=maxId) errors.push('open-issues: next_id='+o.next_id+' <= max_id='+maxId+' (vestigial fallback; next_iss_id absent)');
   }
 } catch (e) { /* non-fatal — open-issues shape may vary */ }
 
