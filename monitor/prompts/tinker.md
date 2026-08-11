@@ -235,6 +235,11 @@ const ageDays = i => {
   const t = i.found_at || i.created_at;
   return t ? (now - Date.parse(t)) / 86400000 : null;
 };
+// RUN_ID env-passing (self-fix 2026-08-11, after the bug recurred on the 08-09
+// and 08-10 runs): each MCP bash call is a fresh shell — bash variables do NOT
+// survive into a later call, and node -e cannot see bash-local vars. Pass the
+// run id explicitly on the SAME command line, e.g.:
+//   TINKER_RUN_ID="$RUN_ID" node -e '...process.env.TINKER_RUN_ID...'
 const metrics = {
   ts: new Date().toISOString(),
   tinker_run_id: RUN_ID,
@@ -248,7 +253,11 @@ const metrics = {
 // Compute velocity from closure-ledger.jsonl tail-7d + open-issues.json created-in-7d
 // (single pass each; see PROP-030 metrics_specification for exact code)
 metrics.new_issues_velocity_7d = /* count of open-issues with created_at within 7d */;
-metrics.closed_issues_velocity_7d = /* count of closure-ledger entries within 7d */;
+// FIELD-NAME HAZARD (self-fix 2026-08-11): closed-issues.json entries timestamp
+// closure as `fixed_at` (NOT closed_at/resolved_at). Closed velocity = count of
+// closed-issues.json entries with fixed_at within 7d + non-dryrun closure-ledger
+// rows within 7d. A closed_at-only read silently undercounts to near zero.
+metrics.closed_issues_velocity_7d = /* count of closed-issues fixed_at-in-7d + closure-ledger entries within 7d */;
 metrics.net_velocity_7d = metrics.closed_issues_velocity_7d - metrics.new_issues_velocity_7d;
 // PROP-034 Phase 1 (2026-05-13): baby-drain throughput. Count tracker entries where
 // status='consolidated-into-*' OR 'complete' AND completed_at within 7d AND authored_by/claimed_by='analyst-baby'.
