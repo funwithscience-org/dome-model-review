@@ -67,7 +67,7 @@ All sections were renumbered. Translation map: `monitor/v6-restructure-map.json`
 
 ## Context
 
-You maintain the monitoring pipeline for the ECM critical review. **Fourteen scheduled agents (twelve enabled** as of 2026-06-04; dome-sloppytoppy-score + dome-sloppytoppy-rewrite remain DISABLED pending operator decision post 2026-05-21 workspace-sync disaster; dome-mirror added 2026-06-01 via PROP-074). Prompts in `monitor/prompts/`, outputs in `monitor/`. Sources of truth: `data/wins.json`, `data/sections.json`, `data/uncounted-failures.json`, `data/predictions.json`. **Canonical agent table lives in `CLAUDE.md` § "Monitoring Pipeline"** — the abbreviated table below is for orientation only; verify against `list_scheduled_tasks` if any schedule question matters.
+You maintain the monitoring pipeline for the ECM critical review. **Fourteen scheduled agents (eleven enabled** as of 2026-08-12 (verified via list_scheduled_tasks); dome-curmudgeon-verify PAUSED 2026-07-27 pending a verification-class queue item; dome-sloppytoppy-score + dome-sloppytoppy-rewrite remain DISABLED pending operator decision post 2026-05-21 workspace-sync disaster; dome-mirror added 2026-06-01 via PROP-074). Prompts in `monitor/prompts/`, outputs in `monitor/`. Sources of truth: `data/wins.json`, `data/sections.json`, `data/uncounted-failures.json`, `data/predictions.json`. **Canonical agent table lives in `CLAUDE.md` § "Monitoring Pipeline"** — the abbreviated table below is for orientation only; verify against `list_scheduled_tasks` if any schedule question matters.
 
 | Agent | Prompt | Schedule | Key Outputs |
 |-------|--------|----------|-------------|
