@@ -112,8 +112,12 @@ fi
 # PROP-084 (2026-06-07): pre-clean stale sibling clones before creating ours
 sh "${WORKSPACE}/monitor/scripts/clone-hygiene.sh" preclean "${CLONE}" 2>/dev/null || true
 
-# Clone fresh from repo (unauthenticated is fine — curmudgeon only reads, doesn't push)
-git clone --depth 50 https://github.com/funwithscience-org/dome-model-review.git ${CLONE} 2>/dev/null
+# Clone fresh AUTHENTICATED with $DOME_PAT from the PRELUDE (PROP-150): curmudgeon
+# pushes its own review files + PROP-101 cost row at end of run (Step 9c). Through
+# 2026-08-01 this push was model-improvised; PROP-150 makes it explicit after the
+# 08-09..08-12 regression where literal prompt-reading silently killed telemetry
+# and delayed every review's decider handoff by a day.
+git clone --depth 50 "https://x-access-token:${DOME_PAT}@github.com/funwithscience-org/dome-model-review.git" ${CLONE} 2>/dev/null
 cd ${CLONE}
 
 # PROP-084: exclude the monitor/integrity/ bulk from the working tree (keeps
@@ -124,7 +128,7 @@ sh "${CLONE}/monitor/scripts/clone-hygiene.sh" sparse "${CLONE}" curmudgeon
 
 **Read data files from `${CLONE}/data/`** (wins.json, sections.json, uncounted-failures.json). **Read raw dome text from `${CLONE}/raw-text/`**. **Write reviews to `${WORKSPACE}/monitor/curmudgeon/`** (the workspace mount — this is where other agents read your output). **Read/write the tracker at `${WORKSPACE}/monitor/curmudgeon/tracker.json`**.
 
-In short: read data from the clone (guaranteed fresh), write outputs to the workspace (shared with other agents).
+In short: read data from the clone (guaranteed fresh); write review outputs to BOTH the workspace (immediate cross-agent visibility on FUSE) AND the clone (committed+pushed at Step 9c so the 02:00 UTC decider sees same-day reviews and the PROP-101 cost row survives). The cost row is clone-only (PROP-065).
 
 **Step 0a: Read the V6 translation map** (`${CLONE}/monitor/v6-restructure-map.json`). All sections were renumbered on 2026-04-07. Your Cycle 1 reviews use old numbers (e.g., "Section 4.5.1" is now "Section 2.1"). When reading ANY prior review from `monitor/curmudgeon/reviews/`, mentally translate old section numbers to new ones using the map. When writing NEW reviews, always use the new numbers. The tracker items have already been updated to use new numbers.
 
@@ -546,6 +550,23 @@ bash "${CLONE}/monitor/scripts/write-self-cost.sh" append "${CLONE}" curmudgeon
 ```
 
 `monitor/curmudgeon/cost-history.jsonl` is `git-append-only` per PROP-065 — workspace-sync will NEVER push FUSE→git for this file. Always write via the clone path.
+
+### 9c. Commit + push run outputs (PROP-150)
+
+From ${CLONE}, commit and push everything this run produced. EXPLICIT PATHS ONLY — never `git add -A` / `git add .` (mass-delete guard, 2026-05-21 lineage):
+
+```bash
+cd "${CLONE}"
+git config user.name steve && git config user.email russelst@melrosecastle.com
+git add monitor/curmudgeon/reviews/<each new review file written this run> \
+        monitor/curmudgeon/cost-history.jsonl
+# plus tracker.json / alerts.txt IF actually modified this run (explicit paths)
+git pull --rebase origin main
+git commit -m "curmudgeon <date>: <target>.c<N> review + PROP-101 cost row"
+git push origin main
+```
+
+On push failure (403/network/rebase conflict): the review files are already dual-written to ${WORKSPACE}/monitor/curmudgeon/reviews/ (append-only dir — workspace-sync rescues within ≤8h), so review content is never lost. Do NOT write cost-history.jsonl to FUSE (git-append-only deny is load-bearing, PROP-065/FND-02); the cost row is accepted-lost for that run. Log the failure to stderr and end the run normally.
 
 ### 10. Alert on Critical/Major Issues
 If any hole has severity "critical" or "major", append to `monitor/curmudgeon/alerts.txt`.
