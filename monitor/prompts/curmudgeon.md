@@ -561,8 +561,11 @@ git config user.name steve && git config user.email russelst@melrosecastle.com
 git add monitor/curmudgeon/reviews/<each new review file written this run> \
         monitor/curmudgeon/cost-history.jsonl
 # plus tracker.json / alerts.txt IF actually modified this run (explicit paths)
-git pull --rebase origin main
 git commit -m "curmudgeon <date>: <target>.c<N> review + PROP-101 cost row"
+git pull --rebase origin main   # MUST be AFTER the commit: rebase requires a clean tree, and
+                                # cost-history.jsonl is already modified by Step 9b — pulling before
+                                # the commit errors ("index contains uncommitted changes"). This
+                                # replays curmudgeon's commit atop poller/analyst's 00:0x–01:4x commits.
 git push origin main
 ```
 
