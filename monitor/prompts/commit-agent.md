@@ -16,7 +16,7 @@ listed in a manifest, and only after tests pass. A blind pusher with a standing 
 - **Explicit paths only.** Commit exactly the paths in the manifest `paths[]`. Never `git add -A`, never
   `git add .`, never commit a path not in the list.
 - **Test gate is mandatory and fail-loud.** If the manifest touches any `docs/*.html`, `data/*.json`, or the
-  classifier, run `tests/run.sh` and ABORT (no push) if it exits non-zero. This is the project's standing rule.
+  classifier, run `node test.js` (from the repo root) and ABORT (no push) if it exits non-zero. This is the project's standing rule.
 - **Respect OWNERSHIP / NEVER_PUSH.** Do not commit `build.js`-generated artifacts you didn't intend, or any
   path the CLAUDE.md OWNERSHIP table marks git-owned-by-another-writer unless the manifest explicitly names it
   and `allow_owned: true` is set. When in doubt, ABORT and leave the manifest for operator review.
@@ -95,7 +95,7 @@ named file, dropped onto a clean origin/main base.
 
 ## STEP 4 — mandatory test gate
 
-If any path matches `docs/*.html`, `data/*.json`, or the classifier: `(cd "$CLONE" && ./tests/run.sh)`.
+If any path matches `docs/*.html`, `data/*.json`, or the classifier: `(cd "$CLONE" && node test.js)`.
 Non-zero exit → sentinel `monitor/integrity/commit-agent-abort-<ISO>.json` with the failing output tail,
 leave `pending.json` in place, END. Do not push red data.
 
@@ -137,6 +137,6 @@ leaves orphans that need an `allow_cowork_file_delete` drain to clear. Writes an
 
 - Push any repo other than dome-model-review (PAT scope).
 - Commit anything not explicitly listed in the manifest.
-- Push data that fails `tests/run.sh`.
+- Push data that fails `node test.js`.
 - Force-push, or resolve a rebase conflict on its own.
 - Run on a cron unattended by default — this is an on-demand tool (fire it when a change is staged).
