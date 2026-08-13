@@ -1,11 +1,13 @@
 {
   "id": "PROP-150",
   "title": "Curmudgeon push-discipline reconciliation — authenticated clone + explicit end-of-run commit+push (restore PROP-101 cost telemetry, remove +1-day review→decider handoff latency)",
-  "status": "pending-operator-review",
+  "status": "applied",
   "created_at": "2026-08-12T02:40:00Z",
   "authored_by": "tinker-2026-08-12T02-40",
   "priority": "medium-high",
-  "source_iss": ["ISS-3062"],
+  "source_iss": [
+    "ISS-3062"
+  ],
   "problem": {
     "summary": "curmudgeon.md is internally contradictory about whether curmudgeon pushes. Step 0 (curmudgeon.md:115) sets up an UNAUTHENTICATED clone with the comment 'unauthenticated is fine — curmudgeon only reads, doesn't push', and line 127 says 'write outputs to the workspace'. But the PROP-101 self-cost block (curmudgeon.md:542-548) appends the cost row to ${CLONE}/monitor/curmudgeon/cost-history.jsonl and states it 'rides along on the curmudgeon's normal commit+push' — a push the prompt never defines and the clone auth cannot perform. cost-history.jsonl is git-append-only (PROP-065), so workspace-sync will NEVER rescue it FUSE→git: the clone path is the ONLY path, and the prompt breaks it.",
     "empirical_evidence": [
@@ -37,21 +39,31 @@
     "explicitly_out_of_scope": "No change to digest-reviews.js or decider.md. ISS-3062's suggested digest FUSE-union is REJECTED as the primary fix: it adds FUSE-read complexity at the consumer, does nothing for the dead cost telemetry, and still leaves reviews ~3h late in git. Decider Step E2's existing queue-pop union-read stays as belt-and-braces for the push-failure fallback path."
   },
   "alternatives_considered": [
-    {"option": "Digest FUSE-union in decider Priority 3 (ISS-3062 suggestion)", "verdict": "rejected as primary — treats the symptom at one consumer; telemetry stays dead; Step E2 union already covers the residual fallback window"},
-    {"option": "Reclassify curmudgeon/cost-history.jsonl to allow FUSE→git rescue", "verdict": "rejected — weakens the FND-02 disaster-tested git-append-only deny for a telemetry file; wrong trade"},
-    {"option": "Do nothing", "verdict": "rejected — PROP-101 blind on an Opus agent, +1d handoff latency on every curmudgeon review, and the contradiction re-bites on every future model change"}
+    {
+      "option": "Digest FUSE-union in decider Priority 3 (ISS-3062 suggestion)",
+      "verdict": "rejected as primary — treats the symptom at one consumer; telemetry stays dead; Step E2 union already covers the residual fallback window"
+    },
+    {
+      "option": "Reclassify curmudgeon/cost-history.jsonl to allow FUSE→git rescue",
+      "verdict": "rejected — weakens the FND-02 disaster-tested git-append-only deny for a telemetry file; wrong trade"
+    },
+    {
+      "option": "Do nothing",
+      "verdict": "rejected — PROP-101 blind on an Opus agent, +1d handoff latency on every curmudgeon review, and the contradiction re-bites on every future model change"
+    }
   ],
   "risk_analysis": {
     "devilwench_403": "Mitigated: PRELUDE scope-check runs before any git op; curmudgeon pushed daily 2026-06-14→2026-08-01 with zero 403 incidents; curmudgeon-verify pushes today (ebf0ab8, bafae4b).",
     "mass_delete_class": "Curmudgeon's push surface is additive-only (new review files + one JSONL append + occasional tracker.json). Explicit-path git add is mandated in the step text; no deletes possible.",
     "concurrency": "Curmudgeon (01:00 UTC) does not overlap decider (02:00) or workspace-sync (00/04/08); git pull --rebase before push handles the poller/analyst commits from 00:0x-01:4x."
   },
-  "verification_pattern": {
-    "grade": "A",
-    "description": "PASS when the newest curmudgeon cost-history row is younger than 72h (proves the clone-side append+push chain is alive again).",
-    "script": "node -e \"const fs=require('fs');const L=fs.readFileSync('monitor/curmudgeon/cost-history.jsonl','utf8').trim().split('\\n');const r=JSON.parse(L[L.length-1]);const age=(Date.now()-Date.parse(r.run_at))/3600000;console.log(age<72?'FIXED':'STILL_BROKEN','last row',r.run_at,'age_h',age.toFixed(1))\"",
-    "expected_pass_output": "FIXED"
-  },
+  "verification_pattern": "AGE_H=$(node -e \"const L=require('fs').readFileSync('monitor/curmudgeon/cost-history.jsonl','utf8').trim().split('\\n');console.log(((Date.now()-Date.parse(JSON.parse(L[L.length-1]).run_at))/3600000).toFixed(1))\"); if [ \"$(echo \"$AGE_H < 72\" | bc)\" = \"1\" ]; then echo FIXED; else echo STILL_BROKEN; fi",
   "iss_closure_on_apply": "ISS-3062 closes as resolved-by-PROP-150 (design question answered: fix at source, not at digest). The decider may close via normal PROP-apply flow.",
-  "operator_apply_notes": "Prompt files are git-owned + NEVER_PUSH: apply via clone-and-push, then cp curmudgeon.md to the FUSE workspace (prompt sync gotcha) or wait for dome-mirror. Expected post-apply signature: curmudgeon-authored commit ~01:15 UTC daily, cost-history rows resume, decider daily report starts processing same-day reviews."
+  "operator_apply_notes": "Prompt files are git-owned + NEVER_PUSH: apply via clone-and-push, then cp curmudgeon.md to the FUSE workspace (prompt sync gotcha) or wait for dome-mirror. Expected post-apply signature: curmudgeon-authored commit ~01:15 UTC daily, cost-history rows resume, decider daily report starts processing same-day reviews.",
+  "applied_at": "2026-08-12",
+  "applied_by": "operator (commits 60e68f2 + 24562fa: curmudgeon.md authenticated clone + Step 9c commit+push; 24562fa fixed Step 9c ordering — commit BEFORE pull --rebase)",
+  "verified_at": "2026-08-13T05:53:46.777Z",
+  "verified_by_run": "tinker-2026-08-13T05-47",
+  "verification_result": "FIXED — first post-apply curmudgeon run 2026-08-13T01:11Z pushed directly (commit faa2c50): cost-history row appended (first since 08-01, age 4.7h at verification) AND WIN-036.c6 review reached git at 01:11Z, ahead of the 02:00Z decider slot. Both failure modes from the 08-12 finding resolved.",
+  "verification_pattern_original_shape": "object (non-walker-compatible; caused grade C in prop-auto-close.js — lesson recorded tinker-2026-08-13T05-47)"
 }

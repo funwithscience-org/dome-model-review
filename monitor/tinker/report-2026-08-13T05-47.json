@@ -1,0 +1,92 @@
+{
+  "run_id": "tinker-2026-08-13T05-47",
+  "ts": "2026-08-13T05:55:00.989Z",
+  "agent": "tinker",
+  "mode_selected": "Mode 0 (ISS-3057 regression-test authoring) + previous-followup PROP-150 verification. Dispatch: no pending operator directives; Mode 0 scan returned 4 assigned-tinker items; sorted top-pick ISS-3025 is PROP-PENDING (PROP-149) and ISS-3062 is PROP-PENDING (PROP-150) — both resolve as deferral/verification per the pending-PROP guard; ISS-3057 was the top actionable item AND the 08-12 run's explicit next-run recommendation. PROP-150 turned out to be operator-applied on 08-12, so its verification folded into this run naturally.",
+  "modes_checked": {
+    "mode0": "4 items: ISS-3025 (deferred, PROP-149 pending-operator-review), ISS-3052 (deferred, folds into PROP-148 apply), ISS-3057 (EXECUTED this run), ISS-3062 (CLOSED via PROP-150 apply verification)",
+    "mode1_quick": "All agents produced on today's slots except the decider anomaly (findings[0]). No stranded-patches files >24h (none present). Poller 00:09Z, analyst 00:42Z, curmudgeon 01:11Z, workspace-sync 04:03Z, dome-mirror 04:34Z, social 03:36Z, analyst-baby 03:29Z, integrity 05:39Z all fresh.",
+    "mode2_quick": "Auth 200 (PRELUDE pass). Sessions FS 9255MB free, /tmp 2588MB, root-FS free 2587MB (down ~580MB from yesterday's 3169 — watch, still >4x the 500MB warning line). Clone-leak footprint not elevated. PROP-099 canary not run (Mode 2 not selected).",
+    "mode3": "not selected (ran 08-12)",
+    "mode4": "not selected (no PROP authored; PROP-150 lifecycle bookkeeping only)"
+  },
+  "backlog_trend": {
+    "row_appended": true,
+    "open_issues_total": 18,
+    "net_velocity_7d": 18,
+    "thresholds_fired": "none (total 18 flat WoW; percent tiers suppressed by <30 small-base floor but nothing tripped anyway; assigned-analyst 0; commission HNOTEs 0; inbound_burst_winnew_unreviewed 0)"
+  },
+  "findings": [
+    {
+      "category": "pipeline-health",
+      "severity": "moderate",
+      "title": "Decider 02:03Z slot produced no observable artifacts by 06:00Z — fresh curmudgeon review WIN-036.c6 unprocessed; probable wake/queue execution delay, verify next run",
+      "description": "monitor/curmudgeon/reviews/WIN-036.c6.json:reviewed_at=2026-08-13T01:10:56Z landed in git at commit faa2c50 (01:11:58Z), before the decider's 02:00Z slot. As of ~06:00Z: monitor/decisions/processed-reviews.json has no WIN-036.c6 entry; no decider commit exists on origin/main after faa2c50 except integrity's 77aa396; monitor/decisions/latest-decider-summary.txt (FUSE) still carries 'DECIDER RUN SUMMARY — 2026-08-12T02:08Z'.",
+      "evidence": "Scheduler list_scheduled_tasks shows dome-decider lastRunAt=2026-08-13T02:03:37Z (task FIRED). But the whole morning batch shows fire-vs-execute queue lag: dome-integrity fired 01:08:07Z yet its run stamp is 05:39:50Z (commit 77aa396); dome-tinker fired 02:39:34Z yet this session began ~05:45Z. Most likely the host slept and executions are queue-serialized on wake — decider's execution may still be pending, or it aborted without artifacts. FUSE transient staleness could explain the stale summary but NOT the missing git artifacts (processed-reviews.json is clone-and-push).",
+      "recommendation": "Next tinker run: check processed-reviews.json for WIN-036.c6 and a decider summary/commit dated 08-13 or 08-14. WIN-036.c6 carries 0 findings so no content risk is aging — if the 08-14 02:00Z slot also leaves no artifacts, escalate to major and inspect the decider transcript. No action needed from operator yet."
+    },
+    {
+      "category": "prop-schema",
+      "severity": "minor",
+      "title": "PROP-150 verification_pattern was authored as an object — invisible to prop-auto-close.js (grade C); normalized to flat-string form this run",
+      "description": "monitor/scripts/prop-auto-close.js:gradePattern() (line ~92) requires verification_pattern to be a flat string containing 'echo FIXED' + 'echo STILL_BROKEN' for grade A. PROP-150 (authored by tinker 08-12) stored an object {grade, description, script, expected_pass_output}, so gradePattern returned C and this morning's walker reported mechA_would_close=0 even though the underlying check passes. Normalized in monitor/tinker/proposals/PROP-150-curmudgeon-push-discipline.json:verification_pattern (original shape noted in verification_pattern_original_shape); re-ran normalized VP → prints FIXED.",
+      "evidence": "prop-auto-close.js run this morning: props_walked with mechA_would_close=0, actually_closed=0. Manual run of the embedded script: 'FIXED last row 2026-08-13T01:11:51.343Z age_h 4.7'.",
+      "recommendation": "Lesson for future PROP authorship (self-applied): verification_pattern MUST be a flat shell string with echo FIXED / echo STILL_BROKEN markers. Consider a lint in prop-auto-close.js that flags object-shaped VPs explicitly rather than silently grading C — deferred, not worth a PROP while volume is 1 occurrence."
+    },
+    {
+      "category": "mode0",
+      "severity": "info",
+      "title": "ISS-3057 executed (test.js §16, suite 3872/0) + ISS-3062 closed via PROP-150 apply verification; closure HNOTE filed; ISS-3025/ISS-3052 remain deferred",
+      "description": "test.js gained section 16 'ISS-3057 regression: poller Step 10b test_window_closes precedence': (16a) synthetic precedence fixtures — both-fields entry must derive test_window_closes (2026-08-12), coarse-only entry still derives month-end (2026-08-31); (16b) live-data invariant over data/predictions.json — all 33 prediction/tracking entries carrying both test_window and ISO test_window_closes must derive exactly test_window_closes (covers the Aug-12 eclipse cluster PRED-095/TIER-1/TIER-2/TIER-3/R005 that motivated ISS-3056); (16c) prompt-marker guard — monitor/prompts/poller.md must retain the 'PROP-fix ISS-3056' marker. Suite: 3872 passed 0 failed (was 3837). HNOTE-TINKER-ISS-3057-3062-CLOSE-001 filed (dual-write FUSE+clone) with action close_iss_batch for [ISS-3057, ISS-3062].",
+      "evidence": "node test.js exit 0; monitor/decisions/human-notes.json + FUSE copy both updated; PROP-150 status flipped pending-operator-review → applied with applied_at/verified_at/verification_result.",
+      "recommendation": "Decider closes both ISSs on next run via the HNOTE handler. ISS-3025 stays deferred on PROP-149 (pending-operator-review); ISS-3052 stays deferred to fold into PROP-148 apply."
+    }
+  ],
+  "previous_followup": {
+    "PROP-150": "APPLIED by operator 08-12 (commits 60e68f2 + 24562fa) + VERIFIED FIXED this run: first post-apply curmudgeon run (2026-08-13T01:11Z, commit faa2c50) pushed review + cost row directly; cost telemetry resumed after the 08-01..08-12 gap; review reached git 49min ahead of the decider slot. Status flipped to applied. ISS-3062 closure HNOTE filed.",
+    "model-pin-drift": "RESOLVED — operator confirmed pins in commit 60e68f2 (CLAUDE.md: tinker→claude-fable-5, curmudgeon→opus-4-8). 08-12 operator-action item 2 done.",
+    "PROP-148": "still pending-operator-review — carried (fold in ISS-3052: add structure-integrity.md to Part A scope at apply time)",
+    "PROP-149": "still pending-operator-review — carried (ISS-3025 deferred on it)",
+    "PROP-146": "FIXED (unchanged since 08-11 vp PASS)",
+    "PROP-147": "on-track — full ≤15% re-check after 2026-09-15; this report's moderate findings carry file:anchor citations per Discipline 3",
+    "PROP-142": "enforce mode LIVE (unchanged)"
+  },
+  "cleanup_actions": [],
+  "claude_md_audit": "not run (Mode 3 only; last run 08-12: CLAUDE.md 249 lines, +8.7% vs 06-25 baseline, under alert line)",
+  "next_run": "Verify decider processed WIN-036.c6 + produced an 08-13/08-14 summary (findings[0] follow-up; escalate to major if the 08-14 slot is also silent). Confirm HNOTE-TINKER-ISS-3057-3062-CLOSE-001 was consumed and ISS-3057/ISS-3062 closed. Then Mode 3 is next in rotation unless Mode 0 surfaces new items; remaining Mode 0 queue after closures: ISS-3025 (PROP-149), ISS-3052 (PROP-148 fold-in).",
+  "self_cost": {
+    "transcript": "6099d2e5-8420-4857-b39b-4f949f1d9628.jsonl",
+    "model": "claude-fable-5",
+    "assistant_msgs": 79,
+    "tokens": {
+      "input": 148,
+      "output": 76854,
+      "cache_write_5m": 0,
+      "cache_write_1h": 355584,
+      "cache_read": 11637149
+    },
+    "cost_usd": {
+      "input_usd": 0.00074,
+      "output_usd": 1.92135,
+      "cache_write_5m_usd": 0,
+      "cache_write_1h_usd": 3.55584,
+      "cache_read_usd": 5.818575,
+      "total_usd": 11.296505
+    },
+    "transcript_duration_sec": 11725.9,
+    "first_ts": "2026-08-13T02:39:34.923Z",
+    "last_ts": "2026-08-13T05:55:00.805Z",
+    "segments_found": 1,
+    "segments_priced": 1,
+    "per_segment": [
+      {
+        "file_basename": "6099d2e5-8420-4857-b39b-4f949f1d9628.jsonl",
+        "msgs": 79,
+        "model": "claude-fable-5",
+        "total_usd": 11.296505,
+        "first_ts": "2026-08-13T02:39:34.923Z",
+        "last_ts": "2026-08-13T05:55:00.805Z"
+      }
+    ]
+  }
+}

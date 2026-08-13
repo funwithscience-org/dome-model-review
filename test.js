@@ -1072,6 +1072,98 @@ console.log('\n── 14. EXP-618 WIN-014 sensitivity-floor regression ──');
 }
 
 // ════════════════════════════════════════════
+// 16. ISS-3057 regression: poller Step 10b test_window_closes precedence
+// ════════════════════════════════════════════
+
+{
+  console.log('\n── 16. ISS-3057 poller Step 10b close-date precedence ──');
+  // ISS-3056 (fixed 2026-08-10): poller.md Step 10b derived window-close dates
+  // from the coarse test_window field ("August 2026" → month-END 08-31) even
+  // when the precise sibling test_window_closes ("2026-08-12") was present,
+  // mis-dating the Aug-12 eclipse cluster by ~19 days and pushing it outside
+  // the 7-day imminent horizon. This section replays the FIXED derivation
+  // logic (a faithful copy of the poller.md Step 10b snippet) against live
+  // data/predictions.json and asserts: for any entry carrying BOTH fields,
+  // the derived close date equals test_window_closes.
+  //
+  // NOTE: this is a replay of the prompt's embedded logic, not an execution
+  // of it — if you change the derivation in monitor/prompts/poller.md Step
+  // 10b, update this copy in the same commit. The prompt-marker assertions
+  // below fire if the poller.md side is edited or the fix marker is removed.
+
+  const MONTHS = ['January','February','March','April','May','June','July',
+    'August','September','October','November','December'];
+
+  // Faithful copy of poller.md Step 10b close-date derivation (post-ISS-3056)
+  function step10bDeriveClose(e) {
+    let closeStr;
+    if (typeof e.test_window_closes === 'string' && /^\d{4}-\d{2}-\d{2}/.test(e.test_window_closes)) {
+      closeStr = e.test_window_closes;
+    } else {
+      const tw = e.test_window;
+      if (typeof tw === 'string') closeStr = tw;
+      else if (tw && tw.closes) closeStr = tw.closes;
+      else return null;
+    }
+    let closeDate;
+    if (/^\d{4}-\d{2}-\d{2}/.test(closeStr)) closeDate = new Date(closeStr.slice(0, 10) + 'T00:00:00Z');
+    else if (/^[A-Za-z]+ \d{4}/.test(closeStr)) {
+      const m = closeStr.match(/^([A-Za-z]+) (\d{4})/);
+      if (m) {
+        const monthIdx = MONTHS.indexOf(m[1]);
+        if (monthIdx >= 0) closeDate = new Date(Date.UTC(parseInt(m[2]), monthIdx + 1, 0));
+      }
+    }
+    if (!closeDate || isNaN(closeDate)) return null;
+    return closeDate.toISOString().slice(0, 10);
+  }
+
+  // 16a. Synthetic fixture: precedence must hold even if live data changes.
+  // Coarse test_window alone would parse to month-end 2026-08-31; the fix
+  // requires the precise sibling to win.
+  assertEq(
+    step10bDeriveClose({ test_window: 'August 2026', test_window_closes: '2026-08-12' }),
+    '2026-08-12',
+    'ISS-3057 synthetic: test_window_closes (2026-08-12) beats coarse test_window month-end (2026-08-31)');
+  assertEq(
+    step10bDeriveClose({ test_window: 'August 2026' }),
+    '2026-08-31',
+    'ISS-3057 synthetic: coarse test_window fallback still parses to month-end when no test_window_closes');
+
+  // 16b. Live-data invariant: every prediction/tracking entry with BOTH a
+  // test_window and an ISO test_window_closes must derive exactly
+  // test_window_closes.
+  const PRED_PATH = path.join(ROOT, 'data', 'predictions.json');
+  if (fs.existsSync(PRED_PATH)) {
+    const predData = JSON.parse(fs.readFileSync(PRED_PATH, 'utf8'));
+    const scanScope = (predData.entries || []).filter(e =>
+      (e.entry_type === 'prediction' || e.entry_type === 'tracking') &&
+      e.test_window &&
+      typeof e.test_window_closes === 'string' &&
+      /^\d{4}-\d{2}-\d{2}/.test(e.test_window_closes));
+    assert(scanScope.length > 0,
+      'ISS-3057: at least one entry carries both test_window and ISO test_window_closes (scope non-empty)');
+    for (const e of scanScope) {
+      assertEq(step10bDeriveClose(e), e.test_window_closes.slice(0, 10),
+        `ISS-3057: ${e.id} Step 10b derived close equals test_window_closes (${e.test_window_closes.slice(0, 10)})`);
+    }
+  }
+
+  // 16c. Prompt-marker guard: the fix must still be present in poller.md.
+  // If Step 10b is rewritten, these markers force this replay copy to be
+  // revisited in the same change.
+  const POLLER_PATH = path.join(ROOT, 'monitor', 'prompts', 'poller.md');
+  if (fs.existsSync(POLLER_PATH)) {
+    const pollerSrc = fs.readFileSync(POLLER_PATH, 'utf8');
+    assert(pollerSrc.includes('PROP-fix ISS-3056'),
+      'ISS-3057: poller.md still carries the PROP-fix ISS-3056 marker (Step 10b precedence fix intact)');
+    const filterIdx = pollerSrc.indexOf('test_window_closes');
+    assert(filterIdx >= 0,
+      'ISS-3057: poller.md Step 10b references test_window_closes');
+  }
+}
+
+// ════════════════════════════════════════════
 // Results
 // ════════════════════════════════════════════
 
