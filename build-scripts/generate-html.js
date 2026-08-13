@@ -601,6 +601,10 @@ a:hover{text-decoration:none}
 .ds-thesis-hero .ds-thesis-badge-date{font-weight:700}
 @keyframes ds-thesis-badge-pulse{0%{box-shadow:0 0 0 0 rgba(74,111,165,.45)}70%{box-shadow:0 0 0 .55rem rgba(74,111,165,0)}100%{box-shadow:0 0 0 0 rgba(74,111,165,0)}}
 @media(prefers-reduced-motion:reduce){.ds-thesis-hero .ds-thesis-badge-dot{animation:none}}
+.ds-thesis-hero #ds-thesis-verdict-badge{border-color:var(--semantic-crit,#d46a6a);color:var(--semantic-crit,#d46a6a)}
+.ds-thesis-hero #ds-thesis-verdict-badge:hover{background:var(--semantic-crit,#d46a6a);color:#fff}
+.ds-thesis-hero #ds-thesis-verdict-badge .ds-thesis-badge-dot{background:var(--semantic-crit,#d46a6a);animation:none;box-shadow:none}
+.ds-thesis-hero #ds-thesis-verdict-badge:hover .ds-thesis-badge-dot{background:#fff;box-shadow:none}
 .ds-thesis-hero .ds-thesis-figures{list-style:none;margin:0;padding:.85rem 0 0;border-top:1px solid var(--rule);display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1.1rem}
 .ds-thesis-hero .ds-tf-item{display:flex;flex-direction:column;align-items:flex-start;gap:.18rem;font-family:var(--sans);min-width:0}
 .ds-thesis-hero .ds-tf-number{font-family:var(--serif);font-size:1.55rem;font-weight:700;color:var(--heading);line-height:1.1;font-variant-numeric:tabular-nums}
@@ -1589,10 +1593,10 @@ ${CSS}
 <section class="ds-thesis-hero" aria-labelledby="ds-thesis-statement">
 <p id="ds-thesis-statement" class="ds-thesis-statement" role="heading" aria-level="1">None of the ${counts.total} predictions produces a dome-specific result that standard physics cannot already explain.</p>
 <div class="ds-thesis-meta">
-<a class="ds-thesis-badge" href="#p4-426" onclick="showTab('pages');return false" aria-label="Live test pending: August 12, 2026 eclipse — see section 4.2.6 What would change our verdict">
+<a class="ds-thesis-badge" id="ds-thesis-verdict-badge" href="#p4-427" onclick="showTab('pages');document.getElementById('p4-427').open=true;return false" aria-label="Geometric verdict in: the August 12, 2026 eclipse falsified the dome's forced shadow geometry by ~223x — see section 4.2.7. The magnetic test remains pre-committed to the +30-day window.">
 <span class="ds-thesis-badge-dot" aria-hidden="true"></span>
-<span class="ds-thesis-badge-pre">Live test pending</span>
-<span class="ds-thesis-badge-date">August 12, 2026 eclipse</span>
+<span class="ds-thesis-badge-pre">Geometric verdict in</span>
+<span class="ds-thesis-badge-date">Aug 12 eclipse — dome falsified ~223×</span>
 </a>
 </div>
 <ul class="ds-thesis-figures" role="list" aria-label="Headline figures">
@@ -1710,6 +1714,10 @@ ${accuracyVariantList ? `<p class="ams-p ams-variant">Internal queries return ${
 
 <div class="ds-breaking-news">
 <h2 class="ds-bn-header">Latest Findings</h2>
+<div class="ds-bn-item">
+<span class="ds-bn-date">2026-08-13</span>
+<span class="ds-bn-text"><strong>Pre-Registered Dome Eclipse Prediction Falsified — Satellites Imaged the Shadow the Dome Said Couldn't Exist.</strong> The August 12, 2026 total solar eclipse arrived on the standard-physics path of totality, printed to the second and the kilometre years in advance. The dome's own pinned V51.1 parameters (commit <code>c3b9f56</code>: Sun 5,733 km, Moon 2,534 km) force a totality footprint roughly 1.317 km wide lasting under a second; geostationary and deep-space satellites (Meteosat, GOES, DSCOVR/EPIC) and ground timings recorded a ~294-km path lasting up to 2 m 18 s — the dome wrong by <strong>≈223×</strong> on shadow width, and by 8–138× on duration. This review's own predictions were frozen and OTS-anchored on 2026-05-02, roughly 102 days before the event, so neither side can adjust after the fact. The <strong>geometric</strong> verdict is settled; the pre-committed <strong>magnetic</strong> test (<a href="#p4-426" onclick="showTab('pages');document.getElementById('p4-426').open=true;return false">§4.2.6</a>) stays open until the +30-day INTERMAGNET window (~2026-09-11). <a href="#p4-427" onclick="showTab('pages');document.getElementById('p4-427').open=true;return false">Full analysis →</a> · <a href="eclipse-2026/">eclipse page →</a></span>
+</div>
 <div class="ds-bn-item">
 <span class="ds-bn-date">2026-06-18</span>
 <span class="ds-bn-text"><strong>Dome's Own Falsification Rule Triggered by Standard Physics — Then Silence.</strong> PRED-073 committed the model to ≥0.3°/month westward drift of the SAA western cell over April–May 2026, with the dome's own published falsification threshold set at &lt;0.1°/month. IGRF-13 / CHAOS-7 secular variation gives ≈0.024°/month — about an order of magnitude below the dome's own &lt;0.1° floor and roughly 12× below the dome's confirmation threshold. The test window closed 2026-05-31; the dome posted nothing. The 14-day-silence rule was crossed on 2026-06-14, and PRED-073 was reclassified <code>dome_silent_terminal</code> — the twelfth member of the silent-ignore cohort tracked in <a href="#p6-615-silent-ignore-cohort" onclick="showTab('predictions');document.getElementById('p6-615-silent-ignore-cohort').open=true;return false">§6.15</a>. The model's own arithmetic defaults to falsified under the consensus null hypothesis; the public scoreboard simply doesn't record it. <a href="#p6-615-silent-ignore-cohort" onclick="showTab('predictions');document.getElementById('p6-615-silent-ignore-cohort').open=true;return false">Full analysis →</a></span>
