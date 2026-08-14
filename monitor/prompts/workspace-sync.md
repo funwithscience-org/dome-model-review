@@ -424,6 +424,13 @@ NEVER_PUSH=(
   # directive_id back-ref). Both git-owned source code; invoked from clones.
   'monitor/scripts/directive-auto-close.js'
   'monitor/scripts/mark-directive-superseded.js'
+  # PROP-151 (2026-08-14): tinker's PROP-030 backlog-trend pre-flight,
+  # extracted from a ~120-line inline JS block in tinker.md that produced
+  # recurring RUN_ID env-passing + fixed_at field-name bugs. Computes the
+  # queue-metrics row, appends to queue-history.jsonl, evaluates all
+  # threshold tiers + PROP-117 Detector B. Clone-invoked-only (tinker);
+  # git-owned source code; NEVER round-trip from FUSE.
+  'monitor/scripts/compute-backlog-metrics.js'
   # PROP-141 Phase 2 / DIRECTIVE-20260725-001 (2026-07-26): ownership-
   # registration-gap lint (read-only canary for the ISS-3000/3001/3011 defect
   # class). Git-owned source code; invoked from integrity's clone; NEVER

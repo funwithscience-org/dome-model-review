@@ -220,149 +220,35 @@ if(items[0].prop_pending)console.log('TOP-PICK HAS PENDING PROP:',items[0].prop_
 
 **Why this exists (PROP-060):** Without Mode 0, `assigned_to: 'tinker'` and `status: 'assigned-tinker'` were write-only signals — no consumer. Items aged indefinitely (ISS-1285 sat 34 days; ISS-2134 sat 6 days even though root cause was fixed by PROP-048; EXP-425 sat 48h before operator caught it). Same defect class as the action-typed HNOTE handler that lost the PROP-053 closure HNOTE for 23h. Mode 0 closes the loop.
 
-### Pre-flight: Backlog-Trend Computation (PROP-030, every run, landed 2026-05-11)
+### Pre-flight: Backlog-Trend Computation (PROP-030, every run; scripted via PROP-151 2026-08-14)
 
-Compute queue-level metrics from open-issues.json + closed-issues.json + closure-ledger.jsonl at every tinker run, regardless of which Mode is selected. Append one row to `monitor/tinker/queue-history.jsonl`. If any threshold fires, emit a `backlog-trend` finding into the run report — even when running Mode 2/3/4, this finding lands.
+Compute queue-level metrics and append one row to `monitor/tinker/queue-history.jsonl` at every tinker run, regardless of which Mode is selected. If any threshold fires, emit a `backlog-trend` finding into the run report — even when running Mode 2/3/4.
 
-**Why this exists:** prior Mode 1 audits measured *liveness* (agents running, outputs fresh, no-op rate low) but never *throughput* (work-backlog growing or shrinking). Three consecutive Mode 1 runs (2026-05-07, -09, -10) returned 'pipeline GREEN' while open-issues.json had grown to 230+ items. PROP-030 closes that gap.
+**Why this exists:** prior Mode 1 audits measured *liveness* but never *throughput*. Three consecutive Mode 1 runs (2026-05-07, -09, -10) returned 'pipeline GREEN' while open-issues.json had grown to 230+ items. PROP-030 closes that gap.
 
-**Compute these six metrics per run** (single read of open-issues.json):
+**The entire computation lives in `monitor/scripts/compute-backlog-metrics.js` (PROP-151, 2026-08-14).** The previous ~120-line inline JS block produced two recurring bug classes that prompt annotations failed to kill — RUN_ID env-passing losses (rows with missing/wrong `tinker_run_id` on 08-09 + 08-10 despite a self-fix note) and the `fixed_at` field-name hazard (closed-issues.json timestamps closure as `fixed_at`, NOT closed_at; a closed_at read silently zeroes closed-velocity). Both are now encoded in the script. Invoke from the clone root:
 
-```javascript
-const oi = JSON.parse(fs.readFileSync('monitor/decisions/open-issues.json', 'utf8'));
-const now = Date.now();
-const ageDays = i => {
-  const t = i.found_at || i.created_at;
-  return t ? (now - Date.parse(t)) / 86400000 : null;
-};
-// RUN_ID env-passing (self-fix 2026-08-11, after the bug recurred on the 08-09
-// and 08-10 runs): each MCP bash call is a fresh shell — bash variables do NOT
-// survive into a later call, and node -e cannot see bash-local vars. Pass the
-// run id explicitly on the SAME command line, e.g.:
-//   TINKER_RUN_ID="$RUN_ID" node -e '...process.env.TINKER_RUN_ID...'
-const metrics = {
-  ts: new Date().toISOString(),
-  tinker_run_id: RUN_ID,
-  open_issues_total: oi.issues.length,
-  open_status_count: oi.issues.filter(i => i.status === 'open').length,
-  assigned_analyst_count: oi.issues.filter(i => i.status === 'assigned-analyst').length,
-  age_ge_14d_count: oi.issues.filter(i => { const a = ageDays(i); return a !== null && a >= 14; }).length,
-  age_ge_30d_count: oi.issues.filter(i => { const a = ageDays(i); return a !== null && a >= 30; }).length,
-  oldest_open_age_days: Math.max(...oi.issues.filter(i => i.status === 'open').map(i => ageDays(i) || 0))
-};
-// Compute velocity from closure-ledger.jsonl tail-7d + open-issues.json created-in-7d
-// (single pass each; see PROP-030 metrics_specification for exact code)
-metrics.new_issues_velocity_7d = /* count of open-issues with created_at within 7d */;
-// FIELD-NAME HAZARD (self-fix 2026-08-11): closed-issues.json entries timestamp
-// closure as `fixed_at` (NOT closed_at/resolved_at). Closed velocity = count of
-// closed-issues.json entries with fixed_at within 7d + non-dryrun closure-ledger
-// rows within 7d. A closed_at-only read silently undercounts to near zero.
-metrics.closed_issues_velocity_7d = /* count of closed-issues fixed_at-in-7d + closure-ledger entries within 7d */;
-metrics.net_velocity_7d = metrics.closed_issues_velocity_7d - metrics.new_issues_velocity_7d;
-// PROP-034 Phase 1 (2026-05-13): baby-drain throughput. Count tracker entries where
-// status='consolidated-into-*' OR 'complete' AND completed_at within 7d AND authored_by/claimed_by='analyst-baby'.
-// Source-of-truth: expansion-tracker.json (read once at pre-flight; same single-pass as other metrics).
-metrics.baby_drain_count_7d = /* count of baby-completed tracker items in last 7d, per expansion-tracker.json */;
-// PROP-038 Phase 1 (2026-05-16): verify-mode curmudgeon throughput. Count curmudgeon/reviews/*.json files
-// where agent_subtype='curmudgeon-verify' AND reviewed_at within last 7d. Same single-pass shape as baby_drain_count_7d.
-metrics.verify_drain_count_7d = /* count of curmudgeon-verify reviews in last 7d, per agent_subtype field */;
-// PROP-043 (2026-06-14): commission HNOTE telemetry. Read monitor/analyst/human-notes.json,
-// count pending notes with commission===true. Surface as info/moderate/major finding per thresholds.
-// Threshold tiers: info >= 3, moderate >= 5, major >= 10 (per PROP-043 design).
-let commissionCount = 0;
-try{
-  const h = JSON.parse(fs.readFileSync('monitor/analyst/human-notes.json','utf8'));
-  const arr = h.notes || (Array.isArray(h) ? h : Object.values(h));
-  commissionCount = arr.filter(n => n.status === 'pending' && n.commission === true).length;
-}catch(_){}
-metrics.pending_commission_hnotes_count = commissionCount;
-// PROP-085 (2026-06-14): root-FS headroom. The single most-correlated metric
-// with pipeline failure (2026-05-07/08 cascade, 2026-05-09 near-miss, 2026-05-21
-// disaster contributing factor). Cheap: one shell call. Gives WoW trend +
-// growth-rate estimation for free once 7+ rows accumulate.
-metrics.root_fs_free_mb = parseInt(require('child_process').execSync("df -m / | awk 'NR==2{print $4}'").toString().trim(), 10);
-// PROP-105 (2026-06-17): closed-issues.json size telemetry. Cheap stat call.
-// Phase 6 archive-split is deferred per PROP-105 with quantitative re-triggers:
-// file>8MB, growth>200KB/day×14d, decider I/O>2s/run, find()>50ms,
-// working-tree>15MB/clone. This metric is the instrument for the size + growth
-// triggers — auto-detected once 14+ rows accumulate. Compare to prior row for
-// growth-rate-7d signal.
-try {
-  const st = fs.statSync('monitor/decisions/closed-issues.json');
-  metrics.closed_issues_mb = +(st.size / 1024 / 1024).toFixed(2);
-} catch (_) { metrics.closed_issues_mb = null; }
-// PROP-117 Detector B (2026-06-29): inbound-burst fallback. If the poller's
-// burst-signal HNOTE (Detector A) didn't fire or got lost, this catches the
-// same shape on a 24h lag. Count priority-queue.json items with
-// target_type=='win-new' that have NO matching curmudgeon review file. This
-// is the canonical "fresh WINs queued but not yet reviewed" signal that
-// indicates a burst is in the chain.
-let burstUnreviewed = 0;
-try {
-  const pq = JSON.parse(fs.readFileSync('monitor/curmudgeon/priority-queue.json','utf8'));
-  const items = pq.items || [];
-  const winNew = items.filter(it => (it.target_type||it.class||'') === 'win-new' || (it.target||'').match(/^WIN-\d{3}$/));
-  for (const it of winNew) {
-    const target = (it.target||'').replace(/^WIN-/, '');
-    const matchPrefix = 'monitor/curmudgeon/reviews/WIN-' + target;
-    let hasReview = false;
-    try {
-      const files = fs.readdirSync('monitor/curmudgeon/reviews/');
-      hasReview = files.some(f => f.startsWith('WIN-'+target+'.'));
-    } catch (_) {}
-    if (!hasReview) burstUnreviewed++;
-  }
-} catch (_) {}
-metrics.inbound_burst_winnew_unreviewed = burstUnreviewed;
-fs.appendFileSync('monitor/tinker/queue-history.jsonl', JSON.stringify(metrics) + '\n');
+```bash
+node "${CLONE}/monitor/scripts/compute-backlog-metrics.js" --run-id "${RUN_ID}" | tee /tmp/backlog-metrics.json
 ```
 
-**Thresholds (calibrated per PROP-030 retroactive simulation):**
+The script appends the row itself (use `--dry-run` to preview without appending — never append two rows for one run) and evaluates ALL thresholds, printing `thresholds_fired[]`, `suppressed_percent_trips[]`, and `detector_b` so you act on conclusions rather than re-deriving them. It is FAIL-LOUD: exit 2 means no row was appended — fix the problem before pushing (the PROP-081 pre-push hook requires the queue-history row). Metrics computed: open/assigned/age counts, 7d new/closed/net velocity (closed = closed-issues `fixed_at` + non-dryrun closure-ledger rows), baby-drain (PROP-034), verify-drain (PROP-038), pending commission HNOTEs (PROP-043), root-FS free MB (PROP-085), closed-issues.json MB (PROP-105), inbound-burst unreviewed win-new (PROP-117 Detector B), sessions-FS free MB (PROP-148 companion).
+
+**Thresholds (calibrated per PROP-030 retroactive simulation; evaluated by the script):**
 
 | Tier | Triggers (ANY of) |
 |---|---|
-| info | open_issues_total grew >5% WoW |
-| moderate | open_issues_total > 200 OR grew >10% WoW OR net_velocity_7d < 0 for 2 consecutive runs OR assigned-analyst > 50 |
-| major | open_issues_total > 300 OR grew >20% WoW OR net_velocity_7d < 0 for 4 consecutive runs OR assigned-analyst > 100 OR age_ge_30d > 50 |
+| info | open_issues_total grew >5% WoW; commission HNOTEs >= 3 |
+| moderate | open_issues_total > 200 OR grew >10% WoW OR net_velocity_7d < 0 for 2 consecutive runs OR assigned-analyst > 50 OR commission HNOTEs >= 5 |
+| major | open_issues_total > 300 OR grew >20% WoW OR net_velocity_7d < 0 for 4 consecutive runs OR assigned-analyst > 100 OR age_ge_30d > 50 OR commission HNOTEs >= 10 |
 | operator_escalation | open_issues_total > 400 OR negative velocity for 7 consecutive runs OR assigned-analyst > 150 |
 
-**Small-base floor on percent tiers (self-fix 2026-07-30):** the percent-growth WoW triggers (info >5%, moderate >10%, major >20% WoW) apply only when `open_issues_total >= 30`. Below that, WoW percent is small-denominator noise — 3 consecutive benign trips fired 07-27..07-29 at totals 10–17 while net velocity stayed positive and every issue was assigned. Absolute-count, net-velocity, assigned-analyst, and age triggers still apply at any base. When the floor suppresses a percent trip, still append the metrics row and record the suppression as a `severity:'info'` note in the report rather than a backlog-trend finding.
+**Small-base floor (self-fix 2026-07-30):** percent-growth WoW tiers apply only when `open_issues_total >= 30` — below that, WoW percent is small-denominator noise. The script reports suppressed trips in `suppressed_percent_trips[]`; record any as a `severity:'info'` note in the report, not a backlog-trend finding.
 
-If ANY threshold fires → add a finding object to the run's report.findings[] with `category='backlog-trend'` and `severity=highest-firing-tier`. The finding lands in every report, regardless of mode selection.
-
-If the operator_escalation tier fires, ALSO write a one-line note to `monitor/tinker/latest-tinker-summary.txt` so the operator sees it in the morning summary.
-
-**PROP-117 Detector B threshold (inbound-burst fallback, 2026-06-29):** if `metrics.inbound_burst_winnew_unreviewed >= 2` AND no `recommend_cadence_revert` HNOTE was filed by poller in the last 24h (check `monitor/decisions/human-notes.json` for `action:'recommend_cadence_revert'` rows with `created_at` within 24h), emit a `category:'inbound-burst'` finding at `severity:'major'` AND write a one-line note to `monitor/tinker/latest-tinker-summary.txt` recommending the same cron reverts as poller's HNOTE Body (analyst `0 1,5,9 * * *`, curmudgeon `0 2,6,10 * * *`, decider `0 3,7,11 * * *`, re-enable curmudgeon-verify). This is the safety net when poller's same-cycle detection missed or its HNOTE write failed.
-
-```javascript
-// Detector B finding emission (after metrics row writes):
-if (metrics.inbound_burst_winnew_unreviewed >= 2) {
-  // Check if poller already filed a recommend_cadence_revert HNOTE in last 24h
-  let pollerAlreadyFiled = false;
-  try {
-    const h = JSON.parse(fs.readFileSync('monitor/decisions/human-notes.json','utf8'));
-    const notes = h.notes || [];
-    const cutoff = Date.now() - 24 * 3600 * 1000;
-    pollerAlreadyFiled = notes.some(n =>
-      (n.action || '') === 'recommend_cadence_revert' &&
-      n.created_at && new Date(n.created_at).getTime() > cutoff
-    );
-  } catch (_) {}
-  if (!pollerAlreadyFiled) {
-    report.findings.push({
-      category: 'inbound-burst',
-      severity: 'major',
-      title: 'PROP-117 Detector B: inbound-burst fallback fired (' + metrics.inbound_burst_winnew_unreviewed + ' unreviewed win-new in priority-queue; poller HNOTE not present)',
-      evidence: 'metrics.inbound_burst_winnew_unreviewed=' + metrics.inbound_burst_winnew_unreviewed + '; no recommend_cadence_revert HNOTE in last 24h',
-      recommendation: 'Operator: revert analyst to `0 1,5,9 * * *`, curmudgeon to `0 2,6,10 * * *`, decider to `0 3,7,11 * * *`, re-enable curmudgeon-verify. Detector A (poller HNOTE) is the primary detector; this is the safety net.'
-    });
-    // Also append the one-line escalation to latest-tinker-summary.txt
-    // (mirror the operator_escalation pattern above)
-  }
-}
-```
-
-**No-op behavior:** if `inbound_burst_winnew_unreviewed < 2` OR poller already filed the HNOTE, no finding emits and no summary line is added. The metric still appears in `queue-history.jsonl` for trend visibility.
+**Acting on script output:**
+- Any entry in `thresholds_fired[]` → add a finding to report.findings[] with `category='backlog-trend'` and `severity=highest-firing-tier`. If `operator_escalation` fires, ALSO write a one-line note to `monitor/tinker/latest-tinker-summary.txt`.
+- `detector_b.fired == true` (PROP-117 inbound-burst fallback: >=2 unreviewed win-new in the priority queue AND no poller `recommend_cadence_revert` HNOTE in 24h) → emit `category:'inbound-burst'` `severity:'major'` finding AND write a summary line recommending the cron reverts (analyst `0 1,5,9 * * *`, curmudgeon `0 2,6,10 * * *`, decider `0 3,7,11 * * *`, re-enable curmudgeon-verify). This is the safety net for poller's same-cycle Detector A.
+- Neither fired → no finding; the row still lands for trend visibility.
 
 ### Pre-flight: Directive Lifecycle Auto-Close (PROP-108, every run, added 2026-06-20)
 
