@@ -1,0 +1,297 @@
+{
+  "ts": "2026-08-17T02:40:00Z",
+  "run_id": "2026-08-17T02-40",
+  "agent": "tinker",
+  "mode_selected": "Mode 3 (cost engineering). Dispatch: no pending operator directives (prop-auto-close walked 163 props, 0 closures; directive-auto-close walked 134, 0 pending); Mode 0 scan returned 2 items — top-pick ISS-3025 is PROP-PENDING (PROP-149 pending-operator-review), ISS-3052 awaits PROP-148 fold-in — Mode 0 treated as empty per the pending-PROP guard. Mode 1 quick-check green (all agents fresh in git: poller 00:10Z, curmudgeon 01:13Z, decider 02:18Z, integrity 01:15Z today; no actionable stranded patches). Mode 2 quick-check fully green this run (FUSE hash-check: all 5 files match GitHub — yesterday's propagation-latency STALE cleared; auth 200; clone-leak 0MB; root-FS 2977MB free; PROP-099 canary clean from clone RC=0; PROP-070 orphan-integrated 0). No unresolved self-fixable findings -> Mode 3 default.",
+  "modes_checked": {
+    "mode0": "2 items, both PROP-PENDING (ISS-3025/PROP-149, ISS-3052/PROP-148) — deferred per guard",
+    "mode1": "GREEN — poller/analyst/curmudgeon/decider/integrity all committed within cadence today; social on schedule (daily 03:30Z, last 08-16); no stranded patches",
+    "mode2": "GREEN — FUSE fully in sync with GitHub on all 5 checked files (incl. sections.json + index.html which were propagation-lagged yesterday); auth 200; disk healthy (root 2977MB free, sessions-FS 8931MB free at clone, clone-leak 0MB); PROP-099 clean; PROP-070 count 0",
+    "mode4": "no self-fixable backlog; carried items are operator-decision-gated (PROP-092/148/149)"
+  },
+  "backlog_trend": {
+    "row_appended": true,
+    "open_issues_total": 16,
+    "wow_pct": -15.8,
+    "net_velocity_7d": 25,
+    "thresholds_fired": [],
+    "detector_b_fired": false,
+    "note": "Queue-history row #3 via PROP-151 script; single append verified (grep count 1 for run_id)."
+  },
+  "findings": [
+    {
+      "category": "verify-consumer-offline",
+      "severity": "moderate",
+      "description": "A verification-class queue item is now pending with its consumer paused: monitor/curmudgeon/priority-queue.json:queue_id=607 (class='verification', target ECLIPSE-2026-08-12-GEOMETRIC-VERDICT, pushed_by decider 2026-08-17T02:17Z — verify decider's 4 self-applied eclipse-response patches, ISS-3073..3076). dome-curmudgeon-verify is enabled=false (scheduler state verified via list_scheduled_tasks this run; PAUSED 2026-07-27 per CLAUDE.md § Monitoring Pipeline). This is the exact documented RE-ENABLE trigger ('RE-ENABLE when a verify-class item appears in the priority queue' — CLAUDE.md:dome-curmudgeon-verify row, same criterion as the 2026-06-30 q564 re-enable). Mitigation exists — the operator manually fired curmudgeon-verify on 08-16 (commit 2026-08-16T05:45+01:00, WIN-036.c7 + EXP-682 recheck) — but qid 607 has no scheduled consumer until re-enabled. Timing matters: poller has the eclipse response-window at HIGH band from 2026-08-20 (d=8), so more verify-class items are plausible this week.",
+      "evidence": "list_scheduled_tasks: dome-curmudgeon-verify enabled=false, lastRunAt 2026-08-16T05:39:52Z (manual fire); priority-queue.json queue depth 1, qid 607 pushed 2026-08-17T02:17:08Z",
+      "recommendation": "Operator: re-enable dome-curmudgeon-verify (cron 30 1,5,9 * * *) — or manually fire it — so qid 607 drains. Re-pause per the 3-consecutive-day queue-empty criterion when the eclipse window closes."
+    },
+    {
+      "category": "infra-fuse-staleness",
+      "severity": "moderate",
+      "description": "CARRIED from 08-15/08-16 (operator decision pending, not new work): PROP-092 overwrite-propagation remains Phase-0 manifest-only (monitor/scripts/sync-workspace-step4c.config.json:overwrite_propagation.enabled=false, verified this run) — day 65. Symptom persists: FUSE monitor/changes/latest-poll-summary.txt differs from git HEAD (md5 mismatch verified this run), producing the recurring false Mode-1 stall signal for any FUSE-reading session. Ask unchanged: flip overwrite_propagation.enabled=true or direct the fallback.",
+      "evidence": "md5(FUSE latest-poll-summary.txt) != md5(git HEAD copy); config enabled=false",
+      "recommendation": "Operator: PROP-092 Phase-2 flip decision."
+    },
+    {
+      "category": "ops-context",
+      "severity": "info",
+      "description": "ISS-3050 (major, pending-human: /sessions disk-pressure outage per monitor/decisions/open-issues.json:ISS-3050) now has TWO consecutive tinker runs of recovery evidence: 08-16 measured 8943MB free; this run 8931MB free at clone time / 8761MB at metrics time, clone succeeded at the primary ${SESSION}/tinker-clone target with no PROP-148 fallback. Integrity 08-17 ran PASS 0 findings. Recommend operator close ISS-3050 as recovered (it is pending-human, so closure is an operator/decider call, not tinker's).",
+      "evidence": "df -m /sessions: 8931MB free; integrity commit acf03e5 'PASS, 0 findings'",
+      "recommendation": "Close ISS-3050; PROP-148 remains useful as dormant insurance either way."
+    },
+    {
+      "category": "ops-context",
+      "severity": "info",
+      "description": "Eclipse-response mini-burst is flowing through the pipeline as designed, on quiet-period cadence: operator commission -> curmudgeon ECLIPSE-RESPONSE-REVIEW-2026-08-17 (1 moderate + 3 minors) -> decider same-morning self-apply of all 4 holes (ISS-3073..3076) -> verification queued (qid 607). Detection-to-patch inside one cycle, second consecutive day (EXP-682 yesterday). No cadence revert indicated yet: Detector B quiet (0 unreviewed win-new), backlog 16 open / net +25 per 7d. Re-evaluate if the 2026-08-20 HIGH-band window produces actual dome-site changes.",
+      "evidence": "commits 2026-08-17T02:13/03:14/03:17 +0100; queue-history row open=16",
+      "recommendation": "None this run; poller Detector A + tinker Detector B remain the cadence-revert tripwires."
+    }
+  ],
+  "wasted_compute": {
+    "re_reviews": [
+      {
+        "target": "WIN-067",
+        "count": 4,
+        "root_cause": "historical Apr-May review cycles",
+        "status": "FIXED"
+      },
+      {
+        "target": "WIN-013",
+        "count": 2,
+        "root_cause": "historical (last 2026-06-13 change-driven cycle)",
+        "status": "FIXED"
+      },
+      {
+        "target": "SEC-4.1 + timestamp-error-tab",
+        "count": 2,
+        "root_cause": "historical April era",
+        "status": "FIXED"
+      }
+    ],
+    "re_work": [],
+    "orphan_reprocessing": [],
+    "duplicate_outputs": [],
+    "stale_queue_items": [],
+    "estimated_wasted_opus_runs": 0,
+    "trend": "STABLE — zero active re-work; identical historical clusters to 08-16, nothing new; all 717 issue-proposals in ledger; stale-complete scan clean; queue item qid 607 is fresh (not stale)"
+  },
+  "cost_engineering": {
+    "agent_efficiency": [
+      {
+        "agent": "analyst",
+        "recent_runs_checked": 4,
+        "substantive_runs": 1,
+        "no_op_runs": 3,
+        "estimated_waste_pct": 75,
+        "model": "opus-4.7",
+        "recommendation": "Known quiet-period profile (manual drought d=122; Mode 6 random-look). Commission days (eclipse) are substantive. No change — cadence already minimal at 1/day; revert triggers armed."
+      },
+      {
+        "agent": "curmudgeon",
+        "recent_runs_checked": 2,
+        "substantive_runs": 2,
+        "no_op_runs": 0,
+        "estimated_waste_pct": 0,
+        "model": "opus-4.8",
+        "recommendation": "Fully substantive (WIN-002.c9, ECLIPSE-RESPONSE commission)."
+      },
+      {
+        "agent": "decider",
+        "recent_runs_checked": 2,
+        "substantive_runs": 2,
+        "no_op_runs": 0,
+        "estimated_waste_pct": 0,
+        "model": "sonnet-5",
+        "recommendation": "Fully substantive both days (EXP-682 rescue, eclipse self-applies, queue mgmt)."
+      },
+      {
+        "agent": "poller",
+        "recent_runs_checked": 3,
+        "substantive_runs": 3,
+        "no_op_runs": 0,
+        "estimated_waste_pct": 0,
+        "model": "sonnet-5",
+        "recommendation": "Quiet cycles but carrying eclipse-window countdown state — monitoring value, cheap model."
+      }
+    ],
+    "proposals_written": [],
+    "implemented_since_last_report": [],
+    "cumulative_estimated_savings": "unchanged — no new optimization PROP indicated (composite threshold not breached)"
+  },
+  "context_load": {
+    "claude_md_lines": 249,
+    "per_agent_incl_claude_md": {
+      "analyst": {
+        "total": 2042,
+        "prev": 2042,
+        "delta_pct": 0
+      },
+      "curmudgeon": {
+        "max_total": 1437,
+        "prev_max": 1437,
+        "delta_pct": 0
+      },
+      "decider": {
+        "total": 4317,
+        "prev": 4317,
+        "delta_pct": 0
+      },
+      "tinker": {
+        "total": 1674,
+        "prev": 1674,
+        "delta_pct": 0
+      }
+    },
+    "trend": "FLAT — identical to 08-14/08-15/08-16 across all four measured agents; CLAUDE.md 249L unchanged",
+    "alerts": []
+  },
+  "real_cost": {
+    "phase": 2,
+    "per_agent_14d": {
+      "decider": {
+        "runs": 8,
+        "p50": 24.37,
+        "p95": 28.3,
+        "max": 28.3,
+        "sum_usd": 173.45,
+        "p95_p50_ratio": 1.2
+      },
+      "integrity": {
+        "runs": 10,
+        "p50": 10.26,
+        "p95": 16.31,
+        "max": 16.31,
+        "sum_usd": 103.45,
+        "p95_p50_ratio": 1.6
+      },
+      "workspace-sync": {
+        "runs": 19,
+        "p50": 5.2,
+        "p95": 7.71,
+        "max": 7.71,
+        "sum_usd": 98.76,
+        "p95_p50_ratio": 1.5
+      },
+      "tinker": {
+        "runs": 8,
+        "p50": 10.87,
+        "p95": 14.01,
+        "max": 14.01,
+        "sum_usd": 86.25,
+        "p95_p50_ratio": 1.3
+      },
+      "poller": {
+        "runs": 10,
+        "p50": 8.02,
+        "p95": 12.58,
+        "max": 12.58,
+        "sum_usd": 79.51,
+        "p95_p50_ratio": 1.6
+      },
+      "analyst": {
+        "runs": 11,
+        "p50": 7.13,
+        "p95": 10.55,
+        "max": 10.55,
+        "sum_usd": 78.37,
+        "p95_p50_ratio": 1.5
+      },
+      "analyst-baby": {
+        "runs": 12,
+        "p50": 3.73,
+        "p95": 9.66,
+        "max": 9.66,
+        "sum_usd": 53.6,
+        "p95_p50_ratio": 2.6
+      },
+      "social": {
+        "runs": 7,
+        "p50": 7.01,
+        "p95": 11.98,
+        "max": 11.98,
+        "sum_usd": 51.86,
+        "p95_p50_ratio": 1.7
+      },
+      "curmudgeon": {
+        "runs": 5,
+        "p50": 10.62,
+        "p95": 12.26,
+        "max": 12.26,
+        "sum_usd": 50.81,
+        "p95_p50_ratio": 1.2
+      },
+      "dome-mirror": {
+        "runs": 24,
+        "p50": 1.38,
+        "p95": 1.59,
+        "max": 1.89,
+        "sum_usd": 33.6,
+        "p95_p50_ratio": 1.2
+      },
+      "curmudgeon-verify": {
+        "runs": 3,
+        "p50": 5.66,
+        "p95": 5.91,
+        "max": 5.91,
+        "sum_usd": 13.64,
+        "p95_p50_ratio": 1
+      }
+    },
+    "pipeline_sum_14d_usd": 823.31,
+    "variance_alerts": [],
+    "composite_threshold_status": "LIVE — top: decider at $173.45/14d ~= $12.4/day, under the $20/day PROP-forcing line (no PROP required). The 08-19 p50 re-check is effectively satisfied early: sum rose from $148 (08-16) on legitimately substantive eclipse-response work, not waste; p50 $24.37/run. analyst-baby ratio 2.6 is the known benign bimodal, below the 3.0 alert line."
+  },
+  "claude_md_audit": {
+    "accuracy": "Monitoring Pipeline table re-verified against list_scheduled_tasks this run: 11 enabled / 3 disabled (curmudgeon-verify, sloppytoppy-score, sloppytoppy-rewrite), all crons match documented quiet-period values. curmudgeon-verify lastRunAt 2026-08-16T05:39Z while enabled=false is consistent with documented operator manual-fire practice, not drift. NOTE: the documented RE-ENABLE criterion for curmudgeon-verify has now FIRED (qid 607) — see findings[0]; no doc change needed, the doc is correct and the action is the operator's.",
+    "performance": "249L, byte-flat vs 08-16. No extraction candidates flagged this run."
+  },
+  "previous_followup": {
+    "08-16 finding (PROP-092 day-64 limbo)": "STILL PENDING operator decision — enabled=false verified, FUSE poll-summary still stale; carried as findings[1], day 65.",
+    "08-16 next-run item (decider p50 re-check ~08-19)": "DONE EARLY this run — $12.4/day, under the $20 line; no PROP forced. Keep an eye on it only if eclipse-window work volume persists past 08-20.",
+    "08-16 next-run item (verify PROP-092 first overwrite cycle if flipped)": "N/A — not flipped.",
+    "08-16 next-run item (suggest ISS-3050 closure if integrity stays clean)": "DONE — integrity 08-17 PASS 0 findings + second consecutive healthy sessions-FS reading; closure recommended to operator as findings[2].",
+    "08-16 operator actions (PROP-148 apply, PROP-149 review)": "Both still pending-operator-review (verified in proposals/); carried. ISS-3025 + ISS-3052 remain blocked on them."
+  },
+  "next_run_recommendations": [
+    "Verify qid 607 drained (curmudgeon-verify re-enabled or manually fired); if still queued >48h, escalate to major.",
+    "Watch 2026-08-20 eclipse HIGH-band window: if dome-site changes land, expect Detector A/B signals and evaluate cadence reverts (analyst 0 1,5,9; curmudgeon 0 2,6,10; decider 0 3,7,11).",
+    "If operator closed ISS-3050, drop it from carried context; if not, repeat recovery evidence once more then stop nagging.",
+    "PROP-092 day-66+ carry unless flipped."
+  ],
+  "self_cost": {
+    "transcript": "82cf2f2b-69d6-42e7-9416-8d538b244e88.jsonl",
+    "model": "claude-fable-5",
+    "assistant_msgs": 58,
+    "tokens": {
+      "input": 110,
+      "output": 66409,
+      "cache_write_5m": 0,
+      "cache_write_1h": 365321,
+      "cache_read": 8083298
+    },
+    "cost_usd": {
+      "input_usd": 0.00055,
+      "output_usd": 1.660225,
+      "cache_write_5m_usd": 0,
+      "cache_write_1h_usd": 3.65321,
+      "cache_read_usd": 4.041649,
+      "total_usd": 9.355634
+    },
+    "transcript_duration_sec": 348.6,
+    "first_ts": "2026-08-17T02:39:34.090Z",
+    "last_ts": "2026-08-17T02:45:22.671Z",
+    "segments_found": 1,
+    "segments_priced": 1,
+    "per_segment": [
+      {
+        "file_basename": "82cf2f2b-69d6-42e7-9416-8d538b244e88.jsonl",
+        "msgs": 58,
+        "model": "claude-fable-5",
+        "total_usd": 9.355634,
+        "first_ts": "2026-08-17T02:39:34.090Z",
+        "last_ts": "2026-08-17T02:45:22.671Z"
+      }
+    ]
+  }
+}
