@@ -201,7 +201,24 @@ async function isVerifyOwned(item){
   // documented this bug: mtime-sort picked WIN-013-014-SEC-6.14-EXP358-verification.json
   // (May 12) over SEC-6.14-kappa-cluster.c5.json (May 16). Fixed 2026-05-17.
   const reviewDir=path+'/monitor/curmudgeon/reviews';
-  const candidates=fs.readdirSync(reviewDir).filter(f=>f.includes(item.target_id));
+  // FILENAME fast path (naming convention: file contains target_id).
+  let candidates=fs.readdirSync(reviewDir).filter(f=>f.includes(item.target_id));
+  // CONTENT fallback (PROP-152, 2026-08-18): reviews named by review_id/topic
+  // convention (e.g. ECLIPSE-RESPONSE-REVIEW-2026-08-17.json) don't carry the
+  // target_id in the filename but DO carry it as the point_id (823/897 files)
+  // or target_id (89/897) JSON field. The 2026-08-17T15:38Z verify run
+  // returned zero candidates for qid 607 on the fast path even though a prior
+  // review existed (point_id matched exactly); the item stalled until MAIN
+  // curmudgeon picked it up a day later. Scan contents only when the fast
+  // path is empty, so the common case costs nothing extra.
+  if(candidates.length===0){
+    candidates=fs.readdirSync(reviewDir).filter(f=>{
+      if(!f.endsWith('.json')) return false;
+      try{ const r=JSON.parse(fs.readFileSync(reviewDir+'/'+f,'utf8'));
+           return r.point_id===item.target_id || r.target_id===item.target_id; }
+      catch(e){ return false; }
+    });
+  }
   if(candidates.length===0) return false; // no prior review → main curmudgeon's job (fresh)
 
   const newest=candidates.map(f=>{
@@ -246,7 +263,19 @@ async function isVerifyOwned(item){
       });
     }catch(e){return false;}
   }
-  const hasNewer = newerInDir(path+'/monitor/decisions') || newerInDir(path+'/monitor/decisions/applied-patches');
+  // PROP-152 (2026-08-18): decider self-applies (e.g. the 4 eclipse-response
+  // fixes, commit db6c349) edit targets directly and write NO suggested-patches
+  // file — they record via closed-issues.json + closure-ledger.jsonl + the
+  // commit itself — so the file-scan signal is structurally blind to them.
+  // When the decider itself pushed THIS item as class='verification' after the
+  // prior review, that push is the authoritative patched-since assertion
+  // (decider pushes verification items only after applying fixes).
+  const deciderPushedVerification =
+    item.class==='verification' &&
+    String(item.pushed_by||'').includes('decider') &&
+    (Date.parse(item.pushed_at||0)||0) > reviewedAt;
+  const hasNewer = deciderPushedVerification ||
+    newerInDir(path+'/monitor/decisions') || newerInDir(path+'/monitor/decisions/applied-patches');
   if(!hasNewer) return false;
 
   item._verifyMode = 're-verify';
