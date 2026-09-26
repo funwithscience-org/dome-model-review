@@ -1,0 +1,193 @@
+{
+  "ts": "2026-09-26T12:31:44.780Z",
+  "run_id": "2026-09-26T12-24",
+  "agent": "tinker",
+  "mode_selected": "Mode 1 (pipeline health). First tinker run after a 39-day pipeline outage (previous run 2026-08-18T02-41; only dome-poller committed between 2026-08-18 and 2026-09-25). Dispatch: no pending operator directives (prop-auto-close walked 164 props / 0 closures, shadow; directive-auto-close walked 134 / 0 pending, enforce). Mode 0 scan: 2 items (ISS-3025 PROP-PENDING PROP-149; ISS-3052 tied to PROP-148) — top-pick PROP-PENDING, Mode 0 treated as empty per the pending-PROP guard. Mode 1 trigger fired on multiple counts: integrity/social/tinker/workspace-sync/mirror/prune all >2x cadence stale at run start (none had run since 08-18/08-27), curmudgeon ran on a 990h-stale drift-audit fallback, and today's manually-fired analyst/baby/decider runs left no persisted sentinel or status.json update. Mode 2 quick-check green.",
+  "modes_checked": {
+    "pipeline_health": "RED at run start (outage recovery). Poller: healthy throughout (daily commits 08-28..09-25, status.json poll fields current). Analyst 07:13-07:24Z, analyst-baby 07:43Z, curmudgeon 07:46-07:57Z, decider 08:07-08:24Z, workspace-sync 10:45-10:50Z, dome-mirror 12:04-12:05Z all fired today (operator manual runs; every dome-* task is enabled:false per list_scheduled_tasks). Integrity, social, prune-integrity and tinker all launched concurrently at 12:21Z (this run). Substantive handoffs intact: curmudgeon WIN-010.c16 -> decider same run (ISS-3078..3087, EXP-684); analyst FUSE-only proposals -> decider (ISS-3088..3090, EXP-685); decider -> curmudgeon qid 608 pushed 08:17Z (curmudgeon ran 07:46Z, will consume next run). Sentinel layer broken: see findings[0].",
+    "infrastructure": "green — FUSE md5 matches clone HEAD on wins.json/sections.json/digest-reviews.js/generate-html.js/index.html and on every monitor/prompts/*.md; PAT HTTP 200; root-FS free 2953MB, sessions-FS free 1295MB; clone-leak 172MB = /tmp/dome-social-clone (live, mtime 12:22Z — social running now, NOT stale, not touched); PROP-099 canary RC=0 clean; 0 non-tombstoned stranded patches.",
+    "cost_engineering": "not run this mode. Today's analyst run cost $18.91 (monitor/analyst/cost-history.jsonl last row: 106 msgs, 21.3M cache-read) for the 105-record backlog + INTERMAGNET evaluation — one-off catch-up, not a trend.",
+    "proposals": "2 stale PROP statuses self-fixed (PROP-148 pending-operator-review -> applied; PROP-092 phase-0-implemented-manifest-only -> implemented) with obe_* evidence. PROP-149 still pending-operator-review (verification_pattern STILL_BROKEN = not applied). PROP-152 verification_pattern FIXED (applied 08-18, FUSE prompt copy in sync)."
+  },
+  "backlog_trend": {
+    "row_appended": true,
+    "open_issues_total": 29,
+    "wow_pct": 70.6,
+    "net_velocity_7d": -13,
+    "new_7d": 14,
+    "closed_7d": 1,
+    "assigned_analyst": 12,
+    "age_ge_30d": 15,
+    "thresholds_fired": [],
+    "suppressed_percent_trips": [
+      {
+        "tier": "info",
+        "reason": "WoW +70.6% >5% suppressed by small-base floor (total 29 < 30)"
+      },
+      {
+        "tier": "moderate",
+        "reason": "WoW +70.6% >10% suppressed by small-base floor (total 29 < 30)"
+      },
+      {
+        "tier": "major",
+        "reason": "WoW +70.6% >20% suppressed by small-base floor (total 29 < 30)"
+      }
+    ],
+    "detector_b": {
+      "fired": false,
+      "reason": "inbound_burst_winnew_unreviewed=0 (<2)"
+    },
+    "note": "PROP-151 script row #5 clean. WoW +70.6% (17 -> 29) is the restart burst: 14 of the 15 new ISSs were filed today by the first post-outage decider run (ISS-3077..3091), 12 are assigned-analyst and 0 days old. Percent tiers suppressed by the small-base floor (29 < 30) — recorded here as info per the 07-30 self-fix, not a backlog-trend finding. neg_velocity_streak=1."
+  },
+  "findings": [
+    {
+      "severity": "major",
+      "category": "handoff",
+      "description": "Sentinel + status.json writes from today's first post-outage analyst, analyst-baby and decider runs did not persist anywhere visible. monitor/analyst/latest-analysis-summary.txt (git HEAD and FUSE) still opens \"=== Analyst run 2026-08-18T00:43:52.003Z ===\"; monitor/analyst-baby/latest-baby-summary.txt still reads \"dome-analyst-baby run — 2026-08-18T03:31:51Z\"; monitor/status.json:last_run = 2026-08-18T02:14:48.190Z and monitor/status.json:last_analyst_run = 2026-08-13T18:10:38.076Z — all byte-identical to git HEAD in three independent FUSE views (workspace-sync 10:45Z, dome-mirror 12:05Z, this session 12:21Z). The three agents each report having written them (analyst final message: \"The run summary and status file are updated\"; baby committed a no-op cost row; monitor/decisions/latest-decider-summary.txt:\"Daily report + status.json (fresh-git-base)\"). workspace-sync 10:45Z recorded 0 mtime_guard / 0 anti_reversion / 0 recent_commit_guard skips (monitor/integrity/workspace-sync-runs/run-2026-09-26T10-49-58Z.json), i.e. it saw FUSE == git for all three files — nothing to rescue. Substantive outputs from the same runs DID persist (decider rescued the analyst's FUSE-only proposals; decider committed its own summary via clone). Root cause not isolable from this session (no cross-session tool-output access): either the FUSE writes landed only in each agent's own mount view and were reverted at the 10:45Z re-population, or the postlude writes silently mis-targeted. Consequence: every FUSE-sentinel-based staleness probe (this prompt's Mode 1 check, structure-integrity.md, poller PIPELINE-HEALTH-NOTE) will read the analyst/baby/decider as ~39 days stale tomorrow even though they ran today, and monitor/status.json:last_analyst_baby_run = 2026-06-07 shows the baby field has been dead for 111 days.",
+      "evidence": "FUSE population mtimes on the three files are 10:45:06Z (the workspace-sync session's mount populate) while unrelated files carry 07:10Z — so the backing store DID change these files between 07:10Z and 10:45Z and the surviving content is git's. monitor/analyst/cost-history.jsonl last row run_at 2026-09-26T07:24:30Z; monitor/analyst-baby/cost-history.jsonl last row 07:44:36Z; decider commits 2535c18/1b51789 08:24Z. Distinguishing test for next run: if the 2026-09-27 04:0xZ workspace-sync rescues fresh copies of the three files, it was view staleness; if it again sees FUSE == git, it is a write-path defect and the postludes need a clone-and-push path like PROP-109 P3.",
+      "suggested_fix": {
+        "file": "monitor/prompts/reference/decider-reporting.md",
+        "find": "2. **Field-merge.** Carry every poll-owned field (`last_poll`, `last_poll_note`, `last_poll_note_prev`, `consecutive_quiet_polls`, `changes_pending_analysis`) verbatim from the git base.",
+        "replace": "2. **Field-merge.** Carry every poll-owned field (`last_poll`, `last_poll_note`, `last_poll_note_prev`, `consecutive_quiet_polls`, `changes_pending_analysis`) verbatim from the git base, and carry every analyst-/baby-owned field (`last_analyst_run`, `last_analyst_mode`, `last_analyst_note`, `last_analyst_baby_run`, `last_analyst_baby_mode`) from whichever of git-base or FUSE holds the NEWER timestamp (these are written FUSE-only by agents that run before you and are not rescued to git until the 04:0x sync — basing on git alone drops them every day).",
+        "rationale": "PROP-135 field-merge enumerates poll-owned + decider-owned fields only; analyst/baby fields written to FUSE at 00:30Z/03:20Z are overwritten by decider's git-based rebuild at 02:00Z before the 04:00Z rescue. Evidence: last_analyst_run stuck at the one off-cadence 08-13T18:10Z commission run despite daily analyst runs 08-14..08-18; last_analyst_baby_run stuck at 2026-06-07."
+      },
+      "self_fixable": false,
+      "fix_applied": false,
+      "prop_candidate": "PROP-153 (Mode 4 next run, pending the 09-27 distinguishing test)"
+    },
+    {
+      "severity": "moderate",
+      "category": "infra-fuse-staleness",
+      "description": "Latent restart-day clobber path in the PROP-092 overwrite-propagation pass. monitor/scripts/sync-workspace-step4c.js:overwritePropagationPass decides git-newer-overwrite by comparing the git commit time of an allow-listed latest-*-summary.txt against last_sentinel_at (the previous dome-mirror sentinel), not against anything about the FUSE copy. After a mirror gap every allow-listed file whose git commit postdates the gap start is classified git-newer even when FUSE holds a fresher agent write. Today's cycle: monitor/integrity/sync-workspace-runs-2026-09-26T12-05-27Z.json last_sentinel_at=2026-08-18T08:34:39Z, mode=overwrite, candidates=0 — it did not fire only because FUSE already equalled git (findings[0]); had the analyst's 07:24Z summary survived to 12:05Z, the 2026-08-27 workspace-sync commit of the 08-18 summary would have qualified as newer and overwritten it. Cross-check the Phase-2 flip note in monitor/scripts/sync-workspace-step4c.config.json (\"zero fuse-ahead-skip mis-fires\" over the 65-day soak): true, but the soak never included a multi-week mirror gap.",
+      "evidence": "sync-workspace-step4c.js lines ~300-312: gitIsNewer = gitCommitMs > lastMs where lastMs = Date.parse(lastSentinelIso); FUSE hash is used only for the equality short-circuit and absent-detection.",
+      "suggested_fix": {
+        "file": "monitor/scripts/sync-workspace-step4c.js",
+        "find": "const gitIsNewer = isFinite(gitCommitMs) && isFinite(lastMs) && gitCommitMs > lastMs;",
+        "replace": "// Freshness reference = the run timestamp embedded in the summary header (every allow-listed file opens with its own ISO run time), falling back to last-sentinel time only when neither copy carries one.\n    const fuseRunMs = headerRunMs(fusePath), gitRunMs = headerRunMs(gitPath);\n    const gitIsNewer = (isFinite(fuseRunMs) && isFinite(gitRunMs)) ? gitRunMs > fuseRunMs : (isFinite(gitCommitMs) && isFinite(lastMs) && gitCommitMs > lastMs);",
+        "rationale": "Compare the two copies to each other, not git to a possibly-ancient sentinel. Restart days are exactly when the sentinel is oldest and the guard is weakest."
+      },
+      "self_fixable": false,
+      "fix_applied": false,
+      "prop_candidate": "fold into PROP-153"
+    },
+    {
+      "severity": "moderate",
+      "category": "ops-context",
+      "description": "Two stale PROP statuses produced false operator-action carries in the last two pre-outage tinker reports and blocked Mode 0. (1) PROP-148 (monitor/tinker/proposals/PROP-148-clone-target-disk-pressure-fallback.json) sat at pending-operator-review although the operator applied Parts A/B on 2026-08-08 (git commit b7fc9ce2, 8 prompt files); tinker 08-17/08-18 both listed \"PROP-148 apply\" as operator action #3 and Mode 0 deferred ISS-3052 on it for 48 days. (2) PROP-092 (monitor/tinker/proposals/PROP-092-dome-mirror-overwrite-propagation.json) sat at phase-0-implemented-manifest-only although monitor/scripts/sync-workspace-step4c.config.json shows overwrite_propagation.enabled=true, updated_at 2026-08-17T15:30:00Z; tinker 08-18 still carried \"PROP-092 Phase-2 flip decision (day 66)\". Both flipped this run with obe_* metadata (PROP-148 -> applied, PROP-092 -> implemented). Root cause: operator applies land as commits/config edits without a PROP status edit, and PROP-102 Mechanism A cannot help — PROP-148 is field-gated (requires_human_judgment=true) and PROP-092's phase-0 status is outside the eligible whitelist. Side effect worth a hygiene look: the operator's one-off apply_prop148.py was committed to the repo ROOT in b7fc9ce2 and is still there.",
+      "evidence": "GitHub API commits?path=apply_prop148.py -> b7fc9ce2 2026-08-08T19:39:41Z; grep -c PROP-148 monitor/prompts/{analyst,curmudgeon,curmudgeon-verify,decider,dome-mirror,workspace-sync}.md = 4 each; PROP-092 verification_pattern -> FIXED.",
+      "self_fixable": true,
+      "fix_applied": true,
+      "fix_note": "PROP-148 and PROP-092 status flips written to the clone and pushed with this report. Recommend operator: git rm apply_prop148.py (or move under monitor/scripts/one-off/) — not done here, outside tinker's write domain for root-level files."
+    },
+    {
+      "severity": "moderate",
+      "category": "schedule",
+      "description": "Scheduler state vs reality. list_scheduled_tasks shows every dome-* recurring task enabled:false (poller, analyst, analyst-baby, curmudgeon, curmudgeon-verify, decider, integrity, tinker, social, workspace-sync, mirror, prune-integrity, sloppytoppy-score/rewrite), yet nine of them fired today between 07:13Z and 12:21Z — operator manual runs. Two consequences: (a) the four 12:21Z launches (integrity, social, prune-integrity, tinker) ran concurrently, which violates the non-concurrent-scheduling assumption that protects the unclassified multi-writer files (monitor/curmudgeon/tracker.json, monitor/analyst/expansion-tracker.json, monitor/analyst/attention-inbox.json — CLAUDE.md File Ownership) and turns every end-of-run push into a rebase race (this run pulls --rebase before pushing for that reason); (b) the pipeline_status text in monitor/decisions/latest-decider-summary.txt and the poller PIPELINE-HEALTH-NOTE both already escalate this. Also: curmudgeon consumed qid 608 zero times today because it ran 07:46Z and the decider pushed the item 08:17Z — normal cadence order would have been decider-then-curmudgeon-next-day; on manual restart days the operator should fire in dependency order (poller -> analyst -> baby -> curmudgeon -> decider -> workspace-sync -> mirror -> integrity/tinker/social -> prune) with pauses, or simply re-enable the crons.",
+      "evidence": "list_scheduled_tasks lastRunAt: analyst 07:13:51Z, baby 07:43:09Z, curmudgeon 07:46:12Z, decider 08:07:23Z, workspace-sync 10:45:52Z, mirror 12:04:38Z, integrity 12:21:06Z, tinker 12:21:14Z, social 12:21:25Z, prune 12:21:37Z; all enabled:false. /tmp/dome-social-clone present and live (172MB) during this run.",
+      "self_fixable": false,
+      "fix_applied": false
+    },
+    {
+      "severity": "info",
+      "category": "ops-context",
+      "description": "Outage-period bookkeeping. Integrity last report monitor/integrity/report-2026-08-18T01-14.json (PASS) — curmudgeon's 09-26 review ran on the §1f drift-audit fallback because monitor/integrity/drift-audit.json was 990h stale (per monitor/decisions/latest-decider-summary.txt); integrity is running now (12:21Z) and should refresh it. Social last ran 08-18 (monitor/social/report-2026-08-18.json); monitor/social/wayback-state.json last commit 2026-08-27 — running now. dome-curmudgeon-verify remains PAUSED (last run 08-17T15:37Z); qid 608 is class=deep-attack, so no re-enable trigger yet; PROP-152 is applied and its FUSE prompt copy matches git, so the next verification-class item should dispatch correctly. The 2026-08-20 eclipse HIGH band (08-18 next-run item) passed inside the outage; poller tracked it through d=44, the analyst delivered the +30d INTERMAGNET evaluation today (15 days late by its own account), now queued as qid 608 for adversarial review.",
+      "self_fixable": false,
+      "fix_applied": false
+    }
+  ],
+  "previous_followup": {
+    "08-18 findings[0] (PROP-152 curmudgeon-verify gate)": "FIXED — status applied 2026-08-18 (operator, delegated), verification_pattern returns FIXED, FUSE curmudgeon-verify.md md5 == git. Live confirmation still pending: no verification-class queue item has existed since (agent paused).",
+    "08-18 findings[2] (PROP-092 day-66 limbo)": "FALSE CARRY — Phase 2 was already flipped 2026-08-17T15:30Z per sync-workspace-step4c.config.json. Status corrected to implemented this run; first overwrite-mode cycle observed 09-26T12:05Z (0 candidates). New latent-guard finding filed (findings[1]).",
+    "08-18 findings[3] (ISS-3050 closure)": "RESOLVED — ISS-3050 no longer in monitor/decisions/open-issues.json.",
+    "08-18 operator action #3 (PROP-148 apply, PROP-149 review)": "PROP-148: FALSE CARRY — applied 2026-08-08 (b7fc9ce2); status corrected this run. PROP-149: still pending-operator-review, verification_pattern STILL_BROKEN (not applied); ISS-3025 remains blocked on it (day 60).",
+    "08-18 next-run (eclipse HIGH band 08-20)": "OVERTAKEN by the 39-day outage; see findings[4]."
+  },
+  "open_issue_health": {
+    "total_open": 29,
+    "by_status": {
+      "pending-human": 12,
+      "needs-human": 1,
+      "assigned-tinker": 2,
+      "assigned-analyst": 12,
+      "queued-curmudgeon-review": 2
+    },
+    "aged_out": [
+      "ISS-2932 (major, pending-human, 82d)",
+      "ISS-2975 (major, pending-human, 75d)",
+      "ISS-2988 (MAJOR, pending-human, 72d)",
+      "ISS-2964 (high, needs-human, 78d)"
+    ],
+    "repeated_deferrals": [
+      "ISS-3025 (PROP-149, 60d)",
+      "ISS-3052 (48d — was deferred on PROP-148 which turns out to be applied; the residual gap is real: monitor/prompts/structure-integrity.md has 0 PROP-148 references and its clone step (~L913) is prose, not a bash block, so the drop-in is not mechanical — escalate)"
+    ],
+    "missing_patches": [],
+    "zombie_fixes": [],
+    "note": "12 assigned-analyst items are all 0d (today's restart burst, ISS-3078..3091); 1 critical (ISS-3078 WIN-010 state text) routed to EXP-684. The 12 pending-human items are the pre-outage carry (56-118d) — no change during the outage, by construction."
+  },
+  "cleanup_actions": [],
+  "schedule_state_check": "monitor/curmudgeon/priority-queue.json schedule_state still says analyst/curmudgeon/decider current_interval_minutes=240 (last_schedule_change 2026-05-10 operator-manual-reconcile) while actual crons are daily 1-slot since the 2026-06-23 quiet period — pre-existing metadata drift, informational only; no override field documents the quiet-period change.",
+  "recommendations": [
+    {
+      "priority": 1,
+      "type": "human_decision",
+      "description": "Decide the scheduler state: either re-enable the 11 core dome-* crons (poller, analyst, analyst-baby, curmudgeon, decider, integrity, tinker, social, workspace-sync, mirror, prune-integrity; leave curmudgeon-verify + sloppytoppy-* paused) or, if manual firing continues, fire in dependency order with gaps rather than four agents at once."
+    },
+    {
+      "priority": 2,
+      "type": "verify",
+      "description": "Tomorrow (09-27) after the 04:0xZ workspace-sync: check whether monitor/analyst/latest-analysis-summary.txt, monitor/analyst-baby/latest-baby-summary.txt and monitor/status.json:last_run carry today's run timestamps in git. If yes -> findings[0] was FUSE view staleness (document, close). If no -> write-path defect; next tinker run authors PROP-153 (clone-and-push sentinel path mirroring PROP-109 P3, + PROP-135 field-merge carry of analyst/baby fields, + the step4c freshness-reference fix)."
+    },
+    {
+      "priority": 3,
+      "type": "human_decision",
+      "description": "PROP-149 review (day 60; ISS-3025 blocked). ISS-3052: add the PROP-148 clone-target block to monitor/prompts/structure-integrity.md around its clone-location prose (~L913) — judgment edit, not done by tinker."
+    },
+    {
+      "priority": 4,
+      "type": "hygiene",
+      "description": "git rm apply_prop148.py from the repo root (operator one-off script committed in b7fc9ce2)."
+    }
+  ],
+  "next_run_recommendations": [
+    "Run the findings[0] distinguishing test first (09-27 workspace-sync rescue of the three sentinel files); branch to Mode 4 / PROP-153 if write-path.",
+    "Confirm integrity 09-26 report landed (drift-audit.json refreshed) and social 09-26 report + wayback-state committed; confirm no push collisions from the four concurrent 12:21Z launches (look for push-failure-*.json / non-ff aborts).",
+    "Curmudgeon should consume qid 608 on its next run — verify the ECLIPSE-2026-08-12-MAGNETIC-RESULTS review lands and decider pops it.",
+    "If crons are re-enabled, verify first automatic cycle 09-27 fires in order; schedule_state metadata drift (240 vs daily) can be reconciled in a Mode 3 run."
+  ],
+  "self_cost": {
+    "transcript": "4783a48a-cd54-4631-a7bf-3aa9be8a0584.jsonl",
+    "model": "claude-fable-5-1",
+    "assistant_msgs": 94,
+    "tokens": {
+      "input": 188,
+      "output": 97296,
+      "cache_write_5m": 0,
+      "cache_write_1h": 554534,
+      "cache_read": 18883027
+    },
+    "cost_usd": {
+      "input_usd": 0.00094,
+      "output_usd": 2.4324,
+      "cache_write_5m_usd": 0,
+      "cache_write_1h_usd": 5.54534,
+      "cache_read_usd": 9.441513,
+      "total_usd": 17.420193
+    },
+    "transcript_duration_sec": 673.5,
+    "first_ts": "2026-09-26T12:21:15.199Z",
+    "last_ts": "2026-09-26T12:32:28.654Z",
+    "segments_found": 1,
+    "segments_priced": 1,
+    "per_segment": [
+      {
+        "file_basename": "4783a48a-cd54-4631-a7bf-3aa9be8a0584.jsonl",
+        "msgs": 94,
+        "model": "claude-fable-5-1",
+        "total_usd": 17.420193,
+        "first_ts": "2026-09-26T12:21:15.199Z",
+        "last_ts": "2026-09-26T12:32:28.654Z"
+      }
+    ]
+  }
+}
