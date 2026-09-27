@@ -56,18 +56,18 @@ The test suite validates across 8 sections: wins.json schema, HTML output consis
 
 ## Monitoring Pipeline
 
-Eight scheduled agents run continuously to detect dome site changes, maintain review quality, and catch pipeline drift:
+A set of scheduled agents detects dome site changes, maintains review quality, and catches pipeline drift. **Current mode (since September 2026): quiet.** The dome site has been static for months, so only the Poller runs on a schedule (daily); the other agents are run by hand when there is specific work, and return to their schedules when the dome changes.
 
-| Agent | Schedule | Purpose |
-|-------|----------|---------|
-| Poller | Every 12h | Detect dome site changes, track prediction test windows, check parameter canaries |
-| Analyst | Every 2h | New WIN onboarding, expansions, defense neutralization, globe fingerprints |
-| Curmudgeon | Every 4h | Adversarial self-review of our own arguments |
-| Decider | Every 4h | Triage findings, apply patches, commit changes |
-| Integrity | Daily | Site health: links, tabs, build drift, data-prose consistency |
-| Tinker | Daily | Pipeline audit, cost engineering, self-repair |
-| Social | Daily | Search engine indexing, discoverability monitoring |
-| Workspace-sync | Every 4h | Commit workspace-only files to git |
+| Agent | Role |
+|-------|------|
+| Poller | Detect dome site changes, track prediction test windows, check parameter canaries (**active, daily**) |
+| Analyst / Analyst-baby | New WIN onboarding, expansions, defense neutralization, globe fingerprints; tracker drain |
+| Curmudgeon | Adversarial self-review of our own arguments, including frozen-prediction reviews before any verdict is published |
+| Decider | Triage findings, route work, apply patches, commit changes |
+| Integrity | Site health: links, tabs, build drift, data-prose consistency |
+| Tinker | Pipeline audit, cost engineering, self-repair |
+| Social | Search engine indexing, discoverability monitoring |
+| Workspace-sync / Dome-mirror | Keep the working copy and git in step (both directions) |
 
 All agent prompts are published in `monitor/prompts/`. The curmudgeon agent runs an advocate mode that stress-tests every argument from the dome defender's perspective — findings with `defense_survives >= 3` are escalated for rewrite.
 
