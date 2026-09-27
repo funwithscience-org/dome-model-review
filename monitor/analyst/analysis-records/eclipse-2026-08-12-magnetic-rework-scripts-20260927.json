@@ -1,0 +1,3515 @@
+{
+ "_meta": {
+  "title": "Eclipse 2026-08-12 magnetic rework (EXP-687) - scripts and derived tables",
+  "created_at": "2026-09-27",
+  "by": "dome-analyst (Opus 5.5)",
+  "how_to_rerun": "Place INTERMAGNET IAGA-2002 1-min files (BGS GIN GetData, publicationState=best-avail, orientation=native, per-day 2026-07-13..2026-08-12) at /tmp/ecl/day/<IAGA>_<date>.txt (or /tmp/ecl/<IAGA>.txt multi-day) and control stations at /tmp/ecl2/ctl/; obsc.json from obsc.py (skyfield 1.55 + DE421); kp.json from kp.gfz.de JSON (status=def). Then run tests.py -> ctl.py -> detr2.py -> zfit.py -> ctlfit.py -> build_draft.py <ISO-ts>. The Z-control table (zctl.json) was produced by an inline variant of zfit.jfit applied to ASC/KOU/HER with each priority station template.",
+  "gin_url_template": "https://imag-data.bgs.ac.uk/GIN_V1/GINServices?Request=GetData&format=iaga2002&testObsys=0&observatoryIagaCode=<IAGA>&samplesPerDay=minute&dataStartDate=<YYYY-MM-DD>&dataDuration=1&publicationState=best-avail&orientation=native"
+ },
+ "scripts": {
+  "lib.py": "import numpy as np, json, glob\nO=json.load(open('/tmp/ecl/obsc.json'))\nkp=json.load(open('/tmp/ecl/kp.json'))\nKPD={}\nfor t,k in zip(kp['datetime'],kp['Kp']): KPD.setdefault(t[:10],[]).append(k)\nDOME=['EBR','SPT','ESK','LER','HAD','NGK','GUI','CLF']; CAND=['MAB','DOU','WNG','SUA','BEL']; SUPP=['SFS']\nPRIORITY=['EBR','SPT','HAD','CLF','NGK','ESK']  # dome Tier-1 priority table\nQ=['2026-07-19','2026-07-20','2026-08-01','2026-08-06','2026-08-05']\nEVD='2026-08-12'\ndef hm(s): h,m=map(int,s.split(':')); return h*60+m\ndef fmt(i): return '%02d:%02d'%divmod(int(i),60)\n_cache={}\ndef load(s):\n    if s in _cache: return _cache[s]\n    d={}\n    files=sorted(glob.glob(f'/tmp/ecl/day/{s}_*.txt')) or ([f'/tmp/ecl/{s}.txt'] if glob.glob(f'/tmp/ecl/{s}.txt') else []) \n    files+=sorted(glob.glob(f'/tmp/ecl2/ctl/{s}_*.txt'))\n    for fn in files:\n        comp=None\n        for l in open(fn):\n            if l.startswith('DATE'): comp=[c[-1] for c in l.split()[3:7]]; continue\n            if not l.startswith('2026-'): continue\n            p=l.split(); day=p[0]; i=int(p[1][:2])*60+int(p[1][3:5])\n            v=[float(x) for x in p[3:7]]\n            dd=d.setdefault(day,{k:np.full(1440,np.nan) for k in 'HXYZF'})\n            if any(x>=88888 for x in v[:3]): continue\n            if comp[0]=='H':\n                dd['H'][i]=v[0]; dd['Z'][i]=v[2]\n                D=np.radians(v[1]/60.0) # D in minutes of arc\n                dd['X'][i]=v[0]*np.cos(D); dd['Y'][i]=v[0]*np.sin(D)\n            else:\n                dd['X'][i]=v[0]; dd['Y'][i]=v[1]; dd['Z'][i]=v[2]; dd['H'][i]=np.hypot(v[0],v[1])\n            if v[3]<88888: dd['F'][i]=v[3]\n    _cache[s]=d; return d\ndef base(d,comp,days,exclude=None):\n    qd=[q for q in days if q in d and q!=exclude and np.isfinite(d[q][comp][15*60:21*60]).mean()>0.9]\n    return np.nanmean(np.array([d[q][comp] for q in qd]),axis=0), qd\ndef contacts(s):\n    o=O[s]; return hm(o['start_ut']),hm(o['t_max_ut']),hm(o['end_ut'])\ndef obsc_series(s):\n    a=np.zeros(1440); o=O[s]; a[np.array(o['mins'])]=o['series']; return a\n",
+  "tests.py": "import sys; sys.path.insert(0,'/tmp/ecl2')\nfrom lib import *\nG1,G4=hm('16:59'),hm('21:01')\ndef gauss(c,sig=10.0):\n    t=np.arange(1440); return np.exp(-0.5*((t-c)/sig)**2)\ndef lag(x,tau):\n    if tau<=0: return x.copy()\n    y=np.zeros_like(x); a=1.0/tau\n    for i in range(1,len(x)): y[i]=y[i-1]+a*(x[i]-y[i-1])\n    return y\ndef pr(a,b):\n    ok=np.isfinite(a)&np.isfinite(b)\n    if ok.sum()<30: return np.nan\n    return float(np.corrcoef(a[ok],b[ok])[0,1])\ndef detr(y,idx):\n    ok=np.isfinite(y[idx]); \n    if ok.sum()<30: return y[idx]*np.nan\n    p=np.polyfit(idx[ok],y[idx][ok],1); return y[idx]-np.polyval(p,idx)\ndef day_metrics(s,day,comp):\n    d=load(s); b,qd=base(d,comp,Q,exclude=day)\n    if day not in d: return None\n    dev=d[day][comp]-b\n    if np.isfinite(dev[14*60:22*60]).mean()<0.9: return None\n    c1,tm,c4=contacts(s); ob=obsc_series(s)\n    w=np.arange(tm-60,tm+61); seg=dev[w]; k=int(np.nanargmax(np.abs(seg)))\n    kmin=int(np.nanargmin(seg))\n    wl=np.arange(c1-60,c4+61); wg=np.arange(G1-60,G4+61)\n    T={'obsc':-ob,'obsc_lag15':-lag(ob,15),'c14_local':-(gauss(c1)+gauss(c4)),'c14_global':-(gauss(G1)+gauss(G4))}\n    r={}\n    for name,t in T.items():\n        ww=wg if name=='c14_global' else wl\n        r[name]=pr(dev[ww],t[ww]); r[name+'_detr']=pr(detr(dev,ww),t[ww])\n    # contact-phase amplitude: mean dev in +-10 min around local C1 and C4 relative to mean of [C1-60,C1-30]\n    ref=np.nanmean(dev[c1-60:c1-30])\n    a1=np.nanmin(dev[c1-10:c1+11])-ref; a4=np.nanmin(dev[c4-10:c4+11])-ref\n    return dict(peak=float(seg[k]),t_peak=tm-60+k,min=float(seg[kmin]),t_min=tm-60+kmin,\n                min_within30=abs(kmin-60)<=30, r=r, c1_dip=float(a1), c4_dip=float(a4), qd=qd)\nif __name__=='__main__':\n    days=sorted(load('EBR').keys())\n    out={}\n    for s in DOME+CAND+SUPP:\n        out[s]={}\n        for comp in 'HZ':\n            out[s][comp]={}\n            for day in days:\n                m=day_metrics(s,day,comp)\n                if m: out[s][comp][day]=m\n    json.dump(out,open('tests.json','w'),default=lambda o: bool(o) if isinstance(o,np.bool_) else float(o))\n    for comp in 'ZH':\n        print('=== ',comp)\n        for s in DOME+CAND+SUPP:\n            e=out[s][comp].get(EVD)\n            ctl=[v for k,v in out[s][comp].items() if k!=EVD]\n            def frac(key,thr): \n                xs=[c['r'][key] for c in ctl if np.isfinite(c['r'][key])]; return f\"{sum(x>thr for x in xs)}/{len(xs)}\"\n            rr=e['r']\n            print(f\"{s} peak {e['peak']:+6.2f}@{fmt(e['t_peak'])} min {e['min']:+6.2f}@{fmt(e['t_min'])} in30={e['min_within30']} \"\n                  f\"r_obsc {rr['obsc']:+.2f}/{rr['obsc_detr']:+.2f} r_lag15 {rr['obsc_lag15_detr']:+.2f} r_c14L {rr['c14_local']:+.2f}/{rr['c14_local_detr']:+.2f} r_c14G {rr['c14_global']:+.2f}/{rr['c14_global_detr']:+.2f} \"\n                  f\"C1dip {e['c1_dip']:+.1f} C4dip {e['c4_dip']:+.1f} | ctl r>0.7: obsc {frac('obsc_detr',0.7)} c14L {frac('c14_local_detr',0.7)} c14G {frac('c14_global_detr',0.7)}; r>0.5 c14L {frac('c14_local_detr',0.5)}\")\n",
+  "ctl.py": "import sys; sys.path.insert(0,'/tmp/ecl2')\nfrom lib import *\nT=json.load(open('tests.json'))\nDC={'EBR':-10.66,'SPT':-9.82,'ESK':-10.32,'LER':-9.5,'HAD':-12.83,'NGK':-6.67,'GUI':-5.04,'CLF':-10.11}\nEVAL=['EBR','SPT','ESK','LER','HAD','NGK','CLF']  # GUI excluded by DQ rule; COI no data\nDOMECOV={'EBR':.95,'SPT':.90,'HAD':.80,'CLF':.70,'NGK':.40,'ESK':.55,'LER':.42,'GUI':.72}\nHI=[s for s in DOME+CAND if s!='GUI' and O[s]['max_obsc']>0.8]\ndays=sorted(set().union(*[T[s]['H'].keys() for s in EVAL]))\nrows=[]\nfor day in days:\n    kpx=max(KPD[day][5:7]); ks=sum(KPD[day])\n    pk={s:T[s]['H'][day]['peak'] for s in EVAL if day in T[s]['H']}\n    n=len(pk)\n    d02=sum(abs(pk[s]-DC[s])>2 for s in pk); s02=sum(abs(pk[s])<1 for s in pk)\n    b2m1=sum(abs(pk[s]-DC[s])<=2 for s in pk); b2m2=sum(abs(pk[s])<2 for s in pk)\n    p095_dome=[s for s in ['EBR','SPT'] if s in pk and -21<=pk[s]<=-17]\n    pkhi={s:T[s]['H'][day]['peak'] for s in HI if day in T[s]['H']}\n    p095_nasa=sum(-21<=v<=-17 for v in pkhi.values()); b1m1=sum(-25<=v<=-5 for v in pkhi.values())\n    # Z tier1 obsc-template r>0.5 / >0.7 at priority stations\n    zr=[T[s]['Z'][day]['r']['obsc_detr'] for s in PRIORITY if day in T[s]['Z']]\n    zamp=sum(-21<=T[s]['Z'][day]['min']<=-17 for s in PRIORITY if day in T[s]['Z'])\n    zc14=sum(T[s]['Z'][day]['r']['c14_local_detr']>0.5 for s in PRIORITY if day in T[s]['Z'])\n    rows.append(dict(day=day,kp_15_21_max=kpx,kp_daily_sum=round(ks,3),n_eval=n,obs_d02_fires_count=d02,obs_s02_count=s02,\n        b2m001_within2=b2m1,b2m002_abs_lt2=b2m2,pred095_domecov_inrange=len(p095_dome),n_hi=len(pkhi),pred095_obsc80_inrange=p095_nasa,b1m001_inrange=b1m1,\n        z_obsc_r_gt05=sum(r>0.5 for r in zr),z_obsc_r_gt07=sum(r>0.7 for r in zr),z_amp_in_range=zamp,z_c14local_r_gt05=zc14,n_prio=len(zr),\n        peaks={s:round(v,1) for s,v in pk.items()}))\njson.dump(rows,open('ctl.json','w'),indent=1)\nprint('day        Kp15-21 sum | n D02 S02 B2M1 B2M2 | 095dom 095obs/nhi B1M1 | Z r>.5 r>.7 amp c14>.5 /n')\nfor r in rows:\n    print(f\"{r['day']} {r['kp_15_21_max']:4.2f} {r['kp_daily_sum']:5.2f} | {r['n_eval']} {r['obs_d02_fires_count']}  {r['obs_s02_count']}   {r['b2m001_within2']}    {r['b2m002_abs_lt2']}   | {r['pred095_domecov_inrange']}  {r['pred095_obsc80_inrange']}/{r['n_hi']} {r['b1m001_inrange']} | {r['z_obsc_r_gt05']} {r['z_obsc_r_gt07']} {r['z_amp_in_range']} {r['z_c14local_r_gt05']} /{r['n_prio']}  {'EVENT' if r['day']==EVD else ''}\")\n",
+  "detr2.py": "import sys; sys.path.insert(0,'/tmp/ecl2')\nfrom lib import *\nfrom tests import lag\ndef stat_orig(dev,c1,c4,tm,pre_only=False):\n    idx=np.r_[c1-60:c1] if pre_only else np.r_[c1-60:c1,c4:c4+60]\n    y=dev[idx]; ok=np.isfinite(y)\n    if ok.sum()<40: return np.nan\n    p=np.polyfit(idx[ok],y[ok],1); r=dev-np.polyval(p,np.arange(1440)); w=r[tm-30:tm+31]\n    return float(np.nanmean(w)) if np.isfinite(w).sum()>=40 else np.nan\ndef joint(dev,c1,c4,s):\n    idx=np.arange(c1-60,c4+61); y=dev[idx]; ok=np.isfinite(y)\n    if ok.sum()<100: return np.nan\n    X=np.c_[np.ones(len(idx)),(idx-idx.mean())/60.0,s[idx]][ok]\n    beta=np.linalg.lstsq(X,y[ok],rcond=None)[0]; return float(beta[2])\nTAUS=[0,15,30,60]\nres={}\nfor s in DOME+CAND+SUPP:\n    d=load(s); c1,tm,c4=contacts(s); ob=obsc_series(s)\n    S={t:lag(ob,t)/lag(ob,t).max() for t in TAUS}\n    days=[k for k in sorted(d) if k!=EVD]\n    ev=None; null={'orig':[],'pre':[],**{f'A{t}':[] for t in TAUS}}; inj={t:{'mean_rec':[],'A_rec':[]} for t in TAUS}\n    def devfor(day):\n        b,qd=base(d,'H',Q,exclude=day); x=d[day]['H']-b\n        return x if np.isfinite(x[c1-60:c4+61]).mean()>0.9 else None\n    dv=devfor(EVD)\n    ev=dict(orig=stat_orig(dv,c1,c4,tm),pre=stat_orig(dv,c1,c4,tm,True),**{f'A{t}':joint(dv,c1,c4,S[t]) for t in TAUS})\n    for day in days:\n        if day not in d: continue\n        x=devfor(day)\n        if x is None: continue\n        kx=max(KPD[day][5:7])\n        if kx<=2.67:\n            null['orig'].append(stat_orig(x,c1,c4,tm)); null['pre'].append(stat_orig(x,c1,c4,tm,True))\n            for t in TAUS: null[f'A{t}'].append(joint(x,c1,c4,S[t]))\n        # injection on every usable control day (real noise), P=-10 nT peak\n        for t in TAUS:\n            sig=-10.0*S[t]; true_mean=float(np.mean(sig[tm-30:tm+31]))\n            m0=stat_orig(x,c1,c4,tm); m1=stat_orig(x+sig,c1,c4,tm)\n            inj[t]['mean_rec'].append(((m1-m0)/true_mean, true_mean/-10.0))\n            a0=joint(x,c1,c4,S[t]); a1=joint(x+sig,c1,c4,S[t]); inj[t]['A_rec'].append((a1-a0)/-10.0)\n    out=dict(event=ev,null={k:dict(n=int(np.isfinite(v).sum()),mean=float(np.nanmean(v)),sd=float(np.nanstd(v,ddof=1))) for k,v in null.items()},\n             injection={t:dict(detrended_mean_recovered_frac=float(np.nanmean([a for a,b in inj[t]['mean_rec']])),\n                                window_mean_over_peak=float(np.nanmean([b for a,b in inj[t]['mean_rec']])),\n                                joint_fit_recovered_frac=float(np.nanmean(inj[t]['A_rec'])),n=len(inj[t]['A_rec'])) for t in TAUS})\n    res[s]=out\n    e=ev; nn=out['null']\n    print(f\"{s}: orig {e['orig']:+.2f} (null sd {nn['orig']['sd']:.2f}) pre-only {e['pre']:+.2f} (sd {nn['pre']['sd']:.2f}) | joint-fit peak-equiv A: \"+' '.join(f\"t{t}:{e[f'A{t}']:+.1f}±{nn[f'A{t}']['sd']:.1f}\" for t in TAUS))\njson.dump(res,open('detr2.json','w'),indent=1)\nprint('\\nInjection (station-avg):')\nfor t in TAUS:\n    a=[res[s]['injection'][t] for s in res]\n    print(t, 'detrended-mean recovered %.2f'%np.mean([x['detrended_mean_recovered_frac'] for x in a]), 'window-mean/peak %.2f'%np.mean([x['window_mean_over_peak'] for x in a]),\n          'joint-fit recovered %.2f'%np.mean([x['joint_fit_recovered_frac'] for x in a]), 'n~',a[0]['n'])\n",
+  "zfit.py": "import sys; sys.path.insert(0,'/tmp/ecl2')\nfrom lib import *\nfrom tests import lag, gauss\nG1,G4=hm('16:59'),hm('21:01')\ndef jfit(dev,idx,s):\n    y=dev[idx]; ok=np.isfinite(y)\n    if ok.mean()<0.9: return np.nan\n    X=np.c_[np.ones(len(idx)),(idx-idx.mean())/60.0,s[idx]][ok]\n    return float(np.linalg.lstsq(X,y[ok],rcond=None)[0][2])\nres={}\nif __name__!=\"__main__\": raise SystemExit\nfor comp in ['Z','H']:\n  for s in PRIORITY+['LER','SFS']:\n    d=load(s); c1,tm,c4=contacts(s); ob=obsc_series(s)\n    wl=np.arange(c1-60,c4+61); wg=np.arange(G1-60,G4+61)\n    TPL={f'obsc_tau{t}':(lag(ob,t)/lag(ob,t).max(),wl) for t in [0,15,30,60]}\n    TPL['c14_local']=(gauss(c1)+gauss(c4),wl); TPL['c14_global']=(gauss(G1)+gauss(G4),wg)\n    for name,(tp,w) in TPL.items():\n        ev=None; nul=[]; devs=[]\n        for day in sorted(d):\n            b,_=base(d,comp,Q,exclude=day); x=d[day][comp]-b\n            a=jfit(x,w,tp)\n            if not np.isfinite(a): continue\n            if day==EVD: ev=a\n            elif max(KPD[day][4:8])<=3.0: nul.append(a); devs.append(x)\n        nul=np.array(nul); mu,sd=nul.mean(),nul.std(ddof=1)\n        # detection power for a -17 nT (peak) injected signal: fraction of noise days where fitted A falls below mu-3sd\n        pw=np.mean([jfit(x-17.0*tp,w,tp)<mu-3*sd for x in devs])\n        res[f'{comp}|{s}|{name}']=dict(A=round(ev,2),null_mean=round(float(mu),2),null_sd=round(float(sd),2),z=round(float((ev-mu)/sd),2),n=len(nul),power_minus17_at_3sigma=round(float(pw),2),\n            A_3sigma_detectable_nT=round(float(3*sd),1))\n  print('==',comp)\n  for s in PRIORITY+['LER','SFS']:\n    print(s,' '.join(f\"{n}:{res[f'{comp}|{s}|{n}']['A']:+.1f}(z{res[f'{comp}|{s}|{n}']['z']:+.1f},3sd{res[f'{comp}|{s}|{n}']['A_3sigma_detectable_nT']},pw{res[f'{comp}|{s}|{n}']['power_minus17_at_3sigma']})\" for n in ['obsc_tau0','obsc_tau30','obsc_tau60','c14_local','c14_global']))\njson.dump(res,open('zfit.json','w'),indent=1)\n",
+  "ctlfit.py": "import sys; sys.path.insert(0,'/tmp/ecl2')\nimport io,contextlib\nwith contextlib.redirect_stdout(io.StringIO()):\n    from detr2 import joint\nfrom lib import *\nfrom tests import lag\nout={}\nfor tgt in ['EBR','SPT','SFS','SUA','HAD','ESK']:\n    c1,tm,c4=contacts(tgt); ob=obsc_series(tgt)\n    for tau in [0,15,30,60]:\n        S=lag(ob,tau); S=S/S.max()\n        for cs in ['ASC','KOU','HER',tgt]:\n            d=load(cs); vals=[]; ev=None\n            for day in sorted(d):\n                b,qd=base(d,'H',Q,exclude=day); x=d[day]['H']-b\n                if np.isfinite(x[c1-60:c4+61]).mean()<0.9: continue\n                a=joint(x,c1,c4,S)\n                if day==EVD: ev=a\n                elif max(KPD[day][5:7])<=2.67: vals.append(a)\n            v=np.array(vals); z=(ev-v.mean())/v.std(ddof=1)\n            out[f'{tgt}|{tau}|{cs}']=dict(A=round(ev,2),null_mean=round(float(v.mean()),2),null_sd=round(float(v.std(ddof=1)),2),z=round(float(z),2),n=len(v))\n    print(tgt, ' | '.join(f\"t{tau}: \"+' '.join(f\"{cs}{out[f'{tgt}|{tau}|{cs}']['A']:+.1f}(z{out[f'{tgt}|{tau}|{cs}']['z']:+.1f})\" for cs in ['ASC','KOU','HER',tgt]) for tau in [15,30,60]))\njson.dump(out,open('ctlfit.json','w'),indent=1)\n# timing of global features at controls: H dev at 16:55-17:15 and 18:35-18:55 relative to 16:00-16:30\nprint()\nfor cs in ['ASC','KOU','HER','EBR','SPT','HAD','NGK','WNG','BEL']:\n    d=load(cs); b,_=base(d,'H',Q); x=d[EVD]['H']-b; ref=np.nanmean(x[16*60:16*60+30])\n    print(cs, ' '.join(f\"{fmt(t)}:{x[t]-ref:+5.1f}\" for t in [hm('17:00'),hm('17:05'),hm('17:09'),hm('17:15'),hm('18:38'),hm('18:42'),hm('18:47'),hm('18:53')]))\n",
+  "build_draft.py": "import json, sys\nsys.path.insert(0,'/tmp/ecl2')\nfrom lib import O, Q, DOME, CAND, SUPP\nT=json.load(open('tests.json')); CT=json.load(open('ctl.json')); D2=json.load(open('detr2.json'))\nZF=json.load(open('zfit.json')); CF=json.load(open('ctlfit.json')); ZC=json.load(open('zctl.json'))\nold=json.load(open('/sessions/ecstatic-jolly-archimedes/mnt/dome-model-review/monitor/analyst/analysis-records/eclipse-2026-08-12-magnetic-results-DRAFT-20260926T072322.json'))\nTS=sys.argv[1]\nOLD='monitor/analyst/analysis-records/eclipse-2026-08-12-magnetic-results-DRAFT-20260926T072322.json'\nREV='monitor/curmudgeon/reviews/ECLIPSE-2026-08-12-MAGNETIC-RESULTS-proposal.json'\nFRZ='predictions/eclipse-2026-08-12-predictions.json'\nBASE='monitor/baseline/03-predictions.txt'\nSCR='monitor/analyst/analysis-records/eclipse-2026-08-12-magnetic-rework-scripts-20260927.json'\nSNAP='monitor/analyst/analysis-records/status_history-eclipse-entry-2026-09-27.json'\nps={}\nfor s in old['per_station']:\n    if 'protocol_peak_signed_dB_nT' not in s: ps[s['iaga']]=s; continue\n    i=s['iaga']; e=dict(s)\n    z=T[i]['Z']['2026-08-12']\n    e['Z_protocol_peak_signed_dB_nT']=round(z['peak'],2); e['Z_protocol_peak_time_ut']='%02d:%02d'%divmod(int(z['t_peak']),60)\n    e['Z_min_in_window_nT']=round(z['min'],2)\n    e['Z_r_obscuration_template_detrended']=round(z['r']['obsc_detr'],2)\n    e['Z_r_contact_phase_local_C1C4_detrended']=round(z['r']['c14_local_detr'],2)\n    e['Z_r_contact_phase_global_1659_2101_detrended']=round(z['r']['c14_global_detr'],2)\n    k='H|'+i+'|' \n    d2=D2[i]\n    e['H_detrended_mean_pre_contact_only_nT']=round(d2['event']['pre'],2)\n    e['H_detrended_mean_pre_contact_only_null_sd_nT']=round(d2['null']['pre']['sd'],2)\n    e['H_joint_fit_peak_equivalent_nT']={f'tau{t}':round(d2['event'][f'A{t}'],2) for t in [0,15,30,60]}\n    e['H_joint_fit_null_sd_nT']={f'tau{t}':round(d2['null'][f'A{t}']['sd'],2) for t in [0,15,30,60]}\n    e['H_joint_fit_z']={f'tau{t}':round((d2['event'][f'A{t}']-d2['null'][f'A{t}']['mean'])/d2['null'][f'A{t}']['sd'],2) for t in [0,15,30,60]}\n    if 'quiet_days_used' in e:\n        miss=[q for q in Q if q not in e['quiet_days_used']]\n        e['quiet_day_note']=('Uses all 5 primary quiet days.' if not miss else f\"Dropped {', '.join(miss)}: the INTERMAGNET file for that day is present but contains no valid H samples 15-21 UT (data gap, not a publication-state exclusion); the 4 remaining days are used.\")\n    if i=='GUI':\n        e['data_quality_rule_DQ1']='EXCLUDED from all absolute-baseline (protocol-metric) criteria under DQ-1: quiet-day 16-20 UT median H levels span ~185 nT (July quasi-definitive ~28,105 nT vs August variation ~27,920 nT). GUI protocol value -92.39 nT meets the letter of OBS-O-01 (< -50 nT) and is set aside by this pre-stated rule, not by judgment. Same-publication-state (August-only) baseline gives -19.6 nT (curmudgeon reproduction), consistent with the other stations. Offset-immune metrics (template fits) are still reported.'\n    ps[i]=e\ncoi={'iaga':'COI','set':'dome-cited','status':'NO DATA - Coimbra not served by INTERMAGNET GIN; excluded. No Portuguese station was evaluated.'}\nctl_table=[{k:v for k,v in r.items()} for r in CT]\ndef zrow(i):\n    return {n:{kk:ZF[f'Z|{i}|{n}'][kk] for kk in ['A','null_sd','z','power_minus17_at_3sigma','A_3sigma_detectable_nT']} for n in ['obsc_tau0','obsc_tau30','obsc_tau60','c14_local','c14_global']}\ndef hrow(i):\n    return {n:{kk:ZF[f'H|{i}|{n}'][kk] for kk in ['A','null_sd','z','power_minus17_at_3sigma','A_3sigma_detectable_nT']} for n in ['obsc_tau0','obsc_tau30','obsc_tau60','c14_local','c14_global']}\nPRIO=['EBR','SPT','HAD','CLF','NGK','ESK']\ndraft={\n \"_meta\":{\n  \"title\":\"Eclipse 2026-08-12 - magnetic bucket post-event evaluation, REVISION 2 (DRAFT for curmudgeon cycle-2 review; not yet OTS-anchored)\",\n  \"proposed_repo_path\":\"predictions/eclipse-2026-08-12-results.json\",\n  \"frozen_file\":FRZ+\" (unmodified; not edited by this revision)\",\n  \"supersedes_draft\":OLD,\n  \"revision_of_record\":\"EXP-687 (curmudgeon review \"+REV+\", queue_id 608, cycle 1, verdict revise-before-publication, 1 critical / 5 major / 4 moderate / 3 minor)\",\n  \"evaluated_at\":TS,\n  \"evaluated_by\":\"dome-analyst (Opus 5.5), scheduled run 2026-09-27\",\n  \"status\":\"DRAFT rev2 - requires curmudgeon cycle-2 adversarial pass (class deep-attack) + operator approval + independent OTS stamp per post_event_protocol step 6. predictions.json verdicts stay pending until then.\",\n  \"reproducibility\":\"All numbers in this file were computed this run from the INTERMAGNET 1-min files fetched 2026-09-26 (BGS GIN, publicationState=best-avail) plus control stations ASC/KOU/HER fetched 2026-09-27 with the same request shape. Scripts and derived tables: \"+SCR+\". Dome live-scoring snapshot: \"+SNAP+\".\"\n },\n \"headline\":\"The magnetic sub-test was non-diagnostic for both models, and we say so for both. Our pre-registered peak metric gives the same -13 to -19 nT magnitudes on ordinary non-eclipse days, so neither the dome's range nor ours is confirmed by it. On the dome's own named instrument (the Z component), no station comes within about 13 nT of the dome's -17 to -21 nT, even though a signal that size would have been visible through that day's noise; and the dome's signature timing (peaks at first and last contact) is absent at every priority station, where a dome-sized signal would have stood out 4-25 times above the noise. The small eclipse-shaped features we could find, including a few nT at the Iberian stations, also show up at observatories the eclipse never reached (Hermanus, Ascension), so we do not claim them as eclipse signals either. The geometric sub-test (294 km path vs the dome's 1.3 km) remains the decisive result - and one of our own geometric numbers (Hartland 88%) missed its registered bound; the true value was about 94%.\",\n \"symmetric_evaluation_rules\":{\n  \"SR-1_kp_gate\":\"One rule for both sides. Every pre-registered criterion that carries a Kp<2 precondition - ours (B1-M-001, OBS-D-02, OBS-D-04, OBS-S-02) and the dome's (PRED-095 'IF Kp<2', Tier-1 'falsification only on verified Kp<2 day', Tier-3 'Kp<2 entire Aug 9-12', live countdown 'Requires Kp < 2') - is formally UNTESTED: GFZ definitive Kp was 2.333 for 18-21 UT on 2026-08-12 and 3.0 for 15-18 UT on 2026-08-11. Note the dome text also leaves Kp 2-3 unspecified: 'IF Kp >= 3, signal will be buried in storm noise (not a falsification)' (\"+BASE+\":74) while validity requires Kp<2 (:91); 2.333 falls in the gap.\",\n  \"DR-1_detectability_override\":\"Beyond the formal status, a prediction is scored 'as-if' ONLY for the part of its predicted amplitude that exceeds 3 x the empirical null SD of the same metric on the same UT window, estimated from the preceding 30 days with Kp(12-24 UT) <= 3 (i.e. at noise levels comparable to or worse than the eclipse day). The same rule is applied to our ranges and to the dome's. Below that threshold a claim is 'untested at this noise level', not confirmed and not refuted. Detection power for a -17 nT signal was checked by injection into real control-day noise (per-station table in z_component_evaluation).\",\n  \"DQ-1_publication_state\":\"A station is excluded from every absolute-baseline (protocol-metric) criterion if the 16-20 UT median H of its quiet-day set spans more than 50 nT (about 3x the largest span, 16 nT, at any station). Only GUI trips it (~185 nT step between July quasi-definitive and August variation files). Applied uniformly to OBS-D-02 counts, PRED-095 tallies, B1-M-001, B2-M-001/002 and OBS-O-01. Offset-immune template fits are unaffected and are still reported for GUI.\",\n  \"CTL-1_control_stations\":\"Any candidate eclipse feature is checked against non-eclipsed observatories with the SAME template and window: ASC (Ascension, zero obscuration, Sun 13 to -1 deg over 18-19 UT, dayside), KOU (Kourou, zero obscuration, full daylight), HER (Hermanus, zero obscuration, NIGHT side after ~16:15 UT - correcting the cycle-1 review, which described HER as dayside). A feature that a non-eclipsed control reproduces at similar z is not attributed to the eclipse.\"\n },\n \"conditions\":dict(old['conditions'],**{\"kp_gfz_definitive_2026_08_11_15_18UT\":3.0,\n   \"geomagnetic_context_revised\":\"Recovery phase of the 2026-08-08 storm. Kyoto quick-look Dst on the eclipse day sits about 12-15 nT below the quiet-day-set mean over 16-20 UT (quick-look, subject to revision). Station H responds to a ring-current change roughly as Dst x cos(magnetic latitude); with a centred dipole (pole ~80.8N, 72.6W) the factors are ~0.73-0.77 in Iberia (EBR, SPT, SFS), ~0.59-0.65 at HAD/NGK/CLF and ~0.47-0.54 at ESK/LER, i.e. about -6 to -10 nT of H for a -13 nT Dst offset. That is a plausible CONTRIBUTOR to the -8 to -11 nT window-mean depressions, not the whole story: LER's 14-16 UT mean was only -4.1 nT against a window mean of -11.2, and the quietest control day (2026-08-06, Kp 0.333) produced protocol-metric values of -6 to -18 nT with no storm at all.\"}),\n \"methods\":dict(old['methods'],**{\n   \"components\":\"H (our frozen protocol's component) AND Z (the dome's named Tier-1 instrument, \"+BASE+\":107). Both use the same quiet-day per-minute baseline. X/Y/F are available in the scripts but not scored (the dome's pattern clause is moot once amplitude fails).\",\n   \"quiet_days_interpretation\":\"'Kp <= 1' in protocol step 2 is read as max 3-h GFZ Kp <= 1.0; 1+ (1.333) does NOT qualify. Four days satisfy it (07-19, 07-20, 08-01, 08-06); 08-05 (max Kp 1.333 in 12-24 UT but lowest daily sum 3.33 among the rest) fills the fifth slot per the tie/fill rule. EBR, CLF, BEL and SFS use 4 days because their 2026-08-01 files contain no valid samples 15-21 UT (data gaps); no day was dropped for publication state.\",\n   \"leave_one_out\":\"For control-day statistics the day being evaluated is removed from its own baseline (leave-one-out) so quiet days are not compared with themselves.\",\n   \"joint_template_fit_NOT_PREREGISTERED\":\"Replaces the cycle-1 window-mean detrend as the primary eclipse-isolating metric (the window-mean compared a mean to peak predictions and attenuated lagged signals). Model over [local C1-60, local C4+60]: dev(t) = a + b t + A s(t), with s(t) a template normalised to peak 1, so A is directly a PEAK-equivalent amplitude in nT with the trend fitted simultaneously. Templates: obscuration(t) passed through a first-order recovery lag tau = 0, 15, 30, 60 min; local C1/C4 contact-phase (Gaussians, sigma 10 min, at each station's own first and last contact); global C1/C4 contact-phase (16:59 and 21:01 UT, the contact times in the dome's own post_eclipse_analysis() code, \"+BASE+\":191-195), window 15:59-22:01. Injection into real control-day noise recovers A at 100% for all tau (linear model).\",\n   \"window_mean_detrend_retained_as_sensitivity\":\"The cycle-1 metric is kept only as a sensitivity check. Injection-recovery of its window mean (signal peak-normalised): 100% at tau 0, 95% at 15 min, 83% at 30 min, 61% at 60 min; window-mean/peak ratio ~0.65-0.72. The pre-contact-only extrapolation variant has null SD 6-15 nT and is non-informative (table in per_station).\",\n   \"correlation_tests\":\"Pearson r between the linearly-detrended deviation and each template over the same windows, reproducing the dome's r > 0.7 (success) / r > 0.5 (falsification) thresholds, with the same statistic computed on every control day for a false-positive rate.\"}),\n \"per_station\":[ps[k] for k in ['EBR','SPT','ESK','LER','HAD','NGK','GUI','CLF']]+[coi]+[ps[k] for k in ['MAB','DOU','WNG','SUA','BEL','SFS']],\n \"control_day_calibration\":{\n  \"purpose\":\"Null calibration of our frozen magnetic criteria (curmudgeon hole 3). Same protocol metric (max |signed dev| within +/-60 min of each station's t_max, leave-one-out quiet baseline) applied to all 30 preceding days. Evaluable dome stations: EBR, SPT, ESK, LER, HAD, NGK, CLF (GUI excluded under DQ-1; COI no data).\",\n  \"summary\":{\n   \"OBS_D_02_quorum_met_on_control_days\":\"24 of 30 control days (19 of the 22 days with all 7 stations evaluable); 10 of the 16 days with Kp(15-21 UT) <= 1.33. On the eclipse day it fires at 6 of 7. It therefore carries no evidential weight.\",\n   \"OBS_S_02_condition_met\":\"0 stations on every one of the 31 days, eclipse day included. With the pre-committed 2 nT noise floor, a |peak| < 1 nT condition cannot be met; the criterion was unfireable.\",\n   \"B1_M_001_in_range_at_all_high_obscuration_stations\":\"Eclipse day 12 of 12; control days: all stations on 6 of 30 days, at least half the stations on 17 of 30 days. Our own range is 'hit' by ordinary days under this metric - the same defect as OBS-D-02, on our side.\",\n   \"PRED_095_range_at_3_or_more_>80%_obscuration_stations\":\"Eclipse day 2 (ESK, LER); control days: 5 of 30 days reach 3 or more.\",\n   \"B2_M_001_within_2nT\":\"Eclipse day 1 of 7 (HAD); control days up to 3 of 7.\",\n   \"B2_M_002_abs_lt_2nT\":\"0 of 7 on every day (the protocol metric picks the largest excursion, so it is never near zero).\",\n   \"Z_obscuration_template_r_gt_0.5_at_3plus_priority_stations\":\"Eclipse day 6 of 6; control days 7 of 30. r > 0.7 at 3+: eclipse day 2 of 6 (not 3+); control days 4 of 30.\",\n   \"Z_local_contact_template_r_gt_0.5_at_3plus_priority_stations\":\"Eclipse day 0 of 6; control days 0 of 30.\"},\n  \"day_table\":ctl_table\n },\n \"z_component_evaluation\":{\n  \"why\":\"Curmudgeon critical hole: the dome's Tier-1 claim names the INTERMAGNET 1-min Z component, pattern Z down, correlated with 'umbra contact geometry', and separately claims peaks at C1 and C4, not at maximum (\"+BASE+\":104-109). Its 2026-03-15 revision instead says 'Z minimum within 30 minutes of maximum eclipse coverage' (:72-73), and its own analysis code correlates against GLOBAL contact times 16:59 / 21:01 UT (:191-195). We evaluate all three readings on Z so the result does not depend on picking one.\",\n  \"reading_R1_Z_minimum_within_30min_of_max_coverage\":{\"result\":\"Z minima in the +/-60 min window: EBR -4.12, SPT -0.27, HAD -2.18, CLF -1.59, NGK -0.33, ESK -2.86 nT (priority stations); LER -3.42. The minimum does fall within 30 min of max coverage at most stations, but a timing hit on its own is weak (about half of any +/-60 min window lies within +/-30 min) and the depth is 13-21 nT short of -17..-21 at every priority station.\"},\n  \"reading_R2_local_contact_phase\":{\"result\":\"r(detrended Z, local C1/C4 template) = \"+', '.join(f\"{i} {T[i]['Z']['2026-08-12']['r']['c14_local_detr']:+.2f}\" for i in PRIO)+\". None reaches the dome's 0.5 'coherent signal' level, let alone 0.7. Joint-fit contact-phase amplitude on Z: \"+', '.join(f\"{i} {ZF[f'Z|{i}|c14_local']['A']:+.1f} nT (3-sigma detectable {ZF[f'Z|{i}|c14_local']['A_3sigma_detectable_nT']} nT)\" for i in PRIO)+\". A -17 nT contact-phase signal would have been 4-25 sigma and detected on 100% of injected control days; it is absent.\"},\n  \"reading_R3_global_contacts_1659_2101\":{\"result\":\"r(detrended Z, global template) = \"+', '.join(f\"{i} {T[i]['Z']['2026-08-12']['r']['c14_global_detr']:+.2f}\" for i in PRIO)+\"; joint-fit amplitudes \"+', '.join(f\"{i} {ZF[f'Z|{i}|c14_global']['A']:+.1f}\" for i in PRIO)+\" nT. Absent on Z. (H shows 2-6 nT drops at both 16:59 and 21:01 at NGK, WNG, BEL, LER - see dome_favourable_findings; on 2026-08-12 itself, 13% of arbitrary time pairs 4 h 02 min apart show the same double drop at 3+ of those 4 stations, 4.7% on an average control day.)\"},\n  \"obscuration_shaped_fit\":{\"result\":\"Z joint-fit amplitudes with an obscuration template (tau 0) are negative at every priority station: \"+', '.join(f\"{i} {ZF[f'Z|{i}|obsc_tau0']['A']:+.1f} (z {ZF[f'Z|{i}|obsc_tau0']['z']:+.1f})\" for i in PRIO)+\" nT - the dome's 'Z down' sign, at roughly a quarter to a third of its amplitude. BUT the non-eclipsed dayside control ASC gives \"+', '.join(f\"{ZC[f'{i}|ASC']['A']:+.1f} (z {ZC[f'{i}|ASC']['z']:+.1f})\" for i in PRIO)+\" nT with the same templates, so the negative-Z shape is common to stations the eclipse never touched and is not attributed to the eclipse (CTL-1).\"},\n  \"per_station_Z_fits\":{i:zrow(i) for i in PRIO+['LER','SFS']},\n  \"per_station_H_fits\":{i:hrow(i) for i in PRIO+['LER','SFS']},\n  \"detectability_summary\":\"Injected -17 nT (peak) obscuration-shaped signal is recovered at >= 3 sigma on 84-100% of control days at all six priority stations on Z; the contact-phase templates on 100%. The dome's amplitude was testable at this noise level under DR-1; the lower half of our own B1-M-001 range (-5 to about -10 nT) was not (3-sigma thresholds 7-15 nT on Z, 8-22 nT on H depending on station and tau).\"\n },\n \"control_station_check\":{\n  \"stations\":{\"ASC\":\"Ascension -7.95N 14.38W, obscuration 0, Sun +12.9 deg at 18:00 UT, -1.4 deg at 19:00\",\"KOU\":\"Kourou 5.21N 52.73W, obscuration 0, Sun 39-53 deg\",\"HER\":\"Hermanus -34.4N 19.2E, obscuration 0, Sun below horizon after ~16:15 UT (-23 deg at 18:00)\"},\n  \"lagged_H_fit_reproduced_at_HER\":\"The strongest eclipse-shaped H result anywhere - lagged-obscuration fits at the southern stations (tau 30: EBR \"+f\"{CF['EBR|30|EBR']['A']:+.1f} (z {CF['EBR|30|EBR']['z']:+.1f}), SPT {CF['SPT|30|SPT']['A']:+.1f} (z {CF['SPT|30|SPT']['z']:+.1f}), SFS {CF['SFS|30|SFS']['A']:+.1f} (z {CF['SFS|30|SFS']['z']:+.1f})\"+\" nT) - is reproduced at Hermanus with the SAME templates (tau 30: \"+f\"{CF['EBR|30|HER']['A']:+.1f} (z {CF['EBR|30|HER']['z']:+.1f}), {CF['SPT|30|HER']['A']:+.1f} (z {CF['SPT|30|HER']['z']:+.1f}), {CF['SFS|30|HER']['A']:+.1f} (z {CF['SFS|30|HER']['z']:+.1f})\"+\"). Hermanus had no eclipse and was in darkness. The feature is a slow late-window decline common to both hemispheres, which a lagged template absorbs. Not attributed to the eclipse.\",\n  \"18_4x_feature\":\"Relative to 16:00-16:30 UT: HER -1.2 (18:38) to -3.5 nT (18:53); KOU +7.2 (18:38) falling to +5.4 (18:47); NGK/WNG/BEL show a positive pulse at 18:38 then a 3-5 nT fall to 18:47, the same shape as KOU. The 18:46-18:48 protocol peaks are part of a feature recorded at non-eclipsed stations on both day and night sides.\",\n  \"pre_C1_step\":\"At 16:57-17:00 UT H drops 3-5 nT at NGK, WNG, BEL, LER and ESK (10-min step: NGK -3.1, WNG -4.0, BEL -3.0, LER -6.0, ESK -5.4 nT) and ~1 nT at HER. Local first contact at NGK/WNG/BEL was 17:14-17:17, so this is 15+ minutes BEFORE the penumbra reached them - it cannot be caused by the eclipse under either model. The 17:09 'protocol peaks' at NGK, WNG and BEL are the first minute of their +/-60 min windows (window starts 17:07-17:09): the depression was largest before the window opened and eased as the eclipse began.\"\n },\n \"criteria\":{\n  \"OBS_D_01\":\"FIRED (geometric bucket, 2026-08-13) - unchanged.\",\n  \"OBS_D_02\":{\"formal\":\"UNTESTED - Kp<2 precondition not met (SR-1).\",\"as_if\":\"Fires at 6 of 7 evaluable stations, but fires on 24 of 30 control days (SC-5). Fired, NON-DIAGNOSTIC; no evidential weight.\"},\n  \"OBS_D_03\":{\"result\":\"DOES NOT FIRE\",\"detail\":old['criteria']['OBS_D_03']['detail'],\"note\":old['criteria']['OBS_D_03']['note']},\n  \"OBS_D_04\":{\"formal\":\"UNTESTED - Kp<2 precondition not met (SR-1).\",\"as_if\":\"Does not fire: no station shows an eclipse-attributable signed amplitude in [-25,-5] nT that survives CTL-1 (the southern-station lagged fits are reproduced at Hermanus).\"},\n  \"OBS_S_01\":\"Not fired (geometric bucket, 2026-08-13).\",\n  \"OBS_S_02\":{\"formal\":\"UNTESTED - Kp<2 precondition not met (SR-1).\",\"as_if\":\"Does not fire, and could not have fired: the |peak| < 1 nT condition is below our own pre-committed 2 nT noise floor and is met at 0 stations on all 31 days examined (SC-5).\"},\n  \"OBS_S_03\":\"NOT EVALUATED - no independent observed per-station obscuration; computed values are themselves standard-physics predictions.\",\n  \"OBS_O_01\":{\"result\":\"DOES NOT FIRE under DQ-1\",\"detail\":\"GUI's protocol value (-92.39 nT) meets the letter of OBS-O-01 (< -50 nT). GUI is excluded from every absolute-baseline criterion by the pre-stated DQ-1 rule (185 nT publication-state level step in its baseline), not by judgment; its same-state baseline gives -19.6 nT. No other station is positive-signed or below -50 nT.\"},\n  \"OBS_O_02\":{\"result\":\"FIRED\",\"detail\":\"The magnetic bucket was not a clean test of either model. Unanticipated conditions: storm-recovery variability (Kp 2.333 in the evaluation window), a quiet-day baseline that non-eclipse days also depart from by 6-18 nT, and external features at 16:57-17:00 and 18:38-18:53 UT recorded at non-eclipsed control stations. Our pre-registered criteria were also miscalibrated (SC-5). Per OBS-O-02 we publicly note the limit: 2026-08-12 did not provide the clean magnetic test we registered.\"},\n  \"OBS_O_03\":{\"result\":\"DOES NOT FIRE\",\"detail\":\"Dome centrals (B2-M-001) matched within 2 nT at only 1 of 7 stations; candidate stations show raw deviations comparable to dome stations.\"}\n },\n \"registered_prediction_scorecard\":{\n  \"B1-G-001\":\"CONFIRMED (geometric bucket, 2026-08-13).\",\n  \"B1-G-002\":\"CONFIRMED (geometric bucket, 2026-08-13).\",\n  \"B1-G-003\":\"Input value - not scored.\",\n  \"B1-G-004\":\"Input value - not scored.\",\n  \"B1-G-005\":{\"result\":\"FAILED - outside registered tolerance\",\"detail\":\"Registered 88% +/- 2 pp. Hartland (51.00N, 4.48W): DE421/skyfield 94.36% obscuration, max 18:15 UT, partial 17:18-19:08 UT (1 h 50 min). Independent ephemeris: timeanddate.com local circumstances for Bideford (51.017N, 4.205W, ~20 km E), fetched 2026-09-27: began 17:17, maximum 18:14 at magnitude 0.947, ended 19:08 UT, duration 1 h 51 min (DE421 at the Bideford coordinates: 94.16% obscuration, same times). Our registered value was ~6 pp low, ~4 pp beyond its own bound. The review's 'roughly 2 h 45 min' partial duration (data/sections.json part4 section 4.2.7) is ~55 min too long. Correction text for 4.2.7 and the other surfaces was supplied in EXP-684 (WIN-010.c16 hole 4 / ISS-3082); it can land as a dated erratum independently of this magnetic revision. The headline geometric result (294 km vs 1.317 km) is unaffected.\"},\n  \"B1-M-001\":{\"formal\":\"UNTESTED - Kp<2 precondition not met (SR-1).\",\"as_if\":\"NOT CONFIRMED. The protocol metric lands in [-25,-5] at 12 of 12 high-obscuration stations, but does so at >= half the stations on 17 of 30 control days - non-diagnostic (SC-5). Under DR-1 the upper part of our range (about -25 to -12 nT eclipse-attributable) was testable and is not observed at any station after CTL-1; the lower part (-5 to about -10 nT) was below the 3-sigma detectability threshold at most stations and is untested. See SC-1.\"},\n  \"B2-G-001..004\":\"Scored in the geometric bucket (2026-08-13) - unchanged.\",\n  \"B2-M-001\":{\"result\":\"NOT MATCHED (non-diagnostic metric)\",\"detail\":\"Protocol metric within +/-2 nT of the frozen dome central at 1 of 7 stations (HAD); obscuration-template tau 0 fit: 0 of 7; lagged fits bring EBR and SPT within ~2 nT of -10.66/-9.82 but Hermanus reproduces those fits (CTL-1). The global-contact H fit at NGK (-7.8 nT) is within 2 nT of the NGK central (-6.67) - reported in dome_favourable_findings; 1 of 7.\"},\n  \"B2-M-002\":{\"result\":\"NOT MET, and non-discriminating\",\"detail\":\"Registered: 8 of 9 dome stations |dB| < 2 nT. Protocol metric: 0 of 7. Cycle-1 window-mean detrend: 4 of 7 (CLF -0.29, HAD +1.62, NGK +1.60, ESK +1.57). Tau-0 joint fit: 1 of 7 (CLF +0.3). Not met at 8 of 9 under any metric. Even if it had been, near-zero eclipse-attributable values are also what a sunset-eclipse Chapman-Sq response buried in noise looks like (SC-1), and B2-M-002 is our derivation of what dome geometry forces, which contradicts the dome's own formula (the trilemma) - so this prediction could not discriminate on this day.\"},\n  \"OBS_criteria\":\"See criteria block.\"\n },\n \"prediction_level\":{\n  \"PRED_095\":{\"claim\":\"-17 to -21 nT at >80% coverage stations ('IF Kp < 2 ... Z minimum within 30 minutes of maximum eclipse coverage', \"+BASE+\":71-75)\",\n   \"formal\":\"UNTESTED by the dome's own precondition (SR-1).\",\n   \"as_if_DR1\":\"Dome's >80%-coverage stations (its own table: EBR 95%, SPT 90%; COI no data): Z minima -4.1 and -0.3 nT; Z obscuration-fit amplitudes -6.1 and -4.0 nT with 3-sigma detectability 10.5 and 8.1 nT; H eclipse-attributable fits -2.9 and -4.1 nT (tau 0). A -17 nT signal was detectable at both on 89-100% of injected control days and is not present on either component. Raw H protocol values (-13.7, -15.6) are not in range and are matched by ordinary days anyway.\",\n   \"recommended_verdict\":\"falsified (as-if under DR-1, with the precondition override stated in the note) - PRIMARY; alternative for operator: standard_physics (dome labels Tier 1 'Globe-Compatible' and PRED-095 restates WIN-068). Use the same label strength as PRED-TIER-1; do not split them.\",\n   \"proposed_note\":\"[2026-09-xx post-event magnetic results, pending OTS] The dome's own Kp<2 precondition was not met (GFZ Kp 2.333 for 18-21 UT), so by its own terms the test is void, and we say so first. We evaluated it anyway under one rule applied to both sides: a predicted amplitude is scored only if it is at least 3x the measured noise on comparable days. -17 to -21 nT clears that bar easily; it is not present at Ebro or San Pablo on the dome's Z component (-4 and -0 nT) or on H. Our own -5 to -25 nT range gets the same treatment and is not confirmed either. Results: predictions/eclipse-2026-08-12-results.json.\"},\n  \"PRED_TIER_1\":{\"claim\":\"-17 to -21 nT umbra-locked dB at >=3 priority stations, INTERMAGNET 1-min Z, pattern Y up X down Z down F down, r > 0.7 with umbra contact geometry; falsification 'no coherent signal at >=3 stations with r > 0.5 on verified Kp<2 day' (\"+BASE+\":106-122)\",\n   \"formal\":\"UNTESTED by the dome's own precondition (SR-1).\",\n   \"as_if_DR1\":\"Z component, all six priority stations (EBR, SPT, HAD, CLF, NGK, ESK): amplitude in range at 0 of 6 under every template and reading (R1/R2/R3); contact-phase correlation r > 0.7 at 0 of 6 and r > 0.5 at 0 of 6 (local and global templates), a statistic that exceeds 0.7 on 0 of 30 control days, so the test had a low false-positive rate and still did not fire; the dome's falsification clause ('no coherent signal at >=3 stations with r > 0.5') is met under the contact-phase readings. Under an obscuration-shaped reading, r > 0.5 at 6 of 6 but also at 3+ stations on 7 of 30 control days and at the non-eclipsed ASC control, and the amplitudes are -2.8 to -7.6 nT. Kp-independent: the H depression at NGK/WNG/BEL/LER began at 16:57-17:00 UT, before the penumbra reached them.\",\n   \"recommended_verdict\":\"falsified (as-if under DR-1; the note states that we override the author's Kp<2 precondition and why - the claimed amplitude and contact-phase signature would have been 4-25 sigma above that day's noise)\",\n   \"proposed_note\":\"[2026-09-xx post-event magnetic results, pending OTS] Void by the dome's Kp<2 rule (Kp 2.333) - stated first. Evaluated as-if on the dome's named Z component at all six priority stations: no station within 13 nT of -17..-21, and the contact-phase timing signature (peaks at C1/C4) absent everywhere (r <= 0.39), where a dome-sized signal would have stood 4-25x above the noise. Several stations dipped before the eclipse reached them. The same detectability rule leaves the lower half of our own range untested. Results: predictions/eclipse-2026-08-12-results.json.\"},\n  \"PRED_TIER_3\":{\"status\":\"NOT EVALUATED - keep pending\",\"proposed_note\":\"[2026-09-xx] Dome precondition (Kp<2 for the entire Aug 9-12 window) failed: GFZ Kp 3.0 on 2026-08-11 15-18 UT. Dome silent - but silence is site-wide (no manual dome commit since 2026-04-17), so it says nothing specific about this prediction. We have not evaluated IGETS Level-3 residuals ourselves. Revisit if Level-3 data or an author statement appears. Do not set tacit_withdrawal or dome_silent_terminal on this basis.\"},\n  \"PRED_R005\":{\"status\":\"NOT EVALUATED - keep pending\",\"proposed_note\":\"[2026-09-xx] No Kp clause found in the R005 text itself, but the dome's Schumann eclipse block is 'valid only if Kp < 2 on eclipse day' (\"+BASE+\":324); that was not met. We have not evaluated ELF data (e.g. Hylaty, Sierra Nevada). Dome silent during a site-wide drought. Keep pending.\"},\n  \"PRED_ECLIPSE_2026_GEOMETRY\":{\"proposed_note_addition\":\"[2026-09-xx] One of our own B1 geometric claims missed: Hartland peak obscuration was ~94%, not our registered 88% +/- 2 pp (confirmed by DE421 and timeanddate.com). The headline falsification (294 km path vs the dome-forced 1.317 km) is unaffected. The Phase-2 magnetic bucket is now evaluated in predictions/eclipse-2026-08-12-results.json: non-diagnostic for both models under the pre-registered metrics; dome amplitude and contact-phase timing not observed.\"},\n  \"dome_live_scoring_entry\":{\n   \"snapshot\":SNAP+\" (proposed repo path data/dome-api-snapshots/status_history-eclipse-entry-2026-09-27.json; full 58 MB file pinned by sha256 dbe53f90d56c...bbf41, 2,474 records 2026-04-05T03:52:12Z..2026-09-27T04:39:32Z)\",\n   \"verbatim_latest\":{\"name\":\"Eclipse Magnetic Anomaly (Aug 12 2026)\",\"formula\":\"dB = -18.22 x coverage x FSF\",\"predicted\":-28.9,\"observed\":\"PENDING\",\"unit\":\"nT\",\"days_remaining\":-47,\"globe_prediction\":0.0,\"falsification\":\"Fails if measured anomaly within +/-3 nT of 0\",\"source\":\"EBR/SPT INTERMAGNET Aug 12 2026\"},\n   \"history\":\"Entry unchanged (apart from days_remaining) since 2026-04-05T04:17:16Z; the falsification line was added at 04:07:51Z that morning. It was set before the event - no post-hoc edit - and still reads PENDING 47 days after the eclipse.\",\n   \"kappa_double_application\":\"The live formula is not a second, independent baseline. 10.9 x 1.672 = 18.22 (the frozen BOU baseline times kappa), and the -28.9 nT EBR/SPT prediction = 18.22 x 0.95 x 1.672: kappa is used again in place of the Ebro FSF, which the dome's own table gives as 1.029 (\"+BASE+\":115; that would give -17.8 nT). Kappa is applied twice. This corroborates WIN-010.c16 hole 6 and should replace the 'two baselines' wording in ISS-3090 / EXP-685.\",\n   \"assessment\":\"Against the dome's own live rule ('fails if within +/-3 nT of 0'): eclipse-attributable H at EBR is -2.9 nT (tau 0 fit) and SPT -4.1; on Z -6.1 and -4.0. Raw H (-13.7, -15.6) passes a one-sided zero test but ordinary days pass it too, and it misses -28.9 by 13-15 nT. The rule is ill-posed: it scores a raw deviation against zero with no baseline for non-eclipse variability, and its 'globe_prediction: 0.0' misstates standard physics, which predicts a non-zero, conductivity-scaled Chapman-Sq effect.\"}\n },\n \"dome_favourable_findings\":[\n  \"Raw H at every dome-cited station sat 13-19 nT below the quiet-day baseline during the eclipse window. Real, reproduced - and matched by ordinary days (2026-08-06, Kp 0.333: -6 to -18 nT).\",\n  \"At both of the dome's global contact times (16:59 and 21:01 UT) H dropped 2-6 nT at NGK, WNG, BEL and LER. On that day's activity level this double coincidence occurs for ~13% of arbitrary time pairs (4.7% on an average control day); it is absent on Z; amplitudes are a quarter or less of the dome's; the r > 0.7 template test does not fire.\",\n  \"NGK's global-contact H fit (-7.8 nT, z -2.5) is within 2 nT of the dome's frozen NGK central (-6.67). One station of seven.\",\n  \"Z-down obscuration-shaped fits at all six priority stations (-2.8 to -7.6 nT). The sign matches the dome's pattern clause; the non-eclipsed ASC shows the same shape (-2.0 to -5.9 nT).\",\n  \"Lagged H fits at EBR and SPT (-8.5 / -8.8 nT at tau 30) sit near the dome's frozen EBR/SPT centrals (-10.66 / -9.82). Hermanus, with no eclipse, gives -8.8 / -9.5 with the same templates.\"\n ],\n \"self_corrections\":[\n  {\"id\":\"SC-1\",\"item\":\"B1-M-001 amplitude window [-25,-5] nT\",\"finding\":\"Our range was drawn from daytime-eclipse ensembles and not scaled for a near-sunset eclipse (Sun 5-14 deg at maximum). The data cannot confirm it: the protocol metric 'hits' it on ordinary days, the eclipse-attributable fits that reach the -5..-12 nT part of the range are reproduced at a non-eclipsed control, and the lower part of the range is below that day's detectability. The observed residuals are compatible with the low end of our range under a lagged-recovery model and with zero. The cycle-1 statement that no station showed a >= 5 nT dip came partly from comparing a window mean with a peak range, and is withdrawn.\"},\n  {\"id\":\"SC-2\",\"item\":\"Frozen-file uniform-negative sign convention\",\"finding\":\"Standard Sq physics gives a latitude-dependent sign relative to the Sq current focus; a uniform negative sign for all European stations was over-specified. Descriptively, cycle-1 detrended residuals were negative south of about 45N (EBR, SPT, SFS, GUI, SUA) and weakly positive north of about 49N (ESK, HAD, NGK, MAB, DOU, WNG, BEL), with LER and CLF as exceptions. The boundary was noticed after the fact and the stations share a common external field, so this is reported descriptively, not as evidence.\"},\n  {\"id\":\"SC-3\",\"item\":\"B1-G-005 Hartland 88% +/- 2 pp\",\"finding\":\"FAILED - ~94% by two independent ephemerides (see scorecard). Dated erratum to section 4.2.7 (88% -> ~94%; 2 h 45 min -> ~1 h 50 min) via the EXP-684 patch set. The frozen file is not edited.\"},\n  {\"id\":\"SC-4\",\"item\":\"+30 d evaluation timeliness\",\"finding\":\"Our pre-registered evaluation target was 2026-09-11; the first evaluation ran 2026-09-26 and this revision 2026-09-27 (15-16 days late) because the pipeline was paused. The review has criticised the dome's post-event silence, so we apply the same lens to ourselves: we were late, and site-wide dome silence during a 160+ day drought is not treated as evidence about any single prediction (PRED-TIER-3/R005 stay pending).\"},\n  {\"id\":\"SC-5\",\"item\":\"Frozen magnetic criteria lacked a null calibration\",\"finding\":\"OBS-D-02 (2 nT, >= 5/9) fires on 24 of 30 ordinary days; OBS-S-02 (|peak| < 1 nT) sits below our own 2 nT noise floor and could never fire; B1-M-001 under the protocol metric is met at half or more of the stations on 17 of 30 ordinary days. The dome-falsifier was near-certain to fire and the standard-physics falsifier could not. The 2026-08-12 OBS-D-02 result carries no evidential weight. Future frozen magnetic criteria must ship with a control-day false-positive rate.\"},\n  {\"id\":\"SC-6\",\"item\":\"Scoring completeness\",\"finding\":\"Cycle 1 omitted B2-M-002 and filed B1-G-005 as a pending self-correction. Every registered ID is now scored in registered_prediction_scorecard.\"},\n  {\"id\":\"SC-7\",\"item\":\"Wording\",\"finding\":\"Cycle-1 companion text said dips ran 'from Portugal to Romania'; no Portuguese station was evaluated (COI has no INTERMAGNET data). Correct statement: from Spain to Romania. The 17:09 group (NGK, WNG, BEL) is a window-edge artefact of a depression that began at 16:57-17:00; the 18:46-18:48 group (EBR, SPT, ESK, HAD, CLF, MAB, DOU, SUA) coincides with a feature at non-eclipsed KOU and HER. Exceptions: LER 17:25, SFS 19:35, GUI 19:39.\"}\n ],\n \"honest_limits\":[\n  \"Kp<2 precondition unmet for 18-21 UT on 2026-08-12 (and for Aug 9-12 per the dome's Tier-3 clause); every magnetic result is formally untested and reported as-if under SR-1/DR-1.\",\n  \"DR-1, DQ-1, CTL-1, the joint template fit and the control-station set were defined after the event, in response to the cycle-1 review. They are applied identically to both sides, but they are not pre-registered.\",\n  \"Obscuration is computed with DE421/skyfield rather than the NASA web calculator named in the protocol; Hartland is cross-checked against timeanddate.com.\",\n  \"Three control stations (ASC, KOU, HER) only; HER is night-side. A fuller non-eclipsed control set would sharpen CTL-1.\",\n  \"Dst values are Kyoto quick-look; ring-current scaling uses a centred dipole.\",\n  \"The curmudgeon's quick pre-contact-only numbers (e.g. ESK -6.85, LER -2.99) differ from ours (ESK -5.88, LER -11.66), probably from anchor or baseline details; the variant's null SD is 6-15 nT, so neither version is informative and no conclusion rests on it.\",\n  \"n = 7-8 stations with obscuration 0.69-1.00 gives the OBS-D-03 correlation test essentially no power (r12 = 0.978).\",\n  \"Kim & Chang 2018 is mis-cited in the frozen file (authors/title; flagged 2026-09-27 in proposal-kim-chang-2018-citation-mismatch). B1-M-001's range basis is therefore itself under review; this does not change any number here.\"\n ],\n \"kernel_of_truth\":\"Two real things sit under the dome's eclipse claims. First, eclipses really do disturb ground magnetometers, and on 2026-08-12 the raw readings at the dome's stations really were 13-19 nT low - a defender looking only at those numbers would see a hit. Second, the dome's insistence on a quiet-day (Kp<2) precondition is good practice, and this day failed it. Both are true. Neither saves the claim: ordinary days produce the same raw numbers, the dome's own named component shows nothing near its amplitude, its signature contact-phase timing is absent where it would have stood out clearly, and the only eclipse-shaped features we could find also appear at observatories the eclipse never reached. A void test is not a confirmation, and 47 days later the dome's own live scoreboard still reads PENDING.\"\n}\njson.dump(draft,open('draft_rev2.json','w'),indent=2,ensure_ascii=False)\nprint('ok', len(json.dumps(draft)))\n",
+  "cycle1_obsc.py": "import numpy as np, json\nfrom skyfield.api import load, wgs84, load_file\nts=load.timescale(); eph=load_file('de421.bsp'); earth,sun,moon=eph['earth'],eph['sun'],eph['moon']\nR_SUN=696000.0; R_MOON=1737.4\ndef overlap_frac(r1,r2,d):\n    # fraction of disk1 (sun, radius r1) covered by disk2 (moon, radius r2), d separation (all same units)\n    if d>=r1+r2: return 0.0\n    if d<=abs(r2-r1): return 1.0 if r2>=r1 else (r2/r1)**2\n    a=r1*r1*np.arccos((d*d+r1*r1-r2*r2)/(2*d*r1)); b=r2*r2*np.arccos((d*d+r2*r2-r1*r1)/(2*d*r2))\n    c=0.5*np.sqrt((-d+r1+r2)*(d+r1-r2)*(d-r1+r2)*(d+r1+r2))\n    return (a+b-c)/(np.pi*r1*r1)\ndef circ(lat,lon,elev=0.0):\n    loc=earth+wgs84.latlon(lat,lon,elevation_m=elev)\n    mins=np.arange(15*60,21*60)  # 15:00-21:00 UT\n    t=ts.utc(2026,8,12,0,mins)\n    s=loc.at(t).observe(sun).apparent(); m=loc.at(t).observe(moon).apparent()\n    sep=s.separation_from(m).radians\n    rs=np.arcsin(R_SUN/s.distance().km); rm=np.arcsin(R_MOON/m.distance().km)\n    alt=s.altaz()[0].degrees\n    ob=np.array([overlap_frac(a,b,c) for a,b,c in zip(rs,rm,sep)])\n    mag=np.clip((rs+rm-sep)/(2*rs),0,None)\n    i=int(np.argmax(ob))\n    on=np.where(ob>0)[0]\n    return dict(max_obsc=round(float(ob[i]),4),max_mag=round(float(mag[i]),4),t_max_ut='%02d:%02d'%divmod(int(mins[i]),60),\n                sun_alt_at_max=round(float(alt[i]),2),\n                start_ut=('%02d:%02d'%divmod(int(mins[on[0]]),60)) if len(on) else None,end_ut=('%02d:%02d'%divmod(int(mins[on[-1]]),60)) if len(on) else None,\n                series=[round(float(x),4) for x in ob], sun_alt=[round(float(x),2) for x in alt], mins=[int(x) for x in mins])\nif __name__=='__main__':\n    for name,lat,lon in [('greatest',65.225,-25.228),('Hartland',51.00,-4.48)]:\n        c=circ(lat,lon); print(name,{k:v for k,v in c.items() if k not in('series','sun_alt','mins')})\n",
+  "cycle1_db.py": "import numpy as np, json, glob, datetime\nfrom stations import DOME, CAND\nO=json.load(open('obsc.json'))\ndef load(s):\n    # returns dict date -> array(1440) of H\n    d={}\n    files=sorted(glob.glob(f'day/{s}_*.txt')) or [f'{s}.txt']\n    for fn in files:\n        comp=None\n        for l in open(fn):\n            if l.startswith('DATE'): comp=l.split()[3:5]; continue\n            if not l.startswith('2026-'): continue\n            p=l.split(); day=p[0]; hh,mm=int(p[1][:2]),int(p[1][3:5]); i=hh*60+mm\n            a,b=float(p[3]),float(p[4])\n            if a>=99999 or b>=99999: v=np.nan\n            elif comp[0].endswith('H'): v=a\n            else: v=np.hypot(a,b)\n            d.setdefault(day,np.full(1440,np.nan))[i]=v\n    return d\nQ_PRIMARY=['2026-07-19','2026-07-20','2026-08-01','2026-08-06','2026-08-05']\nQ_ALT=['2026-08-06','2026-08-05','2026-08-07','2026-07-19','2026-08-01']\nEVD='2026-08-12'\ndef analyse(s,Q):\n    d=load(s); qd=[q for q in Q if q in d and np.isfinite(d[q][16*60:20*60]).mean()>0.9]\n    base=np.nanmean(np.array([d[q] for q in qd]),axis=0)\n    dev=d[EVD]-base\n    hh,mm=map(int,O[s]['t_max_ut'].split(':')); tm=hh*60+mm\n    w=slice(tm-60,tm+61); seg=dev[w]\n    k=int(np.nanargmax(np.abs(seg))); peak=float(seg[k]); tpk=tm-60+k\n    # diagnostics\n    pre=dev[14*60:16*60]; \n    return dict(quiet_days_used=qd,t_max_cov=O[s]['t_max_ut'],peak_signed_dB=round(peak,2),t_peak='%02d:%02d'%divmod(tpk,60),\n        mean_dev_window=round(float(np.nanmean(seg)),2),min_dev_window=round(float(np.nanmin(seg)),2),max_dev_window=round(float(np.nanmax(seg)),2),\n        pre_window_1400_1600_absmax=round(float(np.nanmax(np.abs(pre))),2), pre_window_mean=round(float(np.nanmean(pre)),2),\n        dev_series_1500_2100=[None if not np.isfinite(x) else round(float(x),2) for x in dev[15*60:21*60]])\nif __name__=='__main__':\n    res={}\n    for s in DOME+CAND+['SFS']:\n        a=analyse(s,Q_PRIMARY); b=analyse(s,Q_ALT); res[s]=dict(primary=a,alt=b)\n        print(f\"{s:4} obsc={O[s]['max_obsc']:.3f} tmax={a['t_max_cov']} peak={a['peak_signed_dB']:+7.2f}@{a['t_peak']} mean={a['mean_dev_window']:+6.2f} [min {a['min_dev_window']:+6.2f} max {a['max_dev_window']:+6.2f}] pre|max|={a['pre_window_1400_1600_absmax']:5.2f} preMean={a['pre_window_mean']:+6.2f} altPeak={b['peak_signed_dB']:+7.2f} nQ={len(a['quiet_days_used'])}\")\n    json.dump(res,open('db.json','w'))\n",
+  "cycle1_detr.py": "import numpy as np, json\nfrom db import load, Q_PRIMARY\nfrom stations import DOME, CAND\nO=json.load(open('obsc.json')); kp=json.load(open('kp.json'))\nkpd={}\nfor t,k in zip(kp['datetime'],kp['Kp']): kpd.setdefault(t[:10],[]).append(k)\ndef hm(s): h,m=map(int,s.split(':')); return h*60+m\ndef stat(dev,fc,lc,tm):\n    a=np.r_[fc-60:fc]; b=np.r_[lc:lc+60]; idx=np.r_[a,b]; y=dev[idx]; ok=np.isfinite(y)\n    if ok.sum()<60: return None\n    p=np.polyfit(idx[ok],y[ok],1); r=dev-np.polyval(p,np.arange(1440))\n    w=r[tm-30:tm+31]\n    if np.isfinite(w).sum()<40: return None\n    return float(np.nanmean(w)), float(np.nanmin(r[fc:lc+1])), float(np.nanmax(r[fc:lc+1]))\nres={}\nfor s in DOME+CAND+['SFS']:\n    d=load(s); qd=[q for q in Q_PRIMARY if q in d and np.isfinite(d[q][15*60:21*60]).mean()>0.9]\n    base=np.nanmean(np.array([d[q] for q in qd]),axis=0)\n    fc,lc,tm=hm(O[s]['start_ut']),hm(O[s]['end_ut']),hm(O[s]['t_max_ut'])\n    ev=stat(d['2026-08-12']-base,fc,lc,tm)\n    null=[]\n    for day in sorted(d):\n        if day=='2026-08-12' or day in qd: continue\n        # restrict null to days with Kp in 15-21UT <= 2.67 (comparable or slightly more disturbed than eclipse day)\n        if max(kpd[day][5:7])>2.67: continue\n        v=stat(d[day]-base,fc,lc,tm)\n        if v: null.append(v[0])\n    null=np.array(null)\n    if ev is None: print(s,'insufficient'); continue\n    z=(ev[0]-null.mean())/null.std(ddof=1) if len(null)>2 else None\n    frac=(np.abs(null)>=abs(ev[0])).mean() if len(null) else None\n    res[s]=dict(obsc=O[s]['max_obsc'],t_max=O[s]['t_max_ut'],window=f\"{O[s]['start_ut']}-{O[s]['end_ut']}\",\n      eclipse_mean_resid_nT=round(ev[0],2),resid_min=round(ev[1],2),resid_max=round(ev[2],2),\n      null_n=len(null),null_mean=round(float(null.mean()),2),null_sd=round(float(null.std(ddof=1)),2),z=round(float(z),2),\n      frac_null_abs_ge=round(float(frac),3))\n    print(s,res[s])\njson.dump(res,open('detr.json','w'))\n",
+  "cycle1_stations.py": "import glob,re\ndef hdr(s):\n    f=sorted(glob.glob(f'day/{s}_2026-08-12.txt'))+[f'{s}.txt']\n    for fn in f:\n        try:\n            lat=lon=None\n            for l in open(fn):\n                if 'Geodetic Latitude' in l: lat=float(l.split()[2])\n                if 'Geodetic Longitude' in l: lon=float(l.split()[2]); lon=lon-360 if lon>180 else lon\n                if l.startswith('DATE'): break\n            if lat is not None: return lat,lon\n        except FileNotFoundError: pass\nDOME=['EBR','SPT','ESK','LER','HAD','NGK','GUI','CLF']; CAND=['MAB','DOU','WNG','SUA','BEL']\n"
+ },
+ "derived_tables": {
+  "ctl": [
+   {
+    "day": "2026-07-13",
+    "kp_15_21_max": 2.667,
+    "kp_daily_sum": 14.333,
+    "n_eval": 7,
+    "obs_d02_fires_count": 7,
+    "obs_s02_count": 0,
+    "b2m001_within2": 0,
+    "b2m002_abs_lt2": 0,
+    "pred095_domecov_inrange": 1,
+    "n_hi": 12,
+    "pred095_obsc80_inrange": 2,
+    "b1m001_inrange": 3,
+    "z_obsc_r_gt05": 0,
+    "z_obsc_r_gt07": 0,
+    "z_amp_in_range": 0,
+    "z_c14local_r_gt05": 1,
+    "n_prio": 6,
+    "peaks": {
+     "EBR": -20.5,
+     "SPT": -23.4,
+     "ESK": 37.2,
+     "LER": 45.8,
+     "HAD": 26.5,
+     "NGK": 17.8,
+     "CLF": 14.9
+    }
+   },
+   {
+    "day": "2026-07-14",
+    "kp_15_21_max": 2.333,
+    "kp_daily_sum": 14.0,
+    "n_eval": 7,
+    "obs_d02_fires_count": 7,
+    "obs_s02_count": 0,
+    "b2m001_within2": 0,
+    "b2m002_abs_lt2": 0,
+    "pred095_domecov_inrange": 0,
+    "n_hi": 12,
+    "pred095_obsc80_inrange": 0,
+    "b1m001_inrange": 0,
+    "z_obsc_r_gt05": 1,
+    "z_obsc_r_gt07": 1,
+    "z_amp_in_range": 0,
+    "z_c14local_r_gt05": 1,
+    "n_prio": 6,
+    "peaks": {
+     "EBR": 13.1,
+     "SPT": 11.7,
+     "ESK": 15.7,
+     "LER": 13.6,
+     "HAD": 14.9,
+     "NGK": 13.4,
+     "CLF": 14.9
+    }
+   },
+   {
+    "day": "2026-07-15",
+    "kp_15_21_max": 2.333,
+    "kp_daily_sum": 19.0,
+    "n_eval": 7,
+    "obs_d02_fires_count": 5,
+    "obs_s02_count": 0,
+    "b2m001_within2": 2,
+    "b2m002_abs_lt2": 0,
+    "pred095_domecov_inrange": 0,
+    "n_hi": 12,
+    "pred095_obsc80_inrange": 0,
+    "b1m001_inrange": 8,
+    "z_obsc_r_gt05": 0,
+    "z_obsc_r_gt07": 0,
+    "z_amp_in_range": 0,
+    "z_c14local_r_gt05": 0,
+    "n_prio": 6,
+    "peaks": {
+     "EBR": -12.0,
+     "SPT": -14.8,
+     "ESK": 17.0,
+     "LER": 22.5,
+     "HAD": -8.2,
+     "NGK": -10.6,
+     "CLF": -9.6
+    }
+   },
+   {
+    "day": "2026-07-16",
+    "kp_15_21_max": 1.0,
+    "kp_daily_sum": 13.332,
+    "n_eval": 7,
+    "obs_d02_fires_count": 7,
+    "obs_s02_count": 0,
+    "b2m001_within2": 0,
+    "b2m002_abs_lt2": 0,
+    "pred095_domecov_inrange": 1,
+    "n_hi": 12,
+    "pred095_obsc80_inrange": 1,
+    "b1m001_inrange": 11,
+    "z_obsc_r_gt05": 2,
+    "z_obsc_r_gt07": 1,
+    "z_amp_in_range": 0,
+    "z_c14local_r_gt05": 0,
+    "n_prio": 6,
+    "peaks": {
+     "EBR": -14.5,
+     "SPT": -17.3,
+     "ESK": -7.4,
+     "LER": 11.1,
+     "HAD": -7.2,
+     "NGK": -11.4,
+     "CLF": -7.5
+    }
+   },
+   {
+    "day": "2026-07-17",
+    "kp_15_21_max": 1.333,
+    "kp_daily_sum": 7.333,
+    "n_eval": 7,
+    "obs_d02_fires_count": 4,
+    "obs_s02_count": 0,
+    "b2m001_within2": 3,
+    "b2m002_abs_lt2": 0,
+    "pred095_domecov_inrange": 0,
+    "n_hi": 12,
+    "pred095_obsc80_inrange": 0,
+    "b1m001_inrange": 11,
+    "z_obsc_r_gt05": 2,
+    "z_obsc_r_gt07": 1,
+    "z_amp_in_range": 0,
+    "z_c14local_r_gt05": 0,
+    "n_prio": 6,
+    "peaks": {
+     "EBR": -12.5,
+     "SPT": -14.0,
+     "ESK": -9.2,
+     "LER": 6.6,
+     "HAD": -10.4,
+     "NGK": -10.5,
+     "CLF": -9.3
+    }
+   },
+   {
+    "day": "2026-07-18",
+    "kp_15_21_max": 1.333,
+    "kp_daily_sum": 6.666,
+    "n_eval": 7,
+    "obs_d02_fires_count": 7,
+    "obs_s02_count": 0,
+    "b2m001_within2": 0,
+    "b2m002_abs_lt2": 0,
+    "pred095_domecov_inrange": 0,
+    "n_hi": 12,
+    "pred095_obsc80_inrange": 0,
+    "b1m001_inrange": 1,
+    "z_obsc_r_gt05": 1,
+    "z_obsc_r_gt07": 0,
+    "z_amp_in_range": 0,
+    "z_c14local_r_gt05": 0,
+    "n_prio": 6,
+    "peaks": {
+     "EBR": 4.0,
+     "SPT": 4.2,
+     "ESK": 13.0,
+     "LER": 11.9,
+     "HAD": 7.2,
+     "NGK": 7.5,
+     "CLF": 8.1
+    }
+   },
+   {
+    "day": "2026-07-19",
+    "kp_15_21_max": 1.0,
+    "kp_daily_sum": 4.333,
+    "n_eval": 7,
+    "obs_d02_fires_count": 7,
+    "obs_s02_count": 0,
+    "b2m001_within2": 0,
+    "b2m002_abs_lt2": 0,
+    "pred095_domecov_inrange": 0,
+    "n_hi": 12,
+    "pred095_obsc80_inrange": 0,
+    "b1m001_inrange": 0,
+    "z_obsc_r_gt05": 1,
+    "z_obsc_r_gt07": 1,
+    "z_amp_in_range": 0,
+    "z_c14local_r_gt05": 0,
+    "n_prio": 6,
+    "peaks": {
+     "EBR": 9.6,
+     "SPT": 6.5,
+     "ESK": 11.8,
+     "LER": 13.3,
+     "HAD": 6.3,
+     "NGK": 7.3,
+     "CLF": 7.5
+    }
+   },
+   {
+    "day": "2026-07-20",
+    "kp_15_21_max": 1.0,
+    "kp_daily_sum": 5.333,
+    "n_eval": 7,
+    "obs_d02_fires_count": 7,
+    "obs_s02_count": 0,
+    "b2m001_within2": 0,
+    "b2m002_abs_lt2": 0,
+    "pred095_domecov_inrange": 0,
+    "n_hi": 12,
+    "pred095_obsc80_inrange": 0,
+    "b1m001_inrange": 0,
+    "z_obsc_r_gt05": 0,
+    "z_obsc_r_gt07": 0,
+    "z_amp_in_range": 0,
+    "z_c14local_r_gt05": 1,
+    "n_prio": 6,
+    "peaks": {
+     "EBR": 3.4,
+     "SPT": -4.6,
+     "ESK": 12.1,
+     "LER": 14.5,
+     "HAD": 5.6,
+     "NGK": 6.9,
+     "CLF": -2.5
+    }
+   },
+   {
+    "day": "2026-07-21",
+    "kp_15_21_max": 3.0,
+    "kp_daily_sum": 23.334,
+    "n_eval": 7,
+    "obs_d02_fires_count": 7,
+    "obs_s02_count": 0,
+    "b2m001_within2": 0,
+    "b2m002_abs_lt2": 0,
+    "pred095_domecov_inrange": 0,
+    "n_hi": 12,
+    "pred095_obsc80_inrange": 1,
+    "b1m001_inrange": 5,
+    "z_obsc_r_gt05": 0,
+    "z_obsc_r_gt07": 0,
+    "z_amp_in_range": 0,
+    "z_c14local_r_gt05": 0,
+    "n_prio": 6,
+    "peaks": {
+     "EBR": -26.9,
+     "SPT": -31.0,
+     "ESK": 38.0,
+     "LER": 64.0,
+     "HAD": 13.9,
+     "NGK": -12.9,
+     "CLF": -17.5
+    }
+   },
+   {
+    "day": "2026-07-22",
+    "kp_15_21_max": 2.333,
+    "kp_daily_sum": 19.0,
+    "n_eval": 7,
+    "obs_d02_fires_count": 5,
+    "obs_s02_count": 0,
+    "b2m001_within2": 2,
+    "b2m002_abs_lt2": 0,
+    "pred095_domecov_inrange": 0,
+    "n_hi": 12,
+    "pred095_obsc80_inrange": 3,
+    "b1m001_inrange": 11,
+    "z_obsc_r_gt05": 2,
+    "z_obsc_r_gt07": 2,
+    "z_amp_in_range": 0,
+    "z_c14local_r_gt05": 0,
+    "n_prio": 6,
+    "peaks": {
+     "EBR": -8.7,
+     "SPT": -11.3,
+     "ESK": -20.3,
+     "LER": 12.1,
+     "HAD": -17.3,
+     "NGK": -15.4,
+     "CLF": -14.7
+    }
+   },
+   {
+    "day": "2026-07-23",
+    "kp_15_21_max": 5.0,
+    "kp_daily_sum": 25.667,
+    "n_eval": 7,
+    "obs_d02_fires_count": 7,
+    "obs_s02_count": 0,
+    "b2m001_within2": 0,
+    "b2m002_abs_lt2": 0,
+    "pred095_domecov_inrange": 1,
+    "n_hi": 12,
+    "pred095_obsc80_inrange": 4,
+    "b1m001_inrange": 6,
+    "z_obsc_r_gt05": 2,
+    "z_obsc_r_gt07": 1,
+    "z_amp_in_range": 0,
+    "z_c14local_r_gt05": 0,
+    "n_prio": 6,
+    "peaks": {
+     "EBR": -19.2,
+     "SPT": -23.2,
+     "ESK": 45.2,
+     "LER": 68.5,
+     "HAD": 26.1,
+     "NGK": 22.5,
+     "CLF": -19.2
+    }
+   },
+   {
+    "day": "2026-07-24",
+    "kp_15_21_max": 1.0,
+    "kp_daily_sum": 12.335,
+    "n_eval": 7,
+    "obs_d02_fires_count": 5,
+    "obs_s02_count": 0,
+    "b2m001_within2": 2,
+    "b2m002_abs_lt2": 0,
+    "pred095_domecov_inrange": 0,
+    "n_hi": 12,
+    "pred095_obsc80_inrange": 0,
+    "b1m001_inrange": 12,
+    "z_obsc_r_gt05": 3,
+    "z_obsc_r_gt07": 3,
+    "z_amp_in_range": 0,
+    "z_c14local_r_gt05": 0,
+    "n_prio": 6,
+    "peaks": {
+     "EBR": -13.9,
+     "SPT": -16.4,
+     "ESK": -15.9,
+     "LER": -10.3,
+     "HAD": -13.4,
+     "NGK": -15.0,
+     "CLF": -16.1
+    }
+   },
+   {
+    "day": "2026-07-25",
+    "kp_15_21_max": 2.667,
+    "kp_daily_sum": 10.668,
+    "n_eval": 7,
+    "obs_d02_fires_count": 7,
+    "obs_s02_count": 0,
+    "b2m001_within2": 0,
+    "b2m002_abs_lt2": 0,
+    "pred095_domecov_inrange": 0,
+    "n_hi": 12,
+    "pred095_obsc80_inrange": 0,
+    "b1m001_inrange": 0,
+    "z_obsc_r_gt05": 0,
+    "z_obsc_r_gt07": 0,
+    "z_amp_in_range": 0,
+    "z_c14local_r_gt05": 0,
+    "n_prio": 6,
+    "peaks": {
+     "EBR": 12.3,
+     "SPT": 8.1,
+     "ESK": 46.2,
+     "LER": 58.6,
+     "HAD": 28.7,
+     "NGK": 35.7,
+     "CLF": 19.4
+    }
+   },
+   {
+    "day": "2026-07-26",
+    "kp_15_21_max": 1.0,
+    "kp_daily_sum": 8.999,
+    "n_eval": 7,
+    "obs_d02_fires_count": 6,
+    "obs_s02_count": 0,
+    "b2m001_within2": 1,
+    "b2m002_abs_lt2": 0,
+    "pred095_domecov_inrange": 0,
+    "n_hi": 12,
+    "pred095_obsc80_inrange": 0,
+    "b1m001_inrange": 7,
+    "z_obsc_r_gt05": 3,
+    "z_obsc_r_gt07": 3,
+    "z_amp_in_range": 0,
+    "z_c14local_r_gt05": 0,
+    "n_prio": 6,
+    "peaks": {
+     "EBR": -3.1,
+     "SPT": -4.9,
+     "ESK": 7.1,
+     "LER": -6.9,
+     "HAD": 4.1,
+     "NGK": -5.9,
+     "CLF": -5.7
+    }
+   },
+   {
+    "day": "2026-07-27",
+    "kp_15_21_max": 2.0,
+    "kp_daily_sum": 10.334,
+    "n_eval": 7,
+    "obs_d02_fires_count": 7,
+    "obs_s02_count": 0,
+    "b2m001_within2": 0,
+    "b2m002_abs_lt2": 0,
+    "pred095_domecov_inrange": 0,
+    "n_hi": 12,
+    "pred095_obsc80_inrange": 0,
+    "b1m001_inrange": 0,
+    "z_obsc_r_gt05": 0,
+    "z_obsc_r_gt07": 0,
+    "z_amp_in_range": 0,
+    "z_c14local_r_gt05": 0,
+    "n_prio": 6,
+    "peaks": {
+     "EBR": 15.9,
+     "SPT": 13.1,
+     "ESK": 31.4,
+     "LER": 36.4,
+     "HAD": 22.5,
+     "NGK": 23.0,
+     "CLF": 15.7
+    }
+   },
+   {
+    "day": "2026-07-28",
+    "kp_15_21_max": 2.0,
+    "kp_daily_sum": 15.666,
+    "n_eval": 5,
+    "obs_d02_fires_count": 5,
+    "obs_s02_count": 0,
+    "b2m001_within2": 0,
+    "b2m002_abs_lt2": 0,
+    "pred095_domecov_inrange": 0,
+    "n_hi": 10,
+    "pred095_obsc80_inrange": 0,
+    "b1m001_inrange": 0,
+    "z_obsc_r_gt05": 0,
+    "z_obsc_r_gt07": 0,
+    "z_amp_in_range": 0,
+    "z_c14local_r_gt05": 0,
+    "n_prio": 4,
+    "peaks": {
+     "SPT": 6.0,
+     "ESK": 24.7,
+     "LER": 28.6,
+     "HAD": 17.4,
+     "NGK": 17.7
+    }
+   },
+   {
+    "day": "2026-07-29",
+    "kp_15_21_max": 0.667,
+    "kp_daily_sum": 7.336,
+    "n_eval": 5,
+    "obs_d02_fires_count": 3,
+    "obs_s02_count": 0,
+    "b2m001_within2": 2,
+    "b2m002_abs_lt2": 0,
+    "pred095_domecov_inrange": 0,
+    "n_hi": 10,
+    "pred095_obsc80_inrange": 0,
+    "b1m001_inrange": 10,
+    "z_obsc_r_gt05": 3,
+    "z_obsc_r_gt07": 1,
+    "z_amp_in_range": 0,
+    "z_c14local_r_gt05": 0,
+    "n_prio": 4,
+    "peaks": {
+     "SPT": -5.5,
+     "ESK": -11.1,
+     "LER": -11.3,
+     "HAD": -8.2,
+     "NGK": -8.9
+    }
+   },
+   {
+    "day": "2026-07-30",
+    "kp_15_21_max": 1.333,
+    "kp_daily_sum": 6.666,
+    "n_eval": 5,
+    "obs_d02_fires_count": 3,
+    "obs_s02_count": 0,
+    "b2m001_within2": 2,
+    "b2m002_abs_lt2": 0,
+    "pred095_domecov_inrange": 0,
+    "n_hi": 10,
+    "pred095_obsc80_inrange": 0,
+    "b1m001_inrange": 5,
+    "z_obsc_r_gt05": 0,
+    "z_obsc_r_gt07": 0,
+    "z_amp_in_range": 0,
+    "z_c14local_r_gt05": 0,
+    "n_prio": 4,
+    "peaks": {
+     "SPT": -3.4,
+     "ESK": -6.6,
+     "LER": -10.7,
+     "HAD": -4.2,
+     "NGK": -5.5
+    }
+   },
+   {
+    "day": "2026-07-31",
+    "kp_15_21_max": 1.333,
+    "kp_daily_sum": 7.001,
+    "n_eval": 5,
+    "obs_d02_fires_count": 4,
+    "obs_s02_count": 0,
+    "b2m001_within2": 1,
+    "b2m002_abs_lt2": 0,
+    "pred095_domecov_inrange": 0,
+    "n_hi": 10,
+    "pred095_obsc80_inrange": 0,
+    "b1m001_inrange": 7,
+    "z_obsc_r_gt05": 1,
+    "z_obsc_r_gt07": 1,
+    "z_amp_in_range": 0,
+    "z_c14local_r_gt05": 0,
+    "n_prio": 4,
+    "peaks": {
+     "SPT": 3.2,
+     "ESK": -9.6,
+     "LER": -4.9,
+     "HAD": -10.2,
+     "NGK": -9.5
+    }
+   },
+   {
+    "day": "2026-08-01",
+    "kp_15_21_max": 0.667,
+    "kp_daily_sum": 4.334,
+    "n_eval": 5,
+    "obs_d02_fires_count": 5,
+    "obs_s02_count": 0,
+    "b2m001_within2": 0,
+    "b2m002_abs_lt2": 0,
+    "pred095_domecov_inrange": 0,
+    "n_hi": 9,
+    "pred095_obsc80_inrange": 0,
+    "b1m001_inrange": 0,
+    "z_obsc_r_gt05": 0,
+    "z_obsc_r_gt07": 0,
+    "z_amp_in_range": 0,
+    "z_c14local_r_gt05": 0,
+    "n_prio": 4,
+    "peaks": {
+     "SPT": 12.9,
+     "ESK": 12.5,
+     "LER": 13.5,
+     "HAD": 13.0,
+     "NGK": 12.6
+    }
+   },
+   {
+    "day": "2026-08-02",
+    "kp_15_21_max": 5.667,
+    "kp_daily_sum": 18.0,
+    "n_eval": 5,
+    "obs_d02_fires_count": 5,
+    "obs_s02_count": 0,
+    "b2m001_within2": 0,
+    "b2m002_abs_lt2": 0,
+    "pred095_domecov_inrange": 0,
+    "n_hi": 10,
+    "pred095_obsc80_inrange": 0,
+    "b1m001_inrange": 0,
+    "z_obsc_r_gt05": 0,
+    "z_obsc_r_gt07": 0,
+    "z_amp_in_range": 0,
+    "z_c14local_r_gt05": 0,
+    "n_prio": 4,
+    "peaks": {
+     "SPT": -53.3,
+     "ESK": -45.0,
+     "LER": 119.1,
+     "HAD": -46.2,
+     "NGK": -52.5
+    }
+   },
+   {
+    "day": "2026-08-03",
+    "kp_15_21_max": 3.0,
+    "kp_daily_sum": 25.666,
+    "n_eval": 5,
+    "obs_d02_fires_count": 5,
+    "obs_s02_count": 0,
+    "b2m001_within2": 0,
+    "b2m002_abs_lt2": 0,
+    "pred095_domecov_inrange": 0,
+    "n_hi": 10,
+    "pred095_obsc80_inrange": 4,
+    "b1m001_inrange": 5,
+    "z_obsc_r_gt05": 2,
+    "z_obsc_r_gt07": 0,
+    "z_amp_in_range": 0,
+    "z_c14local_r_gt05": 1,
+    "n_prio": 4,
+    "peaks": {
+     "SPT": -32.9,
+     "ESK": 25.9,
+     "LER": 38.3,
+     "HAD": -18.0,
+     "NGK": -11.3
+    }
+   },
+   {
+    "day": "2026-08-04",
+    "kp_15_21_max": 0.667,
+    "kp_daily_sum": 14.001,
+    "n_eval": 6,
+    "obs_d02_fires_count": 6,
+    "obs_s02_count": 0,
+    "b2m001_within2": 0,
+    "b2m002_abs_lt2": 0,
+    "pred095_domecov_inrange": 0,
+    "n_hi": 11,
+    "pred095_obsc80_inrange": 8,
+    "b1m001_inrange": 11,
+    "z_obsc_r_gt05": 2,
+    "z_obsc_r_gt07": 1,
+    "z_amp_in_range": 0,
+    "z_c14local_r_gt05": 1,
+    "n_prio": 5,
+    "peaks": {
+     "SPT": -23.4,
+     "ESK": -19.5,
+     "LER": -15.1,
+     "HAD": -20.2,
+     "NGK": -19.3,
+     "CLF": -15.3
+    }
+   },
+   {
+    "day": "2026-08-05",
+    "kp_15_21_max": 0.333,
+    "kp_daily_sum": 3.332,
+    "n_eval": 7,
+    "obs_d02_fires_count": 4,
+    "obs_s02_count": 0,
+    "b2m001_within2": 3,
+    "b2m002_abs_lt2": 0,
+    "pred095_domecov_inrange": 0,
+    "n_hi": 12,
+    "pred095_obsc80_inrange": 0,
+    "b1m001_inrange": 11,
+    "z_obsc_r_gt05": 0,
+    "z_obsc_r_gt07": 0,
+    "z_amp_in_range": 0,
+    "z_c14local_r_gt05": 1,
+    "n_prio": 6,
+    "peaks": {
+     "EBR": -7.3,
+     "SPT": -8.2,
+     "ESK": -9.6,
+     "LER": -11.3,
+     "HAD": -7.0,
+     "NGK": -9.0,
+     "CLF": -4.8
+    }
+   },
+   {
+    "day": "2026-08-06",
+    "kp_15_21_max": 0.333,
+    "kp_daily_sum": 2.333,
+    "n_eval": 7,
+    "obs_d02_fires_count": 5,
+    "obs_s02_count": 0,
+    "b2m001_within2": 2,
+    "b2m002_abs_lt2": 0,
+    "pred095_domecov_inrange": 0,
+    "n_hi": 12,
+    "pred095_obsc80_inrange": 1,
+    "b1m001_inrange": 12,
+    "z_obsc_r_gt05": 3,
+    "z_obsc_r_gt07": 1,
+    "z_amp_in_range": 0,
+    "z_c14local_r_gt05": 0,
+    "n_prio": 6,
+    "peaks": {
+     "EBR": -6.7,
+     "SPT": -9.4,
+     "ESK": -15.4,
+     "LER": -18.3,
+     "HAD": -11.2,
+     "NGK": -11.5,
+     "CLF": -5.9
+    }
+   },
+   {
+    "day": "2026-08-07",
+    "kp_15_21_max": 0.333,
+    "kp_daily_sum": 3.999,
+    "n_eval": 7,
+    "obs_d02_fires_count": 7,
+    "obs_s02_count": 0,
+    "b2m001_within2": 0,
+    "b2m002_abs_lt2": 0,
+    "pred095_domecov_inrange": 0,
+    "n_hi": 12,
+    "pred095_obsc80_inrange": 0,
+    "b1m001_inrange": 0,
+    "z_obsc_r_gt05": 4,
+    "z_obsc_r_gt07": 2,
+    "z_amp_in_range": 0,
+    "z_c14local_r_gt05": 0,
+    "n_prio": 6,
+    "peaks": {
+     "EBR": 11.9,
+     "SPT": 9.9,
+     "ESK": 9.0,
+     "LER": 6.8,
+     "HAD": 10.3,
+     "NGK": 8.5,
+     "CLF": 11.1
+    }
+   },
+   {
+    "day": "2026-08-08",
+    "kp_15_21_max": 5.667,
+    "kp_daily_sum": 27.0,
+    "n_eval": 7,
+    "obs_d02_fires_count": 7,
+    "obs_s02_count": 0,
+    "b2m001_within2": 0,
+    "b2m002_abs_lt2": 0,
+    "pred095_domecov_inrange": 0,
+    "n_hi": 12,
+    "pred095_obsc80_inrange": 0,
+    "b1m001_inrange": 3,
+    "z_obsc_r_gt05": 0,
+    "z_obsc_r_gt07": 0,
+    "z_amp_in_range": 0,
+    "z_c14local_r_gt05": 0,
+    "n_prio": 6,
+    "peaks": {
+     "EBR": -51.2,
+     "SPT": -57.7,
+     "ESK": 43.8,
+     "LER": 96.4,
+     "HAD": -30.3,
+     "NGK": -23.2,
+     "CLF": -36.6
+    }
+   },
+   {
+    "day": "2026-08-09",
+    "kp_15_21_max": 1.667,
+    "kp_daily_sum": 13.334,
+    "n_eval": 7,
+    "obs_d02_fires_count": 7,
+    "obs_s02_count": 0,
+    "b2m001_within2": 0,
+    "b2m002_abs_lt2": 0,
+    "pred095_domecov_inrange": 0,
+    "n_hi": 12,
+    "pred095_obsc80_inrange": 6,
+    "b1m001_inrange": 12,
+    "z_obsc_r_gt05": 2,
+    "z_obsc_r_gt07": 2,
+    "z_amp_in_range": 0,
+    "z_c14local_r_gt05": 0,
+    "n_prio": 6,
+    "peaks": {
+     "EBR": -14.5,
+     "SPT": -17.0,
+     "ESK": -23.1,
+     "LER": -23.0,
+     "HAD": -18.2,
+     "NGK": -18.9,
+     "CLF": -14.6
+    }
+   },
+   {
+    "day": "2026-08-10",
+    "kp_15_21_max": 0.333,
+    "kp_daily_sum": 6.666,
+    "n_eval": 7,
+    "obs_d02_fires_count": 4,
+    "obs_s02_count": 0,
+    "b2m001_within2": 3,
+    "b2m002_abs_lt2": 0,
+    "pred095_domecov_inrange": 0,
+    "n_hi": 12,
+    "pred095_obsc80_inrange": 2,
+    "b1m001_inrange": 12,
+    "z_obsc_r_gt05": 6,
+    "z_obsc_r_gt07": 4,
+    "z_amp_in_range": 0,
+    "z_c14local_r_gt05": 0,
+    "n_prio": 6,
+    "peaks": {
+     "EBR": -11.2,
+     "SPT": -13.2,
+     "ESK": -17.7,
+     "LER": -19.7,
+     "HAD": -11.1,
+     "NGK": -13.0,
+     "CLF": -9.3
+    }
+   },
+   {
+    "day": "2026-08-11",
+    "kp_15_21_max": 3.0,
+    "kp_daily_sum": 10.334,
+    "n_eval": 7,
+    "obs_d02_fires_count": 7,
+    "obs_s02_count": 0,
+    "b2m001_within2": 0,
+    "b2m002_abs_lt2": 0,
+    "pred095_domecov_inrange": 0,
+    "n_hi": 12,
+    "pred095_obsc80_inrange": 0,
+    "b1m001_inrange": 7,
+    "z_obsc_r_gt05": 6,
+    "z_obsc_r_gt07": 4,
+    "z_amp_in_range": 0,
+    "z_c14local_r_gt05": 0,
+    "n_prio": 6,
+    "peaks": {
+     "EBR": 6.3,
+     "SPT": -6.8,
+     "ESK": 13.2,
+     "LER": -14.3,
+     "HAD": 12.4,
+     "NGK": 10.0,
+     "CLF": 9.4
+    }
+   },
+   {
+    "day": "2026-08-12",
+    "kp_15_21_max": 2.333,
+    "kp_daily_sum": 14.999,
+    "n_eval": 7,
+    "obs_d02_fires_count": 6,
+    "obs_s02_count": 0,
+    "b2m001_within2": 1,
+    "b2m002_abs_lt2": 0,
+    "pred095_domecov_inrange": 0,
+    "n_hi": 12,
+    "pred095_obsc80_inrange": 2,
+    "b1m001_inrange": 12,
+    "z_obsc_r_gt05": 6,
+    "z_obsc_r_gt07": 2,
+    "z_amp_in_range": 0,
+    "z_c14local_r_gt05": 0,
+    "n_prio": 6,
+    "peaks": {
+     "EBR": -13.7,
+     "SPT": -15.6,
+     "ESK": -18.7,
+     "LER": -18.1,
+     "HAD": -14.4,
+     "NGK": -15.8,
+     "CLF": -13.9
+    }
+   }
+  ],
+  "zfit": {
+   "Z|EBR|obsc_tau0": {
+    "A": -6.13,
+    "null_mean": -1.13,
+    "null_sd": 3.49,
+    "z": -1.44,
+    "n": 19,
+    "power_minus17_at_3sigma": 0.89,
+    "A_3sigma_detectable_nT": 10.5
+   },
+   "Z|EBR|obsc_tau15": {
+    "A": -7.24,
+    "null_mean": -0.78,
+    "null_sd": 3.43,
+    "z": -1.88,
+    "n": 19,
+    "power_minus17_at_3sigma": 0.95,
+    "A_3sigma_detectable_nT": 10.3
+   },
+   "Z|EBR|obsc_tau30": {
+    "A": -7.92,
+    "null_mean": -0.69,
+    "null_sd": 3.48,
+    "z": -2.08,
+    "n": 19,
+    "power_minus17_at_3sigma": 0.95,
+    "A_3sigma_detectable_nT": 10.4
+   },
+   "Z|EBR|obsc_tau60": {
+    "A": -8.86,
+    "null_mean": -0.6,
+    "null_sd": 3.71,
+    "z": -2.23,
+    "n": 19,
+    "power_minus17_at_3sigma": 0.95,
+    "A_3sigma_detectable_nT": 11.1
+   },
+   "Z|EBR|c14_local": {
+    "A": -1.7,
+    "null_mean": -0.06,
+    "null_sd": 1.43,
+    "z": -1.14,
+    "n": 19,
+    "power_minus17_at_3sigma": 1.0,
+    "A_3sigma_detectable_nT": 4.3
+   },
+   "Z|EBR|c14_global": {
+    "A": -1.9,
+    "null_mean": 0.82,
+    "null_sd": 1.4,
+    "z": -1.94,
+    "n": 19,
+    "power_minus17_at_3sigma": 1.0,
+    "A_3sigma_detectable_nT": 4.2
+   },
+   "Z|SPT|obsc_tau0": {
+    "A": -3.99,
+    "null_mean": -0.47,
+    "null_sd": 2.7,
+    "z": -1.3,
+    "n": 25,
+    "power_minus17_at_3sigma": 1.0,
+    "A_3sigma_detectable_nT": 8.1
+   },
+   "Z|SPT|obsc_tau15": {
+    "A": -3.8,
+    "null_mean": -0.33,
+    "null_sd": 2.68,
+    "z": -1.29,
+    "n": 25,
+    "power_minus17_at_3sigma": 1.0,
+    "A_3sigma_detectable_nT": 8.1
+   },
+   "Z|SPT|obsc_tau30": {
+    "A": -3.78,
+    "null_mean": -0.28,
+    "null_sd": 2.73,
+    "z": -1.29,
+    "n": 25,
+    "power_minus17_at_3sigma": 1.0,
+    "A_3sigma_detectable_nT": 8.2
+   },
+   "Z|SPT|obsc_tau60": {
+    "A": -3.7,
+    "null_mean": -0.19,
+    "null_sd": 2.84,
+    "z": -1.23,
+    "n": 25,
+    "power_minus17_at_3sigma": 1.0,
+    "A_3sigma_detectable_nT": 8.5
+   },
+   "Z|SPT|c14_local": {
+    "A": -1.59,
+    "null_mean": -0.21,
+    "null_sd": 0.68,
+    "z": -2.04,
+    "n": 25,
+    "power_minus17_at_3sigma": 1.0,
+    "A_3sigma_detectable_nT": 2.0
+   },
+   "Z|SPT|c14_global": {
+    "A": 1.22,
+    "null_mean": 0.41,
+    "null_sd": 1.63,
+    "z": 0.49,
+    "n": 25,
+    "power_minus17_at_3sigma": 1.0,
+    "A_3sigma_detectable_nT": 4.9
+   },
+   "Z|HAD|obsc_tau0": {
+    "A": -5.51,
+    "null_mean": 0.95,
+    "null_sd": 3.87,
+    "z": -1.67,
+    "n": 25,
+    "power_minus17_at_3sigma": 0.92,
+    "A_3sigma_detectable_nT": 11.6
+   },
+   "Z|HAD|obsc_tau15": {
+    "A": -6.2,
+    "null_mean": 0.98,
+    "null_sd": 4.13,
+    "z": -1.74,
+    "n": 25,
+    "power_minus17_at_3sigma": 0.84,
+    "A_3sigma_detectable_nT": 12.4
+   },
+   "Z|HAD|obsc_tau30": {
+    "A": -7.04,
+    "null_mean": 0.96,
+    "null_sd": 4.38,
+    "z": -1.83,
+    "n": 25,
+    "power_minus17_at_3sigma": 0.84,
+    "A_3sigma_detectable_nT": 13.1
+   },
+   "Z|HAD|obsc_tau60": {
+    "A": -8.19,
+    "null_mean": 0.92,
+    "null_sd": 4.82,
+    "z": -1.89,
+    "n": 25,
+    "power_minus17_at_3sigma": 0.84,
+    "A_3sigma_detectable_nT": 14.5
+   },
+   "Z|HAD|c14_local": {
+    "A": -1.22,
+    "null_mean": 0.18,
+    "null_sd": 0.92,
+    "z": -1.52,
+    "n": 25,
+    "power_minus17_at_3sigma": 1.0,
+    "A_3sigma_detectable_nT": 2.8
+   },
+   "Z|HAD|c14_global": {
+    "A": 1.64,
+    "null_mean": -0.17,
+    "null_sd": 2.19,
+    "z": 0.83,
+    "n": 25,
+    "power_minus17_at_3sigma": 1.0,
+    "A_3sigma_detectable_nT": 6.6
+   },
+   "Z|CLF|obsc_tau0": {
+    "A": -2.81,
+    "null_mean": -0.26,
+    "null_sd": 3.05,
+    "z": -0.84,
+    "n": 20,
+    "power_minus17_at_3sigma": 1.0,
+    "A_3sigma_detectable_nT": 9.1
+   },
+   "Z|CLF|obsc_tau15": {
+    "A": -2.48,
+    "null_mean": -0.12,
+    "null_sd": 3.0,
+    "z": -0.79,
+    "n": 20,
+    "power_minus17_at_3sigma": 1.0,
+    "A_3sigma_detectable_nT": 9.0
+   },
+   "Z|CLF|obsc_tau30": {
+    "A": -2.23,
+    "null_mean": -0.04,
+    "null_sd": 3.04,
+    "z": -0.72,
+    "n": 20,
+    "power_minus17_at_3sigma": 1.0,
+    "A_3sigma_detectable_nT": 9.1
+   },
+   "Z|CLF|obsc_tau60": {
+    "A": -1.9,
+    "null_mean": 0.06,
+    "null_sd": 3.2,
+    "z": -0.61,
+    "n": 20,
+    "power_minus17_at_3sigma": 0.95,
+    "A_3sigma_detectable_nT": 9.6
+   },
+   "Z|CLF|c14_local": {
+    "A": -0.24,
+    "null_mean": 0.02,
+    "null_sd": 0.84,
+    "z": -0.31,
+    "n": 20,
+    "power_minus17_at_3sigma": 1.0,
+    "A_3sigma_detectable_nT": 2.5
+   },
+   "Z|CLF|c14_global": {
+    "A": 0.85,
+    "null_mean": 0.38,
+    "null_sd": 1.65,
+    "z": 0.29,
+    "n": 20,
+    "power_minus17_at_3sigma": 1.0,
+    "A_3sigma_detectable_nT": 5.0
+   },
+   "Z|NGK|obsc_tau0": {
+    "A": -3.6,
+    "null_mean": -0.54,
+    "null_sd": 2.45,
+    "z": -1.25,
+    "n": 25,
+    "power_minus17_at_3sigma": 1.0,
+    "A_3sigma_detectable_nT": 7.3
+   },
+   "Z|NGK|obsc_tau15": {
+    "A": -2.27,
+    "null_mean": -0.62,
+    "null_sd": 2.28,
+    "z": -0.72,
+    "n": 25,
+    "power_minus17_at_3sigma": 1.0,
+    "A_3sigma_detectable_nT": 6.8
+   },
+   "Z|NGK|obsc_tau30": {
+    "A": -1.32,
+    "null_mean": -0.63,
+    "null_sd": 2.23,
+    "z": -0.31,
+    "n": 25,
+    "power_minus17_at_3sigma": 1.0,
+    "A_3sigma_detectable_nT": 6.7
+   },
+   "Z|NGK|obsc_tau60": {
+    "A": -0.22,
+    "null_mean": -0.67,
+    "null_sd": 2.25,
+    "z": 0.2,
+    "n": 25,
+    "power_minus17_at_3sigma": 1.0,
+    "A_3sigma_detectable_nT": 6.7
+   },
+   "Z|NGK|c14_local": {
+    "A": 1.42,
+    "null_mean": 0.15,
+    "null_sd": 1.25,
+    "z": 1.02,
+    "n": 25,
+    "power_minus17_at_3sigma": 1.0,
+    "A_3sigma_detectable_nT": 3.7
+   },
+   "Z|NGK|c14_global": {
+    "A": 1.28,
+    "null_mean": 0.5,
+    "null_sd": 1.67,
+    "z": 0.47,
+    "n": 25,
+    "power_minus17_at_3sigma": 1.0,
+    "A_3sigma_detectable_nT": 5.0
+   },
+   "Z|ESK|obsc_tau0": {
+    "A": -7.56,
+    "null_mean": 0.31,
+    "null_sd": 3.28,
+    "z": -2.4,
+    "n": 25,
+    "power_minus17_at_3sigma": 0.96,
+    "A_3sigma_detectable_nT": 9.8
+   },
+   "Z|ESK|obsc_tau15": {
+    "A": -6.57,
+    "null_mean": 0.55,
+    "null_sd": 3.55,
+    "z": -2.01,
+    "n": 25,
+    "power_minus17_at_3sigma": 0.96,
+    "A_3sigma_detectable_nT": 10.6
+   },
+   "Z|ESK|obsc_tau30": {
+    "A": -6.1,
+    "null_mean": 0.73,
+    "null_sd": 3.88,
+    "z": -1.76,
+    "n": 25,
+    "power_minus17_at_3sigma": 0.96,
+    "A_3sigma_detectable_nT": 11.6
+   },
+   "Z|ESK|obsc_tau60": {
+    "A": -5.78,
+    "null_mean": 0.92,
+    "null_sd": 4.4,
+    "z": -1.52,
+    "n": 25,
+    "power_minus17_at_3sigma": 0.84,
+    "A_3sigma_detectable_nT": 13.2
+   },
+   "Z|ESK|c14_local": {
+    "A": 1.32,
+    "null_mean": 0.45,
+    "null_sd": 1.35,
+    "z": 0.65,
+    "n": 25,
+    "power_minus17_at_3sigma": 1.0,
+    "A_3sigma_detectable_nT": 4.0
+   },
+   "Z|ESK|c14_global": {
+    "A": 0.08,
+    "null_mean": -0.33,
+    "null_sd": 2.75,
+    "z": 0.15,
+    "n": 25,
+    "power_minus17_at_3sigma": 1.0,
+    "A_3sigma_detectable_nT": 8.3
+   },
+   "Z|LER|obsc_tau0": {
+    "A": -12.82,
+    "null_mean": 0.91,
+    "null_sd": 5.16,
+    "z": -2.66,
+    "n": 25,
+    "power_minus17_at_3sigma": 0.6,
+    "A_3sigma_detectable_nT": 15.5
+   },
+   "Z|LER|obsc_tau15": {
+    "A": -12.26,
+    "null_mean": 0.85,
+    "null_sd": 4.66,
+    "z": -2.81,
+    "n": 25,
+    "power_minus17_at_3sigma": 0.84,
+    "A_3sigma_detectable_nT": 14.0
+   },
+   "Z|LER|obsc_tau30": {
+    "A": -11.91,
+    "null_mean": 0.79,
+    "null_sd": 4.64,
+    "z": -2.74,
+    "n": 25,
+    "power_minus17_at_3sigma": 0.76,
+    "A_3sigma_detectable_nT": 13.9
+   },
+   "Z|LER|obsc_tau60": {
+    "A": -11.8,
+    "null_mean": 0.73,
+    "null_sd": 4.97,
+    "z": -2.52,
+    "n": 25,
+    "power_minus17_at_3sigma": 0.64,
+    "A_3sigma_detectable_nT": 14.9
+   },
+   "Z|LER|c14_local": {
+    "A": 0.67,
+    "null_mean": -0.17,
+    "null_sd": 1.79,
+    "z": 0.47,
+    "n": 25,
+    "power_minus17_at_3sigma": 1.0,
+    "A_3sigma_detectable_nT": 5.4
+   },
+   "Z|LER|c14_global": {
+    "A": -1.44,
+    "null_mean": -0.15,
+    "null_sd": 3.96,
+    "z": -0.33,
+    "n": 25,
+    "power_minus17_at_3sigma": 0.88,
+    "A_3sigma_detectable_nT": 11.9
+   },
+   "Z|SFS|obsc_tau0": {
+    "A": -7.2,
+    "null_mean": 0.26,
+    "null_sd": 3.83,
+    "z": -1.95,
+    "n": 18,
+    "power_minus17_at_3sigma": 0.89,
+    "A_3sigma_detectable_nT": 11.5
+   },
+   "Z|SFS|obsc_tau15": {
+    "A": -6.95,
+    "null_mean": 0.31,
+    "null_sd": 3.76,
+    "z": -1.93,
+    "n": 18,
+    "power_minus17_at_3sigma": 0.89,
+    "A_3sigma_detectable_nT": 11.3
+   },
+   "Z|SFS|obsc_tau30": {
+    "A": -6.69,
+    "null_mean": 0.31,
+    "null_sd": 3.72,
+    "z": -1.88,
+    "n": 18,
+    "power_minus17_at_3sigma": 0.89,
+    "A_3sigma_detectable_nT": 11.2
+   },
+   "Z|SFS|obsc_tau60": {
+    "A": -6.32,
+    "null_mean": 0.33,
+    "null_sd": 3.78,
+    "z": -1.76,
+    "n": 18,
+    "power_minus17_at_3sigma": 0.89,
+    "A_3sigma_detectable_nT": 11.3
+   },
+   "Z|SFS|c14_local": {
+    "A": -1.56,
+    "null_mean": -0.21,
+    "null_sd": 0.64,
+    "z": -2.1,
+    "n": 18,
+    "power_minus17_at_3sigma": 1.0,
+    "A_3sigma_detectable_nT": 1.9
+   },
+   "Z|SFS|c14_global": {
+    "A": 0.66,
+    "null_mean": -0.12,
+    "null_sd": 1.87,
+    "z": 0.41,
+    "n": 17,
+    "power_minus17_at_3sigma": 1.0,
+    "A_3sigma_detectable_nT": 5.6
+   },
+   "H|EBR|obsc_tau0": {
+    "A": -2.86,
+    "null_mean": -0.1,
+    "null_sd": 2.7,
+    "z": -1.02,
+    "n": 19,
+    "power_minus17_at_3sigma": 1.0,
+    "A_3sigma_detectable_nT": 8.1
+   },
+   "H|EBR|obsc_tau15": {
+    "A": -6.25,
+    "null_mean": 0.24,
+    "null_sd": 2.72,
+    "z": -2.39,
+    "n": 19,
+    "power_minus17_at_3sigma": 1.0,
+    "A_3sigma_detectable_nT": 8.1
+   },
+   "H|EBR|obsc_tau30": {
+    "A": -8.54,
+    "null_mean": 0.37,
+    "null_sd": 3.16,
+    "z": -2.82,
+    "n": 19,
+    "power_minus17_at_3sigma": 1.0,
+    "A_3sigma_detectable_nT": 9.5
+   },
+   "H|EBR|obsc_tau60": {
+    "A": -11.44,
+    "null_mean": 0.44,
+    "null_sd": 3.96,
+    "z": -3.0,
+    "n": 19,
+    "power_minus17_at_3sigma": 0.89,
+    "A_3sigma_detectable_nT": 11.9
+   },
+   "H|EBR|c14_local": {
+    "A": -3.62,
+    "null_mean": 0.56,
+    "null_sd": 1.75,
+    "z": -2.39,
+    "n": 19,
+    "power_minus17_at_3sigma": 1.0,
+    "A_3sigma_detectable_nT": 5.3
+   },
+   "H|EBR|c14_global": {
+    "A": -2.41,
+    "null_mean": -0.52,
+    "null_sd": 2.45,
+    "z": -0.77,
+    "n": 19,
+    "power_minus17_at_3sigma": 1.0,
+    "A_3sigma_detectable_nT": 7.3
+   },
+   "H|SPT|obsc_tau0": {
+    "A": -4.08,
+    "null_mean": 0.15,
+    "null_sd": 2.59,
+    "z": -1.63,
+    "n": 25,
+    "power_minus17_at_3sigma": 1.0,
+    "A_3sigma_detectable_nT": 7.8
+   },
+   "H|SPT|obsc_tau15": {
+    "A": -6.88,
+    "null_mean": 0.44,
+    "null_sd": 2.53,
+    "z": -2.89,
+    "n": 25,
+    "power_minus17_at_3sigma": 1.0,
+    "A_3sigma_detectable_nT": 7.6
+   },
+   "H|SPT|obsc_tau30": {
+    "A": -8.79,
+    "null_mean": 0.6,
+    "null_sd": 2.87,
+    "z": -3.27,
+    "n": 25,
+    "power_minus17_at_3sigma": 1.0,
+    "A_3sigma_detectable_nT": 8.6
+   },
+   "H|SPT|obsc_tau60": {
+    "A": -11.29,
+    "null_mean": 0.77,
+    "null_sd": 3.54,
+    "z": -3.41,
+    "n": 25,
+    "power_minus17_at_3sigma": 0.96,
+    "A_3sigma_detectable_nT": 10.6
+   },
+   "H|SPT|c14_local": {
+    "A": -2.49,
+    "null_mean": 0.39,
+    "null_sd": 1.28,
+    "z": -2.24,
+    "n": 25,
+    "power_minus17_at_3sigma": 1.0,
+    "A_3sigma_detectable_nT": 3.8
+   },
+   "H|SPT|c14_global": {
+    "A": -1.23,
+    "null_mean": -0.52,
+    "null_sd": 2.12,
+    "z": -0.34,
+    "n": 25,
+    "power_minus17_at_3sigma": 1.0,
+    "A_3sigma_detectable_nT": 6.4
+   },
+   "H|HAD|obsc_tau0": {
+    "A": 3.04,
+    "null_mean": 0.35,
+    "null_sd": 4.93,
+    "z": 0.55,
+    "n": 25,
+    "power_minus17_at_3sigma": 0.68,
+    "A_3sigma_detectable_nT": 14.8
+   },
+   "H|HAD|obsc_tau15": {
+    "A": -0.17,
+    "null_mean": 0.74,
+    "null_sd": 4.8,
+    "z": -0.19,
+    "n": 25,
+    "power_minus17_at_3sigma": 0.64,
+    "A_3sigma_detectable_nT": 14.4
+   },
+   "H|HAD|obsc_tau30": {
+    "A": -2.42,
+    "null_mean": 0.99,
+    "null_sd": 4.94,
+    "z": -0.69,
+    "n": 25,
+    "power_minus17_at_3sigma": 0.6,
+    "A_3sigma_detectable_nT": 14.8
+   },
+   "H|HAD|obsc_tau60": {
+    "A": -4.97,
+    "null_mean": 1.17,
+    "null_sd": 5.51,
+    "z": -1.12,
+    "n": 25,
+    "power_minus17_at_3sigma": 0.6,
+    "A_3sigma_detectable_nT": 16.5
+   },
+   "H|HAD|c14_local": {
+    "A": -4.81,
+    "null_mean": 1.05,
+    "null_sd": 2.92,
+    "z": -2.01,
+    "n": 25,
+    "power_minus17_at_3sigma": 0.96,
+    "A_3sigma_detectable_nT": 8.7
+   },
+   "H|HAD|c14_global": {
+    "A": -2.41,
+    "null_mean": -0.71,
+    "null_sd": 2.96,
+    "z": -0.57,
+    "n": 25,
+    "power_minus17_at_3sigma": 0.96,
+    "A_3sigma_detectable_nT": 8.9
+   },
+   "H|CLF|obsc_tau0": {
+    "A": 0.27,
+    "null_mean": -0.46,
+    "null_sd": 3.62,
+    "z": 0.2,
+    "n": 20,
+    "power_minus17_at_3sigma": 0.95,
+    "A_3sigma_detectable_nT": 10.9
+   },
+   "H|CLF|obsc_tau15": {
+    "A": -3.41,
+    "null_mean": -0.02,
+    "null_sd": 3.67,
+    "z": -0.92,
+    "n": 20,
+    "power_minus17_at_3sigma": 0.95,
+    "A_3sigma_detectable_nT": 11.0
+   },
+   "H|CLF|obsc_tau30": {
+    "A": -6.02,
+    "null_mean": 0.27,
+    "null_sd": 4.01,
+    "z": -1.57,
+    "n": 20,
+    "power_minus17_at_3sigma": 0.85,
+    "A_3sigma_detectable_nT": 12.0
+   },
+   "H|CLF|obsc_tau60": {
+    "A": -9.11,
+    "null_mean": 0.47,
+    "null_sd": 4.77,
+    "z": -2.01,
+    "n": 20,
+    "power_minus17_at_3sigma": 0.75,
+    "A_3sigma_detectable_nT": 14.3
+   },
+   "H|CLF|c14_local": {
+    "A": -4.78,
+    "null_mean": 1.35,
+    "null_sd": 2.61,
+    "z": -2.35,
+    "n": 20,
+    "power_minus17_at_3sigma": 1.0,
+    "A_3sigma_detectable_nT": 7.8
+   },
+   "H|CLF|c14_global": {
+    "A": -2.59,
+    "null_mean": -0.46,
+    "null_sd": 2.48,
+    "z": -0.86,
+    "n": 20,
+    "power_minus17_at_3sigma": 1.0,
+    "A_3sigma_detectable_nT": 7.4
+   },
+   "H|NGK|obsc_tau0": {
+    "A": 3.48,
+    "null_mean": -0.82,
+    "null_sd": 3.95,
+    "z": 1.09,
+    "n": 25,
+    "power_minus17_at_3sigma": 0.92,
+    "A_3sigma_detectable_nT": 11.9
+   },
+   "H|NGK|obsc_tau15": {
+    "A": 0.62,
+    "null_mean": -0.12,
+    "null_sd": 4.63,
+    "z": 0.16,
+    "n": 25,
+    "power_minus17_at_3sigma": 0.72,
+    "A_3sigma_detectable_nT": 13.9
+   },
+   "H|NGK|obsc_tau30": {
+    "A": -2.11,
+    "null_mean": 0.31,
+    "null_sd": 5.36,
+    "z": -0.45,
+    "n": 25,
+    "power_minus17_at_3sigma": 0.72,
+    "A_3sigma_detectable_nT": 16.1
+   },
+   "H|NGK|obsc_tau60": {
+    "A": -5.07,
+    "null_mean": 0.68,
+    "null_sd": 6.48,
+    "z": -0.89,
+    "n": 25,
+    "power_minus17_at_3sigma": 0.48,
+    "A_3sigma_detectable_nT": 19.4
+   },
+   "H|NGK|c14_local": {
+    "A": -7.84,
+    "null_mean": 1.4,
+    "null_sd": 3.39,
+    "z": -2.73,
+    "n": 25,
+    "power_minus17_at_3sigma": 0.96,
+    "A_3sigma_detectable_nT": 10.2
+   },
+   "H|NGK|c14_global": {
+    "A": -7.8,
+    "null_mean": 0.02,
+    "null_sd": 3.18,
+    "z": -2.46,
+    "n": 25,
+    "power_minus17_at_3sigma": 1.0,
+    "A_3sigma_detectable_nT": 9.5
+   },
+   "H|ESK|obsc_tau0": {
+    "A": 3.45,
+    "null_mean": -0.66,
+    "null_sd": 7.15,
+    "z": 0.57,
+    "n": 25,
+    "power_minus17_at_3sigma": 0.28,
+    "A_3sigma_detectable_nT": 21.4
+   },
+   "H|ESK|obsc_tau15": {
+    "A": 1.34,
+    "null_mean": 0.01,
+    "null_sd": 7.17,
+    "z": 0.19,
+    "n": 25,
+    "power_minus17_at_3sigma": 0.28,
+    "A_3sigma_detectable_nT": 21.5
+   },
+   "H|ESK|obsc_tau30": {
+    "A": -0.4,
+    "null_mean": 0.52,
+    "null_sd": 7.4,
+    "z": -0.12,
+    "n": 25,
+    "power_minus17_at_3sigma": 0.32,
+    "A_3sigma_detectable_nT": 22.2
+   },
+   "H|ESK|obsc_tau60": {
+    "A": -2.39,
+    "null_mean": 0.99,
+    "null_sd": 8.17,
+    "z": -0.41,
+    "n": 25,
+    "power_minus17_at_3sigma": 0.12,
+    "A_3sigma_detectable_nT": 24.5
+   },
+   "H|ESK|c14_local": {
+    "A": -3.12,
+    "null_mean": 1.9,
+    "null_sd": 4.83,
+    "z": -1.04,
+    "n": 25,
+    "power_minus17_at_3sigma": 0.8,
+    "A_3sigma_detectable_nT": 14.5
+   },
+   "H|ESK|c14_global": {
+    "A": -0.34,
+    "null_mean": -0.47,
+    "null_sd": 3.59,
+    "z": 0.04,
+    "n": 25,
+    "power_minus17_at_3sigma": 0.96,
+    "A_3sigma_detectable_nT": 10.8
+   },
+   "H|LER|obsc_tau0": {
+    "A": -2.62,
+    "null_mean": -0.46,
+    "null_sd": 8.8,
+    "z": -0.25,
+    "n": 25,
+    "power_minus17_at_3sigma": 0.08,
+    "A_3sigma_detectable_nT": 26.4
+   },
+   "H|LER|obsc_tau15": {
+    "A": 0.02,
+    "null_mean": 0.12,
+    "null_sd": 8.69,
+    "z": -0.01,
+    "n": 25,
+    "power_minus17_at_3sigma": 0.08,
+    "A_3sigma_detectable_nT": 26.1
+   },
+   "H|LER|obsc_tau30": {
+    "A": 1.1,
+    "null_mean": 0.72,
+    "null_sd": 9.24,
+    "z": 0.04,
+    "n": 25,
+    "power_minus17_at_3sigma": 0.0,
+    "A_3sigma_detectable_nT": 27.7
+   },
+   "H|LER|obsc_tau60": {
+    "A": 2.55,
+    "null_mean": 1.34,
+    "null_sd": 10.28,
+    "z": 0.12,
+    "n": 25,
+    "power_minus17_at_3sigma": 0.0,
+    "A_3sigma_detectable_nT": 30.8
+   },
+   "H|LER|c14_local": {
+    "A": -0.49,
+    "null_mean": 2.34,
+    "null_sd": 6.53,
+    "z": -0.43,
+    "n": 25,
+    "power_minus17_at_3sigma": 0.32,
+    "A_3sigma_detectable_nT": 19.6
+   },
+   "H|LER|c14_global": {
+    "A": -3.78,
+    "null_mean": -0.96,
+    "null_sd": 3.97,
+    "z": -0.71,
+    "n": 25,
+    "power_minus17_at_3sigma": 0.92,
+    "A_3sigma_detectable_nT": 11.9
+   },
+   "H|SFS|obsc_tau0": {
+    "A": -6.7,
+    "null_mean": -0.39,
+    "null_sd": 3.39,
+    "z": -1.86,
+    "n": 18,
+    "power_minus17_at_3sigma": 1.0,
+    "A_3sigma_detectable_nT": 10.2
+   },
+   "H|SFS|obsc_tau15": {
+    "A": -9.97,
+    "null_mean": -0.18,
+    "null_sd": 3.46,
+    "z": -2.83,
+    "n": 18,
+    "power_minus17_at_3sigma": 1.0,
+    "A_3sigma_detectable_nT": 10.4
+   },
+   "H|SFS|obsc_tau30": {
+    "A": -12.18,
+    "null_mean": -0.07,
+    "null_sd": 3.89,
+    "z": -3.12,
+    "n": 18,
+    "power_minus17_at_3sigma": 1.0,
+    "A_3sigma_detectable_nT": 11.7
+   },
+   "H|SFS|obsc_tau60": {
+    "A": -15.27,
+    "null_mean": -0.02,
+    "null_sd": 4.66,
+    "z": -3.27,
+    "n": 18,
+    "power_minus17_at_3sigma": 0.72,
+    "A_3sigma_detectable_nT": 14.0
+   },
+   "H|SFS|c14_local": {
+    "A": -1.51,
+    "null_mean": 0.47,
+    "null_sd": 1.48,
+    "z": -1.34,
+    "n": 18,
+    "power_minus17_at_3sigma": 1.0,
+    "A_3sigma_detectable_nT": 4.4
+   },
+   "H|SFS|c14_global": {
+    "A": -1.36,
+    "null_mean": 0.25,
+    "null_sd": 2.25,
+    "z": -0.72,
+    "n": 17,
+    "power_minus17_at_3sigma": 1.0,
+    "A_3sigma_detectable_nT": 6.7
+   }
+  },
+  "detr2": {
+   "EBR": {
+    "event": {
+     "orig": -2.172598969298056,
+     "pre": 1.68685523394881,
+     "A0": -2.861218566099614,
+     "A15": -6.246161243375935,
+     "A30": -8.540636814815588,
+     "A60": -11.435909446468742
+    },
+    "null": {
+     "orig": {
+      "n": 18,
+      "mean": -0.21411184482728132,
+      "sd": 1.6564510328935045
+     },
+     "pre": {
+      "n": 18,
+      "mean": -2.6924751909973064,
+      "sd": 6.233851879774612
+     },
+     "A0": {
+      "n": 18,
+      "mean": -0.593809148145529,
+      "sd": 2.282285624016362
+     },
+     "A15": {
+      "n": 18,
+      "mean": -0.17289243901919227,
+      "sd": 2.3692207446305518
+     },
+     "A30": {
+      "n": 18,
+      "mean": -0.03170651260455286,
+      "sd": 2.901916645783087
+     },
+     "A60": {
+      "n": 18,
+      "mean": 0.045089723281946145,
+      "sd": 3.777270245954626
+     }
+    },
+    "injection": {
+     "0": {
+      "detrended_mean_recovered_frac": 0.9999642703347429,
+      "window_mean_over_peak": 0.6627934426229506,
+      "joint_fit_recovered_frac": 1.0,
+      "n": 22
+     },
+     "15": {
+      "detrended_mean_recovered_frac": 0.9541226981292681,
+      "window_mean_over_peak": 0.7076122202112103,
+      "joint_fit_recovered_frac": 1.0000000000000002,
+      "n": 22
+     },
+     "30": {
+      "detrended_mean_recovered_frac": 0.828018334097439,
+      "window_mean_over_peak": 0.6865148759637834,
+      "joint_fit_recovered_frac": 1.0000000000000002,
+      "n": 22
+     },
+     "60": {
+      "detrended_mean_recovered_frac": 0.6071557587400819,
+      "window_mean_over_peak": 0.6407616215516311,
+      "joint_fit_recovered_frac": 1.0,
+      "n": 22
+     }
+    }
+   },
+   "SPT": {
+    "event": {
+     "orig": -3.200042638615605,
+     "pre": -1.9759169318232521,
+     "A0": -4.083004001201232,
+     "A15": -6.8802872238058566,
+     "A30": -8.789403780734409,
+     "A60": -11.287998002645194
+    },
+    "null": {
+     "orig": {
+      "n": 24,
+      "mean": -0.046247128624417266,
+      "sd": 1.6856992043331356
+     },
+     "pre": {
+      "n": 24,
+      "mean": -1.52311302841347,
+      "sd": 5.824343867041268
+     },
+     "A0": {
+      "n": 24,
+      "mean": -0.20547545813194978,
+      "sd": 2.359419355739627
+     },
+     "A15": {
+      "n": 24,
+      "mean": 0.1321173037191579,
+      "sd": 2.301420337770615
+     },
+     "A30": {
+      "n": 24,
+      "mean": 0.29308332112670205,
+      "sd": 2.680516726334006
+     },
+     "A60": {
+      "n": 24,
+      "mean": 0.4513479122441206,
+      "sd": 3.384807659948748
+     }
+    },
+    "injection": {
+     "0": {
+      "detrended_mean_recovered_frac": 1.0,
+      "window_mean_over_peak": 0.673566548681671,
+      "joint_fit_recovered_frac": 1.0000000000000004,
+      "n": 30
+     },
+     "15": {
+      "detrended_mean_recovered_frac": 0.9579998452227015,
+      "window_mean_over_peak": 0.718687480009613,
+      "joint_fit_recovered_frac": 1.0,
+      "n": 30
+     },
+     "30": {
+      "detrended_mean_recovered_frac": 0.8372968758530029,
+      "window_mean_over_peak": 0.6983975115899246,
+      "joint_fit_recovered_frac": 1.0000000000000004,
+      "n": 30
+     },
+     "60": {
+      "detrended_mean_recovered_frac": 0.6215631775099716,
+      "window_mean_over_peak": 0.652600212763775,
+      "joint_fit_recovered_frac": 1.0000000000000007,
+      "n": 30
+     }
+    }
+   },
+   "ESK": {
+    "event": {
+     "orig": 1.5700578346260394,
+     "pre": -5.883227748449707,
+     "A0": 3.4451553730106035,
+     "A15": 1.3432073877455148,
+     "A30": -0.39530174721133504,
+     "A60": -2.392010787160363
+    },
+    "null": {
+     "orig": {
+      "n": 24,
+      "mean": -0.5376736716669115,
+      "sd": 4.564184354673626
+     },
+     "pre": {
+      "n": 24,
+      "mean": -4.639041670525454,
+      "sd": 15.426882487585983
+     },
+     "A0": {
+      "n": 24,
+      "mean": -1.0558205204214095,
+      "sd": 5.715781158977791
+     },
+     "A15": {
+      "n": 24,
+      "mean": -0.5476777392916258,
+      "sd": 5.722382385662101
+     },
+     "A30": {
+      "n": 24,
+      "mean": -0.10657633369199455,
+      "sd": 6.072134639774859
+     },
+     "A60": {
+      "n": 24,
+      "mean": 0.24810901260548449,
+      "sd": 6.96805539547751
+     }
+    },
+    "injection": {
+     "0": {
+      "detrended_mean_recovered_frac": 0.9999974108229684,
+      "window_mean_over_peak": 0.7180154870007588,
+      "joint_fit_recovered_frac": 1.0000000000000002,
+      "n": 30
+     },
+     "15": {
+      "detrended_mean_recovered_frac": 0.959546626775259,
+      "window_mean_over_peak": 0.7353837989360976,
+      "joint_fit_recovered_frac": 0.9999999999999994,
+      "n": 30
+     },
+     "30": {
+      "detrended_mean_recovered_frac": 0.8416819433603346,
+      "window_mean_over_peak": 0.7074097956387104,
+      "joint_fit_recovered_frac": 0.9999999999999998,
+      "n": 30
+     },
+     "60": {
+      "detrended_mean_recovered_frac": 0.6268283481950321,
+      "window_mean_over_peak": 0.6566256167567074,
+      "joint_fit_recovered_frac": 1.0000000000000004,
+      "n": 30
+     }
+    }
+   },
+   "LER": {
+    "event": {
+     "orig": -2.8944883522059435,
+     "pre": -11.660668333795197,
+     "A0": -2.6151332215036325,
+     "A15": 0.017401633701437658,
+     "A30": 1.1026736000710455,
+     "A60": 2.5477583498941265
+    },
+    "null": {
+     "orig": {
+      "n": 24,
+      "mean": -0.24899942126598548,
+      "sd": 5.820284155200063
+     },
+     "pre": {
+      "n": 24,
+      "mean": -5.7481375767954965,
+      "sd": 15.402089390990213
+     },
+     "A0": {
+      "n": 24,
+      "mean": -0.38596249252449805,
+      "sd": 7.022919142520803
+     },
+     "A15": {
+      "n": 24,
+      "mean": -0.06900050570617573,
+      "sd": 6.781305084115772
+     },
+     "A30": {
+      "n": 24,
+      "mean": 0.324237182052017,
+      "sd": 7.251371242695468
+     },
+     "A60": {
+      "n": 24,
+      "mean": 0.6859179633378029,
+      "sd": 8.233028491590868
+     }
+    },
+    "injection": {
+     "0": {
+      "detrended_mean_recovered_frac": 0.9999803234842675,
+      "window_mean_over_peak": 0.7277399486613694,
+      "joint_fit_recovered_frac": 0.9999999999999998,
+      "n": 30
+     },
+     "15": {
+      "detrended_mean_recovered_frac": 0.9584177693663185,
+      "window_mean_over_peak": 0.7367571590738391,
+      "joint_fit_recovered_frac": 0.9999999999999988,
+      "n": 30
+     },
+     "30": {
+      "detrended_mean_recovered_frac": 0.8395992808948307,
+      "window_mean_over_peak": 0.7058227883351146,
+      "joint_fit_recovered_frac": 0.9999999999999998,
+      "n": 30
+     },
+     "60": {
+      "detrended_mean_recovered_frac": 0.6241544147638659,
+      "window_mean_over_peak": 0.6535057212118244,
+      "joint_fit_recovered_frac": 0.9999999999999998,
+      "n": 30
+     }
+    }
+   },
+   "HAD": {
+    "event": {
+     "orig": 1.623297394623715,
+     "pre": 7.353618597758695,
+     "A0": 3.041392546410441,
+     "A15": -0.17143956971756402,
+     "A30": -2.420651666922587,
+     "A60": -4.971844041611874
+    },
+    "null": {
+     "orig": {
+      "n": 24,
+      "mean": 0.31410868842187695,
+      "sd": 3.4669188546256513
+     },
+     "pre": {
+      "n": 24,
+      "mean": -3.2003592818997677,
+      "sd": 12.480944831582187
+     },
+     "A0": {
+      "n": 24,
+      "mean": -0.006582725462928485,
+      "sd": 4.439543205354221
+     },
+     "A15": {
+      "n": 24,
+      "mean": 0.42914704733154,
+      "sd": 4.533696972402253
+     },
+     "A30": {
+      "n": 24,
+      "mean": 0.7081100365325784,
+      "sd": 4.828425325162308
+     },
+     "A60": {
+      "n": 24,
+      "mean": 0.9242098255280625,
+      "sd": 5.5386269167921744
+     }
+    },
+    "injection": {
+     "0": {
+      "detrended_mean_recovered_frac": 0.9999782813961179,
+      "window_mean_over_peak": 0.70401635869603,
+      "joint_fit_recovered_frac": 1.0000000000000002,
+      "n": 30
+     },
+     "15": {
+      "detrended_mean_recovered_frac": 0.958042653380943,
+      "window_mean_over_peak": 0.7325691482543161,
+      "joint_fit_recovered_frac": 1.0000000000000007,
+      "n": 30
+     },
+     "30": {
+      "detrended_mean_recovered_frac": 0.8386412752735165,
+      "window_mean_over_peak": 0.708198204150332,
+      "joint_fit_recovered_frac": 1.0,
+      "n": 30
+     },
+     "60": {
+      "detrended_mean_recovered_frac": 0.6234434634618211,
+      "window_mean_over_peak": 0.6594685864445461,
+      "joint_fit_recovered_frac": 1.0000000000000002,
+      "n": 30
+     }
+    }
+   },
+   "NGK": {
+    "event": {
+     "orig": 1.6034813762291646,
+     "pre": 10.477283468731713,
+     "A0": 3.478848199046377,
+     "A15": 0.6177902871134621,
+     "A30": -2.1128674683417725,
+     "A60": -5.06774431942917
+    },
+    "null": {
+     "orig": {
+      "n": 24,
+      "mean": -0.419686001771085,
+      "sd": 3.308646307914429
+     },
+     "pre": {
+      "n": 24,
+      "mean": -2.6987940750611585,
+      "sd": 10.007094390026746
+     },
+     "A0": {
+      "n": 24,
+      "mean": -0.8862784701303322,
+      "sd": 4.059274860015708
+     },
+     "A15": {
+      "n": 24,
+      "mean": -0.33057666391673823,
+      "sd": 4.614420346945658
+     },
+     "A30": {
+      "n": 24,
+      "mean": 0.04321792816231884,
+      "sd": 5.327453471456092
+     },
+     "A60": {
+      "n": 24,
+      "mean": 0.3589833977229475,
+      "sd": 6.445397389355706
+     }
+    },
+    "injection": {
+     "0": {
+      "detrended_mean_recovered_frac": 0.9999569080085909,
+      "window_mean_over_peak": 0.7104683264394932,
+      "joint_fit_recovered_frac": 0.9999999999999997,
+      "n": 30
+     },
+     "15": {
+      "detrended_mean_recovered_frac": 0.9518219813038938,
+      "window_mean_over_peak": 0.718671870610154,
+      "joint_fit_recovered_frac": 1.0000000000000007,
+      "n": 30
+     },
+     "30": {
+      "detrended_mean_recovered_frac": 0.8238249571502789,
+      "window_mean_over_peak": 0.689339106466177,
+      "joint_fit_recovered_frac": 1.0000000000000004,
+      "n": 30
+     },
+     "60": {
+      "detrended_mean_recovered_frac": 0.6034685281020751,
+      "window_mean_over_peak": 0.6403862524083394,
+      "joint_fit_recovered_frac": 1.0000000000000002,
+      "n": 30
+     }
+    }
+   },
+   "GUI": {
+    "event": {
+     "orig": -2.3516231089479764,
+     "pre": -18.198301787702114,
+     "A0": -2.9447454905633794,
+     "A15": -4.506038890460601,
+     "A30": -5.486027942489162,
+     "A60": -6.992263749384371
+    },
+    "null": {
+     "orig": {
+      "n": 24,
+      "mean": 0.23158533129848827,
+      "sd": 2.4720425150416303
+     },
+     "pre": {
+      "n": 24,
+      "mean": -2.4935006040541663,
+      "sd": 4.9208158653847
+     },
+     "A0": {
+      "n": 24,
+      "mean": 0.2869351969684369,
+      "sd": 2.8807157302220876
+     },
+     "A15": {
+      "n": 24,
+      "mean": 0.27549845052191846,
+      "sd": 2.781987105819452
+     },
+     "A30": {
+      "n": 24,
+      "mean": 0.2504261337000197,
+      "sd": 2.860728456482361
+     },
+     "A60": {
+      "n": 24,
+      "mean": 0.1903058360859112,
+      "sd": 3.084312636514197
+     }
+    },
+    "injection": {
+     "0": {
+      "detrended_mean_recovered_frac": 0.9999983849034,
+      "window_mean_over_peak": 0.7616736698822276,
+      "joint_fit_recovered_frac": 0.9999999999999997,
+      "n": 30
+     },
+     "15": {
+      "detrended_mean_recovered_frac": 0.9543138374465039,
+      "window_mean_over_peak": 0.7547526243503095,
+      "joint_fit_recovered_frac": 1.0,
+      "n": 30
+     },
+     "30": {
+      "detrended_mean_recovered_frac": 0.8307831727191702,
+      "window_mean_over_peak": 0.7178606318435177,
+      "joint_fit_recovered_frac": 0.9999999999999994,
+      "n": 30
+     },
+     "60": {
+      "detrended_mean_recovered_frac": 0.6149567221434847,
+      "window_mean_over_peak": 0.6633539532151741,
+      "joint_fit_recovered_frac": 0.9999999999999998,
+      "n": 30
+     }
+    }
+   },
+   "CLF": {
+    "event": {
+     "orig": -0.2892897450661747,
+     "pre": 7.745786628582299,
+     "A0": 0.27136006518585243,
+     "A15": -3.4097223255188296,
+     "A30": -6.019623893105762,
+     "A60": -9.114260154096902
+    },
+    "null": {
+     "orig": {
+      "n": 19,
+      "mean": -0.31068617227706635,
+      "sd": 2.3693957908928773
+     },
+     "pre": {
+      "n": 19,
+      "mean": -3.0035944121259934,
+      "sd": 8.664171463080132
+     },
+     "A0": {
+      "n": 19,
+      "mean": -0.9264905525190343,
+      "sd": 3.145168018143607
+     },
+     "A15": {
+      "n": 19,
+      "mean": -0.4216032213958892,
+      "sd": 3.3047457784838845
+     },
+     "A30": {
+      "n": 19,
+      "mean": -0.08789378626293026,
+      "sd": 3.783543426132851
+     },
+     "A60": {
+      "n": 19,
+      "mean": 0.15255103942769202,
+      "sd": 4.670849175353478
+     }
+    },
+    "injection": {
+     "0": {
+      "detrended_mean_recovered_frac": 0.9999711317801075,
+      "window_mean_over_peak": 0.6966992416818948,
+      "joint_fit_recovered_frac": 1.0000000000000002,
+      "n": 23
+     },
+     "15": {
+      "detrended_mean_recovered_frac": 0.9551390268251854,
+      "window_mean_over_peak": 0.7245291694678623,
+      "joint_fit_recovered_frac": 1.0,
+      "n": 23
+     },
+     "30": {
+      "detrended_mean_recovered_frac": 0.8315779736469832,
+      "window_mean_over_peak": 0.7010532403889066,
+      "joint_fit_recovered_frac": 1.0000000000000002,
+      "n": 23
+     },
+     "60": {
+      "detrended_mean_recovered_frac": 0.6143610101760499,
+      "window_mean_over_peak": 0.6540266438969334,
+      "joint_fit_recovered_frac": 0.9999999999999993,
+      "n": 23
+     }
+    }
+   },
+   "MAB": {
+    "event": {
+     "orig": 0.607654117100614,
+     "pre": 6.622403718519721,
+     "A0": 1.786054332565971,
+     "A15": -1.8517581464607027,
+     "A30": -4.525244672177658,
+     "A60": -7.576607816141782
+    },
+    "null": {
+     "orig": {
+      "n": 24,
+      "mean": -0.1368103029042215,
+      "sd": 2.869128861140132
+     },
+     "pre": {
+      "n": 24,
+      "mean": -2.2313112591682276,
+      "sd": 10.497847084753055
+     },
+     "A0": {
+      "n": 24,
+      "mean": -0.45547079731547235,
+      "sd": 3.607052325783487
+     },
+     "A15": {
+      "n": 24,
+      "mean": -0.0985130780350204,
+      "sd": 3.8492064132132873
+     },
+     "A30": {
+      "n": 24,
+      "mean": 0.13075985379597097,
+      "sd": 4.381648829336394
+     },
+     "A60": {
+      "n": 24,
+      "mean": 0.3101705004857204,
+      "sd": 5.356160136142091
+     }
+    },
+    "injection": {
+     "0": {
+      "detrended_mean_recovered_frac": 0.9999664465627487,
+      "window_mean_over_peak": 0.7063592750826648,
+      "joint_fit_recovered_frac": 1.0000000000000007,
+      "n": 30
+     },
+     "15": {
+      "detrended_mean_recovered_frac": 0.9540144374794061,
+      "window_mean_over_peak": 0.7222210037384994,
+      "joint_fit_recovered_frac": 1.0000000000000004,
+      "n": 30
+     },
+     "30": {
+      "detrended_mean_recovered_frac": 0.8287298223619018,
+      "window_mean_over_peak": 0.6949979007694215,
+      "joint_fit_recovered_frac": 0.9999999999999996,
+      "n": 30
+     },
+     "60": {
+      "detrended_mean_recovered_frac": 0.6095588009319234,
+      "window_mean_over_peak": 0.6462966046723733,
+      "joint_fit_recovered_frac": 1.0000000000000002,
+      "n": 30
+     }
+    }
+   },
+   "DOU": {
+    "event": {
+     "orig": 1.187559838069666,
+     "pre": 5.557418261272271,
+     "A0": 2.3073512281085025,
+     "A15": -1.253251417653501,
+     "A30": -3.820403078850529,
+     "A60": -6.842916072384368
+    },
+    "null": {
+     "orig": {
+      "n": 24,
+      "mean": -0.22364111023372893,
+      "sd": 2.738076939749906
+     },
+     "pre": {
+      "n": 24,
+      "mean": -1.884979175334533,
+      "sd": 11.170855551167495
+     },
+     "A0": {
+      "n": 24,
+      "mean": -0.5837410476045218,
+      "sd": 3.5336434305894784
+     },
+     "A15": {
+      "n": 24,
+      "mean": -0.1476268378952567,
+      "sd": 3.532035808802776
+     },
+     "A30": {
+      "n": 24,
+      "mean": 0.1264821844812756,
+      "sd": 3.9718635114425362
+     },
+     "A60": {
+      "n": 24,
+      "mean": 0.3638323314868741,
+      "sd": 4.909760053195185
+     }
+    },
+    "injection": {
+     "0": {
+      "detrended_mean_recovered_frac": 0.9999786732827726,
+      "window_mean_over_peak": 0.7054137544537497,
+      "joint_fit_recovered_frac": 0.9999999999999998,
+      "n": 30
+     },
+     "15": {
+      "detrended_mean_recovered_frac": 0.9552288128134364,
+      "window_mean_over_peak": 0.7262242605621402,
+      "joint_fit_recovered_frac": 1.0000000000000009,
+      "n": 30
+     },
+     "30": {
+      "detrended_mean_recovered_frac": 0.8319172355209886,
+      "window_mean_over_peak": 0.7006258904095782,
+      "joint_fit_recovered_frac": 0.9999999999999998,
+      "n": 30
+     },
+     "60": {
+      "detrended_mean_recovered_frac": 0.6153697279799747,
+      "window_mean_over_peak": 0.6527224564898835,
+      "joint_fit_recovered_frac": 1.0000000000000007,
+      "n": 30
+     }
+    }
+   },
+   "WNG": {
+    "event": {
+     "orig": 0.9858580710331344,
+     "pre": 10.921141549756085,
+     "A0": 3.2853420856488853,
+     "A15": 0.3941471806300876,
+     "A30": -2.4692895478453956,
+     "A60": -5.5212404501167525
+    },
+    "null": {
+     "orig": {
+      "n": 24,
+      "mean": -0.47551186158722536,
+      "sd": 4.32099539950586
+     },
+     "pre": {
+      "n": 24,
+      "mean": -2.89647284410292,
+      "sd": 12.113412714853572
+     },
+     "A0": {
+      "n": 24,
+      "mean": -1.0085680118788385,
+      "sd": 5.257675132978119
+     },
+     "A15": {
+      "n": 24,
+      "mean": -0.26230428503583664,
+      "sd": 5.9826192107354705
+     },
+     "A30": {
+      "n": 24,
+      "mean": 0.22431384174145394,
+      "sd": 6.751878937090854
+     },
+     "A60": {
+      "n": 24,
+      "mean": 0.6711355936013704,
+      "sd": 7.9493216516584075
+     }
+    },
+    "injection": {
+     "0": {
+      "detrended_mean_recovered_frac": 0.9999958623109115,
+      "window_mean_over_peak": 0.7160651909697298,
+      "joint_fit_recovered_frac": 0.9999999999999994,
+      "n": 30
+     },
+     "15": {
+      "detrended_mean_recovered_frac": 0.9555612215036526,
+      "window_mean_over_peak": 0.7288216208117729,
+      "joint_fit_recovered_frac": 0.9999999999999998,
+      "n": 30
+     },
+     "30": {
+      "detrended_mean_recovered_frac": 0.8322655776819343,
+      "window_mean_over_peak": 0.7010030051353051,
+      "joint_fit_recovered_frac": 1.0000000000000002,
+      "n": 30
+     },
+     "60": {
+      "detrended_mean_recovered_frac": 0.615620382001143,
+      "window_mean_over_peak": 0.652081008632298,
+      "joint_fit_recovered_frac": 1.0,
+      "n": 30
+     }
+    }
+   },
+   "SUA": {
+    "event": {
+     "orig": -1.395560675418914,
+     "pre": 3.4739655575136785,
+     "A0": -0.8360588320163241,
+     "A15": -5.08515402414671,
+     "A30": -8.439866668172998,
+     "A60": -12.263739689773228
+    },
+    "null": {
+     "orig": {
+      "n": 24,
+      "mean": -0.8965747689394182,
+      "sd": 1.8113506200727965
+     },
+     "pre": {
+      "n": 24,
+      "mean": -2.6142433623728683,
+      "sd": 6.106658899236098
+     },
+     "A0": {
+      "n": 24,
+      "mean": -1.4939730329004597,
+      "sd": 2.4470585497054604
+     },
+     "A15": {
+      "n": 24,
+      "mean": -1.2405265392917608,
+      "sd": 2.7758184741621794
+     },
+     "A30": {
+      "n": 24,
+      "mean": -1.1044575134422805,
+      "sd": 3.3882941439238823
+     },
+     "A60": {
+      "n": 24,
+      "mean": -1.0609127919221042,
+      "sd": 4.346135098335275
+     }
+    },
+    "injection": {
+     "0": {
+      "detrended_mean_recovered_frac": 0.9999957936084164,
+      "window_mean_over_peak": 0.6700552417534822,
+      "joint_fit_recovered_frac": 0.9999999999999993,
+      "n": 30
+     },
+     "15": {
+      "detrended_mean_recovered_frac": 0.9499771271186753,
+      "window_mean_over_peak": 0.6988651680685246,
+      "joint_fit_recovered_frac": 0.9999999999999994,
+      "n": 30
+     },
+     "30": {
+      "detrended_mean_recovered_frac": 0.818648628389845,
+      "window_mean_over_peak": 0.6788829994211014,
+      "joint_fit_recovered_frac": 0.9999999999999993,
+      "n": 30
+     },
+     "60": {
+      "detrended_mean_recovered_frac": 0.5988369517941013,
+      "window_mean_over_peak": 0.6369201008339688,
+      "joint_fit_recovered_frac": 1.0000000000000002,
+      "n": 30
+     }
+    }
+   },
+   "BEL": {
+    "event": {
+     "orig": 1.942493623491291,
+     "pre": 14.324682213580134,
+     "A0": 4.678569290806567,
+     "A15": 1.4178318622785788,
+     "A30": -1.7008695867410462,
+     "A60": -4.903282359238494
+    },
+    "null": {
+     "orig": {
+      "n": 23,
+      "mean": -0.053186261359829706,
+      "sd": 2.9047682172179496
+     },
+     "pre": {
+      "n": 23,
+      "mean": -0.4529060672105063,
+      "sd": 8.934590793007967
+     },
+     "A0": {
+      "n": 23,
+      "mean": -0.265017960114112,
+      "sd": 3.4307286532916623
+     },
+     "A15": {
+      "n": 23,
+      "mean": -0.011687999641366163,
+      "sd": 4.246939095661022
+     },
+     "A30": {
+      "n": 23,
+      "mean": 0.2159206514145971,
+      "sd": 5.134408999002267
+     },
+     "A60": {
+      "n": 23,
+      "mean": 0.4105651811851396,
+      "sd": 6.352681508800742
+     }
+    },
+    "injection": {
+     "0": {
+      "detrended_mean_recovered_frac": 0.9999553966400755,
+      "window_mean_over_peak": 0.7044251888416991,
+      "joint_fit_recovered_frac": 1.0000000000000013,
+      "n": 29
+     },
+     "15": {
+      "detrended_mean_recovered_frac": 0.9496864803469314,
+      "window_mean_over_peak": 0.7176992574907172,
+      "joint_fit_recovered_frac": 1.0,
+      "n": 29
+     },
+     "30": {
+      "detrended_mean_recovered_frac": 0.8196045582222597,
+      "window_mean_over_peak": 0.6913911651195678,
+      "joint_fit_recovered_frac": 1.0000000000000007,
+      "n": 29
+     },
+     "60": {
+      "detrended_mean_recovered_frac": 0.6002508058784273,
+      "window_mean_over_peak": 0.644976268980327,
+      "joint_fit_recovered_frac": 1.0000000000000002,
+      "n": 29
+     }
+    }
+   },
+   "SFS": {
+    "event": {
+     "orig": -4.972534824924572,
+     "pre": -9.608886959340003,
+     "A0": -6.702371942035541,
+     "A15": -9.967586372051365,
+     "A30": -12.184317413031401,
+     "A60": -15.27164883321072
+    },
+    "null": {
+     "orig": {
+      "n": 17,
+      "mean": -0.5456364573594492,
+      "sd": 2.704732772740751
+     },
+     "pre": {
+      "n": 17,
+      "mean": -2.820639057910873,
+      "sd": 7.196550847539814
+     },
+     "A0": {
+      "n": 17,
+      "mean": -0.879816129173926,
+      "sd": 3.4530768845382624
+     },
+     "A15": {
+      "n": 17,
+      "mean": -0.5730205025587635,
+      "sd": 3.4513601728294314
+     },
+     "A30": {
+      "n": 17,
+      "mean": -0.4504149297135251,
+      "sd": 3.8754648440319714
+     },
+     "A60": {
+      "n": 17,
+      "mean": -0.37180385136670807,
+      "sd": 4.663534573023249
+     }
+    },
+    "injection": {
+     "0": {
+      "detrended_mean_recovered_frac": 0.999979101904655,
+      "window_mean_over_peak": 0.6949284429909883,
+      "joint_fit_recovered_frac": 0.9999999999999993,
+      "n": 21
+     },
+     "15": {
+      "detrended_mean_recovered_frac": 0.9554812220482034,
+      "window_mean_over_peak": 0.725134907498178,
+      "joint_fit_recovered_frac": 1.0000000000000004,
+      "n": 21
+     },
+     "30": {
+      "detrended_mean_recovered_frac": 0.8324327749098762,
+      "window_mean_over_peak": 0.7023370433866689,
+      "joint_fit_recovered_frac": 1.0000000000000004,
+      "n": 21
+     },
+     "60": {
+      "detrended_mean_recovered_frac": 0.6159648419000621,
+      "window_mean_over_peak": 0.6556399045756334,
+      "joint_fit_recovered_frac": 1.0000000000000004,
+      "n": 21
+     }
+    }
+   }
+  },
+  "ctlfit": {
+   "EBR|0|ASC": {
+    "A": 2.77,
+    "null_mean": -1.0,
+    "null_sd": 3.06,
+    "z": 1.23,
+    "n": 24
+   },
+   "EBR|0|KOU": {
+    "A": 2.01,
+    "null_mean": 0.51,
+    "null_sd": 5.65,
+    "z": 0.26,
+    "n": 17
+   },
+   "EBR|0|HER": {
+    "A": -3.88,
+    "null_mean": -1.19,
+    "null_sd": 2.62,
+    "z": -1.03,
+    "n": 24
+   },
+   "EBR|0|EBR": {
+    "A": -2.86,
+    "null_mean": -0.59,
+    "null_sd": 2.28,
+    "z": -0.99,
+    "n": 18
+   },
+   "EBR|15|ASC": {
+    "A": 0.08,
+    "null_mean": -1.66,
+    "null_sd": 2.84,
+    "z": 0.61,
+    "n": 24
+   },
+   "EBR|15|KOU": {
+    "A": 2.02,
+    "null_mean": 0.91,
+    "null_sd": 5.25,
+    "z": 0.21,
+    "n": 17
+   },
+   "EBR|15|HER": {
+    "A": -6.69,
+    "null_mean": -0.99,
+    "null_sd": 2.39,
+    "z": -2.39,
+    "n": 24
+   },
+   "EBR|15|EBR": {
+    "A": -6.25,
+    "null_mean": -0.17,
+    "null_sd": 2.37,
+    "z": -2.56,
+    "n": 18
+   },
+   "EBR|30|ASC": {
+    "A": -1.64,
+    "null_mean": -2.1,
+    "null_sd": 2.92,
+    "z": 0.16,
+    "n": 24
+   },
+   "EBR|30|KOU": {
+    "A": 2.17,
+    "null_mean": 1.2,
+    "null_sd": 5.15,
+    "z": 0.19,
+    "n": 17
+   },
+   "EBR|30|HER": {
+    "A": -8.76,
+    "null_mean": -0.95,
+    "null_sd": 2.51,
+    "z": -3.11,
+    "n": 24
+   },
+   "EBR|30|EBR": {
+    "A": -8.54,
+    "null_mean": -0.03,
+    "null_sd": 2.9,
+    "z": -2.93,
+    "n": 18
+   },
+   "EBR|60|ASC": {
+    "A": -3.96,
+    "null_mean": -2.81,
+    "null_sd": 3.21,
+    "z": -0.36,
+    "n": 24
+   },
+   "EBR|60|KOU": {
+    "A": 2.53,
+    "null_mean": 1.51,
+    "null_sd": 5.15,
+    "z": 0.2,
+    "n": 17
+   },
+   "EBR|60|HER": {
+    "A": -11.41,
+    "null_mean": -0.92,
+    "null_sd": 2.83,
+    "z": -3.71,
+    "n": 24
+   },
+   "EBR|60|EBR": {
+    "A": -11.44,
+    "null_mean": 0.05,
+    "null_sd": 3.78,
+    "z": -3.04,
+    "n": 18
+   },
+   "SPT|0|ASC": {
+    "A": 1.79,
+    "null_mean": -1.33,
+    "null_sd": 3.08,
+    "z": 1.01,
+    "n": 24
+   },
+   "SPT|0|KOU": {
+    "A": 2.14,
+    "null_mean": 0.67,
+    "null_sd": 5.72,
+    "z": 0.26,
+    "n": 17
+   },
+   "SPT|0|HER": {
+    "A": -4.88,
+    "null_mean": -1.15,
+    "null_sd": 2.56,
+    "z": -1.46,
+    "n": 24
+   },
+   "SPT|0|SPT": {
+    "A": -4.08,
+    "null_mean": -0.21,
+    "null_sd": 2.36,
+    "z": -1.64,
+    "n": 24
+   },
+   "SPT|15|ASC": {
+    "A": -0.83,
+    "null_mean": -1.89,
+    "null_sd": 2.89,
+    "z": 0.37,
+    "n": 24
+   },
+   "SPT|15|KOU": {
+    "A": 2.1,
+    "null_mean": 1.1,
+    "null_sd": 5.27,
+    "z": 0.19,
+    "n": 17
+   },
+   "SPT|15|HER": {
+    "A": -7.58,
+    "null_mean": -0.96,
+    "null_sd": 2.44,
+    "z": -2.71,
+    "n": 24
+   },
+   "SPT|15|SPT": {
+    "A": -6.88,
+    "null_mean": 0.13,
+    "null_sd": 2.3,
+    "z": -3.05,
+    "n": 24
+   },
+   "SPT|30|ASC": {
+    "A": -2.53,
+    "null_mean": -2.27,
+    "null_sd": 2.98,
+    "z": -0.09,
+    "n": 24
+   },
+   "SPT|30|KOU": {
+    "A": 2.18,
+    "null_mean": 1.38,
+    "null_sd": 5.14,
+    "z": 0.16,
+    "n": 17
+   },
+   "SPT|30|HER": {
+    "A": -9.52,
+    "null_mean": -0.92,
+    "null_sd": 2.57,
+    "z": -3.35,
+    "n": 24
+   },
+   "SPT|30|SPT": {
+    "A": -8.79,
+    "null_mean": 0.29,
+    "null_sd": 2.68,
+    "z": -3.39,
+    "n": 24
+   },
+   "SPT|60|ASC": {
+    "A": -4.86,
+    "null_mean": -2.9,
+    "null_sd": 3.28,
+    "z": -0.59,
+    "n": 24
+   },
+   "SPT|60|KOU": {
+    "A": 2.44,
+    "null_mean": 1.7,
+    "null_sd": 5.12,
+    "z": 0.14,
+    "n": 17
+   },
+   "SPT|60|HER": {
+    "A": -12.01,
+    "null_mean": -0.88,
+    "null_sd": 2.88,
+    "z": -3.87,
+    "n": 24
+   },
+   "SPT|60|SPT": {
+    "A": -11.29,
+    "null_mean": 0.45,
+    "null_sd": 3.38,
+    "z": -3.47,
+    "n": 24
+   },
+   "SFS|0|ASC": {
+    "A": 0.48,
+    "null_mean": -1.72,
+    "null_sd": 3.0,
+    "z": 0.73,
+    "n": 24
+   },
+   "SFS|0|KOU": {
+    "A": 2.28,
+    "null_mean": 0.85,
+    "null_sd": 5.56,
+    "z": 0.26,
+    "n": 17
+   },
+   "SFS|0|HER": {
+    "A": -5.88,
+    "null_mean": -1.05,
+    "null_sd": 2.44,
+    "z": -1.98,
+    "n": 24
+   },
+   "SFS|0|SFS": {
+    "A": -6.7,
+    "null_mean": -0.88,
+    "null_sd": 3.45,
+    "z": -1.69,
+    "n": 17
+   },
+   "SFS|15|ASC": {
+    "A": -1.96,
+    "null_mean": -2.15,
+    "null_sd": 2.89,
+    "z": 0.07,
+    "n": 24
+   },
+   "SFS|15|KOU": {
+    "A": 2.19,
+    "null_mean": 1.3,
+    "null_sd": 5.13,
+    "z": 0.17,
+    "n": 17
+   },
+   "SFS|15|HER": {
+    "A": -8.46,
+    "null_mean": -0.89,
+    "null_sd": 2.48,
+    "z": -3.06,
+    "n": 24
+   },
+   "SFS|15|SFS": {
+    "A": -9.97,
+    "null_mean": -0.57,
+    "null_sd": 3.45,
+    "z": -2.72,
+    "n": 17
+   },
+   "SFS|30|ASC": {
+    "A": -3.58,
+    "null_mean": -2.45,
+    "null_sd": 3.0,
+    "z": -0.38,
+    "n": 24
+   },
+   "SFS|30|KOU": {
+    "A": 2.21,
+    "null_mean": 1.58,
+    "null_sd": 4.97,
+    "z": 0.13,
+    "n": 17
+   },
+   "SFS|30|HER": {
+    "A": -10.19,
+    "null_mean": -0.84,
+    "null_sd": 2.61,
+    "z": -3.59,
+    "n": 24
+   },
+   "SFS|30|SFS": {
+    "A": -12.18,
+    "null_mean": -0.45,
+    "null_sd": 3.88,
+    "z": -3.03,
+    "n": 17
+   },
+   "SFS|60|ASC": {
+    "A": -5.87,
+    "null_mean": -2.98,
+    "null_sd": 3.29,
+    "z": -0.88,
+    "n": 24
+   },
+   "SFS|60|KOU": {
+    "A": 2.34,
+    "null_mean": 1.9,
+    "null_sd": 4.89,
+    "z": 0.09,
+    "n": 17
+   },
+   "SFS|60|HER": {
+    "A": -12.44,
+    "null_mean": -0.76,
+    "null_sd": 2.9,
+    "z": -4.03,
+    "n": 24
+   },
+   "SFS|60|SFS": {
+    "A": -15.27,
+    "null_mean": -0.37,
+    "null_sd": 4.66,
+    "z": -3.19,
+    "n": 17
+   },
+   "SUA|0|ASC": {
+    "A": 6.96,
+    "null_mean": 0.89,
+    "null_sd": 2.77,
+    "z": 2.19,
+    "n": 24
+   },
+   "SUA|0|KOU": {
+    "A": 1.36,
+    "null_mean": 0.03,
+    "null_sd": 4.79,
+    "z": 0.28,
+    "n": 17
+   },
+   "SUA|0|HER": {
+    "A": 1.58,
+    "null_mean": -1.1,
+    "null_sd": 2.9,
+    "z": 0.92,
+    "n": 24
+   },
+   "SUA|0|SUA": {
+    "A": -0.84,
+    "null_mean": -1.49,
+    "null_sd": 2.45,
+    "z": 0.27,
+    "n": 24
+   },
+   "SUA|15|ASC": {
+    "A": 4.74,
+    "null_mean": -0.18,
+    "null_sd": 2.69,
+    "z": 1.83,
+    "n": 24
+   },
+   "SUA|15|KOU": {
+    "A": 1.82,
+    "null_mean": 0.2,
+    "null_sd": 5.02,
+    "z": 0.32,
+    "n": 17
+   },
+   "SUA|15|HER": {
+    "A": -0.9,
+    "null_mean": -1.08,
+    "null_sd": 2.46,
+    "z": 0.07,
+    "n": 24
+   },
+   "SUA|15|SUA": {
+    "A": -5.09,
+    "null_mean": -1.24,
+    "null_sd": 2.78,
+    "z": -1.39,
+    "n": 24
+   },
+   "SUA|30|ASC": {
+    "A": 3.43,
+    "null_mean": -0.82,
+    "null_sd": 2.74,
+    "z": 1.55,
+    "n": 24
+   },
+   "SUA|30|KOU": {
+    "A": 2.25,
+    "null_mean": 0.41,
+    "null_sd": 5.28,
+    "z": 0.35,
+    "n": 17
+   },
+   "SUA|30|HER": {
+    "A": -2.64,
+    "null_mean": -1.08,
+    "null_sd": 2.36,
+    "z": -0.66,
+    "n": 24
+   },
+   "SUA|30|SUA": {
+    "A": -8.44,
+    "null_mean": -1.1,
+    "null_sd": 3.39,
+    "z": -2.16,
+    "n": 24
+   },
+   "SUA|60|ASC": {
+    "A": 1.85,
+    "null_mean": -1.71,
+    "null_sd": 2.99,
+    "z": 1.19,
+    "n": 24
+   },
+   "SUA|60|KOU": {
+    "A": 3.05,
+    "null_mean": 0.62,
+    "null_sd": 5.69,
+    "z": 0.43,
+    "n": 17
+   },
+   "SUA|60|HER": {
+    "A": -4.68,
+    "null_mean": -1.15,
+    "null_sd": 2.48,
+    "z": -1.42,
+    "n": 24
+   },
+   "SUA|60|SUA": {
+    "A": -12.26,
+    "null_mean": -1.06,
+    "null_sd": 4.35,
+    "z": -2.58,
+    "n": 24
+   },
+   "HAD|0|ASC": {
+    "A": 6.92,
+    "null_mean": 0.92,
+    "null_sd": 2.91,
+    "z": 2.06,
+    "n": 24
+   },
+   "HAD|0|KOU": {
+    "A": 1.07,
+    "null_mean": 0.16,
+    "null_sd": 5.16,
+    "z": 0.17,
+    "n": 17
+   },
+   "HAD|0|HER": {
+    "A": 0.67,
+    "null_mean": -1.14,
+    "null_sd": 2.92,
+    "z": 0.62,
+    "n": 24
+   },
+   "HAD|0|HAD": {
+    "A": 3.04,
+    "null_mean": -0.01,
+    "null_sd": 4.44,
+    "z": 0.69,
+    "n": 24
+   },
+   "HAD|15|ASC": {
+    "A": 4.55,
+    "null_mean": -0.17,
+    "null_sd": 2.77,
+    "z": 1.7,
+    "n": 24
+   },
+   "HAD|15|KOU": {
+    "A": 1.62,
+    "null_mean": 0.38,
+    "null_sd": 5.3,
+    "z": 0.23,
+    "n": 17
+   },
+   "HAD|15|HER": {
+    "A": -1.95,
+    "null_mean": -1.11,
+    "null_sd": 2.51,
+    "z": -0.33,
+    "n": 24
+   },
+   "HAD|15|HAD": {
+    "A": -0.17,
+    "null_mean": 0.43,
+    "null_sd": 4.53,
+    "z": -0.13,
+    "n": 24
+   },
+   "HAD|30|ASC": {
+    "A": 3.09,
+    "null_mean": -0.82,
+    "null_sd": 2.83,
+    "z": 1.39,
+    "n": 24
+   },
+   "HAD|30|KOU": {
+    "A": 2.04,
+    "null_mean": 0.61,
+    "null_sd": 5.52,
+    "z": 0.26,
+    "n": 17
+   },
+   "HAD|30|HER": {
+    "A": -3.91,
+    "null_mean": -1.13,
+    "null_sd": 2.47,
+    "z": -1.13,
+    "n": 24
+   },
+   "HAD|30|HAD": {
+    "A": -2.42,
+    "null_mean": 0.71,
+    "null_sd": 4.83,
+    "z": -0.65,
+    "n": 24
+   },
+   "HAD|60|ASC": {
+    "A": 1.33,
+    "null_mean": -1.74,
+    "null_sd": 3.14,
+    "z": 0.98,
+    "n": 24
+   },
+   "HAD|60|KOU": {
+    "A": 2.8,
+    "null_mean": 0.86,
+    "null_sd": 5.95,
+    "z": 0.33,
+    "n": 17
+   },
+   "HAD|60|HER": {
+    "A": -6.28,
+    "null_mean": -1.21,
+    "null_sd": 2.68,
+    "z": -1.9,
+    "n": 24
+   },
+   "HAD|60|HAD": {
+    "A": -4.97,
+    "null_mean": 0.92,
+    "null_sd": 5.54,
+    "z": -1.06,
+    "n": 24
+   },
+   "ESK|0|ASC": {
+    "A": 8.3,
+    "null_mean": 1.81,
+    "null_sd": 2.94,
+    "z": 2.21,
+    "n": 24
+   },
+   "ESK|0|KOU": {
+    "A": 0.33,
+    "null_mean": 0.03,
+    "null_sd": 4.73,
+    "z": 0.06,
+    "n": 17
+   },
+   "ESK|0|HER": {
+    "A": 2.51,
+    "null_mean": -1.01,
+    "null_sd": 2.95,
+    "z": 1.19,
+    "n": 24
+   },
+   "ESK|0|ESK": {
+    "A": 3.45,
+    "null_mean": -1.06,
+    "null_sd": 5.72,
+    "z": 0.79,
+    "n": 24
+   },
+   "ESK|15|ASC": {
+    "A": 6.47,
+    "null_mean": 0.69,
+    "null_sd": 2.78,
+    "z": 2.08,
+    "n": 24
+   },
+   "ESK|15|KOU": {
+    "A": 1.22,
+    "null_mean": 0.16,
+    "null_sd": 5.12,
+    "z": 0.21,
+    "n": 17
+   },
+   "ESK|15|HER": {
+    "A": 0.39,
+    "null_mean": -1.09,
+    "null_sd": 2.66,
+    "z": 0.56,
+    "n": 24
+   },
+   "ESK|15|ESK": {
+    "A": 1.34,
+    "null_mean": -0.55,
+    "null_sd": 5.72,
+    "z": 0.33,
+    "n": 24
+   },
+   "ESK|30|ASC": {
+    "A": 5.32,
+    "null_mean": 0.0,
+    "null_sd": 2.82,
+    "z": 1.88,
+    "n": 24
+   },
+   "ESK|30|KOU": {
+    "A": 1.78,
+    "null_mean": 0.35,
+    "null_sd": 5.5,
+    "z": 0.26,
+    "n": 17
+   },
+   "ESK|30|HER": {
+    "A": -1.25,
+    "null_mean": -1.14,
+    "null_sd": 2.58,
+    "z": -0.04,
+    "n": 24
+   },
+   "ESK|30|ESK": {
+    "A": -0.4,
+    "null_mean": -0.11,
+    "null_sd": 6.07,
+    "z": -0.05,
+    "n": 24
+   },
+   "ESK|60|ASC": {
+    "A": 4.05,
+    "null_mean": -0.89,
+    "null_sd": 3.11,
+    "z": 1.59,
+    "n": 24
+   },
+   "ESK|60|KOU": {
+    "A": 2.68,
+    "null_mean": 0.56,
+    "null_sd": 6.17,
+    "z": 0.34,
+    "n": 17
+   },
+   "ESK|60|HER": {
+    "A": -3.19,
+    "null_mean": -1.26,
+    "null_sd": 2.73,
+    "z": -0.71,
+    "n": 24
+   },
+   "ESK|60|ESK": {
+    "A": -2.39,
+    "null_mean": 0.25,
+    "null_sd": 6.97,
+    "z": -0.38,
+    "n": 24
+   }
+  },
+  "zctl": {
+   "EBR|ASC": {
+    "A": -2.53,
+    "z": -2.08,
+    "n": 25
+   },
+   "EBR|KOU": {
+    "A": 10.13,
+    "z": 1.3,
+    "n": 19
+   },
+   "EBR|HER": {
+    "A": 0.64,
+    "z": 0.33,
+    "n": 25
+   },
+   "EBR|EBR": {
+    "A": -6.13,
+    "z": -1.44,
+    "n": 19
+   },
+   "SPT|ASC": {
+    "A": -2.01,
+    "z": -1.82,
+    "n": 25
+   },
+   "SPT|KOU": {
+    "A": 10.08,
+    "z": 1.38,
+    "n": 19
+   },
+   "SPT|HER": {
+    "A": -0.18,
+    "z": 0.08,
+    "n": 25
+   },
+   "SPT|SPT": {
+    "A": -3.99,
+    "z": -1.3,
+    "n": 25
+   },
+   "HAD|ASC": {
+    "A": -4.98,
+    "z": -3.06,
+    "n": 25
+   },
+   "HAD|KOU": {
+    "A": 10.36,
+    "z": 0.91,
+    "n": 19
+   },
+   "HAD|HER": {
+    "A": 3.91,
+    "z": 1.27,
+    "n": 25
+   },
+   "HAD|HAD": {
+    "A": -5.51,
+    "z": -1.67,
+    "n": 25
+   },
+   "ESK|ASC": {
+    "A": -5.89,
+    "z": -3.22,
+    "n": 25
+   },
+   "ESK|KOU": {
+    "A": 10.08,
+    "z": 0.73,
+    "n": 19
+   },
+   "ESK|HER": {
+    "A": 4.94,
+    "z": 1.65,
+    "n": 25
+   },
+   "ESK|ESK": {
+    "A": -7.56,
+    "z": -2.4,
+    "n": 25
+   },
+   "LER|ASC": {
+    "A": -6.61,
+    "z": -3.16,
+    "n": 25
+   },
+   "LER|KOU": {
+    "A": 9.48,
+    "z": 0.54,
+    "n": 19
+   },
+   "LER|HER": {
+    "A": 5.5,
+    "z": 1.99,
+    "n": 25
+   },
+   "LER|LER": {
+    "A": -12.82,
+    "z": -2.66,
+    "n": 25
+   },
+   "CLF|ASC": {
+    "A": -4.27,
+    "z": -2.88,
+    "n": 25
+   },
+   "CLF|KOU": {
+    "A": 10.02,
+    "z": 1.0,
+    "n": 19
+   },
+   "CLF|HER": {
+    "A": 3.24,
+    "z": 1.07,
+    "n": 25
+   },
+   "CLF|CLF": {
+    "A": -2.81,
+    "z": -0.84,
+    "n": 20
+   },
+   "NGK|ASC": {
+    "A": -5.27,
+    "z": -3.2,
+    "n": 25
+   },
+   "NGK|KOU": {
+    "A": 9.35,
+    "z": 0.76,
+    "n": 19
+   },
+   "NGK|HER": {
+    "A": 4.65,
+    "z": 1.55,
+    "n": 25
+   },
+   "NGK|NGK": {
+    "A": -3.6,
+    "z": -1.25,
+    "n": 25
+   }
+  }
+ }
+}
