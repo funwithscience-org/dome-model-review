@@ -391,6 +391,12 @@ Purpose: produce a concise, scientific JSON artifact suitable for OpenTimestamps
 
 **Required constraints:**
 - Every numerical claim must match a current claim in `data/wins.json` / `data/sections.json` / `data/predictions.json` at the pinned commit SHA. The frozen file is concise; it does not duplicate prose, but every number it contains must trace back to an unmoved source in the live repo.
+- **Provenance type is mandatory; a number that only traces to our own prose is not enough (added 2026-09-27, eclipse erratum ECLIPSE-2026-08-12-ERRATUM-1).** Each numeric claim carries `provenance_type`:
+  - `computed`: give `computed_by` (a script path committed alongside the frozen file, or in `predictions/`) and `output_sha256` of the run output that contains the value. The value must match that output. "Local-circumstances calculation", "model run" and similar wording are allowed ONLY with a committed script.
+  - `cited`: give the exact location actually checked (page / table / equation / figure number, or the URL plus the row or field) and `verified_at_utc`. Authors, title, year and DOI must be confirmed against the DOI resolver or Crossref, not copied from our own earlier text.
+  - If you can do neither, the number does not go in the frozen file. Put it in prose as unverified, or drop it.
+  - Why: B1-G-005 (Hartland 88 %) was carried from our §4.2.7 prose into an OTS-anchored claim with a NASA attribution, and no calculation existed. The correct value was 94 %, the claim failed, and we had to publish an erratum. B1-M-001 cited Kim & Chang 2018 under the wrong authors and title. Matching our own prose (the rule above) passed both. This rule would have stopped both.
+- **Ranges must be derived for the event, not borrowed.** If a range comes from ensemble literature rather than a calculation for this event's geometry and local time, say so in the claim itself. Also run the claim against at least 30 non-event control days and report how often it is met. A band that ordinary days satisfy is not a prediction (B1-M-001 was met on 17 of 30 control days).
 - Confidence bounds where applicable. No bare central values without ± or range.
 - Self-contained: a third party reading only this file and the linked sources can verify each claim independently.
 - High-confidence claims only. If you are tempted to add a peripheral assertion you only weakly endorse, exclude it — the OTS-anchor is forever and over-commitment hurts more than missing claims.

@@ -593,6 +593,18 @@ Every prose section and prediction panel is now wrapped in `<details>`/`<summary
 - **WIN panels:** Each WIN in `wins.json` has `tldr_evidence` and `tldr_verdict` fields. These render as collapsible Evidence and Verdict sections — the TLDRs are what readers see before clicking expand. When reviewing a WIN, read both TLDRs against the expanded content. A TLDR that contradicts the evidence/verdict it summarizes is **major**.
 - **Predictions:** TLDRs live in the `tldr` field in `predictions.json`. If you're reviewing a prediction and the `tldr` is missing, note it but don't block on it — the analyst writes them in Mode 1b.
 
+## Frozen-Prediction Reviews: Attack Our Side Too (added 2026-09-27)
+
+When a review carries `requires_frozen_prediction_review` (analyst Mode 5 drafts), or covers a RESULTS/verdict file scoring a frozen prediction, the dual-pass review must include an **independent recomputation of our own side's numeric claims** before you may recommend approval. Reviewing only the dome-side derivations is incomplete. Do the following:
+
+- For every `provenance_type: computed` claim: re-run the named script, or an independent method, and confirm the value. For eclipse and astronomical local circumstances, use Skyfield + a JPL ephemeris, or an independent published table. A mismatch outside the stated tolerance is **critical**.
+- For every `provenance_type: cited` claim: resolve the DOI or URL and confirm the authors, title and the specific number at the stated location. Wrong authors or title is **major**; a number not present at the cited location is **critical**.
+- A numeric claim with no `provenance_type`, or one that traces only to our own review prose, is **major**. Block approval until it is fixed.
+- Run each of our falsification bands against non-event control days, or confirm the analyst did. A band met on a large share of ordinary days is **major** (non-diagnostic).
+- Check that failure attribution is symmetric. A dome miss counts as a *model* failure only if the test has power against what the dome's mechanism actually computes, not just the range its author stated. Our misses on values we misstated are attributed to us (`failure_attribution: analyst_representation`), never to standard physics.
+
+Precedent: ECLIPSE-2026-08-12-ERRATUM-1 (`predictions/eclipse-2026-08-12-erratum-2026-09-27.json`). The May 2026 freeze passed review with an uncomputed Hartland obscuration (88 % registered vs 94 % actual) and a mis-cited magnetic source, because the review attacked the dome's numbers and took ours on trust.
+
 ## Severity Guidelines
 
 - **Critical**: Factual error that a dome defender could use to discredit our entire review. Wrong data values, fabricated citations, claims about things the dome model doesn't actually say.
