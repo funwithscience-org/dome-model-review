@@ -1,0 +1,99 @@
+{
+  "point_id": "REACTIVE-AUDIT-2026-09-27",
+  "topic": "Priority 0c2 audit of chg-20260927-0004-001 (critical, pipeline-health self-finding: \"13 of 14 dome-* tasks removed\") + gap analysis of the stalled eclipse magnetic revision loop",
+  "reviewed_at": "2026-09-27T10:32:02.245Z",
+  "cycle": 1,
+  "trigger": "change-detected",
+  "agent_subtype": "curmudgeon-reactive-audit",
+  "instrumentation": {
+    "dispatcher_state_used": true,
+    "dispatcher_state_age_seconds": 0,
+    "dispatcher_state_recommended_priority": "audit",
+    "audited_change_ids": [
+      "chg-20260927-0004-001"
+    ],
+    "git_head": "567cbca"
+  },
+  "prior_audit_references": [
+    "REACTIVE-AUDIT-2026-08-09.json (prior pipeline-health 0c2 audit; same class of self-finding)"
+  ],
+  "current_verdict_holds": true,
+  "confidence": 0.9,
+  "our_argument_summary": "No dome-site content changed: all 10 tracked dome pages byte-identical to baseline (monitor/status.json:last_poll_note, as restated in monitor/decisions/latest-decider-summary.txt). The triggering critical change is a pipeline-infrastructure claim, not dome content, so no WIN/section verdict is affected. Its central factual claim is wrong, and the audit found one real gap it did not name: the eclipse magnetic rev2 draft is stranded (FUSE-only, never queued).",
+  "change_summary": "chg-20260927-0004-001 (poller, 2026-09-27T00:04Z) asserts 13 of 14 dome-* scheduled tasks were REMOVED (not just disabled), based on a list_triggers call showing only a freshly created \"Dome poller\" trigger (trig_01APuCnCS2tgjSzZyKSeX4rS). Decider 567cbca turned it into ISS-3102 (major, pending-human).",
+  "audit_scope": {
+    "change_files": [
+      "monitor/changes/chg-20260927-0004-001.json"
+    ],
+    "cross_checked": [
+      "monitor/decisions/open-issues.json (ISS-3091, ISS-3092, ISS-3101, ISS-3102)",
+      "monitor/analyst/expansion-tracker.json (EXP-684, EXP-687)",
+      "monitor/analyst/human-notes.json",
+      "monitor/curmudgeon/priority-queue.json + priority-queue-archive.jsonl",
+      "FUSE monitor/analyst/{expansions,issue-proposals,analysis-records}/",
+      "Cowork scheduler via list_scheduled_tasks (read-only), 2026-09-27T10:3xZ"
+    ]
+  },
+  "coverage_check": {
+    "chg-20260927-0004-001": "Covered by ISS-3102 (pending-human), but ISS-3102 records a false premise (hole 1) and has description=\"undefined\" (hole 4).",
+    "eclipse magnetic rev2 (EXP-687)": "NOT covered by any work item: no queue item, no open issue. The decider summary asserts it \"awaits curmudgeon cycle-2 deep-attack review\", but nothing routes it to curmudgeon (hole 2).",
+    "FUSE-only analyst outputs": "NOT covered: 7 analyst files from 2026-09-27 exist on FUSE only (hole 3)."
+  },
+  "holes_found": [
+    {
+      "severity": "major",
+      "description": "ISS-3102 (and chg-20260927-0004-001) rests on a false premise. The poller looked at a different scheduler surface (list_triggers; a separate trigger system where the currently-running \"Dome poller\" lives) and read the absence of the other agents there as deletion. The Cowork scheduler (list_scheduled_tasks, which CLAUDE.md names as authoritative for enabled state) still lists all 14 dome-* tasks: dome-poller, analyst, analyst-baby, curmudgeon, curmudgeon-verify, decider, integrity, tinker, social, sloppytoppy-score, sloppytoppy-rewrite, prune-integrity, workspace-sync, mirror. All are enabled=false, and several have lastRunAt values later than the poll: dome-analyst 2026-09-27T07:35Z, dome-decider 09:02Z, and dome-curmudgeon 10:29Z (this very run). A deleted task cannot fire, so the removal claim is falsified. ISS-3092 (all disabled) is also expected state: commit cdc2f18 CLAUDE.md documents OPERATOR QUIET MODE (poller-only, everything else disabled on purpose since 2026-09-26) and says tinker/integrity/social will flag this and that the finding is expected, not a fault. Decider escalated ISS-3102 at 09:09Z, after cdc2f18 had landed, without reconciling the two. Counter-view considered: the poller may be right that no RECURRING schedule for downstream agents exists anywhere, which is true, but that is the documented intent, not a loss.",
+      "recommendation": "Decider: close ISS-3102 as not-a-defect (premise refuted by list_scheduled_tasks; cite this review). Annotate/close ISS-3092 as expected quiet-mode state per CLAUDE.md. Tinker/operator: amend poller.md so its pipeline-health check (a) queries list_scheduled_tasks rather than, or in addition to, list_triggers, and (b) reads the CLAUDE.md quiet-mode block before escalating disabled downstream agents. That stops a daily critical false alarm that currently forces a 0c2 audit every run. Also correct CLAUDE.md: the dome-poller row says ENABLED, but the Cowork dome-poller task is enabled=false (lastRunAt 2026-09-25T07:37Z). The live poller is the separate \"Dome poller\" trigger, created 2026-09-25T07:37:23Z. Document which surface is authoritative."
+    },
+    {
+      "severity": "major",
+      "description": "The eclipse magnetic revision loop (CLAUDE.md Active hand-run work, step 4) has stalled between analyst and curmudgeon. Analyst finished rev2 at 2026-09-27T07:46Z (FUSE monitor/analyst/analysis-records/eclipse-2026-08-12-magnetic-results-DRAFT-20260927T074653.json, _meta.status \"DRAFT rev2 - requires curmudgeon cycle-2 adversarial pass (class deep-attack)\"). Its issue-proposal (proposal-EXP-687-ISS-3088-3089-resolution.json) states ACTION: re-queue to curmudgeon (deep-attack, cycle 2). The decider deferred the whole proposal, citing an operator decision (falsified-with-override vs standard_physics for PRED-095/TIER-1). That decision comes AFTER the cycle-2 adversarial pass in the documented chain (analyst, then curmudgeon re-review, then operator approval + OTS, then integration), so it cannot block the re-queue. Result: priority-queue.json is empty (queue_total 0), and the decider summary claims rev2 awaits curmudgeon review with nothing routing it there. This curmudgeon run deliberately did NOT review rev2 off-queue: doing so would carry no queue_id and would break the PROP-009 pop/audit trail for a frozen, OTS-bound verdict.",
+      "recommendation": "Decider (next hand-fire): push a priority-queue item {target_type:\"proposal\", target_id:\"ECLIPSE-2026-08-12-MAGNETIC-RESULTS\", class:\"deep-attack\", reason:\"EXP-687 rev2 cycle-2 adversarial pass\", context_hints:{source_file: the rev2 DRAFT path, prior_review:\"monitor/curmudgeon/reviews/ECLIPSE-2026-08-12-MAGNETIC-RESULTS-proposal.json\"}}. Do this only after hole 3 lands the file in git (content-exists guard). Keep the operator verdict-framing question separate, on ISS-3088/3089. Keep all four predictions pending."
+    },
+    {
+      "severity": "major",
+      "description": "Seven analyst outputs from 2026-09-27 exist ONLY on FUSE and are absent from git HEAD 567cbca: expansions/EXP-684.json (40 KB), expansions/EXP-687.json (19 KB), issue-proposals/proposal-EXP-684-ISS-3078-3087-resolution.json, issue-proposals/proposal-EXP-687-ISS-3088-3089-resolution.json, issue-proposals/proposal-kim-chang-2018-citation-mismatch-1790492572310.json, analysis-records/eclipse-2026-08-12-magnetic-results-DRAFT-20260927T074653.json (102 KB), analysis-records/eclipse-2026-08-12-magnetic-rework-scripts-20260927.json (133 KB), plus analysis-records/status_history-eclipse-entry-2026-09-27.json. workspace-sync is disabled (quiet mode), so the normal FUSE-to-git rescue will not run. Consequences: (a) any clone-reading agent (curmudgeon, decider in clone mode) fails the content-exists guard on EXP-687; (b) ISS-3101 was minted from a proposal file that is not in git, so its source link dangles in the repo; (c) the rev2 reproducibility pointer (rework-scripts) is unanchored; (d) the dome live-scoring snapshot, which the analyst asked to be copied to data/dome-api-snapshots/, is also FUSE-only, and the dome page may change underneath it. That violates the snapshot practice (ISS-2034).",
+      "recommendation": "Operator: land these files in git before re-queueing. Two options: hand-fire dome-workspace-sync after the CLAUDE.md step-0 FUSE-currency check, or use the manual dome-commit task with an explicit manifest of the 8 paths (all append-only directories, so no overwrite risk). Copy status_history-eclipse-entry-2026-09-27.json to data/dome-api-snapshots/ in the same commit. Underlying structural point: the quiet-mode restart order omits a step for hand-fired analyst runs, which write FUSE-only artifacts that nothing propagates. Add \"hand-fire workspace-sync (or dome-commit) after any hand-fired analyst run\" to the quiet-mode notes."
+    },
+    {
+      "severity": "moderate",
+      "description": "ISS-3102 was written with description:\"undefined\" (literal string). The decider step1i poll-summary-triage intake serialized a missing field. The issue body therefore carries none of the evidence, and a reader of open-issues.json cannot tell what was found without chasing the change file. PROP-087/089 lint-decider-surfaces.js evidently does not reject the literal \"undefined\".",
+      "recommendation": "Decider: when closing ISS-3102 per hole 1, populate description. Tinker: add a lint rule rejecting description/title values of \"undefined\"/\"null\"/\"\" on new open-issues records, and grep the existing open/closed issues for other instances."
+    },
+    {
+      "severity": "minor",
+      "description": "The decider summary for 2026-09-27T09:10Z says \"EXP-687 (eclipse magnetic-bucket draft rev2) awaits curmudgeon cycle-2 deep-attack review\" and, in the same summary, reports curmudgeon queue depth 0. Those two statements are inconsistent, and the first gives the operator a false sense that the loop is moving.",
+      "recommendation": "Decider self-test: when the summary claims an item awaits curmudgeon, assert a matching queue entry exists; otherwise say \"awaiting queue push\"."
+    }
+  ],
+  "unresolved_prior_cycle": [],
+  "stronger_arguments": [
+    {
+      "description": "The scheduler-surface confusion is itself a reproducibility lesson that mirrors our Timestamp Error critique: a monitoring claim should name the instrument it read. The poller did name list_triggers, which is why this refutation was cheap. Keep that habit in poller output.",
+      "sources": [
+        "monitor/changes/chg-20260927-0004-001.json"
+      ]
+    }
+  ],
+  "kernel_of_truth": {
+    "description": "The poller is right that nothing downstream will run automatically. No dome-* task has a live recurring schedule, so any dome movement it flags waits for an operator hand-fire (monitor/changes/chg-20260927-0004-001.json:description). Hole 3 is a live instance of exactly that risk.",
+    "why_it_doesnt_save_claim": "\"Nothing fires automatically\" is the documented quiet-mode design (CLAUDE.md, commit cdc2f18), not task deletion. The tasks exist and have fired today (list_scheduled_tasks lastRunAt values). The correct escalation is \"hand-fire propagation after analyst runs\", not \"recreate 13 deleted tasks\"."
+  },
+  "recommended_action": "minor_edit",
+  "summary_for_decider": "(1) Close ISS-3102 not-a-defect: all 14 dome-* tasks are present in the Cowork scheduler (disabled per documented quiet mode; curmudgeon itself fired 10:29Z). Also populate its \"undefined\" description. (2) Treat ISS-3092 as expected quiet-mode state. (3) BLOCKER on the eclipse loop: the EXP-687 rev2 draft and 7 other analyst files are FUSE-only. Operator should land them via workspace-sync or dome-commit, and then push a deep-attack queue item for ECLIPSE-2026-08-12-MAGNETIC-RESULTS rev2. The operator verdict-framing question does not block the cycle-2 review. (4) poller.md should check list_scheduled_tasks and the CLAUDE.md quiet-mode block before raising pipeline-health criticals.",
+  "text_fingerprint": {
+    "verdict": "n/a (infrastructure audit)"
+  },
+  "deeper_analysis": "Considered the other side: could the poller be right and list_scheduled_tasks be stale? No. Stale listings cannot produce lastRunAt timestamps after the poll time (07:35Z, 09:02Z, 10:29Z on 2026-09-27), and the scheduler fired this dome-curmudgeon run from its dome-curmudgeon SKILL.md. Also considered whether this run should have reviewed rev2 directly, since the operator probably hand-fired curmudgeon for the eclipse loop. I declined. The dispatcher returned audit priority; there is no queue_id; the file is not in git (content-exists guard fails for clone readers). A frozen-prediction verdict review needs a clean PROP-009 trail more than a one-day speedup. If the operator wants it done immediately, pushing the queue item and re-firing curmudgeon costs one run.",
+  "citation_check": {
+    "citations_verified": [
+      "list_scheduled_tasks output 2026-09-27 (14 dome-* tasks present, all enabled=false)",
+      "git ls-tree HEAD for the 8 FUSE-only paths (absent)",
+      "monitor/curmudgeon/priority-queue.json queue_total 0"
+    ],
+    "citations_failed": [],
+    "citations_unchecked": [
+      "list_triggers surface (not available to this agent)"
+    ]
+  }
+}
