@@ -220,12 +220,20 @@ The table below records each agent's configured cron *when enabled*. All prompts
 
 ### Active hand-run work (quiet mode)
 
-**Eclipse 2026-08-12 magnetic bucket — revision loop in progress (operator hand-fired).** The geometric verdict is settled (`PRED-ECLIPSE-2026-GEOMETRY` = falsified, landed August). The magnetic / Schumann / SG-gravity buckets (`PRED-095`, `PRED-TIER-1`, `PRED-TIER-3`, `PRED-R005`) remain `our_verdict: pending` and must stay pending until the loop below completes. State as of 2026-09-27:
+**Eclipse 2026-08-12 magnetic bucket — revision loop in progress (operator hand-fired).** The geometric verdict is settled (`PRED-ECLIPSE-2026-GEOMETRY` = falsified, landed August). The magnetic / Schumann / SG-gravity buckets (`PRED-095`, `PRED-TIER-1`, `PRED-TIER-3`, `PRED-R005`) remain `our_verdict: pending` and must stay pending until the loop below completes. State as of 2026-09-27 (see the 2026-09-28 update below):
 1. Analyst (2026-09-26) drafted `monitor/analyst/analysis-records/eclipse-2026-08-12-magnetic-results-DRAFT-20260926T072322.json` from INTERMAGNET + Dst data (headline: raw −13 to −19 nT depressions pre-date first contact and track a storm-recovery ring-current offset; eclipse-attributable residual ≈ 0 ± 5 nT).
 2. Curmudgeon frozen-prediction-review (queue_id 608, `monitor/curmudgeon/reviews/ECLIPSE-2026-08-12-MAGNETIC-RESULTS-proposal.json`) returned **REVISE before publication — `major_rewrite`**: 1 critical (the Tier-1 "falsified" verdict tested a different quantity than the dome registered — the dome's Tier-1 claim is the INTERMAGNET Z-component, Z-down, timed to umbra-contact geometry), 5 major (asymmetric Kp gate favouring our side; our pre-registered criteria fire on control days; window-mean vs peak detrend attenuates signal; B2-M-002 and B1-G-005 unscored; SC-3 independently confirmed as a failed claim of ours), plus 4 moderate / 3 minor.
 3. Decider catch-up (2026-09-26) routed it as commissioned revision **EXP-687**, predictions left pending, no integration.
 4. Next: analyst reworks (same draft path, new timestamp, holes 1–6 minimum) → curmudgeon re-review (deep-attack) → **operator approval + independent OTS stamp** (post_event_protocol step 6) → only then decider integrates and `predictions/eclipse-2026-08-12-results.json` is committed.
 Do not shortcut this chain: publishing a verdict on a frozen, OTS-anchored prediction without the adversarial pass is precisely the failure mode the review criticises in the dome.
+
+**Update 2026-09-28.** Rev2 (EXP-687) went through curmudgeon cycle 2: REVISE (targeted). Holes are filed as ISS-3103/3104 and routed to the analyst for rev3. **Eclipse erratum 1** (`predictions/eclipse-2026-08-12-erratum-2026-09-27.json` + `.ots`, commit 9f1a184) owns two errors of ours:
+- B1-G-005: Hartland 88 % was never computed; the correct value is 94.4 %, calculated by `predictions/eclipse-2026-08-12-hartland-local-circumstances.py`.
+- B1-M-001: mis-cited source and a borrowed, non-diagnostic range.
+
+The erratum also introduces `failure_attribution` (`model` | `analyst_representation`) and a symmetry obligation: a dome miss is a model failure only if the test has power at the dome formula's own per-station amplitudes. Rev3 obligations are in HNOTE-ANALYST-ECLIPSE-ERRATUM-1-REV3-2026-09-27. **Still open (operator):** the symmetric labelling choice. Either (A) PRED-095/TIER-1 falsified and our B1-M-001 band refuted under the same post-hoc rule, or (B) both pending with 'precondition unmet; claimed signal absent at detectable amplitude'. Frozen-prediction discipline now lives in the prompts: analyst Mode 5 requires `provenance_type` computed/cited, and the curmudgeon recomputes our side before approving a freeze.
+
+**Staging rule (learned 2026-09-27, ISS-3105).** After staging files into the FUSE workspace plus `monitor/commit-queue/pending.json`, fire dome-commit **immediately**, with no other agent run in between. A decider (or any agent) run syncs git back over FUSE and silently reverts uncommitted staged edits. dome-commit's content-mismatch check caught this once; don't rely on it.
 
 ### Data Flow (summary)
 
