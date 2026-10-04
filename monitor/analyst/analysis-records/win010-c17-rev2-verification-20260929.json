@@ -1,0 +1,392 @@
+{
+ "_meta": {
+  "title": "EXP-684-rev2 (WIN-010 c17) verification record: BOU 2017 Z baseline check, local circumstances, citation checks, dome status snapshot",
+  "captured_at": "2026-09-29T21:30:10Z",
+  "captured_by": "dome-analyst (Opus 5.5) Mode 1, run 2026-09-29",
+  "reproduce": "Save each scripts[].source to its filename and run with python3 (pip install skyfield numpy). Script 1 needs day_2017-08-DD.txt minute files fetched from INTERMAGNET via https://imag-data.bgs.ac.uk/GIN_V1/GINServices?Request=GetData&format=IAGA2002&testObsys=0&observatoryIagaCode=BOU&samplesPerDay=minute&dataStartDate=2017-08-DD&dataDuration=1&publicationState=definitive&orientation=native (DD=10..31) and kp.json from https://kp.gfz.de/app/json/?start=2017-08-10T00:00:00Z&end=2017-08-31T23:59:59Z&index=Kp&status=def. Input sha256 values are recorded in the output. Note: the USGS geomag web service returns Z=99999 (missing) for BOU in August 2017; use INTERMAGNET definitive."
+ },
+ "scripts": [
+  {
+   "filename": "win010_bou2017_z_check.py",
+   "sha256": "4ee0d96d7293df4b38e668a6b8a21b7925a329a7a622c953bd2f3a62fb29fb22",
+   "source": "#!/usr/bin/env python3\n\"\"\"WIN-010 / EXP-684-rev2 hole-1 check: what does BOU Z do on 2017-08-21 relative to\n(a) the dome's OPEN-009 baseline (2017-08-20 daily mean) and (b) same-UT quiet-day references?\nInputs: USGS geomag web service IAGA-2002 minute files day_2017-08-DD.txt (BOU, variation/best-available),\n        GFZ definitive Kp JSON kp.json (2017-08-10..31).\nData: INTERMAGNET definitive via BGS GIN (publicationState=definitive). Eclipse at BOU (DE421 / timeanddate): 16:23-19:14 UT, max 17:46-17:47 UT. Dome minimum claim: 17:20 UT.\"\"\"\nimport json, glob, statistics as st, hashlib, sys, os\nD = os.path.dirname(os.path.abspath(__file__))\ndef load(day):\n    f = os.path.join(D, f'day_2017-08-{day:02d}.txt'); rows = {}\n    hdr = None\n    for ln in open(f):\n        if ln.startswith('DATE'): hdr = ln.split(); continue\n        if hdr and ln[:4].isdigit():\n            p = ln.split(); t = p[1][:5]; vals = dict(zip(hdr[3:], map(float, p[3:])))\n            rows[t] = vals\n    return rows, hdr\ndef key(h, comp): return [k for k in h[3:] if k.endswith(comp)][0]\nd21, h = load(21); ZK, XK = key(h,'Z'), key(h,'X')\ndef good(v): return v < 88888\ndef series(rows, k): return {t: v[k] for t, v in rows.items() if good(v[k])}\ndef tmin(t): return int(t[:2])*60+int(t[3:5])\ndef win(s, a, b): return {t: v for t, v in s.items() if a <= tmin(t) <= b}\nE0, E1, EMAX = tmin('16:23'), tmin('19:14'), tmin('17:46')\nout = {}\n# (1) dome OPEN-009 replication: Aug20 daily mean vs Aug21 eclipse-window min\nz20 = series(load(20)[0], ZK); z21 = series(d21, ZK)\nm20 = st.mean(z20.values()); w21 = win(z21, E0, E1); tm = min(w21, key=w21.get)\nout['dome_open009_replication'] = {'aug20_daily_mean_Z': round(m20,2), 'aug21_eclipse_window_min_Z': round(w21[tm],2),\n  'min_time_ut': tm, 'difference_nT': round(w21[tm]-m20,2), 'dome_published': {'aug20_mean':47731.12,'eclipse_min':47712.90,'diff':-18.22}}\n# (2) same statistic on a non-eclipse day: Aug20 itself (min in 16:23-19:14 UT vs Aug19 daily mean) and each quiet day vs own daily mean\nkp = json.load(open(os.path.join(D,'kp.json')))\ndaykp = {}\nfor t, v in zip(kp['datetime'], kp['Kp']): daykp.setdefault(int(t[8:10]), []).append(v)\ncands = [d for d in range(10,32) if d != 21 and len(daykp.get(d,[]))==8]\nquiet = sorted(cands, key=lambda d: (max(daykp[d]), sum(daykp[d])))[:5]\nout['quiet_days_selected'] = {'rule':'5 days in 2017-08-10..31 (excl. 21) with lowest daily max Kp, ties by daily Kp sum', 'days':[f'2017-08-{d:02d}' for d in sorted(quiet)], 'max_kp':{f'2017-08-{d:02d}':max(daykp[d]) for d in sorted(quiet)}}\nsame_stat = {}\nfor d in sorted(quiet):\n    zd = series(load(d)[0], ZK); wd = win(zd, E0, E1); tt = min(wd, key=wd.get)\n    same_stat[f'2017-08-{d:02d}'] = {'window_min_minus_daily_mean_nT': round(wd[tt]-st.mean(zd.values()),2), 'min_time_ut': tt}\nout['same_statistic_on_quiet_days'] = same_stat\n# (3) quiet-day-referenced dZ, dX on eclipse day (mean of 5 quiet days at same UT)\nref = {}\nfor comp,K in (('Z',ZK),('X',XK)):\n    qs = [series(load(d)[0], K) for d in quiet]; s21 = series(d21, K)\n    dd = {t: s21[t]-st.mean(q[t] for q in qs) for t in s21 if all(t in q for q in qs)}\n    # remove offset using pre-eclipse hour 15:20-16:20 UT\n    pre = st.mean(v for t,v in dd.items() if tmin('15:20')<=tmin(t)<=tmin('16:20'))\n    d2 = {t: v-pre for t,v in dd.items()}\n    w = win(d2, E0, E1)\n    ref[comp] = {'at_17:20': round(d2['17:20'],2), 'at_17:46': round(d2['17:46'],2),\n                 'window_min': round(min(w.values()),2), 'window_min_time': min(w,key=w.get),\n                 'window_max': round(max(w.values()),2), 'window_max_time': max(w,key=w.get)}\n    # Meza-style: 2h window centred on max, linear detrend of eclipse-minus-reference\n    w2 = win(dd, EMAX-60, EMAX+60); ts = sorted(w2, key=tmin); xs=[tmin(t) for t in ts]; ys=[w2[t] for t in ts]\n    n=len(xs); mx=sum(xs)/n; my=sum(ys)/n; b=sum((x-mx)*(y-my) for x,y in zip(xs,ys))/sum((x-mx)**2 for x in xs)\n    r = {t: y-(my+b*(x-mx)) for t,x,y in zip(ts,xs,ys)}\n    ref[comp]['meza_style_2h_detrended'] = {'at_17:20': round(r['17:20'],2), 'at_17:46': round(r['17:46'],2), 'min': round(min(r.values()),2), 'min_time': min(r,key=r.get), 'max': round(max(r.values()),2), 'max_time': max(r,key=r.get)}\nout['eclipse_day_minus_quiet_mean'] = ref\nout['inputs_sha256'] = {os.path.basename(f): hashlib.sha256(open(f,'rb').read()).hexdigest() for f in sorted(glob.glob(os.path.join(D,'day_*.txt')))+[os.path.join(D,'kp.json')]}\nout['data_header_type'] = [l.strip() for l in open(os.path.join(D,'day_2017-08-21.txt')) if 'Data Type' in l or 'Data Interval' in l][:2]\nprint(json.dumps(out, indent=1))\n",
+   "output_sha256": "10308a6413c33d01f99dbc0a10f756e58a22f225e34aad92e5cf0187bd4a08a1",
+   "output": {
+    "dome_open009_replication": {
+     "aug20_daily_mean_Z": 47731.12,
+     "aug21_eclipse_window_min_Z": 47712.9,
+     "min_time_ut": "19:07",
+     "difference_nT": -18.22,
+     "dome_published": {
+      "aug20_mean": 47731.12,
+      "eclipse_min": 47712.9,
+      "diff": -18.22
+     }
+    },
+    "quiet_days_selected": {
+     "rule": "5 days in 2017-08-10..31 (excl. 21) with lowest daily max Kp, ties by daily Kp sum",
+     "days": [
+      "2017-08-15",
+      "2017-08-25",
+      "2017-08-26",
+      "2017-08-28",
+      "2017-08-30"
+     ],
+     "max_kp": {
+      "2017-08-15": 1.0,
+      "2017-08-25": 1.667,
+      "2017-08-26": 1.333,
+      "2017-08-28": 0.667,
+      "2017-08-30": 2.0
+     }
+    },
+    "same_statistic_on_quiet_days": {
+     "2017-08-15": {
+      "window_min_minus_daily_mean_nT": -21.65,
+      "min_time_ut": "17:40"
+     },
+     "2017-08-25": {
+      "window_min_minus_daily_mean_nT": -27.29,
+      "min_time_ut": "18:04"
+     },
+     "2017-08-26": {
+      "window_min_minus_daily_mean_nT": -10.23,
+      "min_time_ut": "18:55"
+     },
+     "2017-08-28": {
+      "window_min_minus_daily_mean_nT": -9.27,
+      "min_time_ut": "19:14"
+     },
+     "2017-08-30": {
+      "window_min_minus_daily_mean_nT": -10.32,
+      "min_time_ut": "17:16"
+     }
+    },
+    "eclipse_day_minus_quiet_mean": {
+     "Z": {
+      "at_17:20": 0.75,
+      "at_17:46": 4.91,
+      "window_min": -1.43,
+      "window_min_time": "16:27",
+      "window_max": 5.45,
+      "window_max_time": "17:52",
+      "meza_style_2h_detrended": {
+       "at_17:20": -0.88,
+       "at_17:46": 2.17,
+       "min": -2.71,
+       "min_time": "18:46",
+       "max": 2.48,
+       "max_time": "17:50"
+      }
+     },
+     "X": {
+      "at_17:20": 9.0,
+      "at_17:46": 18.28,
+      "window_min": -5.6,
+      "window_min_time": "16:31",
+      "window_max": 18.32,
+      "window_max_time": "17:45",
+      "meza_style_2h_detrended": {
+       "at_17:20": 1.16,
+       "at_17:46": 7.18,
+       "min": -8.25,
+       "min_time": "18:46",
+       "max": 7.35,
+       "max_time": "17:45"
+      }
+     }
+    },
+    "inputs_sha256": {
+     "day_2017-08-10.txt": "69bbfd11f033fe1e74138fcc988328345876a3403d4d1a448570e2e0f48be524",
+     "day_2017-08-11.txt": "17c1f1d7a13ff5283a8a9e8e0b3f5f1a5121149d40af5ad18cb4ead731628e11",
+     "day_2017-08-12.txt": "99d7ec2a568245bed68d3d1a7eab3392973c16a1479d5daedd62cc905060c815",
+     "day_2017-08-13.txt": "58fe9d12db972f849bf148f573602b12f1adfa0f8655897902e8a40c8dc1d5cb",
+     "day_2017-08-14.txt": "633aa09fb36f7929339fdf088e51aca6e36a7a0cb4f53df830e40750ceca4a26",
+     "day_2017-08-15.txt": "c57971e649a8063b315fce6474e110d74fd547826a8e392db35830174c566311",
+     "day_2017-08-16.txt": "3bc53240d85c05a1a8f332c1ce9a938196dc9c2a666dd606e43532081794a4bb",
+     "day_2017-08-17.txt": "69c2849f0b7c577e2d19f9039489886503d94679472372d9d61c9269cfd2718c",
+     "day_2017-08-18.txt": "24b655b04384653e8eb0ec8a818cf963127f18c11f0411761ce281ae2a327154",
+     "day_2017-08-19.txt": "e3b68315c4e4fc89dd0cbeef9f5f123e4b6cf8b8fb05109138000ca4c1fa082b",
+     "day_2017-08-20.txt": "39d47f2aed371c249ce6b234d6bcfe95cc4d8173231977fa453c91835070adca",
+     "day_2017-08-21.txt": "b21eeb41b76f0b6730504f560ed1e4fa1c99a7dcb687b57adc009f1e50abee55",
+     "day_2017-08-22.txt": "02e85b647a37d6a722f744f6e5048982601cdc80b66e76dd225870cbeb955070",
+     "day_2017-08-23.txt": "755b8c8986babb79eb29c3e33dfa59a3b0d0d6b9f576de7ab5db703356b343be",
+     "day_2017-08-24.txt": "b82c126bad327e8d112ddcee271efe67352bb4d413af4f1aadef74dc736e6083",
+     "day_2017-08-25.txt": "4cd603db4f389f8d250d8babd145f12f05ba4ee786ad797d937c033ec9f2c925",
+     "day_2017-08-26.txt": "64b248700ba314dec781c36de6e13421b7a1ca6b322ed69bc00b87839cca948a",
+     "day_2017-08-27.txt": "6ebf4c3b36f5d8970627667e94f8b3d466e8971c1bb14817aaf96080b27608c5",
+     "day_2017-08-28.txt": "3ecb181cd265661d400aad30ba9eb2d921f2a41f0b2913773f3733938d5855dd",
+     "day_2017-08-29.txt": "68375f4c8e13ce5b4edf92fbb2b373ca9d595a5a1df9005f511ad36f942364a8",
+     "day_2017-08-30.txt": "2f210d9a73a48e5903c7be146c47176c027b516a0356fafb4fe83b87409707d5",
+     "day_2017-08-31.txt": "26509d3a1861b7b0bd28e44a8d68638ceb8efca4c7e9cbcfc1f2e4e588ea6e2f",
+     "kp.json": "4b35c42276aa873b97a526f222b55218bed14b5d09c6ebee76dbd106053e893d"
+    },
+    "data_header_type": [
+     "Data Interval Type     Average 1-Minute (00:30-01:29)               |",
+     "Data Type              Definitive                                   |"
+    ]
+   }
+  },
+  {
+   "filename": "win010_local_circumstances.py",
+   "sha256": "5c1ce9e2bfd69e9121094582869006543c36117bd4d11147ad5329d74ccaff1f",
+   "source": "#!/usr/bin/env python3\n\"\"\"EXP-684-rev2 (WIN-010 c17 holes 3 and 8): eclipse local circumstances + Sun altitude checks.\nMethod identical to predictions/eclipse-2026-08-12-hartland-local-circumstances.py (Skyfield + JPL DE440s,\ntopocentric apparent Sun/Moon, 1 s scan, obscuration = disc-area overlap). Also Kp-slot assignment of each\nstation's maximum (GFZ 3-hour slots) and Boulder Sun altitude / sunset for the 2016-03-09 eclipse clock window.\"\"\"\nimport json, math, numpy as np\nfrom skyfield.api import load, wgs84\nfrom skyfield import almanac\nR_SUN, R_MOON = 695700.0, 1737.4\nts = load.timescale(); eph = load('de440s.bsp'); earth, sun, moon = eph['earth'], eph['sun'], eph['moon']\ndef ov(d,a,b):\n    if d>=a+b: return 0.0\n    if d<=abs(b-a): return 1.0 if b>=a else b*b/(a*a)\n    p=(a*a*math.acos((d*d+a*a-b*b)/(2*d*a))+b*b*math.acos((d*d+b*b-a*a)/(2*d*b))-0.5*math.sqrt((-d+a+b)*(d+a-b)*(d-a+b)*(d+a+b)))\n    return p/(math.pi*a*a)\ndef lc(name, lat, lon, y, mo, dd, h0, hours, elev=100.0):\n    site = earth + wgs84.latlon(lat, lon, elevation_m=elev)\n    t = ts.utc(y, mo, dd, h0, 0, np.arange(0, hours*3600, 1.0))\n    s = site.at(t).observe(sun).apparent(); m = site.at(t).observe(moon).apparent()\n    sep = s.separation_from(m).radians; rs = np.arcsin(R_SUN/s.distance().km); rm = np.arcsin(R_MOON/m.distance().km)\n    alt = s.altaz()[0].degrees\n    idx = np.where(sep < rs+rm)[0]\n    if len(idx)==0: return {'site':name,'eclipse':False}\n    i = idx[np.argmin(sep[idx])]; f = lambda k: t[k].utc_strftime('%H:%M:%S')\n    tot = np.where(sep < rm-rs)[0]\n    return {'site':name,'lat':lat,'lon':lon,'first_contact_utc':f(idx[0]),'maximum_utc':f(i),'last_contact_utc':f(idx[-1]),\n            'obscuration_pct':round(100*ov(sep[i],rs[i],rm[i]),1),'magnitude':round((rs[i]+rm[i]-sep[i])/(2*rs[i]),3),\n            'sun_alt_at_max_deg':round(float(alt[i]),1),'sun_alt_at_first_contact_deg':round(float(alt[idx[0]]),1),\n            'totality_utc':[f(tot[0]),f(tot[-1])] if len(tot) else None,\n            'kp_slot_of_max_utc':f\"{(t[i].utc.hour//3)*3:02d}-{(t[i].utc.hour//3)*3+3:02d}\"}\nout = {'method':'Skyfield + JPL DE440s, topocentric apparent, 1 s scan; obscuration by disc-area overlap'}\nst = [('EBR',40.957,0.333),('SPT',39.55,-4.35),('COI',40.222,-8.411),('CLF',48.025,2.26),('HAD',50.995,-4.482),\n      ('NGK',52.072,12.675),('ESK',55.317,-3.2),('LER',60.133,-1.184),('GUI',28.317,-16.44)]\nout['2026-08-12'] = [lc(n,a,b,2026,8,12,16,4.5) for n,a,b in st]\nout['2016-03-09_GUA'] = lc('GUA',13.588,144.867,2016,3,9,0,4.5)\nout['2017-08-21_BOU'] = lc('BOU',40.137,-105.237,2017,8,21,16,4,1682)\n# Boulder Sun altitude during the GUA 2016 eclipse clock window, and Boulder sunset on 2016-03-08 local (= 2016-03-09 UT)\nbou = wgs84.latlon(40.137,-105.237,elevation_m=1682)\ndef alt_at(h,mi):\n    t = ts.utc(2016,3,9,h,mi); return round(float((earth+bou).at(t).observe(sun).apparent().altaz()[0].degrees),1)\ng = out['2016-03-09_GUA']\nh1,m1 = map(int,g['first_contact_utc'][:5].split(':')); h2,m2 = map(int,g['last_contact_utc'][:5].split(':'))\ntt, yy = almanac.find_discrete(ts.utc(2016,3,9,0), ts.utc(2016,3,9,4), almanac.sunrise_sunset(eph, bou))\nout['boulder_during_GUA_2016_window'] = {'sun_alt_at_GUA_first_contact':alt_at(h1,m1),'sun_alt_at_GUA_max':alt_at(1,52),\n     'sun_alt_at_GUA_last_contact':alt_at(h2,m2),'boulder_sunset_utc':[x.utc_strftime('%H:%M') for x,y in zip(tt,yy) if not y]}\nprint(json.dumps(out, indent=1))\n",
+   "output_sha256": "6ac3016d3b7fd6c488c6497352be3b68ef76a8aeeac19a3b27d275d1b6daf335",
+   "output": {
+    "method": "Skyfield + JPL DE440s, topocentric apparent, 1 s scan; obscuration by disc-area overlap",
+    "2026-08-12": [
+     {
+      "site": "EBR",
+      "lat": 40.957,
+      "lon": 0.333,
+      "first_contact_utc": "17:35:55",
+      "maximum_utc": "18:30:31",
+      "last_contact_utc": "19:21:51",
+      "obscuration_pct": 100.0,
+      "magnitude": 1.009,
+      "sun_alt_at_max_deg": 4.7,
+      "sun_alt_at_first_contact_deg": 14.8,
+      "totality_utc": [
+       "18:29:45",
+       "18:31:17"
+      ],
+      "kp_slot_of_max_utc": "18-21"
+     },
+     {
+      "site": "SPT",
+      "lat": 39.55,
+      "lon": -4.35,
+      "first_contact_utc": "17:38:18",
+      "maximum_utc": "18:33:55",
+      "last_contact_utc": "19:26:00",
+      "obscuration_pct": 98.8,
+      "magnitude": 0.986,
+      "sun_alt_at_max_deg": 7.2,
+      "sun_alt_at_first_contact_deg": 17.8,
+      "totality_utc": null,
+      "kp_slot_of_max_utc": "18-21"
+     },
+     {
+      "site": "COI",
+      "lat": 40.222,
+      "lon": -8.411,
+      "first_contact_utc": "17:36:44",
+      "maximum_utc": "18:33:36",
+      "last_contact_utc": "19:26:41",
+      "obscuration_pct": 97.2,
+      "magnitude": 0.972,
+      "sun_alt_at_max_deg": 10.4,
+      "sun_alt_at_first_contact_deg": 21.2,
+      "totality_utc": null,
+      "kp_slot_of_max_utc": "18-21"
+     },
+     {
+      "site": "CLF",
+      "lat": 48.025,
+      "lon": 2.26,
+      "first_contact_utc": "17:23:45",
+      "maximum_utc": "18:18:45",
+      "last_contact_utc": "19:10:43",
+      "obscuration_pct": 92.9,
+      "magnitude": 0.937,
+      "sun_alt_at_max_deg": 7.2,
+      "sun_alt_at_first_contact_deg": 16.3,
+      "totality_utc": null,
+      "kp_slot_of_max_utc": "18-21"
+     },
+     {
+      "site": "HAD",
+      "lat": 50.995,
+      "lon": -4.482,
+      "first_contact_utc": "17:17:42",
+      "maximum_utc": "18:14:47",
+      "last_contact_utc": "19:08:38",
+      "obscuration_pct": 94.4,
+      "magnitude": 0.949,
+      "sun_alt_at_max_deg": 12.7,
+      "sun_alt_at_first_contact_deg": 21.7,
+      "totality_utc": null,
+      "kp_slot_of_max_utc": "18-21"
+     },
+     {
+      "site": "NGK",
+      "lat": 52.072,
+      "lon": 12.675,
+      "first_contact_utc": "17:16:22",
+      "maximum_utc": "18:09:22",
+      "last_contact_utc": "18:59:54",
+      "obscuration_pct": 85.4,
+      "magnitude": 0.878,
+      "sun_alt_at_max_deg": 3.4,
+      "sun_alt_at_first_contact_deg": 11.3,
+      "totality_utc": null,
+      "kp_slot_of_max_utc": "18-21"
+     },
+     {
+      "site": "ESK",
+      "lat": 55.317,
+      "lon": -3.2,
+      "first_contact_utc": "17:09:56",
+      "maximum_utc": "18:07:01",
+      "last_contact_utc": "19:01:10",
+      "obscuration_pct": 91.0,
+      "magnitude": 0.922,
+      "sun_alt_at_max_deg": 13.6,
+      "sun_alt_at_first_contact_deg": 21.8,
+      "totality_utc": null,
+      "kp_slot_of_max_utc": "18-21"
+     },
+     {
+      "site": "LER",
+      "lat": 60.133,
+      "lon": -1.184,
+      "first_contact_utc": "17:01:18",
+      "maximum_utc": "17:58:15",
+      "last_contact_utc": "18:52:35",
+      "obscuration_pct": 88.3,
+      "magnitude": 0.901,
+      "sun_alt_at_max_deg": 14.2,
+      "sun_alt_at_first_contact_deg": 21.3,
+      "totality_utc": null,
+      "kp_slot_of_max_utc": "15-18"
+     },
+     {
+      "site": "GUI",
+      "lat": 28.317,
+      "lon": -16.44,
+      "first_contact_utc": "17:58:00",
+      "maximum_utc": "18:53:36",
+      "last_contact_utc": "19:45:05",
+      "obscuration_pct": 69.3,
+      "magnitude": 0.751,
+      "sun_alt_at_max_deg": 10.6,
+      "sun_alt_at_first_contact_deg": 22.8,
+      "totality_utc": null,
+      "kp_slot_of_max_utc": "18-21"
+     }
+    ],
+    "2016-03-09_GUA": {
+     "site": "GUA",
+     "lat": 13.588,
+     "lon": 144.867,
+     "first_contact_utc": "00:22:24",
+     "maximum_utc": "01:52:10",
+     "last_contact_utc": "03:24:23",
+     "obscuration_pct": 84.1,
+     "magnitude": 0.866,
+     "sun_alt_at_max_deg": 69.6,
+     "sun_alt_at_first_contact_deg": 53.4,
+     "totality_utc": null,
+     "kp_slot_of_max_utc": "00-03"
+    },
+    "2017-08-21_BOU": {
+     "site": "BOU",
+     "lat": 40.137,
+     "lon": -105.237,
+     "first_contact_utc": "16:23:03",
+     "maximum_utc": "17:46:28",
+     "last_contact_utc": "19:13:48",
+     "obscuration_pct": 93.7,
+     "magnitude": 0.944,
+     "sun_alt_at_max_deg": 57.0,
+     "sun_alt_at_first_contact_deg": 44.7,
+     "totality_utc": null,
+     "kp_slot_of_max_utc": "15-18"
+    },
+    "boulder_during_GUA_2016_window": {
+     "sun_alt_at_GUA_first_contact": 6.5,
+     "sun_alt_at_GUA_max": -10.6,
+     "sun_alt_at_GUA_last_contact": -27.8,
+     "boulder_sunset_utc": [
+      "01:01"
+     ]
+    }
+   }
+  }
+ ],
+ "literature_checks": {
+  "chapman_1933": {
+   "doi": "10.1029/TE038i003p00175",
+   "crossref_verified": "2026-09-29",
+   "abstract_conclusion": "Crossref abstract: Chapman inferred the magnetic effects an E-layer Sq system would show in an eclipse, then judged that the eclipse observations then available showed no regular effect of that type; a final decision was to await further observations."
+  },
+  "malin_2000": {
+   "doi": "10.1046/j.1365-246X.2000.00061.x",
+   "crossref_verified": "2026-09-29",
+   "bibliographic": "Malin, Ozcan, Tank, Tuncer, Yazici-Cakin (2000) Geophys. J. Int. 140(3):F13-F16",
+   "content_status": "Crossref has no abstract; content not opened. NOT used as a quantitative source in EXP-684-rev2."
+  },
+  "meza_2022": {
+   "doi": "10.1016/j.asr.2021.07.029",
+   "crossref_verified": "2026-09-29",
+   "bibliographic": "Meza, Bosch, Natali, Eylenstein (2022) Ionospheric and geomagnetic response to the total solar eclipse on 21 August 2017. Advances in Space Research 69(1):16-25",
+   "preprint": "arXiv:2107.12327v1 (read in full 2026-09-29)",
+   "method": "BOU/NEW/VIC 1-min INTERMAGNET; reference = mean of five nearest quiet days; 15-min smoothing; 2 h window centred on maximum, linear detrend; compared with Ashour-Chapman thin-current-sheet model driven by GNSS TEC depletion (Hvozdara & Prigancova 2002 modification)",
+   "text_findings": "BOU maximum occultation 92.4% at 17:46 UT (11:46 LT). BOU: dX positive with maximum near t0; dY positive then negative; dZ has the lowest amplitude and is positive with its maximum near t0. Model agreement at BOU described as very good; VIC/NEW (north of the path) show dZ negative after t0.",
+   "figure_read_values": "Read by eye from preprint Figure 7 (top row, BOU): dX peak about +10 nT near 17:46 UT; dZ about +3 to +4 nT; model dX about +8.5, dZ about +3. Approximate (figure reading, not tabulated)."
+  },
+  "korte_2001": {
+   "doi": "10.1029/2001JA900006",
+   "status": "title/venue from search result only; not opened; not cited in EXP-684-rev2 prose"
+  }
+ },
+ "dome_status_history_eclipse_entry_2026-09-29": {
+  "url": "https://john09289.github.io/predictions/data/status_history.json",
+  "records": 2486,
+  "last_record_timestamp": "2026-09-29T18:20:05Z",
+  "entry": {
+   "name": "Eclipse Magnetic Anomaly (Aug 12 2026)",
+   "formula": "ΔB = -18.22 × coverage × FSF",
+   "predicted": -28.9,
+   "observed": "PENDING",
+   "pass": null,
+   "days_remaining": -49,
+   "falsification": "Fails if measured anomaly within ±3 nT of 0",
+   "source": "EBR/SPT INTERMAGNET Aug 12 2026"
+  }
+ },
+ "dome_predictions_html_quotes_(monitor/baseline/03-predictions.txt, git 429cb1c)": {
+  "PRED-095": "PRED-095 — Aug 12 2026 Eclipse Magnetic Anomaly −17.8 nT ±2 nT | Registered: 2026-04-04 | ECM formula: ΔB = −18.22 × coverage × FSF = −18.22 × 0.978 × (1 − 0.022) = −17.8 nT ... Requires Kp<2 within 3 hours of totality. Station: EBR or SPT (INTERMAGNET). Falsification: Measured H-component anomaly within ±3 nT of 0 during eclipse totality.",
+  "precondition_1": "Eclipse predictions valid only if Kp < 2 on August 12, 2026.",
+  "precondition_2": "Pre-condition: Kp < 2 entire Aug 9–12 window.",
+  "revised_rule": "IF Kp ≥ 3, signal will be buried in storm noise (not a falsification).",
+  "deadline": "Post-eclipse: Pull INTERMAGNET + IGETS within 72h. Registry: Post raw plots, r-values, asymmetry index, verdict — public record.",
+  "data_availability": "Instrument: Public INTERMAGNET 1-min Z-component (available within 24h post-eclipse)",
+  "arithmetic": "−18.22 × 0.978 = −17.82; × (1 − 0.022) = −17.43. The printed −17.8 omits the (1 − 0.022) factor."
+ },
+ "dome_ai_context_quote_(monitor/baseline/07-ai-context.txt)": "WIN-010 | BOU 2017 eclipse | -10.9 nT at 17:20 UTC. Tracks geometry not time. | INTERMAGNET",
+ "aacgm_offsets_deg": {
+  "note": "dipole minus AACGM-v2 from win010-c16-verification-snapshots-20260927.json aacgm_vs_dipole (EBR dipole 42.9 as pre-registered)",
+  "EBR": 9.6,
+  "SPT": 11.3,
+  "COI": 11.7,
+  "CLF": 6.8,
+  "HAD": 6.9,
+  "NGK": 4.0,
+  "ESK": 5.6,
+  "LER": 4.3,
+  "range": "4-12"
+ },
+ "gfz_kp_slots_used": {
+  "source": "monitor/analyst/analysis-records/win010-c16-verification-snapshots-20260927.json gfz_kp",
+  "2016-03-09": {
+   "00-03": "2o (2.000)",
+   "03-06": "2- (1.667)"
+  },
+  "2017-08-21": {
+   "06-09": "3o",
+   "15-18": "1+ (1.333)",
+   "18-21": "2o (2.000)"
+  },
+  "2024-04-08": {
+   "15-18": "1+",
+   "18-21": "0+"
+  },
+  "2026-08-12": {
+   "15-18": "1+ (1.333)",
+   "18-21": "2+ (2.333)",
+   "21-24": "1o (1.000)"
+  },
+  "2026-08-09..12 max": "3o (2026-08-11 15-18)"
+ }
+}
