@@ -1,0 +1,312 @@
+{
+  "_meta": {
+    "title": "EXP-685 support: dome eclipse coverage tables vs computed obscuration, 2026-08-12",
+    "created_at": "2026-10-04T11:53:18.212Z",
+    "created_by": "dome-analyst (Opus 5.5), Mode 1 EXP-685",
+    "purpose": "computed provenance for every coverage/obscuration number in EXP-685 (analyst Mode 5 provenance discipline applied to section prose: provenance_type computed, script + output sha256)",
+    "run": "cd <dir containing de421.bsp> && python3 exp685_coverage_vs_obscuration.py de421.bsp > exp685_coverage_vs_obscuration.out.json",
+    "environment": "python3, numpy, skyfield 1.55, JPL DE421 (de421.bsp sha256 below)",
+    "de421_sha256": "a20a7139da04cbc462454634918e9a9ca69127044e2cc9d4f9c16e238d2deedc",
+    "script_sha256": "def4c9d8de8ddfe1977851d249827471430da7a8e87d091fa6a84c230e245bc9",
+    "output_sha256": "68855dbf00fd20580b7a5a004a12869d22a63083716765f8a3b504627b414356",
+    "cross_check": "Reproduces rev4 obsc.json max obscuration (same DE421, IAGA-header coordinates) to <=0.0001 at all 8 shared stations: EBR 1.0, SPT 0.9879, ESK 0.9097, LER 0.8826, HAD 0.9436, NGK 0.8533, GUI 0.6925/0.6926, CLF 0.9285/0.9284. Hartland 0.9436 / magnitude 0.9486 agrees with sections.json part4 #p4-427 (94 %, magnitude 0.949, DE440s) and with predictions/eclipse-2026-08-12-hartland-local-circumstances.py (erratum 1, 94.4 %).",
+    "suggested_repo_path": "predictions/ is for frozen files only; suggest scripts/eclipse/exp685_coverage_vs_obscuration.py (+ .out.json) or keep as this analysis record"
+  },
+  "dome_sources": {
+    "predictions_page_table": "monitor/baseline/03-predictions.txt:79-90 (8 stations, audited 2026-03-15) and :113-120 (6 priority stations + FSF); 9-station E001-E009 table (adds SNK/GUI 0.72, FSF 0.642) as registered in predictions/eclipse-2026-08-12-predictions.json B2-M-001.per_station (dome commit c3b9f56fe622f6d3162a03671e797fe74fa6859a) and sections.json part4 #p4-427-station-coverage",
+    "home_page_table": "monitor/baseline/01-home.txt:509 (\"At 7 magnetic observatories with >80% eclipse coverage\"), :513-514 (\"0.0 nT exactly\", \"No mechanism\"), :519-526 (7-station table incl. BDV), :534 (x1.672 note). Live re-check 2026-10-04 via web_fetch of https://john09289.github.io/predictions/: identical rows present.",
+    "v9_locked_table": "monitor/baseline/07-ai-context.txt:318-325 (\"Eclipse PRED-001 through PRED-008 (LOCKED, Aug 12 2026)\", coverage column EBR .95 SPT .94 ESK .98 LER .92 SNK .70), :393 (to-do \"Fix PRED-001-008 eclipse predictions - V9 ESK/LER coverage wrong (0.98/0.92 should be 0.55/0.42)\")",
+    "amplitude_sources": "03-predictions.txt:75 (revised -17..-21 nT, x1.672 applied 2026-03-28), :1423-1425 (PRED-095 card), 05-model.txt:475, :882 (18.22/10.9 = 1.672), 08-killshot.txt:83 (-28.9 nT EBR), 07-ai-context.txt:321 (PRED-001 -8.4 +/-1.7 nT), data/dome-api-snapshots-proposed status_history-eclipse-entry-2026-09-27.json (live -28.9)",
+    "baseline_file_sha256": {
+      "01-home.txt": "baa9e5689ddf0a0c78fd1e4df72e7ef1fb78d076d936dc31e037b131d278689c",
+      "03-predictions.txt": "ee0361d2a8a3b274ee56f592c7a55e509d57af8968b70ff2f2cafdfc716b0771",
+      "05-model.txt": "8767888b22a66b6933a470bd35ee8f76f0b5081d5b0829ca7e0947b5dca4a54a",
+      "07-ai-context.txt": "ee00cb8e3176281e81541178780ca931dd629e4dce7d01acb9ddc1224549c992",
+      "08-killshot.txt": "3cc8671c88e2ba0fb1309cd1ea7f1eacf5e106fdb01113a856f089cfeba5d39c"
+    },
+    "baseline_review_commit": "97cacb9fe4c52bf3784ad0cad00145970adbfeb2 (baseline files last changed f1e7439, 2026-09-17; poller reports all 10 pages byte-identical through 2026-10-04T00:06Z)"
+  },
+  "hypotheses_tested_for_the_V12_values": {
+    "note": "Not for publication as a claim. Recorded so the curmudgeon can see what was tried before the prose says \"no definition we tried reproduces them\".",
+    "obscuration": "fails: 36-46 pp off at ESK/LER/NGK",
+    "magnitude": "fails: 37-48 pp off at ESK/LER/NGK",
+    "obscuration_divided_by_FSF": "partial, within 4 pp at EBR/ESK/LER/CLF/COI but 9-36 pp off at SPT/HAD/NGK/GUI (HAD 0.64 vs 0.80, NGK 0.56 vs 0.40, GUI 1.08 vs 0.72). Not a rule; not claimed. If it were the rule, coverage x FSF would equal obscuration and FSF would cancel out of the dome formula at those stations.",
+    "V9_divided_by_FSF": "ESK 0.98/1.722 = 0.57 (vs 0.55), LER 0.92/2.075 = 0.44 (vs 0.42); suggestive for the two values the to-do names, untestable elsewhere (no V9 value for NGK/HAD/CLF). Not claimed.",
+    "obscuration_x_cos_lat": "fails (EBR 0.76 vs 0.95)"
+  },
+  "script_source": "#!/usr/bin/env python3\n\"\"\"EXP-685: dome per-station eclipse 'coverage' vs computed maximum obscuration/magnitude\nfor the 2026-08-12 total solar eclipse, at the dome's nine named stations (E001-E009).\n\nSelf-contained. Requires: skyfield (1.55 used), numpy, JPL DE421 (de421.bsp in cwd or\npath given as argv[1]). Station coordinates: the dome's published table (lat/lon to 2 dp,\nreview sections.json part4 #p4-427-station-coverage, transcribed from predictions.html),\ncross-checked against IAGA codes. Elevation ignored (<0.01 effect on obscuration).\n\nMethod: topocentric apparent Sun and Moon (skyfield .observe().apparent()), angular radii\nfrom DE421 distances (R_sun 696,000 km, R_moon 1,737.4 km), separation each minute\n15:00-21:00 UT; obscuration = lens-overlap area / solar-disc area; magnitude =\n(r_s + r_m - d) / (2 r_s). Reports the maximum over the window (geometric, ignores\nwhether the Sun is above the local horizon -- sun altitude at max is reported).\nOutput: JSON to stdout.\n\"\"\"\nimport sys, json, math\nimport numpy as np\nfrom skyfield.api import load, wgs84\n\nEPH = sys.argv[1] if len(sys.argv) > 1 else 'de421.bsp'\nts = load.timescale()\neph = load(EPH)\nearth, sun, moon = eph['earth'], eph['sun'], eph['moon']\nR_SUN, R_MOON = 696000.0, 1737.4\n\n# dome table: id, name, code, lat, lon, dome_coverage, dome_fsf\nSTATIONS = [\n ('E001','Ebro','EBR',40.96,0.33,0.95,1.029),\n ('E002','San Pablo','SPT',39.55,-4.35,0.90,1.001),\n ('E003','Eskdalemuir','ESK',55.32,-3.20,0.55,1.722),\n ('E004','Lerwick','LER',60.13,-1.18,0.42,2.075),\n ('E005','Hartland','HAD',51.00,-4.48,0.80,1.471),\n ('E006','Niemegk','NGK',52.07,12.68,0.40,1.529),\n ('E007','Canary Islands (dome code SNK = IAGA GUI)','GUI',28.32,-16.43,0.72,0.642),\n ('E008','Chambon','CLF',48.03,2.26,0.70,1.325),\n ('E009','Coimbra','COI',40.22,-8.42,0.92,1.008),\n ('home-only','Budkov (listed only on the dome home page)','BDV',49.08,14.02,None,None),\n]\n# Other dome-published coverage sets for the same eclipse (verbatim values, provenance in EXP-685):\n# HOME = dome home page station table (monitor/baseline/01-home.txt:520-529; live re-check 2026-10-04)\n# V9   = dome ai-context page 'Eclipse PRED-001 through PRED-008 (LOCKED, Aug 12 2026)' table\n#        (monitor/baseline/07-ai-context.txt:319-325); to-do item at :393 records the V9->V12 change\nHOME = {'EBR':0.95,'SPT':0.90,'HAD':0.80,'CLF':0.85,'NGK':0.72,'BDV':0.68,'ESK':0.60}\nV9   = {'EBR':0.95,'SPT':0.94,'ESK':0.98,'LER':0.92,'GUI':0.70}\n\ndef overlap_frac(rs, rm, d):\n    if d >= rs + rm: return 0.0\n    if d <= abs(rm - rs): return 1.0 if rm >= rs else (rm*rm)/(rs*rs)\n    a1 = rs*rs*math.acos((d*d + rs*rs - rm*rm)/(2*d*rs))\n    a2 = rm*rm*math.acos((d*d + rm*rm - rs*rs)/(2*d*rm))\n    a3 = 0.5*math.sqrt(max(0.0,(-d+rs+rm)*(d+rs-rm)*(d-rs+rm)*(d+rs+rm)))\n    return (a1 + a2 - a3)/(math.pi*rs*rs)\n\nmins = np.arange(15*60, 21*60+1)\nt = ts.utc(2026, 8, 12, 0, mins)\nout = {}\nfor sid, name, code, lat, lon, cov, fsf in STATIONS:\n    obs = earth + wgs84.latlon(lat, lon)\n    s = obs.at(t).observe(sun).apparent(); m = obs.at(t).observe(moon).apparent()\n    sep = s.separation_from(m).radians\n    rs = np.arcsin(R_SUN / s.distance().km); rm = np.arcsin(R_MOON / m.distance().km)\n    ob = np.array([overlap_frac(a, b, c) for a, b, c in zip(rs, rm, sep)])\n    mag = np.clip((rs + rm - sep)/(2*rs), 0, None)\n    i = int(np.argmax(ob))\n    alt, _, _ = s.altaz()\n    o = float(ob[i])\n    out[code] = dict(id=sid, name=name, lat=lat, lon=lon,\n        dome_coverage_predictions_page=cov, dome_fsf=fsf,\n        dome_coverage_home_page=HOME.get(code), dome_coverage_v9_locked=V9.get(code),\n        max_obscuration=round(o,4), max_magnitude=round(float(mag[i]),4),\n        t_max_ut=f\"{mins[i]//60:02d}:{mins[i]%60:02d}\", sun_alt_at_max_deg=round(float(alt.degrees[i]),2),\n        obsc_minus_predictions_page_pp=None if cov is None else round(100*(o-cov),1),\n        obsc_minus_home_page_pp=None if HOME.get(code) is None else round(100*(o-HOME[code]),1),\n        obsc_minus_v9_pp=None if V9.get(code) is None else round(100*(o-V9[code]),1))\n\ndef ranks(a):\n    r = np.argsort(np.argsort(a)); return r.astype(float)\ndef stats(key, codes):\n    a = np.array([out[c][key] for c in codes]); o = np.array([out[c]['max_obscuration'] for c in codes])\n    return dict(n=len(codes), stations=codes, pearson=round(float(np.corrcoef(a,o)[0,1]),3),\n                spearman=round(float(np.corrcoef(ranks(a),ranks(o))[0,1]),3),\n                mean_abs_diff_pp=round(float(np.mean(np.abs(o-a))*100),1),\n                max_understatement_pp=round(float(np.max(o-a))*100,1))\nP = [c for c in out if out[c]['dome_coverage_predictions_page'] is not None]\nsummary = {\n 'predictions_page_all9': stats('dome_coverage_predictions_page', P),\n 'predictions_page_7_mainland_excl_GUI_COI': stats('dome_coverage_predictions_page', [c for c in P if c not in ('GUI','COI')]),\n 'home_page_7': stats('dome_coverage_home_page', [c for c in out if out[c]['dome_coverage_home_page'] is not None]),\n 'v9_locked_5': stats('dome_coverage_v9_locked', [c for c in out if out[c]['dome_coverage_v9_locked'] is not None]),\n 'predictions_page_same5_as_v9': stats('dome_coverage_predictions_page', [c for c in out if out[c]['dome_coverage_v9_locked'] is not None]),\n 'home_page_stations_over_80pct_by_home_page': [c for c in HOME if HOME[c] > 0.80],\n 'home_page_stations_over_80pct_by_obscuration': [c for c in HOME if out[c]['max_obscuration'] > 0.80],\n 'e_pred_b_signal_coverage_x_fsf': dict(HAD_dome=round(0.80*1.471,3), EBR_dome=round(0.95*1.029,3),\n     HAD_obsc=round(out['HAD']['max_obscuration']*1.471,3), EBR_obsc=round(out['EBR']['max_obscuration']*1.029,3)),\n}\njson.dump({'stations': out, 'summary': summary}, sys.stdout, indent=1)\n",
+  "output": {
+    "stations": {
+      "EBR": {
+        "id": "E001",
+        "name": "Ebro",
+        "lat": 40.96,
+        "lon": 0.33,
+        "dome_coverage_predictions_page": 0.95,
+        "dome_fsf": 1.029,
+        "dome_coverage_home_page": 0.95,
+        "dome_coverage_v9_locked": 0.95,
+        "max_obscuration": 1,
+        "max_magnitude": 1.0041,
+        "t_max_ut": "18:30",
+        "sun_alt_at_max_deg": 4.8,
+        "obsc_minus_predictions_page_pp": 5,
+        "obsc_minus_home_page_pp": 5,
+        "obsc_minus_v9_pp": 5
+      },
+      "SPT": {
+        "id": "E002",
+        "name": "San Pablo",
+        "lat": 39.55,
+        "lon": -4.35,
+        "dome_coverage_predictions_page": 0.9,
+        "dome_fsf": 1.001,
+        "dome_coverage_home_page": 0.9,
+        "dome_coverage_v9_locked": 0.94,
+        "max_obscuration": 0.9879,
+        "max_magnitude": 0.9858,
+        "t_max_ut": "18:34",
+        "sun_alt_at_max_deg": 7.17,
+        "obsc_minus_predictions_page_pp": 8.8,
+        "obsc_minus_home_page_pp": 8.8,
+        "obsc_minus_v9_pp": 4.8
+      },
+      "ESK": {
+        "id": "E003",
+        "name": "Eskdalemuir",
+        "lat": 55.32,
+        "lon": -3.2,
+        "dome_coverage_predictions_page": 0.55,
+        "dome_fsf": 1.722,
+        "dome_coverage_home_page": 0.6,
+        "dome_coverage_v9_locked": 0.98,
+        "max_obscuration": 0.9097,
+        "max_magnitude": 0.9217,
+        "t_max_ut": "18:07",
+        "sun_alt_at_max_deg": 13.65,
+        "obsc_minus_predictions_page_pp": 36,
+        "obsc_minus_home_page_pp": 31,
+        "obsc_minus_v9_pp": -7
+      },
+      "LER": {
+        "id": "E004",
+        "name": "Lerwick",
+        "lat": 60.13,
+        "lon": -1.18,
+        "dome_coverage_predictions_page": 0.42,
+        "dome_fsf": 2.075,
+        "dome_coverage_home_page": null,
+        "dome_coverage_v9_locked": 0.92,
+        "max_obscuration": 0.8826,
+        "max_magnitude": 0.9004,
+        "t_max_ut": "17:58",
+        "sun_alt_at_max_deg": 14.25,
+        "obsc_minus_predictions_page_pp": 46.3,
+        "obsc_minus_home_page_pp": null,
+        "obsc_minus_v9_pp": -3.7
+      },
+      "HAD": {
+        "id": "E005",
+        "name": "Hartland",
+        "lat": 51,
+        "lon": -4.48,
+        "dome_coverage_predictions_page": 0.8,
+        "dome_fsf": 1.471,
+        "dome_coverage_home_page": 0.8,
+        "dome_coverage_v9_locked": null,
+        "max_obscuration": 0.9436,
+        "max_magnitude": 0.9486,
+        "t_max_ut": "18:15",
+        "sun_alt_at_max_deg": 12.68,
+        "obsc_minus_predictions_page_pp": 14.4,
+        "obsc_minus_home_page_pp": 14.4,
+        "obsc_minus_v9_pp": null
+      },
+      "NGK": {
+        "id": "E006",
+        "name": "Niemegk",
+        "lat": 52.07,
+        "lon": 12.68,
+        "dome_coverage_predictions_page": 0.4,
+        "dome_fsf": 1.529,
+        "dome_coverage_home_page": 0.72,
+        "dome_coverage_v9_locked": null,
+        "max_obscuration": 0.8533,
+        "max_magnitude": 0.878,
+        "t_max_ut": "18:09",
+        "sun_alt_at_max_deg": 3.49,
+        "obsc_minus_predictions_page_pp": 45.3,
+        "obsc_minus_home_page_pp": 13.3,
+        "obsc_minus_v9_pp": null
+      },
+      "GUI": {
+        "id": "E007",
+        "name": "Canary Islands (dome code SNK = IAGA GUI)",
+        "lat": 28.32,
+        "lon": -16.43,
+        "dome_coverage_predictions_page": 0.72,
+        "dome_fsf": 0.642,
+        "dome_coverage_home_page": null,
+        "dome_coverage_v9_locked": 0.7,
+        "max_obscuration": 0.6926,
+        "max_magnitude": 0.7504,
+        "t_max_ut": "18:54",
+        "sun_alt_at_max_deg": 10.55,
+        "obsc_minus_predictions_page_pp": -2.7,
+        "obsc_minus_home_page_pp": null,
+        "obsc_minus_v9_pp": -0.7
+      },
+      "CLF": {
+        "id": "E008",
+        "name": "Chambon",
+        "lat": 48.03,
+        "lon": 2.26,
+        "dome_coverage_predictions_page": 0.7,
+        "dome_fsf": 1.325,
+        "dome_coverage_home_page": 0.85,
+        "dome_coverage_v9_locked": null,
+        "max_obscuration": 0.9284,
+        "max_magnitude": 0.9369,
+        "t_max_ut": "18:19",
+        "sun_alt_at_max_deg": 7.18,
+        "obsc_minus_predictions_page_pp": 22.8,
+        "obsc_minus_home_page_pp": 7.8,
+        "obsc_minus_v9_pp": null
+      },
+      "COI": {
+        "id": "E009",
+        "name": "Coimbra",
+        "lat": 40.22,
+        "lon": -8.42,
+        "dome_coverage_predictions_page": 0.92,
+        "dome_fsf": 1.008,
+        "dome_coverage_home_page": null,
+        "dome_coverage_v9_locked": null,
+        "max_obscuration": 0.9707,
+        "max_magnitude": 0.9708,
+        "t_max_ut": "18:34",
+        "sun_alt_at_max_deg": 10.37,
+        "obsc_minus_predictions_page_pp": 5.1,
+        "obsc_minus_home_page_pp": null,
+        "obsc_minus_v9_pp": null
+      },
+      "BDV": {
+        "id": "home-only",
+        "name": "Budkov (listed only on the dome home page)",
+        "lat": 49.08,
+        "lon": 14.02,
+        "dome_coverage_predictions_page": null,
+        "dome_fsf": null,
+        "dome_coverage_home_page": 0.68,
+        "dome_coverage_v9_locked": null,
+        "max_obscuration": 0.8715,
+        "max_magnitude": 0.8924,
+        "t_max_ut": "18:13",
+        "sun_alt_at_max_deg": 1.04,
+        "obsc_minus_predictions_page_pp": null,
+        "obsc_minus_home_page_pp": 19.1,
+        "obsc_minus_v9_pp": null
+      }
+    },
+    "summary": {
+      "predictions_page_all9": {
+        "n": 9,
+        "stations": [
+          "EBR",
+          "SPT",
+          "ESK",
+          "LER",
+          "HAD",
+          "NGK",
+          "GUI",
+          "CLF",
+          "COI"
+        ],
+        "pearson": 0.478,
+        "spearman": 0.817,
+        "mean_abs_diff_pp": 20.7,
+        "max_understatement_pp": 46.3
+      },
+      "predictions_page_7_mainland_excl_GUI_COI": {
+        "n": 7,
+        "stations": [
+          "EBR",
+          "SPT",
+          "ESK",
+          "LER",
+          "HAD",
+          "NGK",
+          "CLF"
+        ],
+        "pearson": 0.978,
+        "spearman": 1,
+        "mean_abs_diff_pp": 25.5,
+        "max_understatement_pp": 46.3
+      },
+      "home_page_7": {
+        "n": 7,
+        "stations": [
+          "EBR",
+          "SPT",
+          "ESK",
+          "HAD",
+          "NGK",
+          "CLF",
+          "BDV"
+        ],
+        "pearson": 0.803,
+        "spearman": 0.821,
+        "mean_abs_diff_pp": 14.2,
+        "max_understatement_pp": 31
+      },
+      "v9_locked_5": {
+        "n": 5,
+        "stations": [
+          "EBR",
+          "SPT",
+          "ESK",
+          "LER",
+          "GUI"
+        ],
+        "pearson": 0.904,
+        "spearman": 0.7,
+        "mean_abs_diff_pp": 4.3,
+        "max_understatement_pp": 5
+      },
+      "predictions_page_same5_as_v9": {
+        "n": 5,
+        "stations": [
+          "EBR",
+          "SPT",
+          "ESK",
+          "LER",
+          "GUI"
+        ],
+        "pearson": 0.378,
+        "spearman": 0.7,
+        "mean_abs_diff_pp": 19.8,
+        "max_understatement_pp": 46.3
+      },
+      "home_page_stations_over_80pct_by_home_page": [
+        "EBR",
+        "SPT",
+        "CLF"
+      ],
+      "home_page_stations_over_80pct_by_obscuration": [
+        "EBR",
+        "SPT",
+        "HAD",
+        "CLF",
+        "NGK",
+        "BDV",
+        "ESK"
+      ],
+      "e_pred_b_signal_coverage_x_fsf": {
+        "HAD_dome": 1.177,
+        "EBR_dome": 0.978,
+        "HAD_obsc": 1.388,
+        "EBR_obsc": 1.029
+      }
+    }
+  }
+}
