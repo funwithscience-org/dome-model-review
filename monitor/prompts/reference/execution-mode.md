@@ -57,6 +57,10 @@ relative to the device `$HOME`, used in `device_commit_files` paths as `~/<REPO_
 - This covers the PAT prelude, clones, `node build.js`, `node test.js`, commits, pushes, sentinel writes,
   and every script under `monitor/scripts/`. Run each block **unchanged**. `SESSION=$(pwd | grep -oP '/sessions/[^/]+')`
   resolves correctly on the device, because the device shell starts under `/sessions/<id>/`.
+- **Clone and scratch paths:** in a device shell the session root `/sessions/<id>/` is **read-only**.
+  Wherever your prompt clones or writes scratch files under `${SESSION}/<dir>` (for example
+  `${SESSION}/dome-review-clean`), use `${TMPDIR:-/tmp}/<dir>` instead; `$TMPDIR` is writable.
+  Paths under `${SESSION}/mnt/dome-model-review` (the workspace) are unchanged.
 - Each `device_bash` call is a fresh `bash -c`; env vars do not persist between calls, and neither do
   they with the local `Bash` tool. Re-derive variables at the top of each call, as your prompt already does.
 - Each call is capped at **180 s** (`timeout_ms` max 180000). For anything longer, such as a deep clone or
@@ -98,19 +102,28 @@ Mac by `monitor/scripts/device-push.sh`. Never use a full-history bundle.
    `git bundle create /mnt/user-data/outputs/dome-push/<label>.bundle origin/main..main` (you must be on branch `main`)
 3. Write `/mnt/user-data/outputs/dome-push/<label>.json`:
    `{"label","base":<origin/main sha>,"tip":<main sha>,"commits":N,"tests_green":true,"allow_deletions":false,"created_at"}`
-4. Deliver `<label>.bundle`, `<label>.json` and `device-push.sh` (from *your clone's*
-   `monitor/scripts/`, so the reviewed version is what runs) with `device_commit_files` to
-   `~/<REPO_REL>/.dome-push/`. `.dome-push/` is git-ignored. Use a **fixed filename per label**, so each
-   push overwrites the last and nothing accumulates. The script truncates the bundle to 0 bytes after a
-   successful push.
-5. `device_bash`: `bash "$HOME/<REPO_REL>/.dome-push/device-push.sh" <label>` with `timeout_ms: 180000`.
-   Read the final `DEVICE_PUSH_RESULT=` line.
+4. Deliver the payload **through `device_bash` into the device `$TMPDIR`, not through the synced folder.**
+   The device's view of a file just overwritten in the iCloud-synced workspace can lag by minutes. On
+   2026-10-07 the first live run pushed a previous amend because of it. Write three files into
+   `$TMPDIR/dome-push/` with base64 heredocs: `<label>.bundle`, `<label>.json`, and `device-push.sh`
+   (taken from *your clone's* `monitor/scripts/`, so the reviewed version runs).
+   - Start each call with `mkdir -p "$TMPDIR/dome-push" && cd "$TMPDIR/dome-push"`.
+   - Then write `base64 -d > <label>.bundle <<'B64'` … `B64`, and the same for the script. The manifest
+     can be a plain `cat > <label>.json <<'EOF'` heredoc.
+   - Keep each `device_bash` command under about 150 KB of base64. Split larger bundles by appending
+     parts to `<label>.b64` across calls, then `base64 -d <label>.b64 > <label>.bundle`.
+   - Verify with `sha256sum` against the container copy before running.
+   - Nothing is written to the synced folder, and the script deletes the payload after a successful push,
+     so nothing accumulates anywhere.
+5. `device_bash`: `bash "$TMPDIR/dome-push/device-push.sh" <label> <tip sha>` with `timeout_ms: 180000`.
+   Read the final `DEVICE_PUSH_RESULT=` line. Always pass the tip; `STALE_COPY` means a leftover payload,
+   so re-deliver.
 6. If the result is `BASE_MOVED`, someone pushed in between. Rebase in the container, re-run the tests,
    re-cut, and retry **once**. Any other non-OK result: stop and report it verbatim.
 
 The script's gates are: credential scope, manifest, base equals `origin/main`, bundle verify plus tip
 match, volume, secret scan, fast-forward only, `node test.js` on the device, then push. It never
-force-pushes, never rebases, and never deletes anything in the synced folder. Its scratch clone lives in
+force-pushes, never rebases, and never writes to the synced folder (it only reads the PAT from the workspace `.git/config`). Its scratch clone lives in
 the device `/tmp` (not iCloud; the device `$HOME` itself is not writable) and is removed on exit.
 
 ## Agents that cannot work in cloud mode yet

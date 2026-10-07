@@ -2,15 +2,18 @@
 # device-push.sh — land an INCREMENTAL git bundle on funwithscience-org/dome-model-review,
 # from the operator's Mac (Cowork device shell). See monitor/prompts/reference/execution-mode.md.
 #
-# Usage (on the device):  bash "$HOME/<REPO_REL>/.dome-push/device-push.sh" <label>
+# Usage (on the device):  bash "$TMPDIR/dome-push/device-push.sh" <label> <expected_tip_sha>
 # Expects next to this script:  <label>.bundle  and  <label>.json  (manifest: label, base, tip,
 #                               commits, tests_green, allow_deletions, created_at)
+# The payload is written into the device $TMPDIR by base64 heredoc over device_bash; it does NOT go
+# through the iCloud-synced workspace (the device's view of freshly overwritten synced files lags).
 #
 # Gates, in order: credential, manifest, base, bundle, volume, secrets, ff-only, tests, push.
-# Never force-pushes, never rebases, never deletes in the synced folder (it truncates the used bundle).
+# Never force-pushes, never rebases, never touches the synced folder.
 # Never prints the PAT. Output ends with exactly one line:  DEVICE_PUSH_RESULT=<CODE> [details]
 set -u
-LABEL="${1:?usage: device-push.sh <label>}"
+LABEL="${1:?usage: device-push.sh <label> <expected_tip_sha>}"
+EXPECTED_TIP="${2:-}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 BUNDLE="$HERE/$LABEL.bundle"
 MANIFEST="$HERE/$LABEL.json"
@@ -29,11 +32,14 @@ finish() {  # finish CODE "details"
   exit 0
 }
 
-# ---- gate 0: credential -------------------------------------------------------------------
-# The workspace repo is this script's grandparent (…/dome-model-review/.dome-push/device-push.sh).
-REPO="$(cd "$HERE/.." && pwd)"
-URL="$(git -C "$REPO" config --get remote.origin.url 2>/dev/null)"
-case "$URL" in *"$REPO_SLUG"*) ;; *) finish NO_REPO "workspace at $REPO is not $REPO_SLUG";; esac
+# ---- gate 0: credential (read from the workspace .git/config; the workspace is only read) ----
+REPO=""; URL=""
+for d in "$HOME/mnt/dome-model-review" "$HOME"/mnt/*/dome-model-review; do
+  [ -d "$d/.git" ] || continue
+  u="$(git -C "$d" config --get remote.origin.url 2>/dev/null)"
+  case "$u" in *"$REPO_SLUG"*) REPO="$d"; URL="$u"; break;; esac
+done
+[ -n "$REPO" ] || finish NO_REPO "no connected dome-model-review workspace under \$HOME/mnt"
 PAT="$(printf '%s' "$URL" | sed -n 's#.*x-access-token:\([^@]*\)@.*#\1#p')"
 [ -n "$PAT" ] || finish NO_PAT "no x-access-token in workspace .git/config"
 HTTP="$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $PAT" "https://api.github.com/repos/$REPO_SLUG")"
@@ -49,6 +55,10 @@ read -r M_BASE M_TIP M_TESTS M_ALLOWDEL < <(node -e '
   console.log([m.base||"",m.tip||"",String(m.tests_green===true),String(m.allow_deletions===true)].join(" "))' "$MANIFEST" 2>/dev/null)
 [ -n "${M_BASE:-}" ] && [ -n "${M_TIP:-}" ] || finish MANIFEST_BAD "manifest unparseable or missing base/tip"
 [ "$M_TESTS" = "true" ] || finish MANIFEST_BAD "tests_green is not true"
+# Replay guard: the caller passes the tip it just delivered; anything else is a leftover payload.
+if [ -n "$EXPECTED_TIP" ] && [ "${M_TIP}" != "$EXPECTED_TIP" ]; then
+  finish STALE_COPY "manifest tip ${M_TIP:0:8} != expected ${EXPECTED_TIP:0:8}; re-deliver the payload"
+fi
 
 # ---- scratch clone (device /tmp, not iCloud), removed on exit -----------------------------
 W="$(mktemp -d "${TMPDIR:-/tmp}/dome-push-XXXXXX" 2>/dev/null)" || finish INTERNAL "cannot create scratch dir under ${TMPDIR:-/tmp}"
@@ -107,6 +117,6 @@ if [ "$PUSH_RC" -ne 0 ]; then
   finish PUSH_FAIL "git push rc=$PUSH_RC"
 fi
 
-# success: truncate the used bundle + manifest so iCloud does not keep growing (no unlink in the synced folder)
-: > "$BUNDLE"; : > "$MANIFEST"
+# success: remove the used payload (it lives in device $TMPDIR, not the synced folder)
+rm -f "$BUNDLE" "$MANIFEST"
 finish OK "pushed ${M_TIP:0:8} (${NCOMMITS} commit(s), ${NFILES} file(s)) ${TEST_LINE}"
