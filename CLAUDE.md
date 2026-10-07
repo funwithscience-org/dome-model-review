@@ -235,6 +235,13 @@ The erratum also introduces `failure_attribution` (`model` | `analyst_representa
 
 **Staging rule (learned 2026-09-27, ISS-3105).** After staging files into the FUSE workspace plus `monitor/commit-queue/pending.json`, fire dome-commit **immediately**, with no other agent run in between. A decider (or any agent) run syncs git back over FUSE and silently reverts uncommitted staged edits. dome-commit's content-mismatch check caught this once; don't rely on it.
 
+**Execution mode and the git write path (2026-10-07).** From 2026-10-06, scheduled and hand-fired tasks may run **in the cloud** instead of on the Mac. Cloud containers cannot push to GitHub (#76248) and cannot see the workspace directly. They *can* reach the Mac through the connected-device tools while it is online. Every agent prompt now opens with **Step M0**, which points to `monitor/prompts/reference/execution-mode.md`:
+
+- **LOCAL mode:** carry on unchanged.
+- **CLOUD mode:** run a device preflight (abort if the Mac is unreachable), run every shell block through `device_bash` unchanged, deliver authored files with `device_commit_files`, and never `git push` from the container.
+
+Commits built in a cloud container clone (interactive operator sessions, or agents) land as an **incremental** bundle (`origin/main..main`, never full history). The bundle, a manifest and `monitor/scripts/device-push.sh` are delivered with fixed per-label filenames to the git-ignored `.dome-push/` in the workspace. `device-push.sh` then runs on the Mac. Its gates: credential scope, manifest, base equals `origin/main`, bundle tip, volume, secret scan, fast-forward only, `node test.js` on a sparse device clone, then push. It truncates the bundle after success, so nothing accumulates. **Operator commits now use this path. `dome-commit` (manifest of workspace paths) remains the fallback when the device bridge is down.** The PROP-101 cost rows show `discovery_failed: no-readable-jsonl-transcript-under-sessions` for cloud runs. That is a known side effect, not a fault.
+
 ### Data Flow (summary)
 
 **Primary loops** — each runs continuously via the scheduled agents:
