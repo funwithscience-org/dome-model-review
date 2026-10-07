@@ -102,19 +102,21 @@ Mac by `monitor/scripts/device-push.sh`. Never use a full-history bundle.
    `git bundle create /mnt/user-data/outputs/dome-push/<label>.bundle origin/main..main` (you must be on branch `main`)
 3. Write `/mnt/user-data/outputs/dome-push/<label>.json`:
    `{"label","base":<origin/main sha>,"tip":<main sha>,"commits":N,"tests_green":true,"allow_deletions":false,"created_at"}`
-4. Deliver the payload **through `device_bash` into the device `$TMPDIR`, not through the synced folder.**
-   The device's view of a file just overwritten in the iCloud-synced workspace can lag by minutes. On
-   2026-10-07 the first live run pushed a previous amend because of it. Write three files into
-   `$TMPDIR/dome-push/` with base64 heredocs: `<label>.bundle`, `<label>.json`, and `device-push.sh`
-   (taken from *your clone's* `monitor/scripts/`, so the reviewed version runs).
-   - Start each call with `mkdir -p "$TMPDIR/dome-push" && cd "$TMPDIR/dome-push"`.
-   - Then write `base64 -d > <label>.bundle <<'B64'` … `B64`, and the same for the script. The manifest
-     can be a plain `cat > <label>.json <<'EOF'` heredoc.
-   - Keep each `device_bash` command under about 150 KB of base64. Split larger bundles by appending
-     parts to `<label>.b64` across calls, then `base64 -d <label>.b64 > <label>.bundle`.
-   - Verify with `sha256sum` against the container copy before running.
-   - Nothing is written to the synced folder, and the script deletes the payload after a successful push,
-     so nothing accumulates anywhere.
+4. Deliver the payload with `device_commit_files` under **new, unique filenames**, then copy it into the
+   device `$TMPDIR`. The device's view of a file *overwritten* in the iCloud-synced workspace can lag by
+   minutes; new filenames show up immediately. On 2026-10-07, overwriting fixed names pushed a previous
+   amend, and the unique-name delivery then worked first time.
+   - Deliver to `~/<REPO_REL>/.dome-push/`, which is git-ignored:
+     `<label>-<tip8>.bundle`, `<label>-<tip8>.json`, and `device-push-<tip8>.sh`. Take the script from
+     *your clone's* `monitor/scripts/`, so the reviewed version runs.
+   - In one `device_bash`:
+     - `P="$TMPDIR/dome-push"; mkdir -p "$P"; rm -f "$P"/<label>.* "$P"/device-push.sh`
+     - copy the three files to `$P/<label>.bundle`, `$P/<label>.json` and `$P/device-push.sh`
+     - `sha256sum` them and compare with your container copies
+     - truncate the three delivered files to 0 bytes with `: > file`. Nothing can be deleted in the synced
+       folder; truncation keeps it from filling up.
+   - Bundles are incremental, so typically a few KB. Only empty filenames remain in `.dome-push/`; the
+     operator can clear them whenever.
 5. `device_bash`: `bash "$TMPDIR/dome-push/device-push.sh" <label> <tip sha>` with `timeout_ms: 180000`.
    Read the final `DEVICE_PUSH_RESULT=` line. Always pass the tip; `STALE_COPY` means a leftover payload,
    so re-deliver.

@@ -5,8 +5,8 @@
 # Usage (on the device):  bash "$TMPDIR/dome-push/device-push.sh" <label> <expected_tip_sha>
 # Expects next to this script:  <label>.bundle  and  <label>.json  (manifest: label, base, tip,
 #                               commits, tests_green, allow_deletions, created_at)
-# The payload is written into the device $TMPDIR by base64 heredoc over device_bash; it does NOT go
-# through the iCloud-synced workspace (the device's view of freshly overwritten synced files lags).
+# The caller delivers the payload to .dome-push/ under unique names, copies it into $TMPDIR/dome-push/,
+# and truncates the synced copies (the device's view of OVERWRITTEN synced files can lag; new names don't).
 #
 # Gates, in order: credential, manifest, base, bundle, volume, secrets, ff-only, tests, push.
 # Never force-pushes, never rebases, never touches the synced folder.
@@ -110,12 +110,17 @@ TEST_LINE="$(printf '%s\n' "$TEST_OUT" | grep -E 'passed, *[0-9]+ failed' | tail
 [ "$TEST_RC" -eq 0 ] || finish TESTS_RED "node test.js rc=$TEST_RC ${TEST_LINE}"
 
 # ---- gate 7: push (fast-forward only, no force) ---------------------------------------------
-PUSH_OUT="$(git push origin "$M_TIP:refs/heads/main" 2>&1 | mask)"; PUSH_RC=${PIPESTATUS[0]}
+PUSH_OUT="$(git push origin "$M_TIP:refs/heads/main" 2>&1)"; PUSH_RC=$?
+PUSH_OUT="$(printf '%s\n' "$PUSH_OUT" | mask)"
 if [ "$PUSH_RC" -ne 0 ]; then
   printf '%s\n' "$PUSH_OUT" | tail -5
   case "$PUSH_OUT" in *"non-fast-forward"*|*"fetch first"*|*"rejected"*) finish BASE_MOVED "push rejected (remote moved)";; esac
   finish PUSH_FAIL "git push rc=$PUSH_RC"
 fi
+
+# verify on the remote, never trust the exit code alone (a pipeline once hid a failed push here)
+REMOTE_MAIN="$(git ls-remote origin refs/heads/main 2>/dev/null | awk '{print $1}')"
+[ "$REMOTE_MAIN" = "$M_TIP" ] || { printf '%s\n' "$PUSH_OUT" | tail -5; finish PUSH_UNVERIFIED "push rc=0 but origin/main=${REMOTE_MAIN:0:8} != tip ${M_TIP:0:8}"; }
 
 # success: remove the used payload (it lives in device $TMPDIR, not the synced folder)
 rm -f "$BUNDLE" "$MANIFEST"
