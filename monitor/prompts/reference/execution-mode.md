@@ -89,6 +89,23 @@ switch to container-side git or container-side copies of workspace files. Write 
 completed, what did not, and the last successful step, so the operator can re-fire. Work done only in your
 container is lost when the run ends. That is acceptable; a half-applied write is not.
 
+**C6. Never run a git write in the mounted workspace from the device shell.** The mounted
+workspace is `${SESSION}/mnt/dome-model-review` (the iCloud folder). Git writes include `fetch`, `pull`,
+`reset`, `checkout`, `stash`, `merge`, `commit`, `add`, `gc` and `maintenance`, and even `git status`
+refreshes the index. The device shell cannot unlink files there, so git leaves `*.lock` files it cannot
+remove. **Never rename or move a lock file anywhere under `.git/`** to get past one.
+- Why: on 2026-10-13 a poller run did exactly that. It produced `refs/heads/main.stale-lock-*`, a 0-byte
+  "branch" that breaks every later `git fetch` in that folder.
+- All git work happens in your `$TMPDIR` clone.
+- Read-only inspection of the workspace is fine: `cat`, `ls`, `git config --get`.
+- If the workspace looks stale or broken, **report it** (a change record or summary line) and leave it
+  alone. The operator repairs and fast-forwards it from the Mac's own Terminal.
+
+**C7. Read prompts and reference files from your fresh `$TMPDIR` clone, not the workspace.** In cloud
+mode nothing moves the workspace forward automatically, so its copy of `monitor/prompts/` can be days
+old. Your scheduled-task text may say to read your prompt "in the workspace". If so, read it once to find
+these rules, then clone and re-read the **origin** version of your prompt and of this file before acting.
+
 ## Interactive sessions (operator + assistant), and any agent that builds commits in its container
 
 Sometimes the commits are made in a cloud container clone. Examples: an interactive Cowork session, or an

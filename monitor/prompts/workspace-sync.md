@@ -6,6 +6,7 @@ Before anything else, follow `monitor/prompts/reference/execution-mode.md`. In s
 - Run **every** shell block below through `device_bash`, unchanged. That includes the PAT prelude, clone, build, tests, commit and push. One exception: clone into `${TMPDIR:-/tmp}/...` rather than `${SESSION}/...`, because the device session root is read-only.
 - Deliver any file you author with `device_commit_files`.
 - **Never `git push` from your own container.** It is blocked there, and a retry loop wastes the run.
+- **Never run git writes (fetch, pull, reset, status) in the mounted workspace, and never move lock files under `.git/`.** Do all git work in your `$TMPDIR` clone, and read this prompt from that clone (rules C6 and C7).
 
 In LOCAL mode, carry on exactly as written below.
 
